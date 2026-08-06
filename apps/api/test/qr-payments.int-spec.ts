@@ -127,7 +127,7 @@ describe('QR payments (integration)', () => {
     await assertWalletIntegrity(prisma, wallet.id);
   });
 
-  it('consumes a single-use QR code but leaves a static merchant code reusable', async () => {
+  it('consumes a single-use QR code once it is paid', async () => {
     const { user } = await createCustomer(prisma);
     const partner = await createPartner(prisma);
 
@@ -139,21 +139,35 @@ describe('QR payments (integration)', () => {
     expect(
       (await prisma.qrCode.findUniqueOrThrow({ where: { id: dynamic.id } })).status,
     ).toBe(QrCodeStatus.REDEEMED);
+  });
+
+  it('refuses a static merchant code, which mints bonus on a payment nobody made', async () => {
+    const { user, wallet } = await createCustomer(prisma);
+    const partner = await createPartner(prisma);
 
     const staticQr = await prisma.qrCode.create({
       data: {
         type: QrCodeType.STATIC_MERCHANT,
         token: 'static-merchant-token-0001',
         partnerId: partner.id,
-        amount: '1000',
+        amount: '100000',
         expiresAt: new Date(Date.now() + 86_400_000),
       },
     });
-    await qrPayments.redeem({ token: staticQr.token, idempotencyKey: 'idem-s1' }, user.id);
-    await qrPayments.redeem({ token: staticQr.token, idempotencyKey: 'idem-s2' }, user.id);
-    expect((await prisma.qrCode.findUniqueOrThrow({ where: { id: staticQr.id } })).status).toBe(
-      QrCodeStatus.ACTIVE,
-    );
+
+    // A shop-window code is reusable, carries a fixed amount and is public by
+    // design. Nothing confirms money moved, so five scans of a 100,000 AMD
+    // code produced 25,000 points. Disabled until payment authorization
+    // exists — DYNAMIC_INVOICE still works and is bounded by a merchant act.
+    for (const key of ['s1', 's2', 's3']) {
+      await expect(
+        qrPayments.redeem({ token: staticQr.token, idempotencyKey: key }, user.id),
+      ).rejects.toThrow(/Static merchant codes are not accepted yet/);
+    }
+
+    const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(after.pendingBonus.toFixed(4)).toBe('0.0000');
+    await assertWalletIntegrity(prisma, wallet.id);
   });
 
   // ── Regression: proven exploits ─────────────────────────────────────────
@@ -232,15 +246,7 @@ describe('QR payments (integration)', () => {
     it('replays the caller’s own key without charging twice', async () => {
       const { user, wallet } = await fundedCustomer('3000');
       const partner = await createPartner(prisma);
-      const qr = await prisma.qrCode.create({
-        data: {
-          type: QrCodeType.STATIC_MERCHANT,
-          token: 'static-idem-token-0001',
-          partnerId: partner.id,
-          amount: '1000',
-          expiresAt: new Date(Date.now() + 86_400_000),
-        },
-      });
+      const qr = await createDynamicInvoiceQr(prisma, { partnerId: partner.id, amount: '1000' });
 
       const first = await qrPayments.redeem(
         { token: qr.token, bonusAmountToApply: '500', idempotencyKey: 'retry-key' },

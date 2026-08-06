@@ -122,6 +122,25 @@ export class QrPaymentsService {
       );
     }
 
+    // Static merchant codes are disabled until payment authorization exists.
+    //
+    // They are reusable by design, carry a fixed amount, and are displayed in
+    // public — that is what a shop-window QR is. Nothing in the system
+    // confirms that money actually moved, so anyone who photographs one can
+    // redeem it repeatedly and accrue bonus on a payment that never happened.
+    // Measured at 25,000 points from five scans of a 100,000 AMD code.
+    //
+    // This cannot be hardened away: a fraudulent redemption is indistinguishable
+    // from a real one while the payment is self-asserted. Re-enable this path
+    // together with payment authorization and settlement, not before.
+    // DYNAMIC_INVOICE remains available and is bounded by a merchant raising
+    // one invoice per payment.
+    if (qr.type === QrCodeType.STATIC_MERCHANT) {
+      throw new BadRequestException(
+        'Static merchant codes are not accepted yet. Please ask for a payment invoice.',
+      );
+    }
+
     const amount = qr.amount ?? new Decimal(0);
     if (amount.lessThanOrEqualTo(0)) {
       throw new BadRequestException('QR code has no payable amount set');
@@ -178,15 +197,16 @@ export class QrPaymentsService {
         await this.bonusEngine.settleReservation(reservationId);
       }
 
-      // Single-use QR types are consumed atomically; STATIC_MERCHANT stays reusable.
-      if (qr.type !== QrCodeType.STATIC_MERCHANT) {
-        const flip = await this.prisma.qrCode.updateMany({
-          where: { id: qr.id, status: QrCodeStatus.ACTIVE },
-          data: { status: QrCodeStatus.REDEEMED, redeemedTransactionId: transaction.id },
-        });
-        if (flip.count === 0) {
-          throw new BadRequestException('QR code was already redeemed');
-        }
+      // Every code that reaches this point is single-use — the reusable type
+      // is refused above — so consumption is unconditional. The conditional
+      // flip is the atomicity guard: whoever moves it out of ACTIVE first owns
+      // the redemption, and a concurrent second attempt loses.
+      const flip = await this.prisma.qrCode.updateMany({
+        where: { id: qr.id, status: QrCodeStatus.ACTIVE },
+        data: { status: QrCodeStatus.REDEEMED, redeemedTransactionId: transaction.id },
+      });
+      if (flip.count === 0) {
+        throw new BadRequestException('QR code was already redeemed');
       }
 
       let bonusEarned = new Decimal(0);

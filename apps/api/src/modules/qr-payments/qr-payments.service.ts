@@ -102,6 +102,13 @@ export class QrPaymentsService {
     if (qr.status !== QrCodeStatus.ACTIVE) throw new BadRequestException('QR code is not active');
     if (qr.expiresAt < new Date()) throw new BadRequestException('QR code has expired');
 
+    // A payment needs two parties. Redeeming your own code manufactures a
+    // COMPLETED transaction out of nothing, which was the vehicle for the
+    // referral farm in docs/AUDIT_2026-08-B.md §C4.
+    if (qr.issuedByUserId && qr.issuedByUserId === payerUserId) {
+      throw new BadRequestException('You cannot redeem a code you issued yourself');
+    }
+
     const amount = qr.amount ?? new Decimal(0);
     if (amount.lessThanOrEqualTo(0)) {
       throw new BadRequestException('QR code has no payable amount set');

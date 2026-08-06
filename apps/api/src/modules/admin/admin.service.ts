@@ -57,8 +57,23 @@ export class AdminService {
     });
   }
 
-  setActive(userId: string, isActive: boolean) {
-    return this.prisma.user.update({ where: { id: userId }, data: { isActive } });
+  /**
+   * Deactivation must end the session, not just flag the row: revoking the
+   * refresh tokens stops the account being silently resurrected at the next
+   * refresh, while the isActive check in buildRequestUserClaims kills the
+   * current access token on its very next request.
+   */
+  async setActive(userId: string, isActive: boolean) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({ where: { id: userId }, data: { isActive } });
+      if (!isActive) {
+        await tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      return user;
+    });
   }
 
   async systemOverview() {

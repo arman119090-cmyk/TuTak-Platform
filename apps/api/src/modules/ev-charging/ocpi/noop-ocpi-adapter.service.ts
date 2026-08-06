@@ -12,17 +12,20 @@ import { OcpiAdapter } from './ocpi-adapter.interface';
 export class NoopOcpiAdapter implements OcpiAdapter {
   private readonly logger = new Logger(NoopOcpiAdapter.name);
 
-  async startRemoteSession(): Promise<{ accepted: boolean; ocpiSessionId?: string }> {
+  // These satisfy an async interface without doing async work, so they
+  // return resolved promises rather than being marked `async` — the real
+  // adapter will await network calls here.
+  startRemoteSession(): Promise<{ accepted: boolean; ocpiSessionId?: string }> {
     this.logger.warn('OCPI roaming is not configured — rejecting remote session start');
-    return { accepted: false };
+    return Promise.resolve({ accepted: false });
   }
 
-  async stopRemoteSession(): Promise<{ accepted: boolean }> {
+  stopRemoteSession(): Promise<{ accepted: boolean }> {
     this.logger.warn('OCPI roaming is not configured — rejecting remote session stop');
-    return { accepted: false };
+    return Promise.resolve({ accepted: false });
   }
 
-  async fetchCdr() {
-    return null;
+  fetchCdr(): Promise<null> {
+    return Promise.resolve(null);
   }
 }

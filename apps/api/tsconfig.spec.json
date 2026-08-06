@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Tests are type-checked but never emitted, so the build's rootDir
+    // restriction (src only) must not apply to them.
+    "rootDir": ".",
+    "noEmit": true,
+    "incremental": false,
+    "types": ["jest", "node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

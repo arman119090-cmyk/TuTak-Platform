@@ -2,7 +2,6 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../app/theme/ThemeProvider';
-import { BonusComposition } from './BonusComposition';
 import { JakoWatermark } from './Jako';
 import { Skeleton } from './Skeleton';
 import { formatPoints } from '../utils/format';

@@ -198,6 +198,19 @@ enum BonusLotStatus {
   CONSUMED
 }
 
+/// Ledger entry kinds.
+///
+/// Split into two families, and the distinction is load-bearing:
+///
+///  * VALUE entries change how many points the wallet holds in total
+///    (ACCRUAL_*, REDEMPTION_*, EXPIRY, REVERSAL). Their signed sum is the
+///    wallet's outstanding balance.
+///  * TRANSFER entries move points between buckets without changing the
+///    total (RESERVE_HOLD, RESERVE_RELEASE, PENDING_PROMOTION).
+///
+/// Before this split, reserving and settling both wrote a REDEMPTION_*
+/// DEBIT for the same spend, so summing debits double-counted every
+/// redemption and the ledger could not reproduce the balance.
 enum BonusEntryType {
   ACCRUAL_PURCHASE
   ACCRUAL_REFERRAL
@@ -207,6 +220,9 @@ enum BonusEntryType {
   REDEMPTION_EV_CHARGING
   EXPIRY
   REVERSAL
+  RESERVE_HOLD
+  RESERVE_RELEASE
+  PENDING_PROMOTION
 }
 
 /// A discrete batch of bonus points accrued together, expiring together.
@@ -274,20 +290,43 @@ model BonusReservationAllocation {
   @@map("bonus_reservation_allocations")
 }
 
+/// Direction of an entry's effect on the wallet's *total* holdings.
+/// NEUTRAL is used by TRANSFER entries, which relocate points between
+/// buckets without creating or destroying any.
 enum LedgerDirection {
   CREDIT
   DEBIT
+  NEUTRAL
 }
 
-/// Append-only, immutable audit-grade log of every balance-affecting event.
-/// Never updated or deleted — this is the ledger of record.
+/// Append-only, immutable log of every bonus movement. Never updated or
+/// deleted — this is the ledger of record.
+///
+/// The three *Delta columns make the ledger replayable: for any wallet the
+/// cumulative sum of each delta equals the corresponding column on Wallet.
+/// That property is asserted after every money operation in the test suite,
+/// so a change that breaks reconstruction fails CI rather than silently
+/// corrupting reporting.
 model BonusLedgerEntry {
   id                  String          @id @default(uuid())
   walletId            String
   type                BonusEntryType
   direction           LedgerDirection
+  /// Absolute magnitude of the movement; never negative.
   amount              Decimal         @db.Decimal(18, 4)
+
+  /// Signed effect of this entry on each wallet bucket.
+  /// Invariant: availableDelta + pendingDelta + reservedDelta
+  ///            == +amount (CREDIT) | -amount (DEBIT) | 0 (NEUTRAL)
+  availableDelta      Decimal         @default(0) @db.Decimal(18, 4)
+  pendingDelta        Decimal         @default(0) @db.Decimal(18, 4)
+  reservedDelta       Decimal         @default(0) @db.Decimal(18, 4)
+
+  /// Total outstanding points (available + pending + reserved) after this
+  /// entry was applied. One meaning, everywhere — previously this column
+  /// meant "available + pending" in accruals and "available" elsewhere.
   balanceAfter        Decimal         @db.Decimal(18, 4)
+
   relatedLotId        String?
   relatedReservationId String?
   sourceTransactionId String?
@@ -297,6 +336,7 @@ model BonusLedgerEntry {
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@index([walletId, createdAt])
+  @@index([sourceTransactionId])
   @@map("bonus_ledger_entries")
 }
 
@@ -339,7 +379,11 @@ model Transaction {
   bonusAppliedAmount   Decimal           @default(0) @db.Decimal(18, 4)
   bonusEarnedAmount    Decimal           @default(0) @db.Decimal(18, 4)
   description          String?
-  idempotencyKey       String?           @unique
+  /// Scoped to the owning user, not global. A globally-unique key let one
+  /// account replay another account's key and receive that account's
+  /// transaction back, and let an attacker squat a key to turn a victim's
+  /// future payment into a silent no-op.
+  idempotencyKey       String?
   metadata             Json?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
@@ -349,6 +393,7 @@ model Transaction {
   qrCode  QrCode?
   evSession EvSession?
 
+  @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([partnerId, createdAt])
   @@index([type, status])

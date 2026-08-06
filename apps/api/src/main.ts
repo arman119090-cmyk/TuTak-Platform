@@ -50,4 +50,7 @@ async function bootstrap() {
   console.log(`TuTak API listening on port ${port}`);
 }
 
-bootstrap();
+// `void` is the explicit acknowledgement that nothing awaits the top-level
+// bootstrap; without it a rejection here would be an unhandled promise and
+// the process would exit with no diagnostic.
+void bootstrap();

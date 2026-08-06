@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only credentials for the ephemeral service container below. Nothing
+  # here is a secret; real deployments read these from the environment.
+  TEST_DATABASE_URL: postgresql://tutak:tutak_ci_password@localhost:5432/tutak_test?schema=public
+  DATABASE_URL: postgresql://tutak:tutak_ci_password@localhost:5432/tutak_test?schema=public
+  REDIS_URL: redis://localhost:6379
+  JWT_ACCESS_SECRET: ci-access-secret-not-used-outside-continuous-integration
+  JWT_REFRESH_SECRET: ci-refresh-secret-not-used-outside-continuous-integration
+
+jobs:
+  verify:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+
+    # The integration suite runs against real PostgreSQL rather than a mock:
+    # the guarantees under test (transaction atomicity, Serializable conflict
+    # detection, CHECK constraints, unique indexes) exist in the database, and
+    # a mocked client would pass while production corrupted balances.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tutak
+          POSTGRES_PASSWORD: tutak_ci_password
+          POSTGRES_DB: tutak
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tutak"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @tutak/api prisma:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Unit tests need no database, so a failure here is unambiguous.
+      - name: Unit tests
+        run: pnpm --filter @tutak/api test:unit
+
+      # globalSetup creates tutak_test, applies the full migration history,
+      # and runs VALIDATE CONSTRAINT on bonus_ledger_delta_matches_direction.
+      # That constraint ships NOT VALID to grandfather pre-existing rows in
+      # long-lived databases; on a database built from scratch it must hold
+      # universally, so this step proves no code path can write a ledger entry
+      # whose deltas contradict its direction.
+      - name: Integration tests
+        run: pnpm --filter @tutak/api test:int
+
+      - name: Build all applications
+        run: pnpm build

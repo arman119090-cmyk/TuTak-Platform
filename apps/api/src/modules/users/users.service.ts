@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { RequestUser } from '../auth/types/request-user.type';
@@ -59,7 +59,14 @@ export class UsersService {
     });
   }
 
-  /** Builds the JWT claim set: flattened roles, permissions, and partner scopes. */
+  /**
+   * Builds the JWT claim set: flattened roles, permissions, partner scopes.
+   *
+   * Also the enforcement point for account state. Previously this only
+   * checked existence, so deactivating or locking an account had no effect
+   * until its access token expired — an administrator responding to fraud
+   * pressed "Deactivate" and the attacker kept working (audit §B4).
+   */
   async buildRequestUserClaims(userId: string): Promise<Omit<RequestUser, 'deviceId'>> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -72,6 +79,12 @@ export class UsersService {
 
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+    if (!user.isActive || user.deletedAt) {
+      throw new UnauthorizedException('Account is no longer active');
+    }
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new UnauthorizedException('Account is temporarily locked');
     }
 
     const roles = new Set<RoleName>();

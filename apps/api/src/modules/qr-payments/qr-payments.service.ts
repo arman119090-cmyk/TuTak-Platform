@@ -3,6 +3,7 @@ import { AuditAction, QrCodeStatus, QrCodeType, TransactionType } from '@prisma/
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { generateOpaqueToken } from '../../common/utils/crypto';
+import { parseMoney } from '../../common/utils/money';
 import { AuditService } from '../audit/audit.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -81,7 +82,12 @@ export class QrPaymentsService {
    * portion at the partner's accrual rate. Idempotent on `idempotencyKey`.
    */
   async redeem(dto: RedeemQrDto, payerUserId: string) {
-    const existing = await this.transactionsService.findByIdempotencyKey(dto.idempotencyKey);
+    // Idempotency is scoped to the caller. A global lookup let one account
+    // replay another's key and receive that account's transaction back.
+    const existing = await this.transactionsService.findByIdempotencyKey(
+      payerUserId,
+      dto.idempotencyKey,
+    );
     if (existing) {
       return {
         transactionId: existing.id,
@@ -101,7 +107,12 @@ export class QrPaymentsService {
       throw new BadRequestException('QR code has no payable amount set');
     }
 
-    const bonusToApply = dto.bonusAmountToApply ? new Decimal(dto.bonusAmountToApply) : new Decimal(0);
+    // parseMoney rejects negatives, NaN, Infinity and over-scale values. A
+    // negative here used to invert `amount.minus(bonus)` into an addition,
+    // inflating the accrual base without limit (audit §B1).
+    const bonusToApply = dto.bonusAmountToApply
+      ? parseMoney(dto.bonusAmountToApply, 'bonusAmountToApply')
+      : new Decimal(0);
     if (bonusToApply.greaterThan(amount)) {
       throw new BadRequestException('Bonus applied cannot exceed the payment amount');
     }
@@ -124,6 +135,7 @@ export class QrPaymentsService {
       .catch((e) => this.logger.error('Fraud velocity check failed', e));
 
     let reservationId: string | null = null;
+    let accruedLotId: string | null = null;
     try {
       if (bonusToApply.greaterThan(0)) {
         const walletId = await this.walletService.getWalletIdForUser(payerUserId);
@@ -149,12 +161,13 @@ export class QrPaymentsService {
         bonusEarned = paidPortion.times(partner.bonusAccrualRateBps).dividedBy(10_000);
         if (bonusEarned.greaterThan(0)) {
           const payerWalletId = await this.walletService.getWalletIdForUser(payerUserId);
-          await this.bonusEngine.accrue({
+          const lot = await this.bonusEngine.accrue({
             walletId: payerWalletId,
             type: BonusEntryType.ACCRUAL_PURCHASE,
             amount: bonusEarned,
             sourceTransactionId: transaction.id,
           });
+          accruedLotId = lot.id;
         }
       }
 
@@ -177,10 +190,23 @@ export class QrPaymentsService {
         bonusEarned: bonusEarned.toString(),
       };
     } catch (err) {
+      // Compensate whatever the saga already committed. `release` alone was
+      // not enough: once the hold had been settled it threw, the error was
+      // swallowed here, and the customer's points stayed spent against a
+      // transaction that ended up FAILED.
       if (reservationId) {
-        await this.bonusEngine.releaseReservation(reservationId, 'qr_redeem_failed').catch((e) =>
-          this.logger.error('Failed to release bonus reservation after QR redeem failure', e),
-        );
+        await this.bonusEngine
+          .compensateReservation(reservationId, 'qr_redeem_failed')
+          .catch((e) =>
+            this.logger.error('Failed to compensate bonus reservation after QR redeem failure', e),
+          );
+      }
+      if (accruedLotId) {
+        await this.bonusEngine
+          .reverseAccrualLot(accruedLotId, 'qr_redeem_failed')
+          .catch((e) =>
+            this.logger.error('Failed to reverse bonus accrual after QR redeem failure', e),
+          );
       }
       await this.transactionsService.markFailed(
         transaction.id,

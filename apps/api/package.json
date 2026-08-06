@@ -2,21 +2,23 @@
   "name": "@tutak/api",
   "version": "0.1.0",
   "private": true,
-  "description": "TuTak backend API — NestJS, Prisma/PostgreSQL, Redis.",
+  "description": "TuTak backend API \u2014 NestJS, Prisma/PostgreSQL, Redis.",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
-    "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "lint": "eslint \"{src,test}/**/*.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.spec.json",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "ts-node prisma/seed.ts"
+    "prisma:seed": "ts-node prisma/seed.ts",
+    "test:unit": "jest --selectProjects unit",
+    "test:int": "jest --selectProjects integration"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

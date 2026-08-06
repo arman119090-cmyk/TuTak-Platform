@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Currency, Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { parseMoney } from '../../common/utils/money';
 import { TransactionHistoryQueryDto } from './dto/transaction-history-query.dto';
 import { TransactionCompletedEvent } from './events/transaction-completed.event';
 
@@ -29,15 +30,20 @@ export class TransactionsService {
 
   async create(params: CreateTransactionParams, tx?: Tx) {
     const client = tx ?? this.prisma;
+    // Re-validate at the persistence boundary: no caller, internal or
+    // external, may write a negative or malformed monetary value.
+    const amount = parseMoney(params.amount, 'transaction amount');
+    const bonusApplied = parseMoney(params.bonusAppliedAmount ?? 0, 'bonusAppliedAmount');
+
     return client.transaction.create({
       data: {
         userId: params.userId,
         partnerId: params.partnerId ?? undefined,
         type: params.type,
         status: TransactionStatus.INITIATED,
-        amount: params.amount,
+        amount,
         currency: params.currency ?? Currency.AMD,
-        bonusAppliedAmount: params.bonusAppliedAmount ?? 0,
+        bonusAppliedAmount: bonusApplied,
         description: params.description,
         idempotencyKey: params.idempotencyKey,
         metadata: (params.metadata ?? undefined) as Prisma.InputJsonValue,
@@ -45,8 +51,15 @@ export class TransactionsService {
     });
   }
 
-  async findByIdempotencyKey(idempotencyKey: string) {
-    return this.prisma.transaction.findUnique({ where: { idempotencyKey } });
+  /**
+   * Idempotency keys are namespaced per user. Looking one up globally
+   * allowed cross-account disclosure and let an attacker squat a key so a
+   * victim's later payment silently became a no-op (audit §B3).
+   */
+  async findByIdempotencyKey(userId: string, idempotencyKey: string) {
+    return this.prisma.transaction.findUnique({
+      where: { userId_idempotencyKey: { userId, idempotencyKey } },
+    });
   }
 
   async markCompleted(

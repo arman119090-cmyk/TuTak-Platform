@@ -1,11 +1,12 @@
-import { IsEnum, IsNumberString, IsString, IsUUID, Length } from 'class-validator';
+import { IsEnum, IsString, IsUUID, Length } from 'class-validator';
+import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 import { LedgerDirection } from '@prisma/client';
 
 export class ManualAdjustmentDto {
   @IsUUID()
   userId: string;
 
-  @IsNumberString()
+  @IsMoneyString({ allowZero: false })
   amount: string;
 
   @IsEnum(LedgerDirection)

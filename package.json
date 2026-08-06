@@ -2,7 +2,7 @@
   "name": "tutak-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "TuTak — loyalty ecosystem for Armenia (QR payments, bonuses, EV charging, partner network).",
+  "description": "TuTak \u2014 loyalty ecosystem for Armenia (QR payments, bonuses, EV charging, partner network).",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20.0.0",
@@ -12,7 +12,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
+    "lint": "eslint .",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
@@ -23,13 +23,18 @@
     "docker:down": "docker compose down"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "esbuild": "^0.28.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.5.0",
     "playwright": "1.56.1",
     "prettier": "^3.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-native-web": "^0.21.2",
     "turbo": "^2.1.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.66.0"
   }
 }

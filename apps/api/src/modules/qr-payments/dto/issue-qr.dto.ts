@@ -1,4 +1,5 @@
-import { IsEnum, IsNumberString, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 import { Type } from 'class-transformer';
 import { QrCodeType } from '@prisma/client';
 
@@ -11,7 +12,7 @@ export class IssueQrDto {
   partnerId?: string;
 
   @IsOptional()
-  @IsNumberString()
+  @IsMoneyString({ allowZero: false })
   amount?: string;
 
   @IsOptional()

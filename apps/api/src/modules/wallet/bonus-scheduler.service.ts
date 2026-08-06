@@ -25,4 +25,22 @@ export class BonusSchedulerService {
       this.logger.error('Failed to expire bonus lots', err as Error);
     }
   }
+
+  /**
+   * Returns holds that were never settled.
+   *
+   * A reservation is created before the payment completes. If the process
+   * dies in between, nothing else in the system ever revisits it — the
+   * points sit in `reserved` indefinitely, invisible to the customer and
+   * unrecoverable without a manual database edit. This sweep is what makes
+   * the reserve/settle pair crash-safe.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleExpiredReservations() {
+    try {
+      await this.bonusEngine.releaseExpiredReservations();
+    } catch (err) {
+      this.logger.error('Failed to release expired bonus reservations', err as Error);
+    }
+  }
 }

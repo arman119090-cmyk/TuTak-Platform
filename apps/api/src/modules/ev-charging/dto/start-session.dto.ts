@@ -1,4 +1,5 @@
-import { IsNumberString, IsOptional, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
+import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 
 export class StartSessionDto {
   @IsUUID()
@@ -11,11 +12,11 @@ export class StartSessionDto {
 
 export class StopSessionDto {
   @IsOptional()
-  @IsNumberString()
+  @IsMoneyString()
   bonusAmountToApply?: string;
 }
 
 export class MeterValueDto {
-  @IsNumberString()
+  @IsMoneyString()
   energyKwh: string;
 }

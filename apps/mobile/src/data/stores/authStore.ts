@@ -23,7 +23,7 @@ function generateDeviceId(): string {
   return `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   accessToken: null,
   refreshToken: null,

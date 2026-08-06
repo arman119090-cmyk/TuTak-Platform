@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { parseMoney } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -83,14 +84,21 @@ export class EvSessionsService {
 
   /** OCPP-style meter value ingestion — a real charger telemetry stream would call this. */
   async reportMeterValue(sessionId: string, energyKwh: string) {
+    const reading = parseMoney(energyKwh, 'energyKwh');
     const session = await this.prisma.evSession.findUnique({ where: { id: sessionId } });
     if (!session) throw new NotFoundException('Session not found');
     if (session.status !== EvSessionStatus.CHARGING) {
       throw new BadRequestException('Session is not currently charging');
     }
+    // A meter is monotonic: energy delivered can only increase within a
+    // session. Accepting a lower reading would let a caller reduce the bill
+    // after the fact.
+    if (session.energyKwh && reading.lessThan(session.energyKwh)) {
+      throw new BadRequestException('Meter reading cannot decrease');
+    }
     return this.prisma.evSession.update({
       where: { id: sessionId },
-      data: { energyKwh },
+      data: { energyKwh: reading },
     });
   }
 
@@ -108,7 +116,11 @@ export class EvSessionsService {
 
     const energyKwh = session.energyKwh ?? new Decimal(0);
     const cost = energyKwh.times(session.connector.pricePerKwh);
-    const bonusToApply = dto.bonusAmountToApply ? new Decimal(dto.bonusAmountToApply) : new Decimal(0);
+    // Same negative-amount hole as the QR path: a negative bonus turned
+    // `cost.minus(bonus)` into an addition and inflated the accrual base.
+    const bonusToApply = dto.bonusAmountToApply
+      ? parseMoney(dto.bonusAmountToApply, 'bonusAmountToApply')
+      : new Decimal(0);
     if (bonusToApply.greaterThan(cost)) {
       throw new BadRequestException('Bonus applied cannot exceed the session cost');
     }
@@ -124,6 +136,7 @@ export class EvSessionsService {
     });
 
     let reservationId: string | null = null;
+    let accruedLotId: string | null = null;
     try {
       if (bonusToApply.greaterThan(0)) {
         const walletId = await this.walletService.getWalletIdForUser(userId);
@@ -173,12 +186,13 @@ export class EvSessionsService {
         bonusEarned = paidPortion.times(rateBps).dividedBy(10_000);
         if (bonusEarned.greaterThan(0)) {
           const walletId = await this.walletService.getWalletIdForUser(userId);
-          await this.bonusEngine.accrue({
+          const lot = await this.bonusEngine.accrue({
             walletId,
             type: BonusEntryType.ACCRUAL_PURCHASE,
             amount: bonusEarned,
             sourceTransactionId: transaction.id,
           });
+          accruedLotId = lot.id;
         }
       }
 
@@ -194,11 +208,45 @@ export class EvSessionsService {
         bonusEarned: bonusEarned.toString(),
       };
     } catch (err) {
+      // A settled reservation is already spent and must be reversed rather
+      // than released; an active one is simply returned to available.
+      // compensateReservation picks the right leg — release alone used to
+      // throw here and leave the customer's points spent on a FAILED session.
       if (reservationId) {
         await this.bonusEngine
-          .releaseReservation(reservationId, 'ev_stop_failed')
-          .catch((e) => this.logger.error('Failed to release bonus reservation after EV stop failure', e));
+          .compensateReservation(reservationId, 'ev_stop_failed')
+          .catch((e) =>
+            this.logger.error('Failed to compensate bonus reservation after EV stop failure', e),
+          );
       }
+      if (accruedLotId) {
+        await this.bonusEngine
+          .reverseAccrualLot(accruedLotId, 'ev_stop_failed')
+          .catch((e) =>
+            this.logger.error('Failed to reverse bonus accrual after EV stop failure', e),
+          );
+      }
+
+      // Without this the connector stayed CHARGING forever: the station was
+      // permanently unusable and the partner silently lost the revenue.
+      await this.prisma
+        .$transaction(async (tx) => {
+          await tx.evConnector.update({
+            where: { id: session.connectorId },
+            data: { status: EvConnectorStatus.AVAILABLE },
+          });
+          await tx.evSession.update({
+            where: { id: session.id },
+            data: { status: EvSessionStatus.INVALID, stoppedAt: new Date() },
+          });
+        })
+        .catch((e) =>
+          this.logger.error(
+            `Failed to free connector ${session.connectorId} after EV stop failure`,
+            e,
+          ),
+        );
+
       await this.transactionsService.markFailed(
         transaction.id,
         err instanceof Error ? err.message : 'unknown_error',

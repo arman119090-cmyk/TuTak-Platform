@@ -1,89 +1,290 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useAppTheme } from '../../../app/theme/ThemeProvider';
-import { ScreenContainer } from '../../components/ScreenContainer';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../../app/theme/ThemeProvider';
+import { Screen } from '../../components/Screen';
+import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
-import { TextField } from '../../components/TextField';
+import { Jako } from '../../components/Jako';
 import { qrApi } from '../../../data/api/qrApi';
+import { walletApi } from '../../../data/api/walletApi';
+import { formatAmd, formatPoints } from '../../utils/format';
+
+type Stage = 'scanning' | 'confirm' | 'success';
+
+interface Receipt {
+  amountCharged: string;
+  bonusApplied: string;
+  bonusEarned: string;
+}
 
 export function ScanQrScreen() {
   const { t } = useTranslation();
-  const { theme, spacing, typography, radius } = useAppTheme();
+  const { color, space, text, radius, layout } = useTheme();
+  const queryClient = useQueryClient();
   const [permission, requestPermission] = useCameraPermissions();
-  const [scannedToken, setScannedToken] = useState<string | null>(null);
-  const [amountToApply, setAmountToApply] = useState('');
+
+  const [stage, setStage] = useState<Stage>('scanning');
+  const [token, setToken] = useState<string | null>(null);
+  const [applyBonus, setApplyBonus] = useState(false);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
 
+  const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
+  const availableBonus = Number(wallet?.availableBonus ?? 0);
+
   const handleScan = ({ data }: { data: string }) => {
-    if (!scannedToken) setScannedToken(data);
+    if (token) return;
+    setToken(data);
+    setStage('confirm');
   };
 
   const handleConfirm = async () => {
-    if (!scannedToken) return;
+    if (!token) return;
     setProcessing(true);
+    setError(null);
     try {
       const result = await qrApi.redeem({
-        token: scannedToken,
-        bonusAmountToApply: amountToApply || undefined,
-        idempotencyKey: `${scannedToken}-${Date.now()}`,
+        token,
+        bonusAmountToApply: applyBonus && availableBonus > 0 ? String(availableBonus) : undefined,
+        idempotencyKey: `${token}-${Date.now()}`,
       });
-      Alert.alert(t('qr.paymentSuccess'), `${result.amountCharged} AMD`);
-      setScannedToken(null);
-      setAmountToApply('');
+      setReceipt(result);
+      setStage('success');
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     } catch {
-      Alert.alert(t('qr.paymentFailed'));
+      setError(t('qr.paymentFailed'));
     } finally {
       setProcessing(false);
     }
   };
 
-  if (!permission) {
-    return <ScreenContainer><Text /></ScreenContainer>;
-  }
+  const reset = () => {
+    setToken(null);
+    setReceipt(null);
+    setApplyBonus(false);
+    setError(null);
+    setStage('scanning');
+  };
+
+  // ── Permission gate ───────────────────────────────────────────────────
+  if (!permission) return <Screen title={t('qr.scanQr')}><View /></Screen>;
 
   if (!permission.granted) {
     return (
-      <ScreenContainer>
-        <Text style={[typography.body, { color: theme.textPrimary, marginBottom: spacing.md }]}>
-          {t('qr.scanQr')}
-        </Text>
-        <Button label={t('common.ok')} onPress={requestPermission} />
-      </ScreenContainer>
+      <Screen title={t('qr.scanQr')}>
+        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+          <View
+            style={[
+              styles.permIcon,
+              { backgroundColor: color.primarySurface, borderRadius: radius.full },
+            ]}
+          >
+            <Ionicons name="camera-outline" size={26} color={color.primary} />
+          </View>
+          <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
+            {t('qr.cameraTitle')}
+          </Text>
+          <Text
+            style={[
+              text.bodySm,
+              { color: color.textSecondary, textAlign: 'center', marginTop: space[2], marginBottom: space[5] },
+            ]}
+          >
+            {t('qr.cameraMessage')}
+          </Text>
+          <Button label={t('qr.allowCamera')} onPress={requestPermission} size="md" fullWidth={false} />
+        </Surface>
+      </Screen>
     );
   }
 
-  return (
-    <View style={styles.flex}>
-      {!scannedToken ? (
-        <CameraView
-          style={styles.flex}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={handleScan}
-        />
-      ) : (
-        <ScreenContainer>
-          <Text style={[typography.title2, { color: theme.textPrimary, marginBottom: spacing.md }]}>
-            {t('qr.confirmPayment')}
-          </Text>
-          <TextField
-            label={t('qr.applyBonus')}
-            value={amountToApply}
-            onChangeText={setAmountToApply}
-            keyboardType="decimal-pad"
-            placeholder="0"
-          />
-          <Button label={t('qr.confirmPayment')} onPress={handleConfirm} loading={processing} />
-          <View style={{ marginTop: spacing.md }}>
-            <Button label={t('common.cancel')} variant="ghost" onPress={() => setScannedToken(null)} />
+  // ── Success receipt ───────────────────────────────────────────────────
+  if (stage === 'success' && receipt) {
+    return (
+      <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
+        <View style={[styles.successWrap, { padding: layout.screenPaddingX }]}>
+          <View
+            style={[
+              styles.successMark,
+              { backgroundColor: color.availableSurface, borderRadius: radius.full },
+            ]}
+          >
+            <Ionicons name="checkmark" size={40} color={color.availableText} />
           </View>
-        </ScreenContainer>
-      )}
+
+          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
+            {t('qr.paymentSuccess')}
+          </Text>
+          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
+            {formatAmd(receipt.amountCharged)}
+          </Text>
+
+          <Surface style={{ width: '100%', marginTop: space[8] }}>
+            <ReceiptRow
+              label={t('qr.applyBonus')}
+              value={`−${formatPoints(receipt.bonusApplied)}`}
+              tone={Number(receipt.bonusApplied) > 0 ? 'reserved' : 'muted'}
+            />
+            <View style={[styles.divider, { backgroundColor: color.border, marginVertical: space[3] }]} />
+            <ReceiptRow
+              label={t('bonus.earned')}
+              value={`+${formatPoints(receipt.bonusEarned)}`}
+              tone="available"
+            />
+          </Surface>
+
+          <View style={{ width: '100%', marginTop: space[8], gap: space[3] }}>
+            <Button label={t('common.done')} onPress={reset} />
+          </View>
+
+          <View style={{ marginTop: space[8], opacity: 0.35 }}>
+            <Jako size={32} />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Confirmation ──────────────────────────────────────────────────────
+  if (stage === 'confirm') {
+    return (
+      <Screen title={t('qr.confirmPayment')} subtitle={t('qr.confirmSubtitle')}>
+        <Surface>
+          <Text style={[text.caption, { color: color.textSecondary }]}>{t('qr.merchantCode')}</Text>
+          <Text
+            style={[text.bodySm, { color: color.textPrimary, marginTop: space[1] }]}
+            numberOfLines={1}
+          >
+            {token?.slice(0, 24)}…
+          </Text>
+        </Surface>
+
+        {availableBonus > 0 ? (
+          <Pressable onPress={() => setApplyBonus((v) => !v)} accessibilityRole="switch">
+            <Surface style={{ marginTop: space[4] }}>
+              <View style={styles.toggleRow}>
+                <View style={styles.flex}>
+                  <Text style={[text.body, { color: color.textPrimary }]}>
+                    {t('qr.applyBonus')}
+                  </Text>
+                  <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>
+                    {t('qr.availableToSpend', { amount: formatPoints(availableBonus) })}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.checkbox,
+                    {
+                      borderColor: applyBonus ? color.primary : color.borderStrong,
+                      backgroundColor: applyBonus ? color.primary : 'transparent',
+                      borderRadius: radius.sm,
+                    },
+                  ]}
+                >
+                  {applyBonus ? (
+                    <Ionicons name="checkmark" size={16} color={color.textInverse} />
+                  ) : null}
+                </View>
+              </View>
+            </Surface>
+          </Pressable>
+        ) : null}
+
+        {error ? (
+          <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[4] }]}>
+            {error}
+          </Text>
+        ) : null}
+
+        <View style={{ marginTop: space[7], gap: space[3] }}>
+          <Button label={t('qr.confirmPayment')} onPress={handleConfirm} loading={processing} />
+          <Button label={t('common.cancel')} onPress={reset} variant="tertiary" />
+        </View>
+      </Screen>
+    );
+  }
+
+  // ── Scanner ───────────────────────────────────────────────────────────
+  return (
+    <View style={[styles.flex, { backgroundColor: '#000' }]}>
+      <CameraView
+        style={StyleSheet.absoluteFill}
+        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        onBarcodeScanned={handleScan}
+      />
+      <SafeAreaView style={styles.flex}>
+        <View style={[styles.scannerOverlay, { padding: layout.screenPaddingX }]}>
+          {/* Corner brackets rather than a full frame: less visual weight,
+              and they read as a target without obscuring the camera feed. */}
+          <View style={styles.reticle}>
+            {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+              <View key={corner} style={[styles.corner, cornerStyle(corner)]} />
+            ))}
+          </View>
+          <Text style={[text.body, styles.scanHint]}>{t('qr.scanHint')}</Text>
+        </View>
+      </SafeAreaView>
     </View>
   );
 }
 
+function ReceiptRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: 'available' | 'reserved' | 'muted';
+}) {
+  const { color, text } = useTheme();
+  const toneColor = {
+    available: color.availableText,
+    reserved: color.reservedText,
+    muted: color.textSecondary,
+  }[tone];
+
+  return (
+    <View style={styles.receiptRow}>
+      <Text style={[text.bodySm, { color: color.textSecondary }]}>{label}</Text>
+      <Text style={[text.headline, { color: toneColor }]}>{value}</Text>
+    </View>
+  );
+}
+
+function cornerStyle(corner: 'tl' | 'tr' | 'bl' | 'br') {
+  const w = 3;
+  const base = { borderColor: '#FFFFFF' } as const;
+  switch (corner) {
+    case 'tl':
+      return { ...base, top: 0, left: 0, borderTopWidth: w, borderLeftWidth: w, borderTopLeftRadius: 16 };
+    case 'tr':
+      return { ...base, top: 0, right: 0, borderTopWidth: w, borderRightWidth: w, borderTopRightRadius: 16 };
+    case 'bl':
+      return { ...base, bottom: 0, left: 0, borderBottomWidth: w, borderLeftWidth: w, borderBottomLeftRadius: 16 };
+    default:
+      return { ...base, bottom: 0, right: 0, borderBottomWidth: w, borderRightWidth: w, borderBottomRightRadius: 16 };
+  }
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  scannerOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  reticle: { width: 260, height: 260 },
+  corner: { position: 'absolute', width: 40, height: 40 },
+  scanHint: { color: '#FFFFFF', marginTop: 32, textAlign: 'center', opacity: 0.9 },
+  successWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  successMark: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center' },
+  receiptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  divider: { height: StyleSheet.hairlineWidth },
+  toggleRow: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: { width: 24, height: 24, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  permIcon: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
 });

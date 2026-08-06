@@ -33,7 +33,13 @@
     "otpSubtitle": "Введите 6-значный код, отправленный на {{phone}}",
     "invalidCredentials": "Неверный номер телефона или пароль",
     "referralCodeOptional": "Реферальный код (необязательно)",
-    "logoutConfirm": "Вы уверены, что хотите выйти?"
+    "logoutConfirm": "Вы уверены, что хотите выйти?",
+    "loginSubtitle": "Войдите в свой кошелёк TuTak.",
+    "registerSubtitle": "Присоединяйтесь к TuTak и получайте бонусы за каждый платёж.",
+    "registerFailed": "Не удалось создать аккаунт. Проверьте данные и попробуйте снова.",
+    "passwordHint": "Минимум 8 символов.",
+    "noAccountYet": "Ещё нет аккаунта?",
+    "haveAccount": "Уже есть аккаунт?"
   },
   "wallet": {
     "title": "Кошелёк",
@@ -43,7 +49,9 @@
     "lifetimeEarned": "Всего начислено",
     "lifetimeSpent": "Всего потрачено",
     "history": "История операций",
-    "noTransactions": "Пока нет операций"
+    "noTransactions": "Пока нет операций",
+    "totalBalance": "Общий баланс",
+    "expiringSoon": "Скоро истекает"
   },
   "bonus": {
     "earned": "Начислено",
@@ -65,7 +73,16 @@
     "confirmPayment": "Подтвердить оплату",
     "paymentSuccess": "Оплата прошла успешно",
     "paymentFailed": "Оплата не удалась",
-    "expiresIn": "Истекает через {{seconds}} с"
+    "expiresIn": "Истекает через {{seconds}} с",
+    "scanHint": "Наведите камеру на QR-код TuTak",
+    "confirmSubtitle": "Проверьте детали перед оплатой.",
+    "merchantCode": "Код продавца",
+    "availableToSpend": "Доступно {{amount}} баллов",
+    "bonusAppliedShort": "Списано {{amount}} баллов",
+    "expiredMessage": "Срок действия кода истёк. Создайте новый для оплаты.",
+    "cameraTitle": "Нужен доступ к камере",
+    "cameraMessage": "TuTak использует камеру только для считывания QR-кодов при оплате.",
+    "allowCamera": "Разрешить камеру"
   },
   "ev": {
     "stations": "Зарядные станции",
@@ -79,14 +96,27 @@
     "connectorAvailable": "Свободен",
     "connectorCharging": "Занят",
     "connectorOffline": "Не в сети",
-    "history": "История зарядок"
+    "history": "История зарядок",
+    "stationsSubtitle": "Заряжайте автомобиль и получайте бонусы.",
+    "connectorsFree": "Свободно {{free}} из {{total}}",
+    "totalDelivered": "Всего энергии получено",
+    "noStationsTitle": "Рядом нет станций",
+    "noStationsMessage": "Мы подключаем зарядные станции по всей Армении. Загляните позже.",
+    "noSessionsTitle": "Пока нет зарядных сессий",
+    "noSessionsMessage": "Начните зарядку на любой станции TuTak, и она появится здесь."
   },
   "referral": {
     "inviteFriends": "Пригласить друзей",
     "yourCode": "Ваш реферальный код",
     "totalInvites": "Всего приглашено",
     "rewardEarned": "Заработано вознаграждений",
-    "shareCode": "Поделиться кодом"
+    "shareCode": "Поделиться кодом",
+    "invite": "Пригласить",
+    "subtitle": "Поделитесь кодом — бонусы получите оба.",
+    "yourInvites": "Ваши приглашения",
+    "shareMessage": "Присоединяйтесь ко мне в TuTak и получите бонусные баллы. Мой код: {{code}}",
+    "noInvitesTitle": "Пока нет приглашений",
+    "noInvitesMessage": "Поделитесь кодом с другом, чтобы начать зарабатывать бонусы."
   },
   "partner": {
     "dashboard": "Панель управления",
@@ -110,7 +140,8 @@
     "welcomeTitle": "Добро пожаловать в TuTak!",
     "welcomeBody": "Ваш аккаунт готов. Начните зарабатывать бонусные баллы уже сегодня.",
     "transactionCompletedTitle": "Платёж выполнен",
-    "transactionCompletedBody": "Операция {{type}} на сумму {{amount}} выполнена."
+    "transactionCompletedBody": "Операция {{type}} на сумму {{amount}} выполнена.",
+    "emptyMessage": "Мы сообщим, когда в вашем кошельке что-то произойдёт."
   },
   "settings": {
     "title": "Настройки",
@@ -120,5 +151,60 @@
     "logout": "Выйти",
     "deleteAccount": "Удалить аккаунт",
     "changePassword": "Изменить пароль"
+  },
+  "nav": {
+    "home": "Главная",
+    "pay": "Оплата",
+    "charge": "Зарядка",
+    "profile": "Профиль"
+  },
+  "home": {
+    "greeting": "С возвращением",
+    "recentActivity": "Последние операции",
+    "noActivityTitle": "Пока пусто",
+    "noActivityMessage": "Ваши платежи и бонусы появятся здесь, как только вы начнёте пользоваться TuTak."
+  },
+  "transactionType": {
+    "QR_PAYMENT": "QR-платёж",
+    "EV_CHARGING": "Зарядка",
+    "BONUS_ACCRUAL": "Начислены бонусы",
+    "BONUS_REDEMPTION": "Списаны бонусы",
+    "REFERRAL_REWARD": "Реферальное вознаграждение",
+    "REFUND": "Возврат",
+    "MANUAL_ADJUSTMENT": "Корректировка"
+  },
+  "transactionStatus": {
+    "INITIATED": "Создан",
+    "PENDING": "В обработке",
+    "COMPLETED": "Выполнен",
+    "FAILED": "Ошибка",
+    "REVERSED": "Отменён",
+    "FLAGGED": "На проверке"
+  },
+  "bonusEntryType": {
+    "ACCRUAL_PURCHASE": "Начислено за покупку",
+    "ACCRUAL_REFERRAL": "Реферальный бонус",
+    "ACCRUAL_PROMOTION": "Акция",
+    "ACCRUAL_MANUAL_ADJUSTMENT": "Корректировка",
+    "REDEMPTION_QR_PAYMENT": "Списано при оплате",
+    "REDEMPTION_EV_CHARGING": "Списано за зарядку",
+    "EXPIRY": "Истекло",
+    "REVERSAL": "Отменено"
+  },
+  "referralStatus": {
+    "PENDING": "Ждём первый платёж",
+    "QUALIFIED": "Условие выполнено",
+    "REWARDED": "Вознаграждён",
+    "EXPIRED": "Истекло",
+    "FRAUD_BLOCKED": "Заблокировано"
+  },
+  "evStatus": {
+    "RESERVED": "Забронировано",
+    "AUTHORIZED": "Авторизовано",
+    "CHARGING": "Идёт зарядка",
+    "SUSPENDED": "Приостановлено",
+    "COMPLETED": "Завершено",
+    "INVALID": "Недействительно",
+    "CANCELLED": "Отменено"
   }
 }

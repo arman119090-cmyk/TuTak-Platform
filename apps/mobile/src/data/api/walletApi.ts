@@ -1,4 +1,9 @@
-import type { BonusLedgerEntryDto, PaginatedResultDto, WalletBalanceDto } from '@tutak/shared-types';
+import type {
+  BonusLedgerEntryDto,
+  BonusLotDto,
+  PaginatedResultDto,
+  WalletBalanceDto,
+} from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export const walletApi = {
@@ -16,7 +21,7 @@ export const walletApi = {
   },
 
   async getMyLots() {
-    const { data } = await httpClient.get<ApiEnvelope<unknown[]>>('/wallet/me/lots');
+    const { data } = await httpClient.get<ApiEnvelope<BonusLotDto[]>>('/wallet/me/lots');
     return data.data;
   },
 };

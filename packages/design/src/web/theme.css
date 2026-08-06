@@ -1,0 +1,88 @@
+/**
+ * Tailwind v4 theme bridge.
+ *
+ * Maps the generated CSS custom properties onto Tailwind's `@theme` so the
+ * dashboards get `bg-surface`, `text-secondary`, `text-available` etc.
+ * straight from the same tokens React Native consumes. Import this after
+ * `tailwindcss` and `tutak.css` in each app's globals.css.
+ */
+
+@theme {
+  --color-brand: var(--tutak-color-brand-600);
+  --color-brand-hover: var(--tutak-color-brand-700);
+  --color-brand-surface: var(--tutak-color-brand-50);
+
+  --color-available: var(--tutak-available-fill);
+  --color-available-text: var(--tutak-available-text);
+  --color-available-surface: var(--tutak-available-surface);
+
+  --color-pending: var(--tutak-pending-fill);
+  --color-pending-text: var(--tutak-pending-text);
+  --color-pending-surface: var(--tutak-pending-surface);
+
+  --color-reserved: var(--tutak-reserved-fill);
+  --color-reserved-text: var(--tutak-reserved-text);
+  --color-reserved-surface: var(--tutak-reserved-surface);
+
+  --color-danger: var(--tutak-danger-fill);
+  --color-danger-text: var(--tutak-danger-text);
+  --color-danger-surface: var(--tutak-danger-surface);
+
+  --color-ink: var(--tutak-text-primary);
+  --color-muted: var(--tutak-text-secondary);
+  --color-faint: var(--tutak-text-tertiary);
+  --color-line: var(--tutak-border);
+  --color-line-strong: var(--tutak-border-strong);
+  --color-canvas: var(--tutak-background-subtle);
+  --color-surface: var(--tutak-surface);
+
+  --radius-tutak-sm: var(--tutak-radius-sm);
+  --radius-tutak-md: var(--tutak-radius-md);
+  --radius-tutak-lg: var(--tutak-radius-lg);
+  --radius-tutak-xl: var(--tutak-radius-xl);
+  --radius-tutak-2xl: var(--tutak-radius-2xl);
+
+  --shadow-tutak-sm: var(--tutak-shadow-sm);
+  --shadow-tutak-md: var(--tutak-shadow-md);
+  --shadow-tutak-lg: var(--tutak-shadow-lg);
+
+  --font-sans: var(--tutak-font-sans);
+  --font-mono: var(--tutak-font-mono);
+}
+
+/* ── Base ──────────────────────────────────────────────────────────── */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--tutak-background-subtle);
+  color: var(--tutak-text-primary);
+  font-family: var(--tutak-font-sans);
+}
+
+/* Money and IDs must not shift width as digits change. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Focus is always visible and always brand green — never removed. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--tutak-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--tutak-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

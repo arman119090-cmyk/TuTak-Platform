@@ -33,7 +33,13 @@
     "otpSubtitle": "Enter the 6-digit code we sent to {{phone}}",
     "invalidCredentials": "Incorrect phone number or password",
     "referralCodeOptional": "Referral code (optional)",
-    "logoutConfirm": "Are you sure you want to log out?"
+    "logoutConfirm": "Are you sure you want to log out?",
+    "loginSubtitle": "Sign in to your TuTak wallet.",
+    "registerSubtitle": "Join TuTak and start earning bonuses on every payment.",
+    "registerFailed": "We could not create your account. Please check your details and try again.",
+    "passwordHint": "At least 8 characters.",
+    "noAccountYet": "Don't have an account?",
+    "haveAccount": "Already have an account?"
   },
   "wallet": {
     "title": "Wallet",
@@ -43,7 +49,9 @@
     "lifetimeEarned": "Lifetime earned",
     "lifetimeSpent": "Lifetime spent",
     "history": "Transaction history",
-    "noTransactions": "No transactions yet"
+    "noTransactions": "No transactions yet",
+    "totalBalance": "Total balance",
+    "expiringSoon": "Expiring soon"
   },
   "bonus": {
     "earned": "Earned",
@@ -65,7 +73,16 @@
     "confirmPayment": "Confirm payment",
     "paymentSuccess": "Payment successful",
     "paymentFailed": "Payment failed",
-    "expiresIn": "Expires in {{seconds}}s"
+    "expiresIn": "Expires in {{seconds}}s",
+    "scanHint": "Point your camera at a TuTak QR code",
+    "confirmSubtitle": "Check the details before you pay.",
+    "merchantCode": "Merchant code",
+    "availableToSpend": "{{amount}} points available",
+    "bonusAppliedShort": "{{amount}} points applied",
+    "expiredMessage": "This code has expired. Generate a new one to pay.",
+    "cameraTitle": "Camera access needed",
+    "cameraMessage": "TuTak uses your camera only to read QR codes for payments.",
+    "allowCamera": "Allow camera"
   },
   "ev": {
     "stations": "Charging stations",
@@ -79,14 +96,27 @@
     "connectorAvailable": "Available",
     "connectorCharging": "In use",
     "connectorOffline": "Offline",
-    "history": "Charging history"
+    "history": "Charging history",
+    "stationsSubtitle": "Charge your car and earn bonuses.",
+    "connectorsFree": "{{free}} of {{total}} free",
+    "totalDelivered": "Total energy delivered",
+    "noStationsTitle": "No stations nearby",
+    "noStationsMessage": "We are adding charging partners across Armenia. Check back soon.",
+    "noSessionsTitle": "No charging sessions yet",
+    "noSessionsMessage": "Start a session at any TuTak station and it will show up here."
   },
   "referral": {
     "inviteFriends": "Invite friends",
     "yourCode": "Your referral code",
     "totalInvites": "Total invites",
     "rewardEarned": "Reward earned",
-    "shareCode": "Share code"
+    "shareCode": "Share code",
+    "invite": "Invite",
+    "subtitle": "Share your code and you both earn bonuses.",
+    "yourInvites": "Your invites",
+    "shareMessage": "Join me on TuTak and get bonus points. Use my code: {{code}}",
+    "noInvitesTitle": "No invites yet",
+    "noInvitesMessage": "Share your code with a friend to start earning referral bonuses."
   },
   "partner": {
     "dashboard": "Dashboard",
@@ -110,7 +140,8 @@
     "welcomeTitle": "Welcome to TuTak!",
     "welcomeBody": "Your account is ready. Start earning bonus points today.",
     "transactionCompletedTitle": "Payment completed",
-    "transactionCompletedBody": "Your {{type}} transaction of {{amount}} was completed."
+    "transactionCompletedBody": "Your {{type}} transaction of {{amount}} was completed.",
+    "emptyMessage": "We will let you know when something happens in your wallet."
   },
   "settings": {
     "title": "Settings",
@@ -120,5 +151,60 @@
     "logout": "Log out",
     "deleteAccount": "Delete account",
     "changePassword": "Change password"
+  },
+  "nav": {
+    "home": "Home",
+    "pay": "Pay",
+    "charge": "Charge",
+    "profile": "Profile"
+  },
+  "home": {
+    "greeting": "Welcome back",
+    "recentActivity": "Recent activity",
+    "noActivityTitle": "Nothing here yet",
+    "noActivityMessage": "Your payments and bonuses will appear here once you start using TuTak."
+  },
+  "transactionType": {
+    "QR_PAYMENT": "QR payment",
+    "EV_CHARGING": "EV charging",
+    "BONUS_ACCRUAL": "Bonus earned",
+    "BONUS_REDEMPTION": "Bonus spent",
+    "REFERRAL_REWARD": "Referral reward",
+    "REFUND": "Refund",
+    "MANUAL_ADJUSTMENT": "Adjustment"
+  },
+  "transactionStatus": {
+    "INITIATED": "Initiated",
+    "PENDING": "Pending",
+    "COMPLETED": "Completed",
+    "FAILED": "Failed",
+    "REVERSED": "Reversed",
+    "FLAGGED": "Under review"
+  },
+  "bonusEntryType": {
+    "ACCRUAL_PURCHASE": "Earned on purchase",
+    "ACCRUAL_REFERRAL": "Referral reward",
+    "ACCRUAL_PROMOTION": "Promotion",
+    "ACCRUAL_MANUAL_ADJUSTMENT": "Adjustment",
+    "REDEMPTION_QR_PAYMENT": "Spent on payment",
+    "REDEMPTION_EV_CHARGING": "Spent on charging",
+    "EXPIRY": "Expired",
+    "REVERSAL": "Reversed"
+  },
+  "referralStatus": {
+    "PENDING": "Waiting for first payment",
+    "QUALIFIED": "Qualified",
+    "REWARDED": "Rewarded",
+    "EXPIRED": "Expired",
+    "FRAUD_BLOCKED": "Blocked"
+  },
+  "evStatus": {
+    "RESERVED": "Reserved",
+    "AUTHORIZED": "Authorized",
+    "CHARGING": "Charging",
+    "SUSPENDED": "Suspended",
+    "COMPLETED": "Completed",
+    "INVALID": "Invalid",
+    "CANCELLED": "Cancelled"
   }
 }

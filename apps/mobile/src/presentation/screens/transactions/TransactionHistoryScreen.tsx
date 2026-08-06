@@ -1,48 +1,118 @@
-import React from 'react';
-import { FlatList, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import type { TransactionDto } from '@tutak/shared-types';
-import { useAppTheme } from '../../../app/theme/ThemeProvider';
-import { ScreenContainer } from '../../components/ScreenContainer';
-import { Card } from '../../components/Card';
+import { useTheme } from '../../../app/theme/ThemeProvider';
+import { Screen } from '../../components/Screen';
+import { Surface } from '../../components/Surface';
+import { ListRow } from '../../components/ListRow';
+import { EmptyState } from '../../components/EmptyState';
+import { Skeleton } from '../../components/Skeleton';
 import { transactionsApi } from '../../../data/api/transactionsApi';
-import { formatAmd, formatDate } from '../../utils/format';
-
-function TransactionRow({ tx }: { tx: TransactionDto }) {
-  const { theme, spacing, typography } = useAppTheme();
-  return (
-    <Card style={{ marginBottom: spacing.sm }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={[typography.callout, { color: theme.textPrimary }]}>{tx.type}</Text>
-        <Text style={[typography.headline, { color: theme.textPrimary }]}>{formatAmd(tx.amount)}</Text>
-      </View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs }}>
-        <Text style={[typography.caption, { color: theme.textSecondary }]}>{tx.status}</Text>
-        <Text style={[typography.caption, { color: theme.textSecondary }]}>{formatDate(tx.createdAt)}</Text>
-      </View>
-    </Card>
-  );
-}
+import { formatAmd, formatDayGroup, formatPoints } from '../../utils/format';
+import { transactionIcon, transactionTone } from '../../utils/transactionPresentation';
 
 export function TransactionHistoryScreen() {
   const { t } = useTranslation();
-  const { theme, spacing, typography } = useAppTheme();
-  const { data } = useQuery({ queryKey: ['transactions'], queryFn: () => transactionsApi.myHistory() });
+  const { color, space, text, radius } = useTheme();
+  const { data, isLoading } = useQuery({
+    queryKey: ['transactions'],
+    queryFn: () => transactionsApi.myHistory(),
+  });
+
+  // Grouping by day turns a flat wall of rows into something scannable —
+  // the single highest-value change to a history list.
+  const groups = useMemo(() => {
+    const items = data?.items ?? [];
+    const map = new Map<string, TransactionDto[]>();
+    for (const tx of items) {
+      const key = formatDayGroup(tx.createdAt);
+      const bucket = map.get(key);
+      if (bucket) bucket.push(tx);
+      else map.set(key, [tx]);
+    }
+    return Array.from(map.entries());
+  }, [data]);
 
   return (
-    <ScreenContainer scroll={false}>
-      <Text style={[typography.title1, { color: theme.textPrimary, marginBottom: spacing.md }]}>
-        {t('wallet.history')}
-      </Text>
-      <FlatList
-        data={data?.items ?? []}
-        keyExtractor={(tx) => tx.id}
-        renderItem={({ item }) => <TransactionRow tx={item} />}
-        ListEmptyComponent={
-          <Text style={[typography.body, { color: theme.textSecondary }]}>{t('wallet.noTransactions')}</Text>
-        }
-      />
-    </ScreenContainer>
+    <Screen title={t('wallet.history')}>
+      {isLoading ? (
+        <Surface padded={false}>
+          <View style={{ padding: space[5], gap: space[4] }}>
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} width="100%" height={44} />
+            ))}
+          </View>
+        </Surface>
+      ) : groups.length === 0 ? (
+        <Surface>
+          <EmptyState title={t('wallet.noTransactions')} message={t('home.noActivityMessage')} />
+        </Surface>
+      ) : (
+        groups.map(([day, items]) => (
+          <View key={day} style={{ marginBottom: space[5] }}>
+            <Text
+              style={[
+                text.overline,
+                { color: color.textTertiary, marginBottom: space[2], textTransform: 'uppercase' },
+              ]}
+            >
+              {day}
+            </Text>
+            <Surface padded={false}>
+              <View style={{ paddingHorizontal: space[5] }}>
+                {items.map((tx, i) => {
+                  const tone = transactionTone(tx.type);
+                  return (
+                    <ListRow
+                      key={tx.id}
+                      leading={
+                        <View
+                          style={[
+                            styles.icon,
+                            {
+                              backgroundColor:
+                                tone === 'positive' ? color.availableSurface : color.surfaceSunken,
+                              borderRadius: radius.md,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={transactionIcon(tx.type)}
+                            size={18}
+                            color={tone === 'positive' ? color.availableText : color.textSecondary}
+                          />
+                        </View>
+                      }
+                      title={t(`transactionType.${tx.type}`, { defaultValue: tx.type })}
+                      subtitle={
+                        Number(tx.bonusAppliedAmount) > 0
+                          ? t('qr.bonusAppliedShort', {
+                              amount: formatPoints(tx.bonusAppliedAmount),
+                            })
+                          : t(`transactionStatus.${tx.status}`, { defaultValue: tx.status })
+                      }
+                      value={
+                        tone === 'positive'
+                          ? `+${formatPoints(tx.bonusEarnedAmount)}`
+                          : formatAmd(tx.amount)
+                      }
+                      valueTone={tone}
+                      last={i === items.length - 1}
+                    />
+                  );
+                })}
+              </View>
+            </Surface>
+          </View>
+        ))
+      )}
+    </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  icon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+});

@@ -1,38 +1,20 @@
-import React, { createContext, useContext, useMemo } from 'react';
-import { useColorScheme } from 'react-native';
-import { AppTheme, darkTheme, lightTheme } from './colors';
-import { radius, spacing, typography } from './tokens';
+import React, { createContext, useContext } from 'react';
+import { tutakTheme, TutakTheme } from '@tutak/design';
 
-interface ThemeContextValue {
-  theme: AppTheme;
-  spacing: typeof spacing;
-  radius: typeof radius;
-  typography: typeof typography;
-  isDark: boolean;
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+/**
+ * TuTak is a light-surface product by design: the balance is the brightest
+ * thing on screen and colour is reserved for bonus state, which only reads
+ * correctly on white. There is therefore a single theme rather than a
+ * light/dark pair — the tokens come straight from @tutak/design, so the
+ * app, the partner dashboard and the admin panel are literally rendering
+ * the same values.
+ */
+const ThemeContext = createContext<TutakTheme>(tutakTheme);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-
-  const value = useMemo<ThemeContextValue>(
-    () => ({
-      theme: isDark ? darkTheme : lightTheme,
-      spacing,
-      radius,
-      typography,
-      isDark,
-    }),
-    [isDark],
-  );
-
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={tutakTheme}>{children}</ThemeContext.Provider>;
 }
 
-export function useAppTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error('useAppTheme must be used within ThemeProvider');
-  return ctx;
+export function useTheme(): TutakTheme {
+  return useContext(ThemeContext);
 }

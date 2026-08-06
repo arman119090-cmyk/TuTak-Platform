@@ -1,18 +1,9 @@
 @import 'tailwindcss';
+@import '@tutak/design/tutak.css';
+@import '@tutak/design/theme.css';
 
-@theme {
-  --color-brand-green: #0b5d3b;
-  --color-brand-green-light: #e4f3ec;
-  --color-bonus-available: #1db954;
-  --color-bonus-pending: #f5a623;
-  --color-bonus-reserved: #2e7cf6;
-  --color-ink: #101012;
-  --color-surface: #f7f7f8;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-}
-
-body {
-  background-color: var(--color-surface);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-}
+/* Tailwind v4 only scans this app's own source by default, so utility
+ * classes used *inside* the shared UI kit (Surface's rounded-tutak-xl,
+ * Badge's bg-reserved, …) would be tree-shaken away and those components
+ * would render unstyled. Point the scanner at the design package too. */
+@source '../../../../packages/design/src/web';

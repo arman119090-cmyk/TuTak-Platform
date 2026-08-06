@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useAppTheme } from '../../../app/theme/ThemeProvider';
-import { ScreenContainer } from '../../components/ScreenContainer';
+import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { authApi } from '../../../data/api/authApi';
@@ -14,58 +14,142 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
 export function RegisterScreen({ navigation }: Props) {
   const { t, i18n } = useTranslation();
-  const { theme, spacing, typography } = useAppTheme();
+  const { color, space, text, layout } = useTheme();
   const { deviceId, setSession } = useAuthStore();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('+374');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [referralCode, setReferralCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
+    setError(null);
     setLoading(true);
     try {
       const result = await authApi.register({
         firstName,
         lastName,
-        phone,
+        phone: `+374${phone}`,
         password,
         locale: i18n.language,
         referralCode: referralCode || undefined,
         deviceId,
       });
       await setSession(result.user, result.tokens);
-    } catch (err) {
-      Alert.alert(t('common.error'), t('common.error'));
+    } catch {
+      setError(t('auth.registerFailed'));
     } finally {
       setLoading(false);
     }
   };
 
+  const canSubmit =
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    phone.length === 8 &&
+    password.length >= 8 &&
+    !loading;
+
   return (
-    <ScreenContainer>
-      <Text style={[typography.largeTitle, { color: theme.textPrimary, marginBottom: spacing.lg }]}>
-        {t('auth.createAccount')}
-      </Text>
+    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[6] },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[text.titleLg, { color: color.textPrimary }]}>
+            {t('auth.createAccount')}
+          </Text>
+          <Text
+            style={[
+              text.bodySm,
+              { color: color.textSecondary, marginTop: space[2], marginBottom: space[8] },
+            ]}
+          >
+            {t('auth.registerSubtitle')}
+          </Text>
 
-      <TextField label={t('auth.firstName')} value={firstName} onChangeText={setFirstName} />
-      <TextField label={t('auth.lastName')} value={lastName} onChangeText={setLastName} />
-      <TextField label={t('auth.phoneNumber')} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      <TextField label={t('auth.password')} value={password} onChangeText={setPassword} secureTextEntry />
-      <TextField
-        label={t('auth.referralCodeOptional')}
-        value={referralCode}
-        onChangeText={setReferralCode}
-        autoCapitalize="characters"
-      />
+          <View style={[styles.nameRow, { gap: space[3] }]}>
+            <View style={styles.flex}>
+              <TextField
+                label={t('auth.firstName')}
+                value={firstName}
+                onChangeText={setFirstName}
+                autoComplete="given-name"
+              />
+            </View>
+            <View style={styles.flex}>
+              <TextField
+                label={t('auth.lastName')}
+                value={lastName}
+                onChangeText={setLastName}
+                autoComplete="family-name"
+              />
+            </View>
+          </View>
 
-      <Button label={t('auth.registerButton')} onPress={handleRegister} loading={loading} />
+          <TextField
+            label={t('auth.phoneNumber')}
+            prefix="+374"
+            value={phone}
+            onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
+            keyboardType="number-pad"
+            placeholder="00 000 000"
+            maxLength={8}
+          />
+          <TextField
+            label={t('auth.password')}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholder="••••••••"
+            hint={t('auth.passwordHint')}
+            error={error ?? undefined}
+          />
+          <TextField
+            label={t('auth.referralCodeOptional')}
+            value={referralCode}
+            onChangeText={(v) => setReferralCode(v.toUpperCase())}
+            autoCapitalize="characters"
+            placeholder="TT-XXXXXXXX"
+          />
 
-      <View style={{ marginTop: spacing.lg, alignItems: 'center' }}>
-        <Button label={t('auth.login')} variant="ghost" onPress={() => navigation.navigate('Login')} />
-      </View>
-    </ScreenContainer>
+          <View style={{ marginTop: space[3] }}>
+            <Button
+              label={t('auth.registerButton')}
+              onPress={handleRegister}
+              loading={loading}
+              disabled={!canSubmit}
+            />
+          </View>
+
+          <View style={[styles.footer, { marginTop: space[7], gap: space[1] }]}>
+            <Text style={[text.bodySm, { color: color.textSecondary }]}>
+              {t('auth.haveAccount')}
+            </Text>
+            <Pressable onPress={() => navigation.navigate('Login')} hitSlop={8}>
+              <Text style={[text.label, { color: color.primary }]}>{t('auth.login')}</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  content: { flexGrow: 1, paddingBottom: 40 },
+  nameRow: { flexDirection: 'row' },
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+});

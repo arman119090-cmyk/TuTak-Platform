@@ -2,19 +2,35 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  Surface,
+  Table,
+  Td,
+  Th,
+  Tr,
+} from '@tutak/design/web';
 import { partnersApi } from '@/lib/api/partnersApi';
+
+const EMPTY = {
+  legalName: '',
+  displayName: '',
+  taxId: '',
+  category: '',
+  bonusAccrualRateBps: 300,
+  ownerUserId: '',
+};
 
 export default function PartnersPage() {
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
-  const [form, setForm] = useState({
-    legalName: '',
-    displayName: '',
-    taxId: '',
-    category: '',
-    bonusAccrualRateBps: 300,
-    ownerUserId: '',
-  });
+  const [form, setForm] = useState(EMPTY);
+  const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -23,88 +39,137 @@ export default function PartnersPage() {
     try {
       await partnersApi.create(form);
       queryClient.invalidateQueries({ queryKey: ['partners'] });
-      setForm({ legalName: '', displayName: '', taxId: '', category: '', bonusAccrualRateBps: 300, ownerUserId: '' });
+      setForm(EMPTY);
+      setOpen(false);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleToggle = async (id: string, isActive: boolean) => {
-    await partnersApi.setActive(id, !isActive);
-    queryClient.invalidateQueries({ queryKey: ['partners'] });
-  };
+  const partners = data ?? [];
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Partners</h1>
+    <>
+      <PageHeader
+        title="Partners"
+        description="Businesses accepting TuTak payments."
+        actions={
+          <Button onClick={() => setOpen((v) => !v)} variant={open ? 'tertiary' : 'primary'}>
+            {open ? 'Cancel' : 'Add partner'}
+          </Button>
+        }
+      />
 
-      <form onSubmit={handleCreate} className="mt-6 grid grid-cols-2 gap-4 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
-        <Field label="Legal name" value={form.legalName} onChange={(v) => setForm({ ...form, legalName: v })} />
-        <Field label="Display name" value={form.displayName} onChange={(v) => setForm({ ...form, displayName: v })} />
-        <Field label="Tax ID" value={form.taxId} onChange={(v) => setForm({ ...form, taxId: v })} />
-        <Field label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v })} />
-        <Field label="Owner user ID" value={form.ownerUserId} onChange={(v) => setForm({ ...form, ownerUserId: v })} />
-        <Field
-          label="Bonus rate (bps)"
-          value={String(form.bonusAccrualRateBps)}
-          onChange={(v) => setForm({ ...form, bonusAccrualRateBps: Number(v) || 0 })}
+      {open ? (
+        <Surface className="mb-5">
+          <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Legal name">
+              <Input
+                required
+                value={form.legalName}
+                onChange={(e) => setForm({ ...form, legalName: e.target.value })}
+              />
+            </Field>
+            <Field label="Display name">
+              <Input
+                required
+                value={form.displayName}
+                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+              />
+            </Field>
+            <Field label="Tax ID">
+              <Input
+                required
+                value={form.taxId}
+                onChange={(e) => setForm({ ...form, taxId: e.target.value })}
+              />
+            </Field>
+            <Field label="Category">
+              <Input
+                required
+                placeholder="cafe, retail, fuel…"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              />
+            </Field>
+            <Field label="Owner user ID">
+              <Input
+                required
+                value={form.ownerUserId}
+                onChange={(e) => setForm({ ...form, ownerUserId: e.target.value })}
+              />
+            </Field>
+            <Field
+              label="Bonus accrual rate"
+              hint={`${(form.bonusAccrualRateBps / 100).toFixed(2)}% of every payment`}
+            >
+              <Input
+                required
+                inputMode="numeric"
+                value={String(form.bonusAccrualRateBps)}
+                onChange={(e) =>
+                  setForm({ ...form, bonusAccrualRateBps: Number(e.target.value) || 0 })
+                }
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Button type="submit" loading={submitting}>
+                Create partner
+              </Button>
+            </div>
+          </form>
+        </Surface>
+      ) : null}
+
+      {partners.length === 0 ? (
+        <EmptyState
+          title="No partners yet"
+          message="Add your first partner business to start accepting TuTak payments."
         />
-        <div className="col-span-2">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-lg bg-brand-green px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {submitting ? 'Creating…' : 'Create partner'}
-          </button>
-        </div>
-      </form>
-
-      <div className="mt-8 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-neutral-500">
+      ) : (
+        <Table>
+          <thead>
             <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Category</th>
-              <th className="px-4 py-3">Bonus rate</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3" />
+              <Th>Business</Th>
+              <Th>Category</Th>
+              <Th align="right">Bonus rate</Th>
+              <Th>Status</Th>
+              <Th align="right" />
             </tr>
           </thead>
           <tbody>
-            {data?.map((p) => (
-              <tr key={p.id} className="border-t border-neutral-100">
-                <td className="px-4 py-3">{p.displayName}</td>
-                <td className="px-4 py-3">{p.category}</td>
-                <td className="px-4 py-3">{(p.bonusAccrualRateBps / 100).toFixed(2)}%</td>
-                <td className="px-4 py-3">{p.isActive ? 'Active' : 'Inactive'}</td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => handleToggle(p.id, p.isActive)}
-                    className="rounded-md border border-neutral-200 px-2 py-1 text-xs hover:bg-neutral-50"
+            {partners.map((p) => (
+              <Tr key={p.id}>
+                <Td>
+                  <div className="font-medium text-ink">{p.displayName}</div>
+                  <div className="text-[12px] text-faint">{p.legalName}</div>
+                </Td>
+                <Td className="text-muted">{p.category}</Td>
+                <Td align="right" className="tabular">
+                  {(p.bonusAccrualRateBps / 100).toFixed(2)}%
+                </Td>
+                <Td>
+                  <Badge tone={p.isActive ? 'available' : 'neutral'}>
+                    {p.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </Td>
+                <Td align="right">
+                  <Button
+                    size="sm"
+                    variant={p.isActive ? 'destructive' : 'secondary'}
+                    onClick={async () => {
+                      await partnersApi.setActive(p.id, !p.isActive);
+                      queryClient.invalidateQueries({ queryKey: ['partners'] });
+                    }}
                   >
                     {p.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </Td>
+              </Tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-neutral-600">{label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-neutral-200 px-3 py-2 outline-none focus:border-brand-green"
-        required
-      />
-    </div>
+        </Table>
+      )}
+    </>
   );
 }

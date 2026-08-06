@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useAppTheme } from '../../../app/theme/ThemeProvider';
-import { MascotBadge } from '../../components/MascotBadge';
-import { ScreenContainer } from '../../components/ScreenContainer';
+import { useTheme } from '../../../app/theme/ThemeProvider';
+import { Jako } from '../../components/Jako';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { authApi } from '../../../data/api/authApi';
@@ -15,56 +15,98 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { theme, spacing, typography } = useAppTheme();
+  const { color, space, text, layout } = useTheme();
   const { deviceId, setSession } = useAuthStore();
-  const [phone, setPhone] = useState('+374');
+
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    setError(null);
     setLoading(true);
     try {
-      const result = await authApi.login({ phone, password, deviceId });
+      const result = await authApi.login({ phone: `+374${phone}`, password, deviceId });
       await setSession(result.user, result.tokens);
-    } catch (err) {
-      Alert.alert(t('common.error'), t('auth.invalidCredentials'));
+    } catch {
+      setError(t('auth.invalidCredentials'));
     } finally {
       setLoading(false);
     }
   };
 
+  const canSubmit = phone.length >= 8 && password.length >= 8 && !loading;
+
   return (
-    <ScreenContainer>
-      <View style={{ alignItems: 'center', marginBottom: spacing.xl }}>
-        <MascotBadge size={72} />
-        <Text style={[typography.largeTitle, { color: theme.textPrimary, marginTop: spacing.md }]}>
-          {t('auth.welcomeBack')}
-        </Text>
-      </View>
+    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[10] },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Jako appears once, at the top, as the mark — not decoration. */}
+          <Jako size={52} />
 
-      <TextField
-        label={t('auth.phoneNumber')}
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        autoCapitalize="none"
-      />
-      <TextField
-        label={t('auth.password')}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
+            {t('auth.welcomeBack')}
+          </Text>
+          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], marginBottom: space[8] }]}>
+            {t('auth.loginSubtitle')}
+          </Text>
 
-      <Button label={t('auth.loginButton')} onPress={handleLogin} loading={loading} />
+          <TextField
+            label={t('auth.phoneNumber')}
+            prefix="+374"
+            value={phone}
+            onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
+            keyboardType="number-pad"
+            autoComplete="tel"
+            placeholder="00 000 000"
+            maxLength={8}
+          />
+          <TextField
+            label={t('auth.password')}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="password"
+            placeholder="••••••••"
+            error={error ?? undefined}
+          />
 
-      <View style={{ marginTop: spacing.lg, alignItems: 'center' }}>
-        <Button
-          label={t('auth.createAccount')}
-          variant="ghost"
-          onPress={() => navigation.navigate('Register')}
-        />
-      </View>
-    </ScreenContainer>
+          <View style={{ marginTop: space[3] }}>
+            <Button
+              label={t('auth.loginButton')}
+              onPress={handleLogin}
+              loading={loading}
+              disabled={!canSubmit}
+            />
+          </View>
+
+          <View style={[styles.footer, { marginTop: space[7], gap: space[1] }]}>
+            <Text style={[text.bodySm, { color: color.textSecondary }]}>
+              {t('auth.noAccountYet')}
+            </Text>
+            <Pressable onPress={() => navigation.navigate('Register')} hitSlop={8}>
+              <Text style={[text.label, { color: color.primary }]}>{t('auth.register')}</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  content: { flexGrow: 1, paddingBottom: 40 },
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+});

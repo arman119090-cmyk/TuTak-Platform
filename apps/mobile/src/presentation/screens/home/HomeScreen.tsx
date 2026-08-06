@@ -1,18 +1,25 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useAppTheme } from '../../../app/theme/ThemeProvider';
-import { ScreenContainer } from '../../components/ScreenContainer';
-import { Card } from '../../components/Card';
-import { MascotBadge } from '../../components/MascotBadge';
-import { BonusStatusPill } from '../../components/BonusStatusPill';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../../app/theme/ThemeProvider';
+import { BalanceCard } from '../../components/BalanceCard';
+import { QuickAction } from '../../components/QuickAction';
+import { SectionHeader } from '../../components/SectionHeader';
+import { ListRow } from '../../components/ListRow';
+import { EmptyState } from '../../components/EmptyState';
+import { Skeleton } from '../../components/Skeleton';
 import { walletApi } from '../../../data/api/walletApi';
+import { transactionsApi } from '../../../data/api/transactionsApi';
 import { useAuthStore } from '../../../data/stores/authStore';
-import { formatPoints } from '../../utils/format';
+import { formatDayGroup, formatSigned } from '../../utils/format';
+import { transactionIcon, transactionTone } from '../../utils/transactionPresentation';
 import type { MainTabParamList, RootStackParamList } from '../../../app/navigation/types';
 
 type Props = CompositeScreenProps<
@@ -22,91 +29,145 @@ type Props = CompositeScreenProps<
 
 export function HomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { theme, spacing, typography, radius } = useAppTheme();
+  const { color, space, text, layout, radius } = useTheme();
   const { user } = useAuthStore();
 
-  const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
+  const { data: wallet, isLoading: walletLoading } = useQuery({
+    queryKey: ['wallet'],
+    queryFn: walletApi.getMyWallet,
+  });
+  const { data: txs, isLoading: txLoading } = useQuery({
+    queryKey: ['transactions', 'recent'],
+    queryFn: () => transactionsApi.myHistory(),
+  });
 
-  const actions: { key: keyof RootStackParamList | 'ScanQr'; icon: string; label: string }[] = [
-    { key: 'ScanQr', icon: '▢', label: t('qr.scanQr') },
-    { key: 'Referral', icon: '↗', label: t('referral.inviteFriends') },
-    { key: 'TransactionHistory', icon: '≡', label: t('wallet.history') },
-    { key: 'Notifications', icon: '◔', label: t('notifications.title') },
-  ];
+  const recent = txs?.items.slice(0, 4) ?? [];
 
   return (
-    <ScreenContainer>
-      <View style={styles.header}>
-        <View>
-          <Text style={[typography.footnote, { color: theme.textSecondary }]}>
-            {t('auth.welcomeBack')}
-          </Text>
-          <Text style={[typography.title1, { color: theme.textPrimary }]}>
-            {user?.firstName ?? ''}
-          </Text>
-        </View>
-        <MascotBadge size={48} />
-      </View>
-
-      <Card style={{ marginTop: spacing.lg }}>
-        <Text style={[typography.footnote, { color: theme.textSecondary }]}>{t('wallet.available')}</Text>
-        <Text style={[typography.largeTitle, { color: theme.primary, marginTop: spacing.xs }]}>
-          {formatPoints(wallet?.availableBonus ?? 0)}
-        </Text>
-        <View style={[styles.row, { marginTop: spacing.md, gap: spacing.sm }]}>
-          <BonusStatusPill state="AVAILABLE" />
-          <BonusStatusPill state="PENDING" />
-          <BonusStatusPill state="RESERVED" />
-        </View>
-        <View style={[styles.row, { marginTop: spacing.lg }]}>
-          <View style={styles.statBlock}>
-            <Text style={[typography.headline, { color: theme.bonusPending }]}>
-              {formatPoints(wallet?.pendingBonus ?? 0)}
+    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]} edges={['top']}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: layout.tabBarHeight + space[6] }}
+      >
+        {/* Greeting — quiet, so the balance card is the first thing seen. */}
+        <View
+          style={[
+            styles.greeting,
+            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[3], paddingBottom: space[5] },
+          ]}
+        >
+          <View style={styles.flex}>
+            <Text style={[text.caption, { color: color.textSecondary }]}>
+              {t('home.greeting')}
             </Text>
-            <Text style={[typography.caption, { color: theme.textSecondary }]}>{t('wallet.pending')}</Text>
+            <Text style={[text.title, { color: color.textPrimary, marginTop: space[1] }]}>
+              {user?.firstName ?? ''}
+            </Text>
           </View>
-          <View style={styles.statBlock}>
-            <Text style={[typography.headline, { color: theme.bonusReserved }]}>
-              {formatPoints(wallet?.reservedBonus ?? 0)}
-            </Text>
-            <Text style={[typography.caption, { color: theme.textSecondary }]}>{t('wallet.reserved')}</Text>
-          </View>
+          <NotificationBell onPress={() => navigation.navigate('Notifications')} />
         </View>
-      </Card>
 
-      <View style={[styles.grid, { marginTop: spacing.xl }]}>
-        {actions.map((action) => (
-          <Card
-            key={action.key}
-            style={{
-              width: '47%',
-              marginBottom: spacing.md,
-              alignItems: 'center',
-              borderRadius: radius.md,
-            }}
-          >
-            <Text
-              onPress={() => navigation.navigate(action.key as never)}
-              style={[typography.title2, { color: theme.primary }]}
-            >
-              {action.icon}
-            </Text>
-            <Text
-              onPress={() => navigation.navigate(action.key as never)}
-              style={[typography.footnote, { color: theme.textPrimary, marginTop: spacing.xs, textAlign: 'center' }]}
-            >
-              {action.label}
-            </Text>
-          </Card>
-        ))}
-      </View>
-    </ScreenContainer>
+        <View style={{ paddingHorizontal: layout.screenPaddingX }}>
+          <BalanceCard
+            available={wallet?.availableBonus}
+            pending={wallet?.pendingBonus}
+            reserved={wallet?.reservedBonus}
+            loading={walletLoading}
+          />
+        </View>
+
+        {/* Primary actions. Pay is first — it is why the app exists. */}
+        <View
+          style={[
+            styles.actions,
+            { paddingHorizontal: layout.screenPaddingX, marginTop: space[6], gap: space[3] },
+          ]}
+        >
+          <QuickAction icon="qr-code" label={t('qr.myQr')} onPress={() => navigation.navigate('Main', { screen: 'Pay' } as never)} />
+          <QuickAction icon="scan" label={t('qr.scanQr')} onPress={() => navigation.navigate('ScanQr')} />
+          <QuickAction icon="flash" label={t('ev.stations')} tone="reserved" onPress={() => navigation.navigate('Main', { screen: 'EvCharging' } as never)} />
+          <QuickAction icon="gift" label={t('referral.invite')} tone="pending" onPress={() => navigation.navigate('Referral')} />
+        </View>
+
+        <View style={{ paddingHorizontal: layout.screenPaddingX }}>
+          <SectionHeader
+            title={t('home.recentActivity')}
+            actionLabel={recent.length > 0 ? t('common.seeAll') : undefined}
+            onAction={() => navigation.navigate('TransactionHistory')}
+          />
+
+          {txLoading ? (
+            <View style={{ gap: space[4], paddingVertical: space[3] }}>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={[styles.skeletonRow, { gap: space[3] }]}>
+                  <Skeleton width={40} height={40} style={{ borderRadius: radius.md }} />
+                  <View style={styles.flex}>
+                    <Skeleton width="55%" height={14} />
+                    <Skeleton width="35%" height={12} style={{ marginTop: 8 }} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : recent.length === 0 ? (
+            <EmptyState title={t('home.noActivityTitle')} message={t('home.noActivityMessage')} />
+          ) : (
+            recent.map((tx, i) => (
+              <ListRow
+                key={tx.id}
+                leading={<TransactionIcon type={tx.type} />}
+                title={t(`transactionType.${tx.type}`, { defaultValue: tx.type })}
+                subtitle={formatDayGroup(tx.createdAt)}
+                value={formatSigned(
+                  transactionTone(tx.type) === 'positive' ? tx.bonusEarnedAmount : `-${tx.amount}`,
+                  transactionTone(tx.type) === 'positive' ? 'points' : 'amd',
+                )}
+                valueTone={transactionTone(tx.type)}
+                last={i === recent.length - 1}
+                onPress={() => navigation.navigate('TransactionHistory')}
+              />
+            ))
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function TransactionIcon({ type }: { type: string }) {
+  const { color, radius, bonusState } = useTheme();
+  const tone = transactionTone(type);
+  const surface = tone === 'positive' ? bonusState.available.surface : color.surfaceSunken;
+  const fg = tone === 'positive' ? bonusState.available.text : color.textSecondary;
+
+  return (
+    <View
+      style={[styles.txIcon, { backgroundColor: surface, borderRadius: radius.md }]}
+    >
+      <Ionicons name={transactionIcon(type)} size={18} color={fg} />
+    </View>
+  );
+}
+
+function NotificationBell({ onPress }: { onPress: () => void }) {
+  const { color, radius } = useTheme();
+  return (
+    <View
+      style={[
+        styles.bell,
+        { backgroundColor: color.surfaceSunken, borderRadius: radius.full },
+      ]}
+      onTouchEnd={onPress}
+    >
+      <Ionicons name="notifications-outline" size={20} color={color.textSecondary} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  row: { flexDirection: 'row' },
-  statBlock: { flex: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  flex: { flex: 1 },
+  greeting: { flexDirection: 'row', alignItems: 'center' },
+  actions: { flexDirection: 'row' },
+  txIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  bell: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center' },
 });

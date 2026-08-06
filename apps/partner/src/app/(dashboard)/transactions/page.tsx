@@ -1,8 +1,21 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Badge, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
+
+const num = (v: string | number | undefined) =>
+  Number(v ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/,/g, ' ');
+
+const STATUS_TONE = {
+  COMPLETED: 'available',
+  PENDING: 'pending',
+  INITIATED: 'pending',
+  FAILED: 'danger',
+  REVERSED: 'danger',
+  FLAGGED: 'danger',
+} as const;
 
 export default function TransactionsPage() {
   const { user } = useAuthStore();
@@ -14,43 +27,68 @@ export default function TransactionsPage() {
     enabled: !!partnerId,
   });
 
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold">Transactions</h1>
+  const items = data?.items ?? [];
 
-      <div className="mt-6 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-neutral-500">
+  return (
+    <>
+      <PageHeader
+        title="Transactions"
+        description="Every payment made at your business, newest first."
+      />
+
+      {items.length === 0 ? (
+        <EmptyState
+          title="No transactions yet"
+          message="Payments will appear here as soon as customers start paying with TuTak."
+        />
+      ) : (
+        <Table>
+          <thead>
             <tr>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Amount</th>
-              <th className="px-4 py-3">Bonus applied</th>
-              <th className="px-4 py-3">Bonus earned</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Date</th>
+              <Th>Type</Th>
+              <Th align="right">Amount</Th>
+              <Th align="right">Bonus applied</Th>
+              <Th align="right">Bonus earned</Th>
+              <Th>Status</Th>
+              <Th align="right">Date</Th>
             </tr>
           </thead>
           <tbody>
-            {data?.items.map((tx) => (
-              <tr key={tx.id} className="border-t border-neutral-100">
-                <td className="px-4 py-3">{tx.type}</td>
-                <td className="px-4 py-3">{tx.amount} AMD</td>
-                <td className="px-4 py-3">{tx.bonusAppliedAmount}</td>
-                <td className="px-4 py-3">{tx.bonusEarnedAmount}</td>
-                <td className="px-4 py-3">{tx.status}</td>
-                <td className="px-4 py-3">{new Date(tx.createdAt).toLocaleString()}</td>
-              </tr>
+            {items.map((tx) => (
+              <Tr key={tx.id}>
+                <Td>
+                  <span className="text-ink">{tx.type.replace(/_/g, ' ').toLowerCase()}</span>
+                </Td>
+                <Td align="right" className="tabular font-medium">
+                  {num(tx.amount)} ֏
+                </Td>
+                <Td align="right" className="tabular">
+                  {Number(tx.bonusAppliedAmount) > 0 ? (
+                    <span className="text-reserved-text">−{num(tx.bonusAppliedAmount)}</span>
+                  ) : (
+                    <span className="text-faint">—</span>
+                  )}
+                </Td>
+                <Td align="right" className="tabular">
+                  {Number(tx.bonusEarnedAmount) > 0 ? (
+                    <span className="text-available-text">+{num(tx.bonusEarnedAmount)}</span>
+                  ) : (
+                    <span className="text-faint">—</span>
+                  )}
+                </Td>
+                <Td>
+                  <Badge tone={STATUS_TONE[tx.status as keyof typeof STATUS_TONE] ?? 'neutral'}>
+                    {tx.status.toLowerCase()}
+                  </Badge>
+                </Td>
+                <Td align="right" className="tabular text-[13px] text-muted">
+                  {new Date(tx.createdAt).toLocaleString()}
+                </Td>
+              </Tr>
             ))}
-            {data?.items.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
-                  No transactions yet.
-                </td>
-              </tr>
-            ) : null}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </Table>
+      )}
+    </>
   );
 }

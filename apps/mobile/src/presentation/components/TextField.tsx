@@ -1,43 +1,83 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
-import { useAppTheme } from '../../app/theme/ThemeProvider';
+import { useTheme } from '../../app/theme/ThemeProvider';
 
 interface Props extends TextInputProps {
   label: string;
   error?: string;
+  hint?: string;
+  /** Rendered inside the field, before the input (e.g. a "+374" prefix). */
+  prefix?: string;
 }
 
-export function TextField({ label, error, style, ...rest }: Props) {
-  const { theme, spacing, radius, typography } = useAppTheme();
+/**
+ * Focus is signalled by a brand-green border and a soft ring rather than a
+ * colour flood, so the field stays quiet until the user is actually in it.
+ */
+export function TextField({ label, error, hint, prefix, style, ...rest }: Props) {
+  const { color, space, radius, text } = useTheme();
+  const [focused, setFocused] = useState(false);
+
+  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : color.border;
 
   return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={[typography.footnote, { color: theme.textSecondary, marginBottom: spacing.xs }]}>
+    <View style={{ marginBottom: space[4] }}>
+      <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2] }]}>
         {label}
       </Text>
-      <TextInput
-        placeholderTextColor={theme.textSecondary}
+
+      <View
         style={[
-          styles.input,
-          typography.body,
+          styles.field,
           {
-            color: theme.textPrimary,
-            backgroundColor: theme.surface,
-            borderColor: error ? theme.danger : theme.border,
-            borderRadius: radius.md,
-            paddingHorizontal: spacing.md,
+            backgroundColor: color.surface,
+            borderColor,
+            borderRadius: radius.lg,
+            paddingHorizontal: space[4],
+            gap: space[1],
           },
-          style,
+          focused && !error ? styles.ringBrand : null,
+          error ? styles.ringDanger : null,
         ]}
-        {...rest}
-      />
+      >
+        {prefix ? (
+          <Text style={[text.body, { color: color.textSecondary }]}>{prefix}</Text>
+        ) : null}
+        <TextInput
+          placeholderTextColor={color.textTertiary}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={[styles.input, text.body, { color: color.textPrimary }, style]}
+          {...rest}
+        />
+      </View>
+
       {error ? (
-        <Text style={[typography.caption, { color: theme.danger, marginTop: spacing.xs }]}>{error}</Text>
+        <Text style={[text.caption, { color: color.dangerText, marginTop: space[2] }]}>
+          {error}
+        </Text>
+      ) : hint ? (
+        <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
+          {hint}
+        </Text>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  input: { height: 48, borderWidth: StyleSheet.hairlineWidth },
+  field: { flexDirection: 'row', alignItems: 'center', height: 54, borderWidth: 1 },
+  input: { flex: 1, height: '100%' },
+  ringBrand: {
+    shadowColor: '#0B5D3B',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  ringDanger: {
+    shadowColor: '#F04438',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
 });

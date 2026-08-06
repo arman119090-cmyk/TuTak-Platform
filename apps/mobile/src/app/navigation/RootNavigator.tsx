@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../theme/ThemeProvider';
 import { MainTabNavigator } from './MainTabNavigator';
 import { ScanQrScreen } from '../../presentation/screens/qr/ScanQrScreen';
 import { NotificationsScreen } from '../../presentation/screens/notifications/NotificationsScreen';
@@ -13,11 +14,34 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { t } = useTranslation();
+  const { color, text } = useTheme();
 
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{
+        headerShadowVisible: false,
+        headerStyle: { backgroundColor: color.background },
+        headerTitleStyle: {
+          color: color.textPrimary,
+          fontSize: text.headline.fontSize,
+          fontWeight: text.headline.fontWeight,
+        },
+        headerTintColor: color.primary,
+        headerBackTitle: '',
+        contentStyle: { backgroundColor: color.background },
+      }}
+    >
       <Stack.Screen name="Main" component={MainTabNavigator} options={{ headerShown: false }} />
-      <Stack.Screen name="ScanQr" component={ScanQrScreen} options={{ title: t('qr.scanQr') }} />
+
+      {/* Scanning is full-bleed camera, so it presents modally with no header. */}
+      <Stack.Screen
+        name="ScanQr"
+        component={ScanQrScreen}
+        options={{ presentation: 'fullScreenModal', headerShown: false }}
+      />
+
+      {/* These screens draw their own titles via <Screen>, so the native
+          header only supplies the back affordance. */}
       <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}

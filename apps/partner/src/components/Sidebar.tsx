@@ -2,22 +2,37 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { AppShell, type NavItem } from '@tutak/design/web';
 import { authApi } from '@/lib/api/authApi';
 import { useAuthStore } from '@/lib/stores/authStore';
 
-const NAV_ITEMS = [
-  { href: '/', label: 'Overview' },
-  { href: '/transactions', label: 'Transactions' },
-  { href: '/qr', label: 'Payment QR' },
-  { href: '/ev-stations', label: 'EV stations' },
+const NAV: NavItem[] = [
+  { href: '/', label: 'Overview', icon: <NavIcon d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5" /> },
+  { href: '/transactions', label: 'Transactions', icon: <NavIcon d="M4 7h16M4 7l3-3M4 7l3 3M20 17H4M20 17l-3-3M20 17l-3 3" /> },
+  { href: '/qr', label: 'Payment QR', icon: <NavIcon d="M4 4h6v6H4V4ZM14 4h6v6h-6V4ZM4 14h6v6H4v-6ZM14 14h2.5v2.5H14V14ZM19.5 19.5H17V17h2.5v2.5Z" /> },
+  { href: '/ev-stations', label: 'EV stations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
 ];
 
-export function Sidebar() {
+function NavIcon({ d }: { d: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d={d}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function Sidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, deviceId, clear } = useAuthStore();
 
-  const handleLogout = async () => {
+  const handleSignOut = async () => {
     try {
       await authApi.logout(deviceId);
     } finally {
@@ -27,39 +42,21 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-screen w-64 flex-col justify-between border-r border-black/5 bg-white p-6">
-      <div>
-        <div className="mb-8">
-          <p className="text-xl font-semibold text-brand-green">TuTak</p>
-          <p className="text-xs text-neutral-400">Partner dashboard</p>
-        </div>
-        <nav className="flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                pathname === item.href
-                  ? 'bg-brand-green-light text-brand-green'
-                  : 'text-neutral-600 hover:bg-neutral-50'
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
-      <div>
-        <p className="mb-2 text-sm text-neutral-500">
-          {user?.firstName} {user?.lastName}
-        </p>
-        <button
-          onClick={handleLogout}
-          className="w-full rounded-lg border border-neutral-200 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
-        >
-          Log out
-        </button>
-      </div>
-    </aside>
+    <AppShell
+      subtitle="Partner"
+      nav={NAV}
+      currentPath={pathname}
+      userName={user ? `${user.firstName} ${user.lastName}` : undefined}
+      userRole={user?.roles?.find((r) => r.startsWith('PARTNER'))?.replace(/_/g, ' ').toLowerCase()}
+      onSignOut={handleSignOut}
+      renderLink={(item, _active, className) => (
+        <Link href={item.href} className={className}>
+          {item.icon}
+          {item.label}
+        </Link>
+      )}
+    >
+      {children}
+    </AppShell>
   );
 }

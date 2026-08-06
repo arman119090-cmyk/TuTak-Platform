@@ -31,6 +31,12 @@
       ],
       "@tutak/i18n": [
         "../../packages/i18n/src/index.ts"
+      ],
+      "@tutak/design": [
+        "../../packages/design/src/index.ts"
+      ],
+      "@tutak/design/web": [
+        "../../packages/design/src/web/index.ts"
       ]
     }
   },

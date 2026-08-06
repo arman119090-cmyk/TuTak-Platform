@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { SecurityModule } from '../security/security.module';
+import { AuthModule } from '../auth/auth.module';
 import { EvChargingController } from './ev-charging.controller';
 import { EvReservationsService } from './ev-reservations.service';
 import { EvSchedulerService } from './ev-scheduler.service';
@@ -11,7 +12,7 @@ import { OCPI_ADAPTER } from './ocpi/ocpi-adapter.interface';
 import { NoopOcpiAdapter } from './ocpi/noop-ocpi-adapter.service';
 
 @Module({
-  imports: [WalletModule, TransactionsModule, SecurityModule],
+  imports: [WalletModule, TransactionsModule, SecurityModule, forwardRef(() => AuthModule)],
   controllers: [EvChargingController],
   providers: [
     EvStationsService,

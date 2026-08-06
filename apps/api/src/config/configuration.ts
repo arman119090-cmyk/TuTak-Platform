@@ -23,6 +23,14 @@ export interface AppConfig {
     token: string;
     baseUrl: string;
   };
+  sms: {
+    endpoint: string;
+    authScheme: 'basic' | 'bearer';
+    username: string;
+    token: string;
+    sender: string;
+    encoding: 'form' | 'json';
+  };
 }
 
 export default (): AppConfig => ({
@@ -61,5 +69,13 @@ export default (): AppConfig => ({
     countryCode: process.env.OCPI_COUNTRY_CODE ?? 'AM',
     token: process.env.OCPI_TOKEN ?? '',
     baseUrl: process.env.OCPI_BASE_URL ?? '',
+  },
+  sms: {
+    endpoint: process.env.SMS_ENDPOINT ?? '',
+    authScheme: (process.env.SMS_AUTH_SCHEME as 'basic' | 'bearer') ?? 'basic',
+    username: process.env.SMS_USERNAME ?? '',
+    token: process.env.SMS_TOKEN ?? '',
+    sender: process.env.SMS_SENDER ?? 'TuTak',
+    encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
   },
 });

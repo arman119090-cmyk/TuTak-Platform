@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -10,6 +11,7 @@ import { generateNumericCode, sha256Hex } from '../../common/utils/crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SMS_PROVIDER, SmsProvider } from '../../infrastructure/sms/sms-provider.interface';
 import { RequestMeta } from './auth.service';
 
 /** A reset code is short-lived by design; a 10-minute window is ample by SMS. */
@@ -52,6 +54,7 @@ export class PasswordService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly notifications: NotificationsService,
+    @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
 
   /** Authenticated change. Requires the current password — a stolen access token alone must not be enough. */
@@ -106,9 +109,16 @@ export class PasswordService {
         });
       });
 
-      // Persisted as an SMS-channel notification, the same shape every other
-      // outbound message uses. Actual carrier dispatch is not implemented —
-      // see the remaining-blockers section of the report.
+      // Delivered, then recorded. The notification row is the in-app trail;
+      // the carrier hand-off is what actually reaches the customer. A failure
+      // to send is logged rather than surfaced, because telling the caller
+      // that delivery failed would say the number exists.
+      await this.sms
+        .send({ to: user.phone, body: `TuTak: your password reset code is ${code}` })
+        .catch((err: Error) =>
+          this.logger.error(`Could not deliver reset code to ${user.id}: ${err.message}`),
+        );
+
       await this.notifications.send({
         userId: user.id,
         channel: NotificationChannel.SMS,

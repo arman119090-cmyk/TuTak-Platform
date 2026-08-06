@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import configuration from '../../src/config/configuration';
 import { PrismaModule } from '../../src/infrastructure/prisma/prisma.module';
+import { SmsModule } from '../../src/infrastructure/sms/sms.module';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -49,6 +50,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
       EventEmitterModule.forRoot(),
       PrismaModule,
+      SmsModule,
       WalletModule,
       TransactionsModule,
       QrPaymentsModule,

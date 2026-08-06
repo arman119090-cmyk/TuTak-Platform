@@ -21,7 +21,7 @@ export interface CustomerFixture {
 
 export async function createCustomer(
   prisma: PrismaClient,
-  overrides: Partial<{ phone: string; isActive: boolean }> = {},
+  overrides: Partial<{ phone: string; isActive: boolean; isPhoneVerified: boolean }> = {},
 ): Promise<CustomerFixture> {
   const user = await prisma.user.create({
     data: {
@@ -31,6 +31,10 @@ export async function createCustomer(
       firstName: 'Test',
       lastName: 'Customer',
       isActive: overrides.isActive ?? true,
+      // Verified by default: most suites are about money movement, and an
+      // unverified account cannot earn. Suites testing the gate itself pass
+      // false explicitly.
+      isPhoneVerified: overrides.isPhoneVerified ?? true,
       wallet: { create: {} },
     },
     include: { wallet: true },

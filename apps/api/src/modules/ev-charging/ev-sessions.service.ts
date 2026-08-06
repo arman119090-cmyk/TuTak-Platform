@@ -20,6 +20,7 @@ import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
+import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -94,6 +95,7 @@ export class EvSessionsService {
     private readonly walletService: WalletService,
     private readonly transactionsService: TransactionsService,
     private readonly fraudDetection: FraudDetectionService,
+    private readonly phoneVerification: PhoneVerificationService,
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
   ) {}
 
@@ -322,7 +324,11 @@ export class EvSessionsService {
         ? (await this.prisma.partner.findUnique({ where: { id: session.connector.station.partnerId } }))
             ?.bonusAccrualRateBps
         : undefined;
-      if (rateBps) {
+      const canEarn = await this.phoneVerification
+        .assertCanEarn(userId)
+        .then(() => true)
+        .catch(() => false);
+      if (rateBps && canEarn) {
         const paidPortion = cost.minus(bonusToApply);
         bonusEarned = paidPortion.times(rateBps).dividedBy(10_000);
         if (bonusEarned.greaterThan(0)) {

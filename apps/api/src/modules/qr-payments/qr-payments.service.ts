@@ -10,6 +10,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { PartnersService } from '../partners/partners.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
+import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { RequestUser } from '../auth/types/request-user.type';
 import { BonusEntryType } from '@prisma/client';
 import { IssueQrDto } from './dto/issue-qr.dto';
@@ -27,6 +28,7 @@ export class QrPaymentsService {
     private readonly partnersService: PartnersService,
     private readonly auditService: AuditService,
     private readonly fraudDetectionService: FraudDetectionService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
   async issue(dto: IssueQrDto, issuer: RequestUser) {
@@ -210,7 +212,14 @@ export class QrPaymentsService {
       }
 
       let bonusEarned = new Decimal(0);
-      if (partner) {
+      // Verified accounts only. Spending and paying stay open to everyone —
+      // those cost the customer money. Earning is the one direction in which
+      // a free, fabricated account is profitable, so that is what is gated.
+      const canEarn = await this.phoneVerification
+        .assertCanEarn(payerUserId)
+        .then(() => true)
+        .catch(() => false);
+      if (partner && canEarn) {
         const paidPortion = amount.minus(bonusToApply);
         bonusEarned = paidPortion.times(partner.bonusAccrualRateBps).dividedBy(10_000);
         if (bonusEarned.greaterThan(0)) {

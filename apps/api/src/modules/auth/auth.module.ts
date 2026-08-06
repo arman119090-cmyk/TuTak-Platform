@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PasswordService } from './password.service';
+import { PhoneVerificationService } from './phone-verification.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SecurityModule } from '../security/security.module';
 
@@ -28,7 +29,7 @@ import { SecurityModule } from '../security/security.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PasswordService],
-  exports: [AuthService, PasswordService],
+  providers: [AuthService, JwtStrategy, PasswordService, PhoneVerificationService],
+  exports: [AuthService, PasswordService, PhoneVerificationService],
 })
 export class AuthModule {}

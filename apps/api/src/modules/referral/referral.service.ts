@@ -84,6 +84,23 @@ export class ReferralService {
       return null;
     }
 
+    // Both sides verified. An unverified referrer is a farm's collection
+    // account; an unverified referee is the fabricated signup it feeds on.
+    const [referrer, referee] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: invite.referrerUserId },
+        select: { isPhoneVerified: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: refereeUserId },
+        select: { isPhoneVerified: true },
+      }),
+    ]);
+    if (!referrer?.isPhoneVerified || !referee?.isPhoneVerified) {
+      this.logger.warn(`Referral ${invite.id} not rewarded: an unverified number is involved`);
+      return null;
+    }
+
     const rewardAmount = this.config.get('bonus.referralRewardAmount', { infer: true });
 
     return this.prisma.$transaction(async (tx) => {

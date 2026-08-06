@@ -128,6 +128,7 @@ model User {
   evReservations    EvReservation[]
   fraudSignals      FraudSignal[]
   passwordResets    PasswordResetToken[]
+  phoneVerifications PhoneVerificationToken[]
 
   @@index([createdAt])
   @@map("users")
@@ -169,6 +170,29 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+/// A single-use phone-ownership challenge.
+///
+/// Same shape and same reasoning as PasswordResetToken: only the hash is
+/// stored, attempts are counted, and the row is consumed on use. Kept as a
+/// separate table because the two have different lifetimes and different
+/// abuse profiles — a verification code is issued to someone who has just
+/// registered, a reset code to someone who may not control the account.
+model PhoneVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([expiresAt])
+  @@map("phone_verification_tokens")
 }
 
 /// A single-use password reset challenge.

@@ -13,9 +13,11 @@ import { RefreshDto } from './dto/refresh.dto';
 import {
   ChangePasswordDto,
   ConfirmPasswordResetDto,
+  ConfirmPhoneDto,
   RequestPasswordResetDto,
 } from './dto/password.dto';
 import { PasswordService } from './password.service';
+import { PhoneVerificationService } from './phone-verification.service';
 import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from './refresh-cookie';
 
 function extractMeta(req: Request): RequestMeta {
@@ -31,6 +33,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly passwordService: PasswordService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
   @Public()
@@ -135,6 +138,25 @@ export class AuthController {
       dto.newPassword,
       extractMeta(req),
     );
+  }
+
+  /**
+   * Phone ownership. Not required to register — a failed SMS at signup would
+   * strand a customer with no account — but required before an account can
+   * earn anything, which is the only direction free accounts are profitable in.
+   */
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 5, ttl: 300_000 } })
+  @Post('verify-phone/request')
+  requestPhoneVerification(@CurrentUser() user: RequestUser) {
+    return this.phoneVerification.request(user.id);
+  }
+
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 10, ttl: 300_000 } })
+  @Post('verify-phone/confirm')
+  confirmPhoneVerification(@CurrentUser() user: RequestUser, @Body() dto: ConfirmPhoneDto) {
+    return this.phoneVerification.confirm(user.id, dto.code);
   }
 
   @ApiBearerAuth()

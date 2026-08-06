@@ -9,6 +9,7 @@ import configuration, { AppConfig } from './config/configuration';
 import { validate } from './config/env.validation';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
+import { SmsModule } from './infrastructure/sms/sms.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -49,6 +50,7 @@ import { SecurityModule } from './modules/security/security.module';
     }),
     PrismaModule,
     RedisModule,
+    SmsModule,
 
     AuditModule,
     UsersModule,

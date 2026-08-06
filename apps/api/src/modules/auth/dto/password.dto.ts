@@ -38,3 +38,9 @@ export class ConfirmPasswordResetDto {
   @Length(PASSWORD_MIN, PASSWORD_MAX)
   newPassword: string;
 }
+
+export class ConfirmPhoneDto {
+  @IsString()
+  @Length(6, 6)
+  code: string;
+}

@@ -66,7 +66,7 @@ describe('Error disclosure and analytics (integration)', () => {
       return payload;
     };
 
-    it('never returns the message of an error the application did not raise', async () => {
+    it('never returns the message of an error the application did not raise', () => {
       // Standing in for a PrismaClientValidationError, whose real message
       // contains the full query text and its arguments.
       const leaky = new Error(

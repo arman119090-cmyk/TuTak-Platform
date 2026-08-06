@@ -36,6 +36,20 @@ const METER_FLOOR_KWH = new Decimal('1');
 /** `EvSession.energyKwh` is Decimal(10,3) — anything finer would be rounded away. */
 const ENERGY_SCALE = 3;
 
+/**
+ * Longest window a session may bill for, and the age at which an abandoned
+ * one is swept.
+ *
+ * Bounding a reading by the connector's rating fixed the magnitude of a
+ * fraudulent claim but not its window: the ceiling is proportional to elapsed
+ * time, and nothing closed a session that was simply never stopped. One left
+ * open for a month billed 36,000 kWh and paid 180,000 points, and the bay
+ * stayed CHARGING for as long as the row existed. Capping the billable window
+ * bounds the money; the sweep bounds the stuck state.
+ */
+const MAX_BILLABLE_HOURS = new Decimal(24);
+const STALE_SESSION_HOURS = 24;
+
 function parseEnergyKwh(value: string): Decimal {
   const reading = parseMoney(value, 'energyKwh');
   if (reading.decimalPlaces() > ENERGY_SCALE) {
@@ -56,12 +70,16 @@ function assertDeliverable(reading: Decimal, powerKw: Decimal, startedAt: Date |
     ? new Decimal(Math.max(0, Date.now() - startedAt.getTime())).dividedBy(3_600_000)
     : new Decimal(0);
 
-  const ceiling = Decimal.max(powerKw.times(elapsedHours).times(METER_TOLERANCE), METER_FLOOR_KWH);
+  // A session's age is not a licence to bill for it. Beyond the cap the
+  // session is abandoned, not charging, and the sweep will close it.
+  const billableHours = Decimal.min(elapsedHours, MAX_BILLABLE_HOURS);
+
+  const ceiling = Decimal.max(powerKw.times(billableHours).times(METER_TOLERANCE), METER_FLOOR_KWH);
 
   if (reading.greaterThan(ceiling)) {
     throw new BadRequestException(
       `Meter reading of ${reading.toString()} kWh exceeds what the connector could have delivered ` +
-        `(${powerKw.toString()} kW for ${elapsedHours.toFixed(3)} h)`,
+        `(${powerKw.toString()} kW for ${billableHours.toFixed(3)} h)`,
     );
   }
 }
@@ -365,6 +383,36 @@ export class EvSessionsService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Closes sessions that were started and never stopped.
+   *
+   * Without this a connector stayed CHARGING for as long as the row existed:
+   * the bay was physically unusable, every subsequent customer was turned
+   * away, and the partner lost the revenue silently. The charge is not billed
+   * — an abandoned session has no trustworthy meter reading — which is the
+   * right trade against a bay lost forever.
+   */
+  async expireStaleSessions(now = new Date()) {
+    const cutoff = new Date(now.getTime() - STALE_SESSION_HOURS * 3_600_000);
+    const stale = await this.prisma.evSession.findMany({
+      where: { status: EvSessionStatus.CHARGING, startedAt: { lte: cutoff } },
+      select: { id: true, connectorId: true },
+    });
+
+    let closed = 0;
+    for (const session of stale) {
+      try {
+        await this.releaseConnector(session.connectorId, session.id);
+        closed += 1;
+      } catch (err) {
+        this.logger.error(`Failed to close stale EV session ${session.id}`, err as Error);
+      }
+    }
+
+    if (closed > 0) this.logger.warn(`Closed ${closed} abandoned EV session(s)`);
+    return closed;
   }
 
   /**

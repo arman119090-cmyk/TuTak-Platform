@@ -47,7 +47,10 @@ export class QrPaymentsService {
       data: {
         type: dto.type,
         token: generateOpaqueToken(24),
-        issuedByUserId: dto.type === QrCodeType.USER_PAY_TOKEN ? issuer.id : null,
+        // Recorded for every type. Leaving it null on merchant codes meant
+        // the self-redemption check below could not see who raised the
+        // invoice, and the audit trail could not say either.
+        issuedByUserId: issuer.id,
         partnerId: dto.partnerId,
         amount: dto.amount,
         expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
@@ -102,11 +105,21 @@ export class QrPaymentsService {
     if (qr.status !== QrCodeStatus.ACTIVE) throw new BadRequestException('QR code is not active');
     if (qr.expiresAt < new Date()) throw new BadRequestException('QR code has expired');
 
-    // A payment needs two parties. Redeeming your own code manufactures a
-    // COMPLETED transaction out of nothing, which was the vehicle for the
-    // referral farm in docs/AUDIT_2026-08-B.md §C4.
+    // A payment needs two parties, and neither of them may be the merchant.
+    //
+    // Blocking only the issuer was not enough. Accrual is funded by the
+    // partner, so anyone on the partner's side who can raise an invoice can
+    // raise one against themselves for an amount they choose and collect the
+    // accrual on it — 50,000 points a call at a 5% rate, repeatable. Blocking
+    // just the issuer would also leave two staff members issuing for each
+    // other, so membership is what is checked, not identity.
     if (qr.issuedByUserId && qr.issuedByUserId === payerUserId) {
       throw new BadRequestException('You cannot redeem a code you issued yourself');
+    }
+    if (qr.partnerId && (await this.partnersService.isMember(qr.partnerId, payerUserId))) {
+      throw new BadRequestException(
+        'You cannot redeem a code issued by the partner you belong to',
+      );
     }
 
     const amount = qr.amount ?? new Decimal(0);

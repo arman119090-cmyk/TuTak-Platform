@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PermissionName } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { hasPartnerScope, isPlatformAdmin } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AnalyticsService } from './analytics.service';
 
@@ -20,17 +21,23 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('SUPER_ADMIN');
-    const ownsPartner = Object.values(user.partnerScopes).some((ids) => ids.includes(partnerId));
-    if (!isAdmin && !ownsPartner) {
+    if (!hasPartnerScope(user, partnerId)) {
       throw new ForbiddenException('You do not have analytics access for this partner');
     }
     return this.analyticsService.partnerAnalytics(partnerId, from, to);
   }
 
+  /**
+   * ANALYTICS_READ is held by PARTNER_OWNER, so gating on the permission alone
+   * exposed platform-wide volumes and the total outstanding bonus liability to
+   * every partner on the network (audit §H8). Platform figures are admin-only.
+   */
   @Get('platform')
   @RequirePermissions(PermissionName.ANALYTICS_READ)
-  platform() {
+  platform(@CurrentUser() user: RequestUser) {
+    if (!isPlatformAdmin(user)) {
+      throw new ForbiddenException('Platform analytics are restricted to administrators');
+    }
     return this.analyticsService.platformOverview();
   }
 }

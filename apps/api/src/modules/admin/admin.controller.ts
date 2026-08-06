@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Patch, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -8,6 +8,7 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { AdminService } from './admin.service';
 import { AssignRoleDto } from './dto/assign-role.dto';
+import { SetActiveDto } from './dto/set-active.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -26,7 +27,7 @@ export class AdminController {
 
   @Post('users/roles')
   async assignRole(@CurrentUser() admin: RequestUser, @Body() dto: AssignRoleDto) {
-    const result = await this.adminService.assignRole(dto);
+    const result = await this.adminService.assignRole(dto, admin);
     await this.auditService.record({
       actorUserId: admin.id,
       action: AuditAction.ADMIN_ROLE_CHANGED,
@@ -37,12 +38,21 @@ export class AdminController {
     return result;
   }
 
+  /**
+   * `@Body('isActive')` extracted a raw value that ValidationPipe skips for
+   * primitive metatypes, so `"false"` reached Prisma as a string and `{}` as
+   * undefined — no schema at all on a security-relevant toggle (§M3).
+   */
   @Patch('users/:id/active')
   async setActive(
     @CurrentUser() admin: RequestUser,
     @Param('id') id: string,
-    @Body('isActive') isActive: boolean,
+    @Body() dto: SetActiveDto,
   ) {
+    const isActive = dto.isActive;
+    if (id === admin.id && !isActive) {
+      throw new ForbiddenException('You cannot deactivate your own account');
+    }
     const user = await this.adminService.setActive(id, isActive);
     await this.auditService.record({
       actorUserId: admin.id,

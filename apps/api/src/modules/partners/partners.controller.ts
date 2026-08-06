@@ -4,10 +4,12 @@ import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
+import { hasPartnerScope } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
+import { SetActiveDto } from '../admin/dto/set-active.dto';
 import { PartnersService } from './partners.service';
 
 @ApiTags('partners')
@@ -36,8 +38,7 @@ export class PartnersController {
     @Param('id') id: string,
     @Query() query: CursorPaginationQueryDto,
   ) {
-    const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('SUPER_ADMIN');
-    if (!isAdmin && !(await this.partnersService.isMember(id, user.id))) {
+    if (!hasPartnerScope(user, id) && !(await this.partnersService.isMember(id, user.id))) {
       throw new ForbiddenException('You are not a member of this partner');
     }
     return this.transactionsService.history({ ...query, partnerId: id });
@@ -62,15 +63,15 @@ export class PartnersController {
   async setActive(
     @CurrentUser() admin: RequestUser,
     @Param('id') id: string,
-    @Body('isActive') isActive: boolean,
+    @Body() dto: SetActiveDto,
   ) {
-    const partner = await this.partnersService.setActive(id, isActive);
+    const partner = await this.partnersService.setActive(id, dto.isActive);
     await this.auditService.record({
       actorUserId: admin.id,
       action: AuditAction.PARTNER_UPDATED,
       entityType: 'Partner',
       entityId: partner.id,
-      metadata: { isActive },
+      metadata: { isActive: dto.isActive },
     });
     return partner;
   }

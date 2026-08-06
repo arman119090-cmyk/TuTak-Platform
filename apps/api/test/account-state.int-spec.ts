@@ -113,9 +113,17 @@ describe('Account state enforcement (integration)', () => {
 
   it('grants a role idempotently', async () => {
     const { user } = await createCustomer(prisma);
+    const { user: granter } = await createCustomer(prisma);
+    const actor = {
+      id: granter.id,
+      phone: granter.phone,
+      roles: [RoleName.SUPER_ADMIN],
+      permissions: [],
+      partnerScopes: {},
+    };
 
-    const first = await admin.assignRole({ userId: user.id, role: RoleName.ADMIN });
-    const second = await admin.assignRole({ userId: user.id, role: RoleName.ADMIN });
+    const first = await admin.assignRole({ userId: user.id, role: RoleName.ADMIN }, actor);
+    const second = await admin.assignRole({ userId: user.id, role: RoleName.ADMIN }, actor);
 
     expect(second.id).toBe(first.id);
     expect(await prisma.userRole.count({ where: { userId: user.id } })).toBe(1);

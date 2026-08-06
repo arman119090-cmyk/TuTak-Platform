@@ -8,5 +8,7 @@ export interface RequestUser {
   permissions: PermissionName[];
   /** partnerId per scoped role, e.g. { PARTNER_OWNER: ['partner-uuid'] } */
   partnerScopes: Record<string, string[]>;
+  /** True while a bootstrap or operator-issued credential is still in place. */
+  mustChangePassword: boolean;
   deviceId?: string;
 }

@@ -1,4 +1,5 @@
 import { PrismaClient, RoleName, PermissionName } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
 import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
@@ -64,7 +65,19 @@ async function main() {
     where: { name: RoleName.SUPER_ADMIN },
   });
 
-  const passwordHash = await argon2.hash('ChangeMe123!');
+  // The password must come from the environment. A literal here is committed
+  // to the repository, published in the README's seed instructions, and never
+  // rotated by `upsert({ update: {} })` — anyone who read the repo owned the
+  // platform (docs/AUDIT_2026-08-B.md §C2).
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword || adminPassword.length < 12) {
+    throw new Error(
+      'SEED_ADMIN_PASSWORD must be set to at least 12 characters before seeding. ' +
+        'Generate one, store it in your secret manager, and rotate it through ' +
+        'POST /v1/auth/change-password after the first login.',
+    );
+  }
+  const passwordHash = await argon2.hash(adminPassword);
   const admin = await prisma.user.upsert({
     where: { phone: '+37400000000' },
     update: {},
@@ -76,8 +89,19 @@ async function main() {
       lastName: 'Admin',
       locale: 'hy',
       isPhoneVerified: true,
+      // Forces rotation at first login: the seeded credential is only ever a
+      // bootstrap, never a working operator password.
+      mustChangePassword: true,
       wallet: { create: {} },
     },
+  });
+
+  // Every user needs a referral code; only register() created one, so the
+  // seeded admin used to 500 on GET /referral/me/code (§M2).
+  await prisma.referralCode.upsert({
+    where: { userId: admin.id },
+    update: {},
+    create: { userId: admin.id, code: `TT-${randomBytes(5).toString('hex').toUpperCase()}` },
   });
 
   // A global (unscoped) role has partnerId = NULL. Postgres treats NULLs as

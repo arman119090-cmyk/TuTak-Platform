@@ -108,6 +108,7 @@ export class UsersService {
       roles: Array.from(roles),
       permissions: Array.from(permissions) as RequestUser['permissions'],
       partnerScopes,
+      mustChangePassword: user.mustChangePassword,
     };
   }
 

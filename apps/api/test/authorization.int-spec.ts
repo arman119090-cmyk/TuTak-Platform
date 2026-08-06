@@ -45,6 +45,7 @@ describe('Authorization (integration)', () => {
     roles,
     permissions: [PermissionName.USER_MANAGE, PermissionName.EV_STATION_MANAGE],
     partnerScopes,
+    mustChangePassword: false,
   });
 
   // ── §C6 role escalation ────────────────────────────────────────────────
@@ -181,6 +182,7 @@ describe('Authorization (integration)', () => {
         roles: [RoleName.CUSTOMER],
         permissions: [],
         partnerScopes: {},
+        mustChangePassword: false,
       };
       expect(resolveOperatorPartner(customer)).toBeNull();
       expect(hasPartnerScope(customer, 'partner-a')).toBe(false);

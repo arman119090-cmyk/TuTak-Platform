@@ -45,7 +45,7 @@ describe('QR payments (integration)', () => {
   });
 
   const asRequestUser = (id: string, roles: RoleName[] = [RoleName.CUSTOMER]): RequestUser =>
-    ({ id, phone: '+37400000000', roles, permissions: [], partnerScopes: {} }) as RequestUser;
+    ({ id, phone: '+37400000000', roles, permissions: [], partnerScopes: {}, mustChangePassword: false }) as RequestUser;
 
   const fundedCustomer = async (available: string) => {
     const { user, wallet } = await createCustomer(prisma);

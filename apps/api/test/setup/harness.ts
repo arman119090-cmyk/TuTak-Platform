@@ -6,6 +6,8 @@ import configuration from '../../src/config/configuration';
 import { PrismaModule } from '../../src/infrastructure/prisma/prisma.module';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
+import { AuthModule } from '../../src/modules/auth/auth.module';
+import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
 import { AuditModule } from '../../src/modules/audit/audit.module';
 import { EvChargingModule } from '../../src/modules/ev-charging/ev-charging.module';
 import { QrPaymentsModule } from '../../src/modules/qr-payments/qr-payments.module';
@@ -53,6 +55,8 @@ export async function createTestHarness(): Promise<TestHarness> {
       UsersModule,
       AdminModule,
       ReferralModule,
+      NotificationsModule,
+      AuthModule,
     ],
   })
     .overrideProvider(PrismaService)

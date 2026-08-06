@@ -120,6 +120,7 @@ describe('Account state enforcement (integration)', () => {
       roles: [RoleName.SUPER_ADMIN],
       permissions: [],
       partnerScopes: {},
+      mustChangePassword: false,
     };
 
     const first = await admin.assignRole({ userId: user.id, role: RoleName.ADMIN }, actor);

@@ -50,6 +50,7 @@ describe('Referral abuse (integration)', () => {
     roles: [RoleName.CUSTOMER],
     permissions: [],
     partnerScopes: {},
+    mustChangePassword: false,
   });
 
   /** A referrer, a referee, and a PENDING invite between them. */

@@ -102,6 +102,12 @@ model User {
   isActive         Boolean   @default(true)
   failedLoginCount Int       @default(0)
   lockedUntil      DateTime?
+  /// Set when a credential was issued by someone other than the account
+  /// owner (seeding, an operator reset). Login succeeds but every other
+  /// route is refused until the password is changed, so a bootstrap
+  /// credential can never become a working one.
+  mustChangePassword Boolean @default(false)
+  passwordChangedAt  DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
@@ -121,6 +127,7 @@ model User {
   evSessions        EvSession[]
   evReservations    EvReservation[]
   fraudSignals      FraudSignal[]
+  passwordResets    PasswordResetToken[]
 
   @@index([createdAt])
   @@map("users")
@@ -162,6 +169,28 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+/// A single-use password reset challenge.
+///
+/// Only the hash is stored, exactly as for refresh tokens: a database dump
+/// must not hand the attacker a working reset for every pending request.
+/// Rows are consumed on use and swept once expired.
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String
+  /// SHA-256 of the code delivered to the user. Never the code itself.
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

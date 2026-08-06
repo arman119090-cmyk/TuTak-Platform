@@ -1,7 +1,7 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { AllowsPendingPasswordChange } from '../../common/decorators/allow-pending-password-change.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -16,6 +16,7 @@ import {
   RequestPasswordResetDto,
 } from './dto/password.dto';
 import { PasswordService } from './password.service';
+import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from './refresh-cookie';
 
 function extractMeta(req: Request): RequestMeta {
   return {
@@ -35,22 +36,61 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  register(@Body() dto: RegisterDto, @Req() req: Request) {
-    return this.authService.register(dto, extractMeta(req));
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.register(dto, extractMeta(req));
+    setRefreshCookie(
+      res,
+      result.tokens.refreshToken,
+      new Date(result.tokens.refreshTokenExpiresAt),
+    );
+    return result;
   }
 
   @Public()
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Post('login')
-  login(@Body() dto: LoginDto, @Req() req: Request) {
-    return this.authService.login(dto, extractMeta(req));
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto, extractMeta(req));
+    setRefreshCookie(
+      res,
+      result.tokens.refreshToken,
+      new Date(result.tokens.refreshTokenExpiresAt),
+    );
+    return result;
   }
 
+  /**
+   * Takes the refresh token from the httpOnly cookie when there is one, and
+   * from the body otherwise, so native clients are unaffected.
+   */
   @Public()
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Post('refresh')
-  refresh(@Body() dto: RefreshDto, @Req() req: Request) {
-    return this.authService.refresh(dto.refreshToken, dto.deviceId, extractMeta(req));
+  async refresh(
+    @Body() dto: RefreshDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const presented = readRefreshToken(req, dto.refreshToken);
+    if (!presented) {
+      throw new UnauthorizedException('Refresh token is invalid or expired');
+    }
+
+    const result = await this.authService.refresh(presented, dto.deviceId, extractMeta(req));
+    setRefreshCookie(
+      res,
+      result.tokens.refreshToken,
+      new Date(result.tokens.refreshTokenExpiresAt),
+    );
+    return result;
   }
 
   /**
@@ -104,7 +144,9 @@ export class AuthController {
     @CurrentUser() user: RequestUser,
     @Body() dto: RefreshDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    clearRefreshCookie(res);
     return this.authService.logout(user.id, dto.deviceId, extractMeta(req));
   }
 }

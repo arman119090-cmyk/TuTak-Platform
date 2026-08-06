@@ -6,7 +6,12 @@ import { useAuthStore } from './stores/authStore';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/v1';
 
-export const httpClient = axios.create({ baseURL: API_BASE_URL, timeout: 15_000 });
+// withCredentials is what carries the httpOnly refresh cookie to /auth/refresh.
+export const httpClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 15_000,
+  withCredentials: true,
+});
 
 httpClient.interceptors.request.use((config) => {
   const { accessToken } = useAuthStore.getState();
@@ -18,13 +23,17 @@ httpClient.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<AuthTokensDto> | null = null;
 
+/**
+ * The refresh token is never in JavaScript's hands — the browser attaches it
+ * as an httpOnly cookie, so this request carries only the device id.
+ */
 async function refreshTokens(): Promise<AuthTokensDto> {
-  const { refreshToken, deviceId, setTokens, clear } = useAuthStore.getState();
-  if (!refreshToken) throw new Error('No refresh token available');
+  const { deviceId, setTokens, clear } = useAuthStore.getState();
   try {
     const { data } = await axios.post<{ data: { tokens: AuthTokensDto } }>(
       `${API_BASE_URL}/auth/refresh`,
-      { refreshToken, deviceId },
+      { deviceId },
+      { withCredentials: true },
     );
     setTokens(data.data.tokens);
     return data.data.tokens;

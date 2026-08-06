@@ -11,6 +11,7 @@ import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { Jako } from '../../components/Jako';
 import { qrApi } from '../../../data/api/qrApi';
+import { describeApiError } from '../../../data/api/errors';
 import { walletApi } from '../../../data/api/walletApi';
 import { formatAmd, formatPoints } from '../../utils/format';
 
@@ -30,36 +31,48 @@ export function ScanQrScreen() {
 
   const [stage, setStage] = useState<Stage>('scanning');
   const [token, setToken] = useState<string | null>(null);
+  const [paymentKey, setPaymentKey] = useState<string | null>(null);
   const [applyBonus, setApplyBonus] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
 
   const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
-  const availableBonus = Number(wallet?.availableBonus ?? 0);
+  // Kept as the decimal string the API returned. Number() round-trips lose
+  // precision and can emit exponential notation, which the server rejects.
+  const availableBonus = wallet?.availableBonus ?? '0';
+  const hasBonus = Number(availableBonus) > 0;
 
   const handleScan = ({ data }: { data: string }) => {
     if (token) return;
     setToken(data);
+    // One key per payment attempt, minted when the code is scanned and held
+    // across retries. Deriving it from Date.now() at confirm time produced a
+    // fresh key every tap, so the server's idempotency could never match and
+    // a double-tap on a reusable merchant code charged twice.
+    setPaymentKey(`${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
     setStage('confirm');
   };
 
   const handleConfirm = async () => {
-    if (!token) return;
+    if (!token || !paymentKey) return;
     setProcessing(true);
     setError(null);
     try {
       const result = await qrApi.redeem({
         token,
-        bonusAmountToApply: applyBonus && availableBonus > 0 ? String(availableBonus) : undefined,
-        idempotencyKey: `${token}-${Date.now()}`,
+        bonusAmountToApply: applyBonus && hasBonus ? availableBonus : undefined,
+        idempotencyKey: paymentKey,
       });
       setReceipt(result);
       setStage('success');
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    } catch {
-      setError(t('qr.paymentFailed'));
+    } catch (err) {
+      // The server explains why a payment was refused — insufficient balance,
+      // an expired code, a bonus larger than the bill. Swallowing that left
+      // the customer with "payment failed" and no idea what to change.
+      setError(describeApiError(err) ?? t('qr.paymentFailed'));
     } finally {
       setProcessing(false);
     }
@@ -67,6 +80,7 @@ export function ScanQrScreen() {
 
   const reset = () => {
     setToken(null);
+    setPaymentKey(null);
     setReceipt(null);
     setApplyBonus(false);
     setError(null);
@@ -166,7 +180,7 @@ export function ScanQrScreen() {
           </Text>
         </Surface>
 
-        {availableBonus > 0 ? (
+        {hasBonus ? (
           <Pressable onPress={() => setApplyBonus((v) => !v)} accessibilityRole="switch">
             <Surface style={{ marginTop: space[4] }}>
               <View style={styles.toggleRow}>

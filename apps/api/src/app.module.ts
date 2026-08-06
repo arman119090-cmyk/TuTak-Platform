@@ -1,0 +1,75 @@
+import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+
+import configuration, { AppConfig } from './config/configuration';
+import { validate } from './config/env.validation';
+import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { RedisModule } from './infrastructure/redis/redis.module';
+
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
+
+import { AuditModule } from './modules/audit/audit.module';
+import { UsersModule } from './modules/users/users.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { WalletModule } from './modules/wallet/wallet.module';
+import { ReferralModule } from './modules/referral/referral.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
+import { PartnersModule } from './modules/partners/partners.module';
+import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
+import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { SecurityModule } from './modules/security/security.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate }),
+    EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<AppConfig, true>) => ({
+        throttlers: [
+          {
+            ttl: config.get('rateLimit.ttlSeconds', { infer: true }) * 1000,
+            limit: config.get('rateLimit.maxRequests', { infer: true }),
+          },
+        ],
+      }),
+    }),
+    PrismaModule,
+    RedisModule,
+
+    AuditModule,
+    UsersModule,
+    AuthModule,
+    WalletModule,
+    ReferralModule,
+    TransactionsModule,
+    PartnersModule,
+    QrPaymentsModule,
+    EvChargingModule,
+    AdminModule,
+    NotificationsModule,
+    AnalyticsModule,
+    SecurityModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
+  ],
+})
+export class AppModule {}

@@ -1,0 +1,124 @@
+{
+  "common": {
+    "appName": "TuTak",
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "next": "Next",
+    "back": "Back",
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "retry": "Try again",
+    "confirm": "Confirm",
+    "done": "Done",
+    "search": "Search",
+    "seeAll": "See all",
+    "comingSoon": "Coming soon",
+    "amd": "AMD",
+    "points": "points"
+  },
+  "auth": {
+    "welcomeBack": "Welcome back",
+    "createAccount": "Create your account",
+    "login": "Log in",
+    "register": "Sign up",
+    "phoneNumber": "Phone number",
+    "password": "Password",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "forgotPassword": "Forgot password?",
+    "loginButton": "Log in",
+    "registerButton": "Create account",
+    "otpTitle": "Verify your phone",
+    "otpSubtitle": "Enter the 6-digit code we sent to {{phone}}",
+    "invalidCredentials": "Incorrect phone number or password",
+    "referralCodeOptional": "Referral code (optional)",
+    "logoutConfirm": "Are you sure you want to log out?"
+  },
+  "wallet": {
+    "title": "Wallet",
+    "available": "Available",
+    "pending": "Pending",
+    "reserved": "Reserved",
+    "lifetimeEarned": "Lifetime earned",
+    "lifetimeSpent": "Lifetime spent",
+    "history": "Transaction history",
+    "noTransactions": "No transactions yet"
+  },
+  "bonus": {
+    "earned": "Earned",
+    "spent": "Spent",
+    "expiresOn": "Expires {{date}}",
+    "statusAvailable": "Available",
+    "statusPending": "Pending",
+    "statusReserved": "Reserved",
+    "statusExpired": "Expired",
+    "statusSettled": "Settled",
+    "statusReversed": "Reversed"
+  },
+  "qr": {
+    "myQr": "My QR code",
+    "scanToPay": "Show this code to pay",
+    "scanQr": "Scan QR",
+    "amount": "Amount",
+    "applyBonus": "Apply bonus points",
+    "confirmPayment": "Confirm payment",
+    "paymentSuccess": "Payment successful",
+    "paymentFailed": "Payment failed",
+    "expiresIn": "Expires in {{seconds}}s"
+  },
+  "ev": {
+    "stations": "Charging stations",
+    "nearbyStations": "Nearby stations",
+    "startCharging": "Start charging",
+    "stopCharging": "Stop charging",
+    "chargingInProgress": "Charging in progress",
+    "energyDelivered": "Energy delivered",
+    "sessionCost": "Session cost",
+    "reserveSlot": "Reserve a slot",
+    "connectorAvailable": "Available",
+    "connectorCharging": "In use",
+    "connectorOffline": "Offline",
+    "history": "Charging history"
+  },
+  "referral": {
+    "inviteFriends": "Invite friends",
+    "yourCode": "Your referral code",
+    "totalInvites": "Total invites",
+    "rewardEarned": "Reward earned",
+    "shareCode": "Share code"
+  },
+  "partner": {
+    "dashboard": "Dashboard",
+    "transactions": "Transactions",
+    "revenue": "Revenue",
+    "customers": "Customers",
+    "bonusCampaigns": "Bonus campaigns",
+    "qrGenerate": "Generate payment QR"
+  },
+  "admin": {
+    "users": "Users",
+    "partners": "Partners",
+    "auditLog": "Audit log",
+    "bonusRules": "Bonus rules",
+    "systemSettings": "System settings"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "empty": "You're all caught up",
+    "welcomeTitle": "Welcome to TuTak!",
+    "welcomeBody": "Your account is ready. Start earning bonus points today.",
+    "transactionCompletedTitle": "Payment completed",
+    "transactionCompletedBody": "Your {{type}} transaction of {{amount}} was completed."
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "notifications": "Notifications",
+    "security": "Security",
+    "logout": "Log out",
+    "deleteAccount": "Delete account",
+    "changePassword": "Change password"
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "common": {
+    "appName": "TuTak",
+    "ok": "Լավ",
+    "cancel": "Չեղարկել",
+    "save": "Պահպանել",
+    "next": "Հաջորդը",
+    "back": "Հետ",
+    "loading": "Բեռնվում է…",
+    "error": "Ինչ-որ բան այն չէ",
+    "retry": "Կրկին փորձել",
+    "confirm": "Հաստատել",
+    "done": "Պատրաստ է",
+    "search": "Փնտրել",
+    "seeAll": "Տեսնել բոլորը",
+    "comingSoon": "Շուտով",
+    "amd": "դրամ",
+    "points": "միավոր"
+  },
+  "auth": {
+    "welcomeBack": "Բարի վերադարձ",
+    "createAccount": "Ստեղծել հաշիվ",
+    "login": "Մուտք",
+    "register": "Գրանցվել",
+    "phoneNumber": "Հեռախոսահամար",
+    "password": "Գաղտնաբառ",
+    "firstName": "Անուն",
+    "lastName": "Ազգանուն",
+    "forgotPassword": "Մոռացե՞լ եք գաղտնաբառը",
+    "loginButton": "Մուտք գործել",
+    "registerButton": "Ստեղծել հաշիվ",
+    "otpTitle": "Հաստատեք հեռախոսահամարը",
+    "otpSubtitle": "Մուտքագրեք {{phone}} ուղարկված 6 նիշանոց կոդը",
+    "invalidCredentials": "Սխալ հեռախոսահամար կամ գաղտնաբառ",
+    "referralCodeOptional": "Հրավերի կոդ (ոչ պարտադիր)",
+    "logoutConfirm": "Համոզվա՞ծ եք, որ ցանկանում եք դուրս գալ"
+  },
+  "wallet": {
+    "title": "Դրամապանակ",
+    "available": "Հասանելի",
+    "pending": "Սպասման մեջ",
+    "reserved": "Ամրագրված",
+    "lifetimeEarned": "Ընդհանուր վաստակած",
+    "lifetimeSpent": "Ընդհանուր ծախսած",
+    "history": "Գործարքների պատմություն",
+    "noTransactions": "Գործարքներ դեռ չկան"
+  },
+  "bonus": {
+    "earned": "Վաստակած",
+    "spent": "Ծախսված",
+    "expiresOn": "Ավարտվում է {{date}}",
+    "statusAvailable": "Հասանելի",
+    "statusPending": "Սպասման մեջ",
+    "statusReserved": "Ամրագրված",
+    "statusExpired": "Ժամկետանց",
+    "statusSettled": "Հաշվարկված",
+    "statusReversed": "Չեղարկված"
+  },
+  "qr": {
+    "myQr": "Իմ QR կոդը",
+    "scanToPay": "Ցույց տվեք այս կոդը վճարելու համար",
+    "scanQr": "Սկանավորել QR",
+    "amount": "Գումար",
+    "applyBonus": "Կիրառել բոնուս միավորները",
+    "confirmPayment": "Հաստատել վճարումը",
+    "paymentSuccess": "Վճարումը հաջողվեց",
+    "paymentFailed": "Վճարումը ձախողվեց",
+    "expiresIn": "Ավարտվում է {{seconds}} վրկ-ից"
+  },
+  "ev": {
+    "stations": "Լիցքակայաններ",
+    "nearbyStations": "Մոտակա կայաններ",
+    "startCharging": "Սկսել լիցքավորումը",
+    "stopCharging": "Կանգնեցնել լիցքավորումը",
+    "chargingInProgress": "Լիցքավորումն ընթացքի մեջ է",
+    "energyDelivered": "Փոխանցված էներգիա",
+    "sessionCost": "Սեսիայի արժեքը",
+    "reserveSlot": "Ամրագրել տեղ",
+    "connectorAvailable": "Ազատ է",
+    "connectorCharging": "Զբաղված է",
+    "connectorOffline": "Ցանցից դուրս",
+    "history": "Լիցքավորումների պատմություն"
+  },
+  "referral": {
+    "inviteFriends": "Հրավիրել ընկերների",
+    "yourCode": "Ձեր հրավերի կոդը",
+    "totalInvites": "Ընդհանուր հրավերներ",
+    "rewardEarned": "Վաստակած պարգև",
+    "shareCode": "Կիսվել կոդով"
+  },
+  "partner": {
+    "dashboard": "Վահանակ",
+    "transactions": "Գործարքներ",
+    "revenue": "Եկամուտ",
+    "customers": "Հաճախորդներ",
+    "bonusCampaigns": "Բոնուսային արշավներ",
+    "qrGenerate": "Ստեղծել վճարման QR"
+  },
+  "admin": {
+    "users": "Օգտատերեր",
+    "partners": "Գործընկերներ",
+    "auditLog": "Աուդիտի մատյան",
+    "bonusRules": "Բոնուսների կանոններ",
+    "systemSettings": "Համակարգի կարգավորումներ"
+  },
+  "notifications": {
+    "title": "Ծանուցումներ",
+    "markAllRead": "Նշել բոլորը որպես կարդացված",
+    "empty": "Նոր ծանուցումներ չկան",
+    "welcomeTitle": "Բարի գալուստ TuTak!",
+    "welcomeBody": "Ձեր հաշիվը պատրաստ է։ Սկսեք վաստակել բոնուս միավորներ արդեն այսօր։",
+    "transactionCompletedTitle": "Վճարումն ավարտված է",
+    "transactionCompletedBody": "{{type}} գործարքը {{amount}} գումարով ավարտվեց։"
+  },
+  "settings": {
+    "title": "Կարգավորումներ",
+    "language": "Լեզու",
+    "notifications": "Ծանուցումներ",
+    "security": "Անվտանգություն",
+    "logout": "Դուրս գալ",
+    "deleteAccount": "Ջնջել հաշիվը",
+    "changePassword": "Փոխել գաղտնաբառը"
+  }
+}

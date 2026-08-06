@@ -1,0 +1,124 @@
+{
+  "common": {
+    "appName": "TuTak",
+    "ok": "ОК",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "next": "Далее",
+    "back": "Назад",
+    "loading": "Загрузка…",
+    "error": "Что-то пошло не так",
+    "retry": "Повторить",
+    "confirm": "Подтвердить",
+    "done": "Готово",
+    "search": "Поиск",
+    "seeAll": "Смотреть все",
+    "comingSoon": "Скоро",
+    "amd": "AMD",
+    "points": "баллов"
+  },
+  "auth": {
+    "welcomeBack": "С возвращением",
+    "createAccount": "Создать аккаунт",
+    "login": "Войти",
+    "register": "Регистрация",
+    "phoneNumber": "Номер телефона",
+    "password": "Пароль",
+    "firstName": "Имя",
+    "lastName": "Фамилия",
+    "forgotPassword": "Забыли пароль?",
+    "loginButton": "Войти",
+    "registerButton": "Создать аккаунт",
+    "otpTitle": "Подтвердите номер",
+    "otpSubtitle": "Введите 6-значный код, отправленный на {{phone}}",
+    "invalidCredentials": "Неверный номер телефона или пароль",
+    "referralCodeOptional": "Реферальный код (необязательно)",
+    "logoutConfirm": "Вы уверены, что хотите выйти?"
+  },
+  "wallet": {
+    "title": "Кошелёк",
+    "available": "Доступно",
+    "pending": "В ожидании",
+    "reserved": "Зарезервировано",
+    "lifetimeEarned": "Всего начислено",
+    "lifetimeSpent": "Всего потрачено",
+    "history": "История операций",
+    "noTransactions": "Пока нет операций"
+  },
+  "bonus": {
+    "earned": "Начислено",
+    "spent": "Потрачено",
+    "expiresOn": "Истекает {{date}}",
+    "statusAvailable": "Доступно",
+    "statusPending": "В ожидании",
+    "statusReserved": "Зарезервировано",
+    "statusExpired": "Истёк",
+    "statusSettled": "Списано",
+    "statusReversed": "Отменено"
+  },
+  "qr": {
+    "myQr": "Мой QR-код",
+    "scanToPay": "Покажите этот код для оплаты",
+    "scanQr": "Сканировать QR",
+    "amount": "Сумма",
+    "applyBonus": "Списать бонусные баллы",
+    "confirmPayment": "Подтвердить оплату",
+    "paymentSuccess": "Оплата прошла успешно",
+    "paymentFailed": "Оплата не удалась",
+    "expiresIn": "Истекает через {{seconds}} с"
+  },
+  "ev": {
+    "stations": "Зарядные станции",
+    "nearbyStations": "Станции поблизости",
+    "startCharging": "Начать зарядку",
+    "stopCharging": "Остановить зарядку",
+    "chargingInProgress": "Идёт зарядка",
+    "energyDelivered": "Отдано энергии",
+    "sessionCost": "Стоимость сессии",
+    "reserveSlot": "Забронировать слот",
+    "connectorAvailable": "Свободен",
+    "connectorCharging": "Занят",
+    "connectorOffline": "Не в сети",
+    "history": "История зарядок"
+  },
+  "referral": {
+    "inviteFriends": "Пригласить друзей",
+    "yourCode": "Ваш реферальный код",
+    "totalInvites": "Всего приглашено",
+    "rewardEarned": "Заработано вознаграждений",
+    "shareCode": "Поделиться кодом"
+  },
+  "partner": {
+    "dashboard": "Панель управления",
+    "transactions": "Транзакции",
+    "revenue": "Выручка",
+    "customers": "Клиенты",
+    "bonusCampaigns": "Бонусные кампании",
+    "qrGenerate": "Создать QR для оплаты"
+  },
+  "admin": {
+    "users": "Пользователи",
+    "partners": "Партнёры",
+    "auditLog": "Журнал аудита",
+    "bonusRules": "Правила бонусов",
+    "systemSettings": "Системные настройки"
+  },
+  "notifications": {
+    "title": "Уведомления",
+    "markAllRead": "Отметить всё как прочитанное",
+    "empty": "Новых уведомлений нет",
+    "welcomeTitle": "Добро пожаловать в TuTak!",
+    "welcomeBody": "Ваш аккаунт готов. Начните зарабатывать бонусные баллы уже сегодня.",
+    "transactionCompletedTitle": "Платёж выполнен",
+    "transactionCompletedBody": "Операция {{type}} на сумму {{amount}} выполнена."
+  },
+  "settings": {
+    "title": "Настройки",
+    "language": "Язык",
+    "notifications": "Уведомления",
+    "security": "Безопасность",
+    "logout": "Выйти",
+    "deleteAccount": "Удалить аккаунт",
+    "changePassword": "Изменить пароль"
+  }
+}

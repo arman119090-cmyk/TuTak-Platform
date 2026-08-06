@@ -1,0 +1,735 @@
+// TuTak Platform — Production Data Model
+// Design principles:
+//  - No duplicated business data: materialized balances on Wallet are a
+//    read-optimized cache over the append-only BonusLedgerEntry log, always
+//    rewritten inside the same DB transaction as the ledger write.
+//  - Money uses Decimal, never Float.
+//  - Every state-changing action produces an AuditLog row.
+//  - Soft delete (deletedAt) on identity-bearing tables so history stays intact.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Identity, RBAC, Sessions
+// ─────────────────────────────────────────────────────────────────────────
+
+enum RoleName {
+  CUSTOMER
+  PARTNER_STAFF
+  PARTNER_OWNER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum PermissionName {
+  WALLET_READ
+  WALLET_WRITE
+  BONUS_RULE_MANAGE
+  PARTNER_MANAGE
+  PARTNER_TRANSACTIONS_READ
+  USER_MANAGE
+  ADMIN_AUDIT_READ
+  EV_STATION_MANAGE
+  QR_ISSUE
+  QR_REDEEM
+  ANALYTICS_READ
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        RoleName         @unique
+  description String?
+  permissions RolePermission[]
+  userRoles   UserRole[]
+  createdAt   DateTime         @default(now())
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        PermissionName   @unique
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// A user's role, optionally scoped to a partner (e.g. PARTNER_STAFF at partner X).
+/// Global roles (CUSTOMER, ADMIN, SUPER_ADMIN) leave partnerId null.
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  partnerId String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  partner   Partner? @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, roleId, partnerId])
+  @@index([userId])
+  @@map("user_roles")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  phone            String    @unique
+  email            String?   @unique
+  passwordHash     String
+  firstName        String
+  lastName         String
+  locale           String    @default("hy")
+  isPhoneVerified  Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  roles             UserRole[]
+  wallet            Wallet?
+  devices           Device[]
+  refreshTokens     RefreshToken[]
+  transactions      Transaction[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  issuedQrCodes     QrCode[]              @relation("QrIssuedBy")
+  partnerMembership PartnerMembership[]
+  referralCode      ReferralCode?
+  referralsMade     ReferralInvite[]      @relation("Referrer")
+  referredBy        ReferralInvite?       @relation("Referee")
+  evSessions        EvSession[]
+  evReservations    EvReservation[]
+  fraudSignals      FraudSignal[]
+
+  @@index([createdAt])
+  @@map("users")
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+model Device {
+  id         String         @id @default(uuid())
+  userId     String
+  deviceId   String
+  platform   DevicePlatform
+  deviceName String?
+  pushToken  String?
+  lastSeenAt DateTime       @default(now())
+  createdAt  DateTime       @default(now())
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@map("devices")
+}
+
+model RefreshToken {
+  id                String    @id @default(uuid())
+  userId            String
+  tokenHash         String    @unique
+  deviceId          String
+  ipAddress         String?
+  userAgent         String?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wallet & Bonus Engine (event-sourced ledger with FIFO-expiring lots)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Wallet {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  // Materialized, read-optimized cache — always recomputed transactionally
+  // alongside the ledger/lot writes that back it. Source of truth is
+  // BonusLot + BonusReservation + BonusLedgerEntry below.
+  availableBonus     Decimal  @default(0) @db.Decimal(18, 4)
+  pendingBonus       Decimal  @default(0) @db.Decimal(18, 4)
+  reservedBonus      Decimal  @default(0) @db.Decimal(18, 4)
+  lifetimeEarned     Decimal  @default(0) @db.Decimal(18, 4)
+  lifetimeSpent      Decimal  @default(0) @db.Decimal(18, 4)
+  version            Int      @default(0) // optimistic locking
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lots         BonusLot[]
+  reservations BonusReservation[]
+  ledgerEntries BonusLedgerEntry[]
+
+  @@map("wallets")
+}
+
+enum BonusLotStatus {
+  PENDING
+  AVAILABLE
+  EXPIRED
+  CONSUMED
+}
+
+enum BonusEntryType {
+  ACCRUAL_PURCHASE
+  ACCRUAL_REFERRAL
+  ACCRUAL_PROMOTION
+  ACCRUAL_MANUAL_ADJUSTMENT
+  REDEMPTION_QR_PAYMENT
+  REDEMPTION_EV_CHARGING
+  EXPIRY
+  REVERSAL
+}
+
+/// A discrete batch of bonus points accrued together, expiring together.
+/// FIFO consumption against lots is what lets us expire the *oldest*
+/// points first and gives an accurate "expiring soon" view.
+model BonusLot {
+  id                String         @id @default(uuid())
+  walletId          String
+  type              BonusEntryType
+  status            BonusLotStatus @default(PENDING)
+  originalAmount    Decimal        @db.Decimal(18, 4)
+  remainingAmount   Decimal        @db.Decimal(18, 4)
+  sourceTransactionId String?
+  availableAt       DateTime // when PENDING -> AVAILABLE (cooling-off window)
+  expiresAt         DateTime
+  createdAt         DateTime       @default(now())
+
+  wallet       Wallet                      @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  allocations  BonusReservationAllocation[]
+
+  @@index([walletId, status])
+  @@index([expiresAt])
+  @@map("bonus_lots")
+}
+
+enum BonusReservationStatus {
+  ACTIVE
+  SETTLED
+  RELEASED
+  EXPIRED
+}
+
+/// A hold against AVAILABLE lots, placed while a QR payment / EV session is
+/// in flight, so the same points can never be double-spent concurrently.
+model BonusReservation {
+  id                  String                  @id @default(uuid())
+  walletId            String
+  amount              Decimal                 @db.Decimal(18, 4)
+  status              BonusReservationStatus  @default(ACTIVE)
+  reasonTransactionId String?
+  expiresAt           DateTime
+  settledAt           DateTime?
+  releasedAt          DateTime?
+  createdAt           DateTime                @default(now())
+
+  wallet      Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  allocations BonusReservationAllocation[]
+
+  @@index([walletId, status])
+  @@map("bonus_reservations")
+}
+
+/// Join table recording exactly which lots (and how much of each) back a
+/// given reservation, so releasing/settling can credit/debit the right lots.
+model BonusReservationAllocation {
+  id             String           @id @default(uuid())
+  reservationId  String
+  lotId          String
+  amount         Decimal          @db.Decimal(18, 4)
+
+  reservation BonusReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  lot         BonusLot         @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  @@unique([reservationId, lotId])
+  @@map("bonus_reservation_allocations")
+}
+
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+}
+
+/// Append-only, immutable audit-grade log of every balance-affecting event.
+/// Never updated or deleted — this is the ledger of record.
+model BonusLedgerEntry {
+  id                  String          @id @default(uuid())
+  walletId            String
+  type                BonusEntryType
+  direction           LedgerDirection
+  amount              Decimal         @db.Decimal(18, 4)
+  balanceAfter        Decimal         @db.Decimal(18, 4)
+  relatedLotId        String?
+  relatedReservationId String?
+  sourceTransactionId String?
+  metadata            Json?
+  createdAt           DateTime        @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+  @@map("bonus_ledger_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Transactions (single source of truth for "what happened commercially")
+// ─────────────────────────────────────────────────────────────────────────
+
+enum TransactionType {
+  QR_PAYMENT
+  EV_CHARGING
+  BONUS_ACCRUAL
+  BONUS_REDEMPTION
+  REFERRAL_REWARD
+  REFUND
+  MANUAL_ADJUSTMENT
+}
+
+enum TransactionStatus {
+  INITIATED
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+  FLAGGED
+}
+
+enum Currency {
+  AMD
+  BONUS_POINT
+}
+
+model Transaction {
+  id                  String             @id @default(uuid())
+  userId              String
+  partnerId           String?
+  type                TransactionType
+  status              TransactionStatus  @default(INITIATED)
+  amount               Decimal           @db.Decimal(18, 4)
+  currency            Currency           @default(AMD)
+  bonusAppliedAmount   Decimal           @default(0) @db.Decimal(18, 4)
+  bonusEarnedAmount    Decimal           @default(0) @db.Decimal(18, 4)
+  description          String?
+  idempotencyKey       String?           @unique
+  metadata             Json?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id])
+  partner Partner? @relation(fields: [partnerId], references: [id])
+  qrCode  QrCode?
+  evSession EvSession?
+
+  @@index([userId, createdAt])
+  @@index([partnerId, createdAt])
+  @@index([type, status])
+  @@map("transactions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// QR Payments
+// ─────────────────────────────────────────────────────────────────────────
+
+enum QrCodeType {
+  STATIC_MERCHANT
+  DYNAMIC_INVOICE
+  USER_PAY_TOKEN
+}
+
+enum QrCodeStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  VOID
+}
+
+model QrCode {
+  id                 String       @id @default(uuid())
+  type               QrCodeType
+  status             QrCodeStatus @default(ACTIVE)
+  token               String      @unique
+  issuedByUserId      String?
+  partnerId           String?
+  amount              Decimal?    @db.Decimal(18, 4)
+  expiresAt           DateTime
+  redeemedTransactionId String?   @unique
+  createdAt           DateTime   @default(now())
+
+  issuedBy            User?        @relation("QrIssuedBy", fields: [issuedByUserId], references: [id])
+  partner              Partner?    @relation(fields: [partnerId], references: [id])
+  redeemedTransaction  Transaction? @relation(fields: [redeemedTransactionId], references: [id])
+
+  @@index([status, expiresAt])
+  @@map("qr_codes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Partners
+// ─────────────────────────────────────────────────────────────────────────
+
+model Partner {
+  id                    String   @id @default(uuid())
+  legalName             String
+  displayName           String
+  taxId                 String   @unique
+  category              String
+  bonusAccrualRateBps   Int      @default(300) // basis points, e.g. 300 = 3%
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  memberships PartnerMembership[]
+  branches    PartnerBranch[]
+  transactions Transaction[]
+  qrCodes     QrCode[]
+  evStations  EvStation[]
+  userRoles   UserRole[]
+
+  @@map("partners")
+}
+
+model PartnerMembership {
+  id        String   @id @default(uuid())
+  partnerId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, userId])
+  @@map("partner_memberships")
+}
+
+model PartnerBranch {
+  id        String   @id @default(uuid())
+  partnerId String
+  name      String
+  address   String
+  city      String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@map("partner_branches")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Referral Engine
+// ─────────────────────────────────────────────────────────────────────────
+
+model ReferralCode {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referral_codes")
+}
+
+enum ReferralInviteStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+  EXPIRED
+  FRAUD_BLOCKED
+}
+
+model ReferralInvite {
+  id                String                @id @default(uuid())
+  referrerUserId    String
+  refereeUserId     String                @unique
+  status            ReferralInviteStatus  @default(PENDING)
+  qualifyingAction  String?
+  rewardAmount      Decimal?              @db.Decimal(18, 4)
+  createdAt         DateTime              @default(now())
+  qualifiedAt       DateTime?
+  rewardedAt        DateTime?
+
+  referrer User @relation("Referrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referee  User @relation("Referee", fields: [refereeUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerUserId])
+  @@map("referral_invites")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EV Charging (OCPI-oriented — modeled to map cleanly onto OCPI 2.2.1
+// Location/EVSE/Session/CDR modules so a FastCharge (or any CPO) adapter
+// can be plugged in without a schema change)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum EvConnectorType {
+  TYPE_2
+  CCS2
+  CHADEMO
+  GBT_DC
+}
+
+enum EvConnectorStatus {
+  AVAILABLE
+  BLOCKED
+  CHARGING
+  INOPERATIVE
+  OUTOFORDER
+  PLANNED
+  REMOVED
+  RESERVED
+  UNKNOWN
+}
+
+model EvStation {
+  id             String   @id @default(uuid())
+  partnerId      String
+  name           String
+  address        String
+  city           String
+  latitude       Float
+  longitude      Float
+  ocpiLocationId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  partner    Partner       @relation(fields: [partnerId], references: [id])
+  connectors EvConnector[]
+
+  @@map("ev_stations")
+}
+
+model EvConnector {
+  id           String             @id @default(uuid())
+  stationId    String
+  ocpiEvseUid  String?            @unique
+  connectorType EvConnectorType
+  status       EvConnectorStatus  @default(AVAILABLE)
+  powerKw      Decimal            @db.Decimal(8, 2)
+  pricePerKwh  Decimal            @db.Decimal(10, 2)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  station      EvStation       @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  sessions     EvSession[]
+  reservations EvReservation[]
+
+  @@index([status])
+  @@map("ev_connectors")
+}
+
+enum EvSessionStatus {
+  RESERVED
+  AUTHORIZED
+  CHARGING
+  SUSPENDED
+  COMPLETED
+  INVALID
+  CANCELLED
+}
+
+model EvSession {
+  id                 String          @id @default(uuid())
+  connectorId        String
+  userId             String
+  reservationId      String?         @unique
+  status             EvSessionStatus @default(AUTHORIZED)
+  startedAt          DateTime?
+  stoppedAt          DateTime?
+  energyKwh          Decimal?        @db.Decimal(10, 3)
+  cost               Decimal?        @db.Decimal(18, 4)
+  bonusEarnedAmount  Decimal?        @db.Decimal(18, 4)
+  transactionId      String?         @unique
+  ocpiCdrId          String?         @unique
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  connector    EvConnector    @relation(fields: [connectorId], references: [id])
+  user         User           @relation(fields: [userId], references: [id])
+  reservation  EvReservation? @relation(fields: [reservationId], references: [id])
+  transaction  Transaction?   @relation(fields: [transactionId], references: [id])
+  cdr          EvCdr?
+
+  @@index([userId, createdAt])
+  @@index([connectorId, status])
+  @@map("ev_sessions")
+}
+
+enum EvReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  FULFILLED
+}
+
+model EvReservation {
+  id          String               @id @default(uuid())
+  connectorId String
+  userId      String
+  status      EvReservationStatus  @default(PENDING)
+  startAt     DateTime
+  expiresAt   DateTime
+  createdAt   DateTime             @default(now())
+
+  connector EvConnector @relation(fields: [connectorId], references: [id])
+  user      User        @relation(fields: [userId], references: [id])
+  session   EvSession?
+
+  @@index([connectorId, status])
+  @@map("ev_reservations")
+}
+
+/// Charge Detail Record — placeholder for OCPI CDR ingestion once a real
+/// CPO/eMSP roaming partner (e.g. FastCharge) is connected. `raw` retains
+/// the untouched upstream payload for reconciliation/dispute handling.
+model EvCdr {
+  id           String   @id @default(uuid())
+  sessionId    String   @unique
+  ocpiCdrId    String?  @unique
+  totalEnergy  Decimal  @db.Decimal(10, 3)
+  totalCost    Decimal  @db.Decimal(18, 4)
+  totalTimeSec Int
+  raw          Json?
+  createdAt    DateTime @default(now())
+
+  session EvSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("ev_cdrs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────────────────────────────────
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  EMAIL
+  IN_APP
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  channel   NotificationChannel
+  titleKey  String
+  bodyKey   String
+  params    Json?
+  isRead    Boolean             @default(false)
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Security: Audit Trail & Fraud Detection
+// ─────────────────────────────────────────────────────────────────────────
+
+enum AuditAction {
+  USER_LOGIN
+  USER_LOGIN_FAILED
+  USER_LOGOUT
+  TOKEN_REFRESHED
+  TOKEN_REVOKED
+  BONUS_ACCRUED
+  BONUS_RESERVED
+  BONUS_SETTLED
+  BONUS_EXPIRED
+  BONUS_REVERSED
+  BONUS_MANUAL_ADJUSTMENT
+  QR_ISSUED
+  QR_REDEEMED
+  EV_SESSION_STARTED
+  EV_SESSION_STOPPED
+  PARTNER_CREATED
+  PARTNER_UPDATED
+  ADMIN_ROLE_CHANGED
+  FRAUD_FLAGGED
+  ACCOUNT_LOCKED
+}
+
+/// Immutable, append-only system-wide audit trail. Never updated/deleted.
+model AuditLog {
+  id           String      @id @default(uuid())
+  actorUserId  String?
+  action       AuditAction
+  entityType   String
+  entityId     String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime    @default(now())
+
+  actor User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+enum FraudSignalType {
+  VELOCITY_LIMIT_EXCEEDED
+  IMPOSSIBLE_TRAVEL
+  DEVICE_MISMATCH
+  QR_REPLAY_ATTEMPT
+  BONUS_ABUSE_PATTERN
+  REFERRAL_RING_DETECTED
+}
+
+enum FraudSignalSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model FraudSignal {
+  id                  String               @id @default(uuid())
+  userId              String?
+  type                FraudSignalType
+  severity            FraudSignalSeverity
+  relatedTransactionId String?
+  metadata            Json?
+  createdAt           DateTime             @default(now())
+  resolvedAt          DateTime?
+  resolvedByUserId    String?
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("fraud_signals")
+}

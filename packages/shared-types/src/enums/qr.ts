@@ -1,0 +1,12 @@
+export enum QrCodeType {
+  STATIC_MERCHANT = 'STATIC_MERCHANT',
+  DYNAMIC_INVOICE = 'DYNAMIC_INVOICE',
+  USER_PAY_TOKEN = 'USER_PAY_TOKEN',
+}
+
+export enum QrCodeStatus {
+  ACTIVE = 'ACTIVE',
+  REDEEMED = 'REDEEMED',
+  EXPIRED = 'EXPIRED',
+  VOID = 'VOID',
+}

@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   BonusEntryType,
   EvConnectorStatus,
@@ -14,6 +21,49 @@ import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
+
+/**
+ * How far above the connector's nameplate rating a reading may sit before it
+ * is rejected. Real meters drift, clocks skew, and a session's `startedAt` is
+ * recorded a moment after energy begins to flow, so a hard equality would
+ * reject honest readings. 15% plus a 1 kWh floor absorbs that without leaving
+ * room for a meaningful overstatement.
+ */
+const METER_TOLERANCE = new Decimal('1.15');
+const METER_FLOOR_KWH = new Decimal('1');
+
+/** `EvSession.energyKwh` is Decimal(10,3) — anything finer would be rounded away. */
+const ENERGY_SCALE = 3;
+
+function parseEnergyKwh(value: string): Decimal {
+  const reading = parseMoney(value, 'energyKwh');
+  if (reading.decimalPlaces() > ENERGY_SCALE) {
+    throw new BadRequestException(`energyKwh supports at most ${ENERGY_SCALE} decimal places`);
+  }
+  return reading;
+}
+
+/**
+ * Rejects an energy reading larger than the connector could have produced.
+ *
+ * This is the ceiling on how much bonus a single session can mint: a 50 kW
+ * connector running for an hour tops out around 57 kWh, so the accrual is
+ * bounded by physics rather than by whatever the client claims.
+ */
+function assertDeliverable(reading: Decimal, powerKw: Decimal, startedAt: Date | null) {
+  const elapsedHours = startedAt
+    ? new Decimal(Math.max(0, Date.now() - startedAt.getTime())).dividedBy(3_600_000)
+    : new Decimal(0);
+
+  const ceiling = Decimal.max(powerKw.times(elapsedHours).times(METER_TOLERANCE), METER_FLOOR_KWH);
+
+  if (reading.greaterThan(ceiling)) {
+    throw new BadRequestException(
+      `Meter reading of ${reading.toString()} kWh exceeds what the connector could have delivered ` +
+        `(${powerKw.toString()} kW for ${elapsedHours.toFixed(3)} h)`,
+    );
+  }
+}
 
 @Injectable()
 export class EvSessionsService {
@@ -82,20 +132,56 @@ export class EvSessionsService {
     });
   }
 
-  /** OCPP-style meter value ingestion — a real charger telemetry stream would call this. */
-  async reportMeterValue(sessionId: string, energyKwh: string) {
-    const reading = parseMoney(energyKwh, 'energyKwh');
-    const session = await this.prisma.evSession.findUnique({ where: { id: sessionId } });
-    if (!session) throw new NotFoundException('Session not found');
+  /**
+   * OCPP-style meter value ingestion.
+   *
+   * The energy reported here is the entire basis of the bill and of the bonus
+   * accrued on it, so it is the most security-sensitive input in the module.
+   * Until a charge point authenticates in its own right, two guards stand in:
+   * the caller must own the session (or operate the station), and the reading
+   * must be physically possible for the connector over the elapsed time.
+   *
+   * Without them any customer could declare 9,999,999 kWh and collect the
+   * partner's accrual rate on a billion AMD — see docs/AUDIT_2026-08-B.md §C1.
+   *
+   * @param callerUserId  the customer whose session this must be, or null when
+   *                      an operator is reporting on a charge point's behalf.
+   * @param operator      partner scope of an EV_STATION_MANAGE holder.
+   */
+  async reportMeterValue(
+    sessionId: string,
+    energyKwh: string,
+    callerUserId: string | null,
+    operator?: { partnerId: string },
+  ) {
+    const reading = parseEnergyKwh(energyKwh);
+
+    const session = await this.prisma.evSession.findUnique({
+      where: { id: sessionId },
+      include: { connector: { include: { station: true } } },
+    });
+
+    // A caller who does not own the session learns nothing about whether it
+    // exists — the id alone must not be authority over someone else's bill.
+    if (!session || (callerUserId !== null && session.userId !== callerUserId)) {
+      throw new NotFoundException('Session not found');
+    }
+    if (operator && session.connector.station.partnerId !== operator.partnerId) {
+      throw new ForbiddenException('This session belongs to another partner');
+    }
     if (session.status !== EvSessionStatus.CHARGING) {
       throw new BadRequestException('Session is not currently charging');
     }
+
     // A meter is monotonic: energy delivered can only increase within a
     // session. Accepting a lower reading would let a caller reduce the bill
     // after the fact.
     if (session.energyKwh && reading.lessThan(session.energyKwh)) {
       throw new BadRequestException('Meter reading cannot decrease');
     }
+
+    assertDeliverable(reading, session.connector.powerKw, session.startedAt);
+
     return this.prisma.evSession.update({
       where: { id: sessionId },
       data: { energyKwh: reading },
@@ -115,6 +201,21 @@ export class EvSessionsService {
     }
 
     const energyKwh = session.energyKwh ?? new Decimal(0);
+
+    // Re-checked here on purpose. reportMeterValue is not the only way a row
+    // can acquire an energy reading — a future OCPI adapter, an operator
+    // script or a bug could write one directly — and this is the moment the
+    // number becomes money. Settlement is the right place for the last word.
+    try {
+      assertDeliverable(energyKwh, session.connector.powerKw, session.startedAt);
+    } catch (err) {
+      // The reading is rejected, but the bay must not be left occupied.
+      await this.releaseConnector(session.connectorId, session.id).catch((e) =>
+        this.logger.error(`Failed to free connector ${session.connectorId}`, e),
+      );
+      throw err;
+    }
+
     const cost = energyKwh.times(session.connector.pricePerKwh);
     // Same negative-amount hole as the QR path: a negative bonus turned
     // `cost.minus(bonus)` into an addition and inflated the accrual base.
@@ -229,23 +330,12 @@ export class EvSessionsService {
 
       // Without this the connector stayed CHARGING forever: the station was
       // permanently unusable and the partner silently lost the revenue.
-      await this.prisma
-        .$transaction(async (tx) => {
-          await tx.evConnector.update({
-            where: { id: session.connectorId },
-            data: { status: EvConnectorStatus.AVAILABLE },
-          });
-          await tx.evSession.update({
-            where: { id: session.id },
-            data: { status: EvSessionStatus.INVALID, stoppedAt: new Date() },
-          });
-        })
-        .catch((e) =>
-          this.logger.error(
-            `Failed to free connector ${session.connectorId} after EV stop failure`,
-            e,
-          ),
-        );
+      await this.releaseConnector(session.connectorId, session.id).catch((e) =>
+        this.logger.error(
+          `Failed to free connector ${session.connectorId} after EV stop failure`,
+          e,
+        ),
+      );
 
       await this.transactionsService.markFailed(
         transaction.id,
@@ -253,6 +343,27 @@ export class EvSessionsService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Returns the bay to service and marks the session unusable.
+   *
+   * Every failure path in `stop()` ends here. A connector left CHARGING is
+   * physically unusable until someone edits the database, so this must run
+   * whether the failure was a rejected reading, a ledger error or a crash
+   * mid-settlement.
+   */
+  private releaseConnector(connectorId: string, sessionId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.evConnector.update({
+        where: { id: connectorId },
+        data: { status: EvConnectorStatus.AVAILABLE },
+      });
+      await tx.evSession.update({
+        where: { id: sessionId },
+        data: { status: EvSessionStatus.INVALID, stoppedAt: new Date() },
+      });
+    });
   }
 
   historyForUser(userId: string) {

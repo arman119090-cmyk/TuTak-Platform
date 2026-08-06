@@ -5,6 +5,7 @@ import { IsNumber } from 'class-validator';
 import { PermissionName } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { assertPartnerScope, resolveOperatorPartner } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreateConnectorDto } from './dto/create-connector.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -53,15 +54,24 @@ export class EvChargingController {
     return this.stationsService.findStationOrThrow(id);
   }
 
+  /**
+   * Holding EV_STATION_MANAGE is not enough: the permission says *what* the
+   * caller may do, `partnerScopes` says *whose* assets they may do it to.
+   * Without the second check a partner could create stations, and set the
+   * per-kWh price driving accrual, under a competitor's account (audit §H5).
+   */
   @Post('stations')
   @RequirePermissions(PermissionName.EV_STATION_MANAGE)
-  createStation(@Body() dto: CreateStationDto) {
+  createStation(@CurrentUser() user: RequestUser, @Body() dto: CreateStationDto) {
+    assertPartnerScope(user, dto.partnerId);
     return this.stationsService.createStation(dto);
   }
 
   @Post('connectors')
   @RequirePermissions(PermissionName.EV_STATION_MANAGE)
-  createConnector(@Body() dto: CreateConnectorDto) {
+  async createConnector(@CurrentUser() user: RequestUser, @Body() dto: CreateConnectorDto) {
+    const station = await this.stationsService.findStationOrThrow(dto.stationId);
+    assertPartnerScope(user, station.partnerId);
     return this.stationsService.createConnector(dto);
   }
 
@@ -85,9 +95,24 @@ export class EvChargingController {
     return this.sessionsService.start(dto, user.id);
   }
 
+  /**
+   * Telemetry ingestion. Bounded by session ownership, or by the station's
+   * partner when an operator reports on a charge point's behalf — the energy
+   * reported here is the entire basis of the bill (audit §C1).
+   */
   @Post('sessions/:id/meter-value')
-  reportMeterValue(@Param('id') id: string, @Body() dto: MeterValueDto) {
-    return this.sessionsService.reportMeterValue(id, dto.energyKwh);
+  reportMeterValue(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: MeterValueDto,
+  ) {
+    const operatorPartnerId = resolveOperatorPartner(user);
+    return this.sessionsService.reportMeterValue(
+      id,
+      dto.energyKwh,
+      operatorPartnerId ? null : user.id,
+      operatorPartnerId ? { partnerId: operatorPartnerId } : undefined,
+    );
   }
 
   @Post('sessions/:id/stop')

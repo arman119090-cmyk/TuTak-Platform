@@ -38,6 +38,13 @@ describe('EV charging (integration)', () => {
     await truncateAll(prisma);
   });
 
+  /** Backdates a session so the reported energy is physically deliverable. */
+  const backdate = (sessionId: string, hours = 2) =>
+    prisma.evSession.update({
+      where: { id: sessionId },
+      data: { startedAt: new Date(Date.now() - hours * 3_600_000) },
+    });
+
   /** A customer, a 100 AMD/kWh connector, and an optional starting balance. */
   const scenario = async (options: { availableBonus?: string; rateBps?: number } = {}) => {
     const { user, wallet } = await createCustomer(prisma);
@@ -64,7 +71,8 @@ describe('EV charging (integration)', () => {
     const { user, wallet, connector } = await scenario({ rateBps: 500 });
 
     const session = await sessions.start({ connectorId: connector.id }, user.id);
-    await sessions.reportMeterValue(session.id, '25');
+    await backdate(session.id);
+    await sessions.reportMeterValue(session.id, '25', user.id);
     const result = await sessions.stop(session.id, user.id, {});
 
     // 25 kWh × 100 AMD = 2500; 5% of 2500 = 125.
@@ -80,11 +88,12 @@ describe('EV charging (integration)', () => {
     const { user, connector } = await scenario();
 
     const session = await sessions.start({ connectorId: connector.id }, user.id);
+    await backdate(session.id);
     expect(
       (await prisma.evConnector.findUniqueOrThrow({ where: { id: connector.id } })).status,
     ).toBe(EvConnectorStatus.CHARGING);
 
-    await sessions.reportMeterValue(session.id, '10');
+    await sessions.reportMeterValue(session.id, '10', user.id);
     await sessions.stop(session.id, user.id, {});
 
     const finished = await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } });
@@ -105,7 +114,8 @@ describe('EV charging (integration)', () => {
     });
 
     const session = await sessions.start({ connectorId: connector.id }, user.id);
-    await sessions.reportMeterValue(session.id, '25');
+    await backdate(session.id);
+    await sessions.reportMeterValue(session.id, '25', user.id);
     const result = await sessions.stop(session.id, user.id, { bonusAmountToApply: '1000' });
 
     // 2500 cost − 1000 in points = 1500 cash → 10% = 150.
@@ -130,11 +140,12 @@ describe('EV charging (integration)', () => {
     it('refuses a reading lower than the last one', async () => {
       const { user, connector } = await scenario();
       const session = await sessions.start({ connectorId: connector.id }, user.id);
-      await sessions.reportMeterValue(session.id, '50');
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '50', user.id);
 
       // A meter only counts up. Accepting a lower value would let a caller
       // rewrite the bill downwards after the energy was delivered.
-      await expect(sessions.reportMeterValue(session.id, '10')).rejects.toThrow(
+      await expect(sessions.reportMeterValue(session.id, '10', user.id)).rejects.toThrow(
         /cannot decrease/,
       );
 
@@ -148,8 +159,9 @@ describe('EV charging (integration)', () => {
     it.each(['-10', 'NaN', 'Infinity'])('refuses the malformed reading %p', async (value) => {
       const { user, connector } = await scenario();
       const session = await sessions.start({ connectorId: connector.id }, user.id);
+      await backdate(session.id);
 
-      await expect(sessions.reportMeterValue(session.id, value)).rejects.toThrow(
+      await expect(sessions.reportMeterValue(session.id, value, user.id)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -157,10 +169,11 @@ describe('EV charging (integration)', () => {
     it('refuses a reading for a session that is not charging', async () => {
       const { user, connector } = await scenario();
       const session = await sessions.start({ connectorId: connector.id }, user.id);
-      await sessions.reportMeterValue(session.id, '5');
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '5', user.id);
       await sessions.stop(session.id, user.id, {});
 
-      await expect(sessions.reportMeterValue(session.id, '9999')).rejects.toThrow(
+      await expect(sessions.reportMeterValue(session.id, '9999', user.id)).rejects.toThrow(
         /not currently charging/,
       );
     });
@@ -182,6 +195,7 @@ describe('EV charging (integration)', () => {
     it('refuses to stop someone else’s session', async () => {
       const { user, connector } = await scenario();
       const session = await sessions.start({ connectorId: connector.id }, user.id);
+      await backdate(session.id);
       const { user: attacker } = await createCustomer(prisma);
 
       // Direct object reference: the session id alone must not be authority.
@@ -194,7 +208,8 @@ describe('EV charging (integration)', () => {
     it('refuses to stop the same session twice', async () => {
       const { user, connector } = await scenario();
       const session = await sessions.start({ connectorId: connector.id }, user.id);
-      await sessions.reportMeterValue(session.id, '5');
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '5', user.id);
       await sessions.stop(session.id, user.id, {});
 
       await expect(sessions.stop(session.id, user.id, {})).rejects.toThrow(/cannot be stopped/);
@@ -204,7 +219,8 @@ describe('EV charging (integration)', () => {
     it('rejects a negative bonus rather than inflating the accrual base', async () => {
       const { user, wallet, connector } = await scenario({ rateBps: 1000 });
       const session = await sessions.start({ connectorId: connector.id }, user.id);
-      await sessions.reportMeterValue(session.id, '25');
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '25', user.id);
 
       await expect(
         sessions.stop(session.id, user.id, { bonusAmountToApply: '-1000000' }),
@@ -218,7 +234,8 @@ describe('EV charging (integration)', () => {
     it('rejects a bonus larger than the session cost', async () => {
       const { user, wallet, connector } = await scenario({ availableBonus: '100000' });
       const session = await sessions.start({ connectorId: connector.id }, user.id);
-      await sessions.reportMeterValue(session.id, '1'); // 100 AMD
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '1', user.id); // 100 AMD
 
       await expect(
         sessions.stop(session.id, user.id, { bonusAmountToApply: '5000' }),
@@ -233,7 +250,8 @@ describe('EV charging (integration)', () => {
     it('frees the connector and refunds the points when stopping fails', async () => {
       const { user, wallet, connector } = await scenario({ availableBonus: '1000' });
       const session = await sessions.start({ connectorId: connector.id }, user.id);
-      await sessions.reportMeterValue(session.id, '25');
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '25', user.id);
 
       // Fail while writing the completion/CDR — after the points were settled.
       const spy = jest

@@ -155,3 +155,59 @@ nothing has been run under real contention.
 | **Security** | 31 | **74** | Privilege escalation, the unauthenticated billing input, unscoped partner authorization, `localStorage` tokens, error disclosure, token-reuse blindness and the lockout DoS are all closed and regression-tested. Held back from higher by unverified registration and the absence of a second factor anywhere. |
 | **Architecture** | 64 | **68** | Authorization moved from hand-rolled per-controller checks into a shared, tested module, and the password lifecycle has one write path. The structural gaps are unchanged: no payment layer, no outbox, in-process cron that will double-fire on a second replica. |
 | **Code quality** | 71 | **79** | 221 tests, every fix mutation-verified, ESLint clean, no new dead code. The duplicated `httpClient`/`authStore` between admin and partner remains. |
+
+---
+
+## Round two — re-audit of the fixed code
+
+The fixed code was audited again from scratch rather than trusted. Three
+further issues were found and fixed; one blocker was found that cannot be
+fixed within "no new features".
+
+**Found and fixed**
+
+- **Self-dealing through merchant codes (Critical).** Blocking self-redemption
+  only ever covered `USER_PAY_TOKEN`, the one type whose issuer was recorded.
+  A partner member could raise a `DYNAMIC_INVOICE` against their own partner
+  for any amount and pay it themselves — measured at 50,000 points per call.
+  The issuer is now recorded on every code, and membership (not just identity)
+  bars redemption, so two staff cannot issue for each other.
+- **Unbounded session duration (High).** The meter bound is proportional to
+  elapsed time and nothing closed an abandoned session: 30 days open billed
+  36,000 kWh and 180,000 points, and the bay stayed `CHARGING` forever. The
+  billable window is capped at 24 hours and an hourly sweep frees the bay.
+- **Reset-code guessing (High).** Five attempts per challenge bought five more
+  with each new code. Ceilings now follow the account: five codes and fifteen
+  wrong guesses per hour.
+
+**Verification.** All 232 tests pass. Disabling six of the guards added across
+both rounds — the negative-amount check, the meter bound, the role-rank check,
+partner deactivation, account-state enforcement and error redaction —
+produces 24 failures across 11 suites, so the regression net covers them.
+
+**Still open — see the Critical entry below.**
+
+### Remaining Critical: bonus is minted by asserting a payment that never happens
+
+`STATIC_MERCHANT` codes are reusable by design, carry a fixed amount, and are
+displayed publicly — that is what a shop-window QR is. Any authenticated user
+who can photograph one can redeem it repeatedly and accrue bonus on an amount
+nobody collected. Measured: five scans of a 100,000 AMD code at 5% produced
+25,000 points, with no money paid and no collusion. The velocity limit throttles
+this to eight redemptions per ten minutes per account; registration is
+unverified, so accounts are free and the aggregate is unbounded.
+
+This is the concrete form of the missing payment layer. It cannot be fixed by
+hardening: the redemption is indistinguishable from a real one because nothing
+in the system ever confirms that money moved. There are two honest options,
+both product decisions rather than defects to patch:
+
+1. Build payment authorization and settlement, so a redemption requires a
+   confirmed charge.
+2. Until then, disable the exploitable configuration — refuse to redeem
+   `STATIC_MERCHANT` codes, leaving merchant-initiated `DYNAMIC_INVOICE`
+   codes, which are bounded by an act of the merchant per payment.
+
+Option 2 is a one-line refusal in `QrPaymentsService.redeem`. It has not been
+applied, because removing a shipped payment path is a decision for the product
+owner, not a fix to be made silently during an audit.

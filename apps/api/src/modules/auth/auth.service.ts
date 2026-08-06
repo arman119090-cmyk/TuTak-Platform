@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
-import { AuditAction, DevicePlatform } from '@prisma/client';
+import { AuditAction, DevicePlatform, User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { AppConfig } from '../../config/configuration';
 import { generateOpaqueToken, sha256Hex } from '../../common/utils/crypto';
@@ -18,6 +18,7 @@ import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAccessPayload } from './strategies/jwt.strategy';
+import { RequestUser } from './types/request-user.type';
 
 export interface RequestMeta {
   ipAddress?: string;
@@ -107,7 +108,7 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, user.phone, dto.deviceId, meta);
     const claims = await this.usersService.buildRequestUserClaims(user.id);
-    return { user: { ...user, ...claims }, tokens };
+    return { user: this.toAuthenticatedUser(user, claims), tokens };
   }
 
   async login(dto: LoginDto, meta: RequestMeta) {
@@ -163,7 +164,7 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, user.phone, dto.deviceId, meta);
     const claims = await this.usersService.buildRequestUserClaims(user.id);
-    return { user: { ...user, ...claims }, tokens };
+    return { user: this.toAuthenticatedUser(user, claims), tokens };
   }
 
   async refresh(refreshToken: string, deviceId: string, meta: RequestMeta) {
@@ -214,6 +215,22 @@ export class AuthService {
       userAgent: meta.userAgent,
     });
     return { success: true };
+  }
+
+  /** Strips internal-only fields (passwordHash, lockout counters, ...) before returning to the client. */
+  private toAuthenticatedUser(user: User, claims: Omit<RequestUser, 'deviceId'>) {
+    return {
+      id: user.id,
+      phone: user.phone,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      locale: user.locale,
+      isPhoneVerified: user.isPhoneVerified,
+      roles: claims.roles,
+      permissions: claims.permissions,
+      partnerScopes: claims.partnerScopes,
+    };
   }
 
   private async issueTokenPair(

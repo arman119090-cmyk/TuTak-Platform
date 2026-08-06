@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AuditAction, QrCodeStatus, QrCodeType, TransactionType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -9,6 +9,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { PartnersService } from '../partners/partners.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
+import { RequestUser } from '../auth/types/request-user.type';
 import { BonusEntryType } from '@prisma/client';
 import { IssueQrDto } from './dto/issue-qr.dto';
 import { RedeemQrDto } from './dto/redeem-qr.dto';
@@ -27,12 +28,16 @@ export class QrPaymentsService {
     private readonly fraudDetectionService: FraudDetectionService,
   ) {}
 
-  async issue(dto: IssueQrDto, issuedByUserId: string) {
+  async issue(dto: IssueQrDto, issuer: RequestUser) {
     if (dto.type !== QrCodeType.USER_PAY_TOKEN && !dto.partnerId) {
       throw new BadRequestException('partnerId is required for merchant-issued QR codes');
     }
     if (dto.type === QrCodeType.DYNAMIC_INVOICE && !dto.amount) {
       throw new BadRequestException('amount is required for a dynamic invoice QR code');
+    }
+
+    if (dto.partnerId) {
+      await this.assertCanIssueForPartner(issuer, dto.partnerId);
     }
 
     const expiresInSeconds = dto.expiresInSeconds ?? (dto.type === QrCodeType.STATIC_MERCHANT ? 3153600000 : 900);
@@ -41,7 +46,7 @@ export class QrPaymentsService {
       data: {
         type: dto.type,
         token: generateOpaqueToken(24),
-        issuedByUserId: dto.type === QrCodeType.USER_PAY_TOKEN ? issuedByUserId : null,
+        issuedByUserId: dto.type === QrCodeType.USER_PAY_TOKEN ? issuer.id : null,
         partnerId: dto.partnerId,
         amount: dto.amount,
         expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
@@ -49,7 +54,7 @@ export class QrPaymentsService {
     });
 
     await this.auditService.record({
-      actorUserId: issuedByUserId,
+      actorUserId: issuer.id,
       action: AuditAction.QR_ISSUED,
       entityType: 'QrCode',
       entityId: qr.id,
@@ -57,6 +62,17 @@ export class QrPaymentsService {
     });
 
     return qr;
+  }
+
+  /** Only an admin or a member of the partner may issue a merchant-scoped QR code. */
+  private async assertCanIssueForPartner(issuer: RequestUser, partnerId: string) {
+    const isAdmin = issuer.roles.includes('ADMIN') || issuer.roles.includes('SUPER_ADMIN');
+    if (isAdmin) return;
+
+    const isMember = await this.partnersService.isMember(partnerId, issuer.id);
+    if (!isMember) {
+      throw new ForbiddenException('You are not authorized to issue QR codes for this partner');
+    }
   }
 
   /**

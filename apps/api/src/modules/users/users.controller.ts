@@ -13,7 +13,7 @@ export class UsersController {
 
   @Get('me')
   async me(@CurrentUser() user: RequestUser) {
-    return this.usersService.findById(user.id);
+    return this.usersService.findSafeById(user.id);
   }
 
   @Patch('me')

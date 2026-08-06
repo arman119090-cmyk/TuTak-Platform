@@ -9,6 +9,7 @@ export interface TransactionDto {
   amount: string;
   currency: Currency;
   bonusAppliedAmount: string;
+  bonusEarnedAmount: string;
   description: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;

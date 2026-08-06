@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
+import { TransactionsService } from '../transactions/transactions.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { PartnersService } from './partners.service';
 
@@ -15,6 +17,7 @@ export class PartnersController {
   constructor(
     private readonly partnersService: PartnersService,
     private readonly auditService: AuditService,
+    private readonly transactionsService: TransactionsService,
   ) {}
 
   @Get()
@@ -25,6 +28,19 @@ export class PartnersController {
   @Get(':id')
   get(@Param('id') id: string) {
     return this.partnersService.findByIdOrThrow(id);
+  }
+
+  @Get(':id/transactions')
+  async transactions(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Query() query: CursorPaginationQueryDto,
+  ) {
+    const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('SUPER_ADMIN');
+    if (!isAdmin && !(await this.partnersService.isMember(id, user.id))) {
+      throw new ForbiddenException('You are not a member of this partner');
+    }
+    return this.transactionsService.history({ ...query, partnerId: id });
   }
 
   @Post()

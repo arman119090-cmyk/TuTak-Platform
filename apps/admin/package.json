@@ -1,0 +1,30 @@
+{
+  "name": "@tutak/admin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@tutak/shared-types": "workspace:*",
+    "@tutak/i18n": "workspace:*",
+    "axios": "^1.19.0",
+    "next": "^16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.2",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.6.3"
+  }
+}

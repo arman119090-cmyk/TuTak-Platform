@@ -1,0 +1,24 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ADMIN_ROLES, useAuthStore } from '@/lib/stores/authStore';
+
+export function AuthGate({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { user, accessToken } = useAuthStore();
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    const isAdmin = user?.roles.some((r) => (ADMIN_ROLES as readonly string[]).includes(r));
+    if (!accessToken || !user || !isAdmin) {
+      router.replace('/login');
+    } else {
+      setChecked(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, user]);
+
+  if (!checked) return null;
+  return <>{children}</>;
+}

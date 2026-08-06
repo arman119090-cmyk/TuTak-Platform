@@ -12,7 +12,23 @@ export class AdminService {
       take: query.limit,
       ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
       orderBy: { createdAt: 'desc' },
-      include: { roles: { include: { role: true } }, wallet: true },
+      // Explicit select — never let passwordHash leave the server boundary.
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        locale: true,
+        isPhoneVerified: true,
+        isActive: true,
+        failedLoginCount: true,
+        lockedUntil: true,
+        createdAt: true,
+        updatedAt: true,
+        roles: { include: { role: true } },
+        wallet: true,
+      },
     });
     return { items, nextCursor: items.length === query.limit ? (items.at(-1)?.id ?? null) : null };
   }

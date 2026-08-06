@@ -14,7 +14,7 @@ export class QrPaymentsController {
 
   @Post('issue')
   issue(@CurrentUser() user: RequestUser, @Body() dto: IssueQrDto) {
-    return this.qrPaymentsService.issue(dto, user.id);
+    return this.qrPaymentsService.issue(dto, user);
   }
 
   @Post('redeem')

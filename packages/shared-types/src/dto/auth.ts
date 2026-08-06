@@ -36,6 +36,8 @@ export interface AuthenticatedUserDto {
   firstName: string;
   lastName: string;
   roles: Role[];
+  /** Partner IDs a scoped role (e.g. PARTNER_OWNER) applies to, keyed by role name. */
+  partnerScopes: Record<string, string[]>;
   locale: string;
   isPhoneVerified: boolean;
 }

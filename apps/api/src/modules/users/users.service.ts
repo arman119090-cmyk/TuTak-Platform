@@ -15,6 +15,25 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  /** Like findById, but never includes passwordHash — safe to return over HTTP. */
+  findSafeById(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        locale: true,
+        isPhoneVerified: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
   async createCustomer(
     data: {
       phone: string;
@@ -83,7 +102,22 @@ export class UsersService {
     userId: string,
     data: Partial<{ firstName: string; lastName: string; email: string; locale: string }>,
   ) {
-    return this.prisma.user.update({ where: { id: userId }, data });
+    return this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        locale: true,
+        isPhoneVerified: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   async registerFailedLogin(userId: string, lockThreshold = 5, lockMinutes = 15) {

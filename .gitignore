@@ -50,3 +50,6 @@ apps/api/generated/
 # Misc
 *.pem
 .eslintcache
+
+# Generated preview harness bundle
+tools/preview/mobile/bundle.js

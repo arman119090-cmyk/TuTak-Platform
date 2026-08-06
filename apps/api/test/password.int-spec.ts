@@ -224,6 +224,39 @@ describe('Password lifecycle (integration)', () => {
       expect(after.lockedUntil).toBeNull();
     });
 
+    it('bounds guessing across challenges, not just within one', async () => {
+      const { user } = await withPassword();
+
+      // Five tries per challenge bounds nothing if a fresh challenge buys five
+      // more. Three rounds of five is the account's whole hourly budget.
+      for (let round = 0; round < 3; round += 1) {
+        await passwords.requestReset(user.phone, meta);
+        for (let i = 0; i < 5; i += 1) {
+          await passwords
+            .confirmReset(user.phone, '000000', NEXT, meta)
+            .catch(() => undefined);
+        }
+      }
+
+      await passwords.requestReset(user.phone, meta);
+      const code = await deliveredCode(user.id);
+      await expect(passwords.confirmReset(user.phone, code, NEXT, meta)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(await verify(user.id, CURRENT)).toBe(true);
+    });
+
+    it('bounds how many codes an account can be issued in an hour', async () => {
+      const { user } = await withPassword();
+
+      for (let i = 0; i < 8; i += 1) {
+        await passwords.requestReset(user.phone, meta);
+      }
+
+      // Still reports success — the budget must not become an oracle either.
+      expect(await prisma.passwordResetToken.count({ where: { userId: user.id } })).toBe(5);
+    });
+
     it('refuses a reset for a deactivated account', async () => {
       const { user } = await withPassword();
       await prisma.user.update({ where: { id: user.id }, data: { isActive: false } });

@@ -19,6 +19,19 @@ const RESET_TTL_MS = 10 * 60_000;
 const MAX_RESET_ATTEMPTS = 5;
 
 /**
+ * Ceilings that apply to the account, not to a single challenge.
+ *
+ * Five tries per challenge bounds nothing on its own: an attacker who can
+ * request a fresh code simply gets five more. A six-digit space is a million
+ * values, and the per-IP throttler is in-process, so a distributed attempt
+ * would walk it in hours. These limits follow the account, so the attack costs
+ * the same however many IPs it comes from.
+ */
+const MAX_CODES_PER_WINDOW = 5;
+const MAX_ATTEMPTS_PER_WINDOW = 15;
+const RESET_WINDOW_MS = 60 * 60_000;
+
+/**
  * Password lifecycle: change, reset, and forced rotation.
  *
  * Before this existed there was no way to change a password at all
@@ -74,7 +87,7 @@ export class PasswordService {
   async requestReset(phone: string, meta: RequestMeta) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
 
-    if (user && user.isActive && !user.deletedAt) {
+    if (user && user.isActive && !user.deletedAt && (await this.withinRequestBudget(user.id))) {
       const code = generateNumericCode(6);
 
       await this.prisma.$transaction(async (tx) => {
@@ -124,6 +137,10 @@ export class PasswordService {
     const user = await this.prisma.user.findUnique({ where: { phone } });
     if (!user || !user.isActive || user.deletedAt) throw invalid;
 
+    // Checked before the code is compared, so exhausting the budget stops the
+    // guessing rather than merely recording it.
+    if (!(await this.withinAttemptBudget(user.id))) throw invalid;
+
     const challenge = await this.prisma.passwordResetToken.findFirst({
       where: { userId: user.id, consumedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
@@ -153,6 +170,32 @@ export class PasswordService {
 
     await this.applyNewPassword(user.id, newPassword, 'reset', meta);
     return { success: true };
+  }
+
+  /** Caps how many codes an account can be issued in the window. */
+  private async withinRequestBudget(userId: string): Promise<boolean> {
+    const issued = await this.prisma.passwordResetToken.count({
+      where: { userId, createdAt: { gte: new Date(Date.now() - RESET_WINDOW_MS) } },
+    });
+    if (issued >= MAX_CODES_PER_WINDOW) {
+      this.logger.warn(`Password reset request budget exhausted for user ${userId}`);
+      return false;
+    }
+    return true;
+  }
+
+  /** Caps total wrong guesses across every challenge in the window. */
+  private async withinAttemptBudget(userId: string): Promise<boolean> {
+    const recent = await this.prisma.passwordResetToken.aggregate({
+      where: { userId, createdAt: { gte: new Date(Date.now() - RESET_WINDOW_MS) } },
+      _sum: { attempts: true },
+    });
+    const spent = recent._sum.attempts ?? 0;
+    if (spent >= MAX_ATTEMPTS_PER_WINDOW) {
+      this.logger.warn(`Password reset attempt budget exhausted for user ${userId}`);
+      return false;
+    }
+    return true;
   }
 
   /**

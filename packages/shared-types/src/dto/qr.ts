@@ -21,7 +21,6 @@ export interface QrCodeDto {
 
 export interface RedeemQrRequestDto {
   token: string;
-  payerUserId: string;
   bonusAmountToApply?: string;
   idempotencyKey: string;
 }

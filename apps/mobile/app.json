@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "TuTak",
+    "slug": "tutak",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "tutak",
+    "splash": {
+      "backgroundColor": "#0B5D3B"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "am.tutak.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B5D3B"
+      },
+      "package": "am.tutak.app",
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TuTak needs camera access to scan QR codes for payments."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000/v1"
+    }
+  }
+}

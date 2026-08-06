@@ -37,16 +37,16 @@ export class AdminService {
     const role = await this.prisma.role.findUnique({ where: { name: dto.role } });
     if (!role) throw new NotFoundException('Role not found');
 
-    return this.prisma.userRole.upsert({
-      where: {
-        userId_roleId_partnerId: {
-          userId: dto.userId,
-          roleId: role.id,
-          partnerId: dto.partnerId ?? (null as unknown as string),
-        },
-      },
-      update: {},
-      create: { userId: dto.userId, roleId: role.id, partnerId: dto.partnerId },
+    // Global roles carry partnerId = NULL, which Prisma disallows inside a
+    // compound unique lookup, so this is a find-then-create rather than an
+    // upsert. Idempotent: re-granting an existing role is a no-op.
+    const existing = await this.prisma.userRole.findFirst({
+      where: { userId: dto.userId, roleId: role.id, partnerId: dto.partnerId ?? null },
+    });
+    if (existing) return existing;
+
+    return this.prisma.userRole.create({
+      data: { userId: dto.userId, roleId: role.id, partnerId: dto.partnerId },
     });
   }
 

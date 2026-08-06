@@ -1,4 +1,12 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Keep the incremental state file inside the emit directory. nest-cli's
+    // `deleteOutDir` wipes dist/ before every build; if .tsbuildinfo lived
+    // outside it, TypeScript would still believe the outputs were current and
+    // silently emit nothing — producing a successful-looking build with no
+    // dist/main.js (and an empty Turborepo cache entry).
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
   "exclude": ["node_modules", "test", "dist", "prisma", "**/*spec.ts"]
 }

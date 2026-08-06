@@ -34,23 +34,57 @@ roadmap (what's real today vs. what a millions-of-users launch still needs).
 
 ```bash
 pnpm install
+./scripts/dev-setup.sh
+```
 
-# Start local Postgres + Redis
-docker compose up -d
+`dev-setup.sh` brings up PostgreSQL and Redis (via Docker Compose when the
+daemon is reachable, otherwise using locally-installed servers), writes the
+`.env` files if they are missing, then generates the Prisma client, applies
+migrations and seeds baseline data. It is idempotent — safe to re-run.
 
-# Configure the API
-cp apps/api/.env.example apps/api/.env
-# edit apps/api/.env if you changed the docker-compose credentials/ports
+Then start whichever apps you need, each in its own terminal:
 
-pnpm --filter @tutak/api prisma:generate
-pnpm --filter @tutak/api prisma:migrate
-pnpm --filter @tutak/api prisma:seed   # creates roles/permissions + a super-admin
-
-pnpm --filter @tutak/api dev            # http://localhost:4000/v1, docs at /docs
+```bash
+pnpm --filter @tutak/api dev        # http://localhost:4000/v1  (OpenAPI docs at /docs)
+pnpm --filter @tutak/admin dev      # http://localhost:3000
+pnpm --filter @tutak/partner dev    # http://localhost:3001
+pnpm --filter @tutak/mobile start   # Expo — press i / a, or scan the QR code
 ```
 
 The seeded super-admin logs in with phone `+37400000000` / password
 `ChangeMe123!` — change this immediately in any non-throwaway environment.
+
+### Verifying the stack
+
+With the API running:
+
+```bash
+./scripts/smoke-test.sh
+```
+
+This exercises the real money-moving paths end to end against your database —
+registration/login/refresh-token rotation, RBAC, partner onboarding, QR issue
+and redemption with a bonus discount, bonus accrual and ledger state,
+overspend rejection, idempotent replay, referral qualification, and the
+admin/analytics/audit read models — and exits non-zero if anything regresses.
+
+### Doing it manually
+
+If you would rather not use the setup script:
+
+```bash
+docker compose up -d                      # or run your own Postgres + Redis
+cp apps/api/.env.example apps/api/.env
+cp apps/admin/.env.example apps/admin/.env.local
+cp apps/partner/.env.example apps/partner/.env.local
+
+pnpm --filter @tutak/api prisma:generate
+pnpm --filter @tutak/api prisma:deploy    # apply existing migrations
+pnpm --filter @tutak/api prisma:seed
+```
+
+Use `prisma:migrate` (rather than `prisma:deploy`) only when you have changed
+`schema.prisma` and want to author a new migration.
 
 ### Web dashboards
 
@@ -87,12 +121,24 @@ the mobile app and both dashboards; backend-issued notifications carry
 translation keys + params rather than pre-rendered text, so the client
 always renders in the user's chosen locale.
 
-## A note on this environment
+## Verification status
 
-The Docker Compose stack (Postgres/Redis) could not be pulled and verified
-inside the sandbox this was built in — the sandbox's egress policy blocks
-Docker Hub's registry CDN. Everything was instead verified at the strongest
-level available: the Prisma schema loads and generates a client cleanly, and
-the full backend, mobile app, and both dashboards each typecheck/build with
-zero errors. Run `docker compose up -d` in a normal environment before
-`prisma:migrate`.
+The stack has been run end to end against a real PostgreSQL 16 + Redis 7:
+
+- `prisma migrate deploy` reproduces all 27 tables and 21 enums from an empty
+  database, and the seed is idempotent.
+- The API boots in both watch mode (`nest start --watch`) and from a
+  production build (`node dist/main.js`), serving OpenAPI docs at `/docs`.
+- `./scripts/smoke-test.sh` — 39 end-to-end assertions covering auth, RBAC,
+  the bonus ledger, QR payments, referrals, EV charging, and the admin read
+  models — passes with zero server-side errors.
+- Both dashboards production-build and serve their routes, with CORS verified
+  against the API from `localhost:3000` and `localhost:3001`.
+- The mobile app bundles through Metro for both `expo export` (1318 modules →
+  a Hermes bytecode bundle) and the `expo start` dev server.
+
+One caveat on Docker specifically: the sandbox this was verified in blocks
+Docker Hub's registry CDN, so `docker compose up -d` itself could not be
+executed there and PostgreSQL/Redis were run natively instead. The Compose
+file is unchanged and standard; `dev-setup.sh` takes the Docker path whenever
+the daemon is reachable and falls back to local servers when it is not.

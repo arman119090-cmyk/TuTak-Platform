@@ -80,17 +80,18 @@ async function main() {
     },
   });
 
-  await prisma.userRole.upsert({
-    where: {
-      userId_roleId_partnerId: {
-        userId: admin.id,
-        roleId: superAdminRole.id,
-        partnerId: null as unknown as string,
-      },
-    },
-    update: {},
-    create: { userId: admin.id, roleId: superAdminRole.id },
+  // A global (unscoped) role has partnerId = NULL. Postgres treats NULLs as
+  // distinct in a unique index and Prisma rejects null inside a compound
+  // unique lookup, so upsert-by-compound-key can't be used here — find then
+  // create instead.
+  const existingAdminRole = await prisma.userRole.findFirst({
+    where: { userId: admin.id, roleId: superAdminRole.id, partnerId: null },
   });
+  if (!existingAdminRole) {
+    await prisma.userRole.create({
+      data: { userId: admin.id, roleId: superAdminRole.id },
+    });
+  }
 
   console.log('Seed complete.');
 }

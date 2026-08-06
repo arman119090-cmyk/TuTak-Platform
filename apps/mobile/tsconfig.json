@@ -4,10 +4,19 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@tutak/shared-types": ["../../packages/shared-types/src/index.ts"],
-      "@tutak/i18n": ["../../packages/i18n/src/index.ts"]
+      "@/*": [
+        "src/*"
+      ],
+      "@tutak/shared-types": [
+        "../../packages/shared-types/src/index.ts"
+      ],
+      "@tutak/i18n": [
+        "../../packages/i18n/src/index.ts"
+      ]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ]
 }

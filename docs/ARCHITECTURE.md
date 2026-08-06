@@ -148,11 +148,16 @@ still needs, roughly in priority order:
 5. **Observability.** Structured logging is in place (Nest's `Logger`); add
    OpenTelemetry tracing, error tracking (Sentry), and metrics/alerting
    before production traffic.
-6. **Testing.** The codebase is structured for it (services are DI'd, pure
-   domain logic is isolated in `BonusEngineService`), but this build did not
-   include a test suite — add unit tests for the bonus engine's edge cases
-   (partial lot consumption, concurrent reservations, expiry during a hold)
-   and e2e tests for the QR/EV sagas before launch.
+6. **Testing.** `scripts/smoke-test.sh` covers the critical paths end to end
+   (39 assertions over auth, RBAC, the bonus ledger, QR redemption including
+   idempotent replay and overspend rejection, referral qualification, and the
+   admin read models) and is the current regression gate. What it does not
+   cover, and what should exist before launch, is unit-level testing of the
+   bonus engine's harder edge cases — partial lot consumption across many
+   lots, genuinely concurrent reservations against one lot, and expiry
+   landing mid-hold — plus automated EV-saga coverage. The code is structured
+   for this (services are DI'd, the domain logic is isolated in
+   `BonusEngineService`), but no Jest suite has been written yet.
 7. **CI/CD.** No pipeline exists yet — add typecheck/lint/test/build gates
    and environment-specific deploy workflows.
 8. **Push notifications.** `NotificationsService` persists an in-app inbox

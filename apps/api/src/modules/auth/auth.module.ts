@@ -10,6 +10,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PasswordService } from './password.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SecurityModule } from '../security/security.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     UsersModule,
     AuditModule,
     NotificationsModule,
+    SecurityModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) => ({

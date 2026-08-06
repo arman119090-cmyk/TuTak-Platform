@@ -134,6 +134,15 @@ export class UsersService {
     });
   }
 
+  /**
+   * Counts a failed attempt and locks the account once the threshold is hit.
+   *
+   * The counter is cleared at the same moment the lock is applied. Leaving it
+   * at or above the threshold meant that once an account had ever been locked,
+   * a single further mistake after the lock expired re-locked it immediately —
+   * an effectively permanent lockout that any stranger could trigger against a
+   * known phone number (docs/AUDIT_2026-08-B.md §H10).
+   */
   async registerFailedLogin(userId: string, lockThreshold = 5, lockMinutes = 15) {
     const user = await this.prisma.user.update({
       where: { id: userId },
@@ -141,9 +150,12 @@ export class UsersService {
     });
 
     if (user.failedLoginCount >= lockThreshold) {
-      await this.prisma.user.update({
+      return this.prisma.user.update({
         where: { id: userId },
-        data: { lockedUntil: new Date(Date.now() + lockMinutes * 60_000) },
+        data: {
+          lockedUntil: new Date(Date.now() + lockMinutes * 60_000),
+          failedLoginCount: 0,
+        },
       });
     }
     return user;

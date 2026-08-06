@@ -6,6 +6,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { hasPartnerScope, isPlatformAdmin } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AnalyticsService } from './analytics.service';
+import { AnalyticsRangeDto } from './dto/analytics-range.dto';
 
 @ApiTags('analytics')
 @ApiBearerAuth()
@@ -18,13 +19,16 @@ export class AnalyticsController {
   async partner(
     @CurrentUser() user: RequestUser,
     @Param('partnerId') partnerId: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: AnalyticsRangeDto,
   ) {
     if (!hasPartnerScope(user, partnerId)) {
       throw new ForbiddenException('You do not have analytics access for this partner');
     }
-    return this.analyticsService.partnerAnalytics(partnerId, from, to);
+    return this.analyticsService.partnerAnalytics(
+      partnerId,
+      query.from ? new Date(query.from) : undefined,
+      query.to ? new Date(query.to) : undefined,
+    );
   }
 
   /**

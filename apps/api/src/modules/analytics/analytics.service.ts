@@ -1,37 +1,49 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionStatus } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async partnerAnalytics(partnerId: string, from?: string, to?: string) {
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
-        partnerId,
-        status: TransactionStatus.COMPLETED,
-        createdAt:
-          from || to
-            ? { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined }
-            : undefined,
-      },
-    });
+  /**
+   * Partner totals for a period.
+   *
+   * Aggregated by the database rather than in memory. Loading every matching
+   * transaction and reducing over it was an out-of-memory denial of service
+   * once a partner had real history, and `Number(t.amount)` summed money in
+   * IEEE 754 after the whole codebase was built on Decimal, so the revenue a
+   * partner saw drifted from the revenue they earned
+   * (docs/AUDIT_2026-08-B.md §H9).
+   */
+  async partnerAnalytics(partnerId: string, from?: Date, to?: Date) {
+    const where = {
+      partnerId,
+      status: TransactionStatus.COMPLETED,
+      ...(from || to ? { createdAt: { gte: from, lte: to } } : {}),
+    };
 
-    const totalRevenue = transactions.reduce((acc, t) => acc + Number(t.amount), 0);
-    const totalBonusIssued = transactions.reduce((acc, t) => acc + Number(t.bonusEarnedAmount), 0);
-    const totalBonusRedeemed = transactions.reduce((acc, t) => acc + Number(t.bonusAppliedAmount), 0);
-    const uniqueCustomers = new Set(transactions.map((t) => t.userId)).size;
+    const [totals, distinctCustomers] = await Promise.all([
+      this.prisma.transaction.aggregate({
+        where,
+        _count: true,
+        _sum: { amount: true, bonusEarnedAmount: true, bonusAppliedAmount: true },
+      }),
+      // groupBy rather than a set built from every row: only the distinct
+      // user ids cross the wire, not the transactions themselves.
+      this.prisma.transaction.groupBy({ by: ['userId'], where }),
+    ]);
 
     return {
       partnerId,
-      periodFrom: from ?? null,
-      periodTo: to ?? null,
-      totalTransactions: transactions.length,
-      totalRevenue: totalRevenue.toFixed(2),
-      totalBonusIssued: totalBonusIssued.toFixed(4),
-      totalBonusRedeemed: totalBonusRedeemed.toFixed(4),
-      uniqueCustomers,
+      periodFrom: from?.toISOString() ?? null,
+      periodTo: to?.toISOString() ?? null,
+      totalTransactions: totals._count,
+      totalRevenue: (totals._sum.amount ?? new Decimal(0)).toFixed(4),
+      totalBonusIssued: (totals._sum.bonusEarnedAmount ?? new Decimal(0)).toFixed(4),
+      totalBonusRedeemed: (totals._sum.bonusAppliedAmount ?? new Decimal(0)).toFixed(4),
+      uniqueCustomers: distinctCustomers.length,
     };
   }
 

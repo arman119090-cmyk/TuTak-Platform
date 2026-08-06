@@ -19,6 +19,7 @@ import { parseMoney } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { FraudDetectionService } from '../security/fraud-detection.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -74,12 +75,19 @@ export class EvSessionsService {
     private readonly bonusEngine: BonusEngineService,
     private readonly walletService: WalletService,
     private readonly transactionsService: TransactionsService,
+    private readonly fraudDetection: FraudDetectionService,
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
   ) {}
 
   async start(dto: StartSessionDto, userId: string) {
-    const connector = await this.prisma.evConnector.findUnique({ where: { id: dto.connectorId } });
+    const connector = await this.prisma.evConnector.findUnique({
+      where: { id: dto.connectorId },
+      include: { station: { include: { partner: true } } },
+    });
     if (!connector) throw new NotFoundException('Connector not found');
+    if (!connector.station.partner.isActive) {
+      throw new BadRequestException('This charging network is not currently active');
+    }
 
     if (dto.reservationId) {
       const reservation = await this.prisma.evReservation.findUnique({ where: { id: dto.reservationId } });
@@ -235,6 +243,20 @@ export class EvSessionsService {
       description: `EV charging at ${session.connector.station.name}`,
       metadata: { sessionId: session.id, energyKwh: energyKwh.toString() },
     });
+
+    const anomalous = await this.fraudDetection
+      .checkVelocity(userId, transaction.id)
+      .catch((e) => {
+        this.logger.error('Fraud velocity check failed', e);
+        return false;
+      });
+    if (anomalous) {
+      await this.transactionsService.markFlagged(transaction.id, 'velocity_limit_exceeded');
+      await this.releaseConnector(session.connectorId, session.id).catch((e) =>
+        this.logger.error(`Failed to free connector ${session.connectorId}`, e),
+      );
+      throw new BadRequestException('This session was held for review. Please contact support.');
+    }
 
     let reservationId: string | null = null;
     let accruedLotId: string | null = null;

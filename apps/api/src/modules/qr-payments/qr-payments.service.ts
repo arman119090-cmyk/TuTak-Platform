@@ -125,7 +125,9 @@ export class QrPaymentsService {
     }
 
     const partnerId = qr.partnerId ?? undefined;
-    const partner = partnerId ? await this.partnersService.findByIdOrThrow(partnerId) : null;
+    // Refuses a deactivated partner: a switched-off merchant must stop
+    // redeeming and stop accruing, not merely look switched off (§H3).
+    const partner = partnerId ? await this.partnersService.findActiveOrThrow(partnerId) : null;
 
     const transaction = await this.transactionsService.create({
       userId: payerUserId,
@@ -137,9 +139,21 @@ export class QrPaymentsService {
       description: `QR payment${partner ? ` at ${partner.displayName}` : ''}`,
     });
 
-    await this.fraudDetectionService
+    // The signal used to be raised and then dropped on the floor: nothing read
+    // the return value and markFlagged was dead code, so velocity abuse
+    // completed normally and was visible only in a table nobody watched (§H7).
+    const anomalous = await this.fraudDetectionService
       .checkVelocity(payerUserId, transaction.id)
-      .catch((e) => this.logger.error('Fraud velocity check failed', e));
+      .catch((e) => {
+        this.logger.error('Fraud velocity check failed', e);
+        return false;
+      });
+    if (anomalous) {
+      await this.transactionsService.markFlagged(transaction.id, 'velocity_limit_exceeded');
+      throw new BadRequestException(
+        'This payment was held for review. Please try again shortly.',
+      );
+    }
 
     let reservationId: string | null = null;
     let accruedLotId: string | null = null;

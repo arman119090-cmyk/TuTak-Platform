@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
@@ -42,6 +42,23 @@ export class PartnersService {
   async findByIdOrThrow(id: string) {
     const partner = await this.findById(id);
     if (!partner) throw new NotFoundException('Partner not found');
+    return partner;
+  }
+
+  /**
+   * Like findByIdOrThrow, but refuses a partner that has been switched off.
+   *
+   * `isActive` was written by PATCH /partners/:id/active and read by nothing:
+   * deactivating a fraudulent or terminated partner had no effect at all,
+   * their QR codes kept redeeming and kept accruing bonus at the platform's
+   * expense, and the admin control appeared to work while doing nothing
+   * (docs/AUDIT_2026-08-B.md §H3).
+   */
+  async findActiveOrThrow(id: string) {
+    const partner = await this.findByIdOrThrow(id);
+    if (!partner.isActive) {
+      throw new BadRequestException('This partner is not currently active');
+    }
     return partner;
   }
 

@@ -508,6 +508,12 @@ model Partner {
   /// impossible to change without affecting the other.
   paymentCommissionRateBps Int   @default(250) // 2.5%
   isActive              Boolean  @default(true)
+  /// Set by reconciliation when this partner's ledger balance disagrees with
+  /// the bank statement. Blocks payouts until a human clears it — paying out
+  /// against a balance known to be wrong is the one thing worse than not
+  /// paying out at all.
+  payoutsBlockedAt      DateTime?
+  payoutsBlockedReason  String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -518,6 +524,8 @@ model Partner {
   evStations  EvStation[]
   userRoles   UserRole[]
   payments    Payment[]
+  settlements Settlement[]
+  payouts     Payout[]
 
   @@map("partners")
 }
@@ -750,6 +758,12 @@ enum LedgerAccountType {
   PSP_RECEIVABLE
   PLATFORM_REVENUE
   BONUS_LIABILITY
+  /// Money that has left PARTNER_PAYABLE for the bank but is not yet
+  /// confirmed settled. A payout sits here between request and confirmation,
+  /// so an in-flight transfer is never invisible: it is out of the partner's
+  /// payable balance (they cannot request it twice) without yet being
+  /// claimed as gone.
+  BANK_CLEARING
 }
 
 enum PostingDirection {
@@ -797,6 +811,8 @@ model LedgerTransaction {
 
   postings LedgerPosting[]
   payment  Payment?
+  refund   Refund?
+  payout   Payout?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -892,15 +908,134 @@ model Payment {
   declineReason       String?
   /// Null on a declined payment.
   ledgerTransactionId String?       @unique
+  /// Running total of every refund against this payment. The guard that stops
+  /// a payment being refunded past what was captured is a conditional UPDATE
+  /// on this column, not a read-then-write in application code — two
+  /// concurrent refunds must not each read the same stale total.
+  refundedAmount      Decimal       @db.Decimal(18, 4) @default(0)
+  /// Set when the nightly settlement batch has claimed this payment. Also the
+  /// claim itself: a payment moves into exactly one settlement, once.
+  settlementId        String?
+  settledAt           DateTime?
+  /// The bonus lot settlement issued for this payment, if any. A direct link
+  /// rather than a metadata lookup, because a refund has to find exactly the
+  /// points this payment created in order to claw back the right ones.
+  accruedLotId        String?   @unique
   createdAt           DateTime      @default(now())
 
   user              User               @relation(fields: [userId], references: [id])
   partner           Partner            @relation(fields: [partnerId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  settlement        Settlement?        @relation(fields: [settlementId], references: [id])
+  refunds           Refund[]
 
   @@index([userId])
   @@index([partnerId])
+  @@index([settlementId])
   @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Settlement, refunds, payouts, reconciliation (financial core, phases 4-5)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// One partner's captured payments for one day.
+///
+/// Settlement does not move money between the platform and the partner —
+/// capture already did that. What settlement adds is the point at which
+/// bonus is accrued: points earned on a payment that is later charged back
+/// must never have been issued, rather than issued and clawed back, so
+/// accrual waits until the payment has survived to settlement.
+model Settlement {
+  id               String   @id @default(uuid())
+  partnerId        String
+  /// UTC midnight of the day being settled.
+  periodStart      DateTime
+  periodEnd        DateTime
+  grossAmount      Decimal  @db.Decimal(18, 4) @default(0)
+  commissionAmount Decimal  @db.Decimal(18, 4) @default(0)
+  netAmount        Decimal  @db.Decimal(18, 4) @default(0)
+  bonusAccrued     Decimal  @db.Decimal(18, 4) @default(0)
+  paymentCount     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  partner  Partner   @relation(fields: [partnerId], references: [id])
+  payments Payment[]
+
+  /// One settlement per partner per day — the find-or-create races on this.
+  @@unique([partnerId, periodStart])
+  @@index([periodStart])
+  @@map("settlements")
+}
+
+/// A refund of some or all of a captured payment.
+model Refund {
+  id                  String   @id @default(uuid())
+  paymentId           String
+  amount              Decimal  @db.Decimal(18, 4)
+  reason              String
+  /// The reversing ledger transaction. Postings are immutable, so a refund is
+  /// a new transaction pointing back at the original, never an edit.
+  ledgerTransactionId String?  @unique
+  /// Points reclaimed from the customer, if the payment had already settled
+  /// and accrued. Zero when it had not.
+  bonusClawedBack     Decimal  @db.Decimal(18, 4) @default(0)
+  createdAt           DateTime @default(now())
+
+  payment           Payment            @relation(fields: [paymentId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+enum PayoutStatus {
+  REQUESTED
+  PAID
+  FAILED
+}
+
+/// A transfer of a partner's payable balance to their bank.
+model Payout {
+  id                  String       @id @default(uuid())
+  partnerId           String
+  amount              Decimal      @db.Decimal(18, 4)
+  status              PayoutStatus
+  bankReference       String?
+  failureReason       String?
+  ledgerTransactionId String?      @unique
+  requestedByUserId   String?
+  createdAt           DateTime     @default(now())
+  completedAt         DateTime?
+
+  partner           Partner            @relation(fields: [partnerId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@index([partnerId, status])
+  @@map("payouts")
+}
+
+enum ReconciliationStatus {
+  CLEAN
+  DRIFT_DETECTED
+}
+
+/// One night's comparison of the ledger against external statements.
+///
+/// Drift is recorded and escalated, never auto-corrected: a reconciliation
+/// engine that silently adjusts balances hides exactly the bug it exists to
+/// find.
+model ReconciliationRun {
+  id          String               @id @default(uuid())
+  /// UTC midnight of the day reconciled.
+  periodStart DateTime             @unique
+  status      ReconciliationStatus
+  /// Per-account expected (ledger) vs reported (statement) comparison.
+  findings    Json
+  createdAt   DateTime             @default(now())
+
+  @@map("reconciliation_runs")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -984,6 +1119,9 @@ enum FraudSignalType {
   QR_REPLAY_ATTEMPT
   BONUS_ABUSE_PATTERN
   REFERRAL_RING_DETECTED
+  /// The ledger and an external statement disagree. Not necessarily fraud —
+  /// but never benign, and it blocks payouts until someone has looked.
+  SETTLEMENT_DRIFT
 }
 
 enum FraudSignalSeverity {

@@ -53,3 +53,6 @@ apps/api/generated/
 
 # Generated preview harness bundle
 tools/preview/mobile/bundle.js
+
+# Redis snapshot, written where redis-server happens to be started
+dump.rdb

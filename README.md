@@ -16,7 +16,7 @@ apps/
 packages/
   shared-types/  TypeScript enums + DTOs shared by every app
   i18n/          hy/ru/en translation resources shared by every app
-docker-compose.yml   Local Postgres + Redis for development
+docker-compose.yml   Postgres + Redis + the api container itself
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data model, the
@@ -102,9 +102,44 @@ pnpm --filter @tutak/partner dev   # http://localhost:3001
 pnpm --filter @tutak/mobile start
 ```
 
-Edit `apps/mobile/app.json` → `expo.extra.apiBaseUrl` to point at your API
-(defaults to `http://localhost:4000/v1`; use your machine's LAN IP when
-testing on a physical device).
+Config is dynamic (`apps/mobile/app.config.js`), not the static `app.json` a
+plain Expo template ships with — it reads `API_BASE_URL` from the
+environment at build time (falls back to `http://localhost:4000/v1` for
+local dev; use your machine's LAN IP when testing on a physical device).
+EAS build profiles in `apps/mobile/eas.json` set it per environment
+(`development`/`preview`/`production`) — the latter two carry a
+`REPLACE_WITH_*_API_URL` placeholder until the API is actually deployed
+somewhere reachable.
+
+## Deploying
+
+There is nowhere the API actually runs in production yet — no cloud account
+exists for this project — but everything short of that is in place:
+
+- `docker-compose.yml` runs the full stack (Postgres, Redis, and the api
+  container itself, built from `apps/api/Dockerfile`) with health-checked
+  startup ordering. Copy `.env.example` to `.env` at the repo root, fill in
+  the values (JWT secrets, SMS provider — the api container refuses to boot
+  without SMS_ENDPOINT, same as production), then `docker compose up -d`.
+- The api image's entrypoint (`apps/api/docker-entrypoint.sh`) runs
+  `prisma migrate deploy` before starting the process, so a rolling deploy
+  across several instances is safe — the first one to start applies
+  whatever is pending, the rest find nothing to do.
+- `GET /health` (liveness) and `GET /health/ready` (readiness — checks
+  Postgres and Redis) are wired for any orchestrator's probes, and are
+  intentionally outside API versioning (`/health`, not `/v1/health`) so a
+  version bump can never take the health check down with it.
+- `.github/workflows/docker-publish.yml` builds and pushes the api image to
+  GitHub Container Registry (`ghcr.io`) on every push to `main` and on
+  version tags, using only the repo's built-in token — no secrets to
+  configure. The other half of shipping, an actual host to run that image
+  on, is the part only the project owner can provide.
+
+**Not verified in this repository's sandbox:** the Docker daemon is not
+reachable here (no `/var/run/docker.sock`), so the image build and
+`docker compose up` themselves could not be executed — only reviewed. The
+Dockerfile and compose file are otherwise unchanged from a standard
+multi-stage Node/pnpm setup.
 
 ## Monorepo scripts
 

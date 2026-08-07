@@ -29,5 +29,47 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Compose's internal DNS resolves these to the containers above — not
+      # "localhost", which inside this container would mean the api
+      # container itself.
+      DATABASE_URL: postgresql://tutak:tutak_dev_password@postgres:5432/tutak?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in a .env file — see apps/api/.env.example}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in a .env file — see apps/api/.env.example}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      SMS_ENDPOINT: ${SMS_ENDPOINT:-}
+      SMS_AUTH_SCHEME: ${SMS_AUTH_SCHEME:-basic}
+      SMS_USERNAME: ${SMS_USERNAME:-}
+      SMS_TOKEN: ${SMS_TOKEN:-}
+      SMS_SENDER: ${SMS_SENDER:-TuTak}
+      SMS_ENCODING: ${SMS_ENCODING:-form}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   tutak_postgres_data:

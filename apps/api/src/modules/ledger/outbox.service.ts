@@ -13,6 +13,16 @@ const MAX_ATTEMPTS = 10;
 /** How many events one drain pass claims. Bounded so a backlog cannot stall a worker. */
 const BATCH_SIZE = 50;
 
+/**
+ * How long a claimed row is invisible to other claimants while its handlers
+ * run. `FOR UPDATE SKIP LOCKED` only holds the row lock for the claiming
+ * transaction, which commits before handlers execute — without this lease, a
+ * second `drain()` racing the first could SELECT the same rows the instant
+ * the claim transaction commits and process them a second time before the
+ * first claimant ever reaches its `processedAt` update.
+ */
+const CLAIM_LEASE_MS = 60_000;
+
 @Injectable()
 export class OutboxService {
   private readonly logger = new Logger(OutboxService.name);
@@ -71,6 +81,14 @@ export class OutboxService {
    * replicas would either block on each other or process the same event
    * twice.
    *
+   * The row lock alone is not enough, though: it is held only for the
+   * claiming transaction, which commits before any handler runs. Pushing
+   * `nextAttemptAt` out by `CLAIM_LEASE_MS` in that same transaction is what
+   * keeps a claimed-but-not-yet-processed row invisible to a concurrent
+   * `drain()` for the rest of the processing window — without it, two
+   * replicas draining at once could both claim and both process the same
+   * event before either reached its `processedAt` update.
+   *
    * Returns the number of events successfully handled.
    */
   async drain(now = new Date()): Promise<number> {
@@ -90,12 +108,14 @@ export class OutboxService {
 
       if (rows.length === 0) return [];
 
-      // Bump the attempt inside the claiming transaction. A worker that dies
-      // mid-handler has still recorded the try, so a poisonous event backs
-      // off instead of spinning forever.
+      // Bump the attempt and extend the lease inside the claiming
+      // transaction. A worker that dies mid-handler has still recorded the
+      // try, so a poisonous event backs off instead of spinning forever, and
+      // the lease means it becomes reclaimable again once it lapses rather
+      // than staying invisible forever.
       await tx.outboxEvent.updateMany({
         where: { id: { in: rows.map((r) => r.id) } },
-        data: { attempts: { increment: 1 } },
+        data: { attempts: { increment: 1 }, nextAttemptAt: new Date(now.getTime() + CLAIM_LEASE_MS) },
       });
 
       return rows;

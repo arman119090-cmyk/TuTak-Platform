@@ -166,6 +166,38 @@ describe('Outbox (integration)', () => {
       expect(await prisma.outboxEvent.count({ where: { processedAt: null } })).toBe(0);
     });
 
+    it('does not let a second drain reclaim a row while the first is still inside its handler', async () => {
+      // The claim transaction commits before any handler runs, so the row
+      // lock from FOR UPDATE SKIP LOCKED is gone by the time a handler is
+      // slow — this is what a second `drain()` racing into that gap looks
+      // like. A slow handler here is standing in for exactly that gap,
+      // widened deliberately so the assertion does not depend on incidental
+      // scheduling luck the way the test above does.
+      let concurrentHandlerCalls = 0;
+      let maxConcurrentHandlerCalls = 0;
+      outbox.register('slow.event', async () => {
+        concurrentHandlerCalls += 1;
+        maxConcurrentHandlerCalls = Math.max(maxConcurrentHandlerCalls, concurrentHandlerCalls);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        concurrentHandlerCalls -= 1;
+      });
+
+      await prisma.$transaction((tx) =>
+        outbox.publish(tx, {
+          aggregateType: 'Probe',
+          aggregateId: 'slow-1',
+          eventType: 'slow.event',
+          payload: {},
+        }),
+      );
+
+      const [a, b] = await Promise.all([outbox.drain(), outbox.drain()]);
+
+      expect(a + b).toBe(1);
+      expect(maxConcurrentHandlerCalls).toBe(1);
+      expect(await prisma.outboxEvent.count({ where: { processedAt: { not: null } } })).toBe(1);
+    });
+
     it('retries a failing handler with backoff rather than dropping the event', async () => {
       let attempts = 0;
       outbox.register('flaky.event', () => {

@@ -1,6 +1,27 @@
 # TuTak Financial Core — design
 
-Status: **design, not implemented.** No code in this document exists yet.
+Status: **built, on a sandbox acquirer.** All five phases exist and are
+tested; what does not exist is a real PSP behind them.
+
+| Phase | Status | Where |
+| --- | --- | --- |
+| 1 — Ledger, constraints, outbox | Built | `modules/ledger/` |
+| 2 — Idempotency `IN_FLIGHT` | Built | `modules/ledger/idempotency.service.ts` |
+| 3 — Payment engine | Built, sandbox PSP | `modules/payments/payment-engine.service.ts` |
+| 4 — Settlement | Built | `modules/settlement/` |
+| 5 — Refund, payout, reconciliation | Built | `modules/payments/refund-engine.service.ts`, `modules/payouts/`, `modules/reconciliation/` |
+
+Two things in this document are still specification rather than code, and are
+called out again where they appear below:
+
+- **The acquirer.** Every payment runs against `SandboxPspAdapter`, a
+  deterministic fake behind the `PspAdapter` interface. There is no acquirer
+  contract, so there is no real adapter to write yet. The module refuses to
+  boot the sandbox in production.
+- **The phase-4 cut-over.** QR and EV redemption still use the pre-existing
+  path and accrue bonus at their own completion, not through settlement. The
+  new engines run alongside rather than underneath them. §9 describes that
+  cut-over as the high-risk step it is; it has not been taken.
 
 The existing `BonusLedgerEntry` handles loyalty points and does so correctly
 (263 tests, property-based invariants). It is *not* a general ledger: it tracks
@@ -370,4 +391,65 @@ correct.
 Steps 1–3 are the foundation and are independent of which PSP is chosen —
 they can start before the acquirer contract is signed. Step 4 cannot.
 
-**Not started.** This document is the specification; the code does not exist.
+---
+
+## 11. What was actually built, and what it cost
+
+All five steps above exist. Where the implementation departed from this
+specification, it was for a reason worth recording:
+
+**Settlement posts a bonus liability.** The chart of accounts listed
+`BONUS_LIABILITY` but no engine wrote to it. Issuing points is incurring a
+debt — the platform owes that value at redemption — so settlement posts
+`DR PLATFORM_REVENUE / CR BONUS_LIABILITY` alongside the bonus-ledger
+accrual. Without it the double-entry ledger claimed the platform kept revenue
+it had already committed to giving back.
+
+**`BANK_CLEARING` was added to the chart of accounts.** A payout debits
+`PARTNER_PAYABLE` and credits clearing, where the money sits until the bank
+confirms. The alternative — straight out of the ledger on request — makes an
+in-flight transfer invisible: not the partner's to request again, but not yet
+safe to call gone either.
+
+**Payouts serialize on `SELECT ... FOR UPDATE`, not a conditional UPDATE.**
+The conditional-UPDATE pattern used everywhere else in this codebase does not
+work here, because `ledger.post` moves the same balance the claim would move
+— a claim that also moved it would double-count. Locking the row states the
+intent (exclude concurrent readers) without touching the number.
+
+**`reverseAccrualLot` gained an optional cap.** A partial refund must reclaim
+a proportional share of the points, not all of them. The existing method took
+the whole unspent remainder; it now takes `min(cap, remainder)`.
+
+**Reconciliation runs today without any external statement.** Neither an
+acquirer feed nor a bank feed exists. What it can do unaided — replay every
+account against its own postings — is the check most worth running
+unattended anyway, because it catches the ledger disagreeing with *itself*,
+which is a bug in this codebase rather than a dispute with a third party.
+
+### Test coverage against §8
+
+| §8 requirement | Covered by |
+| --- | --- |
+| Every transaction balances | `ledger.int-spec.ts`, deferred constraint trigger |
+| Balance equals its postings | `assertLedgerIntegrity` in refund/payout specs; `reconciliation.int-spec.ts` |
+| Postings immutable | `ledger.int-spec.ts` |
+| No over-refund under concurrency | `refund-engine.int-spec.ts`, plus a CHECK constraint |
+| Concurrent payout drain | `payout-engine.int-spec.ts` |
+| Outbox drained by two workers | `outbox.int-spec.ts` |
+| Idempotency: replay, mismatch, per-actor | `idempotency.int-spec.ts` and each engine's spec |
+| Injected drift blocks payouts | `reconciliation.int-spec.ts` |
+
+### Not covered, and honestly so
+
+- **Rollback after a successful external call.** §8 asks for "PSP timeout
+  mid-capture" and "ledger write fails after PSP capture succeeds". The
+  second is the genuinely hard case — money moved externally, locally it did
+  not — and it is *not* solved here. `SandboxPspAdapter` can simulate an
+  outage before capture (tested), but reconciling a real acquirer's captured
+  charge against a missing local posting needs the acquirer's settlement
+  file, which does not exist yet. This is the largest known gap in the
+  financial core.
+- **The phase-4 cut-over** (QR/EV redemption routed through payments) has
+  not been done; §9 marks it high-risk and it needs the dual-write period it
+  describes.

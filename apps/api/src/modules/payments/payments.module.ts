@@ -3,7 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PartnersModule } from '../partners/partners.module';
+import { WalletModule } from '../wallet/wallet.module';
 import { PaymentEngineService } from './payment-engine.service';
+import { RefundEngineService } from './refund-engine.service';
 import { PSP_ADAPTER } from './psp-adapter.interface';
 import { SandboxPspAdapter } from './sandbox-psp.adapter';
 
@@ -13,9 +15,10 @@ import { SandboxPspAdapter } from './sandbox-psp.adapter';
  * surface of its own yet.
  */
 @Module({
-  imports: [LedgerModule, PartnersModule],
+  imports: [LedgerModule, PartnersModule, WalletModule],
   providers: [
     PaymentEngineService,
+    RefundEngineService,
     SandboxPspAdapter,
     {
       provide: PSP_ADAPTER,
@@ -34,6 +37,6 @@ import { SandboxPspAdapter } from './sandbox-psp.adapter';
       },
     },
   ],
-  exports: [PaymentEngineService],
+  exports: [PaymentEngineService, RefundEngineService],
 })
 export class PaymentsModule {}

@@ -84,8 +84,6 @@ export class TransactionsService {
     extra: { bonusEarnedAmount?: Decimal | number | string } = {},
     tx?: Tx,
   ) {
-    const client = tx ?? this.prisma;
-
     const write = async (inner: Tx) => {
       const updated = await inner.transaction.update({
         where: { id: transactionId },

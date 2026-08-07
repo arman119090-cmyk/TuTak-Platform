@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { Request, Response } from 'express';
+import { requestContext } from '../observability/request-context';
 
 interface HttpExceptionBody {
   message?: string | string[];
@@ -74,7 +75,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // PrismaClientInitializationError and CHECK-constraint violations, which
     // arrive as PrismaClientUnknownRequestError — keeps the generic 500.
 
-    const incidentId = randomUUID();
+    // Prefer the request's own correlation id: it is already on every log
+    // line this request produced and is echoed in the `x-request-id` header,
+    // so one identifier ties the client's report, the response body and the
+    // whole log trail together. A freshly minted id would only ever appear
+    // on this one line.
+    const incidentId = requestContext.get()?.requestId ?? randomUUID();
     if (status >= 500) {
       this.logger.error(
         `[${incidentId}] ${request.method} ${request.url} -> ${status}`,

@@ -9,10 +9,20 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
+import { StructuredLogger } from './common/observability/structured-logger';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { cors: false });
+  // `bufferLogs` holds startup output until the real logger is installed, so
+  // the first lines of a production boot are JSON like every line after them
+  // rather than a format nothing downstream can parse.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    cors: false,
+    bufferLogs: true,
+  });
   const config = app.get(ConfigService<AppConfig, true>);
+
+  const isProduction = config.get('nodeEnv', { infer: true }) === 'production';
+  app.useLogger(new StructuredLogger(isProduction));
 
   app.use(helmet());
   app.use(compression());

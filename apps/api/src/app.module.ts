@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -12,6 +12,7 @@ import { RedisModule } from './infrastructure/redis/redis.module';
 import { SmsModule } from './infrastructure/sms/sms.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { RequestContextMiddleware } from './common/observability/request-context.middleware';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -88,4 +89,12 @@ import { HealthModule } from './modules/health/health.module';
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /**
+   * Applied to every route including the health probes: a probe that starts
+   * failing is exactly when the correlation id is most wanted.
+   */
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

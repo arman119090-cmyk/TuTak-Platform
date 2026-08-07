@@ -4,6 +4,9 @@ import { AppConfig } from '../../config/configuration';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PartnersModule } from '../partners/partners.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { AuditModule } from '../audit/audit.module';
+import { PaymentsController } from './payments.controller';
+import { RefundsController } from './refunds.controller';
 import { PaymentEngineService } from './payment-engine.service';
 import { RefundEngineService } from './refund-engine.service';
 import { PSP_ADAPTER } from './psp-adapter.interface';
@@ -15,7 +18,8 @@ import { SandboxPspAdapter } from './sandbox-psp.adapter';
  * surface of its own yet.
  */
 @Module({
-  imports: [LedgerModule, PartnersModule, WalletModule],
+  imports: [LedgerModule, PartnersModule, WalletModule, AuditModule],
+  controllers: [PaymentsController, RefundsController],
   providers: [
     PaymentEngineService,
     RefundEngineService,

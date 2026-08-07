@@ -2,8 +2,10 @@ import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { AppConfig } from '../../config/configuration';
+import { DistributedLockService } from './distributed-lock.service';
+import { REDIS_CLIENT } from './redis-client.token';
 
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+export { REDIS_CLIENT };
 
 @Global()
 @Module({
@@ -28,7 +30,8 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
         return client;
       },
     },
+    DistributedLockService,
   ],
-  exports: [REDIS_CLIENT],
+  exports: [REDIS_CLIENT, DistributedLockService],
 })
 export class RedisModule {}

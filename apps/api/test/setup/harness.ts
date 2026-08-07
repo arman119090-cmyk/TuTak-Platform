@@ -3,7 +3,9 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import configuration from '../../src/config/configuration';
+import type Redis from 'ioredis';
 import { PrismaModule } from '../../src/infrastructure/prisma/prisma.module';
+import { REDIS_CLIENT, RedisModule } from '../../src/infrastructure/redis/redis.module';
 import { SmsModule } from '../../src/infrastructure/sms/sms.module';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
@@ -51,6 +53,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
       EventEmitterModule.forRoot(),
       PrismaModule,
+      RedisModule,
       SmsModule,
       WalletModule,
       TransactionsModule,
@@ -79,6 +82,10 @@ export async function createTestHarness(): Promise<TestHarness> {
     app: moduleRef,
     prisma,
     async close() {
+      // ioredis doesn't implement OnModuleDestroy, so Nest's own shutdown
+      // hooks never reach it — left unclosed, the open TCP handle keeps the
+      // Jest worker alive after every test in the file has finished.
+      await moduleRef.get<Redis>(REDIS_CLIENT).quit();
       await moduleRef.close();
       await prisma.$disconnect();
     },

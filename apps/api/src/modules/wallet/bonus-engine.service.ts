@@ -479,8 +479,13 @@ export class BonusEngineService {
    * Only the portion still unspent is clawed back: if the customer has
    * already redeemed part of the lot, taking it back would drive the wallet
    * negative. The shortfall is recorded on the entry rather than forced.
+   *
+   * `maxAmount` caps how much is taken, which is what a partial refund needs
+   * — refunding half a purchase should reclaim half its points, not all of
+   * them. Omitted, the whole unspent remainder goes, which is what a full
+   * reversal needs.
    */
-  async reverseAccrualLot(lotId: string, reason: string) {
+  async reverseAccrualLot(lotId: string, reason: string, maxAmount?: Decimal) {
     return this.prisma.$transaction(
       async (tx) => {
         const lot = await tx.bonusLot.findUniqueOrThrow({ where: { id: lotId } });
@@ -488,12 +493,19 @@ export class BonusEngineService {
           return null;
         }
 
-        const amount = lot.remainingAmount;
+        const amount = maxAmount
+          ? Decimal.min(maxAmount, lot.remainingAmount)
+          : lot.remainingAmount;
+        if (amount.lessThanOrEqualTo(0)) return null;
+        const drained = amount.equals(lot.remainingAmount);
         const wasPending = lot.status === BonusLotStatus.PENDING;
 
         await tx.bonusLot.update({
           where: { id: lot.id },
-          data: { remainingAmount: 0, status: BonusLotStatus.CONSUMED },
+          data: {
+            remainingAmount: { decrement: amount },
+            ...(drained ? { status: BonusLotStatus.CONSUMED } : {}),
+          },
         });
 
         await tx.wallet.update({

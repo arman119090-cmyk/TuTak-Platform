@@ -46,3 +46,27 @@ export interface AuthResponseDto {
   user: AuthenticatedUserDto;
   tokens: AuthTokensDto;
 }
+
+/** Every auth mutation that has no richer payload returns this shape. */
+export interface SuccessResponseDto {
+  success: boolean;
+}
+
+export interface ChangePasswordRequestDto {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface RequestPasswordResetRequestDto {
+  phone: string;
+}
+
+export interface ConfirmPasswordResetRequestDto {
+  phone: string;
+  code: string;
+  newPassword: string;
+}
+
+export interface ConfirmPhoneVerificationRequestDto {
+  code: string;
+}

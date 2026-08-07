@@ -1,8 +1,13 @@
 import type {
   AuthResponseDto,
   AuthTokensDto,
+  ChangePasswordRequestDto,
+  ConfirmPasswordResetRequestDto,
+  ConfirmPhoneVerificationRequestDto,
   LoginRequestDto,
   RegisterRequestDto,
+  RequestPasswordResetRequestDto,
+  SuccessResponseDto,
 } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
@@ -27,5 +32,44 @@ export const authApi = {
       { refreshToken, deviceId },
     );
     return data.data.tokens;
+  },
+
+  async changePassword(dto: ChangePasswordRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/change-password',
+      dto,
+    );
+    return data.data;
+  },
+
+  async requestPasswordReset(dto: RequestPasswordResetRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/password-reset/request',
+      dto,
+    );
+    return data.data;
+  },
+
+  async confirmPasswordReset(dto: ConfirmPasswordResetRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/password-reset/confirm',
+      dto,
+    );
+    return data.data;
+  },
+
+  async requestPhoneVerification() {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/verify-phone/request',
+    );
+    return data.data;
+  },
+
+  async confirmPhoneVerification(dto: ConfirmPhoneVerificationRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/verify-phone/confirm',
+      dto,
+    );
+    return data.data;
   },
 };

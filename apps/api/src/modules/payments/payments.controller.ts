@@ -1,11 +1,13 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { PermissionName } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { isPlatformAdmin } from '../../common/auth/partner-scope';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { RequestUser } from '../auth/types/request-user.type';
-import { CapturePaymentDto } from './dto/capture-payment.dto';
+import { CapturePaymentDto, SearchPaymentsDto } from './dto/capture-payment.dto';
 import { PaymentEngineService } from './payment-engine.service';
 import { RefundEngineService } from './refund-engine.service';
 
@@ -34,6 +36,35 @@ export class PaymentsController {
       amount: dto.amount,
       sourceToken: dto.sourceToken,
       idempotencyKey: dto.idempotencyKey,
+    });
+  }
+
+  /**
+   * Recent payments, for an operator about to issue a refund.
+   *
+   * Declared before `:id` on purpose — Nest matches in declaration order, and
+   * `@Get(':id')` above this would swallow `/payments/search` as a lookup for
+   * a payment whose id is the literal string "search".
+   *
+   * Gated on PAYMENT_REFUND rather than a separate read permission: finding
+   * the payment is strictly less privileged than refunding it, and anyone
+   * who can do the latter needs the former to be useful.
+   */
+  @Get('search')
+  @RequirePermissions(PermissionName.PAYMENT_REFUND)
+  search(@Query() query: SearchPaymentsDto) {
+    return this.prisma.payment.findMany({
+      where: {
+        ...(query.partnerId ? { partnerId: query.partnerId } : {}),
+        ...(query.userId ? { userId: query.userId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Number(query.limit) || 50, 200),
+      include: {
+        partner: { select: { displayName: true } },
+        user: { select: { firstName: true, lastName: true, phone: true } },
+      },
     });
   }
 

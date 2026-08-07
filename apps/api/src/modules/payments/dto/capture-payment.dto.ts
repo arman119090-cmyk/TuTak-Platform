@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { IsIn, IsNumberString, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 
 export class CapturePaymentDto {
@@ -24,6 +24,24 @@ export class CapturePaymentDto {
   @IsString()
   @Length(8, 128)
   idempotencyKey: string;
+}
+
+export class SearchPaymentsDto {
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
+  @IsOptional()
+  @IsIn(['CAPTURED', 'DECLINED'])
+  status?: 'CAPTURED' | 'DECLINED';
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;
 }
 
 export class RefundPaymentDto {

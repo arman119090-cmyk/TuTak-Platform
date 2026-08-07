@@ -31,6 +31,19 @@ export interface AppConfig {
     sender: string;
     encoding: 'form' | 'json';
   };
+  features: {
+    /**
+     * Phase 4 of docs/FINANCIAL_CORE_DESIGN.md: mirror QR redemptions into
+     * the double-entry ledger alongside the existing path.
+     *
+     * Off by default and additive when on — the old path stays authoritative
+     * for what the customer is told, and the mirror only writes ledger
+     * postings. §9 marks this cut-over as the high-risk one and calls for a
+     * dual-write period with reconciliation before the old path is removed;
+     * this flag is what makes that period possible.
+     */
+    qrLedgerMirror: boolean;
+  };
 }
 
 export default (): AppConfig => ({
@@ -77,5 +90,10 @@ export default (): AppConfig => ({
     token: process.env.SMS_TOKEN ?? '',
     sender: process.env.SMS_SENDER ?? 'TuTak',
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
+  },
+  features: {
+    // Opt-in, and it must stay that way until a full settlement cycle has
+    // reconciled clean.
+    qrLedgerMirror: process.env.FEATURE_QR_LEDGER_MIRROR === 'true',
   },
 });

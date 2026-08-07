@@ -5,8 +5,10 @@ import { SecurityModule } from '../security/security.module';
 import { AuthModule } from '../auth/auth.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { QrPaymentsController } from './qr-payments.controller';
 import { QrPaymentsService } from './qr-payments.service';
+import { QrLedgerMirrorService } from './qr-ledger-mirror.service';
 
 @Module({
   imports: [
@@ -15,10 +17,11 @@ import { QrPaymentsService } from './qr-payments.service';
     PartnersModule,
     AuditModule,
     SecurityModule,
+    LedgerModule,
     forwardRef(() => AuthModule),
   ],
   controllers: [QrPaymentsController],
-  providers: [QrPaymentsService],
+  providers: [QrPaymentsService, QrLedgerMirrorService],
   exports: [QrPaymentsService],
 })
 export class QrPaymentsModule {}

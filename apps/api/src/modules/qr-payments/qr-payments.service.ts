@@ -15,6 +15,7 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { BonusEntryType } from '@prisma/client';
 import { IssueQrDto } from './dto/issue-qr.dto';
 import { RedeemQrDto } from './dto/redeem-qr.dto';
+import { QrLedgerMirrorService } from './qr-ledger-mirror.service';
 
 @Injectable()
 export class QrPaymentsService {
@@ -29,6 +30,7 @@ export class QrPaymentsService {
     private readonly auditService: AuditService,
     private readonly fraudDetectionService: FraudDetectionService,
     private readonly phoneVerification: PhoneVerificationService,
+    private readonly ledgerMirror: QrLedgerMirrorService,
   ) {}
 
   async issue(dto: IssueQrDto, issuer: RequestUser) {
@@ -245,6 +247,18 @@ export class QrPaymentsService {
         entityId: qr.id,
         metadata: { transactionId: transaction.id, amount: amount.toString() },
       });
+
+      // Dual-write for the phase-4 cut-over. Off unless the flag is set, and
+      // it never throws — this path stays authoritative until reconciliation
+      // has proven the ledger agrees with it across a settlement cycle.
+      if (partner) {
+        await this.ledgerMirror.mirror({
+          transactionId: transaction.id,
+          partnerId: partner.id,
+          amount,
+          bonusApplied: bonusToApply,
+        });
+      }
 
       return {
         transactionId: completed.id,

@@ -86,5 +86,14 @@ jobs:
       - name: Integration tests
         run: pnpm --filter @tutak/api test:int
 
+      - name: Mobile tests
+        run: pnpm --filter @tutak/mobile test
+
+      - name: Admin dashboard tests
+        run: pnpm --filter @tutak/admin test
+
+      - name: Partner dashboard tests
+        run: pnpm --filter @tutak/partner test
+
       - name: Build all applications
         run: pnpm build

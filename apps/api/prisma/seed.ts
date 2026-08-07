@@ -1,33 +1,10 @@
 import { PrismaClient, RoleName, PermissionName } from '@prisma/client';
+import { ROLE_PERMISSIONS } from './seed-permissions';
 import { randomBytes } from 'node:crypto';
 import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
-const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
-  CUSTOMER: [PermissionName.WALLET_READ, PermissionName.QR_REDEEM],
-  PARTNER_STAFF: [
-    PermissionName.QR_ISSUE,
-    PermissionName.PARTNER_TRANSACTIONS_READ,
-  ],
-  PARTNER_OWNER: [
-    PermissionName.QR_ISSUE,
-    PermissionName.PARTNER_TRANSACTIONS_READ,
-    PermissionName.PARTNER_MANAGE,
-    PermissionName.EV_STATION_MANAGE,
-    PermissionName.ANALYTICS_READ,
-  ],
-  ADMIN: [
-    PermissionName.USER_MANAGE,
-    PermissionName.PARTNER_MANAGE,
-    PermissionName.BONUS_RULE_MANAGE,
-    PermissionName.ADMIN_AUDIT_READ,
-    PermissionName.EV_STATION_MANAGE,
-    PermissionName.ANALYTICS_READ,
-    PermissionName.WALLET_WRITE,
-  ],
-  SUPER_ADMIN: Object.values(PermissionName),
-};
 
 async function main() {
   console.log('Seeding permissions...');

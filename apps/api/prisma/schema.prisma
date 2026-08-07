@@ -40,6 +40,16 @@ enum PermissionName {
   QR_ISSUE
   QR_REDEEM
   ANALYTICS_READ
+  /// Issue refunds against captured payments. Separate from PARTNER_MANAGE
+  /// on purpose: managing a partner's details and moving money back out of
+  /// their balance are different levels of trust.
+  PAYMENT_REFUND
+  /// Request, confirm and fail payouts to partner bank accounts.
+  PAYOUT_MANAGE
+  /// Read the double-entry ledger and reconciliation results. Read-only, but
+  /// it exposes every account on the platform, so it is not given out with
+  /// ordinary analytics access.
+  LEDGER_READ
 }
 
 model Role {
@@ -1091,6 +1101,11 @@ enum AuditAction {
   ADMIN_ROLE_CHANGED
   FRAUD_FLAGGED
   ACCOUNT_LOCKED
+  PAYMENT_REFUNDED
+  PAYOUT_REQUESTED
+  PAYOUT_RESOLVED
+  PAYOUT_BLOCK_CLEARED
+  RECONCILIATION_RUN
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

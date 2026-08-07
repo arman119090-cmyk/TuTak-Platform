@@ -317,18 +317,48 @@ the bug it exists to find.
 
 ## 7. API surface
 
+Originally specified as a two-phase authorize/capture/void flow. **Built as
+single-phase capture**, and the difference is worth stating rather than
+quietly absorbing:
+
 ```
-POST   /v1/payments/authorize     { amount, partnerId, idempotencyKey }
-POST   /v1/payments/:id/capture   { idempotencyKey }
-POST   /v1/payments/:id/void      { idempotencyKey }
-POST   /v1/refunds                { paymentId, amount?, reason, idempotencyKey }
-GET    /v1/partners/:id/balance
-POST   /v1/payouts                { partnerId, amount, idempotencyKey }   [ADMIN]
-GET    /v1/admin/ledger/accounts/:id/postings                             [ADMIN]
-GET    /v1/admin/reconciliation/:date                                     [ADMIN]
+POST   /v1/payments                       { partnerId, amount, sourceToken, idempotencyKey }
+GET    /v1/payments/:id                                          [owner or admin]
+GET    /v1/payments/:id/refunds                                  [owner or admin]
+POST   /v1/refunds                        { paymentId, amount?, reason, idempotencyKey }
+                                                                 [PAYMENT_REFUND]
+GET    /v1/payouts/partners/:id/balance                          [partner-scoped]
+GET    /v1/payouts/partners/:id/settlements                      [partner-scoped]
+GET    /v1/payouts/partners/:id                                  [partner-scoped]
+POST   /v1/payouts                        { partnerId, amount, idempotencyKey }
+                                                                 [PAYOUT_MANAGE]
+POST   /v1/payouts/:id/confirm            { bankReference }      [PAYOUT_MANAGE]
+POST   /v1/payouts/:id/fail               { failureReason }      [PAYOUT_MANAGE]
+GET    /v1/admin/ledger/accounts                                 [LEDGER_READ]
+GET    /v1/admin/ledger/accounts/:id/postings                    [LEDGER_READ]
+GET    /v1/admin/reconciliation                                  [LEDGER_READ]
+POST   /v1/admin/reconciliation/run       { periodStart, pspReceivable?, partnerPayables? }
+                                                                 [LEDGER_READ]
+POST   /v1/admin/partners/:id/payout-block/clear                 [PAYOUT_MANAGE]
 ```
 
 Every mutating call takes `idempotencyKey` and is scoped per actor.
+
+**Why single-phase.** A separate `authorize` earns its keep when the final
+amount is not known when the customer commits — the EV case, where a session
+is authorized for a ceiling and captured for what was actually drawn. QR
+payments know the amount up front, so two phases would be ceremony. When EV
+is routed through payments (the §9 phase-4 cut-over, not yet done), authorize
+becomes necessary and should be added then, against a real acquirer that can
+actually hold funds — a sandbox "authorization" proves nothing.
+
+**Permissions.** Three were added rather than reusing `PARTNER_MANAGE`:
+`PAYMENT_REFUND`, `PAYOUT_MANAGE`, `LEDGER_READ`. Editing a partner's
+details, moving money back out of their balance, and wiring money to an
+external bank are three different levels of trust. `PAYOUT_MANAGE` is
+deliberately **not** granted to `ADMIN` — only `SUPER_ADMIN` — because a
+payout is the least reversible action here and there is no maker-checker
+flow yet to hand it out more widely.
 
 ---
 

@@ -33,6 +33,9 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SecurityModule } from './modules/security/security.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { SettlementModule } from './modules/settlement/settlement.module';
+import { PayoutsModule } from './modules/payouts/payouts.module';
+import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -70,6 +73,9 @@ import { HealthModule } from './modules/health/health.module';
     SecurityModule,
     LedgerModule,
     PaymentsModule,
+    SettlementModule,
+    PayoutsModule,
+    ReconciliationModule,
     HealthModule,
   ],
   providers: [

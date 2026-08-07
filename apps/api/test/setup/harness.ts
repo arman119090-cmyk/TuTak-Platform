@@ -14,6 +14,9 @@ import { NotificationsModule } from '../../src/modules/notifications/notificatio
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
 import { PaymentsModule } from '../../src/modules/payments/payments.module';
+import { SettlementModule } from '../../src/modules/settlement/settlement.module';
+import { PayoutsModule } from '../../src/modules/payouts/payouts.module';
+import { ReconciliationModule } from '../../src/modules/reconciliation/reconciliation.module';
 import { HealthModule } from '../../src/modules/health/health.module';
 import { SecurityModule } from '../../src/modules/security/security.module';
 import { AuditModule } from '../../src/modules/audit/audit.module';
@@ -71,6 +74,9 @@ export async function createTestHarness(): Promise<TestHarness> {
       AnalyticsModule,
       LedgerModule,
       PaymentsModule,
+      SettlementModule,
+      PayoutsModule,
+      ReconciliationModule,
       HealthModule,
     ],
   })

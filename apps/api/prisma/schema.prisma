@@ -129,6 +129,7 @@ model User {
   fraudSignals      FraudSignal[]
   passwordResets    PasswordResetToken[]
   phoneVerifications PhoneVerificationToken[]
+  payments          Payment[]
 
   @@index([createdAt])
   @@map("users")
@@ -501,6 +502,11 @@ model Partner {
   taxId                 String   @unique
   category              String
   bonusAccrualRateBps   Int      @default(300) // basis points, e.g. 300 = 3%
+  /// The platform's cut of a captured payment, in basis points. Independent
+  /// of bonusAccrualRateBps — one prices what the customer earns, the other
+  /// what the platform keeps, and conflating them would make either one
+  /// impossible to change without affecting the other.
+  paymentCommissionRateBps Int   @default(250) // 2.5%
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -511,6 +517,7 @@ model Partner {
   qrCodes     QrCode[]
   evStations  EvStation[]
   userRoles   UserRole[]
+  payments    Payment[]
 
   @@map("partners")
 }
@@ -789,6 +796,7 @@ model LedgerTransaction {
   postedAt   DateTime @default(now())
 
   postings LedgerPosting[]
+  payment  Payment?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -852,6 +860,47 @@ model IdempotencyRecord {
 
   @@unique([scope, key])
   @@map("idempotency_records")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Payments (financial core, phase 3)
+//
+// A record of one PSP charge attempt. Deliberately separate from
+// `Transaction`, which is the QR/EV/bonus domain record of "the customer did
+// something" — this is the money side of a card charge specifically:
+// whether the acquirer captured it, for how much, and what it cost in
+// commission. A CAPTURED payment always has exactly one LedgerTransaction; a
+// DECLINED payment has none, because nothing moved.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  CAPTURED
+  DECLINED
+}
+
+model Payment {
+  id                  String        @id @default(uuid())
+  userId              String
+  partnerId           String
+  amount              Decimal       @db.Decimal(18, 4)
+  currency            Currency      @default(AMD)
+  /// The platform's cut, already deducted from what the partner is owed.
+  /// Zero on a declined payment — nothing was captured to take a cut of.
+  commissionAmount    Decimal       @db.Decimal(18, 4)
+  status              PaymentStatus
+  pspReference        String?
+  declineReason       String?
+  /// Null on a declined payment.
+  ledgerTransactionId String?       @unique
+  createdAt           DateTime      @default(now())
+
+  user              User               @relation(fields: [userId], references: [id])
+  partner           Partner            @relation(fields: [partnerId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@index([userId])
+  @@index([partnerId])
+  @@map("payments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

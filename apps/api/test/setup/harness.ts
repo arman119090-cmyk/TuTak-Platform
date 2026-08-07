@@ -13,6 +13,7 @@ import { AuthModule } from '../../src/modules/auth/auth.module';
 import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
+import { PaymentsModule } from '../../src/modules/payments/payments.module';
 import { SecurityModule } from '../../src/modules/security/security.module';
 import { AuditModule } from '../../src/modules/audit/audit.module';
 import { EvChargingModule } from '../../src/modules/ev-charging/ev-charging.module';
@@ -68,6 +69,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       SecurityModule,
       AnalyticsModule,
       LedgerModule,
+      PaymentsModule,
     ],
   })
     .overrideProvider(PrismaService)

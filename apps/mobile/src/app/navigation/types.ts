@@ -1,6 +1,8 @@
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
+  ForgotPassword: undefined;
+  ResetPassword: { phone: string };
 };
 
 export type MainTabParamList = {
@@ -18,4 +20,6 @@ export type RootStackParamList = {
   TransactionHistory: undefined;
   Referral: undefined;
   EvHistory: undefined;
+  ChangePassword: undefined;
+  VerifyPhone: undefined;
 };

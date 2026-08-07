@@ -82,6 +82,14 @@ export function LoginScreen({ navigation }: Props) {
             error={error ?? undefined}
           />
 
+          <Pressable
+            onPress={() => navigation.navigate('ForgotPassword')}
+            hitSlop={8}
+            style={{ alignSelf: 'flex-end', marginTop: -space[2], marginBottom: space[2] }}
+          >
+            <Text style={[text.label, { color: color.primary }]}>{t('auth.forgotPassword')}</Text>
+          </Pressable>
+
           <View style={{ marginTop: space[3] }}>
             <Button
               label={t('auth.loginButton')}

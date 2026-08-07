@@ -1,6 +1,8 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { SUPPORTED_LOCALES } from '@tutak/i18n';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -11,6 +13,7 @@ import { SectionHeader } from '../../components/SectionHeader';
 import { Button } from '../../components/Button';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
+import type { RootStackParamList } from '../../../app/navigation/types';
 
 const LOCALE_LABELS: Record<string, string> = {
   hy: 'Հայերեն',
@@ -22,6 +25,7 @@ export function SettingsScreen() {
   const { t, i18n } = useTranslation();
   const { color, space, text, radius } = useTheme();
   const { user, deviceId, clear } = useAuthStore();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
 
@@ -96,10 +100,19 @@ export function SettingsScreen() {
             leading={<SettingIcon name="notifications-outline" />}
             trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
           />
+          {!user?.isPhoneVerified ? (
+            <ListRow
+              title={t('settings.verifyPhone')}
+              leading={<SettingIcon name="shield-checkmark-outline" />}
+              trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+              onPress={() => navigation.navigate('VerifyPhone')}
+            />
+          ) : null}
           <ListRow
             title={t('settings.changePassword')}
             leading={<SettingIcon name="lock-closed-outline" />}
             trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+            onPress={() => navigation.navigate('ChangePassword')}
             last
           />
         </View>

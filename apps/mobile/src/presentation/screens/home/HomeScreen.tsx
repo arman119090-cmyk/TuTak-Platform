@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -75,6 +75,33 @@ export function HomeScreen({ navigation }: Props) {
             loading={walletLoading}
           />
         </View>
+
+        {/* Unverified accounts can pay and charge, but cannot earn — the
+            backend gates accrual on isPhoneVerified, so this is the one
+            action that actually unblocks the product for a new customer. */}
+        {user && !user.isPhoneVerified ? (
+          <Pressable
+            onPress={() => navigation.navigate('VerifyPhone')}
+            style={[
+              styles.verifyBanner,
+              {
+                marginHorizontal: layout.screenPaddingX,
+                marginTop: space[4],
+                backgroundColor: color.pendingSurface,
+                borderRadius: radius.lg,
+                padding: space[4],
+                gap: space[1],
+              },
+            ]}
+          >
+            <Text style={[text.label, { color: color.pendingText }]}>
+              {t('auth.verifyPhoneBannerTitle')}
+            </Text>
+            <Text style={[text.bodySm, { color: color.pendingText }]}>
+              {t('auth.verifyPhoneBannerBody')}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {/* Primary actions. Pay is first — it is why the app exists. */}
         <View
@@ -170,4 +197,5 @@ const styles = StyleSheet.create({
   txIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   bell: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   skeletonRow: { flexDirection: 'row', alignItems: 'center' },
+  verifyBanner: {},
 });

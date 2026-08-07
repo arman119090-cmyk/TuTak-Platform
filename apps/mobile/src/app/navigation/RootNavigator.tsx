@@ -8,6 +8,8 @@ import { NotificationsScreen } from '../../presentation/screens/notifications/No
 import { TransactionHistoryScreen } from '../../presentation/screens/transactions/TransactionHistoryScreen';
 import { ReferralScreen } from '../../presentation/screens/referral/ReferralScreen';
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
+import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -61,6 +63,16 @@ export function RootNavigator() {
         name="EvHistory"
         component={EvHistoryScreen}
         options={{ title: t('ev.history'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ title: t('settings.changePassword'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="VerifyPhone"
+        component={VerifyPhoneScreen}
+        options={{ title: t('auth.otpTitle'), headerShown: false }}
       />
     </Stack.Navigator>
   );

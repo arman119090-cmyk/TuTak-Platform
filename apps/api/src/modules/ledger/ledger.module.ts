@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { LedgerService } from './ledger.service';
+import { OutboxService } from './outbox.service';
 
 /**
  * Phase 1 of the financial core: the ledger and its posting primitive.
@@ -11,7 +12,7 @@ import { LedgerService } from './ledger.service';
  * balance.
  */
 @Module({
-  providers: [LedgerService],
-  exports: [LedgerService],
+  providers: [LedgerService, OutboxService],
+  exports: [LedgerService, OutboxService],
 })
 export class LedgerModule {}

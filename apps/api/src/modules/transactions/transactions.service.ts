@@ -5,6 +5,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { parseMoney } from '../../common/utils/money';
 import { TransactionHistoryQueryDto } from './dto/transaction-history-query.dto';
+import { OutboxService } from '../ledger/outbox.service';
 import { TransactionCompletedEvent } from './events/transaction-completed.event';
 
 type Tx = Prisma.TransactionClient;
@@ -26,6 +27,7 @@ export class TransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly outbox: OutboxService,
   ) {}
 
   async create(params: CreateTransactionParams, tx?: Tx) {
@@ -62,25 +64,57 @@ export class TransactionsService {
     });
   }
 
+  /**
+   * Marks a transaction complete and records the event durably.
+   *
+   * The event used to be an in-process emit after the write. That is
+   * fire-and-forget: a process death between the update and the listener lost
+   * the referral reward silently, and nothing ever noticed
+   * (docs/AUDIT_FINAL_2026-08.md H-2). The outbox row is now written in the
+   * same transaction as the status change, so the event exists if and only if
+   * the transaction completed, and a drainer delivers it whenever the process
+   * comes back.
+   *
+   * The in-process emit is kept alongside it, deliberately: it is what makes
+   * notifications feel instant, and it is now an optimisation rather than the
+   * only delivery path. If it is missed, the outbox still delivers.
+   */
   async markCompleted(
     transactionId: string,
     extra: { bonusEarnedAmount?: Decimal | number | string } = {},
     tx?: Tx,
   ) {
     const client = tx ?? this.prisma;
-    const updated = await client.transaction.update({
-      where: { id: transactionId },
-      data: {
-        status: TransactionStatus.COMPLETED,
-        ...(extra.bonusEarnedAmount !== undefined
-          ? { bonusEarnedAmount: extra.bonusEarnedAmount }
-          : {}),
-      },
-    });
 
-    // Emitted post-write; listeners (referral qualification, notifications,
-    // analytics) are decoupled side effects, not part of the money-moving
-    // transaction itself.
+    const write = async (inner: Tx) => {
+      const updated = await inner.transaction.update({
+        where: { id: transactionId },
+        data: {
+          status: TransactionStatus.COMPLETED,
+          ...(extra.bonusEarnedAmount !== undefined
+            ? { bonusEarnedAmount: extra.bonusEarnedAmount }
+            : {}),
+        },
+      });
+
+      await this.outbox.publish(inner, {
+        aggregateType: 'Transaction',
+        aggregateId: updated.id,
+        eventType: 'transaction.completed',
+        payload: {
+          transactionId: updated.id,
+          userId: updated.userId,
+          partnerId: updated.partnerId,
+          type: updated.type,
+          amount: updated.amount.toString(),
+        },
+      });
+
+      return updated;
+    };
+
+    const updated = tx ? await write(tx) : await this.prisma.$transaction(write);
+
     this.events.emit('transaction.completed', {
       transactionId: updated.id,
       userId: updated.userId,

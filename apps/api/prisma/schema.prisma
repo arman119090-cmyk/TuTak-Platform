@@ -727,6 +727,134 @@ model EvCdr {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Double-entry ledger (see docs/FINANCIAL_CORE_DESIGN.md)
+//
+// Separate from BonusLedgerEntry on purpose. That ledger tracks one asset for
+// one party and is correct at what it does; this one records real money from
+// both sides, which is what makes an error detectable rather than merely
+// undesirable. The two agree through a BONUS_LIABILITY account, which is a
+// reconciliation check — one rewritten ledger would be a rewrite of the only
+// part of the money path currently known to be correct.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum LedgerAccountType {
+  CUSTOMER_PAYABLE
+  PARTNER_PAYABLE
+  PSP_RECEIVABLE
+  PLATFORM_REVENUE
+  BONUS_LIABILITY
+}
+
+enum PostingDirection {
+  DEBIT
+  CREDIT
+}
+
+/// One account in the chart of accounts. Platform accounts leave both owner
+/// columns null; customer and partner accounts set exactly one.
+model LedgerAccount {
+  id        String            @id @default(uuid())
+  type      LedgerAccountType
+  userId    String?
+  partnerId String?
+  currency  Currency          @default(AMD)
+  /// Materialized for reads, always rewritten in the same transaction as the
+  /// postings that move it — the same discipline Wallet already follows.
+  balance   Decimal           @default(0) @db.Decimal(18, 4)
+  version   Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  postings LedgerPosting[]
+
+  @@unique([type, userId, partnerId, currency])
+  @@index([partnerId])
+  @@index([userId])
+  @@map("ledger_accounts")
+}
+
+/// A financial event. Its postings must sum to zero — enforced by a deferred
+/// constraint trigger, because postings are inserted one at a time and an
+/// intermediate state is legitimately unbalanced.
+model LedgerTransaction {
+  id         String   @id @default(uuid())
+  kind       String
+  /// The domain row that caused this, so accounting can be traced back to
+  /// the thing that happened.
+  sourceType String
+  sourceId   String
+  /// A correction is a new transaction pointing at the original, never an
+  /// edit — postings are immutable.
+  reversesId String?  @unique
+  postedAt   DateTime @default(now())
+
+  postings LedgerPosting[]
+
+  @@index([sourceType, sourceId])
+  @@index([postedAt])
+  @@map("ledger_transactions")
+}
+
+model LedgerPosting {
+  id            String           @id @default(uuid())
+  transactionId String
+  accountId     String
+  direction     PostingDirection
+  /// Always strictly positive; the direction carries the sign.
+  amount        Decimal          @db.Decimal(18, 4)
+  currency      Currency         @default(AMD)
+  createdAt     DateTime         @default(now())
+
+  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     LedgerAccount     @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, id])
+  @@index([transactionId])
+  @@map("ledger_postings")
+}
+
+/// Written in the same transaction as the postings it describes. That is the
+/// whole point: an event exists if and only if the money moved.
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  processedAt   DateTime?
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  createdAt     DateTime  @default(now())
+
+  @@index([processedAt, nextAttemptAt])
+  @@map("outbox_events")
+}
+
+/// Idempotency for financial operations.
+///
+/// IN_FLIGHT is what makes this correct under concurrency: a second caller
+/// finds the row, sees the first is still running, and refuses rather than
+/// starting a parallel execution of the same money movement.
+model IdempotencyRecord {
+  id           String   @id @default(uuid())
+  /// Scoped per actor. A global key let one account replay another's — the
+  /// mistake already made once on Transaction.idempotencyKey.
+  scope        String
+  key          String
+  /// A repeat with the same key and a different body is a client bug and must
+  /// be refused, not silently answered with the first result.
+  requestHash  String
+  status       String
+  responseBody Json?
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  @@unique([scope, key])
+  @@map("idempotency_records")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Notifications
 // ─────────────────────────────────────────────────────────────────────────
 

@@ -31,6 +31,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SecurityModule } from './modules/security/security.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { SecurityModule } from './modules/security/security.module';
     NotificationsModule,
     AnalyticsModule,
     SecurityModule,
+    LedgerModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

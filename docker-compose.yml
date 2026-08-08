@@ -45,7 +45,17 @@ services:
     ports:
       - "4000:4000"
     environment:
-      NODE_ENV: production
+      # This file describes a local stack — the database password is in the
+      # clear a dozen lines above and every port is published to the host.
+      # Claiming `production` here was not just inaccurate, it could not
+      # start: in production the app deliberately refuses to boot without a
+      # real SMS carrier (SmsModule) and a real acquirer (PaymentsModule),
+      # both of which are exactly what a local stack does not have. It also
+      # switches off Swagger, which is half the point of running this.
+      #
+      # A real deployment overrides this and supplies both. See
+      # docs/DEPLOYMENT.md.
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
       # Compose's internal DNS resolves these to the containers above — not
       # "localhost", which inside this container would mean the api

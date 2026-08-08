@@ -193,6 +193,24 @@ jobs:
           pnpm exec playwright install --with-deps chromium
           DEMO_PASSWORD='CiDemoPassword-2026!' pnpm e2e
 
+      # A backup script nobody has run is not a backup script. The stack is
+      # already up and seeded, so this costs seconds and proves the dump is
+      # restorable into a ledger that still balances.
+      - name: Backup and restore rehearsal
+        run: |
+          docker compose exec -T postgres pg_dump --format=custom --compress=9 \
+            --no-owner --no-privileges -U tutak -d tutak -f /tmp/ci.dump
+          docker compose exec -T postgres pg_restore --list /tmp/ci.dump \
+            | grep -q 'TABLE DATA public ledger_postings '
+          docker compose exec -T postgres psql -U tutak -d postgres -q \
+            -c 'CREATE DATABASE tutak_restore_check'
+          docker compose exec -T postgres pg_restore --no-owner --no-privileges \
+            -U tutak -d tutak_restore_check /tmp/ci.dump
+          docker compose exec -T postgres psql -U tutak -d tutak_restore_check -tAc \
+            "SELECT CASE WHEN COALESCE(SUM(balance),0) = 0 THEN 'balanced' ELSE 'DRIFT' END FROM ledger_accounts" \
+            | grep -qx balanced
+          echo "restore rehearsal passed: the dump restores into a ledger that balances"
+
       - name: Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4

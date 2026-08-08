@@ -173,6 +173,18 @@ The short version of what exists:
 What is missing is a host to run it on and an acquirer to move money through
 — both decisions only the project owner can make.
 
+## Operations
+
+```bash
+./scripts/backup.sh                    # compressed dump into ./backups, verified readable
+./scripts/restore.sh --verify <dump>   # restore into a scratch DB, check the ledger, drop it
+```
+
+The rehearsal is the point: it asserts the restored ledger sums to zero and
+that every account still agrees with a replay of its own postings. CI runs
+the same rehearsal against the stack it just booted. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) §6.
+
 ## Monorepo scripts
 
 - `pnpm build` — Turborepo build across every app/package

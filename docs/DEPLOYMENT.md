@@ -134,19 +134,45 @@ behind the load balancer's own network.
 
 ## 6. Backups
 
-Not automated by anything in this repository, and the single most important
-gap in an operational sense. The ledger is append-only and reconstructible
-from its own postings, but only if the rows still exist.
+Two scripts, and one habit.
 
-Minimum before real money:
+```bash
+./scripts/backup.sh                        # dump to ./backups
+./scripts/restore.sh --verify <dump>       # rehearse the restore, then throw it away
+./scripts/restore.sh --into tutak_recovered <dump>
+./scripts/restore.sh --force-into tutak <dump>   # overwrite; refuses without --force-into
+```
 
-- Point-in-time recovery on the Postgres instance (every managed provider
-  offers it; turn it on).
-- A restore rehearsal. A backup nobody has restored is a hypothesis.
-- Redis needs no backup: it holds rate-limit counters and advisory locks, all
-  of which regenerate. Losing it costs a moment of throughput, not data.
+`backup.sh` writes a compressed custom-format dump, then reads its table of
+contents back and refuses to call it a backup unless every money-bearing
+table is present. That catches the two silent failures — a truncated file,
+and a dump taken against the wrong database — without restoring anything.
 
----
+`restore.sh --verify` is the one that matters. It restores into a scratch
+database, checks that every ledger account sums to zero and that each
+account's stored balance still equals a replay of its own postings, and then
+drops the scratch copy. Those two checks are what separate "the file parses"
+from "the data inside it is a ledger you could run the business on". A
+one-unit change to a single balance fails both.
+
+Run the rehearsal on a schedule, not once. A backup nobody has restored is a
+hypothesis, and the moment you need it is the worst moment to discover the
+dump has been empty for three weeks.
+
+### What the scripts do not do
+
+- **Point-in-time recovery.** A nightly dump loses up to a day; PITR loses
+  seconds. Every managed Postgres offers it — turn it on. These scripts are
+  the second copy, not the first line.
+- **Off-host storage.** `backups/` is on the same disk as everything else,
+  which is no help when that disk is the thing that failed. Ship the dumps
+  somewhere else — object storage, another region — and encrypt them: a
+  dump contains every phone number and password hash on the platform.
+- **Redis.** It holds rate-limit counters and advisory locks, all of which
+  regenerate. Losing it costs a moment of throughput, not data.
+
+`BACKUP_RETAIN_DAYS` (default 14) prunes older dumps from the output
+directory.
 
 ## 7. First deployment, in order
 

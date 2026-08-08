@@ -61,3 +61,7 @@ dump.rdb
 tests/e2e/.auth/
 test-results/
 playwright-report/
+
+# Local database dumps. Never committed — a dump carries every phone
+# number and password hash on the platform.
+backups/

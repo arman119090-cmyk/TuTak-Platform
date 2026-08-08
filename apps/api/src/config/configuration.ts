@@ -16,6 +16,8 @@ export interface AppConfig {
     expiryMonths: number;
     reservationHoldSeconds: number;
     referralRewardAmount: string;
+    /** Ceiling on a single admin credit or debit. Points are a liability. */
+    manualAdjustmentMax: string;
   };
   rateLimit: { ttlSeconds: number; maxRequests: number };
   cors: { origins: string[] };
@@ -104,6 +106,12 @@ export default (): AppConfig => ({
       10,
     ),
     referralRewardAmount: process.env.REFERRAL_REWARD_AMOUNT ?? '1000',
+    // A goodwill credit is normally a few thousand points. A million is
+    // already far beyond any plausible correction, which makes it a useful
+    // place to stop: large enough never to obstruct real work, small enough
+    // that a fat-fingered extra three zeros is refused rather than becoming
+    // a liability nobody notices until the balance sheet.
+    manualAdjustmentMax: process.env.BONUS_MANUAL_ADJUSTMENT_MAX ?? '1000000',
   },
   rateLimit: {
     ttlSeconds: parseInt(process.env.RATE_LIMIT_TTL_SECONDS ?? '60', 10),

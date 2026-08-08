@@ -4,7 +4,7 @@ import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
-import { hasPartnerScope } from '../../common/auth/partner-scope';
+import { hasPartnerScope, isPlatformAdmin } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -22,14 +22,39 @@ export class PartnersController {
     private readonly transactionsService: TransactionsService,
   ) {}
 
+  /**
+   * The partner directory.
+   *
+   * Every authenticated user can read this — a customer has to be able to
+   * find where their points are worth something — so what comes back depends
+   * on who is asking. Anyone gets name, category, cashback rate and whether
+   * the partner is trading. Only a platform administrator gets the rest,
+   * which includes tax IDs, individually negotiated commission rates, and
+   * whether a business is currently blocked from being paid.
+   *
+   * The test is `isPlatformAdmin` — a role — and not "holds PARTNER_MANAGE".
+   * PARTNER_OWNER holds that permission too, because owners manage *their
+   * own* partner: the permission name carries no scope, so checking it here
+   * handed every partner owner the commercial terms of every competitor on
+   * the platform. That is the same class of mistake as §H5 in
+   * docs/AUDIT_2026-08-B.md, and `partner-scope.ts` exists precisely because
+   * a permission name is not an authorization decision on its own.
+   */
   @Get()
-  list() {
-    return this.partnersService.list();
+  list(@CurrentUser() user: RequestUser) {
+    return isPlatformAdmin(user)
+      ? this.partnersService.list()
+      : this.partnersService.listPublic();
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.partnersService.findByIdOrThrow(id);
+  get(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    // A partner's own people see their own record in full — the dashboard
+    // shows them their tax ID and their commission — but nobody else's.
+    // `hasPartnerScope` already lets platform admins through.
+    return hasPartnerScope(user, id)
+      ? this.partnersService.findByIdOrThrow(id)
+      : this.partnersService.findPublicOrThrow(id);
   }
 
   @Get(':id/transactions')

@@ -10,7 +10,7 @@ import {
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { parsePositiveMoney } from '../../common/utils/money';
+import { MONEY_MAX, parsePositiveMoney } from '../../common/utils/money';
 
 type Tx = Prisma.TransactionClient;
 
@@ -65,6 +65,44 @@ export class BonusEngineService {
   // ── Ledger primitive ──────────────────────────────────────────────────
 
   /**
+   * Refuses a mutation whose result would not fit the money column.
+   *
+   * Postgres would refuse it too, but as a 22003 on the way out — an
+   * unhandled 500 rather than a clean 400 naming the balance that could not
+   * hold it.
+   */
+  private async assertFits(
+    client: Tx,
+    walletId: string,
+    deltas: Partial<Record<'available' | 'pending' | 'reserved' | 'lifetimeEarned', Decimal>>,
+  ): Promise<void> {
+    const wallet = await client.wallet.findUniqueOrThrow({
+      where: { id: walletId },
+      select: {
+        availableBonus: true,
+        pendingBonus: true,
+        reservedBonus: true,
+        lifetimeEarned: true,
+      },
+    });
+
+    const checks: Array<[string, Decimal]> = [
+      ['available', wallet.availableBonus.plus(deltas.available ?? ZERO)],
+      ['pending', wallet.pendingBonus.plus(deltas.pending ?? ZERO)],
+      ['reserved', wallet.reservedBonus.plus(deltas.reserved ?? ZERO)],
+      ['lifetime earned', wallet.lifetimeEarned.plus(deltas.lifetimeEarned ?? ZERO)],
+    ];
+
+    for (const [bucket, value] of checks) {
+      if (value.abs().greaterThan(MONEY_MAX)) {
+        throw new BadRequestException(
+          `This would take the wallet's ${bucket} balance past the maximum the platform can hold`,
+        );
+      }
+    }
+  }
+
+  /**
    * The single write path into the ledger. Computes the resulting balance
    * from the wallet row that the caller has already updated, so the entry
    * and the wallet can never disagree.
@@ -106,6 +144,7 @@ export class BonusEngineService {
       );
     }
 
+
     return client.bonusLedgerEntry.create({
       data: {
         walletId: params.walletId,
@@ -146,6 +185,22 @@ export class BonusEngineService {
       }
 
       const immediatelyAvailable = pendingHours <= 0;
+
+      // Check the *resulting* balance before writing it.
+      //
+      // `parseMoney` checks the requested amount against Decimal(18,4)'s
+      // maximum; nothing checked the sum. An accrual that pushed a wallet
+      // past 10^14 therefore reached Postgres and came back as `numeric
+      // field overflow` — a 500 from a request that was refusable on sight.
+      //
+      // The first version of this guard sat in `writeLedger`, which runs
+      // *after* the wallet update, so the overflow still happened first and
+      // the test caught it. Order matters more than placement here.
+      await this.assertFits(client, params.walletId, {
+        [immediatelyAvailable ? 'available' : 'pending']: amount,
+        lifetimeEarned: amount,
+      });
+
       const lot = await client.bonusLot.create({
         data: {
           walletId: params.walletId,
@@ -689,7 +744,30 @@ export class BonusEngineService {
 
   // ── Administrative ────────────────────────────────────────────────────
 
-  /** Admin credit/debit. Both directions take a strictly positive amount. */
+  /**
+   * Admin credit/debit. Both directions take a strictly positive amount.
+   *
+   * ── Why there is a ceiling ────────────────────────────────────────────
+   *
+   * This is the only path on the platform where a caller-supplied number
+   * becomes loyalty points without anything bounding it. A payment's accrual
+   * is bounded by what the acquirer actually captured; an EV session by the
+   * physical limits on a meter; a referral by a configured constant. Here a
+   * single request minted whatever it asked for, and points are a liability
+   * the business owes.
+   *
+   * Two ways that goes wrong, neither of them exotic: an administrator types
+   * an extra three zeros into a goodwill credit, or one compromised admin
+   * session mints a balance and walks it out through partners. Before this,
+   * both succeeded silently — and an adjustment large enough to overflow the
+   * column crashed with a 500 rather than being refused, because the input
+   * was checked against the column's maximum while the *resulting balance*
+   * was not.
+   *
+   * The ceiling is per adjustment and configurable, not a hard constant: a
+   * legitimate large correction still exists, it just has to be made
+   * deliberately by someone who raised the limit, rather than by accident.
+   */
   async manualAdjustment(
     walletId: string,
     amount: Decimal | number | string,
@@ -697,6 +775,16 @@ export class BonusEngineService {
     reason: string,
   ) {
     const target = parsePositiveMoney(amount, 'adjustment amount');
+
+    const ceiling = new Decimal(
+      this.config.get('bonus.manualAdjustmentMax', { infer: true }),
+    );
+    if (target.greaterThan(ceiling)) {
+      throw new BadRequestException(
+        `A single manual adjustment is limited to ${ceiling.toFixed(0)} points. ` +
+          'Raise BONUS_MANUAL_ADJUSTMENT_MAX deliberately if a larger correction is genuinely needed.',
+      );
+    }
 
     if (direction === LedgerDirection.CREDIT) {
       return this.accrue({

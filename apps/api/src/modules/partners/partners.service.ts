@@ -62,8 +62,49 @@ export class PartnersService {
     return partner;
   }
 
+  /**
+   * What a partner looks like to someone who is not part of it.
+   *
+   * The full row was being handed to every authenticated caller, customers
+   * included, and it carries three things that have no business leaving the
+   * platform: `taxId`, `paymentCommissionRateBps` — the commercial terms
+   * negotiated with that partner individually — and `payoutsBlockedAt` /
+   * `payoutsBlockedReason`, which announce that a business is under a
+   * financial dispute and why.
+   *
+   * `bonusAccrualRateBps` stays: it is the cashback rate, which the partner
+   * advertises and the customer is entitled to know before paying.
+   */
+  private static readonly PUBLIC_FIELDS = {
+    id: true,
+    displayName: true,
+    category: true,
+    bonusAccrualRateBps: true,
+    isActive: true,
+    createdAt: true,
+  } as const;
+
+  /** Every partner, in the projection safe for any authenticated caller. */
+  listPublic() {
+    return this.prisma.partner.findMany({
+      select: PartnersService.PUBLIC_FIELDS,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Every partner, in full. Callers must hold PARTNER_MANAGE. */
   list() {
     return this.prisma.partner.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
+  /** One partner, in the projection safe for any authenticated caller. */
+  async findPublicOrThrow(id: string) {
+    const partner = await this.prisma.partner.findUnique({
+      where: { id },
+      select: PartnersService.PUBLIC_FIELDS,
+    });
+    if (!partner) throw new NotFoundException('Partner not found');
+    return partner;
   }
 
   async isMember(partnerId: string, userId: string) {

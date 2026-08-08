@@ -100,6 +100,25 @@ saga above.
 - API responses are explicitly mapped/`select`ed — raw Prisma `User` rows
   (which carry `passwordHash`) never leave the server boundary.
 
+### Recurring work
+
+Everything that runs without a request behind it lives in one place:
+`SweepsModule`, backed by a BullMQ queue on the Redis that is already a
+dependency. `apps/api/src/modules/sweeps/sweeps.jobs.ts` is the complete list —
+outbox drain, bonus promotion, bonus expiry, expired-reservation release, EV
+reservation and session cleanup, nightly reconciliation — each row carrying its
+schedule, its overlap policy, and what breaks if it stops.
+
+The module depends on the domain modules rather than the reverse, so a domain
+service has no idea it is being swept and nothing in a request path can reach a
+queue by accident. Two properties worth naming:
+
+- The schedule is one row in Redis per job, not a timer per instance, so
+  instances add capacity instead of duplicate ticks.
+- A sweep that throws fails its job and keeps the stack trace, instead of
+  logging one line and losing the tick. A sweep that has been broken for a week
+  no longer looks like one that has been working for a week.
+
 ## Client apps
 
 - **Mobile** (`apps/mobile`) — Expo/React Native, one codebase for iOS and
@@ -177,8 +196,11 @@ double-entry ledger and its reconciliation, the payment/settlement/refund/
 payout engines on an idempotent outbox, structured logging with request
 correlation, push notification delivery, both directions of the platform's
 cash cycle — the acquirer settling `PSP_RECEIVABLE` into `PLATFORM_BANK`
-was the last open end — and a CI pipeline that lints, typechecks, runs 72
-unit and 357 integration tests, builds every app, builds all three
+was the last open end — distributed tracing joined to those logs, backup and
+restore tooling proven by an actual restore, recurring work moved off
+in-process cron onto a queue, a load harness that asserts the ledger still
+balances under concurrency, and a CI pipeline that lints, typechecks, runs 77
+unit and 368 integration tests, builds every app, builds all three
 container images, boots the whole stack and drives the dashboards through
 twelve end-to-end scenarios in a browser.
 

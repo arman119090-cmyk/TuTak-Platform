@@ -52,6 +52,10 @@ next start is clean.
 смотреть на каждом экране, как подключить мобильное приложение, что делать
 если что-то не работает.
 
+**[`docs/LAUNCH_RU.md`](docs/LAUNCH_RU.md)** — по-русски: всё, что нужно
+получить, подписать и решить до запуска, в порядке, и куда именно попадает
+каждый реквизит.
+
 For a real deployment rather than this one, see
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — including the three things the
 application deliberately refuses to start without.

@@ -78,6 +78,12 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-tutak-api}
+      # Recurring work: settlement, bonus promotion and expiry, EV cleanup,
+      # nightly reconciliation. On by default because a stack where nothing
+      # settles looks like a stack where payments do not work. Set it to
+      # `false` only to measure something without a drainer competing.
+      SWEEPS_ENABLED: ${SWEEPS_ENABLED:-true}
+      QUEUE_PREFIX: ${QUEUE_PREFIX:-tutak}
     healthcheck:
       test:
         [

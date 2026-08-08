@@ -70,3 +70,24 @@ export interface ConfirmPasswordResetRequestDto {
 export interface ConfirmPhoneVerificationRequestDto {
   code: string;
 }
+
+/**
+ * Deleting your own account.
+ *
+ * The password is re-entered because the access token is a fifteen-minute
+ * bearer credential, and this is the one action a customer cannot undo.
+ */
+export interface DeleteAccountRequestDto {
+  password: string;
+}
+
+export interface DeleteAccountResponseDto {
+  /** When access ended — immediately, from the customer's point of view. */
+  deletedAt: string;
+  /**
+   * When the personal data will be erased. Shown to the customer verbatim,
+   * because "deleted" and "erased" happening a month apart is exactly the
+   * kind of thing a privacy notice has to state rather than imply.
+   */
+  anonymizedAfter: string;
+}

@@ -196,7 +196,19 @@
     "logout": "Log out",
     "deleteAccount": "Delete account",
     "changePassword": "Change password",
-    "verifyPhone": "Verify phone number"
+    "verifyPhone": "Verify phone number",
+    "deleteAccountHeading": "This cannot be undone",
+    "deleteAccountIntro": "Deleting your account signs you out everywhere and ends your access straight away. Here is exactly what happens:",
+    "deleteAccountPointAccess": "You are signed out on every device immediately, and you will not be able to sign in again.",
+    "deleteAccountPointBonus": "Your remaining {{amount}} points are forfeited. They cannot be transferred or restored.",
+    "deleteAccountPointData": "Your name, phone number and notifications are erased 30 days from now. Until then, support can restore your account if you change your mind.",
+    "deleteAccountPointLedger": "Your payment and refund history is kept, as accounting rules require, but it will no longer identify you.",
+    "deleteAccountPasswordHint": "Enter your password to confirm it is really you.",
+    "deleteAccountConfirmTitle": "Delete your account?",
+    "deleteAccountConfirmBody": "Your points will be forfeited and you will be signed out on every device. This cannot be undone from the app.",
+    "deleteAccountDoneTitle": "Your account is deleted",
+    "deleteAccountDoneBody": "You have been signed out. Your personal data will be erased on {{date}}.",
+    "deleteAccountFailed": "We could not delete your account. Please try again."
   },
   "nav": {
     "home": "Home",

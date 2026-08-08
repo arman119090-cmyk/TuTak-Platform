@@ -27,4 +27,5 @@ export type RootStackParamList = {
   EvSession: { session?: EvSessionDto } | undefined;
   ChangePassword: undefined;
   VerifyPhone: undefined;
+  DeleteAccount: undefined;
 };

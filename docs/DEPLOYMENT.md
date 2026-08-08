@@ -106,6 +106,13 @@ OTEL_EXPORTER_OTLP_ENDPOINT=       # e.g. https://otlp.your-collector.io
 OTEL_EXPORTER_OTLP_HEADERS=        # e.g. api-key=...
 OTEL_SERVICE_NAME=tutak-api
 FEATURE_QR_LEDGER_MIRROR=false      # see §10
+ACCOUNT_DELETION_GRACE_DAYS=30      # see §7a
+RETENTION_NOTIFICATION_DAYS=90      # see §7b — none of these are legal advice
+RETENTION_SESSION_DAYS=90
+RETENTION_CHALLENGE_DAYS=30
+RETENTION_QR_CODE_DAYS=90
+RETENTION_IDEMPOTENCY_DAYS=180
+RETENTION_OUTBOX_DAYS=90
 ```
 
 ### Secrets
@@ -262,6 +269,69 @@ dump has been empty for three weeks.
 
 `BACKUP_RETAIN_DAYS` (default 14) prunes older dumps from the output
 directory.
+
+## 7a. Account deletion
+
+Both app stores require an in-app way to delete an account, and Google Play
+additionally requires a **public web page** explaining it that works without
+installing anything. Ship `public/account-deletion.html` at a stable URL —
+`https://tutak.am/account-deletion` or equivalent — and give Google Play that
+URL in the Data safety form. It is a single self-contained file with no
+external requests, so any static host will do; nothing about it depends on
+this repository being deployed.
+
+The deletion itself happens in two stages, and the split is the part worth
+understanding before answering a regulator about it:
+
+| | When | What |
+| --- | --- | --- |
+| Stage 1 | The instant the customer confirms | `deletedAt` set, every session revoked, every device and push token removed. They cannot sign in again. |
+| Stage 2 | `ACCOUNT_DELETION_GRACE_DAYS` later | Phone, email, name and password overwritten; notifications and spent credentials deleted; remaining loyalty points retired through the normal expiry path. |
+
+The gap is not hesitation. A refund or a card chargeback can arrive days after
+a purchase and has to post against a wallet whose owner row still exists, and
+a customer who deleted by mistake needs a window in which support can restore
+them — impossible once the phone number is gone. Thirty days covers both.
+Shortening it below your acquirer's chargeback window will produce refunds
+that cannot be settled.
+
+The user row is never deleted. Payments, transactions, ledger postings and
+audit entries reference it by foreign key; removing it would either break
+those references or take the accounting record with them. After stage 2 the
+row survives with nothing on it that names a person, which is what both the
+accounting rules and the privacy rules actually ask for.
+
+Accounts holding a partner or administrative role are refused by the endpoint
+— deleting one would orphan a business or remove the last operator. Those go
+through support, after the role is transferred.
+
+The sweep that performs stage 2 is `account.anonymize-deleted`, hourly. If it
+stops, the heartbeat in §5a alerts within four hours.
+
+---
+
+## 7b. Retention
+
+`retention.prune` runs nightly at 04:00 Yerevan and deletes non-financial
+records past their period: read notifications, dead sessions, spent
+verification codes, redeemed QR codes, completed idempotency records and
+processed outbox rows. Unread notifications, live sessions, in-flight
+idempotency keys and unprocessed outbox rows are never touched — each of
+those exclusions is load-bearing, and each has a test asserting it.
+
+**Nothing financial is pruned, ever.** Transactions, payments, refunds,
+settlements, payouts, ledger accounts and postings, bonus lots and the bonus
+ledger are outside this sweep's reach by construction. So are audit logs — a
+trail with a hole in it is not a trail — and fraud signals, which exist to
+recognise a pattern repeating.
+
+The default periods are engineering judgements about what the code needs, not
+legal advice. They are configurable because the final numbers should come
+from a lawyer who knows which regime applies to you. If you shorten
+`RETENTION_IDEMPOTENCY_DAYS` below your clients' retry horizon, a retried
+request will execute a second payment.
+
+---
 
 ## 8. First deployment, in order
 

@@ -21,6 +21,7 @@ import { PaymentsModule } from '../../src/modules/payments/payments.module';
 import { SettlementModule } from '../../src/modules/settlement/settlement.module';
 import { PayoutsModule } from '../../src/modules/payouts/payouts.module';
 import { ReconciliationModule } from '../../src/modules/reconciliation/reconciliation.module';
+import { RetentionModule } from '../../src/modules/retention/retention.module';
 import { HealthModule } from '../../src/modules/health/health.module';
 import { SecurityModule } from '../../src/modules/security/security.module';
 import { AuditModule } from '../../src/modules/audit/audit.module';
@@ -96,6 +97,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       SettlementModule,
       PayoutsModule,
       ReconciliationModule,
+      RetentionModule,
       HealthModule,
     ],
   })

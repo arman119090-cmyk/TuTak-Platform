@@ -1,10 +1,23 @@
+import type { AccountDeletionService } from '../users/account-deletion.service';
 import type { BonusEngineService } from '../wallet/bonus-engine.service';
 import type { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
+import type { RetentionService } from '../retention/retention.service';
 
 export const SWEEPS_QUEUE = 'sweeps';
+
+/**
+ * Injection token for the bundle below.
+ *
+ * The processor takes the whole bundle rather than one constructor parameter
+ * per service. That started as tidiness and became necessary: with a
+ * parameter each, adding a sweep changed the processor's arity, which broke
+ * every place that constructs it directly — including tests that have nothing
+ * to do with the new sweep. Now a new sweep adds a field to one object.
+ */
+export const SWEEP_DEPENDENCIES = Symbol('SWEEP_DEPENDENCIES');
 
 /** Everything a sweep is allowed to reach. Nothing here touches HTTP. */
 export interface SweepDependencies {
@@ -13,6 +26,8 @@ export interface SweepDependencies {
   sessions: EvSessionsService;
   outbox: OutboxService;
   reconciliation: ReconciliationService;
+  accountDeletion: AccountDeletionService;
+  retention: RetentionService;
 }
 
 export interface SweepDefinition {
@@ -129,6 +144,26 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 4 * 60 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ sessions }) => sessions.expireStaleSessions(),
+  },
+  {
+    name: 'account.anonymize-deleted',
+    why: "Scrubs the personal data of customers who deleted their account once the grace window has passed. Without it the platform keeps every phone number and name it promised to erase, and the deletion the app store required is a promise the backend never keeps.",
+    // Hourly. The window is measured in days, so the schedule only has to be
+    // fine enough that "we delete after thirty days" is true to the hour.
+    repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 4 * 60 * 60_000,
+    lockTtlMs: 10 * 60_000,
+    run: ({ accountDeletion }) => accountDeletion.anonymizeDue(),
+  },
+  {
+    name: 'retention.prune',
+    why: 'Deletes non-financial records past their retention period — read notifications, spent verification codes, consumed idempotency keys. Nothing breaks without it; the platform simply keeps personal data forever, which is a growing disk and a shrinking legal position.',
+    // Daily at 04:00 Yerevan, an hour after reconciliation so the two heavy
+    // table scans do not overlap.
+    repeat: { pattern: '0 4 * * *', tz: 'Asia/Yerevan' },
+    maxSilenceMs: 26 * 60 * 60_000,
+    lockTtlMs: 15 * 60_000,
+    run: ({ retention }) => retention.prune(),
   },
   {
     name: 'reconciliation.nightly',

@@ -1,17 +1,12 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Inject, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { AppConfig } from '../../config/configuration';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DistributedLockService } from '../../infrastructure/redis/distributed-lock.service';
-import { BonusEngineService } from '../wallet/bonus-engine.service';
-import { EvReservationsService } from '../ev-charging/ev-reservations.service';
-import { EvSessionsService } from '../ev-charging/ev-sessions.service';
-import { OutboxService } from '../ledger/outbox.service';
-import { ReconciliationService } from '../reconciliation/reconciliation.service';
-import { SWEEPS_QUEUE, SweepDependencies, findSweep } from './sweeps.jobs';
+import { SWEEPS_QUEUE, SWEEP_DEPENDENCIES, SweepDependencies, findSweep } from './sweeps.jobs';
 
 export interface SweepResult {
   /** False when another worker held the lock — not a failure, just nothing to do. */
@@ -40,21 +35,15 @@ export interface SweepResult {
 })
 export class SweepsProcessor extends WorkerHost implements OnApplicationBootstrap {
   private readonly logger = new Logger(SweepsProcessor.name);
-  private readonly deps: SweepDependencies;
 
   constructor(
-    bonus: BonusEngineService,
-    reservations: EvReservationsService,
-    sessions: EvSessionsService,
-    outbox: OutboxService,
-    reconciliation: ReconciliationService,
+    @Inject(SWEEP_DEPENDENCIES) private readonly deps: SweepDependencies,
     private readonly lock: DistributedLockService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly alerts: AlertsService,
     private readonly prisma: PrismaService,
   ) {
     super();
-    this.deps = { bonus, reservations, sessions, outbox, reconciliation };
   }
 
   onApplicationBootstrap(): void {

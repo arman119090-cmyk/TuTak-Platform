@@ -182,11 +182,18 @@ describe('Alerting (integration)', () => {
      */
     const buildProcessor = () =>
       new SweepsProcessor(
-        harness.app.get(BonusEngineService),
-        harness.app.get(EvReservationsService),
-        harness.app.get(EvSessionsService),
-        outbox,
-        reconciliation,
+        {
+          bonus: harness.app.get(BonusEngineService),
+          reservations: harness.app.get(EvReservationsService),
+          sessions: harness.app.get(EvSessionsService),
+          outbox,
+          reconciliation,
+          // Neither is reachable from `onFailed`, which is all this suite
+          // drives — and the bundle is now one parameter, so adding a sweep
+          // no longer changes this constructor's shape.
+          accountDeletion: undefined as never,
+          retention: undefined as never,
+        },
         harness.app.get(DistributedLockService),
         harness.app.get(ConfigService),
         alerts,

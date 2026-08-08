@@ -11,12 +11,7 @@ import { PrismaModule } from '../src/infrastructure/prisma/prisma.module';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
 import { AlertsModule } from '../src/infrastructure/alerts/alerts.module';
 import { ALERT_CHANNEL } from '../src/infrastructure/alerts/alert-channel.interface';
-import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
-import { EvReservationsService } from '../src/modules/ev-charging/ev-reservations.service';
-import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
-import { OutboxService } from '../src/modules/ledger/outbox.service';
-import { ReconciliationService } from '../src/modules/reconciliation/reconciliation.service';
-import { SWEEPS, SWEEPS_QUEUE } from '../src/modules/sweeps/sweeps.jobs';
+import { SWEEPS, SWEEPS_QUEUE, SWEEP_DEPENDENCIES } from '../src/modules/sweeps/sweeps.jobs';
 import { SweepsProcessor } from '../src/modules/sweeps/sweeps.processor';
 import { SweepsHeartbeatService } from '../src/modules/sweeps/sweeps.heartbeat.service';
 import { SweepsScheduler } from '../src/modules/sweeps/sweeps.scheduler';
@@ -67,6 +62,8 @@ describe('Sweeps (integration)', () => {
   const reconciliation = {
     reconcile: jest.fn((_params: { periodStart: Date }) => record('reconciliation')()),
   };
+  const accountDeletion = { anonymizeDue: jest.fn(record('account.anonymize')) };
+  const retention = { prune: jest.fn(record('retention.prune')) };
 
   beforeAll(async () => {
     // A keyspace of this suite's own, so a run here cannot disturb the
@@ -88,11 +85,21 @@ describe('Sweeps (integration)', () => {
         SweepsProcessor,
         SweepsScheduler,
         SweepsHeartbeatService,
-        { provide: BonusEngineService, useValue: bonus },
-        { provide: EvReservationsService, useValue: reservations },
-        { provide: EvSessionsService, useValue: sessions },
-        { provide: OutboxService, useValue: outbox },
-        { provide: ReconciliationService, useValue: reconciliation },
+        // One stubbed bundle rather than one provider per service. The
+        // production module assembles the same shape from the real services;
+        // what this suite is asking is whether the dispatch reaches them.
+        {
+          provide: SWEEP_DEPENDENCIES,
+          useValue: {
+            bonus,
+            reservations,
+            sessions,
+            outbox,
+            reconciliation,
+            accountDeletion,
+            retention,
+          },
+        },
       ],
     })
       .overrideProvider(PrismaService)

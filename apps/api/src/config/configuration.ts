@@ -58,6 +58,25 @@ export interface AppConfig {
     /** Bearer token a Prometheus scraper must present. Empty disables /metrics. */
     token: string;
   };
+  accountDeletion: {
+    /**
+     * Days between a customer deleting their account and their personal data
+     * being scrubbed. Access ends immediately either way.
+     */
+    graceDays: number;
+  };
+  /**
+   * How long non-financial records are kept. Nothing financial appears here
+   * — see `RetentionService` for what is deliberately excluded and why.
+   */
+  retention: {
+    notificationDays: number;
+    sessionDays: number;
+    challengeDays: number;
+    qrCodeDays: number;
+    idempotencyDays: number;
+    outboxDays: number;
+  };
   features: {
     /**
      * Phase 4 of docs/FINANCIAL_CORE_DESIGN.md: mirror QR redemptions into
@@ -112,6 +131,44 @@ export default (): AppConfig => ({
     // that a fat-fingered extra three zeros is refused rather than becoming
     // a liability nobody notices until the balance sheet.
     manualAdjustmentMax: process.env.BONUS_MANUAL_ADJUSTMENT_MAX ?? '1000000',
+  },
+  accountDeletion: {
+    // Thirty days, chosen against this platform rather than as a round
+    // number. Two things have to be able to happen after someone deletes
+    // their account, and both are bounded by roughly a month: a card
+    // chargeback or a partner-initiated refund can still arrive against a
+    // payment made days earlier and has to post against a wallet that still
+    // exists; and a customer who deleted by mistake has to have a window in
+    // which support can restore them. Scrubbing immediately would make the
+    // first impossible to settle and the second impossible to honour, and
+    // waiting a year would keep phone numbers we have no reason to hold.
+    //
+    // Access ends the moment they press the button — this window is about
+    // the data, not the account.
+    graceDays: parseInt(process.env.ACCOUNT_DELETION_GRACE_DAYS ?? '30', 10),
+  },
+  retention: {
+    // Ninety days of read notifications is enough for a customer to scroll
+    // back through a season of activity; unread ones are never pruned.
+    notificationDays: parseInt(process.env.RETENTION_NOTIFICATION_DAYS ?? '90', 10),
+    // Refresh tokens carry the IP and user agent of every sign-in, which is
+    // the most sensitive thing this sweep touches. Ninety days keeps a
+    // meaningful "where has this account been used from" history for an abuse
+    // investigation without keeping it indefinitely.
+    sessionDays: parseInt(process.env.RETENTION_SESSION_DAYS ?? '90', 10),
+    // A reset or verification code is dead the moment it expires. Thirty days
+    // exists only so somebody investigating an account takeover the week
+    // after can still see the attempts.
+    challengeDays: parseInt(process.env.RETENTION_CHALLENGE_DAYS ?? '30', 10),
+    // A spent QR code is not the record of the purchase — the transaction is.
+    qrCodeDays: parseInt(process.env.RETENTION_QR_CODE_DAYS ?? '90', 10),
+    // The longest of the short periods on purpose. An idempotency key deleted
+    // while a client might still retry turns that retry into a second
+    // payment, so this errs far past any plausible retry horizon.
+    idempotencyDays: parseInt(process.env.RETENTION_IDEMPOTENCY_DAYS ?? '180', 10),
+    // Only processed rows are ever pruned; an unprocessed one is settlement
+    // that has not happened yet.
+    outboxDays: parseInt(process.env.RETENTION_OUTBOX_DAYS ?? '90', 10),
   },
   rateLimit: {
     ttlSeconds: parseInt(process.env.RATE_LIMIT_TTL_SECONDS ?? '60', 10),

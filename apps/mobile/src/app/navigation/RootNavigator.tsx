@@ -10,6 +10,7 @@ import { ReferralScreen } from '../../presentation/screens/referral/ReferralScre
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { DeleteAccountScreen } from '../../presentation/screens/settings/DeleteAccountScreen';
 import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
 import type { RootStackParamList } from './types';
 
@@ -83,6 +84,11 @@ export function RootNavigator() {
         name="VerifyPhone"
         component={VerifyPhoneScreen}
         options={{ title: t('auth.otpTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="DeleteAccount"
+        component={DeleteAccountScreen}
+        options={{ title: t('settings.deleteAccount'), headerShown: false }}
       />
     </Stack.Navigator>
   );

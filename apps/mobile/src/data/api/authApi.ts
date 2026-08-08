@@ -4,6 +4,8 @@ import type {
   ChangePasswordRequestDto,
   ConfirmPasswordResetRequestDto,
   ConfirmPhoneVerificationRequestDto,
+  DeleteAccountRequestDto,
+  DeleteAccountResponseDto,
   LoginRequestDto,
   RegisterRequestDto,
   RequestPasswordResetRequestDto,
@@ -62,6 +64,20 @@ export const authApi = {
     const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
       '/auth/verify-phone/request',
     );
+    return data.data;
+  },
+
+  /**
+   * Deletes this account.
+   *
+   * The response carries the date the personal data is erased, which the
+   * confirmation screen shows verbatim — access ends now, erasure is later,
+   * and telling the customer only the first half would be misleading.
+   */
+  async deleteAccount(dto: DeleteAccountRequestDto) {
+    const { data } = await httpClient.delete<ApiEnvelope<DeleteAccountResponseDto>>('/users/me', {
+      data: dto,
+    });
     return data.data;
   },
 

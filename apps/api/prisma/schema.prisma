@@ -120,7 +120,16 @@ model User {
   passwordChangedAt  DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  /// When the customer asked to be deleted. Access ends at this instant —
+  /// every auth path already refuses on it. The personal data survives until
+  /// `anonymizedAt`, because a refund or a chargeback can still arrive
+  /// against a payment made before this moment and has to post somewhere.
   deletedAt        DateTime?
+  /// When the personal fields were actually scrubbed. Set by the
+  /// `account.anonymize-deleted` sweep once the grace window has elapsed;
+  /// the row itself is never removed, because the ledger postings and audit
+  /// entries that reference it must not be.
+  anonymizedAt     DateTime?
 
   roles             UserRole[]
   wallet            Wallet?
@@ -142,6 +151,10 @@ model User {
   payments          Payment[]
 
   @@index([createdAt])
+  /// The anonymisation sweep asks for "deleted, not yet scrubbed", which is a
+  /// vanishing fraction of the table and would otherwise scan all of it every
+  /// hour.
+  @@index([deletedAt, anonymizedAt])
   @@map("users")
 }
 
@@ -1172,6 +1185,14 @@ enum AuditAction {
   /// without a customer transaction behind it.
   ACQUIRER_SETTLEMENT_RECORDED
   RECONCILIATION_RUN
+  /// A customer deleted their own account. Recorded because access ends at
+  /// that instant and every subsequent refusal for that user needs an
+  /// explanation that is not "the account vanished".
+  ACCOUNT_DELETION_REQUESTED
+  /// The grace window elapsed and the personal fields were scrubbed. This
+  /// entry, and the userId in it, are what remain of the person: enough to
+  /// answer "did we delete them, and when", and nothing else.
+  ACCOUNT_ANONYMIZED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

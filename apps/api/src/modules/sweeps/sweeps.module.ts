@@ -5,9 +5,18 @@ import { AppConfig } from '../../config/configuration';
 import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
+import { RetentionModule } from '../retention/retention.module';
+import { UsersModule } from '../users/users.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { EvReservationsService } from '../ev-charging/ev-reservations.service';
+import { EvSessionsService } from '../ev-charging/ev-sessions.service';
+import { OutboxService } from '../ledger/outbox.service';
+import { ReconciliationService } from '../reconciliation/reconciliation.service';
+import { RetentionService } from '../retention/retention.service';
+import { AccountDeletionService } from '../users/account-deletion.service';
+import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { SweepsHeartbeatService } from './sweeps.heartbeat.service';
-import { SWEEPS_QUEUE } from './sweeps.jobs';
+import { SWEEPS_QUEUE, SWEEP_DEPENDENCIES, SweepDependencies } from './sweeps.jobs';
 import { SweepsProcessor } from './sweeps.processor';
 import { SweepsScheduler } from './sweeps.scheduler';
 
@@ -31,8 +40,46 @@ import { SweepsScheduler } from './sweeps.scheduler';
     EvChargingModule,
     LedgerModule,
     ReconciliationModule,
+    RetentionModule,
+    UsersModule,
   ],
-  providers: [SweepsProcessor, SweepsScheduler, SweepsHeartbeatService],
+  providers: [
+    // The one place the sweeps' view of the domain is assembled. Adding a
+    // sweep that needs a new service means a field here and a field on
+    // `SweepDependencies`, and nothing else changes shape.
+    {
+      provide: SWEEP_DEPENDENCIES,
+      inject: [
+        BonusEngineService,
+        EvReservationsService,
+        EvSessionsService,
+        OutboxService,
+        ReconciliationService,
+        AccountDeletionService,
+        RetentionService,
+      ],
+      useFactory: (
+        bonus: BonusEngineService,
+        reservations: EvReservationsService,
+        sessions: EvSessionsService,
+        outbox: OutboxService,
+        reconciliation: ReconciliationService,
+        accountDeletion: AccountDeletionService,
+        retention: RetentionService,
+      ): SweepDependencies => ({
+        bonus,
+        reservations,
+        sessions,
+        outbox,
+        reconciliation,
+        accountDeletion,
+        retention,
+      }),
+    },
+    SweepsProcessor,
+    SweepsScheduler,
+    SweepsHeartbeatService,
+  ],
 })
 export class SweepsModule implements OnApplicationBootstrap {
   private readonly logger = new Logger(SweepsModule.name);

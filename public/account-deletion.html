@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Delete your TuTak account</title>
+    <meta
+      name="description"
+      content="How to delete your TuTak account, what is erased, what is kept, and when."
+    />
+    <!--
+      A single self-contained file with no external requests, because Google
+      Play requires this page to be reachable without installing the app and
+      it should not depend on a CDN, a font host, or anything else that can
+      be blocked or go away. Host it at a stable URL — see docs/DEPLOYMENT.md.
+    -->
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --surface: rgba(255, 255, 255, 0.05);
+        --border: rgba(255, 255, 255, 0.1);
+        --text: #f5f6fa;
+        --muted: #a2a6b8;
+        --brand: #5b8cff;
+        --brand-2: #a05bff;
+        --danger: #ff6b6b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 44rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+      h1 {
+        font-size: clamp(1.75rem, 5vw, 2.5rem);
+        line-height: 1.15;
+        margin: 0 0 0.75rem;
+        background: linear-gradient(120deg, var(--brand), var(--brand-2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      h2 { font-size: 1.2rem; margin: 2.5rem 0 0.75rem; }
+      p, li { color: var(--muted); }
+      strong { color: var(--text); font-weight: 600; }
+      .lede { font-size: 1.05rem; }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+      }
+      ol.steps { padding-left: 1.25rem; }
+      ol.steps li { margin-bottom: 0.6rem; }
+      ul.plain { list-style: none; padding: 0; margin: 0; }
+      ul.plain li { padding-left: 1.5rem; position: relative; margin-bottom: 0.6rem; }
+      ul.plain li::before {
+        content: '';
+        position: absolute;
+        left: 0.25rem;
+        top: 0.7em;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--brand);
+      }
+      ul.kept li::before { background: var(--muted); }
+      .warn { border-color: rgba(255, 107, 107, 0.35); }
+      .warn h2 { margin-top: 0; color: var(--danger); }
+      nav.langs { display: flex; gap: 0.5rem; margin-bottom: 2rem; flex-wrap: wrap; }
+      nav.langs button {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 0.4rem 0.9rem;
+        font: inherit;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      nav.langs button[aria-current='true'] { color: var(--text); border-color: var(--brand); }
+      footer { margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
+      a { color: var(--brand); }
+      /* Scoped to the three content blocks, never to bare [lang]. The
+         script also sets <html lang>, and an unscoped selector matched that
+         too — switching language hid the entire document. Found by loading
+         the page and clicking the buttons, which is the only way that class
+         of mistake shows up. */
+      main > div[lang] { display: none; }
+      body[data-lang='en'] > main > div[lang='en'],
+      body[data-lang='ru'] > main > div[lang='ru'],
+      body[data-lang='hy'] > main > div[lang='hy'] { display: block; }
+    </style>
+  </head>
+  <body data-lang="en">
+    <main>
+      <nav class="langs">
+        <button data-set="en" aria-current="true">English</button>
+        <button data-set="ru">Русский</button>
+        <button data-set="hy">Հայերեն</button>
+      </nav>
+
+      <!-- ── English ─────────────────────────────────────────────────── -->
+      <div lang="en">
+        <h1>Delete your TuTak account</h1>
+        <p class="lede">
+          You can delete your TuTak account at any time, from inside the app. This page explains
+          how, and exactly what happens to your data.
+        </p>
+
+        <h2>How to delete your account</h2>
+        <div class="card">
+          <ol class="steps">
+            <li>Open the TuTak app and sign in.</li>
+            <li>Go to <strong>Settings</strong>.</li>
+            <li>Tap <strong>Delete account</strong>.</li>
+            <li>Read what will happen, enter your password, and confirm.</li>
+          </ol>
+          <p style="margin-bottom: 0">
+            You are signed out immediately and cannot sign in again. If you cannot access the app,
+            email us from the address or phone number on your account and we will delete it for
+            you.
+          </p>
+        </div>
+
+        <div class="card warn">
+          <h2>Your loyalty points are forfeited</h2>
+          <p style="margin-bottom: 0">
+            Any points still in your wallet are cancelled when your account is deleted. They cannot
+            be transferred to another account, converted to money, or restored. Spend them first if
+            you want to keep their value.
+          </p>
+        </div>
+
+        <h2>What is erased, and when</h2>
+        <p>
+          Your access ends the moment you confirm. Your personal data is erased
+          <strong>30 days later</strong>. That gap exists for two reasons: a refund or a card
+          chargeback can still arrive against a purchase you made days ago and has to be settled
+          against a real account, and if you deleted by mistake, support can restore you during
+          that window.
+        </p>
+        <p>After 30 days the following are permanently erased:</p>
+        <ul class="plain">
+          <li>Your name, phone number and email address</li>
+          <li>Your password</li>
+          <li>Your notifications and message history</li>
+          <li>Your devices and push notification tokens</li>
+          <li>Any unused verification or password-reset codes</li>
+        </ul>
+
+        <h2>What is kept, and why</h2>
+        <p>
+          Records of money that actually moved are kept, because accounting and tax rules require
+          it. After erasure these records no longer identify you — they are attached to an account
+          with no name, phone number or email on it.
+        </p>
+        <ul class="plain kept">
+          <li>Payments, refunds and the accounting entries behind them</li>
+          <li>Settlements and payouts made to merchants</li>
+          <li>The security audit log, which records that the deletion happened and when</li>
+        </ul>
+
+        <h2>Questions</h2>
+        <p>
+          Write to <a href="mailto:privacy@tutak.am">privacy@tutak.am</a>. If you want to know what
+          data we hold about you before deciding, ask — you are entitled to that, and it does not
+          start the deletion.
+        </p>
+      </div>
+
+      <!-- ── Русский ─────────────────────────────────────────────────── -->
+      <div lang="ru">
+        <h1>Удаление аккаунта TuTak</h1>
+        <p class="lede">
+          Вы можете удалить аккаунт TuTak в любой момент прямо из приложения. Здесь описано, как это
+          сделать и что именно произойдёт с вашими данными.
+        </p>
+
+        <h2>Как удалить аккаунт</h2>
+        <div class="card">
+          <ol class="steps">
+            <li>Откройте приложение TuTak и войдите в аккаунт.</li>
+            <li>Перейдите в <strong>Настройки</strong>.</li>
+            <li>Нажмите <strong>Удалить аккаунт</strong>.</li>
+            <li>Прочитайте, что произойдёт, введите пароль и подтвердите.</li>
+          </ol>
+          <p style="margin-bottom: 0">
+            Вы сразу выйдете из аккаунта и больше не сможете войти. Если доступа к приложению нет,
+            напишите нам с адреса или номера, привязанного к аккаунту, и мы удалим его за вас.
+          </p>
+        </div>
+
+        <div class="card warn">
+          <h2>Баллы сгорают</h2>
+          <p style="margin-bottom: 0">
+            Все баллы, оставшиеся на счёте, аннулируются при удалении аккаунта. Их нельзя перевести
+            на другой аккаунт, обменять на деньги или восстановить. Если их ценность важна —
+            потратьте их заранее.
+          </p>
+        </div>
+
+        <h2>Что стирается и когда</h2>
+        <p>
+          Доступ прекращается сразу после подтверждения. Персональные данные стираются
+          <strong>через 30 дней</strong>. Этот промежуток нужен по двум причинам: возврат или
+          chargeback может прийти по покупке, сделанной несколько дней назад, и его нужно провести
+          по реальному счёту; а если вы удалили аккаунт по ошибке, поддержка сможет восстановить его
+          в течение этого срока.
+        </p>
+        <p>Через 30 дней безвозвратно стираются:</p>
+        <ul class="plain">
+          <li>Имя, номер телефона и адрес электронной почты</li>
+          <li>Пароль</li>
+          <li>Уведомления и история сообщений</li>
+          <li>Устройства и токены push-уведомлений</li>
+          <li>Неиспользованные коды подтверждения и восстановления пароля</li>
+        </ul>
+
+        <h2>Что сохраняется и почему</h2>
+        <p>
+          Записи о фактическом движении денег сохраняются — этого требуют правила бухгалтерского и
+          налогового учёта. После стирания эти записи вас больше не идентифицируют: они привязаны к
+          счёту без имени, телефона и почты.
+        </p>
+        <ul class="plain kept">
+          <li>Платежи, возвраты и бухгалтерские проводки по ним</li>
+          <li>Расчёты и выплаты партнёрам</li>
+          <li>Журнал безопасности, фиксирующий сам факт и дату удаления</li>
+        </ul>
+
+        <h2>Вопросы</h2>
+        <p>
+          Пишите на <a href="mailto:privacy@tutak.am">privacy@tutak.am</a>. Если перед решением вы
+          хотите узнать, какие данные мы о вас храним, — спросите. Вы имеете на это право, и запрос
+          не запускает удаление.
+        </p>
+      </div>
+
+      <!-- ── Հայերեն ─────────────────────────────────────────────────── -->
+      <div lang="hy">
+        <h1>Ջնջել ձեր TuTak հաշիվը</h1>
+        <p class="lede">
+          Դուք կարող եք ցանկացած պահի ջնջել ձեր TuTak հաշիվը՝ անմիջապես հավելվածից։ Այս էջը
+          բացատրում է, թե ինչպես դա անել և ինչ կկատարվի ձեր տվյալների հետ։
+        </p>
+
+        <h2>Ինչպես ջնջել հաշիվը</h2>
+        <div class="card">
+          <ol class="steps">
+            <li>Բացեք TuTak հավելվածը և մուտք գործեք։</li>
+            <li>Անցեք <strong>Կարգավորումներ</strong>։</li>
+            <li>Սեղմեք <strong>Ջնջել հաշիվը</strong>։</li>
+            <li>Կարդացեք, թե ինչ կկատարվի, մուտքագրեք գաղտնաբառը և հաստատեք։</li>
+          </ol>
+          <p style="margin-bottom: 0">
+            Դուք անմիջապես դուրս կգաք և այլևս չեք կարողանա մուտք գործել։ Եթե հավելվածին հասանելիություն
+            չունեք, գրեք մեզ հաշվին կապված հասցեից կամ համարից, և մենք կջնջենք այն ձեր փոխարեն։
+          </p>
+        </div>
+
+        <div class="card warn">
+          <h2>Ձեր միավորները չեղարկվում են</h2>
+          <p style="margin-bottom: 0">
+            Հաշվին մնացած բոլոր միավորները չեղարկվում են հաշիվը ջնջելիս։ Դրանք հնարավոր չէ փոխանցել
+            այլ հաշվի, փոխարկել գումարի կամ վերականգնել։ Եթե դրանց արժեքը կարևոր է, ծախսեք դրանք
+            նախապես։
+          </p>
+        </div>
+
+        <h2>Ինչ է ջնջվում և երբ</h2>
+        <p>
+          Հասանելիությունը դադարում է հաստատման պահին։ Անձնական տվյալները ջնջվում են
+          <strong>30 օր անց</strong>։ Այդ ընդմիջումն անհրաժեշտ է երկու պատճառով՝ վերադարձը կամ
+          chargeback-ը կարող է հասնել մի քանի օր առաջ կատարված գնման դիմաց և պետք է անցկացվի իրական
+          հաշվով, և եթե սխալմամբ եք ջնջել, աջակցության ծառայությունը կարող է վերականգնել այդ
+          ընթացքում։
+        </p>
+        <p>30 օր հետո անվերադարձ ջնջվում են՝</p>
+        <ul class="plain">
+          <li>Անունը, հեռախոսահամարը և էլ. հասցեն</li>
+          <li>Գաղտնաբառը</li>
+          <li>Ծանուցումները և հաղորդագրությունների պատմությունը</li>
+          <li>Սարքերը և push-ծանուցումների բանալիները</li>
+          <li>Չօգտագործված հաստատման և գաղտնաբառի վերականգնման կոդերը</li>
+        </ul>
+
+        <h2>Ինչ է պահվում և ինչու</h2>
+        <p>
+          Փաստացի կատարված դրամական շարժի գրառումները պահվում են՝ ինչպես պահանջում են հաշվապահական և
+          հարկային կանոնները։ Ջնջումից հետո այդ գրառումները ձեզ այլևս չեն նույնականացնում. դրանք
+          կապված են առանց անվան, հեռախոսի և էլ. հասցեի հաշվի հետ։
+        </p>
+        <ul class="plain kept">
+          <li>Վճարումները, վերադարձները և դրանց հաշվապահական գրանցումները</li>
+          <li>Գործընկերների հետ հաշվարկները և վճարումները</li>
+          <li>Անվտանգության մատյանը, որը գրանցում է ջնջման փաստը և ամսաթիվը</li>
+        </ul>
+
+        <h2>Հարցեր</h2>
+        <p>
+          Գրեք <a href="mailto:privacy@tutak.am">privacy@tutak.am</a> հասցեին։ Եթե որոշելուց առաջ
+          ուզում եք իմանալ, թե ինչ տվյալներ ենք պահում ձեր մասին, հարցրեք։ Դուք դրա իրավունքն ունեք,
+          և հարցումը ջնջում չի սկսում։
+        </p>
+      </div>
+
+      <footer>TuTak · <span id="year"></span></footer>
+    </main>
+
+    <script>
+      // Language choice only. No analytics, no network requests — this page
+      // has to work for someone who has already deleted their account and has
+      // no reason to trust us with another data point.
+      document.getElementById('year').textContent = new Date().getFullYear();
+      const buttons = document.querySelectorAll('nav.langs button');
+      const pick = (lang) => {
+        document.body.dataset.lang = lang;
+        document.documentElement.lang = lang;
+        buttons.forEach((b) => b.setAttribute('aria-current', String(b.dataset.set === lang)));
+      };
+      buttons.forEach((b) => b.addEventListener('click', () => pick(b.dataset.set)));
+      const preferred = (navigator.language || 'en').slice(0, 2);
+      if (['ru', 'hy'].includes(preferred)) pick(preferred);
+    </script>
+  </body>
+</html>

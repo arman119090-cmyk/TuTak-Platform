@@ -117,6 +117,16 @@ export function SettingsScreen() {
             leading={<SettingIcon name="lock-closed-outline" />}
             trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
             onPress={() => navigation.navigate('ChangePassword')}
+          />
+          {/* Required by both app stores to be reachable from inside the app.
+              Styled as an ordinary row rather than hidden behind a warning:
+              hard to find is its own kind of dark pattern, and the screen it
+              opens does the explaining. */}
+          <ListRow
+            title={t('settings.deleteAccount')}
+            leading={<SettingIcon name="trash-outline" />}
+            trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+            onPress={() => navigation.navigate('DeleteAccount')}
             last
           />
         </View>

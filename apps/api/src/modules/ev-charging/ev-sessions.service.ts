@@ -176,6 +176,21 @@ export class EvSessionsService {
         if (!result.accepted) {
           throw new BadRequestException('Roaming CPO rejected the remote start command');
         }
+
+        // Keep the identifier the CPO answered with. It was being discarded,
+        // and `stop()` then addressed the remote session by *our* id — an
+        // identifier the CPO has never seen, so the stop command would not
+        // match anything on their side and the bay would keep delivering
+        // energy. Only reachable on a roaming connector, of which there are
+        // none yet; see docs/AUDIT_FINANCIAL_2026-08.md on what else the
+        // roaming path still needs before it can carry money.
+        if (result.ocpiSessionId) {
+          await tx.evSession.update({
+            where: { id: session.id },
+            data: { ocpiCdrId: result.ocpiSessionId },
+          });
+          session.ocpiCdrId = result.ocpiSessionId;
+        }
       }
 
       return session;

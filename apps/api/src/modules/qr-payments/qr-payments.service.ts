@@ -291,6 +291,29 @@ export class QrPaymentsService {
             this.logger.error('Failed to reverse bonus accrual after QR redeem failure', e),
           );
       }
+
+      // Give the merchant their invoice back.
+      //
+      // Everything else this saga touched was compensated and the code was
+      // not: a failure after the flip left it REDEEMED against a transaction
+      // that ended FAILED. Nobody was charged, the customer's points were
+      // returned — and the invoice could never be paid again, so the merchant
+      // had to reissue it at the till while the customer watched.
+      //
+      // Conditioned on `redeemedTransactionId` so only the attempt that
+      // actually consumed the code can return it. A concurrent second
+      // request never flipped it and so can never un-redeem the first one's
+      // legitimate payment.
+      await this.prisma.qrCode
+        .updateMany({
+          where: {
+            id: qr.id,
+            status: QrCodeStatus.REDEEMED,
+            redeemedTransactionId: transaction.id,
+          },
+          data: { status: QrCodeStatus.ACTIVE, redeemedTransactionId: null },
+        })
+        .catch((e) => this.logger.error('Failed to release QR code after redeem failure', e));
       await this.transactionsService.markFailed(
         transaction.id,
         err instanceof Error ? err.message : 'unknown_error',

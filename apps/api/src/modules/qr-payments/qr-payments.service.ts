@@ -16,6 +16,7 @@ import { BonusEntryType } from '@prisma/client';
 import { IssueQrDto } from './dto/issue-qr.dto';
 import { RedeemQrDto } from './dto/redeem-qr.dto';
 import { QrLedgerMirrorService } from './qr-ledger-mirror.service';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 
 @Injectable()
 export class QrPaymentsService {
@@ -31,7 +32,40 @@ export class QrPaymentsService {
     private readonly fraudDetectionService: FraudDetectionService,
     private readonly phoneVerification: PhoneVerificationService,
     private readonly ledgerMirror: QrLedgerMirrorService,
+    private readonly alerts: AlertsService,
   ) {}
+
+  /**
+   * A rollback that itself failed, which is the worst state this saga can
+   * reach and the one nothing else will find.
+   *
+   * Reconciliation cannot see it: the ledger is internally consistent, and a
+   * settled reservation whose reversal failed is simply a customer whose
+   * points are gone against a transaction marked FAILED. The expiry sweep
+   * cannot see it either — that only returns *active* holds. Without an
+   * alert the sole record is a log line, and the customer finds out by
+   * counting their points.
+   */
+  private async compensationFailed(
+    what: string,
+    entityId: string,
+    transactionId: string,
+    err: unknown,
+  ): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    this.logger.error(`Failed to compensate ${what} after QR redeem failure: ${message}`);
+    await this.alerts.fire({
+      severity: 'critical',
+      key: `compensation.failed:qr:${entityId}`,
+      title: `A customer's ${what} could not be rolled back`,
+      body:
+        `A QR redemption failed and the compensating action for its ${what} also failed. ` +
+        'The customer has been charged points for a purchase that did not complete, and nothing ' +
+        'else in the platform will find this — reconciliation sees a consistent ledger and the ' +
+        'expiry sweep only returns holds that are still active. This one needs a person.',
+      context: { entityId, transactionId, error: message.slice(0, 200) },
+    });
+  }
 
   async issue(dto: IssueQrDto, issuer: RequestUser) {
     if (dto.type !== QrCodeType.USER_PAY_TOKEN && !dto.partnerId) {
@@ -280,16 +314,12 @@ export class QrPaymentsService {
       if (reservationId) {
         await this.bonusEngine
           .compensateReservation(reservationId, 'qr_redeem_failed')
-          .catch((e) =>
-            this.logger.error('Failed to compensate bonus reservation after QR redeem failure', e),
-          );
+          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, transaction.id, e));
       }
       if (accruedLotId) {
         await this.bonusEngine
           .reverseAccrualLot(accruedLotId, 'qr_redeem_failed')
-          .catch((e) =>
-            this.logger.error('Failed to reverse bonus accrual after QR redeem failure', e),
-          );
+          .catch((e) => this.compensationFailed('bonus accrual', accruedLotId!, transaction.id, e));
       }
 
       // Give the merchant their invoice back.

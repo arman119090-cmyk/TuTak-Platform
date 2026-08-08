@@ -51,6 +51,7 @@ describe('Crash recovery (integration)', () => {
 
   beforeEach(async () => {
     await truncateAll(prisma);
+    await harness.resetAlerts();
     jest.restoreAllMocks();
   });
 
@@ -215,6 +216,46 @@ describe('Crash recovery (integration)', () => {
       // The bay must not stay occupied by a session that failed.
       const bay = await prisma.evConnector.findUniqueOrThrow({ where: { id: connector.id } });
       expect(bay.status).toBe('AVAILABLE');
+    });
+  });
+
+  describe('a rollback that itself fails', () => {
+    it('tells a human, because nothing else will find it', async () => {
+      // The worst state this saga reaches. Reconciliation sees a perfectly
+      // consistent ledger — the points really were spent — and the expiry
+      // sweep only returns holds that are still active, so a settled
+      // reservation whose reversal failed is invisible to both. Before this
+      // alert the only record was a log line, and the customer found out by
+      // counting their points.
+      const { user, wallet } = await funded('1000');
+      const partner = await createPartner(prisma);
+      const code = await createDynamicInvoiceQr(prisma, {
+        partnerId: partner.id,
+        amount: '5000',
+      });
+
+      jest
+        .spyOn(transactions, 'markCompleted')
+        .mockRejectedValueOnce(new Error('database went away'));
+      jest
+        .spyOn(engine, 'compensateReservation')
+        .mockRejectedValueOnce(new Error('and the rollback went away too'));
+
+      await expect(
+        qr.redeem(
+          { token: code.token, bonusAmountToApply: '400', idempotencyKey: 'rollback-failed' },
+          user.id,
+        ),
+      ).rejects.toThrow();
+
+      const fired = harness.alerts.matching('compensation.failed');
+      expect(fired).toHaveLength(1);
+      expect(fired[0]!.severity).toBe('critical');
+
+      // And the customer really is short — which is why somebody has to be
+      // told rather than the alert being belt-and-braces.
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.availableBonus.toString()).toBe('600');
     });
   });
 

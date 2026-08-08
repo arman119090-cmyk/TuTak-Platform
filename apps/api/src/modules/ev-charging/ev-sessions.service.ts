@@ -21,6 +21,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
 import { PhoneVerificationService } from '../auth/phone-verification.service';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -97,6 +98,7 @@ export class EvSessionsService {
     private readonly fraudDetection: FraudDetectionService,
     private readonly phoneVerification: PhoneVerificationService,
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
+    private readonly alerts: AlertsService,
   ) {}
 
   async start(dto: StartSessionDto, userId: string) {
@@ -426,16 +428,12 @@ export class EvSessionsService {
       if (reservationId) {
         await this.bonusEngine
           .compensateReservation(reservationId, 'ev_stop_failed')
-          .catch((e) =>
-            this.logger.error('Failed to compensate bonus reservation after EV stop failure', e),
-          );
+          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, session.id, e));
       }
       if (accruedLotId) {
         await this.bonusEngine
           .reverseAccrualLot(accruedLotId, 'ev_stop_failed')
-          .catch((e) =>
-            this.logger.error('Failed to reverse bonus accrual after EV stop failure', e),
-          );
+          .catch((e) => this.compensationFailed('bonus accrual', accruedLotId!, session.id, e));
       }
 
       // Without this the connector stayed CHARGING forever: the station was
@@ -493,6 +491,35 @@ export class EvSessionsService {
    * whether the failure was a rejected reading, a ledger error or a crash
    * mid-settlement.
    */
+  /**
+   * A rollback that itself failed — the state nothing else will find.
+   *
+   * Reconciliation sees a consistent ledger, and the expiry sweep only
+   * returns holds that are still active, so a settled reservation whose
+   * reversal failed is invisible to both. The customer simply has fewer
+   * points than they should for a charge that never completed, and without
+   * this the only record is a log line.
+   */
+  private async compensationFailed(
+    what: string,
+    entityId: string,
+    sessionId: string,
+    err: unknown,
+  ): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    this.logger.error(`Failed to compensate ${what} after EV stop failure: ${message}`);
+    await this.alerts.fire({
+      severity: 'critical',
+      key: `compensation.failed:ev:${entityId}`,
+      title: `A customer's ${what} could not be rolled back`,
+      body:
+        `A charging session failed to stop cleanly and the compensating action for its ${what} ` +
+        'also failed. The customer has been charged points for a session that did not complete, ' +
+        'and nothing else in the platform will find this. This one needs a person.',
+      context: { entityId, sessionId, error: message.slice(0, 200) },
+    });
+  }
+
   private releaseConnector(connectorId: string, sessionId: string) {
     return this.prisma.$transaction(async (tx) => {
       await tx.evConnector.update({

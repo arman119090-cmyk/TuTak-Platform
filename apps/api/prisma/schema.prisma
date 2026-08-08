@@ -743,6 +743,14 @@ model EvReservation {
   session   EvSession?
 
   @@index([connectorId, status])
+  /// `listMine` filters by user and sorts by recency, and the table grows
+  /// with every hold anybody ever places. Composite rather than a bare
+  /// `userId` so the sort is served by the index too — the same shape
+  /// `transactions` and `ev_sessions` already use.
+  @@index([userId, createdAt])
+  /// The expiry sweep asks for confirmed holds past their window, once a
+  /// minute, forever. Without this it reads every reservation ever made.
+  @@index([status, expiresAt])
   @@map("ev_reservations")
 }
 

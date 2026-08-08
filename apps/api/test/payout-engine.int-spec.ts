@@ -215,12 +215,95 @@ describe('PayoutEngineService (integration)', () => {
       idempotencyKey: 'payout-confirm-1',
     });
 
+    expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('-9750.0000');
+
     await payouts.confirmPaid(requested.payoutId, 'BANK-REF-123');
 
     const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
     expect(stored.status).toBe(PayoutStatus.PAID);
     expect(stored.bankReference).toBe('BANK-REF-123');
     expect(stored.completedAt).not.toBeNull();
+
+    // The point of the clearing account: it answers "what is moving right
+    // now", so a settled transfer must leave it. It used to stay, which made
+    // a confirmed payout indistinguishable from a stuck one.
+    expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('0.0000');
+    expect(await balanceOf(LedgerAccountType.PLATFORM_BANK)).toBe('-9750.0000');
+    await assertLedgerIntegrity();
+  });
+
+  it('records the settlement posting against the payout it settled', async () => {
+    const partner = await createPartner(prisma);
+    await earn(partner.id, '10000', 'pay-payout-trace');
+    const requested = await payouts.requestPayout({
+      partnerId: partner.id,
+      amount: '2000',
+      actorId: 'admin-1',
+      idempotencyKey: 'payout-trace-1',
+    });
+    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-TRACE');
+
+    const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
+    // Both halves are traceable: money leaving the partner's balance, and
+    // money leaving the platform's bank.
+    expect(stored.ledgerTransactionId).not.toBeNull();
+    expect(stored.settlementLedgerTransactionId).not.toBeNull();
+    expect(stored.settlementLedgerTransactionId).not.toBe(stored.ledgerTransactionId);
+
+    const settlement = await prisma.ledgerTransaction.findUniqueOrThrow({
+      where: { id: stored.settlementLedgerTransactionId! },
+      include: { postings: true },
+    });
+    expect(settlement.kind).toBe('payout.settled');
+    expect(settlement.sourceId).toBe(requested.payoutId);
+    const net = settlement.postings.reduce(
+      (acc, p) => acc + (p.direction === 'DEBIT' ? 1 : -1) * Number(p.amount),
+      0,
+    );
+    expect(net).toBe(0);
+  });
+
+  it('leaves clearing at zero and the bank untouched when a payout fails instead', async () => {
+    const partner = await createPartner(prisma);
+    await earn(partner.id, '10000', 'pay-payout-nobank');
+    const requested = await payouts.requestPayout({
+      partnerId: partner.id,
+      amount: '3000',
+      actorId: 'admin-1',
+      idempotencyKey: 'payout-nobank-1',
+    });
+
+    await payouts.markFailed(requested.payoutId, 'account closed');
+
+    // Failure reverses the request. No money ever left the platform, so the
+    // bank account must have nothing to say about it.
+    expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('0.0000');
+    expect(await balanceOf(LedgerAccountType.PLATFORM_BANK)).toBe('0.0000');
+    const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
+    expect(stored.settlementLedgerTransactionId).toBeNull();
+    await assertLedgerIntegrity();
+  });
+
+  it('does not double-drain clearing when a confirmation is retried', async () => {
+    const partner = await createPartner(prisma);
+    await earn(partner.id, '10000', 'pay-payout-retry');
+    const requested = await payouts.requestPayout({
+      partnerId: partner.id,
+      amount: '5000',
+      actorId: 'admin-1',
+      idempotencyKey: 'payout-retry-1',
+    });
+
+    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-A');
+    await expect(payouts.confirmPaid(requested.payoutId, 'BANK-REF-B')).rejects.toThrow();
+
+    // The refused second confirmation must not have posted anything: the
+    // claim and the posting share a transaction precisely so that a rejected
+    // claim rolls the posting back with it.
+    expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('0.0000');
+    expect(await balanceOf(LedgerAccountType.PLATFORM_BANK)).toBe('-5000.0000');
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'payout.settled' } })).toBe(1);
+    await assertLedgerIntegrity();
   });
 
   it('returns the money to the partner when the bank rejects the transfer', async () => {

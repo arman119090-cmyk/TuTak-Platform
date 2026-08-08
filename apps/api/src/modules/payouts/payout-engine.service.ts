@@ -176,8 +176,15 @@ export class PayoutEngineService {
   }
 
   /**
-   * The bank confirmed the transfer landed. Clears it out of BANK_CLEARING —
-   * the money is now genuinely gone rather than merely in flight.
+   * The bank confirmed the transfer landed. Drains it out of BANK_CLEARING
+   * into PLATFORM_BANK — the money is now genuinely gone rather than merely
+   * in flight.
+   *
+   * This used to write no posting at all, only the status flip. The ledger
+   * still balanced, because BANK_CLEARING was silently doing the platform
+   * bank account's job — but it meant a confirmed payout looked identical to
+   * one still in flight, and BANK_CLEARING's balance, which should answer
+   * "how much is moving right now", answered "how much has ever moved".
    */
   async confirmPaid(payoutId: string, bankReference: string): Promise<void> {
     const payout = await this.prisma.payout.findUniqueOrThrow({ where: { id: payoutId } });
@@ -185,13 +192,65 @@ export class PayoutEngineService {
       throw new BadRequestException(`Payout is already ${payout.status}`);
     }
 
-    const claimed = await this.prisma.payout.updateMany({
-      where: { id: payoutId, status: PayoutStatus.REQUESTED },
-      data: { status: PayoutStatus.PAID, bankReference, completedAt: new Date() },
+    const currency = Currency.AMD;
+    const [clearingAccount, bankAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.BANK_CLEARING, currency }),
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_BANK, currency }),
+    ]);
+
+    await this.prisma.$transaction(async (tx) => {
+      // The claim and the posting share a transaction, so a payout can never
+      // end up PAID without the money having left BANK_CLEARING, or the
+      // reverse. Two concurrent confirmations: one claims, the other finds
+      // count === 0 and posts nothing.
+      const claimed = await tx.payout.updateMany({
+        where: { id: payoutId, status: PayoutStatus.REQUESTED },
+        data: { status: PayoutStatus.PAID, bankReference, completedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException('This payout was already resolved');
+      }
+
+      const ledgerTransaction = await this.ledger.post(
+        {
+          kind: 'payout.settled',
+          sourceType: 'Payout',
+          sourceId: payoutId,
+          currency,
+          postings: [
+            {
+              accountId: clearingAccount.id,
+              direction: PostingDirection.DEBIT,
+              amount: payout.amount,
+            },
+            {
+              accountId: bankAccount.id,
+              direction: PostingDirection.CREDIT,
+              amount: payout.amount,
+            },
+          ],
+          events: [
+            {
+              aggregateType: 'Payout',
+              aggregateId: payoutId,
+              eventType: 'payout.settled',
+              payload: {
+                payoutId,
+                partnerId: payout.partnerId,
+                amount: payout.amount.toString(),
+                bankReference,
+              },
+            },
+          ],
+        },
+        tx,
+      );
+
+      await tx.payout.update({
+        where: { id: payoutId },
+        data: { settlementLedgerTransactionId: ledgerTransaction.id },
+      });
     });
-    if (claimed.count === 0) {
-      throw new ConflictException('This payout was already resolved');
-    }
 
     this.logger.log(`Payout ${payoutId} confirmed paid, bank ref ${bankReference}`);
   }

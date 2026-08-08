@@ -772,8 +772,19 @@ enum LedgerAccountType {
   /// confirmed settled. A payout sits here between request and confirmation,
   /// so an in-flight transfer is never invisible: it is out of the partner's
   /// payable balance (they cannot request it twice) without yet being
-  /// claimed as gone.
+  /// claimed as gone. Confirmation drains it into PLATFORM_BANK; a failure
+  /// reverses the original posting. Either way it returns to zero, so a
+  /// non-zero balance here means exactly one thing: transfers are in flight
+  /// right now.
   BANK_CLEARING
+  /// The platform's own bank account. A confirmed payout leaves it.
+  ///
+  /// Its balance is negative and will stay negative until the other side of
+  /// the platform's cash cycle is modelled — the acquirer settling
+  /// PSP_RECEIVABLE into this account. Until then it reads as "paid out this
+  /// much more than we have recorded receiving", which is true, rather than
+  /// being hidden inside BANK_CLEARING, which was not.
+  PLATFORM_BANK
 }
 
 enum PostingDirection {
@@ -819,10 +830,11 @@ model LedgerTransaction {
   reversesId String?  @unique
   postedAt   DateTime @default(now())
 
-  postings LedgerPosting[]
-  payment  Payment?
-  refund   Refund?
-  payout   Payout?
+  postings         LedgerPosting[]
+  payment          Payment?
+  refund           Refund?
+  payoutRequested  Payout?         @relation("PayoutRequested")
+  payoutSettled    Payout?         @relation("PayoutSettled")
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -1015,12 +1027,18 @@ model Payout {
   bankReference       String?
   failureReason       String?
   ledgerTransactionId String?      @unique
+  /// The posting that drained BANK_CLEARING when the bank confirmed. Kept
+  /// separate from `ledgerTransactionId` because a payout moves money twice
+  /// — out of the partner's balance, then out of the platform's — and both
+  /// halves need to be traceable to the row that caused them.
+  settlementLedgerTransactionId String? @unique
   requestedByUserId   String?
   createdAt           DateTime     @default(now())
   completedAt         DateTime?
 
   partner           Partner            @relation(fields: [partnerId], references: [id])
-  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation("PayoutRequested", fields: [ledgerTransactionId], references: [id])
+  settlementLedgerTransaction LedgerTransaction? @relation("PayoutSettled", fields: [settlementLedgerTransactionId], references: [id])
 
   @@index([partnerId, status])
   @@map("payouts")

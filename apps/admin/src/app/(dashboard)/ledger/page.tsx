@@ -25,6 +25,24 @@ function displayBalance(type: string, balance: string): string {
   return normalized.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * What a number in this account actually means.
+ *
+ * A chart of accounts is only readable to whoever built it. PLATFORM_BANK in
+ * particular reads as alarming without its sentence — it is negative, and
+ * will stay negative until the acquirer settling PSP_RECEIVABLE into it is
+ * modelled.
+ */
+const MEANING: Record<string, string> = {
+  PSP_RECEIVABLE: 'owed to us by the acquirer',
+  PARTNER_PAYABLE: 'owed by us to this partner',
+  CUSTOMER_PAYABLE: 'owed by us to this customer',
+  PLATFORM_REVENUE: 'commission kept, less points issued',
+  BONUS_LIABILITY: 'points issued and not yet spent',
+  BANK_CLEARING: 'payouts in flight right now',
+  PLATFORM_BANK: 'paid out, less inflows recorded (acquirer settlement not modelled yet)',
+};
+
 export default function LedgerPage() {
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -73,6 +91,9 @@ export default function LedgerPage() {
                   >
                     {a.type.replace(/_/g, ' ').toLowerCase()}
                   </button>
+                  {MEANING[a.type] && (
+                    <p className="mt-0.5 text-[12px] text-muted">{MEANING[a.type]}</p>
+                  )}
                 </Td>
                 <Td className="tabular text-[12px] text-muted">
                   {a.partnerId ?? a.userId ?? 'platform'}

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { LedgerAccountType, PayoutStatus, PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
@@ -203,6 +203,55 @@ describe('PayoutEngineService (integration)', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  // ── The two-person rule ───────────────────────────────────────────────
+  //
+  // Requesting a payout moves a partner's money into BANK_CLEARING;
+  // confirming it asserts the bank really sent it. One person doing both is
+  // enough to drain a partner and mark the theft settled, with every record
+  // left behind agreeing it was legitimate.
+
+  it('refuses a confirmation from the person who requested the payout', async () => {
+    const partner = await createPartner(prisma);
+    await earn(partner.id, '10000', 'pay-dual-1');
+    const requested = await payouts.requestPayout({
+      partnerId: partner.id,
+      amount: '5000',
+      actorId: 'admin-1',
+      idempotencyKey: 'payout-dual-1',
+    });
+
+    await expect(
+      payouts.confirmPaid(requested.payoutId, 'BANK-SELF', 'admin-1'),
+    ).rejects.toThrow(ForbiddenException);
+
+    // And nothing moved: the refusal has to happen before the ledger does,
+    // or the control is decorative.
+    const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
+    expect(stored.status).toBe(PayoutStatus.REQUESTED);
+    expect(stored.confirmedByUserId).toBeNull();
+    expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('-5000.0000');
+  });
+
+  it('records who confirmed, so the rule is auditable afterwards', async () => {
+    const partner = await createPartner(prisma);
+    await earn(partner.id, '10000', 'pay-dual-2');
+    const requested = await payouts.requestPayout({
+      partnerId: partner.id,
+      amount: '5000',
+      actorId: 'admin-1',
+      idempotencyKey: 'payout-dual-2',
+    });
+
+    await payouts.confirmPaid(requested.payoutId, 'BANK-OK', 'admin-2');
+
+    const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
+    // Both names on the row the money moved through. An audit log can be
+    // argued with; this cannot.
+    expect(stored.requestedByUserId).toBe('admin-1');
+    expect(stored.confirmedByUserId).toBe('admin-2');
+    expect(stored.status).toBe(PayoutStatus.PAID);
+  });
+
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
   it('closes a payout when the bank confirms it', async () => {
@@ -217,7 +266,7 @@ describe('PayoutEngineService (integration)', () => {
 
     expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('-9750.0000');
 
-    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-123');
+    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-123', 'admin-2');
 
     const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
     expect(stored.status).toBe(PayoutStatus.PAID);
@@ -241,7 +290,7 @@ describe('PayoutEngineService (integration)', () => {
       actorId: 'admin-1',
       idempotencyKey: 'payout-trace-1',
     });
-    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-TRACE');
+    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-TRACE', 'admin-2');
 
     const stored = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
     // Both halves are traceable: money leaving the partner's balance, and
@@ -294,8 +343,10 @@ describe('PayoutEngineService (integration)', () => {
       idempotencyKey: 'payout-retry-1',
     });
 
-    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-A');
-    await expect(payouts.confirmPaid(requested.payoutId, 'BANK-REF-B')).rejects.toThrow();
+    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-A', 'admin-2');
+    await expect(
+      payouts.confirmPaid(requested.payoutId, 'BANK-REF-B', 'admin-2'),
+    ).rejects.toThrow();
 
     // The refused second confirmation must not have posted anything: the
     // claim and the posting share a transaction precisely so that a rejected
@@ -338,8 +389,8 @@ describe('PayoutEngineService (integration)', () => {
       idempotencyKey: 'payout-twice-1',
     });
 
-    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-1');
-    await expect(payouts.confirmPaid(requested.payoutId, 'BANK-REF-2')).rejects.toThrow(
+    await payouts.confirmPaid(requested.payoutId, 'BANK-REF-1', 'admin-2');
+    await expect(payouts.confirmPaid(requested.payoutId, 'BANK-REF-2', 'admin-2')).rejects.toThrow(
       BadRequestException,
     );
     await expect(payouts.markFailed(requested.payoutId, 'too late')).rejects.toThrow(

@@ -11,6 +11,7 @@ import { RedisModule } from './infrastructure/redis/redis.module';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { SmsModule } from './infrastructure/sms/sms.module';
 import { PushModule } from './infrastructure/push/push.module';
+import { AlertsModule } from './infrastructure/alerts/alerts.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestContextMiddleware } from './common/observability/request-context.middleware';
@@ -61,6 +62,7 @@ import { SweepsModule } from './modules/sweeps/sweeps.module';
     QueueModule,
     SmsModule,
     PushModule,
+    AlertsModule,
 
     AuditModule,
     UsersModule,

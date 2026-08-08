@@ -8,6 +8,9 @@ import { PrismaModule } from '../../src/infrastructure/prisma/prisma.module';
 import { REDIS_CLIENT, RedisModule } from '../../src/infrastructure/redis/redis.module';
 import { SmsModule } from '../../src/infrastructure/sms/sms.module';
 import { PushModule } from '../../src/infrastructure/push/push.module';
+import { AlertsModule } from '../../src/infrastructure/alerts/alerts.module';
+import { ALERT_CHANNEL } from '../../src/infrastructure/alerts/alert-channel.interface';
+import { RecordingAlertChannel } from './recording-alert.channel';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -46,6 +49,16 @@ import { TEST_DATABASE_URL } from './test-database';
 export interface TestHarness {
   app: TestingModule;
   prisma: PrismaClient;
+  /**
+   * Everything the platform tried to tell a human during the test.
+   *
+   * Exposed because "money moved wrongly" and "money moved wrongly and
+   * nobody was told" are different failures, and only the tests can tell
+   * them apart before production does.
+   */
+  alerts: RecordingAlertChannel;
+  /** Clears captured alerts *and* the Redis suppression window. */
+  resetAlerts(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -55,6 +68,8 @@ const PRESERVED_TABLES = new Set(['roles', 'permissions', 'role_permissions', '_
 export async function createTestHarness(): Promise<TestHarness> {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
 
+  const alerts = new RecordingAlertChannel();
+
   const moduleRef = await Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
@@ -63,6 +78,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       RedisModule,
       SmsModule,
       PushModule,
+      AlertsModule,
       WalletModule,
       TransactionsModule,
       QrPaymentsModule,
@@ -85,20 +101,33 @@ export async function createTestHarness(): Promise<TestHarness> {
   })
     .overrideProvider(PrismaService)
     .useValue(prisma)
+    .overrideProvider(ALERT_CHANNEL)
+    .useValue(alerts)
     .compile();
 
   // TestingModule *is* an application context — no HTTP adapter is created,
   // so the suites exercise the services directly with no server listening.
   await moduleRef.init();
 
+  const redis = moduleRef.get<Redis>(REDIS_CLIENT);
+
   return {
     app: moduleRef,
     prisma,
+    alerts,
+    async resetAlerts() {
+      alerts.clear();
+      // Suppression lives in Redis and survives table truncation, so without
+      // this the second test in a file would find its alert silently
+      // swallowed by the first test's fifteen-minute window.
+      const keys = await redis.keys('alert:sent:*');
+      if (keys.length) await redis.del(...keys);
+    },
     async close() {
       // ioredis doesn't implement OnModuleDestroy, so Nest's own shutdown
       // hooks never reach it — left unclosed, the open TCP handle keeps the
       // Jest worker alive after every test in the file has finished.
-      await moduleRef.get<Redis>(REDIS_CLIENT).quit();
+      await redis.quit();
       await moduleRef.close();
       await prisma.$disconnect();
     },

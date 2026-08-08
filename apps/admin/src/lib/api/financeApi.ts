@@ -64,6 +64,11 @@ export interface Payout {
   failureReason: string | null;
   createdAt: string;
   completedAt: string | null;
+  /** The two-person rule's participants. Ids for the check, names to read. */
+  requestedByUserId: string | null;
+  confirmedByUserId: string | null;
+  requestedByName: string | null;
+  confirmedByName: string | null;
 }
 
 export interface PaymentRow {

@@ -13,6 +13,7 @@ import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { ReconciliationService } from '../src/modules/reconciliation/reconciliation.service';
 import { SWEEPS, SWEEPS_QUEUE } from '../src/modules/sweeps/sweeps.jobs';
 import { SweepsProcessor } from '../src/modules/sweeps/sweeps.processor';
+import { AlertsService } from '../src/infrastructure/alerts/alerts.service';
 import { SweepsScheduler } from '../src/modules/sweeps/sweeps.scheduler';
 
 /**
@@ -76,6 +77,10 @@ describe('Sweeps (integration)', () => {
         { provide: EvSessionsService, useValue: sessions },
         { provide: OutboxService, useValue: outbox },
         { provide: ReconciliationService, useValue: reconciliation },
+        // The processor alerts when a job stops retrying. This suite is
+        // about scheduling and dispatch, so a recorder is enough — the
+        // alerting behaviour itself is covered in alerting.int-spec.ts.
+        { provide: AlertsService, useValue: { fire: jest.fn() } },
       ],
     }).compile();
 

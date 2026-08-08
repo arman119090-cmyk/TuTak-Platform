@@ -209,7 +209,7 @@ describe('AcquirerSettlementService (integration)', () => {
       actorId: 'admin-1',
       idempotencyKey: 'acq-cycle-payout',
     });
-    await payouts.confirmPaid(payout.payoutId, 'BANK-CYCLE');
+    await payouts.confirmPaid(payout.payoutId, 'BANK-CYCLE', 'admin-2');
 
     expect(await balanceOf(LedgerAccountType.PSP_RECEIVABLE)).toBe('0.0000');
     expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('0.0000');

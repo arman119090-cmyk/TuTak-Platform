@@ -1,8 +1,9 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { AppConfig } from '../../config/configuration';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { DistributedLockService } from '../../infrastructure/redis/distributed-lock.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { EvReservationsService } from '../ev-charging/ev-reservations.service';
@@ -48,6 +49,7 @@ export class SweepsProcessor extends WorkerHost implements OnApplicationBootstra
     reconciliation: ReconciliationService,
     private readonly lock: DistributedLockService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly alerts: AlertsService,
   ) {
     super();
     this.deps = { bonus, reservations, sessions, outbox, reconciliation };
@@ -84,5 +86,45 @@ export class SweepsProcessor extends WorkerHost implements OnApplicationBootstra
       this.logger.debug(`${sweep.name} skipped — another worker holds the lock`);
     }
     return { ran, ms };
+  }
+
+  /**
+   * Fires when BullMQ has finished retrying and the job is staying failed.
+   *
+   * This is the alert that covers everything the other two do not. Bonus
+   * expiry, EV session cleanup, the outbox drain and reconciliation all run
+   * here, and a sweep that has been failing for a week used to look exactly
+   * like a sweep that had been working for a week — which is the entire
+   * reason these moved off in-process cron. Now the silence has a voice.
+   *
+   * `attemptsMade` is compared against the job's own configured maximum
+   * rather than a constant: BullMQ emits `failed` on every attempt, and
+   * alerting on the first of five retries would page someone about a
+   * transient database blip that fixed itself nine seconds later.
+   */
+  @OnWorkerEvent('failed')
+  async onFailed(job: Job | undefined, error: Error): Promise<void> {
+    if (!job) return;
+
+    const max = job.opts.attempts ?? 1;
+    if (job.attemptsMade < max) {
+      this.logger.warn(
+        `${job.name} failed on attempt ${job.attemptsMade}/${max}, will retry: ${error.message}`,
+      );
+      return;
+    }
+
+    this.logger.error(`${job.name} failed permanently after ${max} attempt(s): ${error.message}`);
+
+    await this.alerts.fire({
+      severity: 'critical',
+      key: `sweep.failed:${job.name}`,
+      title: `Background job '${job.name}' is failing`,
+      body:
+        `It has failed ${max} time(s) and stopped retrying. Depending on the job this means ` +
+        'bonuses are not expiring, charging sessions are not being closed, ledger events are ' +
+        'not settling, or nothing is being reconciled.',
+      context: { job: job.name, attempts: max, error: error.message.slice(0, 200) },
+    });
   }
 }

@@ -307,6 +307,25 @@ async function main() {
     log.log('Super admin password aligned with DEMO_PASSWORD.');
   }
 
+  // A second administrator, so the demo can actually exercise the two-person
+  // rule on payouts. With one admin the rule is invisible — and a control
+  // nobody has seen working is a control nobody trusts when it fires.
+  const approver = await prisma.user.upsert({
+    where: { phone: '+37400000001' },
+    update: { passwordHash, mustChangePassword: false },
+    create: {
+      phone: '+37400000001',
+      firstName: 'Nune',
+      lastName: 'Approver',
+      passwordHash,
+      isPhoneVerified: true,
+      mustChangePassword: false,
+      passwordChangedAt: new Date(),
+    },
+  });
+  await grantRole(approver.id, RoleName.ADMIN);
+  log.log('Second administrator created for payout approval.');
+
   // ── QR payments: the loyalty loop ──────────────────────────────────────
 
   const asRequestUser = (user: User, roles: RoleName[], scopes: Record<string, string[]> = {}): RequestUser => ({
@@ -426,9 +445,10 @@ async function main() {
       actorId: admin?.id ?? owner.id,
       idempotencyKey: 'demo-payout-1',
     });
-    // Confirm it, so the payouts screen shows a completed transfer as well
-    // as the balance that remains.
-    await payouts.confirmPaid(payout.payoutId, 'DEMO-WIRE-000117');
+    // Confirmed by the *other* administrator. Passing the requester here
+    // would be rejected by the engine, which is the point: the demo data
+    // could not have been produced by one person acting alone.
+    await payouts.confirmPaid(payout.payoutId, 'DEMO-WIRE-000117', approver.id);
   }
 
   // ── The acquirer pays us ───────────────────────────────────────────────

@@ -44,6 +44,14 @@ export interface AppConfig {
     serviceName: string;
     debug: boolean;
   };
+  alerts: {
+    /** Where an operator gets told that money is at risk. Empty = the log only. */
+    webhookUrl: string;
+  };
+  payouts: {
+    /** Whether confirming a payout requires someone other than its requester. */
+    dualControl: boolean;
+  };
   features: {
     /**
      * Phase 4 of docs/FINANCIAL_CORE_DESIGN.md: mirror QR redemptions into
@@ -120,6 +128,19 @@ export default (): AppConfig => ({
     enabled: process.env.PUSH_ENABLED === 'true',
     endpoint: process.env.PUSH_ENDPOINT ?? 'https://exp.host/--/api/v2/push/send',
     accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
+  },
+  alerts: {
+    // A Slack/Mattermost/Discord incoming webhook, or anything that accepts a
+    // JSON POST. Unset in development; production boots without it but warns
+    // — see AlertsModule for why it does not refuse.
+    webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+  },
+  payouts: {
+    // On unless explicitly disabled. The safe default for a control that
+    // exists to stop one compromised account from moving money out on its
+    // own; an operation genuinely run by one person turns it off knowingly,
+    // which is a decision someone made rather than one nobody noticed.
+    dualControl: process.env.PAYOUT_DUAL_CONTROL !== 'false',
   },
   tracing: {
     // Standard OpenTelemetry variable names, so a collector's own

@@ -20,8 +20,11 @@ import { AcquirerSettlementService } from './acquirer-settlement.service';
  * their own money and withholding it serves nobody. What they cannot do is
  * initiate the transfer: `PAYOUT_MANAGE` is deliberately not granted to
  * ADMIN either, only SUPER_ADMIN, because wiring money to an external bank
- * account is the least reversible action on this platform and there is no
- * maker-checker flow yet to hand it out more widely.
+ * account is the least reversible action on this platform.
+ *
+ * On top of that permission, confirming a payout is subject to the
+ * two-person rule enforced in `PayoutEngineService.confirmPaid`: the
+ * confirming admin must not be the one who requested it.
  */
 @ApiTags('payouts')
 @ApiBearerAuth()
@@ -139,13 +142,13 @@ export class PayoutsController {
     @Param('id') id: string,
     @Body() dto: ConfirmPayoutDto,
   ) {
-    await this.payouts.confirmPaid(id, dto.bankReference);
+    await this.payouts.confirmPaid(id, dto.bankReference, admin.id);
     await this.audit.record({
       actorUserId: admin.id,
       action: AuditAction.PAYOUT_RESOLVED,
       entityType: 'Payout',
       entityId: id,
-      metadata: { outcome: 'PAID', bankReference: dto.bankReference },
+      metadata: { outcome: 'PAID', bankReference: dto.bankReference, confirmedBy: admin.id },
     });
     return { success: true };
   }

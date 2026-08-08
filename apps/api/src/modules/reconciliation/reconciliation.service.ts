@@ -11,6 +11,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 
 /** What an external party says they hold, for one day. */
 export interface ExternalStatement {
@@ -76,6 +77,7 @@ export class ReconciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async reconcile(
@@ -143,6 +145,30 @@ export class ReconciliationService {
       this.logger.error(
         `Reconciliation for ${statement.periodStart.toISOString()} found ${findings.length} discrepancies`,
       );
+
+      // The single most important alert this platform sends. Reconciliation
+      // finding drift means the ledger disagrees with itself or with a bank
+      // — money is either missing or double-counted, and every hour nobody
+      // knows is an hour of transactions built on top of the discrepancy.
+      // Blocked partners are named because that is the customer-visible
+      // consequence someone will be asked about first.
+      await this.alerts.fire({
+        severity: 'critical',
+        key: `reconciliation.drift:${run.id}`,
+        title: 'Reconciliation found a discrepancy',
+        body:
+          `${findings.length} account(s) disagree for the period starting ` +
+          `${statement.periodStart.toISOString()}. Payouts are blocked for any partner ` +
+          'involved until a human resolves it.',
+        context: {
+          runId: run.id,
+          findings: findings.length,
+          partnersBlocked: partnersBlocked.length,
+          worstDrift: findings
+            .map((f) => f.drift)
+            .sort((a, b) => Math.abs(Number(b)) - Math.abs(Number(a)))[0] ?? '0',
+        },
+      });
     } else {
       this.logger.log(`Reconciliation for ${statement.periodStart.toISOString()} is clean`);
     }

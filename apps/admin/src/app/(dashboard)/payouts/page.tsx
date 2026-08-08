@@ -161,6 +161,7 @@ export default function PayoutsPage() {
                 <Th align="right">Amount</Th>
                 <Th>Status</Th>
                 <Th>Bank reference</Th>
+                <Th>Requested by</Th>
                 <Th>Requested</Th>
                 <Th align="right" />
               </tr>
@@ -177,13 +178,31 @@ export default function PayoutsPage() {
                   <Td className="tabular text-[12px] text-muted">
                     {p.bankReference ?? p.failureReason ?? '—'}
                   </Td>
+                  <Td className="text-muted">
+                    {p.requestedByName ?? '—'}
+                    {p.confirmedByName && (
+                      <span className="block text-[12px]">
+                        confirmed by {p.confirmedByName}
+                      </span>
+                    )}
+                  </Td>
                   <Td className="text-muted">{new Date(p.createdAt).toLocaleString()}</Td>
                   <Td align="right">
                     {p.status === 'REQUESTED' && canMoveMoney && (
-                      <div className="flex justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Own request: the API would refuse this, so the
+                            button says why instead of producing a 403 the
+                            admin has to interpret. */}
+                        {p.requestedByUserId === user?.id && (
+                          <span className="text-[12px] text-muted">
+                            You requested this — someone else must confirm it
+                          </span>
+                        )}
                         <Button
                           size="sm"
                           variant="secondary"
+                          disabled={p.requestedByUserId === user?.id}
+                          aria-label={`Confirm the ${Number(p.amount).toLocaleString('en-US')} payout requested by ${p.requestedByName ?? 'an unknown admin'}`}
                           onClick={() => resolve.mutate({ id: p.id, outcome: 'paid' })}
                         >
                           Confirm

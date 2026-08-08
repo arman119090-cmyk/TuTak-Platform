@@ -1066,6 +1066,11 @@ model Payout {
   /// halves need to be traceable to the row that caused them.
   settlementLedgerTransactionId String? @unique
   requestedByUserId   String?
+  /// Who confirmed the bank actually sent it. Recorded separately from the
+  /// requester so the two-person rule is auditable after the fact rather than
+  /// merely enforced at the time — an audit log can be argued with, a column
+  /// on the row the money moved through cannot.
+  confirmedByUserId   String?
   createdAt           DateTime     @default(now())
   completedAt         DateTime?
 

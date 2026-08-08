@@ -1,6 +1,14 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Currency, LedgerAccountType, PayoutStatus, PostingDirection } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, Money, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
@@ -47,6 +55,7 @@ export class PayoutEngineService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   /** What the platform currently owes this partner, as a positive figure. */
@@ -186,10 +195,39 @@ export class PayoutEngineService {
    * one still in flight, and BANK_CLEARING's balance, which should answer
    * "how much is moving right now", answered "how much has ever moved".
    */
-  async confirmPaid(payoutId: string, bankReference: string): Promise<void> {
+  async confirmPaid(
+    payoutId: string,
+    bankReference: string,
+    confirmedByUserId: string,
+  ): Promise<void> {
     const payout = await this.prisma.payout.findUniqueOrThrow({ where: { id: payoutId } });
     if (payout.status !== PayoutStatus.REQUESTED) {
       throw new BadRequestException(`Payout is already ${payout.status}`);
+    }
+
+    // ── Two-person rule ──────────────────────────────────────────────────
+    //
+    // Requesting a payout moves money out of a partner's balance into
+    // BANK_CLEARING; confirming it is the assertion that the bank really
+    // sent it. With one person doing both, a single compromised admin
+    // session is enough to drain a partner's balance and mark the theft
+    // settled, and every record left behind agrees that it was legitimate.
+    //
+    // Enforced here rather than in the controller so a script, a console
+    // session or a future endpoint cannot route around it.
+    //
+    // The check is skipped when the payout has no recorded requester —
+    // those predate this column or came from a system process, and there is
+    // no maker for a checker to differ from. It is not skipped for
+    // convenience anywhere else.
+    if (
+      this.config.get('payouts.dualControl', { infer: true }) &&
+      payout.requestedByUserId &&
+      payout.requestedByUserId === confirmedByUserId
+    ) {
+      throw new ForbiddenException(
+        'This payout must be confirmed by someone other than the person who requested it',
+      );
     }
 
     const currency = Currency.AMD;
@@ -205,7 +243,12 @@ export class PayoutEngineService {
       // count === 0 and posts nothing.
       const claimed = await tx.payout.updateMany({
         where: { id: payoutId, status: PayoutStatus.REQUESTED },
-        data: { status: PayoutStatus.PAID, bankReference, completedAt: new Date() },
+        data: {
+          status: PayoutStatus.PAID,
+          bankReference,
+          confirmedByUserId,
+          completedAt: new Date(),
+        },
       });
       if (claimed.count === 0) {
         throw new ConflictException('This payout was already resolved');
@@ -280,11 +323,41 @@ export class PayoutEngineService {
     this.logger.warn(`Payout ${payoutId} failed: ${failureReason}`);
   }
 
-  listForPartner(partnerId: string, limit = 30) {
-    return this.prisma.payout.findMany({
+  /**
+   * A partner's payouts, with the two-person rule's participants named.
+   *
+   * The ids are resolved to names here rather than in the dashboard because
+   * the whole point of the control is that a human looks at who requested
+   * the transfer before confirming it, and nobody recognises a UUID. Users
+   * are fetched in one query rather than per row.
+   */
+  async listForPartner(partnerId: string, limit = 30) {
+    const payouts = await this.prisma.payout.findMany({
       where: { partnerId },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+
+    const actorIds = [
+      ...new Set(
+        payouts.flatMap((p) => [p.requestedByUserId, p.confirmedByUserId]).filter((id): id is string => !!id),
+      ),
+    ];
+    const actors = actorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameOf = new Map(actors.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
+
+    return payouts.map((p) => ({
+      ...p,
+      // Null when nobody is recorded; the raw id when the actor is not a
+      // user row (a script, or a seeded fixture) — which is itself worth
+      // seeing rather than hiding behind a dash.
+      requestedByName: p.requestedByUserId ? (nameOf.get(p.requestedByUserId) ?? p.requestedByUserId) : null,
+      confirmedByName: p.confirmedByUserId ? (nameOf.get(p.confirmedByUserId) ?? p.confirmedByUserId) : null,
+    }));
   }
 }

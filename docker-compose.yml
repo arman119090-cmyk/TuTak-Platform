@@ -76,6 +76,11 @@ services:
       PUSH_ENDPOINT: ${PUSH_ENDPOINT:-https://exp.host/--/api/v2/push/send}
       PUSH_ACCESS_TOKEN: ${PUSH_ACCESS_TOKEN:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Where money-at-risk alerts go. Unset means they are logged and nobody
+      # is told; the API boots either way and warns at startup.
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      # A payout must be confirmed by someone other than its requester.
+      PAYOUT_DUAL_CONTROL: ${PAYOUT_DUAL_CONTROL:-true}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-tutak-api}
       # Recurring work: settlement, bonus promotion and expiry, EV cleanup,

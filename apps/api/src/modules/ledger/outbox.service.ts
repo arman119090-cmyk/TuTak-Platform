@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -28,7 +29,10 @@ export class OutboxService {
   private readonly logger = new Logger(OutboxService.name);
   private readonly handlers = new Map<string, OutboxHandler[]>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alerts: AlertsService,
+  ) {}
 
   /**
    * Records an event.
@@ -151,6 +155,22 @@ export class OutboxService {
           this.logger.error(
             `Outbox event ${event.id} (${event.eventType}) exhausted ${MAX_ATTEMPTS} attempts: ${message}`,
           );
+
+          // A dead-lettered event is work the platform promised itself it
+          // would do and then stopped trying to do — most often a settlement
+          // that never posted. The money is not lost, but it is stuck, and
+          // nothing else in the system will notice: the drain simply stops
+          // selecting the row. Keyed per event so ten stuck events produce
+          // ten alerts, while one stuck event does not produce one a minute.
+          await this.alerts.fire({
+            severity: 'critical',
+            key: `outbox.dead-letter:${event.id}`,
+            title: 'An outbox event gave up',
+            body:
+              `${event.eventType} failed ${MAX_ATTEMPTS} times and will not be retried. ` +
+              'Whatever it was meant to settle has not settled.',
+            context: { eventId: event.id, eventType: event.eventType, lastError: message.slice(0, 200) },
+          });
         } else {
           this.logger.warn(`Outbox event ${event.id} failed, retry ${attempts}: ${message}`);
         }

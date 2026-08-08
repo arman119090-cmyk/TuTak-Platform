@@ -127,6 +127,13 @@ async function main() {
     throw new Error('DEMO_PASSWORD must be set to at least 12 characters.');
   }
 
+  // A seeder is not a worker. Left on, this process would start its own
+  // BullMQ worker and race the drain calls below for the events it just
+  // wrote — which does no harm, but makes a script that asserts ledger state
+  // depend on timing. The API container's worker is the one that should be
+  // draining.
+  process.env.SWEEPS_ENABLED = 'false';
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });

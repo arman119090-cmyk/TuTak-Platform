@@ -10,7 +10,7 @@ before the fix and passes after it. Nothing here was concluded by reading
 alone.
 
 State audited: `ff96a6a`, 446 integration tests passing. State after:
-`da4b43c`, 489 integration tests passing.
+`6b3ad06`, 489 integration tests passing, CI green.
 
 ---
 
@@ -242,7 +242,7 @@ mobile app depends on, which is more than an audit should change unasked.
 
 ## Verification
 
-Everything below was executed on this machine, at `da4b43c`.
+Everything below was executed on this machine, at `6b3ad06`.
 
 | Check | Result |
 | --- | --- |
@@ -261,10 +261,14 @@ Everything below was executed on this machine, at `da4b43c`.
 found a defect), `crash-recovery` (8), `partner-reconstruction` (3).
 Integration total went 446 → 489.
 
-**Not verified, stated plainly:**
+**CI, at `6b3ad06`:** both jobs green
+([run 31280421849](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/31280421849)).
+That run is also the only evidence for three things this machine cannot
+check: the Playwright end-to-end suite against the booted stack, the
+backup-and-restore rehearsal, and the fact that all three container images
+still build and boot now that they run as `node` rather than root.
 
-- The end-to-end Playwright suite was not run locally (it needs the full
-  Docker stack). CI runs it on every push and it is green on `da4b43c`.
+**Not verified, stated plainly:**
 - No load or soak test was run in this round; the numbers in
   `docs/LOAD_TEST.md` predate these changes.
 - The roaming/OCPI path (B-1) is untested against any real CPO.

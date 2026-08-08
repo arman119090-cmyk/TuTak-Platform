@@ -3,6 +3,13 @@ RUN corepack enable
 WORKDIR /repo
 
 FROM base AS deps
+# argon2 ships prebuilt binaries for glibc but not for musl, so on Alpine
+# node-gyp-build falls back to compiling it — and the base image has no
+# compiler. Without these three packages the install dies on
+# "Could not find any Python installation to use" and the image never
+# builds at all. They stay in this stage: the runtime image copies the
+# compiled node_modules and needs no toolchain of its own.
+RUN apk add --no-cache python3 make g++
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/shared-types/package.json packages/shared-types/package.json
 COPY packages/i18n/package.json packages/i18n/package.json

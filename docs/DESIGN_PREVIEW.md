@@ -128,6 +128,24 @@ The bonus adjustment screen carries a consequence panel that changes with the
 direction — a debit consumes oldest-expiring lots first and can never touch
 pending or reserved points, and the copy says so before you submit.
 
+### Money screens
+
+| Refunds | Payouts |
+|---|---|
+| ![Refunds](screenshots/admin-refunds.png) | ![Payouts](screenshots/admin-payouts.png) |
+
+| Ledger | Reconciliation |
+|---|---|
+| ![Ledger](screenshots/admin-ledger.png) | ![Reconciliation](screenshots/admin-reconciliation.png) |
+
+The ledger screen shows each account's stored balance beside a replay of its
+own postings. They agree or the row says so — a disagreement means the ledger
+contradicts itself, which is a worse failure than disagreeing with a bank and
+is the one thing worth surfacing on a screen rather than in a report.
+
+Reconciliation never corrects drift. It records it, blocks the affected
+partner's payouts, and waits for a human to clear the block.
+
 ---
 
 ## Partner dashboard
@@ -143,6 +161,14 @@ pending or reserved points, and the copy says so before you submit.
 | Payment QR — idle | Payment QR — live invoice |
 |---|---|
 | ![QR idle](screenshots/partner-qr-empty.png) | ![QR active](screenshots/partner-qr-active.png) |
+
+| Earnings |
+|---|
+| ![Partner earnings](screenshots/partner-earnings.png) |
+
+Earnings is the partner's side of the same numbers the admin ledger holds:
+what they are owed, the daily settlements behind it, and the transfers that
+have left for their bank.
 
 Both dashboards share the identical `AppShell`, so someone who works in both
 never relearns the furniture — only the subtitle and nav items differ.

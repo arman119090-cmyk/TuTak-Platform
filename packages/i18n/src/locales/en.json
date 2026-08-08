@@ -206,6 +206,7 @@
   },
   "home": {
     "greeting": "Welcome back",
+    "greetingNamed": "Hello, {{name}}",
     "recentActivity": "Recent activity",
     "noActivityTitle": "Nothing here yet",
     "noActivityMessage": "Your payments and bonuses will appear here once you start using TuTak."

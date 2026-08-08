@@ -206,6 +206,7 @@
   },
   "home": {
     "greeting": "Բարի վերադարձ",
+    "greetingNamed": "Բարև, {{name}}",
     "recentActivity": "Վերջին գործարքները",
     "noActivityTitle": "Դեռ դատարկ է",
     "noActivityMessage": "Ձեր վճարումներն ու բոնուսները կհայտնվեն այստեղ, երբ սկսեք օգտվել TuTak-ից։"

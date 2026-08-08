@@ -206,6 +206,7 @@
   },
   "home": {
     "greeting": "С возвращением",
+    "greetingNamed": "Привет, {{name}}",
     "recentActivity": "Последние операции",
     "noActivityTitle": "Пока пусто",
     "noActivityMessage": "Ваши платежи и бонусы появятся здесь, как только вы начнёте пользоваться TuTak."

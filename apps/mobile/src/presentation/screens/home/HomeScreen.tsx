@@ -10,6 +10,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { BalanceCard } from '../../components/BalanceCard';
+import { HomeHeader } from '../../components/HomeHeader';
 import { QuickAction } from '../../components/QuickAction';
 import { SectionHeader } from '../../components/SectionHeader';
 import { ListRow } from '../../components/ListRow';
@@ -49,22 +50,17 @@ export function HomeScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: layout.tabBarHeight + space[6] }}
       >
-        {/* Greeting — quiet, so the balance card is the first thing seen. */}
         <View
-          style={[
-            styles.greeting,
-            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[3], paddingBottom: space[5] },
-          ]}
+          style={{
+            paddingHorizontal: layout.screenPaddingX,
+            paddingTop: space[3],
+            paddingBottom: space[5],
+          }}
         >
-          <View style={styles.flex}>
-            <Text style={[text.caption, { color: color.textSecondary }]}>
-              {t('home.greeting')}
-            </Text>
-            <Text style={[text.title, { color: color.textPrimary, marginTop: space[1] }]}>
-              {user?.firstName ?? ''}
-            </Text>
-          </View>
-          <NotificationBell onPress={() => navigation.navigate('Notifications')} />
+          <HomeHeader
+            firstName={user?.firstName}
+            onNotifications={() => navigation.navigate('Notifications')}
+          />
         </View>
 
         <View style={{ paddingHorizontal: layout.screenPaddingX }}>
@@ -175,27 +171,11 @@ function TransactionIcon({ type }: { type: string }) {
   );
 }
 
-function NotificationBell({ onPress }: { onPress: () => void }) {
-  const { color, radius } = useTheme();
-  return (
-    <View
-      style={[
-        styles.bell,
-        { backgroundColor: color.surfaceSunken, borderRadius: radius.full },
-      ]}
-      onTouchEnd={onPress}
-    >
-      <Ionicons name="notifications-outline" size={20} color={color.textSecondary} />
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  greeting: { flexDirection: 'row', alignItems: 'center' },
   actions: { flexDirection: 'row' },
   txIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  bell: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   skeletonRow: { flexDirection: 'row', alignItems: 'center' },
   verifyBanner: {},
 });

@@ -15,7 +15,8 @@
     "seeAll": "Смотреть все",
     "comingSoon": "Скоро",
     "amd": "AMD",
-    "points": "баллов"
+    "points": "баллов",
+    "somethingWentWrong": "Что-то пошло не так. Попробуйте ещё раз."
   },
   "auth": {
     "welcomeBack": "С возвращением",
@@ -129,7 +130,25 @@
     "noStationsTitle": "Рядом нет станций",
     "noStationsMessage": "Мы подключаем зарядные станции по всей Армении. Загляните позже.",
     "noSessionsTitle": "Пока нет зарядных сессий",
-    "noSessionsMessage": "Начните зарядку на любой станции TuTak, и она появится здесь."
+    "noSessionsMessage": "Начните зарядку на любой станции TuTak, и она появится здесь.",
+    "sessionTitle": "Зарядка",
+    "charging": "Заряжается",
+    "chargingNow": "Сейчас идёт зарядка",
+    "tapToManage": "Нажмите, чтобы открыть сессию и остановить её",
+    "connector": "Коннектор",
+    "elapsed": "Прошло",
+    "delivered": "Отдано",
+    "estimated": "Примерно",
+    "estimateNote": "Энергию передаёт зарядная станция. Итоговая сумма считается при остановке.",
+    "payWithPoints": "Оплатить бонусами",
+    "pointsAvailable": "Доступно {{points}}",
+    "notEnoughPoints": "Больше, чем у вас есть",
+    "startAt": "Начать зарядку на {{connector}} — {{station}}",
+    "couldNotStart": "Не удалось начать зарядку",
+    "couldNotStop": "Не удалось остановить зарядку",
+    "noActiveSession": "Эта сессия уже завершена.",
+    "sessionEnded": "Зарядка завершена",
+    "sessionEndedBody": "{{energy}} · {{cost}} · начислено {{points}} бонусов"
   },
   "referral": {
     "inviteFriends": "Пригласить друзей",

@@ -136,6 +136,11 @@ export class EvSessionsService {
           startedAt: new Date(),
           energyKwh: 0,
         },
+        // Joined so the response is a session a client can render on its own.
+        // Without it the app opens its charging screen with no price and no
+        // station name and has to wait a poll cycle to fill them in — the
+        // same shape `historyForUser` already returns.
+        include: { connector: { include: { station: true } } },
       });
 
       if (dto.reservationId) {

@@ -15,7 +15,8 @@
     "seeAll": "Տեսնել բոլորը",
     "comingSoon": "Շուտով",
     "amd": "դրամ",
-    "points": "միավոր"
+    "points": "միավոր",
+    "somethingWentWrong": "Ինչ-որ բան սխալ գնաց։ Փորձեք նորից։"
   },
   "auth": {
     "welcomeBack": "Բարի վերադարձ",
@@ -129,7 +130,25 @@
     "noStationsTitle": "Մոտակայքում կայաններ չկան",
     "noStationsMessage": "Մենք ավելացնում ենք լիցքակայաններ ողջ Հայաստանում։ Այցելեք ավելի ուշ։",
     "noSessionsTitle": "Դեռ լիցքավորումներ չկան",
-    "noSessionsMessage": "Սկսեք լիցքավորումը ցանկացած TuTak կայանում, և այն կհայտնվի այստեղ։"
+    "noSessionsMessage": "Սկսեք լիցքավորումը ցանկացած TuTak կայանում, և այն կհայտնվի այստեղ։",
+    "sessionTitle": "Լիցքավորում",
+    "charging": "Լիցքավորվում է",
+    "chargingNow": "Այժմ լիցքավորվում եք",
+    "tapToManage": "Սեղմեք՝ սեսիան տեսնելու և կանգնեցնելու համար",
+    "connector": "Միակցիչ",
+    "elapsed": "Անցել է",
+    "delivered": "Փոխանցված",
+    "estimated": "Մոտավոր",
+    "estimateNote": "Էներգիան հաղորդում է լիցքակայանը։ Վերջնական գումարը հաշվարկվում է կանգնեցնելիս։",
+    "payWithPoints": "Վճարել բոնուսներով",
+    "pointsAvailable": "Հասանելի է {{points}}",
+    "notEnoughPoints": "Ավելին, քան ունեք",
+    "startAt": "Սկսել լիցքավորումը {{connector}}-ով՝ {{station}}",
+    "couldNotStart": "Չհաջողվեց սկսել լիցքավորումը",
+    "couldNotStop": "Չհաջողվեց կանգնեցնել լիցքավորումը",
+    "noActiveSession": "Այս սեսիան արդեն ավարտված է։",
+    "sessionEnded": "Լիցքավորումն ավարտվեց",
+    "sessionEndedBody": "{{energy}} · {{cost}} · վաստակած {{points}} բոնուս"
   },
   "referral": {
     "inviteFriends": "Հրավիրել ընկերների",

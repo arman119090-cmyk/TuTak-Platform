@@ -8,6 +8,7 @@ import { NotificationsScreen } from '../../presentation/screens/notifications/No
 import { TransactionHistoryScreen } from '../../presentation/screens/transactions/TransactionHistoryScreen';
 import { ReferralScreen } from '../../presentation/screens/referral/ReferralScreen';
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
+import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
 import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
 import type { RootStackParamList } from './types';
@@ -63,6 +64,15 @@ export function RootNavigator() {
         name="EvHistory"
         component={EvHistoryScreen}
         options={{ title: t('ev.history'), headerShown: false }}
+      />
+      {/* Deliberately not a modal: a charging session runs for half an hour
+          and the customer will leave the app and come back to it. It belongs
+          in the stack, where the back gesture returns to the station list
+          rather than dismissing the session out of view. */}
+      <Stack.Screen
+        name="EvSession"
+        component={EvSessionScreen}
+        options={{ title: t('ev.sessionTitle'), headerShown: false }}
       />
       <Stack.Screen
         name="ChangePassword"

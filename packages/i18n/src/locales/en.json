@@ -15,7 +15,8 @@
     "seeAll": "See all",
     "comingSoon": "Coming soon",
     "amd": "AMD",
-    "points": "points"
+    "points": "points",
+    "somethingWentWrong": "Something went wrong. Please try again."
   },
   "auth": {
     "welcomeBack": "Welcome back",
@@ -129,7 +130,25 @@
     "noStationsTitle": "No stations nearby",
     "noStationsMessage": "We are adding charging partners across Armenia. Check back soon.",
     "noSessionsTitle": "No charging sessions yet",
-    "noSessionsMessage": "Start a session at any TuTak station and it will show up here."
+    "noSessionsMessage": "Start a session at any TuTak station and it will show up here.",
+    "sessionTitle": "Charging",
+    "charging": "Charging",
+    "chargingNow": "You are charging now",
+    "tapToManage": "Tap to see the session and stop it",
+    "connector": "Connector",
+    "elapsed": "Elapsed",
+    "delivered": "Delivered",
+    "estimated": "Estimated",
+    "estimateNote": "Energy is reported by the charge point. The final amount is calculated when you stop.",
+    "payWithPoints": "Pay with points",
+    "pointsAvailable": "{{points}} available",
+    "notEnoughPoints": "More than you have",
+    "startAt": "Start charging on {{connector}} at {{station}}",
+    "couldNotStart": "Could not start charging",
+    "couldNotStop": "Could not stop charging",
+    "noActiveSession": "This session has already ended.",
+    "sessionEnded": "Charging finished",
+    "sessionEndedBody": "{{energy}} · {{cost}} · {{points}} points earned"
   },
   "referral": {
     "inviteFriends": "Invite friends",

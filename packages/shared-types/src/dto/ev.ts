@@ -27,10 +27,20 @@ export interface EvConnectorDto {
   pricePerKwh: string;
 }
 
+/**
+ * No `userId`. The session belongs to whoever holds the token, and the API
+ * validates with `forbidNonWhitelisted`, so a client that sent one — as this
+ * type used to require — got a 400 rather than a session. Nothing caught it
+ * because no screen had ever called it.
+ */
 export interface StartEvSessionRequestDto {
   connectorId: string;
-  userId: string;
   reservationId?: string;
+}
+
+export interface StopEvSessionRequestDto {
+  /** Points to spend against the session's cost. Omit to pay in full. */
+  bonusAmountToApply?: string;
 }
 
 export interface EvSessionDto {
@@ -44,11 +54,16 @@ export interface EvSessionDto {
   cost: string | null;
   bonusEarned: string | null;
   ocpiCdrId: string | null;
+  /**
+   * Present on the list endpoints, which join it. A session on its own says
+   * nothing a customer can read — the price and the station name live here.
+   */
+  connector?: EvConnectorDto & { station: Omit<EvStationDto, 'connectors'> };
 }
 
+/** See StartEvSessionRequestDto on why there is no `userId`. */
 export interface CreateEvReservationRequestDto {
   connectorId: string;
-  userId: string;
   startAt: string;
   holdMinutes?: number;
 }

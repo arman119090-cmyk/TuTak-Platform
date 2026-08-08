@@ -31,4 +31,10 @@ COPY --from=build /repo/apps/partner ./apps/partner
 
 EXPOSE 3001
 WORKDIR /repo/apps/partner
-CMD ["pnpm", "exec", "next", "start", "--port", "3001", "--hostname", "0.0.0.0"]
+# Invoked directly, not through `pnpm exec`. The runtime image has
+# corepack enabled but no cached pnpm and no root package.json, so
+# corepack could not see the pinned packageManager version and
+# downloaded the newest pnpm on every container start — which needs a
+# newer Node than this image has, and crashed. A container should not
+# need the network to start.
+CMD ["./node_modules/.bin/next", "start", "--port", "3001", "--hostname", "0.0.0.0"]

@@ -38,9 +38,10 @@ import { TEST_DATABASE_URL } from './test-database';
  * PostgreSQL. A mocked Prisma client would assert the mock's behaviour and
  * pass while production corrupts balances.
  *
- * Note that no `ScheduleModule` is imported: the cron services are
- * constructed as plain providers, so the sweepers run only when a test calls
- * them, never spontaneously in the middle of an assertion.
+ * Note that `SweepsModule` is not imported. Recurring work runs on a BullMQ
+ * worker, and a worker picking jobs up in the background would sweep a table
+ * mid-assertion. The sweeps are exercised deliberately in
+ * `sweeps.int-spec.ts`, which drives the processor by hand.
  */
 export interface TestHarness {
   app: TestingModule;

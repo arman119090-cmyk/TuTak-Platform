@@ -2,13 +2,13 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import configuration, { AppConfig } from './config/configuration';
 import { validate } from './config/env.validation';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
+import { QueueModule } from './infrastructure/queue/queue.module';
 import { SmsModule } from './infrastructure/sms/sms.module';
 import { PushModule } from './infrastructure/push/push.module';
 
@@ -39,12 +39,12 @@ import { SettlementModule } from './modules/settlement/settlement.module';
 import { PayoutsModule } from './modules/payouts/payouts.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { HealthModule } from './modules/health/health.module';
+import { SweepsModule } from './modules/sweeps/sweeps.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate }),
     EventEmitterModule.forRoot(),
-    ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) => ({
@@ -58,6 +58,7 @@ import { HealthModule } from './modules/health/health.module';
     }),
     PrismaModule,
     RedisModule,
+    QueueModule,
     SmsModule,
     PushModule,
 
@@ -79,6 +80,10 @@ import { HealthModule } from './modules/health/health.module';
     SettlementModule,
     PayoutsModule,
     ReconciliationModule,
+    // Last, and deliberately: it depends on the domain modules above rather
+    // than the other way round, so nothing in the request path can reach a
+    // queue by accident.
+    SweepsModule,
     HealthModule,
   ],
   providers: [

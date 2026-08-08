@@ -116,6 +116,13 @@ async function saturate(
 }
 
 async function main() {
+  // No background sweeps in a measurement run. The outbox drainer is on a
+  // ten-second schedule, so with it running the "outbox drain" phase below
+  // shares its work with a drainer this script cannot see — the rate it
+  // reports would be a fraction of the platform's, and the fraction would
+  // vary with how long the run took.
+  process.env.SWEEPS_ENABLED = 'false';
+
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   const prisma = app.get(PrismaService);
   const payments = app.get(PaymentEngineService);

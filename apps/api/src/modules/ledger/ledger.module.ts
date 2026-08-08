@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { LedgerService } from './ledger.service';
 import { OutboxService } from './outbox.service';
-import { OutboxSchedulerService } from './outbox-scheduler.service';
 import { IdempotencyService } from './idempotency.service';
 
 /**
@@ -14,7 +13,7 @@ import { IdempotencyService } from './idempotency.service';
  * balance.
  */
 @Module({
-  providers: [LedgerService, OutboxService, OutboxSchedulerService, IdempotencyService],
+  providers: [LedgerService, OutboxService, IdempotencyService],
   exports: [LedgerService, OutboxService, IdempotencyService],
 })
 export class LedgerModule {}

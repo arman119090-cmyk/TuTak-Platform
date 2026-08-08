@@ -191,8 +191,11 @@ dump has been empty for three weeks.
   which is no help when that disk is the thing that failed. Ship the dumps
   somewhere else — object storage, another region — and encrypt them: a
   dump contains every phone number and password hash on the platform.
-- **Redis.** It holds rate-limit counters and advisory locks, all of which
-  regenerate. Losing it costs a moment of throughput, not data.
+- **Redis.** It holds rate-limit counters, advisory locks and the job
+  schedule, all of which regenerate — the schedule is re-upserted on the next
+  boot. Losing it costs a moment of throughput and one skipped tick per job,
+  not data. Jobs in flight when it dies are lost, which is why the work behind
+  each one is idempotent and re-runs on the next tick.
 
 `BACKUP_RETAIN_DAYS` (default 14) prunes older dumps from the output
 directory.
@@ -260,11 +263,21 @@ this system that could lose money quietly.
 
 ## 11. Scaling past one instance
 
-Bonus-lot promotion and expiry run on in-process `@nestjs/schedule`, guarded
-by a Redis advisory lock so that two instances do not sweep the same lots.
-That is correct but wasteful — every instance wakes up to discover it lost the
-lock. Before running more than two or three API instances, move those jobs to
-a queue (BullMQ; Redis is already a dependency).
+Recurring work — settlement, bonus promotion and expiry, EV cleanup, nightly
+reconciliation — runs on a BullMQ worker rather than in-process cron, so
+adding instances adds capacity instead of duplicate ticks. The schedule lives
+in Redis as one row per job, upserted on boot by whichever instance starts;
+every recurring job in the platform is listed in
+`apps/api/src/modules/sweeps/sweeps.jobs.ts`.
+
+Two operational consequences worth knowing:
+
+- **`SWEEPS_ENABLED=false` gives a web-only instance.** It serves HTTP and
+  runs nothing on a timer — useful if the sweeps are ever moved to their own
+  deployment. At least one instance in the deployment must have sweeps on, or
+  nothing settles and no customer's points ever become spendable.
+- **`QUEUE_PREFIX` separates environments.** Two deployments pointed at one
+  Redis with the same prefix will drain each other's jobs.
 
 Read replicas for analytics and transaction history are the next step after
 that, and neither requires a change to the module boundaries.
@@ -291,8 +304,11 @@ Named rather than omitted:
 
 - **Alerting.** Traces and structured logs exist and correlate; nothing
   wakes anybody up. Point the collector at something that pages, and decide
-  what is worth paging for — a reconciliation run that finds drift and a
-  dead-lettered outbox event are the two that mean money is at stake.
+  what is worth paging for — a reconciliation run that finds drift, a
+  dead-lettered outbox event, and a failed job in the `sweeps` queue are the
+  three that mean money is at stake. The last one is new: a sweep that throws
+  now leaves a failed job in Redis with its stack trace instead of one log
+  line, which is only an improvement if something is watching for it.
 - **Metrics.** Tracing covers latency and errors per request. Business
   counters — payments per hour, points issued, payout volume — are not
   exported.

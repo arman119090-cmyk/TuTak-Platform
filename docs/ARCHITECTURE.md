@@ -153,11 +153,12 @@ code.
 
 ### Engineering, in rough priority order
 
-1. **Horizontal scale.** Bonus-lot promotion and expiry run on in-process
-   `@nestjs/schedule` behind a Redis advisory lock, which is correct for one
-   instance and wasteful for several — move them to a queue (BullMQ, Redis
-   is already there) before running more than one API. Read replicas for
-   analytics and history follow the same point.
+1. **Horizontal scale.** Recurring work is on BullMQ (`SweepsModule`), so
+   the schedule is one row in Redis rather than a timer per instance and
+   adding instances adds drain capacity. What remains is the database side:
+   `connection_limit` is unset, so Prisma opens `num_cpus × 2 + 1` per
+   instance, and read replicas for analytics and history are untouched. See
+   `docs/LOAD_TEST.md` for where the ceiling actually sits.
 2. **Tracing and alerting.** Structured JSON logging with request
    correlation is in place; OpenTelemetry spans, error tracking and metrics
    are not.

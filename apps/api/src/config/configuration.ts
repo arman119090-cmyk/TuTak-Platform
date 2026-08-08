@@ -3,6 +3,8 @@ export interface AppConfig {
   port: number;
   database: { url: string };
   redis: { url: string };
+  queue: { prefix: string };
+  sweeps: { enabled: boolean };
   jwt: {
     accessSecret: string;
     accessExpiresIn: string;
@@ -65,6 +67,16 @@ export default (): AppConfig => ({
   },
   redis: {
     url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  },
+  queue: {
+    // Keyspace for BullMQ. Set it per environment when several share a Redis,
+    // or staging will drain production's jobs.
+    prefix: process.env.QUEUE_PREFIX ?? 'tutak',
+  },
+  sweeps: {
+    // On unless explicitly disabled. A deployment with this off runs no
+    // recurring work at all: no settlement, no bonus promotion, no expiry.
+    enabled: (process.env.SWEEPS_ENABLED ?? 'true') !== 'false',
   },
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',

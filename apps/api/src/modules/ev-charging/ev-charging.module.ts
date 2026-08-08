@@ -5,7 +5,6 @@ import { SecurityModule } from '../security/security.module';
 import { AuthModule } from '../auth/auth.module';
 import { EvChargingController } from './ev-charging.controller';
 import { EvReservationsService } from './ev-reservations.service';
-import { EvSchedulerService } from './ev-scheduler.service';
 import { EvSessionsService } from './ev-sessions.service';
 import { EvStationsService } from './ev-stations.service';
 import { OCPI_ADAPTER } from './ocpi/ocpi-adapter.interface';
@@ -21,7 +20,6 @@ import { AppConfig } from '../../config/configuration';
     EvStationsService,
     EvSessionsService,
     EvReservationsService,
-    EvSchedulerService,
     {
       // Real client when a roaming partner is configured, refusal when not.
       //

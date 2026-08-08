@@ -1,11 +1,16 @@
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaClient } from '@prisma/client';
 import { Job, Queue } from 'bullmq';
 import type Redis from 'ioredis';
 import configuration from '../src/config/configuration';
 import { QueueModule } from '../src/infrastructure/queue/queue.module';
 import { REDIS_CLIENT, RedisModule } from '../src/infrastructure/redis/redis.module';
+import { PrismaModule } from '../src/infrastructure/prisma/prisma.module';
+import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
+import { AlertsModule } from '../src/infrastructure/alerts/alerts.module';
+import { ALERT_CHANNEL } from '../src/infrastructure/alerts/alert-channel.interface';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { EvReservationsService } from '../src/modules/ev-charging/ev-reservations.service';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
@@ -13,8 +18,10 @@ import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { ReconciliationService } from '../src/modules/reconciliation/reconciliation.service';
 import { SWEEPS, SWEEPS_QUEUE } from '../src/modules/sweeps/sweeps.jobs';
 import { SweepsProcessor } from '../src/modules/sweeps/sweeps.processor';
-import { AlertsService } from '../src/infrastructure/alerts/alerts.service';
+import { SweepsHeartbeatService } from '../src/modules/sweeps/sweeps.heartbeat.service';
 import { SweepsScheduler } from '../src/modules/sweeps/sweeps.scheduler';
+import { RecordingAlertChannel } from './setup/recording-alert.channel';
+import { TEST_DATABASE_URL } from './setup/test-database';
 
 /**
  * The recurring-work machinery, against a real Redis.
@@ -35,7 +42,11 @@ describe('Sweeps (integration)', () => {
   let moduleRef: TestingModule;
   let processor: SweepsProcessor;
   let scheduler: SweepsScheduler;
+  let heartbeat: SweepsHeartbeatService;
   let queue: Queue;
+  let prisma: PrismaClient;
+  let redis: Redis;
+  const alerts = new RecordingAlertChannel();
 
   const calls: string[] = [];
   const record = (name: string) => () => {
@@ -62,33 +73,44 @@ describe('Sweeps (integration)', () => {
     // schedule of a development stack sharing the same Redis.
     process.env.QUEUE_PREFIX = `tutak-test-${process.pid}`;
 
+    prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
+
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
+        PrismaModule,
         RedisModule,
         QueueModule,
+        AlertsModule,
         BullModule.registerQueue({ name: SWEEPS_QUEUE }),
       ],
       providers: [
         SweepsProcessor,
         SweepsScheduler,
+        SweepsHeartbeatService,
         { provide: BonusEngineService, useValue: bonus },
         { provide: EvReservationsService, useValue: reservations },
         { provide: EvSessionsService, useValue: sessions },
         { provide: OutboxService, useValue: outbox },
         { provide: ReconciliationService, useValue: reconciliation },
-        // The processor alerts when a job stops retrying. This suite is
-        // about scheduling and dispatch, so a recorder is enough — the
-        // alerting behaviour itself is covered in alerting.int-spec.ts.
-        { provide: AlertsService, useValue: { fire: jest.fn() } },
       ],
-    }).compile();
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      // The real AlertsService, with delivery captured. The heartbeat's whole
+      // purpose is that somebody is told, so a stubbed alerter would let this
+      // suite pass while the outage stayed silent.
+      .overrideProvider(ALERT_CHANNEL)
+      .useValue(alerts)
+      .compile();
 
     // No `init()`: that would fire onApplicationBootstrap and start the worker,
     // which would then race every assertion below.
     processor = moduleRef.get(SweepsProcessor);
     scheduler = moduleRef.get(SweepsScheduler);
+    heartbeat = moduleRef.get(SweepsHeartbeatService);
     queue = moduleRef.get<Queue>(getQueueToken(SWEEPS_QUEUE));
+    redis = moduleRef.get<Redis>(REDIS_CLIENT);
   });
 
   afterAll(async () => {
@@ -96,14 +118,23 @@ describe('Sweeps (integration)', () => {
     // connections by hand: the raw ioredis client has no lifecycle hook, so
     // without this jest hangs on an open handle after the last assertion.
     await queue.obliterate({ force: true }).catch(() => undefined);
-    await moduleRef.get<Redis>(REDIS_CLIENT).quit().catch(() => undefined);
+    await redis.quit().catch(() => undefined);
     await moduleRef.close();
+    await prisma.$disconnect();
     delete process.env.QUEUE_PREFIX;
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     calls.length = 0;
     jest.clearAllMocks();
+    jest.restoreAllMocks();
+    alerts.clear();
+    await prisma.sweepRun.deleteMany();
+    // Suppression is a Redis key with a fifteen-minute life, so without this
+    // the second test to fire a given key would find its alert swallowed by
+    // the first and assert on an empty list.
+    const keys = await redis.keys('alert:sent:*');
+    if (keys.length) await redis.del(...keys);
   });
 
   describe('the job table', () => {
@@ -249,6 +280,165 @@ describe('Sweeps (integration)', () => {
       expect((await queue.getJobSchedulers(0, -1)).map((s) => s.key)).not.toContain(
         'sweep.removed.last.release',
       );
+    });
+  });
+
+  describe('the heartbeat', () => {
+    /** What a Redis restart looks like from here: the schedule is simply gone. */
+    const loseTheSchedule = async () => {
+      for (const scheduled of await queue.getJobSchedulers(0, -1)) {
+        await queue.removeJobScheduler(scheduled.key);
+      }
+      expect(await queue.getJobSchedulers(0, -1)).toHaveLength(0);
+    };
+
+    it('records the run that proves a sweep is alive', async () => {
+      await processor.process({ name: 'outbox.drain' } as Job);
+
+      const row = await prisma.sweepRun.findUniqueOrThrow({ where: { name: 'outbox.drain' } });
+      expect(row.didWork).toBe(true);
+      expect(Date.now() - row.lastSuccessAt.getTime()).toBeLessThan(10_000);
+    });
+
+    it('records a lock-skipped run too, because the schedule still delivered a tick', async () => {
+      // The distinction that matters: "another replica is doing the work" is
+      // healthy, and treating it as silence would page someone about a
+      // platform that is working correctly.
+      const locked = SWEEPS.find((sweep) => sweep.name === 'bonus.promote-pending')!;
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      bonus.promotePendingLots.mockImplementationOnce(() => held);
+
+      const first = processor.process({ name: locked.name } as Job);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const second = await processor.process({ name: locked.name } as Job);
+      expect(second.ran).toBe(false);
+      release();
+      await first;
+
+      const row = await prisma.sweepRun.findUniqueOrThrow({ where: { name: locked.name } });
+      expect(row.lastSuccessAt).toBeInstanceOf(Date);
+    });
+
+    it('restores a schedule that Redis has lost', async () => {
+      // The failure the whole heartbeat exists for. Nothing fails when this
+      // happens: no job errors, no queue backs up, the API keeps answering.
+      // Every sweep just stops, and the first symptom is a customer noticing
+      // their points never arrived.
+      await scheduler.sync();
+      await loseTheSchedule();
+
+      await heartbeat.tick();
+
+      const restored = (await queue.getJobSchedulers(0, -1)).map((s) => s.key).sort();
+      expect(restored).toEqual(SWEEPS.map((s) => s.name).sort());
+    });
+
+    it('says so when it has had to restore one', async () => {
+      await scheduler.sync();
+      await loseTheSchedule();
+
+      await heartbeat.tick();
+
+      // Self-healing silently would hide that Redis lost data, which is a
+      // fact about the deployment that outlives this particular repair.
+      const fired = alerts.matching('sweeps.schedule-lost');
+      expect(fired).toHaveLength(1);
+      expect(fired[0]!.severity).toBe('critical');
+      expect(fired[0]!.context?.count).toBe(SWEEPS.length);
+    });
+
+    it('leaves a healthy schedule completely alone', async () => {
+      // Not a tidiness assertion. `upsertJobScheduler` re-anchors a
+      // scheduler's next run, so a heartbeat that re-applied the schedule
+      // every minute would push a five-minute sweep's next tick forward
+      // every minute and it would never fire — the repair mechanism causing
+      // the outage it exists to fix.
+      await scheduler.sync();
+      const sync = jest.spyOn(scheduler, 'sync');
+
+      await heartbeat.tick();
+      await heartbeat.tick();
+
+      expect(sync).not.toHaveBeenCalled();
+      expect(alerts.matching('sweeps.schedule-lost')).toHaveLength(0);
+    });
+
+    it('alerts on a sweep that has gone quiet for longer than its own tolerance', async () => {
+      const sweep = SWEEPS.find((s) => s.name === 'outbox.drain')!;
+      await scheduler.sync();
+      await prisma.sweepRun.create({
+        data: {
+          name: sweep.name,
+          // Just past its tolerance, not wildly past: the boundary is where
+          // an off-by-one would hide.
+          lastSuccessAt: new Date(Date.now() - sweep.maxSilenceMs - 1_000),
+          lastDurationMs: 12,
+        },
+      });
+
+      await heartbeat.tick();
+
+      const fired = alerts.matching(`sweep.silent:${sweep.name}`);
+      expect(fired).toHaveLength(1);
+      // The operator reading this at 3am needs the consequence, not the
+      // queue mechanics.
+      expect(fired[0]!.body).toContain(sweep.why);
+    });
+
+    it('stays quiet about a sweep that completed within its tolerance', async () => {
+      await scheduler.sync();
+      for (const sweep of SWEEPS) {
+        await prisma.sweepRun.create({
+          data: { name: sweep.name, lastSuccessAt: new Date(), lastDurationMs: 5 },
+        });
+      }
+
+      await heartbeat.tick();
+
+      expect(alerts.matching('sweep.silent')).toHaveLength(0);
+    });
+
+    it('does not cry wolf on a fresh deployment that has never run anything', async () => {
+      // Every sweep has zero recorded runs here. Alerting on that would mean
+      // seven critical pages on every first boot, which is how an operator
+      // learns to ignore this channel.
+      await scheduler.sync();
+      expect(await prisma.sweepRun.count()).toBe(0);
+
+      await heartbeat.tick();
+
+      expect(alerts.matching('sweep.silent')).toHaveLength(0);
+    });
+
+    it('gives every sweep a tolerance longer than its own interval', () => {
+      // A tolerance below the repeat interval would alert on a perfectly
+      // healthy job every single tick.
+      for (const sweep of SWEEPS) {
+        if ('every' in sweep.repeat) {
+          expect(sweep.maxSilenceMs).toBeGreaterThan(sweep.repeat.every);
+        } else {
+          // The nightly job: anything under a day is guaranteed noise.
+          expect(sweep.maxSilenceMs).toBeGreaterThan(24 * 60 * 60_000);
+        }
+      }
+    });
+
+    it('keeps a sweep succeeding even when the heartbeat row cannot be written', async () => {
+      // The work is already committed by the time the row is written. A throw
+      // here would fail the job, BullMQ would retry it, and real financial
+      // work would be repeated because bookkeeping about that work did not
+      // land.
+      jest
+        .spyOn(prisma.sweepRun, 'upsert')
+        .mockRejectedValueOnce(new Error('relation "sweep_runs" does not exist'));
+
+      const result = await processor.process({ name: 'outbox.drain' } as Job);
+
+      expect(result.ran).toBe(true);
+      expect(outbox.drain).toHaveBeenCalledTimes(1);
     });
   });
 });

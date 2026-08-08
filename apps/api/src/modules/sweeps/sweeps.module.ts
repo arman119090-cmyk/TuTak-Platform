@@ -6,6 +6,7 @@ import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { SweepsHeartbeatService } from './sweeps.heartbeat.service';
 import { SWEEPS_QUEUE } from './sweeps.jobs';
 import { SweepsProcessor } from './sweeps.processor';
 import { SweepsScheduler } from './sweeps.scheduler';
@@ -31,7 +32,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
     LedgerModule,
     ReconciliationModule,
   ],
-  providers: [SweepsProcessor, SweepsScheduler],
+  providers: [SweepsProcessor, SweepsScheduler, SweepsHeartbeatService],
 })
 export class SweepsModule implements OnApplicationBootstrap {
   private readonly logger = new Logger(SweepsModule.name);

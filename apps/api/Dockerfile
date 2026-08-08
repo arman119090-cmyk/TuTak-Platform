@@ -35,4 +35,19 @@ RUN chmod +x ./apps/api/docker-entrypoint.sh
 
 EXPOSE 4000
 WORKDIR /repo/apps/api
+
+# Drop root before the process starts.
+#
+# Nothing here needs it: the image is built already, migrations run over a
+# TCP connection, and port 4000 is above 1024 so no privileged bind is
+# involved. What it buys is that a remote-code-execution bug in a
+# dependency lands as an unprivileged user rather than as root inside the
+# container, where the only thing left between it and the host is the
+# container runtime's own configuration.
+#
+# `node` (uid 1000) ships in the official image. The copied files stay
+# owned by root and world-readable, which is what we want — the process
+# can read its own code and cannot rewrite it.
+USER node
+
 ENTRYPOINT ["./docker-entrypoint.sh"]

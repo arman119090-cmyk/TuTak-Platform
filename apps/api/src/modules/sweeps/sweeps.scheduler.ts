@@ -37,6 +37,18 @@ export class SweepsScheduler implements OnApplicationBootstrap {
     await this.sync();
   }
 
+  /**
+   * What Redis currently holds, without changing any of it.
+   *
+   * Separate from `sync` because the heartbeat has to be able to ask whether
+   * the schedule is intact without re-applying it — see the note in
+   * `SweepsHeartbeatService.repairSchedule` on why an unconditional upsert
+   * would be harmful.
+   */
+  async listScheduled(): Promise<{ key: string }[]> {
+    return this.queue.getJobSchedulers(0, -1);
+  }
+
   /** Exposed for tests, and for anyone who needs to re-apply the schedule. */
   async sync(): Promise<void> {
     for (const sweep of SWEEPS) {
@@ -44,7 +56,7 @@ export class SweepsScheduler implements OnApplicationBootstrap {
     }
 
     const defined = new Set(SWEEPS.map((sweep) => sweep.name));
-    const existing = await this.queue.getJobSchedulers(0, -1);
+    const existing = await this.listScheduled();
     for (const scheduler of existing) {
       if (scheduler.key && !defined.has(scheduler.key)) {
         await this.queue.removeJobScheduler(scheduler.key);

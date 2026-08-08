@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LedgerAccountType, PayoutStatus, ReconciliationStatus } from '@prisma/client';
 import { Registry, Gauge, collectDefaultMetrics } from 'prom-client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { SWEEPS } from '../sweeps/sweeps.jobs';
 
 /**
  * The numbers that say whether the *business* is working.
@@ -53,6 +54,7 @@ export class MetricsService {
   private walletsTotal!: Gauge;
   private reconciliationDrift!: Gauge;
   private reconciliationAgeSeconds!: Gauge;
+  private sweepAgeSeconds!: Gauge<'job'>;
 
   private defineGauges(): void {
     const g = (name: string, help: string, labelNames: string[] = []) =>
@@ -105,6 +107,16 @@ export class MetricsService {
       'tutak_reconciliation_age_seconds',
       'Seconds since the last reconciliation run. A number that keeps growing means the sweep has stopped.',
     );
+    // Per job rather than one aggregate: "some sweep is late" is not
+    // actionable, and the tolerances differ by two orders of magnitude
+    // between the outbox drain and the nightly reconciliation. -1 means the
+    // job has never completed, which a dashboard must not draw as "0 seconds
+    // ago".
+    this.sweepAgeSeconds = g(
+      'tutak_sweep_seconds_since_success',
+      'Seconds since each recurring job last completed. -1 means it has never completed. Compare against the job tolerance in sweeps.jobs.ts.',
+      ['job'],
+    );
   }
 
   /**
@@ -131,7 +143,7 @@ export class MetricsService {
   private async refresh(): Promise<void> {
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-    const [accounts, outbox, deadLettered, payouts, payments, bonus, wallets, lastRun] =
+    const [accounts, outbox, deadLettered, payouts, payments, bonus, wallets, lastRun, sweeps] =
       await Promise.all([
         this.prisma.ledgerAccount.groupBy({ by: ['type'], _sum: { balance: true } }),
         this.prisma.outboxEvent.count({ where: { processedAt: null } }),
@@ -153,6 +165,7 @@ export class MetricsService {
         }),
         this.prisma.wallet.count(),
         this.prisma.reconciliationRun.findFirst({ orderBy: { createdAt: 'desc' } }),
+        this.prisma.sweepRun.findMany(),
       ]);
 
     let total = 0;
@@ -184,6 +197,20 @@ export class MetricsService {
 
     this.bonusAccruedLastHour.set(Number(bonus._sum.originalAmount ?? 0));
     this.walletsTotal.set(wallets);
+
+    // Every defined sweep is reported whether or not it has a row, so a job
+    // that has never run once is visible as -1 rather than absent from the
+    // scrape — a missing series is indistinguishable from a healthy one on
+    // most dashboards.
+    const lastSweep = new Map(sweeps.map((row) => [row.name, row.lastSuccessAt.getTime()]));
+    this.sweepAgeSeconds.reset();
+    for (const sweep of SWEEPS) {
+      const last = lastSweep.get(sweep.name);
+      this.sweepAgeSeconds.set(
+        { job: sweep.name },
+        last === undefined ? -1 : (Date.now() - last) / 1000,
+      );
+    }
 
     if (lastRun) {
       const findings = Array.isArray(lastRun.findings) ? lastRun.findings.length : 0;

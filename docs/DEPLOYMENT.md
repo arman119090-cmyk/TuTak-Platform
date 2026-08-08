@@ -82,7 +82,7 @@ Everything below is read by `apps/api/src/config/configuration.ts`. See
 ```
 NODE_ENV=production
 DATABASE_URL=postgresql://user:password@host:5432/tutak?schema=public
-REDIS_URL=redis://host:6379
+REDIS_URL=redis://:<redis password>@host:6379
 JWT_ACCESS_SECRET=<32+ random characters>
 JWT_REFRESH_SECRET=<32+ random characters, different from the above>
 CORS_ORIGINS=https://admin.example.am,https://partner.example.am

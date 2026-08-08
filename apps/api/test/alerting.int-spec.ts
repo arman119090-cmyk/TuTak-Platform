@@ -10,6 +10,7 @@ import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { EvReservationsService } from '../src/modules/ev-charging/ev-reservations.service';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { DistributedLockService } from '../src/infrastructure/redis/distributed-lock.service';
+import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
@@ -189,6 +190,7 @@ describe('Alerting (integration)', () => {
         harness.app.get(DistributedLockService),
         harness.app.get(ConfigService),
         alerts,
+        harness.prisma as unknown as PrismaService,
       );
 
     it('tells a human once a job has stopped retrying', async () => {

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { AppConfig } from '../../config/configuration';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DistributedLockService } from '../../infrastructure/redis/distributed-lock.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { EvReservationsService } from '../ev-charging/ev-reservations.service';
@@ -50,6 +51,7 @@ export class SweepsProcessor extends WorkerHost implements OnApplicationBootstra
     private readonly lock: DistributedLockService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly alerts: AlertsService,
+    private readonly prisma: PrismaService,
   ) {
     super();
     this.deps = { bonus, reservations, sessions, outbox, reconciliation };
@@ -85,7 +87,39 @@ export class SweepsProcessor extends WorkerHost implements OnApplicationBootstra
     if (!ran) {
       this.logger.debug(`${sweep.name} skipped — another worker holds the lock`);
     }
+
+    await this.recordSuccess(sweep.name, ms, ran);
     return { ran, ms };
+  }
+
+  /**
+   * Writes the heartbeat row this sweep's liveness is judged by.
+   *
+   * A lock-skipped run is still recorded, and that is deliberate: the
+   * question this row answers is "is the schedule still delivering ticks",
+   * not "did this particular worker do the work". A busy platform where
+   * another replica holds every lock is healthy; a platform where no tick
+   * arrives at all is the outage.
+   *
+   * Failing to record must never fail the sweep. The work is already done and
+   * committed by this point — throwing here would fail the job, retry it, and
+   * repeat real financial work because bookkeeping about that work did not
+   * land. Losing one heartbeat only shortens the window before the next one.
+   */
+  private async recordSuccess(name: string, ms: number, didWork: boolean): Promise<void> {
+    try {
+      await this.prisma.sweepRun.upsert({
+        where: { name },
+        create: { name, lastSuccessAt: new Date(), lastDurationMs: ms, didWork },
+        update: { lastSuccessAt: new Date(), lastDurationMs: ms, didWork },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not record the heartbeat for '${name}': ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**

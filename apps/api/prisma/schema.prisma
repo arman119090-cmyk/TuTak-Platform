@@ -955,6 +955,12 @@ model Payment {
   @@index([userId])
   @@index([partnerId])
   @@index([settlementId])
+  /// Metrics group payments from the last hour by status on every scrape.
+  /// Without this the plan was a sequential scan of the whole table — fine
+  /// while it is small, and at a million rows it makes monitoring the
+  /// heaviest recurring load on the database, which is a bad way to find out.
+  /// Status leads because the grouping is by status within a time window.
+  @@index([status, createdAt])
   @@map("payments")
 }
 
@@ -1220,4 +1226,23 @@ model FraudSignal {
 
   @@index([userId, createdAt])
   @@map("fraud_signals")
+}
+
+/// When each recurring sweep last completed.
+///
+/// Deliberately in Postgres rather than Redis. The failure this exists to
+/// detect *is* Redis losing state: BullMQ keeps repeatable-job definitions
+/// there, so a restart, an eviction or a failover silently removes the whole
+/// schedule. Recording the evidence in the same store that can lose it would
+/// make the outage invisible in exactly the case that matters.
+model SweepRun {
+  /// The sweep's name from SWEEPS — one row per definition, upserted.
+  name           String   @id
+  lastSuccessAt  DateTime
+  lastDurationMs Int
+  /// False when the run found another worker holding the lock. Still counts
+  /// as the schedule being alive, which is what is being watched here.
+  didWork        Boolean  @default(true)
+
+  @@map("sweep_runs")
 }

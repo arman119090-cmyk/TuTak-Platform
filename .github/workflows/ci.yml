@@ -73,6 +73,21 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Reported, not enforced — and that is a decision rather than laziness.
+      # Every advisory the last review turned up was either a build-time
+      # dependency of the mobile app (`image-size`, `uuid`, reached only by
+      # Metro and the Xcode project writer) or `js-yaml` under Swagger, which
+      # `main.ts` disables in production. None of them sit on a request path
+      # in a deployment. A gate that fails on those trains everyone to ignore
+      # a red build, which costs more than it saves. What this step does buy
+      # is that a genuinely new advisory appears in the run summary the day it
+      # is published rather than the day somebody thinks to look — and if one
+      # ever lands in an API production dependency, this is where it shows up
+      # first and the gate becomes worth arguing about.
+      - name: Dependency audit (advisory only)
+        continue-on-error: true
+        run: pnpm audit --audit-level moderate
+
       # Unit tests need no database, so a failure here is unambiguous.
       - name: Unit tests
         run: pnpm --filter @tutak/api test:unit

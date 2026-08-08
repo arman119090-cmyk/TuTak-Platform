@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./web": "./src/web/index.ts",
+    "./security-headers": "./security-headers.mjs",
     "./tutak.css": "./tutak.css",
     "./theme.css": "./src/web/theme.css",
     "./brand/*": "./src/brand/*"

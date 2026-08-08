@@ -23,6 +23,15 @@ export interface SweepDefinition {
   /** BullMQ repeat options: `every` in milliseconds, or a cron `pattern`. */
   repeat: { every: number } | { pattern: string; tz?: string };
   /**
+   * How long this sweep may go without completing before something is wrong.
+   *
+   * Not derived from `repeat` automatically: a job that runs every ten
+   * seconds and one that runs nightly want very different tolerances, and
+   * the nightly one has to survive a slow night without crying wolf. Stated
+   * per job so the number is a decision rather than a formula.
+   */
+  maxSilenceMs: number;
+  /**
    * How long the advisory lock is held, or `null` when overlapping runs are
    * not merely safe but wanted.
    *
@@ -66,6 +75,10 @@ export const SWEEPS: readonly SweepDefinition[] = [
     name: 'outbox.drain',
     why: 'Settlement only happens because something drains the outbox. Nothing else in the running process calls drain(), so without this the durable-outbox rows are written and never read.',
     repeat: { every: 10_000 },
+    // Five minutes against a ten-second cadence: long enough to ride out a
+    // deploy or a brief Redis blip, short enough that settlement stalling is
+    // noticed while it is still this hour's problem.
+    maxSilenceMs: 5 * 60_000,
     // The one sweep with no lock, and the only one where that is an
     // improvement rather than a risk. `drain` claims its batch with
     // `FOR UPDATE SKIP LOCKED` under a lease, so a second drainer picks up
@@ -81,6 +94,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
     name: 'bonus.promote-pending',
     why: 'Points accrue as PENDING and become spendable only when promoted. Without this a customer never gets the points they earned.',
     repeat: { every: 5 * 60_000 },
+    maxSilenceMs: 30 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ bonus }) => bonus.promotePendingLots(),
   },
@@ -88,6 +102,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
     name: 'bonus.expire-lots',
     why: 'Expiry is a liability the platform has promised to retire. Unswept, BONUS_LIABILITY grows forever and the balance a customer sees is wrong.',
     repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 4 * 60 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ bonus }) => bonus.expireLots(),
   },
@@ -95,6 +110,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
     name: 'bonus.release-expired-reservations',
     why: 'A hold is taken before a payment completes. If the process dies in between, the points sit in `reserved` indefinitely — invisible to the customer and unrecoverable without a manual database edit. This is what makes reserve/settle crash-safe.',
     repeat: { every: 5 * 60_000 },
+    maxSilenceMs: 30 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ bonus }) => bonus.releaseExpiredReservations(),
   },
@@ -102,6 +118,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
     name: 'ev.expire-stale-reservations',
     why: 'A reservation holds a connector nobody can use. Unswept, the bay is lost to the network until someone notices.',
     repeat: { every: 60_000 },
+    maxSilenceMs: 15 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ reservations }) => reservations.expireStaleReservations(),
   },
@@ -109,6 +126,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
     name: 'ev.expire-stale-sessions',
     why: 'Frees bays held by sessions nobody ever stopped. Without it a connector stays CHARGING indefinitely.',
     repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 4 * 60 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ sessions }) => sessions.expireStaleSessions(),
   },
@@ -119,6 +137,9 @@ export const SWEEPS: readonly SweepDefinition[] = [
     // one, and Armenia does not observe daylight saving, so this does not
     // drift twice a year.
     repeat: { pattern: '0 3 * * *', tz: 'Asia/Yerevan' },
+    // 26 hours: one missed night is a problem, but the tolerance has to clear
+    // a full day plus a slow run without alerting on a healthy platform.
+    maxSilenceMs: 26 * 60 * 60_000,
     lockTtlMs: 15 * 60_000,
     run: ({ reconciliation }) => {
       // Yesterday, in the same timezone the schedule is expressed in, so the

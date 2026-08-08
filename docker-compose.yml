@@ -21,10 +21,20 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Password-protected even locally. Not because anything can reach this
+    # port on a developer's machine, but because this file is the template
+    # people copy onto a server — and what Redis holds here is the advisory
+    # locks that keep two workers off the same money, the job queue that
+    # drives settlement, and the suppression windows that decide whether an
+    # alert reaches a human. An unauthenticated Redis on a network someone
+    # else can see is all three of those, writable.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-tutak_dev_password}"]
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # The ping has to authenticate too, or the container reports healthy
+      # while every real client is being refused.
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-tutak_dev_password}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -61,7 +71,7 @@ services:
       # "localhost", which inside this container would mean the api
       # container itself.
       DATABASE_URL: postgresql://tutak:tutak_dev_password@postgres:5432/tutak?schema=public
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-tutak_dev_password}@redis:6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in a .env file — see apps/api/.env.example}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in a .env file — see apps/api/.env.example}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}

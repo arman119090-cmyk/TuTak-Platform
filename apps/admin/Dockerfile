@@ -32,8 +32,20 @@ COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/packages ./packages
 COPY --from=build /repo/apps/admin ./apps/admin
 
+# `next start` writes into `.next/cache` at runtime (image optimization,
+# fetch cache), so that one directory has to be owned by the user the
+# server runs as. Everything else stays root-owned and read-only to the
+# process — code the running server cannot rewrite is the point of
+# dropping privileges in the first place.
+RUN chown -R node:node /repo/apps/admin/.next
+
 EXPOSE 3000
 WORKDIR /repo/apps/admin
+
+# See the API image for the reasoning. Port 3000 needs no privilege, and
+# this container renders operator sessions — the audience an XSS or a
+# compromised dependency would most like to reach.
+USER node
 # Invoked directly, not through `pnpm exec`. The runtime image has
 # corepack enabled but no cached pnpm and no root package.json, so
 # corepack could not see the pinned packageManager version and

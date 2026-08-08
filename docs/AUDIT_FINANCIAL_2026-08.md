@@ -10,7 +10,7 @@ before the fix and passes after it. Nothing here was concluded by reading
 alone.
 
 State audited: `ff96a6a`, 446 integration tests passing. State after:
-`6b3ad06`, 489 integration tests passing, CI green.
+`9e02396`, 506 integration tests passing.
 
 ---
 
@@ -19,9 +19,13 @@ State audited: `ff96a6a`, 446 integration tests passing. State after:
 | | Found | Fixed | Verified by test |
 | --- | --- | --- | --- |
 | Critical | 3 | 3 | yes |
-| High | 2 | 2 | yes |
+| High | 4 | 4 | yes |
 | Medium | 1 | 1 | yes |
 | Not fixed — see §Blockers | 2 | — | — |
+
+Two rounds. The first attacked the money paths; the second attacked
+authorization by object id, database-level enforcement, and whether a failure
+reaches a human. F-7 and F-8 come from the second — see §Round two.
 
 The financial core proper — payments, settlement, refunds, payouts,
 reconciliation — held everything thrown at it. Its claims are conditional
@@ -240,14 +244,78 @@ mobile app depends on, which is more than an audit should change unasked.
 
 ---
 
+## Round two: production readiness
+
+A second pass over the areas the first did not reach — authorization by
+object id, database-level enforcement, and whether a money failure reaches a
+human. Two more defects, both variants of ones already fixed, in places those
+fixes did not touch.
+
+### F-7 (High) — A cleanup path could hand away a bay that was charging
+
+`EvReservationsService.cancel` and `expireStaleReservations` both selected
+their target outside the transaction and then wrote the connector to
+`AVAILABLE` unconditionally. A customer plugging in at minute fourteen of a
+fifteen-minute hold — exactly when people hurry — starts a session inside the
+window between that select and that write, and the release then sells the
+next customer a cable that is already delivering energy to this one's car.
+The sweep also stamped `EXPIRED` on a hold that had just been fulfilled,
+recording that the customer never turned up for a session they were charging
+on.
+
+*Fix:* both releases conditional on the bay still being `RESERVED`; the sweep
+expires only a hold still `CONFIRMED`, and frees the bay only if that
+succeeded.
+
+*Proof:* `reservation-race.int-spec.ts`. Worth noting how: the first version
+raced the two calls with `Promise.allSettled` and **passed**, which proved
+nothing — that interleaving is not reliably produced. The state the stale
+read actually creates is now constructed directly, which fails before the fix
+and passes after.
+
+### F-8 (High) — A rollback that itself failed was silent
+
+`compensateReservation` and `reverseAccrualLot` were wrapped in
+`.catch(logger.error)`. When one fails, the customer's points stay spent
+against a transaction marked FAILED — and **nothing else on the platform will
+find it**. Reconciliation sees a consistent ledger, because the points really
+were spent. The expiry sweep only returns holds that are still *active*. The
+sole record was a log line.
+
+*Fix:* both sagas fire a critical alert. That is exactly the contract
+`AlertsService` exists for, and it is safe inside a catch block because it
+never throws.
+
+*Proof:* `crash-recovery.int-spec.ts` › "tells a human, because nothing else
+will find it" — asserts both the alert and that the customer really is short,
+so the alert is not belt-and-braces.
+
+### Also in round two
+
+- **IDOR sweep.** Every route taking an id was enumerated (20 of them) and
+  the ones not already covered elsewhere were attacked as the wrong customer
+  and the wrong partner: notifications, charging sessions, meter values,
+  reservations, transaction history. **All nine passed first time — nothing
+  found.** Per-user scoping is consistently applied.
+- **Database enforcement.** 21 CHECK constraints, all `VALID` rather than
+  `NOT VALID` — including `wallets_balances_non_negative`, which means no
+  code path, present or future, can persist a negative balance. Schema and
+  migration history agree (`migrate diff` reports no difference).
+- **Unindexed foreign keys.** Eleven exist; nine are on small reference
+  tables where it does not matter. Two on `ev_reservations` had real query
+  paths on a table that grows with every hold — `listMine` and the expiry
+  sweep — and are now indexed.
+
+---
+
 ## Verification
 
-Everything below was executed on this machine, at `6b3ad06`.
+Everything below was executed on this machine, at `9e02396`.
 
 | Check | Result |
 | --- | --- |
 | `pnpm --filter @tutak/api test:unit` | 77 passed |
-| `pnpm --filter @tutak/api test:int` | **489 passed**, 41 suites |
+| `pnpm --filter @tutak/api test:int` | **506 passed**, 43 suites |
 | `pnpm --filter @tutak/mobile test` | 41 passed |
 | `pnpm --filter @tutak/admin test` | 14 passed |
 | `pnpm --filter @tutak/partner test` | 9 passed |
@@ -256,10 +324,10 @@ Everything below was executed on this machine, at `6b3ad06`.
 | `pnpm build` | clean, 3 apps |
 | `pnpm audit --audit-level moderate` | 3 high, 1 moderate — all build-time deps of the mobile app or Swagger, none on a request path (unchanged, see `WEAK_SPOTS_RU.md` §3) |
 
-**Tests added: 37** across five new suites — `concurrency-probe` (14),
-`money-rounding` (6), `ev-lifecycle-probe` (12, of which 12 pass and none
-found a defect), `crash-recovery` (8), `partner-reconstruction` (3).
-Integration total went 446 → 489.
+**Tests added: 54** across seven new suites — `concurrency-probe` (14),
+`money-rounding` (6), `ev-lifecycle-probe` (12), `crash-recovery` (9),
+`partner-reconstruction` (3), `reservation-race` (7), `idor-sweep` (9).
+Integration total went 446 → 506.
 
 **CI, at `6b3ad06`:** both jobs green
 ([run 31280421849](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/31280421849)).

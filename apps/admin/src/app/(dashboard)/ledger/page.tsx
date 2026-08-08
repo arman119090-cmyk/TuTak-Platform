@@ -1,8 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, EmptyState, PageHeader, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  Surface,
+  Table,
+  Td,
+  Th,
+  Tr,
+} from '@tutak/design/web';
 import { financeApi } from '@/lib/api/financeApi';
 
 /**
@@ -28,10 +40,9 @@ function displayBalance(type: string, balance: string): string {
 /**
  * What a number in this account actually means.
  *
- * A chart of accounts is only readable to whoever built it. PLATFORM_BANK in
- * particular reads as alarming without its sentence — it is negative, and
- * will stay negative until the acquirer settling PSP_RECEIVABLE into it is
- * modelled.
+ * A chart of accounts is only readable to whoever built it, and these two
+ * lines are the difference between an operator reading the screen and
+ * guessing at it.
  */
 const MEANING: Record<string, string> = {
   PSP_RECEIVABLE: 'owed to us by the acquirer',
@@ -40,11 +51,48 @@ const MEANING: Record<string, string> = {
   PLATFORM_REVENUE: 'commission kept, less points issued',
   BONUS_LIABILITY: 'points issued and not yet spent',
   BANK_CLEARING: 'payouts in flight right now',
-  PLATFORM_BANK: 'paid out, less inflows recorded (acquirer settlement not modelled yet)',
+  PLATFORM_BANK: 'cash the platform actually holds',
 };
 
 export default function LedgerPage() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [amount, setAmount] = useState('');
+  const [reference, setReference] = useState('');
+  const [settledOn, setSettledOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const { data: outstanding } = useQuery({
+    queryKey: ['acquirer-outstanding'],
+    queryFn: financeApi.outstandingReceivable,
+  });
+  const { data: settlements } = useQuery({
+    queryKey: ['acquirer-settlements'],
+    queryFn: financeApi.acquirerSettlements,
+  });
+
+  const recordSettlement = useMutation({
+    mutationFn: () =>
+      financeApi.recordAcquirerSettlement({
+        amount,
+        reference: reference.trim(),
+        settledOn: new Date(settledOn).toISOString(),
+      }),
+    onSuccess: async () => {
+      setAmount('');
+      setReference('');
+      setError(null);
+      await queryClient.invalidateQueries({ queryKey: ['acquirer-outstanding'] });
+      await queryClient.invalidateQueries({ queryKey: ['acquirer-settlements'] });
+      await queryClient.invalidateQueries({ queryKey: ['ledger-accounts'] });
+    },
+    onError: (err: unknown) => {
+      setError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          'Could not record the settlement.',
+      );
+    },
+  });
 
   const { data: accounts } = useQuery({
     queryKey: ['ledger-accounts'],
@@ -64,6 +112,96 @@ export default function LedgerPage() {
         title="Ledger"
         description="Double-entry accounts. Select one to see its postings and whether its stored balance still matches them."
       />
+
+      {/* Money arriving from the acquirer.
+          Entered by hand from the remittance advice on purpose: an inbound
+          settlement asserts that money arrived, and that assertion should
+          come from a person reading the bank's own statement rather than
+          from an integration that could be compromised. */}
+      <Surface className="mb-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <div>
+            <h2 className="text-[15px] font-semibold text-ink">Acquirer settlement</h2>
+            <p className="mt-1 text-[13px] text-muted">
+              Record the acquirer paying us, from their remittance advice. This is what turns a
+              receivable into cash.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-[12px] text-muted">Still owed to us</div>
+            <div className="tabular text-[19px] font-semibold text-ink">
+              {outstanding
+                ? Number(outstanding.outstandingReceivable).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                  })
+                : '—'}{' '}
+              AMD
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="w-40">
+            <Field label="Amount">
+              <Input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="0"
+                inputMode="decimal"
+              />
+            </Field>
+          </div>
+          <div className="w-64">
+            <Field label="Statement reference">
+              <Input
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="REMIT-2026-08-08"
+              />
+            </Field>
+          </div>
+          <div className="w-44">
+            <Field label="Landed on">
+              <Input type="date" value={settledOn} onChange={(e) => setSettledOn(e.target.value)} />
+            </Field>
+          </div>
+          <Button
+            onClick={() => {
+              setError(null);
+              recordSettlement.mutate();
+            }}
+            disabled={!amount || reference.trim().length === 0 || recordSettlement.isPending}
+          >
+            {recordSettlement.isPending ? 'Recording…' : 'Record'}
+          </Button>
+        </div>
+        {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
+
+        {settlements && settlements.length > 0 && (
+          <div className="mt-5">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Landed</Th>
+                  <Th>Reference</Th>
+                  <Th align="right">Amount</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlements.map((s) => (
+                  <Tr key={s.id}>
+                    <Td className="tabular">{new Date(s.settledOn).toLocaleDateString()}</Td>
+                    <Td className="font-mono text-[12px]">{s.reference}</Td>
+                    <Td align="right" className="tabular">
+                      {Number(s.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        )}
+      </Surface>
 
       {rows.length === 0 ? (
         <EmptyState

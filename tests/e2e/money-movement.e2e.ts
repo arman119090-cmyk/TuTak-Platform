@@ -248,6 +248,81 @@ test.describe('payouts', () => {
   });
 });
 
+test.describe('acquirer settlements', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('recording a remittance turns a receivable into cash', async ({ page }) => {
+    const adminToken = await apiLogin(PHONES.admin, 'admin');
+
+    const before = await api<{ outstandingReceivable: string }>(
+      adminToken,
+      '/payouts/acquirer/outstanding',
+    );
+    const amount = 2500;
+    expect(Number(before.outstandingReceivable)).toBeGreaterThan(amount);
+    const bankBefore = await accountBalance(adminToken, 'PLATFORM_BANK');
+
+    // Through the admin's own screen: this is an operator keying in a
+    // remittance advice, which is the only way an inbound settlement is
+    // meant to be recorded.
+    await page.goto(`${ADMIN}/ledger`);
+    const reference = unique('E2E-REMIT');
+    await page.getByLabel('Amount').fill(String(amount));
+    await page.getByLabel('Statement reference').fill(reference);
+    await page.getByRole('button', { name: 'Record', exact: true }).click();
+
+    await expect
+      .poll(
+        async () => {
+          const after = await api<{ outstandingReceivable: string }>(
+            adminToken,
+            '/payouts/acquirer/outstanding',
+          );
+          return Number(after.outstandingReceivable);
+        },
+        { timeout: 20_000 },
+      )
+      .toBeCloseTo(Number(before.outstandingReceivable) - amount, 4);
+
+    // The other side of the same posting.
+    expect(await accountBalance(adminToken, 'PLATFORM_BANK')).toBeCloseTo(bankBefore + amount, 4);
+    await expectLedgerBalanced(adminToken);
+  });
+
+  test('a remittance larger than the acquirer holds is refused', async () => {
+    const adminToken = await apiLogin(PHONES.admin, 'admin');
+    const { outstandingReceivable } = await api<{ outstandingReceivable: string }>(
+      adminToken,
+      '/payouts/acquirer/outstanding',
+    );
+
+    // Not a rounding difference to absorb — the two sides disagree about
+    // what was captured, and posting it would bury that.
+    await expect(
+      api(adminToken, '/payouts/acquirer/settlements', {
+        method: 'POST',
+        body: {
+          amount: String(Number(outstandingReceivable) + 1000),
+          reference: unique('E2E-REMIT-OVER'),
+          settledOn: new Date().toISOString(),
+          idempotencyKey: unique('e2e-remit-over'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    await expectLedgerBalanced(adminToken);
+  });
+});
+
+async function accountBalance(token: string, type: string): Promise<number> {
+  const accounts = await api<Array<{ type: string; balance: string; partnerId: string | null }>>(
+    token,
+    '/admin/ledger/accounts',
+  );
+  const account = accounts.find((a) => a.type === type && a.partnerId === null);
+  return Number(account?.balance ?? 0);
+}
+
 async function clearingBalance(token: string): Promise<number> {
   const accounts = await api<Array<{ type: string; balance: string; partnerId: string | null }>>(
     token,

@@ -18,6 +18,16 @@ export interface ExternalStatement {
   periodStart: Date;
   /** The acquirer's reported receivable balance. */
   pspReceivable?: Decimal | string | number;
+  /**
+   * What the platform's own bank says is in the account.
+   *
+   * Only meaningful once acquirer settlements are being recorded — before
+   * that, PLATFORM_BANK carries payouts out with nothing in, so it disagrees
+   * with any real statement by construction. Omit it and the check is
+   * skipped, which is the right default while that half is still being
+   * entered by hand.
+   */
+  platformBank?: Decimal | string | number;
   /** Per-partner balances the bank reports as owed. */
   partnerPayables?: Array<{ partnerId: string; amount: Decimal | string | number }>;
 }
@@ -91,7 +101,24 @@ export class ReconciliationService {
       if (finding) findings.push(finding);
     }
 
-    // 3. Each partner's payable against the bank's view.
+    // 3. The platform's own bank account.
+    //
+    //    This is the check that only became possible once the inbound half
+    //    of the cash cycle was modelled: the acquirer settling
+    //    PSP_RECEIVABLE into PLATFORM_BANK. Without those entries this
+    //    account only ever went down and could not be compared with
+    //    anything.
+    if (statement.platformBank !== undefined) {
+      const finding = await this.compareAccount({
+        label: 'PLATFORM_BANK',
+        type: LedgerAccountType.PLATFORM_BANK,
+        currency,
+        reported: new Decimal(statement.platformBank),
+      });
+      if (finding) findings.push(finding);
+    }
+
+    // 4. Each partner's payable against the bank's view.
     for (const reported of statement.partnerPayables ?? []) {
       const finding = await this.compareAccount({
         label: 'PARTNER_PAYABLE',

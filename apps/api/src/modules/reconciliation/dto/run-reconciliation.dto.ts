@@ -21,6 +21,15 @@ export class RunReconciliationDto {
   @IsMoneyString()
   pspReceivable?: string;
 
+  /**
+   * What the platform's own bank statement says. Omit until acquirer
+   * settlements are being recorded — before that this account carries
+   * payouts out with nothing in, and would report drift by construction.
+   */
+  @IsOptional()
+  @IsMoneyString()
+  platformBank?: string;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

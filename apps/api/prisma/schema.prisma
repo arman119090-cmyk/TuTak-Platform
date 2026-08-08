@@ -835,6 +835,7 @@ model LedgerTransaction {
   refund           Refund?
   payoutRequested  Payout?         @relation("PayoutRequested")
   payoutSettled    Payout?         @relation("PayoutSettled")
+  acquirerSettlement AcquirerSettlement?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -991,6 +992,38 @@ model Settlement {
   @@map("settlements")
 }
 
+/// The acquirer paying the platform what it has been holding.
+///
+/// The inbound half of the platform's cash cycle, and the counterpart to
+/// `Payout`. Capture puts money into PSP_RECEIVABLE, which is a claim on the
+/// acquirer rather than cash; this is the day that claim becomes cash in the
+/// platform's own bank. Without it PSP_RECEIVABLE grows for the life of the
+/// platform and PLATFORM_BANK only ever goes down, so neither can be
+/// reconciled against a real statement.
+///
+/// Recorded by an operator from the acquirer's remittance advice — there is
+/// no webhook to trust here, because a fabricated inbound settlement is a
+/// claim that money arrived when it did not.
+model AcquirerSettlement {
+  id                  String   @id @default(uuid())
+  amount              Decimal  @db.Decimal(18, 4)
+  currency            Currency @default(AMD)
+  /// The acquirer's own reference for this transfer, as it appears on the
+  /// statement. Unique so the same remittance cannot be entered twice by two
+  /// operators looking at the same email.
+  reference           String   @unique
+  /// The day the money landed, per the statement — not when it was keyed in.
+  settledOn           DateTime
+  ledgerTransactionId String?  @unique
+  recordedByUserId    String?
+  createdAt           DateTime @default(now())
+
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@index([settledOn])
+  @@map("acquirer_settlements")
+}
+
 /// A refund of some or all of a captured payment.
 model Refund {
   id                  String   @id @default(uuid())
@@ -1123,6 +1156,10 @@ enum AuditAction {
   PAYOUT_REQUESTED
   PAYOUT_RESOLVED
   PAYOUT_BLOCK_CLEARED
+  /// An operator recorded the acquirer paying the platform. Audited because
+  /// it is the one entry point through which cash appears in the books
+  /// without a customer transaction behind it.
+  ACQUIRER_SETTLEMENT_RECORDED
   RECONCILIATION_RUN
 }
 

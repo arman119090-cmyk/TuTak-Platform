@@ -153,24 +153,18 @@ code.
 
 ### Engineering, in rough priority order
 
-1. **The platform's cash cycle is half-modelled.** A payout leaves
-   `PLATFORM_BANK`, but the acquirer settling `PSP_RECEIVABLE` into that
-   account is not recorded anywhere, so both accounts grow without bound and
-   `PLATFORM_BANK` reads negative. The ledger balances and the number is
-   honest about what it covers, but reconciliation against a real bank
-   statement needs the inbound side too.
-2. **Horizontal scale.** Bonus-lot promotion and expiry run on in-process
+1. **Horizontal scale.** Bonus-lot promotion and expiry run on in-process
    `@nestjs/schedule` behind a Redis advisory lock, which is correct for one
    instance and wasteful for several — move them to a queue (BullMQ, Redis
    is already there) before running more than one API. Read replicas for
    analytics and history follow the same point.
-3. **Tracing and alerting.** Structured JSON logging with request
+2. **Tracing and alerting.** Structured JSON logging with request
    correlation is in place; OpenTelemetry spans, error tracking and metrics
    are not.
-4. **Geo queries.** `EvStationsService.listNearby` does bounding-box maths
+3. **Geo queries.** `EvStationsService.listNearby` does bounding-box maths
    in application code; PostGIS `ST_DWithin` once station count justifies
    it.
-5. **A BFF for the dashboards.** The refresh token is already an httpOnly
+4. **A BFF for the dashboards.** The refresh token is already an httpOnly
    cookie the browser cannot read; the short-lived access token still sits
    in localStorage so a reload does not force a re-login. Moving it behind a
    thin server layer closes the last of that surface.
@@ -180,10 +174,12 @@ code.
 Kept visible because a roadmap that never shrinks stops being read: the
 double-entry ledger and its reconciliation, the payment/settlement/refund/
 payout engines on an idempotent outbox, structured logging with request
-correlation, a CI pipeline that lints, typechecks, runs 72 unit and 349
-integration tests, builds every app, builds all three container images,
-boots the whole stack and drives the dashboards through ten end-to-end
-scenarios in a browser, and push notification delivery.
+correlation, push notification delivery, both directions of the platform's
+cash cycle — the acquirer settling `PSP_RECEIVABLE` into `PLATFORM_BANK`
+was the last open end — and a CI pipeline that lints, typechecks, runs 72
+unit and 357 integration tests, builds every app, builds all three
+container images, boots the whole stack and drives the dashboards through
+twelve end-to-end scenarios in a browser.
 
 None of the above are architectural dead-ends — they are additive on top of
 the module boundaries already in place.

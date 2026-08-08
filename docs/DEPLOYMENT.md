@@ -102,7 +102,7 @@ BONUS_PENDING_HOURS=                # cooling-off before points become spendable
 BONUS_EXPIRY_MONTHS=
 RATE_LIMIT_TTL_SECONDS=
 RATE_LIMIT_MAX_REQUESTS=
-FEATURE_QR_LEDGER_MIRROR=false      # see §7
+FEATURE_QR_LEDGER_MIRROR=false      # see §9
 ```
 
 ### Secrets
@@ -174,7 +174,30 @@ Minimum before real money:
 
 ---
 
-## 8. The QR ledger cut-over
+## 8. Recording money from the acquirer
+
+Capture credits `PSP_RECEIVABLE` — a claim on the acquirer, not cash. When
+the acquirer actually pays, an operator records it on the admin **Ledger**
+screen from the remittance advice: amount, the acquirer's own reference, and
+the day it landed. That posts `DR PLATFORM_BANK / CR PSP_RECEIVABLE`, and it
+is what makes both accounts comparable with a real bank statement.
+
+Deliberately manual. An inbound settlement asserts that money arrived, and
+that assertion should come from a person reading the bank's own statement
+rather than from an integration that could be compromised into creating cash
+out of nothing. The endpoint is gated on `PAYOUT_MANAGE` — the same trust
+level as sending money out — and the statement reference is unique, so two
+operators working from the same email cannot enter it twice.
+
+A remittance larger than the outstanding receivable is refused rather than
+absorbed: that is the two sides disagreeing about what was captured, and it
+needs a human before it needs a posting.
+
+Once settlements are being recorded, `platformBank` can be passed to
+`POST /v1/admin/reconciliation/run` alongside `pspReceivable`, and the
+platform's own bank balance is reconciled like every other account.
+
+## 9. The QR ledger cut-over
 
 `FEATURE_QR_LEDGER_MIRROR` is off by default and should stay off through the
 first deployment. It makes QR redemptions write double-entry postings
@@ -186,7 +209,7 @@ this system that could lose money quietly.
 
 ---
 
-## 9. Scaling past one instance
+## 10. Scaling past one instance
 
 Bonus-lot promotion and expiry run on in-process `@nestjs/schedule`, guarded
 by a Redis advisory lock so that two instances do not sweep the same lots.
@@ -199,16 +222,12 @@ that, and neither requires a change to the module boundaries.
 
 ---
 
-## 10. What is not covered here
+## 11. What is not covered here
 
 Named rather than omitted:
 
 - **Tracing and alerting.** Structured JSON logs with request correlation
   exist; OpenTelemetry spans, error tracking and metrics do not.
-- **The inbound half of the cash cycle.** A payout leaves `PLATFORM_BANK`,
-  but the acquirer settling `PSP_RECEIVABLE` into it is not modelled, so both
-  accounts grow without bound. Reconciling against a real bank statement
-  needs it. See `docs/ARCHITECTURE.md`.
 - **An external security review.** The code has been audited from the inside
   (`docs/AUDIT_*.md`) and hardened accordingly; nobody outside has tried to
   break it.

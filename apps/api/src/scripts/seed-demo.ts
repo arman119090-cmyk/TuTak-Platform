@@ -42,6 +42,7 @@ import { QrPaymentsService } from '../modules/qr-payments/qr-payments.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
 import { RefundEngineService } from '../modules/payments/refund-engine.service';
 import { PayoutEngineService } from '../modules/payouts/payout-engine.service';
+import { AcquirerSettlementService } from '../modules/payouts/acquirer-settlement.service';
 import { ReconciliationService } from '../modules/reconciliation/reconciliation.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
 import { LedgerService } from '../modules/ledger/ledger.service';
@@ -135,6 +136,7 @@ async function main() {
   const payments = app.get(PaymentEngineService);
   const refunds = app.get(RefundEngineService);
   const payouts = app.get(PayoutEngineService);
+  const acquirerSettlements = app.get(AcquirerSettlementService);
   const reconciliation = app.get(ReconciliationService);
   const outbox = app.get(OutboxService);
   const ledger = app.get(LedgerService);
@@ -420,6 +422,26 @@ async function main() {
     // Confirm it, so the payouts screen shows a completed transfer as well
     // as the balance that remains.
     await payouts.confirmPaid(payout.payoutId, 'DEMO-WIRE-000117');
+  }
+
+  // ── The acquirer pays us ───────────────────────────────────────────────
+  //
+  // Deliberately partial. A remittance that cleared the whole receivable
+  // would leave the ledger looking tidier than a real one ever does — the
+  // acquirer settles on its own schedule, and there is always something in
+  // flight.
+
+  log.log('Recording an acquirer remittance…');
+  const receivable = await acquirerSettlements.outstandingReceivable();
+  const remittance = receivable.times(0.6).toDecimalPlaces(4, Decimal.ROUND_DOWN);
+  if (remittance.greaterThan(0)) {
+    await acquirerSettlements.record({
+      amount: remittance.toFixed(4),
+      reference: 'DEMO-REMIT-000401',
+      settledOn: new Date(Date.now() - 24 * 3_600_000),
+      actorId: admin?.id ?? owner.id,
+      idempotencyKey: 'demo-acquirer-1',
+    });
   }
 
   // ── Reconciliation ─────────────────────────────────────────────────────

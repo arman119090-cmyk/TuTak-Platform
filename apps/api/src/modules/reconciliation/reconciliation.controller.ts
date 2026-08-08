@@ -86,6 +86,7 @@ export class ReconciliationController {
     const result = await this.reconciliation.reconcile({
       periodStart,
       pspReceivable: dto.pspReceivable,
+      platformBank: dto.platformBank,
       partnerPayables: dto.partnerPayables,
     });
 

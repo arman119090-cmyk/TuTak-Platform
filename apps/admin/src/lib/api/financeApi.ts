@@ -1,5 +1,14 @@
 import { httpClient } from '../httpClient';
 
+export interface AcquirerSettlement {
+  id: string;
+  amount: string;
+  currency: string;
+  reference: string;
+  settledOn: string;
+  createdAt: string;
+}
+
 export interface LedgerAccount {
   id: string;
   type: string;
@@ -153,5 +162,25 @@ export const financeApi = {
 
   async failPayout(payoutId: string, failureReason: string): Promise<void> {
     await httpClient.post(`/payouts/${payoutId}/fail`, { failureReason });
+  },
+
+  // ── Money arriving from the acquirer ───────────────────────────────────
+
+  async outstandingReceivable(): Promise<{ outstandingReceivable: string; currency: string }> {
+    const { data } = await httpClient.get('/payouts/acquirer/outstanding');
+    return data.data;
+  },
+
+  async acquirerSettlements(): Promise<AcquirerSettlement[]> {
+    const { data } = await httpClient.get('/payouts/acquirer/settlements');
+    return data.data;
+  },
+
+  async recordAcquirerSettlement(input: { amount: string; reference: string; settledOn: string }) {
+    const { data } = await httpClient.post('/payouts/acquirer/settlements', {
+      ...input,
+      idempotencyKey: newIdempotencyKey(),
+    });
+    return data.data;
   },
 };

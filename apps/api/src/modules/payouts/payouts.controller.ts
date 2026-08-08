@@ -9,7 +9,9 @@ import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../auth/types/request-user.type';
 import { SettlementService } from '../settlement/settlement.service';
 import { ConfirmPayoutDto, FailPayoutDto, RequestPayoutDto } from './dto/request-payout.dto';
+import { RecordAcquirerSettlementDto } from './dto/record-acquirer-settlement.dto';
 import { PayoutEngineService } from './payout-engine.service';
+import { AcquirerSettlementService } from './acquirer-settlement.service';
 
 /**
  * Reads are partner-scoped; writes are platform-admin only.
@@ -27,9 +29,58 @@ import { PayoutEngineService } from './payout-engine.service';
 export class PayoutsController {
   constructor(
     private readonly payouts: PayoutEngineService,
+    private readonly acquirerSettlements: AcquirerSettlementService,
     private readonly settlement: SettlementService,
     private readonly audit: AuditService,
   ) {}
+
+  // ── Money arriving from the acquirer ──────────────────────────────────
+  //
+  // Gated on PAYOUT_MANAGE, the same permission as sending money out.
+  // Recording an inbound settlement is the one route by which cash appears
+  // in the books without a customer transaction behind it, so a false entry
+  // makes the platform believe it holds money it does not — which is the
+  // same class of harm as an unauthorised transfer out, and deserves the
+  // same level of trust.
+
+  @Get('acquirer/outstanding')
+  @RequirePermissions(PermissionName.LEDGER_READ)
+  async outstandingReceivable() {
+    const outstanding = await this.acquirerSettlements.outstandingReceivable();
+    return { outstandingReceivable: outstanding.toFixed(4), currency: 'AMD' };
+  }
+
+  @Get('acquirer/settlements')
+  @RequirePermissions(PermissionName.LEDGER_READ)
+  listAcquirerSettlements() {
+    return this.acquirerSettlements.list();
+  }
+
+  @Post('acquirer/settlements')
+  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async recordAcquirerSettlement(
+    @CurrentUser() admin: RequestUser,
+    @Body() dto: RecordAcquirerSettlementDto,
+  ) {
+    const result = await this.acquirerSettlements.record({
+      amount: dto.amount,
+      reference: dto.reference,
+      settledOn: new Date(dto.settledOn),
+      actorId: admin.id,
+      idempotencyKey: dto.idempotencyKey,
+    });
+
+    await this.audit.record({
+      actorUserId: admin.id,
+      action: AuditAction.ACQUIRER_SETTLEMENT_RECORDED,
+      entityType: 'AcquirerSettlement',
+      entityId: result.settlementId,
+      metadata: { amount: result.amount, reference: dto.reference },
+    });
+
+    return result;
+  }
 
   @Get('partners/:partnerId/balance')
   async balance(@CurrentUser() user: RequestUser, @Param('partnerId') partnerId: string) {

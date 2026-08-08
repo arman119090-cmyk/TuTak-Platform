@@ -4,7 +4,11 @@ import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
-import { hasPartnerScope, isPlatformAdmin } from '../../common/auth/partner-scope';
+import {
+  assertPlatformAdmin,
+  hasPartnerScope,
+  isPlatformAdmin,
+} from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -69,9 +73,21 @@ export class PartnersController {
     return this.transactionsService.history({ ...query, partnerId: id });
   }
 
+  /**
+   * Brings a new tenant onto the platform.
+   *
+   * `PARTNER_MANAGE` alone is not sufficient and never was: PARTNER_OWNER
+   * holds it, so any partner could conjure a new partner — with an accrual
+   * rate of their choosing, owned by themselves. That is a funded accrual
+   * channel created by the person who benefits from it.
+   *
+   * There is no partner id to scope this against; the action is about the
+   * set of partners, not one of them. So the check is the role.
+   */
   @Post()
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async create(@CurrentUser() admin: RequestUser, @Body() dto: CreatePartnerDto) {
+    assertPlatformAdmin(admin, 'Creating a partner');
     const partner = await this.partnersService.create(dto);
     await this.auditService.record({
       actorUserId: admin.id,
@@ -83,6 +99,19 @@ export class PartnersController {
     return partner;
   }
 
+  /**
+   * Switches a partner on or off.
+   *
+   * This is the platform's termination control — `findActiveOrThrow` gates
+   * redemption on the flag, so switching a partner off stops their QR codes
+   * working. Gated on the permission alone, one tenant could shut down a
+   * competitor's trading with a single request.
+   *
+   * Deliberately not extended to "a partner may switch *itself* off": the
+   * same endpoint is how fraud and terminations are handled, and a control
+   * that the subject of it can also operate is not a control. A partner who
+   * wants to stop trading asks the platform.
+   */
   @Patch(':id/active')
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async setActive(
@@ -90,6 +119,7 @@ export class PartnersController {
     @Param('id') id: string,
     @Body() dto: SetActiveDto,
   ) {
+    assertPlatformAdmin(admin, 'Enabling or disabling a partner');
     const partner = await this.partnersService.setActive(id, dto.isActive);
     await this.auditService.record({
       actorUserId: admin.id,

@@ -41,6 +41,25 @@ export function assertPartnerScope(user: RequestUser, partnerId: string): void {
 }
 
 /**
+ * Throws unless the user administers the platform itself.
+ *
+ * For operations that are not *about* one partner but about the set of them:
+ * bringing a new tenant into existence, or switching one off. There is no
+ * partner id to scope such an action against, so `assertPartnerScope` cannot
+ * express it and the check has to be the role.
+ *
+ * This exists because `@RequirePermissions(PARTNER_MANAGE)` reads like it
+ * means "platform administrator" and does not. PARTNER_OWNER holds that
+ * permission — owners manage their own partner — so every route gated on the
+ * permission alone was open to every tenant on the network.
+ */
+export function assertPlatformAdmin(user: RequestUser, action: string): void {
+  if (!isPlatformAdmin(user)) {
+    throw new ForbiddenException(`${action} is restricted to platform administrators`);
+  }
+}
+
+/**
  * The partner a station operator is reporting for, or null when the caller is
  * acting as an ordinary customer.
  *

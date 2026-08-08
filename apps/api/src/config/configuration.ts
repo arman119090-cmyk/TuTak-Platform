@@ -31,6 +31,11 @@ export interface AppConfig {
     sender: string;
     encoding: 'form' | 'json';
   };
+  push: {
+    enabled: boolean;
+    endpoint: string;
+    accessToken: string;
+  };
   features: {
     /**
      * Phase 4 of docs/FINANCIAL_CORE_DESIGN.md: mirror QR redemptions into
@@ -90,6 +95,13 @@ export default (): AppConfig => ({
     token: process.env.SMS_TOKEN ?? '',
     sender: process.env.SMS_SENDER ?? 'TuTak',
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
+  },
+  push: {
+    // Off by default so local development needs no Expo project. Production
+    // refuses to boot without it — see PushModule.
+    enabled: process.env.PUSH_ENABLED === 'true',
+    endpoint: process.env.PUSH_ENDPOINT ?? 'https://exp.host/--/api/v2/push/send',
+    accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
   },
   features: {
     // Opt-in, and it must stay that way until a full settlement cycle has

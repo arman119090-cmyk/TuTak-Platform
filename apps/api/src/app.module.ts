@@ -10,6 +10,7 @@ import { validate } from './config/env.validation';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { SmsModule } from './infrastructure/sms/sms.module';
+import { PushModule } from './infrastructure/push/push.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestContextMiddleware } from './common/observability/request-context.middleware';
@@ -58,6 +59,7 @@ import { HealthModule } from './modules/health/health.module';
     PrismaModule,
     RedisModule,
     SmsModule,
+    PushModule,
 
     AuditModule,
     UsersModule,

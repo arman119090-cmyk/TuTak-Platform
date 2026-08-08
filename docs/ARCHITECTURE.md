@@ -126,44 +126,64 @@ swap the SVG, keep the `size` prop contract.
 
 ## Production-readiness roadmap
 
-Built as real, working code end-to-end (not stubs) — but "serves millions of
-users" is a destination, not a day-one state. Honest list of what a scale-up
-still needs, roughly in priority order:
+Built as real, working code end to end. What follows is what a scale-up
+still needs, split by who can do it — because most of what is left is not
+code.
 
-1. **Web auth hardening.** Admin/partner dashboards currently hold JWTs in
-   localStorage via zustand for MVP simplicity. Move to httpOnly, SameSite
-   cookies issued by a thin BFF layer before handling real money in
-   production — this closes the XSS-token-theft surface localStorage has.
-2. **OCPI/FastCharge integration.** The adapter interface and data model are
-   ready; `NoopOcpiAdapter` needs to become a real OCPI 2.2.1 client once
-   credentials with a roaming partner exist.
-3. **Geo queries.** `EvStationsService.listNearby` does bounding-box math in
-   application code; swap for PostGIS (`ST_DWithin`) once station count
-   makes that necessary.
-4. **Horizontal scale.** Add Postgres read replicas for analytics/history
-   reads, a queue (BullMQ, already have Redis) for notification delivery and
-   the bonus-lot promotion/expiry crons instead of in-process `@nestjs/schedule`
-   once running more than one API instance, and CDN/edge caching for the
-   dashboards.
-5. **Observability.** Structured logging is in place (Nest's `Logger`); add
-   OpenTelemetry tracing, error tracking (Sentry), and metrics/alerting
-   before production traffic.
-6. **Testing.** `scripts/smoke-test.sh` covers the critical paths end to end
-   (39 assertions over auth, RBAC, the bonus ledger, QR redemption including
-   idempotent replay and overspend rejection, referral qualification, and the
-   admin read models) and is the current regression gate. What it does not
-   cover, and what should exist before launch, is unit-level testing of the
-   bonus engine's harder edge cases — partial lot consumption across many
-   lots, genuinely concurrent reservations against one lot, and expiry
-   landing mid-hold — plus automated EV-saga coverage. The code is structured
-   for this (services are DI'd, the domain logic is isolated in
-   `BonusEngineService`), but no Jest suite has been written yet.
-7. **CI/CD.** No pipeline exists yet — add typecheck/lint/test/build gates
-   and environment-specific deploy workflows.
-8. **Push notifications.** `NotificationsService` persists an in-app inbox
-   row today; wire actual FCM/APNs delivery for the `PUSH` channel.
-9. **Real illustrated mascot + design system.** Placeholder SVG today;
-   swap in final brand assets once delivered.
+### Blocked on a commercial decision, not on engineering
 
-None of the above are architectural dead-ends — they're additive on top of
+1. **An acquirer.** `SandboxPspAdapter` approves and declines on demand and
+   moves no money. `PaymentsModule` refuses to boot in production with it —
+   a fake acquirer that silently approved every charge would be far worse
+   than a process that will not start. A real adapter is a day's work once
+   there is a contract and credentials with an Armenian acquirer.
+2. **An SMS carrier.** Same discipline in `SmsModule`: without
+   `SMS_ENDPOINT` production refuses to start, because a verification code
+   logged to stdout is indistinguishable from one that was delivered until a
+   real user is locked out.
+3. **A host.** `docker compose up` runs the whole platform locally and
+   `docker-publish.yml` pushes an image to GHCR, but nothing owns a domain
+   or a server yet.
+4. **Apple and Google developer accounts.** `eas.json` has the build
+   profiles; the app cannot reach a phone outside Expo Go without them.
+5. **An OCPI roaming partner.** The adapter interface and data model are
+   ready; `NoopOcpiAdapter` becomes a real OCPI 2.2.1 client once
+   credentials exist.
+6. **Final brand assets.** The mascot is a placeholder SVG.
+
+### Engineering, in rough priority order
+
+1. **The platform's cash cycle is half-modelled.** A payout leaves
+   `PLATFORM_BANK`, but the acquirer settling `PSP_RECEIVABLE` into that
+   account is not recorded anywhere, so both accounts grow without bound and
+   `PLATFORM_BANK` reads negative. The ledger balances and the number is
+   honest about what it covers, but reconciliation against a real bank
+   statement needs the inbound side too.
+2. **Horizontal scale.** Bonus-lot promotion and expiry run on in-process
+   `@nestjs/schedule` behind a Redis advisory lock, which is correct for one
+   instance and wasteful for several — move them to a queue (BullMQ, Redis
+   is already there) before running more than one API. Read replicas for
+   analytics and history follow the same point.
+3. **Tracing and alerting.** Structured JSON logging with request
+   correlation is in place; OpenTelemetry spans, error tracking and metrics
+   are not.
+4. **Geo queries.** `EvStationsService.listNearby` does bounding-box maths
+   in application code; PostGIS `ST_DWithin` once station count justifies
+   it.
+5. **A BFF for the dashboards.** The refresh token is already an httpOnly
+   cookie the browser cannot read; the short-lived access token still sits
+   in localStorage so a reload does not force a re-login. Moving it behind a
+   thin server layer closes the last of that surface.
+
+### Done since this list was first written
+
+Kept visible because a roadmap that never shrinks stops being read: the
+double-entry ledger and its reconciliation, the payment/settlement/refund/
+payout engines on an idempotent outbox, structured logging with request
+correlation, a CI pipeline that lints, typechecks, runs 72 unit and 349
+integration tests, builds every app, builds all three container images,
+boots the whole stack and drives the dashboards through ten end-to-end
+scenarios in a browser, and push notification delivery.
+
+None of the above are architectural dead-ends — they are additive on top of
 the module boundaries already in place.

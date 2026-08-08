@@ -72,6 +72,9 @@ services:
       SMS_SENDER: ${SMS_SENDER:-TuTak}
       SMS_ENCODING: ${SMS_ENCODING:-form}
       FEATURE_QR_LEDGER_MIRROR: ${FEATURE_QR_LEDGER_MIRROR:-false}
+      PUSH_ENABLED: ${PUSH_ENABLED:-false}
+      PUSH_ENDPOINT: ${PUSH_ENDPOINT:-https://exp.host/--/api/v2/push/send}
+      PUSH_ACCESS_TOKEN: ${PUSH_ACCESS_TOKEN:-}
     healthcheck:
       test:
         [

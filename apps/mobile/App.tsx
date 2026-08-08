@@ -13,6 +13,7 @@ import { AuthNavigator } from './src/app/navigation/AuthNavigator';
 import { RootNavigator } from './src/app/navigation/RootNavigator';
 import { SplashScreen } from './src/presentation/screens/SplashScreen';
 import { useAuthStore } from './src/data/stores/authStore';
+import { usePushRegistration } from './src/app/usePushRegistration';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -39,6 +40,11 @@ function Root() {
     hydrate().then(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Asks for notification permission once a session exists — after someone
+  // has signed in and seen what the app does, which is when a prompt has a
+  // chance of being allowed.
+  usePushRegistration();
 
   if (!ready || !isHydrated) {
     return <SplashScreen />;

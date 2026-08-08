@@ -25,8 +25,10 @@
     "expo": "~57.0.10",
     "expo-camera": "~57.0.3",
     "expo-constants": "~57.0.9",
+    "expo-device": "^57.0.1",
     "expo-linear-gradient": "~57.0.1",
     "expo-localization": "~57.0.1",
+    "expo-notifications": "^57.0.9",
     "expo-secure-store": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "i18next": "^26.3.6",
@@ -50,6 +52,9 @@
   },
   "jest": {
     "preset": "jest-expo",
-    "testPathIgnorePatterns": ["/node_modules/", "/dist/"]
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/"
+    ]
   }
 }

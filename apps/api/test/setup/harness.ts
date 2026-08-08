@@ -7,6 +7,7 @@ import type Redis from 'ioredis';
 import { PrismaModule } from '../../src/infrastructure/prisma/prisma.module';
 import { REDIS_CLIENT, RedisModule } from '../../src/infrastructure/redis/redis.module';
 import { SmsModule } from '../../src/infrastructure/sms/sms.module';
+import { PushModule } from '../../src/infrastructure/push/push.module';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -60,6 +61,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       PrismaModule,
       RedisModule,
       SmsModule,
+      PushModule,
       WalletModule,
       TransactionsModule,
       QrPaymentsModule,

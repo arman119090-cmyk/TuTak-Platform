@@ -59,10 +59,17 @@ describe('Money rounding (integration)', () => {
       data: { startedAt: new Date(Date.now() - hours * 3_600_000) },
     });
 
-  /** Every stored money value must fit the column that holds it. */
+  /**
+   * Every stored money value must fit the column that holds it.
+   *
+   * Named in the assertion so a failure says *which* value overflowed rather
+   * than just reporting a number of decimal places.
+   */
   const assertStorable = (value: Decimal, what: string) => {
-    expect({ what, dp: value.decimalPlaces() }).toEqual({ what, dp: expect.any(Number) });
-    expect(value.decimalPlaces()).toBeLessThanOrEqual(MONEY_SCALE);
+    expect({ what, decimals: value.decimalPlaces() <= MONEY_SCALE }).toEqual({
+      what,
+      decimals: true,
+    });
   };
 
   describe('EV charging', () => {

@@ -3,7 +3,7 @@ import { AuditAction, QrCodeStatus, QrCodeType, TransactionType } from '@prisma/
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { generateOpaqueToken } from '../../common/utils/crypto';
-import { parseMoney } from '../../common/utils/money';
+import { parseMoney, roundIssued } from '../../common/utils/money';
 import { AuditService } from '../audit/audit.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -223,7 +223,13 @@ export class QrPaymentsService {
         .catch(() => false);
       if (partner && canEarn) {
         const paidPortion = amount.minus(bonusToApply);
-        bonusEarned = paidPortion.times(partner.bonusAccrualRateBps).dividedBy(10_000);
+        // Rounded down: amount × bps ÷ 10⁴ is up to eight decimals, the
+        // column holds four, and points are a liability the platform should
+        // never over-issue because of a rounding step. Unrounded, this threw
+        // out of `parsePositiveMoney` and failed the whole payment.
+        bonusEarned = roundIssued(
+          paidPortion.times(partner.bonusAccrualRateBps).dividedBy(10_000),
+        );
         if (bonusEarned.greaterThan(0)) {
           const payerWalletId = await this.walletService.getWalletIdForUser(payerUserId);
           const lot = await this.bonusEngine.accrue({

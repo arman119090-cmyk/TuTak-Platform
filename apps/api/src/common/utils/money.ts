@@ -59,3 +59,40 @@ export function parseMoney(
 /** Strictly positive variant — accruals, reservations, adjustments. */
 export const parsePositiveMoney = (value: Money, field: string): Decimal =>
   parseMoney(value, field, { allowZero: false });
+
+/**
+ * Rounds a *computed* monetary value to what the column can hold.
+ *
+ * `parseMoney` guards amounts that arrive from outside and refuses more than
+ * four decimal places. That is right for input and wrong for arithmetic: the
+ * platform's own multiplications routinely produce more.
+ *
+ *   energy(3 dp) × tariff(2 dp)        = 5 dp
+ *   amount(4 dp) × bps ÷ 10⁴           = 8 dp
+ *
+ * Unrounded, those values reached `parseMoney` and were refused — so a
+ * charging session with a fractional meter reading at a fractional tariff
+ * could not be stopped, and an accrual on a fractional amount failed the
+ * payment that earned it. Whole amounts and round rates divide cleanly, which
+ * is why it took deliberately awkward numbers to see.
+ *
+ * Two modes, and the split is not arbitrary:
+ *
+ * - **What the customer pays** rounds half up. That is the retail convention
+ *   and what a receipt is expected to show.
+ * - **What the platform issues** rounds down. Points are a liability; the
+ *   platform should never owe more than the rate says because of a rounding
+ *   step. A sub-0.0001 accrual therefore becomes zero rather than failing the
+ *   purchase.
+ *
+ * Both match what the financial core already does at its own arithmetic —
+ * see the commission in `payment-engine` and the accrual in `settlement`.
+ * This puts the loyalty and EV paths on the same footing rather than
+ * inventing a third convention.
+ */
+export const roundCharge = (value: Money): Decimal =>
+  toDecimal(value).toDecimalPlaces(MONEY_SCALE, Decimal.ROUND_HALF_UP);
+
+/** Rounds an issued liability down. See `roundCharge` for why they differ. */
+export const roundIssued = (value: Money): Decimal =>
+  toDecimal(value).toDecimalPlaces(MONEY_SCALE, Decimal.ROUND_DOWN);

@@ -15,7 +15,7 @@ import {
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { parseMoney } from '../../common/utils/money';
+import { parseMoney, roundCharge, roundIssued } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -122,10 +122,27 @@ export class EvSessionsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.evConnector.update({
-        where: { id: connector.id },
+      // Claim the bay conditionally rather than asserting it is free and then
+      // taking it. The check above reads the connector outside this
+      // transaction, so two customers tapping "start" on the same charger at
+      // the same moment both passed it and both got a session — two people
+      // billed for one cable. Whoever moves the status out of AVAILABLE first
+      // owns the bay; the loser is refused. Same shape as the QR code flip,
+      // which is correct for the same reason.
+      //
+      // A confirmed reservation may claim a connector held in RESERVED for
+      // it, which is the whole point of reserving one.
+      const claimable = dto.reservationId
+        ? [EvConnectorStatus.AVAILABLE, EvConnectorStatus.RESERVED]
+        : [EvConnectorStatus.AVAILABLE];
+
+      const claimed = await tx.evConnector.updateMany({
+        where: { id: connector.id, status: { in: claimable } },
         data: { status: EvConnectorStatus.CHARGING },
       });
+      if (claimed.count === 0) {
+        throw new BadRequestException('Connector is not available');
+      }
 
       const session = await tx.evSession.create({
         data: {
@@ -233,6 +250,29 @@ export class EvSessionsService {
       throw new BadRequestException(`Session cannot be stopped (status: ${session.status})`);
     }
 
+    // Claim the stop before doing anything that costs money.
+    //
+    // The check above is a read outside any transaction, so two stops in
+    // flight together — a double tap, or a client retrying a request that
+    // timed out while the server was still working — both passed it. Both
+    // then created a transaction, reserved and settled the customer's points,
+    // and told the charger to stop. The second one only failed at the very
+    // end, on the CDR's unique index, by which time it had already spent
+    // points and issued a second remote stop; its cleanup then marked a
+    // session that had billed correctly as INVALID.
+    //
+    // Stamping `stoppedAt` is the claim: it is the one column that is null
+    // exactly while a session is stoppable, so whoever sets it owns the stop.
+    // A process that dies between here and the billing transaction leaves the
+    // session CHARGING with a stop time, which `expireStaleSessions` closes.
+    const claimed = await this.prisma.evSession.updateMany({
+      where: { id: sessionId, status: EvSessionStatus.CHARGING, stoppedAt: null },
+      data: { stoppedAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      throw new BadRequestException('Session is already being stopped');
+    }
+
     const energyKwh = session.energyKwh ?? new Decimal(0);
 
     // Re-checked here on purpose. reportMeterValue is not the only way a row
@@ -249,7 +289,11 @@ export class EvSessionsService {
       throw err;
     }
 
-    const cost = energyKwh.times(session.connector.pricePerKwh);
+    // Rounded because the product is not storable as-is: a 3-decimal meter
+    // reading times a 2-decimal tariff is 5 decimals, and the amount column
+    // holds 4. Unrounded, `parseMoney` refused it and the session could not
+    // be stopped at all.
+    const cost = roundCharge(energyKwh.times(session.connector.pricePerKwh));
     // Same negative-amount hole as the QR path: a negative bonus turned
     // `cost.minus(bonus)` into an addition and inflated the accrual base.
     const bonusToApply = dto.bonusAmountToApply
@@ -335,7 +379,7 @@ export class EvSessionsService {
         .catch(() => false);
       if (rateBps && canEarn) {
         const paidPortion = cost.minus(bonusToApply);
-        bonusEarned = paidPortion.times(rateBps).dividedBy(10_000);
+        bonusEarned = roundIssued(paidPortion.times(rateBps).dividedBy(10_000));
         if (bonusEarned.greaterThan(0)) {
           const walletId = await this.walletService.getWalletIdForUser(userId);
           const lot = await this.bonusEngine.accrue({
@@ -440,8 +484,14 @@ export class EvSessionsService {
         where: { id: connectorId },
         data: { status: EvConnectorStatus.AVAILABLE },
       });
-      await tx.evSession.update({
-        where: { id: sessionId },
+      // Only a session that is still charging may be invalidated. This used
+      // to be an unconditional update, which meant a failing caller could
+      // stamp INVALID over a session that had already completed and billed —
+      // a charge the customer paid, the CDR recorded and the partner will be
+      // settled for, filed under a status that says it never happened.
+      // COMPLETED and CANCELLED are terminal; nothing may walk them back.
+      await tx.evSession.updateMany({
+        where: { id: sessionId, status: EvSessionStatus.CHARGING },
         data: { status: EvSessionStatus.INVALID, stoppedAt: new Date() },
       });
     });

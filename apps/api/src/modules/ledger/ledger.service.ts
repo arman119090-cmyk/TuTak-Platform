@@ -274,12 +274,13 @@ export class LedgerService {
     const existing = await this.prisma.ledgerAccount.findFirst({ where });
     if (existing) return existing;
 
-    try {
-      return await this.prisma.ledgerAccount.create({ data: where });
-    } catch {
-      // Lost the race to a concurrent creator; theirs is as good as ours.
-      return this.prisma.ledgerAccount.findFirstOrThrow({ where });
-    }
+    // `ON CONFLICT DO NOTHING`, so losing the race to a concurrent creator
+    // costs a returned count of zero rather than a thrown unique violation.
+    // The account either exists now because we made it or because someone
+    // else did a millisecond earlier; both are the same account, and neither
+    // is worth an ERROR in the log.
+    await this.prisma.ledgerAccount.createMany({ data: [where], skipDuplicates: true });
+    return this.prisma.ledgerAccount.findFirstOrThrow({ where });
   }
 
   /** Recomputes a balance from its postings. The reconciliation primitive. */

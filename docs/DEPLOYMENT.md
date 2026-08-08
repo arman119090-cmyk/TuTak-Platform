@@ -269,6 +269,20 @@ a queue (BullMQ; Redis is already a dependency).
 Read replicas for analytics and transaction history are the next step after
 that, and neither requires a change to the module boundaries.
 
+Two numbers to set deliberately before adding instances, both measured in
+`docs/LOAD_TEST.md`:
+
+- **`connection_limit` on `DATABASE_URL`.** Unset, Prisma opens
+  `num_cpus × 2 + 1` connections per instance. That is the ceiling the load
+  test hit — throughput stopped rising at 32 concurrent captures while latency
+  doubled. Raise it, but multiply by your instance count and keep the total
+  under the database's `max_connections`, or a rolling deploy will exhaust the
+  server while both versions are up.
+- **Outbox drainers.** Settlement drains at roughly a third of the rate
+  captures are produced under saturation. Irrelevant at a few hundred payments
+  a day; the fix when it matters is more drainers, not a faster one, since the
+  claim already uses `FOR UPDATE SKIP LOCKED` and is safe to run concurrently.
+
 ---
 
 ## 12. What is not covered here

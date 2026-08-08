@@ -32,9 +32,10 @@ export function hashIdempotencyRequest(request: unknown): string {
  * Three things make this correct under concurrency, all resting on the
  * `@@unique([scope, key])` constraint rather than an application-level check:
  *
- *  1. Claiming the key is a single INSERT. Two racing callers both attempt
- *     it; Postgres lets exactly one through and the loser gets a unique
- *     violation, not a read-then-write race.
+ *  1. Claiming the key is a single INSERT ... ON CONFLICT DO NOTHING. Two
+ *     racing callers both attempt it; Postgres lets exactly one through and
+ *     tells the loser it inserted nothing. Not a read-then-write race, and
+ *     not an exception either — see `claim`.
  *  2. A key already COMPLETED returns the stored result without calling
  *     `fn` again — replaying a mutation is the entire point of idempotency.
  *  3. A key stuck IN_FLIGHT past its lease is reclaimed by a conditional
@@ -70,16 +71,19 @@ export class IdempotencyService {
     requestHash: string,
     leaseMs: number,
   ): Promise<'own' | unknown> {
-    try {
-      await this.prisma.idempotencyRecord.create({
-        data: { scope, key, requestHash, status: 'IN_FLIGHT' },
-      });
-      return 'own';
-    } catch (err) {
-      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
-        throw err;
-      }
-    }
+    // `createMany` + `skipDuplicates` rather than create-then-catch. Both are
+    // a single INSERT and both are equally correct, but this one compiles to
+    // `ON CONFLICT DO NOTHING` and returns a count instead of raising. That
+    // matters because losing this race is not an error — it is the ordinary
+    // outcome of a phone retrying on a bad connection, which is the single
+    // most common thing that happens here. Raising made Prisma's error
+    // listener log an ERROR line per retry, so a normal Saturday evening on a
+    // patchy network looked like an incident.
+    const claimed = await this.prisma.idempotencyRecord.createMany({
+      data: [{ scope, key, requestHash, status: 'IN_FLIGHT' }],
+      skipDuplicates: true,
+    });
+    if (claimed.count === 1) return 'own';
 
     const existing = await this.prisma.idempotencyRecord.findUniqueOrThrow({
       where: { scope_key: { scope, key } },

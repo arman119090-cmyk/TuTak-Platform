@@ -1,5 +1,6 @@
 import { ConsoleLogger, LoggerService, LogLevel } from '@nestjs/common';
 import { requestContext } from './request-context';
+import { activeTraceId } from './tracing';
 
 /**
  * Fields every line carries, whatever produced it. A log aggregator can
@@ -14,6 +15,13 @@ interface LogRecord {
   userId?: string;
   method?: string;
   path?: string;
+  /**
+   * Present only when tracing is switched on. It is what lets an operator
+   * jump from a log line to the trace it came from, and back — without it,
+   * logs and traces are two views of the same incident that cannot be
+   * joined.
+   */
+  traceId?: string;
   stack?: string;
 }
 
@@ -83,6 +91,7 @@ export class StructuredLogger extends ConsoleLogger implements LoggerService {
     }
 
     const ctx = requestContext.get();
+    const traceId = activeTraceId();
     const record: LogRecord = {
       timestamp: new Date().toISOString(),
       level,
@@ -92,6 +101,7 @@ export class StructuredLogger extends ConsoleLogger implements LoggerService {
       ...(ctx?.userId ? { userId: ctx.userId } : {}),
       ...(ctx?.method ? { method: ctx.method } : {}),
       ...(ctx?.path ? { path: ctx.path } : {}),
+      ...(traceId ? { traceId } : {}),
       ...(stack ? { stack } : {}),
     };
 

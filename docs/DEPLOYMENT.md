@@ -67,7 +67,7 @@ second and later instances find nothing to do and exit immediately.
 It calls the Prisma binary directly rather than through pnpm, because a
 container must not need the network to start.
 
-**Before a migration that rewrites data**, take a backup (§6). Prisma will
+**Before a migration that rewrites data**, take a backup (§7). Prisma will
 not roll one back for you.
 
 ---
@@ -102,7 +102,10 @@ BONUS_PENDING_HOURS=                # cooling-off before points become spendable
 BONUS_EXPIRY_MONTHS=
 RATE_LIMIT_TTL_SECONDS=
 RATE_LIMIT_MAX_REQUESTS=
-FEATURE_QR_LEDGER_MIRROR=false      # see §9
+OTEL_EXPORTER_OTLP_ENDPOINT=       # e.g. https://otlp.your-collector.io
+OTEL_EXPORTER_OTLP_HEADERS=        # e.g. api-key=...
+OTEL_SERVICE_NAME=tutak-api
+FEATURE_QR_LEDGER_MIRROR=false      # see §10
 ```
 
 ### Secrets
@@ -115,7 +118,27 @@ are short-lived and clients refresh automatically.
 
 ---
 
-## 5. Health and readiness
+## 5. Tracing
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` and every request produces a span tree
+covering HTTP, Postgres and Redis, with the service name and deployment
+environment attached. Every JSON log line then carries the `traceId`
+alongside the `requestId` it already had, so a log search and a trace viewer
+point at the same incident.
+
+Deliberately not a boot requirement, unlike SMS and push. Those two are how
+a customer receives something and their absence is invisible until someone
+is locked out; missing traces are visible to the operator the first time
+they look. Refusing to serve payments because a telemetry collector is
+unreachable trades a real outage for an observability gap.
+
+Health probes are excluded from tracing — they fire every few seconds
+forever and would bury real requests — as is filesystem instrumentation.
+
+Spans are flushed on SIGTERM, so the requests in flight during a rolling
+deploy are the ones you can still see afterwards.
+
+## 6. Health and readiness
 
 | Endpoint | Meaning |
 |---|---|
@@ -132,7 +155,7 @@ behind the load balancer's own network.
 
 ---
 
-## 6. Backups
+## 7. Backups
 
 Two scripts, and one habit.
 
@@ -174,7 +197,7 @@ dump has been empty for three weeks.
 `BACKUP_RETAIN_DAYS` (default 14) prunes older dumps from the output
 directory.
 
-## 7. First deployment, in order
+## 8. First deployment, in order
 
 1. **Provision** Postgres 16 and Redis 7. Managed instances are the right
    default — the platform's data is worth more than the saving.
@@ -200,7 +223,7 @@ directory.
 
 ---
 
-## 8. Recording money from the acquirer
+## 9. Recording money from the acquirer
 
 Capture credits `PSP_RECEIVABLE` — a claim on the acquirer, not cash. When
 the acquirer actually pays, an operator records it on the admin **Ledger**
@@ -223,7 +246,7 @@ Once settlements are being recorded, `platformBank` can be passed to
 `POST /v1/admin/reconciliation/run` alongside `pspReceivable`, and the
 platform's own bank balance is reconciled like every other account.
 
-## 9. The QR ledger cut-over
+## 10. The QR ledger cut-over
 
 `FEATURE_QR_LEDGER_MIRROR` is off by default and should stay off through the
 first deployment. It makes QR redemptions write double-entry postings
@@ -235,7 +258,7 @@ this system that could lose money quietly.
 
 ---
 
-## 10. Scaling past one instance
+## 11. Scaling past one instance
 
 Bonus-lot promotion and expiry run on in-process `@nestjs/schedule`, guarded
 by a Redis advisory lock so that two instances do not sweep the same lots.
@@ -248,12 +271,17 @@ that, and neither requires a change to the module boundaries.
 
 ---
 
-## 11. What is not covered here
+## 12. What is not covered here
 
 Named rather than omitted:
 
-- **Tracing and alerting.** Structured JSON logs with request correlation
-  exist; OpenTelemetry spans, error tracking and metrics do not.
+- **Alerting.** Traces and structured logs exist and correlate; nothing
+  wakes anybody up. Point the collector at something that pages, and decide
+  what is worth paging for — a reconciliation run that finds drift and a
+  dead-lettered outbox event are the two that mean money is at stake.
+- **Metrics.** Tracing covers latency and errors per request. Business
+  counters — payments per hour, points issued, payout volume — are not
+  exported.
 - **An external security review.** The code has been audited from the inside
   (`docs/AUDIT_*.md`) and hardened accordingly; nobody outside has tried to
   break it.

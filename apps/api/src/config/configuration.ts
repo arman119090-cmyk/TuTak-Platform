@@ -36,6 +36,12 @@ export interface AppConfig {
     endpoint: string;
     accessToken: string;
   };
+  tracing: {
+    endpoint: string;
+    headers: string;
+    serviceName: string;
+    debug: boolean;
+  };
   features: {
     /**
      * Phase 4 of docs/FINANCIAL_CORE_DESIGN.md: mirror QR redemptions into
@@ -102,6 +108,14 @@ export default (): AppConfig => ({
     enabled: process.env.PUSH_ENABLED === 'true',
     endpoint: process.env.PUSH_ENDPOINT ?? 'https://exp.host/--/api/v2/push/send',
     accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
+  },
+  tracing: {
+    // Standard OpenTelemetry variable names, so a collector's own
+    // documentation applies without translation.
+    endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? '',
+    headers: process.env.OTEL_EXPORTER_OTLP_HEADERS ?? '',
+    serviceName: process.env.OTEL_SERVICE_NAME ?? 'tutak-api',
+    debug: process.env.OTEL_DEBUG === 'true',
   },
   features: {
     // Opt-in, and it must stay that way until a full settlement cycle has

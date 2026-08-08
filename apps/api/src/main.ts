@@ -1,4 +1,9 @@
 import 'reflect-metadata';
+// Before every other import. The OpenTelemetry auto instrumentations work by
+// patching modules as they are required, so anything loaded before the SDK
+// starts is never traced — and half-traced is worse than untraced, because
+// the untraced half looks like it is never called.
+import { startTracing, stopTracing } from './common/observability/tracing';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
@@ -10,6 +15,15 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 import { StructuredLogger } from './common/observability/structured-logger';
+
+const tracingEnabled = startTracing({
+  serviceName: process.env.OTEL_SERVICE_NAME ?? 'tutak-api',
+  serviceVersion: process.env.npm_package_version ?? '0.1.0',
+  environment: process.env.NODE_ENV ?? 'development',
+  endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? '',
+  headers: process.env.OTEL_EXPORTER_OTLP_HEADERS ?? '',
+  debug: process.env.OTEL_DEBUG === 'true',
+});
 
 async function bootstrap() {
   // `bufferLogs` holds startup output until the real logger is installed, so
@@ -68,10 +82,23 @@ async function bootstrap() {
     SwaggerModule.setup('docs', app, document);
   }
 
+  // Spans describing whatever was in flight when the process is told to stop
+  // are exactly the ones an operator wants after a crash or a rolling
+  // deploy, and they are the ones lost without an explicit flush.
+  app.enableShutdownHooks();
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      void stopTracing().finally(() => process.exit(0));
+    });
+  }
+
   const port = config.get('port', { infer: true });
   await app.listen(port);
   // eslint-disable-next-line no-console
-  console.log(`TuTak API listening on port ${port}`);
+  console.log(
+    `TuTak API listening on port ${port}` +
+      (tracingEnabled ? ' (tracing on)' : ''),
+  );
 }
 
 // `void` is the explicit acknowledgement that nothing awaits the top-level

@@ -17,6 +17,15 @@ export const PASSWORD = process.env.DEMO_PASSWORD ?? 'TuTakDemo-2026!';
  */
 export const PHONES = {
   admin: '+37400000000',
+  /**
+   * The second administrator.
+   *
+   * Payouts are under a two-person rule: whoever requested one cannot
+   * confirm it. Without a second account the suite cannot exercise the happy
+   * path at all — which is a good sign that the control is real, and the
+   * reason this account exists in the demo seeder.
+   */
+  approver: '+37400000001',
   partnerOwner: '+37477200001',
   /** QR loop. */
   customer: '+37477190001',

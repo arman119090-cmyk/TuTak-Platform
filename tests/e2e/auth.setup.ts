@@ -6,6 +6,7 @@ import {
   ADMIN_STATE,
   PARTNER,
   PARTNER_STATE,
+  PASSWORD,
   PHONES,
   TOKENS_FILE,
   apiLogin,
@@ -96,6 +97,10 @@ setup('sign in to both dashboards', async ({ browser }) => {
     customers[phone] = await apiLogin(phone, phone.slice(-4));
   }
 
+  // The payout approver never drives a browser — it only ever confirms
+  // transfers over the API — so a plain API login is all it needs.
+  const approverToken = await apiLogin(PHONES.approver, PASSWORD);
+
   writeFileSync(
     TOKENS_FILE,
     JSON.stringify({
@@ -103,6 +108,7 @@ setup('sign in to both dashboards', async ({ browser }) => {
       // login already produced a token for each of these.
       [PHONES.admin]: tokenFrom(ADMIN_STATE, 'tutak-admin-auth'),
       [PHONES.partnerOwner]: tokenFrom(PARTNER_STATE, 'tutak-partner-auth'),
+      [PHONES.approver]: approverToken,
       ...customers,
     }),
   );

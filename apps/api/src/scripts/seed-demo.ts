@@ -310,6 +310,14 @@ async function main() {
   // A second administrator, so the demo can actually exercise the two-person
   // rule on payouts. With one admin the rule is invisible — and a control
   // nobody has seen working is a control nobody trusts when it fires.
+  //
+  // SUPER_ADMIN, not ADMIN: confirming a payout needs PAYOUT_MANAGE, which
+  // is deliberately not granted to ADMIN because wiring money to an external
+  // account is the least reversible action here. The consequence is worth
+  // stating plainly — running with dual control means the business needs
+  // *two* super administrators, or no payout can ever be confirmed. An ADMIN
+  // approver looks like it should work and is refused by the permission
+  // guard before the two-person rule is even reached.
   const approver = await prisma.user.upsert({
     where: { phone: '+37400000001' },
     update: { passwordHash, mustChangePassword: false },
@@ -323,7 +331,7 @@ async function main() {
       passwordChangedAt: new Date(),
     },
   });
-  await grantRole(approver.id, RoleName.ADMIN);
+  await grantRole(approver.id, RoleName.SUPER_ADMIN);
   log.log('Second administrator created for payout approval.');
 
   // ── QR payments: the loyalty loop ──────────────────────────────────────

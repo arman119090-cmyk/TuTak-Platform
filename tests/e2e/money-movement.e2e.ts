@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
   ADMIN,
   ADMIN_STATE,
+  API,
   PARTNER,
   PARTNER_STATE,
   PHONES,
@@ -213,7 +214,18 @@ test.describe('payouts', () => {
     const clearingBefore = await clearingBalance(adminToken);
     expect(clearingBefore).toBeLessThan(0); // credit-normal: in flight
 
-    await api(adminToken, `/payouts/${payout.payoutId}/confirm`, {
+    // The same admin cannot confirm their own request — asserted here rather
+    // than only in the integration suite, because this is the path an actual
+    // person takes and the refusal has to survive the whole stack.
+    const selfConfirm = await fetch(`${API}/payouts/${payout.payoutId}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ bankReference: unique('E2E-SELF') }),
+    });
+    expect(selfConfirm.status).toBe(403);
+
+    const approverToken = await apiLogin(PHONES.approver, 'approver');
+    await api(approverToken, `/payouts/${payout.payoutId}/confirm`, {
       method: 'POST',
       body: { bankReference: unique('E2E-WIRE') },
     });

@@ -216,6 +216,12 @@ export class PayoutEngineService {
     // Enforced here rather than in the controller so a script, a console
     // session or a future endpoint cannot route around it.
     //
+    // Operationally this means the business needs two accounts holding
+    // PAYOUT_MANAGE — in practice two SUPER_ADMINs, since that permission is
+    // deliberately not granted to ADMIN. With one, every payout stays at
+    // REQUESTED forever, which is why the flag exists rather than the rule
+    // being unconditional.
+    //
     // The check is skipped when the payout has no recorded requester —
     // those predate this column or came from a system process, and there is
     // no maker for a checker to differ from. It is not skipped for

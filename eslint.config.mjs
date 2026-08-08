@@ -75,6 +75,9 @@ export default tseslint.config(
     // Command-line tooling: printing progress is the point.
     files: [
       'apps/api/prisma/**/*.ts',
+      // Seeders. They report progress to whoever is watching the terminal;
+      // that output is the whole interface.
+      'apps/api/src/scripts/**/*.ts',
       'tools/**/*.{ts,mjs,js}',
       'scripts/**/*.{ts,mjs,js}',
       'packages/*/scripts/**/*.{ts,mjs,js}',
@@ -82,8 +85,17 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
-    // Build tooling still runs under CommonJS.
-    files: ['**/*.config.js', '**/*.config.cjs', '**/jest.config.js', '**/metro.config.js'],
+    // Build tooling and plain Node scripts still run under CommonJS — the
+    // workspace has no "type": "module", so a bare .js file is CJS and
+    // `require` is the only import that works in it.
+    files: [
+      '**/*.config.js',
+      '**/*.config.cjs',
+      '**/jest.config.js',
+      '**/metro.config.js',
+      'tools/**/*.js',
+      'scripts/**/*.js',
+    ],
     languageOptions: { globals: { ...globals.node }, sourceType: 'commonjs' },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },

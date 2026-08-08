@@ -16,14 +16,43 @@ apps/
 packages/
   shared-types/  TypeScript enums + DTOs shared by every app
   i18n/          hy/ru/en translation resources shared by every app
-docker-compose.yml   Postgres + Redis + the api container itself
+docker-compose.yml   Postgres + Redis + api + both dashboards
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data model, the
 bonus engine's design, module boundaries, and the production-readiness
 roadmap (what's real today vs. what a millions-of-users launch still needs).
 
-## Prerequisites
+## Try it: the whole platform in one command
+
+If you want to *use* the thing rather than develop on it, this needs Docker
+and nothing else — no Node, no pnpm, no PostgreSQL:
+
+```bash
+./scripts/demo-up.sh
+```
+
+It generates secrets, builds the API and both dashboards, brings up
+Postgres and Redis, applies migrations, and seeds a working dataset —
+partners, customers, EV stations, captured card payments, a decline,
+settlements, a partial refund, a confirmed payout and two reconciliation
+runs (one clean, one with drift). Then it prints the URLs and the logins.
+
+The money is seeded by driving the real engines, not by inserting rows, so
+the ledger it produces balances to zero the same way production's would.
+
+- Admin panel — http://localhost:3000
+- Partner dashboard — http://localhost:3001
+- API + Swagger — http://localhost:4000/v1, http://localhost:4000/docs
+
+`./scripts/demo-down.sh` stops it; `--wipe` also drops the database so the
+next start is clean.
+
+**[`docs/TESTING_RU.md`](docs/TESTING_RU.md)** — по-русски: логины, что
+смотреть на каждом экране, как подключить мобильное приложение, что делать
+если что-то не работает.
+
+## Prerequisites (for development)
 
 - Node.js 20+
 - pnpm 10 (`corepack enable` will pick up the pinned version automatically)

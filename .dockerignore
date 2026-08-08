@@ -1,0 +1,36 @@
+# Everything here would either break the image or bloat it.
+#
+# node_modules is the important one: each Dockerfile installs its own inside
+# the image, and copying the host's over the top replaces Linux-correct
+# native binaries (argon2, prisma engines) with whatever the developer's
+# machine built — on macOS that is a broken image, everywhere it is a slow
+# one.
+node_modules
+**/node_modules
+.pnpm-store
+
+# Build outputs are produced inside the image.
+dist
+.next
+out
+.turbo
+**/dist
+**/.next
+**/out
+**/.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Secrets must arrive as environment variables, never baked into a layer.
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+.git
+.github
+docs
+apps/mobile
+tools
+*.log

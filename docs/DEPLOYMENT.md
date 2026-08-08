@@ -138,6 +138,69 @@ forever and would bury real requests — as is filesystem instrumentation.
 Spans are flushed on SIGTERM, so the requests in flight during a rolling
 deploy are the ones you can still see afterwards.
 
+## 5a. Alerts — who gets told when money is at risk
+
+Set `ALERT_WEBHOOK_URL` to a Slack/Mattermost/Discord incoming webhook, or to
+anything that accepts a JSON POST. Three events reach it, and they are the
+three that mean money is at risk while nothing else in the system notices:
+
+| Event | What it means |
+|---|---|
+| `reconciliation.drift` | The ledger disagrees with itself or with a bank statement. Payouts are already blocked for the partners involved. |
+| `outbox.dead-letter` | An event exhausted its retries. Something the platform promised itself it would settle has not settled. |
+| `sweep.failed` | A background job stopped retrying: bonuses are not expiring, sessions are not closing, or nothing is being reconciled. |
+
+The same alert key stays quiet for fifteen minutes after firing. That window
+is measured against the one-minute outbox drain, which would otherwise send
+sixty notifications an hour forever — and the failure mode being avoided is
+not noise but an operator muting the channel, which is worse than no alerting
+because it still looks alive. Suppression state lives in Redis, so three
+replicas noticing the same problem produce one notification.
+
+Like tracing and unlike SMS, a missing webhook does **not** stop the process:
+it warns at startup instead. Refusing to serve payments because a
+notification endpoint is unset would take the platform down at the exact
+moment someone was fixing the webhook.
+
+Test it before you rely on it — post to the URL by hand and confirm the
+message arrives where a human will see it at 3am, not in a channel nobody
+opens.
+
+## 5b. Metrics
+
+`GET /metrics` serves the Prometheus text exposition format, gated on
+`METRICS_TOKEN` as a bearer token. **Unset disables the endpoint** rather
+than opening it: these are the operating figures of the business — revenue
+per hour, outstanding liability, how much is sitting in clearing — and an
+accidentally public metrics endpoint is the classic way that data leaks
+quietly. Generate the token with `openssl rand -hex 32`.
+
+Scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: tutak-api
+    metrics_path: /metrics
+    authorization:
+      credentials: <METRICS_TOKEN>
+    static_configs:
+      - targets: ['api:4000']
+```
+
+The metric worth putting on a wall is `tutak_ledger_imbalance_amd`. Every
+account balance summed must be exactly zero; anything else means money was
+invented or lost. Alert on `!= 0` and treat it as a page, not a ticket.
+
+Also exposed: per-account balances, outbox pending and dead-lettered counts,
+pending payouts and their value, payments and points in the last hour,
+and `tutak_reconciliation_age_seconds` — which reads `-1` when reconciliation
+has never run, so a fresh deployment cannot be mistaken for one that
+reconciled a moment ago.
+
+Everything is derived from the database at scrape time rather than counted in
+the process, because in-process counters reset on deploy and are per-replica:
+two instances would each report half the truth.
+
 ## 6. Health and readiness
 
 | Endpoint | Meaning |
@@ -302,16 +365,12 @@ Two numbers to set deliberately before adding instances, both measured in
 
 Named rather than omitted:
 
-- **Alerting.** Traces and structured logs exist and correlate; nothing
-  wakes anybody up. Point the collector at something that pages, and decide
-  what is worth paging for — a reconciliation run that finds drift, a
-  dead-lettered outbox event, and a failed job in the `sweeps` queue are the
-  three that mean money is at stake. The last one is new: a sweep that throws
-  now leaves a failed job in Redis with its stack trace instead of one log
-  line, which is only an improvement if something is watching for it.
-- **Metrics.** Tracing covers latency and errors per request. Business
-  counters — payments per hour, points issued, payout volume — are not
-  exported.
+- **Paging.** Alerts now reach a webhook (§5a) and metrics are exported
+  (§5b), but nothing escalates: a message in a chat channel at 3am is only as
+  good as whoever is looking at it. Wiring the webhook to an on-call rotation,
+  or alerting on `tutak_ledger_imbalance_amd != 0` in whatever you use to
+  page, is a decision about people rather than code.
+- **Dashboards.** The metrics are exported; no Grafana board ships with them.
 - **An external security review.** The code has been audited from the inside
   (`docs/AUDIT_*.md`) and hardened accordingly; nobody outside has tried to
   break it.

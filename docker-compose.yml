@@ -81,6 +81,8 @@ services:
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
       # A payout must be confirmed by someone other than its requester.
       PAYOUT_DUAL_CONTROL: ${PAYOUT_DUAL_CONTROL:-true}
+      # Bearer token for GET /metrics. Unset leaves the endpoint disabled.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-tutak-api}
       # Recurring work: settlement, bonus promotion and expiry, EV cleanup,

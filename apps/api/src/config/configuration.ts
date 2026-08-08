@@ -52,6 +52,10 @@ export interface AppConfig {
     /** Whether confirming a payout requires someone other than its requester. */
     dualControl: boolean;
   };
+  metrics: {
+    /** Bearer token a Prometheus scraper must present. Empty disables /metrics. */
+    token: string;
+  };
   features: {
     /**
      * Phase 4 of docs/FINANCIAL_CORE_DESIGN.md: mirror QR redemptions into
@@ -134,6 +138,11 @@ export default (): AppConfig => ({
     // JSON POST. Unset in development; production boots without it but warns
     // — see AlertsModule for why it does not refuse.
     webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+  },
+  metrics: {
+    // No default. An unset token disables the endpoint rather than opening
+    // it — these numbers are the operating figures of the business.
+    token: process.env.METRICS_TOKEN ?? '',
   },
   payouts: {
     // On unless explicitly disabled. The safe default for a control that

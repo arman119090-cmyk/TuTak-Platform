@@ -97,3 +97,84 @@ jobs:
 
       - name: Build all applications
         run: pnpm build
+
+  # The demo stack is only a real deliverable if the images actually build.
+  # This job is the proof: it builds all three Dockerfiles the same way
+  # `scripts/demo-up.sh` does. It does not push anything — publishing is
+  # docker-publish.yml's job, and only from the default branch.
+  docker:
+    name: Build the container images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          # Loaded into the daemon under the name Compose derives for
+          # this service, so the boot step below runs these exact
+          # images instead of building them a second time.
+          load: true
+          tags: tutak-api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Admin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: false
+          # Loaded into the daemon under the name Compose derives for
+          # this service, so the boot step below runs these exact
+          # images instead of building them a second time.
+          load: true
+          tags: tutak-admin:latest
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,mode=max,scope=admin
+
+      - name: Partner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/partner/Dockerfile
+          push: false
+          # Loaded into the daemon under the name Compose derives for
+          # this service, so the boot step below runs these exact
+          # images instead of building them a second time.
+          load: true
+          tags: tutak-partner:latest
+          cache-from: type=gha,scope=partner
+          cache-to: type=gha,mode=max,scope=partner
+
+      # Booting the stack is a different failure mode from building it: a
+      # missing runtime dependency, a bad entrypoint or a service that cannot
+      # reach Postgres all pass the build and fail here.
+      - name: Boot the whole stack and seed it
+        run: |
+          cat > .env <<'ENVFILE'
+          JWT_ACCESS_SECRET=ci-access-secret-not-used-outside-continuous-integration
+          JWT_REFRESH_SECRET=ci-refresh-secret-not-used-outside-continuous-integration
+          DEMO_PASSWORD=CiDemoPassword-2026!
+          ENVFILE
+          docker compose up -d
+          for i in $(seq 1 90); do
+            [ "$(docker compose ps --format '{{.Health}}' api | head -1)" = healthy ] && break
+            [ "$i" = 90 ] && { docker compose logs; exit 1; }
+            sleep 2
+          done
+          docker compose exec -T -e SEED_ADMIN_PASSWORD='CiDemoPassword-2026!' \
+            api node dist/scripts/seed-baseline.js
+          docker compose exec -T -e TUTAK_DEMO=1 -e DEMO_PASSWORD='CiDemoPassword-2026!' \
+            api node dist/scripts/seed-demo.js
+          curl -fsS http://localhost:4000/health/ready
+          curl -fsS -o /dev/null http://localhost:3000/login
+          curl -fsS -o /dev/null http://localhost:3001/login
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose logs --tail 100

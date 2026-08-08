@@ -30,6 +30,9 @@ services:
       retries: 10
 
   api:
+    # Named explicitly rather than left to Compose's project-plus-service
+    # derivation, so CI can build the image once and boot that exact image.
+    image: tutak-api:latest
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -80,6 +83,7 @@ services:
   # that value at build time, which is why it is a build argument.
 
   admin:
+    image: tutak-admin:latest
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
@@ -105,6 +109,7 @@ services:
       start_period: 20s
 
   partner:
+    image: tutak-partner:latest
     build:
       context: .
       dockerfile: apps/partner/Dockerfile

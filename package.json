@@ -2,7 +2,7 @@
   "name": "tutak-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "TuTak \u2014 loyalty ecosystem for Armenia (QR payments, bonuses, EV charging, partner network).",
+  "description": "TuTak — loyalty ecosystem for Armenia (QR payments, bonuses, EV charging, partner network).",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20.0.0",
@@ -20,10 +20,14 @@
     "prisma:migrate": "pnpm --filter @tutak/api prisma:migrate",
     "prisma:seed": "pnpm --filter @tutak/api prisma:seed",
     "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "e2e:ui": "playwright test --config tests/e2e/playwright.config.ts --ui"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.20.1",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",

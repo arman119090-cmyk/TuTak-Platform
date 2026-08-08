@@ -56,3 +56,8 @@ tools/preview/mobile/bundle.js
 
 # Redis snapshot, written where redis-server happens to be started
 dump.rdb
+
+# Playwright session state and artifacts from the e2e suite.
+tests/e2e/.auth/
+test-results/
+playwright-report/

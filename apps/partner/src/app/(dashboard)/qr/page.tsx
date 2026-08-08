@@ -113,7 +113,10 @@ export default function QrPage() {
 
               <div className="mx-auto mt-6 max-w-md rounded-tutak-lg bg-canvas p-4 text-left">
                 <div className="mb-1.5 text-[12px] font-medium text-muted">Invoice token</div>
-                <code className="block break-all font-mono text-[12px] leading-relaxed text-ink">
+                <code
+                  data-testid="qr-token"
+                  className="block break-all font-mono text-[12px] leading-relaxed text-ink"
+                >
                   {issued.token}
                 </code>
               </div>

@@ -96,6 +96,23 @@ const CUSTOMERS = [
   { phone: '+37477100004', firstName: 'Narek', lastName: 'Grigoryan', locale: 'hy' },
 ] as const;
 
+/**
+ * Accounts the end-to-end suite owns, and nothing else touches.
+ *
+ * Velocity limiting refuses a customer's ninth transaction in ten minutes,
+ * which is correct and which a test suite reaches quickly if it shares an
+ * account with the seeded demo history. Giving the suite its own accounts —
+ * and one per spec — keeps every run well under the limit without loosening
+ * the rule that a real customer is protected by.
+ */
+const E2E_CUSTOMERS = [
+  { phone: '+37477190001', firstName: 'E2E', lastName: 'One', locale: 'en' },
+  { phone: '+37477190002', firstName: 'E2E', lastName: 'Two', locale: 'en' },
+  { phone: '+37477190003', firstName: 'E2E', lastName: 'Three', locale: 'en' },
+  { phone: '+37477190004', firstName: 'E2E', lastName: 'Four', locale: 'en' },
+  { phone: '+37477190005', firstName: 'E2E', lastName: 'Five', locale: 'en' },
+] as const;
+
 async function main() {
   if (process.env.TUTAK_DEMO !== '1') {
     throw new Error(
@@ -231,6 +248,13 @@ async function main() {
     const user = await createUser(c);
     await grantRole(user.id, RoleName.CUSTOMER);
     customers.push(user);
+  }
+
+  // Created, then deliberately left out of everything below: the suite that
+  // uses them needs their transaction history to be its own.
+  for (const c of E2E_CUSTOMERS) {
+    const user = await createUser(c);
+    await grantRole(user.id, RoleName.CUSTOMER);
   }
 
   // The partner dashboard resolves "my partner" from a partner-scoped role.

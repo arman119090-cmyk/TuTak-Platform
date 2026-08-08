@@ -160,7 +160,17 @@ export default function RefundsPage() {
                     </Td>
                     <Td align="right">
                       {p.status === 'CAPTURED' && remaining > 0 && (
-                        <Button size="sm" variant="secondary" onClick={() => setTarget(p)}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          // Every row's button reads "Refund", so on a busy
+                          // screen a dozen controls share one name. The label
+                          // says which payment this one opens — for a screen
+                          // reader, and for anyone else who has to tell them
+                          // apart.
+                          aria-label={`Refund ${p.user.firstName} ${p.user.lastName}'s ${p.amount} payment`}
+                          onClick={() => setTarget(p)}
+                        >
                           Refund
                         </Button>
                       )}

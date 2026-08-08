@@ -52,6 +52,10 @@ next start is clean.
 смотреть на каждом экране, как подключить мобильное приложение, что делать
 если что-то не работает.
 
+For a real deployment rather than this one, see
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — including the three things the
+application deliberately refuses to start without.
+
 ## Prerequisites (for development)
 
 - Node.js 20+
@@ -80,8 +84,12 @@ pnpm --filter @tutak/partner dev    # http://localhost:3001
 pnpm --filter @tutak/mobile start   # Expo — press i / a, or scan the QR code
 ```
 
-The seeded super-admin logs in with phone `+37400000000` / password
-`ChangeMe123!` — change this immediately in any non-throwaway environment.
+The seeded super-admin logs in with phone `+37400000000` and whatever
+`SEED_ADMIN_PASSWORD` was set to when the seed ran — there is no literal
+default, because one committed here would be published in these
+instructions and never rotated. The account is marked
+`mustChangePassword`, so it reaches login and nothing else until it is
+rotated through `POST /v1/auth/change-password`.
 
 ### Verifying the stack
 
@@ -142,33 +150,28 @@ somewhere reachable.
 
 ## Deploying
 
-There is nowhere the API actually runs in production yet — no cloud account
-exists for this project — but everything short of that is in place:
+**[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** is the runbook: required
+environment, migrations, health probes, backups, first-deploy order, and the
+three things the application deliberately refuses to start without.
 
-- `docker-compose.yml` runs the full stack (Postgres, Redis, and the api
-  container itself, built from `apps/api/Dockerfile`) with health-checked
-  startup ordering. Copy `.env.example` to `.env` at the repo root, fill in
-  the values (JWT secrets, SMS provider — the api container refuses to boot
-  without SMS_ENDPOINT, same as production), then `docker compose up -d`.
-- The api image's entrypoint (`apps/api/docker-entrypoint.sh`) runs
-  `prisma migrate deploy` before starting the process, so a rolling deploy
-  across several instances is safe — the first one to start applies
-  whatever is pending, the rest find nothing to do.
-- `GET /health` (liveness) and `GET /health/ready` (readiness — checks
-  Postgres and Redis) are wired for any orchestrator's probes, and are
-  intentionally outside API versioning (`/health`, not `/v1/health`) so a
-  version bump can never take the health check down with it.
-- `.github/workflows/docker-publish.yml` builds and pushes the api image to
-  GitHub Container Registry (`ghcr.io`) on every push to `main` and on
-  version tags, using only the repo's built-in token — no secrets to
-  configure. The other half of shipping, an actual host to run that image
-  on, is the part only the project owner can provide.
+The short version of what exists:
 
-**Not verified in this repository's sandbox:** the Docker daemon is not
-reachable here (no `/var/run/docker.sock`), so the image build and
-`docker compose up` themselves could not be executed — only reviewed. The
-Dockerfile and compose file are otherwise unchanged from a standard
-multi-stage Node/pnpm setup.
+- `apps/api/Dockerfile` and the two dashboard Dockerfiles build all three
+  images. CI builds them on every commit, boots the whole stack with
+  `docker compose`, seeds it, and drives the dashboards through ten
+  end-to-end scenarios in a browser — so "it builds" and "it runs" are both
+  checked, not assumed.
+- The api entrypoint applies pending migrations before serving, so a rolling
+  deploy across several instances is safe.
+- `GET /health` and `GET /health/ready` are wired for orchestrator probes and
+  sit outside API versioning, so a version bump cannot take the health check
+  down with it.
+- `.github/workflows/docker-publish.yml` pushes the api image to GHCR on
+  every push to the default branch and on version tags, using only the
+  repository's built-in token.
+
+What is missing is a host to run it on and an acquirer to move money through
+— both decisions only the project owner can make.
 
 ## Monorepo scripts
 

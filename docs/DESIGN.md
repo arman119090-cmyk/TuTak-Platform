@@ -6,14 +6,26 @@ the admin panel. All of them render the same tokens from
 TypeScript, the web apps import the generated CSS custom properties. There is
 no second copy of the palette anywhere in the repo.
 
-**Two schemes, one system.** The phone runs the *premium dark* scheme; the
-dashboards run the light one. They share the spacing grid, the type scale, the
-bonus-state semantics and every component contract — what differs is the
-ground and the accent. That split is deliberate: a consumer app opened for
+**Two schemes, one system.** The phone is dark-only. The dashboards ship dark
+to match it and can be switched to light, because a consumer app opened for
 twenty seconds at a checkout counter and a back-office tool someone reads
-spreadsheets in for an hour want opposite things from a background. The
-scheme a surface gets is decided in one place, `tutakTheme` (dark, mobile) vs
-`tutakLightTheme` and the generated CSS (light, web).
+spreadsheets in for an hour genuinely want different things from a
+background — and which one you are doing is not something the code can know.
+
+Both schemes share the spacing grid, the type scale, the bonus-state
+semantics and every component contract; only the ground and the accent
+differ. On the web the switch is `data-theme` on `<html>`, set by a blocking
+inline script in `<head>` before the first paint. That script is not an
+optimisation: React sets the attribute after hydration, which is several
+hundred milliseconds too late, and the white flash before the dark UI arrives
+is the single most common "cheap-looking" tell in a themed web app.
+
+One place where the web scheme deliberately deviates from the phone's: a
+mobile card is a translucent pane blurring what is behind it, so `surface` is
+an alpha colour. The web has no blur, and that same value renders a card
+almost exactly the colour of the page under it — so on the web the canvas
+takes the darkest ground and a card takes the step above. The *relationship*
+is what carries across, not the literal value.
 
 ---
 

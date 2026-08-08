@@ -8,9 +8,15 @@
  */
 
 @theme {
-  --color-brand: var(--tutak-color-brand-600);
-  --color-brand-hover: var(--tutak-color-brand-700);
-  --color-brand-surface: var(--tutak-color-brand-50);
+  /* Semantic aliases, not ramp steps. These three used to point straight at
+   * `--tutak-color-brand-600/700/50`, which are fixed values in both schemes
+   * — so on the dark theme the active nav item and the avatar chip stayed a
+   * pale green pill from the light palette, in an otherwise blue interface.
+   * The semantic names are redefined per scheme, which is the whole reason
+   * they exist. */
+  --color-brand: var(--tutak-primary);
+  --color-brand-hover: var(--tutak-primary-hover);
+  --color-brand-surface: var(--tutak-primary-surface);
 
   --color-available: var(--tutak-available-fill);
   --color-available-text: var(--tutak-available-text);
@@ -35,6 +41,8 @@
   --color-line-strong: var(--tutak-border-strong);
   --color-canvas: var(--tutak-background-subtle);
   --color-surface: var(--tutak-surface);
+  --color-surface-sunken: var(--tutak-surface-sunken);
+  --color-surface-raised: var(--tutak-surface-raised);
 
   --radius-tutak-sm: var(--tutak-radius-sm);
   --radius-tutak-md: var(--tutak-radius-md);

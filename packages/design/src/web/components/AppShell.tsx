@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { cx } from './primitives';
 import { JakoLockup } from './Jako';
+import { ThemeToggle } from '../ThemeToggle';
 
 export interface NavItem {
   href: string;
@@ -82,12 +83,18 @@ export function AppShell({
               {userRole ? <div className="truncate text-[11px] text-faint">{userRole}</div> : null}
             </div>
           </div>
-          <button
-            onClick={onSignOut}
-            className="mt-3 w-full rounded-tutak-md border border-line px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-canvas hover:text-ink"
-          >
-            {signOutLabel}
-          </button>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={onSignOut}
+              className="flex-1 rounded-tutak-md border border-line px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-canvas hover:text-ink"
+            >
+              {signOutLabel}
+            </button>
+            {/* Beside sign-out rather than in a settings page: the reason to
+                switch is "this is uncomfortable to read right now", and a
+                preference you have to go looking for does not get used. */}
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 

@@ -5,6 +5,7 @@
  * `pnpm --filter @tutak/design build:css`.
  */
 import { palette, semantic } from './tokens/color';
+import { premiumGlow, premiumSemantic, premium } from './tokens/premium';
 import { fontFamily, fontSize, fontWeight, letterSpacing, lineHeight } from './tokens/typography';
 import { elevation, layout, radius, space } from './tokens/layout';
 import { duration, easing } from './tokens/motion';
@@ -59,5 +60,45 @@ export function buildCssVariables(): string {
     lines.push(`  --tutak-ease-${kebab(name)}: ${value};`);
   }
 
-  return `:root {\n${lines.join('\n')}\n}\n`;
+  // ── The dark scheme, as an override block ───────────────────────────────
+  //
+  // Only the semantic aliases are redefined. Ramps, spacing, type and radii
+  // are the same in both schemes, so a component that reads
+  // `var(--tutak-surface)` changes appearance without changing markup, and
+  // there is exactly one place where a colour's meaning is decided.
+  //
+  // Scoped to `[data-theme='dark']` rather than `prefers-color-scheme`: the
+  // dashboards ship dark by default to match the app, and someone reading
+  // tables for an hour can switch. Following the OS instead would mean the
+  // product's own look depended on a setting made for an unrelated reason.
+  const dark: string[] = [];
+  for (const [name, value] of Object.entries(premiumSemantic)) {
+    dark.push(`  --tutak-${kebab(name)}: ${value};`);
+  }
+  // ── Where the web scheme deviates from the phone's ─────────────────────
+  //
+  // On mobile a card is a translucent pane blurring the ground behind it, so
+  // `surface` is an alpha colour and `backgroundSubtle` is a lifted panel.
+  // The web has no blur, and those same values produce a card almost exactly
+  // the colour of the page it sits on. The relationship is what matters, not
+  // the literal values: the canvas takes the darkest ground and a card takes
+  // the step above it, which is the same visual hierarchy arrived at by the
+  // means available.
+  dark.push(`  --tutak-background-subtle: ${premium.background.base};`);
+  dark.push(`  --tutak-surface: ${premium.background.secondary};`);
+  dark.push(`  --tutak-surface-raised: ${premium.background.tertiary};`);
+  dark.push(`  --tutak-glass-background: ${premium.glass.background};`);
+  dark.push(`  --tutak-glass-border: ${premium.glass.border};`);
+  dark.push(`  --tutak-gradient-primary: linear-gradient(135deg, ${premium.gradients.primary[0]}, ${premium.gradients.primary[1]});`);
+  // Depth on a near-black ground is a blue glow, not a grey shadow — there is
+  // nothing darker to cast one onto.
+  dark.push(`  --tutak-shadow-sm: ${premiumGlow.sm.web};`);
+  dark.push(`  --tutak-shadow-md: ${premiumGlow.md.web};`);
+  dark.push(`  --tutak-shadow-lg: ${premiumGlow.lg.web};`);
+  dark.push(`  color-scheme: dark;`);
+
+  return (
+    `:root {\n${lines.join('\n')}\n  color-scheme: light;\n}\n\n` +
+    `:root[data-theme='dark'] {\n${dark.join('\n')}\n}\n`
+  );
 }

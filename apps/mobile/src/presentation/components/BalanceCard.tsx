@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { JakoWatermark } from './Jako';
@@ -16,30 +17,38 @@ interface Props {
 /**
  * The hero of the app.
  *
- * Deep brand green, edge-to-edge, with the available balance set very large
- * and everything else deliberately quiet — the one number a user opens the
- * app to see. Jako sits behind it as a large, cropped, 7%-opacity
- * silhouette: present enough to make the card unmistakably TuTak, faint
- * enough that it never competes with the balance. That restraint is the
- * whole point of the brand element.
+ * The blue→violet gradient, edge-to-edge, with the available balance set
+ * very large and everything else deliberately quiet — the one number a user
+ * opens the app to see. It is the only full-bleed gradient in the app; the
+ * primary button borrows the same ramp at a fraction of the area, which is
+ * what ties the screen together without two things competing to be the
+ * brightest.
+ *
+ * Jako sits behind it as a large, cropped, 10%-opacity silhouette: present
+ * enough to make the card unmistakably TuTak, faint enough that it never
+ * competes with the balance. The opacity is up from 7% because the mark now
+ * sits on saturated blue rather than flat green, where white loses contrast.
  */
 export function BalanceCard({ available, pending, reserved, loading }: Props) {
-  const { color, space, radius, text, palette } = useTheme();
+  const { color, space, radius, text, gradients, glow } = useTheme();
   const { t } = useTranslation();
 
   return (
-    <View
+    <LinearGradient
+      colors={[...gradients.primary]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
       style={[
         styles.card,
+        glow.md.native,
         {
-          backgroundColor: palette.brand[600],
           borderRadius: radius['2xl'],
           padding: space[6],
         },
       ]}
     >
       <View style={styles.watermark} pointerEvents="none">
-        <JakoWatermark size={260} color={color.textInverse} opacity={0.07} />
+        <JakoWatermark size={260} color={color.textInverse} opacity={0.1} />
       </View>
 
       <Text style={[text.caption, { color: 'rgba(255,255,255,0.72)' }]}>
@@ -68,7 +77,7 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
           reserved={reserved ?? 0}
         />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 

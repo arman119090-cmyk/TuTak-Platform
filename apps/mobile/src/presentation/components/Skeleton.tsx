@@ -5,6 +5,11 @@ import { useTheme } from '../../app/theme/ThemeProvider';
 /**
  * Loading placeholders rather than spinners: the layout never jumps when
  * data lands, which is most of what makes an app feel fast.
+ *
+ * The placeholder is a wash of white, not the sunken surface colour the
+ * light theme used. On #0A0A0F a "sunken" panel is within a couple of
+ * percent of the background — the skeleton was there, and invisible, which
+ * is the same as having no loading state at all.
  */
 export function Skeleton({
   width = '100%',
@@ -15,7 +20,7 @@ export function Skeleton({
   height?: number;
   style?: ViewStyle;
 }) {
-  const { color, radius } = useTheme();
+  const { glass, radius } = useTheme();
   const pulse = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
@@ -32,7 +37,7 @@ export function Skeleton({
   return (
     <Animated.View
       style={[
-        { width, height, backgroundColor: color.surfaceSunken, borderRadius: radius.sm, opacity: pulse },
+        { width, height, backgroundColor: glass.light, borderRadius: radius.sm, opacity: pulse },
         style,
       ]}
     />

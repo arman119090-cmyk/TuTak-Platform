@@ -6,14 +6,25 @@ the admin panel. All of them render the same tokens from
 TypeScript, the web apps import the generated CSS custom properties. There is
 no second copy of the palette anywhere in the repo.
 
+**Two schemes, one system.** The phone runs the *premium dark* scheme; the
+dashboards run the light one. They share the spacing grid, the type scale, the
+bonus-state semantics and every component contract — what differs is the
+ground and the accent. That split is deliberate: a consumer app opened for
+twenty seconds at a checkout counter and a back-office tool someone reads
+spreadsheets in for an hour want opposite things from a background. The
+scheme a surface gets is decided in one place, `tutakTheme` (dark, mobile) vs
+`tutakLightTheme` and the generated CSS (light, web).
+
 ---
 
 ## Principles
 
-**1. White is the product.**
-Surfaces are white or near-white. Colour is spent only where it carries
-meaning, never for decoration. If you are reaching for a tint to make
-something "look designed", the layout is what needs fixing.
+**1. Colour is spent only where it carries meaning.**
+On the dashboards that means white surfaces with tint reserved for state. On
+the phone it means a near-black ground where the single blue→violet gradient
+marks the one thing you are meant to act on. Both follow the same rule from
+opposite ends: if you are reaching for colour to make something "look
+designed", the layout is what needs fixing.
 
 **2. The three bonus states are the brand.**
 Green = available, amber = pending, blue = reserved. These hues are reserved
@@ -41,6 +52,42 @@ information — you should see value travel between states.
 
 ## Colour
 
+### The phone: premium dark
+
+Defined in [`tokens/premium.ts`](../packages/design/src/tokens/premium.ts).
+
+| Role | Token | Hex |
+|---|---|---|
+| Ground | `premium.background.base` | `#0A0A0F` |
+| Raised surface | `premium.background.tertiary` | `#1C1C24` |
+| Card fill | `premium.card.background` | `rgba(20,20,26,0.85)` |
+| Glass fill | `glass.background` | `rgba(255,255,255,0.05)` |
+| Glass edge | `glass.border` | `rgba(255,255,255,0.10)` |
+| Primary | `premium.brand.primary` | `#5B8CFF` |
+| Gradient | `gradients.primary` | `#5B8CFF → #A05BFF` |
+| Warm gradient | `gradients.secondary` | `#FF6B6B → #FFB347` |
+| Primary text | `color.textPrimary` | `#FFFFFF` |
+| Secondary text | `color.textSecondary` | `#8E8E93` |
+
+Three rules make it hold together:
+
+- **Depth is a glow, not a shadow.** There is nothing darker than `#0A0A0F`
+  to cast a shadow onto, so elevation is blue light spilling outward
+  (`glow.sm/md/lg`) rather than grey pooling underneath.
+- **Glass needs an edge.** A blur without its 10%-white hairline is a smudge.
+  Every pane gets both.
+- **The gradient means "act here".** The balance card wears it full-bleed,
+  the primary button wears it, the focused pay tab wears it. Nothing else
+  does — a second gradient competing for attention is a third of the reason
+  dark UIs end up looking cheap.
+
+Both the blur and the glass fill are the same colour on Android, where the
+blur is replaced by a flat translucent panel: `expo-blur`'s Android path
+repaints every frame and a scrolling list of cards visibly drops frames,
+which a user notices and the blur they would not.
+
+### The dashboards: light
+
 Full ramps (25→900) live in
 [`tokens/color.ts`](../packages/design/src/tokens/color.ts). Use 500/600 for
 fills and icons, **700+ for text on white** (500-level hues do not reach
@@ -60,8 +107,17 @@ fills and icons, **700+ for text on white** (500-level hues do not reach
 | Border | `neutral.200` | `#E4E7EC` |
 
 Red (`danger`) is for destructive actions and failures only. It is never a
-bonus state — which is also why Jako's tail is brand green rather than the
-species' real red.
+bonus state — which is also why Jako's tail carries the brand accent rather
+than the species' real red.
+
+### Bonus states across both schemes
+
+The three states keep their identity in both — green available, amber
+pending, blue reserved — but the relationships invert on dark. `text` becomes
+*lighter* than `fill`, and `surface` is a 12%-alpha wash of the hue with a
+28%-alpha border rather than a pale solid tint: a solid light panel would
+punch a hole in a dark screen, and a wash without a border dissolves into the
+card behind it.
 
 Screens reference **semantic aliases** (`color.availableText`,
 `color.textSecondary`) rather than ramp steps, so meaning stays consistent and
@@ -155,6 +211,18 @@ sees of their own wallet. That is the point of running one system.
 `Screen` · `Surface` · `Button` · `TextField` · `ListRow` · `StatePill` ·
 `BonusComposition` · `BalanceCard` · `QuickAction` · `SectionHeader` ·
 `EmptyState` · `Skeleton` · `Jako`
+
+The dark scheme changed how these look, not what they are: `Surface` became a
+glass pane, `Button`'s primary variant took the gradient, `TextField` gained a
+focus glow. Names, props and behaviour are unchanged, which is why re-skinning
+the entire app touched no screen logic and cost no tests.
+
+One exception is worth knowing about. **The QR code on `MyQrScreen` does not
+follow the theme.** Its modules are hardcoded near-black on a hardcoded white
+plate, because a QR symbol is specified dark-on-light and plenty of scanners —
+including the cheap merchant handhelds that will be pointed at this screen —
+refuse an inverted one. Themed, it would have been a beautiful code that does
+not scan, failing as a broken payment rather than a broken palette.
 
 **Web** (`packages/design/src/web`)
 `AppShell` · `AuthShell` · `Surface` · `Button` · `Field`/`Input`/`Select`/

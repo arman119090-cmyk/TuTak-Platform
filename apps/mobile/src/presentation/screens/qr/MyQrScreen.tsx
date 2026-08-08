@@ -21,9 +21,19 @@ import { formatPoints } from '../../utils/format';
  * separate decision from design. The layout, sizing and quiet zone are all
  * built to real QR proportions so dropping in a true encoder later is a
  * one-component swap with no visual change.
+ *
+ * The modules are hardcoded near-black on a hardcoded white panel, and they
+ * must stay that way whatever the theme does. A QR symbol is specified as
+ * dark-on-light; plenty of scanners — including cheap merchant handhelds,
+ * which is exactly what will be pointed at this screen — refuse an inverted
+ * one. Following the dark theme here would have produced a beautiful code
+ * that does not scan, and the failure would look like a broken payment
+ * rather than a broken palette.
  */
+const QR_DARK = '#0A0D14';
+const QR_LIGHT = '#FFFFFF';
+
 function TokenMatrix({ token, size = 240 }: { token: string; size?: number }) {
-  const { color } = useTheme();
   const cells = 21; // QR v1 module count, so the density looks right
   const cell = size / cells;
 
@@ -68,7 +78,7 @@ function TokenMatrix({ token, size = 240 }: { token: string; size?: number }) {
             width={cell}
             height={cell}
             rx={cell * 0.28}
-            fill={color.textPrimary}
+            fill={QR_DARK}
           />
         );
       })}
@@ -105,27 +115,36 @@ export function MyQrScreen() {
   return (
     <Screen title={t('qr.myQr')} subtitle={t('qr.scanToPay')}>
       <Surface style={styles.card}>
-        <View style={[styles.matrixWrap, { backgroundColor: color.background, borderRadius: radius.lg }]}>
-          {isLoading || !qr ? (
+        {/* The white plate appears only when there is a code to put on it.
+            It is the symbol's quiet zone, not a decorative frame — so
+            loading and expired states stay on the dark card, where the
+            skeleton and the retry button are legible. A white plate holding
+            white-on-white content was the bug this avoids. */}
+        {isLoading || !qr ? (
+          <View style={styles.matrixWrap}>
             <Skeleton width={240} height={240} style={{ borderRadius: radius.lg }} />
-          ) : expired ? (
-            <View style={[styles.expired, { gap: space[4] }]}>
-              <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
-                {t('qr.expiredMessage')}
-              </Text>
-              <Button
-                label={t('common.retry')}
-                onPress={() => refetch()}
-                variant="secondary"
-                size="md"
-                loading={isRefetching}
-                fullWidth={false}
-              />
-            </View>
-          ) : (
+          </View>
+        ) : expired ? (
+          <View style={[styles.expired, { gap: space[4] }]}>
+            <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
+              {t('qr.expiredMessage')}
+            </Text>
+            <Button
+              label={t('common.retry')}
+              onPress={() => refetch()}
+              variant="secondary"
+              size="md"
+              loading={isRefetching}
+              fullWidth={false}
+            />
+          </View>
+        ) : (
+          <View
+            style={[styles.matrixWrap, { backgroundColor: QR_LIGHT, borderRadius: radius.lg }]}
+          >
             <TokenMatrix token={qr.token} />
-          )}
-        </View>
+          </View>
+        )}
 
         {qr && !expired && secondsLeft !== null ? (
           <View

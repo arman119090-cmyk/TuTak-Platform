@@ -100,6 +100,13 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
+    // Preview-harness stubs stand in for native modules inside a browser, so
+    // they are ES modules with browser globals — unlike the CommonJS Node
+    // scripts the rule above covers.
+    files: ['tools/preview/mobile/stubs/**/*.{js,jsx}'],
+    languageOptions: { globals: { ...globals.browser }, sourceType: 'module' },
+  },
+  {
     files: ['apps/api/**/*.spec.ts', 'apps/api/test/**/*.ts'],
     languageOptions: { globals: { ...globals.jest } },
     rules: {

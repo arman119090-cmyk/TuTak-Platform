@@ -23,6 +23,7 @@
     "@tutak/shared-types": "workspace:*",
     "axios": "^1.19.0",
     "expo": "~57.0.10",
+    "expo-blur": "^57.0.2",
     "expo-camera": "~57.0.3",
     "expo-constants": "~57.0.9",
     "expo-device": "^57.0.1",

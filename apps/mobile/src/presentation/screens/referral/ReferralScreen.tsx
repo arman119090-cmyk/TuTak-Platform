@@ -1,5 +1,6 @@
 import React from 'react';
 import { Share, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +18,7 @@ import { formatDate, formatPoints } from '../../utils/format';
 
 export function ReferralScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, palette } = useTheme();
+  const { color, space, text, radius, gradients, glow } = useTheme();
 
   const { data: code } = useQuery({ queryKey: ['referral-code'], queryFn: referralApi.getMyCode });
   const { data: invites } = useQuery({
@@ -36,11 +37,19 @@ export function ReferralScreen() {
 
   return (
     <Screen title={t('referral.inviteFriends')} subtitle={t('referral.subtitle')}>
-      {/* The code is the point of the screen, so it gets the brand surface. */}
-      <View
+      {/* The code is the point of the screen, so it gets a full-bleed
+          gradient — the warm one, not the primary blue→violet. Two cards
+          wearing the identity gradient would each dilute the other, and the
+          balance card owns it. Warm also happens to say "reward", which is
+          what this screen is asking for. */}
+      <LinearGradient
+        colors={[...gradients.secondary]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={[
           styles.codeCard,
-          { backgroundColor: palette.brand[600], borderRadius: radius['2xl'], padding: space[6] },
+          glow.sm.native,
+          { borderRadius: radius['2xl'], padding: space[6] },
         ]}
       >
         <View style={styles.watermark} pointerEvents="none">
@@ -64,10 +73,10 @@ export function ReferralScreen() {
             label={t('referral.shareCode')}
             onPress={handleShare}
             variant="secondary"
-            icon={<Ionicons name="share-outline" size={18} color={color.primary} />}
+            icon={<Ionicons name="share-outline" size={18} color={color.textPrimary} />}
           />
         </View>
-      </View>
+      </LinearGradient>
 
       <View style={[styles.stats, { marginTop: space[5], gap: space[3] }]}>
         <Surface style={styles.flex}>

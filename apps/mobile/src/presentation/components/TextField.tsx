@@ -11,14 +11,20 @@ interface Props extends TextInputProps {
 }
 
 /**
- * Focus is signalled by a brand-green border and a soft ring rather than a
- * colour flood, so the field stays quiet until the user is actually in it.
+ * Focus is signalled by the brand blue arriving on the border and a soft
+ * glow behind it, rather than by a colour flood — the field stays quiet
+ * until the user is actually in it.
+ *
+ * The resting fill is a 5%-white wash rather than a solid panel. On a dark
+ * UI a field filled with a lighter grey reads as *disabled*, because that is
+ * what a greyed control looks like everywhere else; a barely-lit well reads
+ * as empty and waiting, which is what it is.
  */
 export function TextField({ label, error, hint, prefix, style, ...rest }: Props) {
-  const { color, space, radius, text } = useTheme();
+  const { color, space, radius, text, glass, premium } = useTheme();
   const [focused, setFocused] = useState(false);
 
-  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : color.border;
+  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : glass.border;
 
   return (
     <View style={{ marginBottom: space[4] }}>
@@ -30,14 +36,16 @@ export function TextField({ label, error, hint, prefix, style, ...rest }: Props)
         style={[
           styles.field,
           {
-            backgroundColor: color.surface,
+            backgroundColor: focused ? glass.light : glass.background,
             borderColor,
-            borderRadius: radius.lg,
+            borderRadius: radius.md,
             paddingHorizontal: space[4],
             gap: space[1],
           },
-          focused && !error ? styles.ringBrand : null,
-          error ? styles.ringDanger : null,
+          focused && !error
+            ? { shadowColor: premium.brand.primary, ...styles.ring }
+            : null,
+          error ? { shadowColor: color.dangerFill, ...styles.ring } : null,
         ]}
       >
         {prefix ? (
@@ -45,6 +53,9 @@ export function TextField({ label, error, hint, prefix, style, ...rest }: Props)
         ) : null}
         <TextInput
           placeholderTextColor={color.textTertiary}
+          // Without this the OS paints a black caret on a black field, and
+          // the user cannot see where they are typing.
+          selectionColor={premium.brand.light}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={[styles.input, text.body, { color: color.textPrimary }, style]}
@@ -68,16 +79,10 @@ export function TextField({ label, error, hint, prefix, style, ...rest }: Props)
 const styles = StyleSheet.create({
   field: { flexDirection: 'row', alignItems: 'center', height: 54, borderWidth: 1 },
   input: { flex: 1, height: '100%' },
-  ringBrand: {
-    shadowColor: '#0B5D3B',
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
+  ring: {
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 0 },
-  },
-  ringDanger: {
-    shadowColor: '#F04438',
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
 });

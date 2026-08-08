@@ -20,13 +20,17 @@ export function EmptyState({
   actionLabel?: string;
   onAction?: () => void;
 }) {
-  const { color, space, text } = useTheme();
+  const { color, space, text, premium } = useTheme();
 
   return (
     <View style={[styles.wrap, { paddingVertical: space[10], gap: space[3] }]}>
+      {/* Dimmed one step from the mark's normal plumage, not two. The
+          border tokens this used to reach for are 8-10% white — a bird
+          nobody can see — and the tertiary/muted pair was barely better.
+          An empty state should be quiet, not empty of its own illustration. */}
       <Jako
         size={56}
-        colors={{ body: color.borderStrong, crown: color.border, brand: color.primarySurface }}
+        colors={{ body: color.textSecondary, crown: color.textTertiary, brand: premium.brand.dark }}
       />
       <Text style={[text.headline, { color: color.textPrimary, marginTop: space[2] }]}>
         {title}

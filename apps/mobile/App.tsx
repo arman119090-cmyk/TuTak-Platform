@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
@@ -19,11 +19,18 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-/** Navigation's own chrome recoloured to the TuTak palette. */
+/**
+ * Navigation's own chrome recoloured to the TuTak palette.
+ *
+ * Built on `DarkTheme` rather than `DefaultTheme` because the base theme is
+ * what shows through in the places this object does not reach — the push and
+ * pop transition underlay between two screens, most visibly. On the light
+ * base that gap flashed white on every navigation.
+ */
 const navigationTheme = {
-  ...DefaultTheme,
+  ...DarkTheme,
   colors: {
-    ...DefaultTheme.colors,
+    ...DarkTheme.colors,
     primary: tutakTheme.color.primary,
     background: tutakTheme.color.background,
     card: tutakTheme.color.background,
@@ -52,7 +59,7 @@ function Root() {
 
   return (
     <NavigationContainer theme={navigationTheme}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       {user ? <RootNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );

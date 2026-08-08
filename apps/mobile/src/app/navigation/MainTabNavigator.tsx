@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -24,7 +25,7 @@ const ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap, key
 
 export function MainTabNavigator() {
   const { t } = useTranslation();
-  const { color, text, layout } = useTheme();
+  const { color, text, layout, glass } = useTheme();
 
   return (
     <Tab.Navigator
@@ -33,8 +34,11 @@ export function MainTabNavigator() {
         tabBarActiveTintColor: color.primary,
         tabBarInactiveTintColor: color.textTertiary,
         tabBarStyle: {
-          backgroundColor: color.background,
-          borderTopColor: color.border,
+          // Slightly lifted off the ground rather than the same black, so
+          // the bar reads as a surface the content scrolls beneath instead
+          // of as the end of the screen.
+          backgroundColor: color.backgroundSubtle,
+          borderTopColor: glass.border,
           borderTopWidth: StyleSheet.hairlineWidth,
           height: layout.tabBarHeight,
           paddingTop: 8,
@@ -70,18 +74,29 @@ export function MainTabNavigator() {
 }
 
 function PayTabIcon({ focused }: { focused: boolean }) {
-  const { color, radius } = useTheme();
+  const { color, radius, gradients, glow } = useTheme();
+
+  // Focused, it wears the identity gradient and its glow — the only place in
+  // the tab bar that does, which is how the app's primary verb stays
+  // findable without making the icon bigger than its neighbours.
+  if (focused) {
+    return (
+      <LinearGradient
+        colors={[...gradients.primary]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.payChip, glow.sm.native, { borderRadius: radius.md }]}
+      >
+        <Ionicons name="qr-code" size={18} color={color.textInverse} />
+      </LinearGradient>
+    );
+  }
+
   return (
     <View
-      style={[
-        styles.payChip,
-        {
-          backgroundColor: focused ? color.primary : color.primarySurface,
-          borderRadius: radius.md,
-        },
-      ]}
+      style={[styles.payChip, { backgroundColor: color.primarySurface, borderRadius: radius.md }]}
     >
-      <Ionicons name="qr-code" size={18} color={focused ? color.textInverse : color.primary} />
+      <Ionicons name="qr-code" size={18} color={color.primary} />
     </View>
   );
 }

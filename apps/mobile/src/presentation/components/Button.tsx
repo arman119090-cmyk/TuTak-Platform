@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
-import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../app/theme/ThemeProvider';
 
 type Variant = 'primary' | 'secondary' | 'tertiary' | 'destructive';
@@ -17,9 +18,15 @@ interface Props {
 }
 
 /**
- * Buttons press *inward* (scale 0.97) rather than changing colour on touch.
+ * Buttons press *inward* (scale 0.96) rather than changing colour on touch.
  * It reads as physical, matches the platform feel users already know, and
- * avoids introducing a second green.
+ * leaves the gradient undisturbed — a gradient that shifts on press looks
+ * like a rendering glitch rather than a response.
+ *
+ * Only `primary` wears the blue→violet gradient, and there is at most one
+ * primary button on a screen. That is the whole discipline of this palette:
+ * the gradient means "this is the action", so the moment a second one
+ * appears it stops meaning anything.
  */
 export function Button({
   label,
@@ -31,7 +38,7 @@ export function Button({
   icon,
   fullWidth = true,
 }: Props) {
-  const { color, space, radius, text, motion } = useTheme();
+  const { color, space, radius, text, motion, glass, gradients, glow } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
 
   const press = (to: number) =>
@@ -44,48 +51,83 @@ export function Button({
   const height = size === 'lg' ? 54 : size === 'md' ? 46 : 38;
 
   const surface: Record<Variant, string> = {
-    primary: color.primary,
-    secondary: color.primarySurface,
+    primary: 'transparent', // painted by the gradient below
+    secondary: glass.light,
     tertiary: 'transparent',
     destructive: color.dangerSurface,
   };
   const foreground: Record<Variant, string> = {
     primary: color.textInverse,
-    secondary: color.primary,
-    tertiary: color.primary,
+    secondary: color.textPrimary,
+    tertiary: color.textBrand,
     destructive: color.dangerText,
+  };
+  const borderColor: Record<Variant, string> = {
+    primary: 'transparent',
+    secondary: glass.border,
+    tertiary: 'transparent',
+    destructive: 'rgba(255, 59, 48, 0.28)',
   };
 
   const isDisabled = disabled || loading;
 
+  const body = (
+    <>
+      {loading ? (
+        <ActivityIndicator color={foreground[variant]} />
+      ) : (
+        <View style={[styles.content, { gap: space[2] }]}>
+          {icon}
+          <Text style={[text.headline, { color: foreground[variant] }]}>{label}</Text>
+        </View>
+      )}
+    </>
+  );
+
+  const shape: ViewStyle = {
+    height,
+    borderRadius: radius.md,
+    paddingHorizontal: space[5],
+  };
+
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, fullWidth && styles.full]}>
+    <Animated.View
+      style={[
+        { transform: [{ scale }], borderRadius: radius.md },
+        // The glow belongs to the wrapper, not the gradient: a shadow on a
+        // view with `overflow: hidden` is clipped away on Android.
+        variant === 'primary' && !isDisabled ? glow.md.native : null,
+        fullWidth && styles.full,
+      ]}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
         onPress={onPress}
         disabled={isDisabled}
-        onPressIn={() => press(0.97)}
+        onPressIn={() => press(0.96)}
         onPressOut={() => press(1)}
         style={[
           styles.base,
+          shape,
           {
-            height,
             backgroundColor: surface[variant],
-            borderRadius: radius.lg,
-            paddingHorizontal: space[5],
+            borderColor: borderColor[variant],
+            borderWidth: variant === 'secondary' || variant === 'destructive' ? 1 : 0,
             opacity: isDisabled ? 0.4 : 1,
+            overflow: 'hidden',
           },
         ]}
       >
-        {loading ? (
-          <ActivityIndicator color={foreground[variant]} />
-        ) : (
-          <View style={[styles.content, { gap: space[2] }]}>
-            {icon}
-            <Text style={[text.headline, { color: foreground[variant] }]}>{label}</Text>
-          </View>
-        )}
+        {variant === 'primary' ? (
+          <LinearGradient
+            colors={[...gradients.primary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[StyleSheet.absoluteFill, styles.base]}
+          />
+        ) : null}
+        {body}
       </Pressable>
     </Animated.View>
   );

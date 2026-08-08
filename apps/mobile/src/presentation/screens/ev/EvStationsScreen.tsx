@@ -30,7 +30,7 @@ function StationCard({
   startingConnectorId: string | null;
   disabled: boolean;
 }) {
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text, radius, glass } = useTheme();
   const { t } = useTranslation();
 
   const free = station.connectors.filter((c) => c.status === 'AVAILABLE').length;
@@ -95,8 +95,15 @@ function StationCard({
               style={({ pressed }) => [
                 styles.connector,
                 {
-                  borderColor: startable ? color.availableFill : color.border,
-                  backgroundColor: startable && pressed ? color.availableSurface : 'transparent',
+                  // Neutral glass, not a green outline. Green is this
+                  // product's "available" state and it belongs on the status
+                  // dot and the free-connectors pill — spending it on every
+                  // border as well turned the whole screen green and made the
+                  // charging tab look like a different app from the rest.
+                  // The bay's availability is still unmissable: an occupied
+                  // one is dimmed and inert.
+                  borderColor: startable ? glass.border : color.border,
+                  backgroundColor: startable && pressed ? glass.light : 'transparent',
                   opacity: startable || starting ? 1 : 0.55,
                   borderRadius: radius.md,
                   paddingHorizontal: space[3],
@@ -106,7 +113,7 @@ function StationCard({
               ]}
             >
               {starting ? (
-                <ActivityIndicator size="small" color={color.availableText} />
+                <ActivityIndicator size="small" color={color.primary} />
               ) : (
                 <View style={[styles.statusDot, { backgroundColor: dotFor(c.status, color) }]} />
               )}
@@ -116,8 +123,10 @@ function StationCard({
               <Text style={[text.caption, { color: color.textTertiary }]}>
                 {Number(c.powerKw)} kW · {formatAmd(c.pricePerKwh)}
               </Text>
+              {/* The start control wears the brand blue: it is an action,
+                  not a state. */}
               {startable ? (
-                <Ionicons name="play-circle" size={16} color={color.availableText} />
+                <Ionicons name="play-circle" size={16} color={color.primary} />
               ) : null}
             </Pressable>
           );

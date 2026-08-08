@@ -27,6 +27,10 @@ await esbuild.build({
     'expo-constants': join(stubs, 'expo-constants.js'),
     'expo-camera': join(stubs, 'expo-camera.jsx'),
     'expo-status-bar': join(stubs, 'expo-status-bar.js'),
+    // Screens that read navigation from context rather than from props throw
+    // without a navigator above them, and a throwing screen photographs as a
+    // blank page. See the stub for the full reasoning.
+    '@react-navigation/native': join(stubs, 'react-navigation-native.js'),
     'node:async_hooks': join(stubs, 'async-hooks.js'),
     async_hooks: join(stubs, 'async-hooks.js'),
     '@tutak/design': join(root, 'packages', 'design', 'src', 'index.ts'),

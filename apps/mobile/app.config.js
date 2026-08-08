@@ -12,12 +12,16 @@ module.exports = ({ config }) => ({
   version: '0.1.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
-  userInterfaceStyle: 'automatic',
+  // The app is dark-only. 'automatic' let the OS hand a light system
+  // background to anything the app had not painted itself.
+  userInterfaceStyle: 'dark',
   scheme: 'tutak',
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',
-    backgroundColor: '#0B5D3B',
+    // The app's own ground colour, so the splash does not flash a different
+    // shade before the first frame renders.
+    backgroundColor: '#0A0A0F',
   },
   assetBundlePatterns: ['**/*'],
   ios: {
@@ -27,7 +31,7 @@ module.exports = ({ config }) => ({
   android: {
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#0B5D3B',
+      backgroundColor: '#0A0A0F',
     },
     package: 'am.tutak.app',
     permissions: ['CAMERA'],

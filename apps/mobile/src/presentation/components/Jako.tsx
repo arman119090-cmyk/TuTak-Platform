@@ -2,9 +2,9 @@ import React from 'react';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import {
   JAKO_VIEWBOX,
-  jakoDefaultColors,
   jakoEye,
   jakoPaths,
+  jakoPremiumColors,
   jakoSilhouette,
   type JakoColors,
 } from '@tutak/design';
@@ -18,9 +18,13 @@ interface JakoProps {
  * The full Jako mark. Used at exactly three moments in the app: the splash,
  * the auth header, and empty states. Never as page decoration — if Jako is
  * on screen more than once, something has gone wrong.
+ *
+ * Defaults to the dark-scheme palette, not the light one. The white-surface
+ * defaults put a green wing on a bird sitting in a blue-and-violet app, and
+ * drew the plumage in greys that all but vanish against #0A0A0F.
  */
 export function Jako({ size = 48, colors }: JakoProps) {
-  const c = { ...jakoDefaultColors, ...colors };
+  const c = { ...jakoPremiumColors, ...colors };
   const fillFor: Record<string, string> = {
     brand: c.brand,
     body: c.body,

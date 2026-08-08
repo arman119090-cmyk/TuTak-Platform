@@ -1,5 +1,6 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,7 +24,7 @@ const LOCALE_LABELS: Record<string, string> = {
 
 export function SettingsScreen() {
   const { t, i18n } = useTranslation();
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text, radius, gradients } = useTheme();
   const { user, deviceId, clear } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -51,14 +52,17 @@ export function SettingsScreen() {
       {/* Identity card — initials avatar avoids demanding a photo upload. */}
       <Surface>
         <View style={styles.profile}>
-          <View
-            style={[
-              styles.avatar,
-              { backgroundColor: color.primarySurface, borderRadius: radius.full },
-            ]}
+          {/* The gradient avatar is the one place a person's own identity
+              gets the brand ramp — small, and the only warm spot on an
+              otherwise informational screen. */}
+          <LinearGradient
+            colors={[...gradients.primary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.avatar, { borderRadius: radius.full }]}
           >
-            <Text style={[text.title, { color: color.primary }]}>{initials || '—'}</Text>
-          </View>
+            <Text style={[text.title, { color: color.textInverse }]}>{initials || '—'}</Text>
+          </LinearGradient>
           <View style={[styles.flex, { marginLeft: space[4] }]}>
             <Text style={[text.headline, { color: color.textPrimary }]}>
               {user?.firstName} {user?.lastName}

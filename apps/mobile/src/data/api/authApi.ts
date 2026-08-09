@@ -19,6 +19,31 @@ export const authApi = {
     return data.data;
   },
 
+  /**
+   * Whether the API this build points at is a demonstration.
+   *
+   * Asked of the server rather than decided by the app: a build is not
+   * inherently a demo, the deployment it talks to is. The same APK aimed at a
+   * real API shows no demo entry at all.
+   */
+  async isDemoDeployment(): Promise<boolean> {
+    try {
+      const { data } = await httpClient.get<{ demoMode?: boolean }>('/health');
+      return data?.demoMode === true;
+    } catch {
+      // Unreachable, older, or not a demo — either way, no shortcut.
+      return false;
+    }
+  },
+
+  /** Signs in as the seeded demo customer. Only exists on a demo deployment. */
+  async demoSession(deviceId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<AuthResponseDto>>('/auth/demo-session', {
+      deviceId,
+    });
+    return data.data;
+  },
+
   async login(dto: LoginRequestDto) {
     const { data } = await httpClient.post<ApiEnvelope<AuthResponseDto>>('/auth/login', dto);
     return data.data;

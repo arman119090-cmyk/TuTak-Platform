@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
@@ -25,6 +25,35 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /**
+   * Shown only when the API says it is a demonstration. Asked of the server
+   * rather than decided here: the same build aimed at a real API offers no
+   * shortcut, so there is nothing to disable before release.
+   */
+  const [demoAvailable, setDemoAvailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    authApi.isDemoDeployment().then((yes) => {
+      if (!cancelled) setDemoAvailable(yes);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleDemo = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await authApi.demoSession(deviceId);
+      await setSession(result.user, result.tokens);
+    } catch {
+      setError(t('auth.demoUnavailable'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     setError(null);
@@ -98,6 +127,25 @@ export function LoginScreen({ navigation }: Props) {
               disabled={!canSubmit}
             />
           </View>
+
+          {demoAvailable ? (
+            <View style={{ marginTop: space[5] }}>
+              <Button
+                label={t('auth.enterDemo')}
+                variant="secondary"
+                onPress={handleDemo}
+                disabled={loading}
+              />
+              <Text
+                style={[
+                  text.caption,
+                  { color: color.textTertiary, marginTop: space[2], textAlign: 'center' },
+                ]}
+              >
+                {t('auth.demoHint')}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={[styles.footer, { marginTop: space[7], gap: space[1] }]}>
             <Text style={[text.bodySm, { color: color.textSecondary }]}>

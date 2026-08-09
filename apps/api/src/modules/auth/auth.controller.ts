@@ -6,6 +6,8 @@ import { Public } from '../../common/decorators/public.decorator';
 import { AllowsPendingPasswordChange } from '../../common/decorators/allow-pending-password-change.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequestUser } from './types/request-user.type';
+import { DemoSessionService } from './demo-session.service';
+import { DemoSessionDto } from './dto/demo-session.dto';
 import { AuthService, RequestMeta } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -34,6 +36,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly passwordService: PasswordService,
     private readonly phoneVerification: PhoneVerificationService,
+    private readonly demoSessionService: DemoSessionService,
   ) {}
 
   @Public()
@@ -62,6 +65,33 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(dto, extractMeta(req));
+    setRefreshCookie(
+      res,
+      result.tokens.refreshToken,
+      new Date(result.tokens.refreshTokenExpiresAt),
+    );
+    return result;
+  }
+
+  /**
+   * Signs in as the seeded demonstration customer.
+   *
+   * Present only when `DEMO_MODE=true`; a deployment without it answers 404,
+   * so a production API does not advertise a route it would refuse. See
+   * `DemoSessionService` for why this grants nothing that typing the seeded
+   * credentials into the form above would not.
+   *
+   * The same throttle as `login`, because it *is* a login.
+   */
+  @Public()
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('demo-session')
+  async demoSession(
+    @Body() dto: DemoSessionDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.demoSessionService.createSession(dto.deviceId, extractMeta(req));
     setRefreshCookie(
       res,
       result.tokens.refreshToken,

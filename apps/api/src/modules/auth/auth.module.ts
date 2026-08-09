@@ -6,6 +6,7 @@ import { AppConfig } from '../../config/configuration';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
+import { DemoSessionService } from './demo-session.service';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PasswordService } from './password.service';
@@ -29,7 +30,7 @@ import { SecurityModule } from '../security/security.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PasswordService, PhoneVerificationService],
+  providers: [DemoSessionService, AuthService, JwtStrategy, PasswordService, PhoneVerificationService],
   exports: [AuthService, PasswordService, PhoneVerificationService],
 })
 export class AuthModule {}

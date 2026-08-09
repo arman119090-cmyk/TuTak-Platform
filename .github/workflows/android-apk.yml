@@ -1,25 +1,24 @@
-# Builds the Android APK on EAS, triggered from a browser.
+# Builds the Android APK on EAS and hands it back as a downloadable file.
 #
-# The reason this workflow exists rather than a line in a README: an EAS build
-# needs the Expo account that owns the project, and the people who need this
-# APK have phones, not computers. `eas build` is a CLI, and a CLI is a
-# computer. GitHub's "Run workflow" button is not — it is a button, on a web
-# page, that works on a phone.
+# The reason this exists rather than a line in a README: an EAS build needs
+# the Expo account that owns the project, and `eas build` is a CLI. The people
+# who need this APK have phones. GitHub's "Run workflow" button is not a CLI —
+# it is a button on a web page, and it works on a phone.
 #
-# So the whole flow becomes: add one secret once, press Run, wait, open the
-# link EAS prints. docs/ANDROID_APK_RU.md walks through it with the screens
-# named.
+# The APK is attached to the run as an artifact *and* linked on EAS, because
+# those fail in different ways: an artifact expires after 30 days and needs a
+# GitHub login to download, an EAS link needs the build not to have been
+# pruned. Whichever is still there is the one you use.
 #
-# ## What you need before the first run
+# ## What you need once
 #
-#   EXPO_TOKEN   repository secret — expo.dev → Account settings → Access
-#                tokens → Create. A robot token is enough; it does not need
-#                to be your personal login.
+#   EXPO_TOKEN        repository secret. expo.dev → Account settings →
+#                     Access tokens → Create.
 #
-# The API address is asked for at run time rather than stored, because it
-# changes: a demonstration deployed today has a different URL than the one
-# deployed next month, and a stale value baked into a workflow produces an
-# app that installs and reaches nothing.
+# The API address is a run-time input rather than stored, because it changes:
+# a demonstration deployed today has a different URL than one deployed next
+# month, and a stale value baked into a workflow builds an app that installs
+# and reaches nothing.
 name: Build Android APK
 
 on:
@@ -30,39 +29,48 @@ on:
         required: true
         type: string
       profile:
-        description: 'preview = standalone app, works on its own. development = needs a Metro server on a computer.'
+        description: 'preview = standalone, works on its own. development = needs a Metro server on a computer.'
         required: true
         default: preview
         type: choice
         options: [preview, development]
 
+# Two builds of the same app at once would race for the same version code and
+# waste build minutes on a result nobody wants.
+concurrency:
+  group: android-apk
+  cancel-in-progress: false
+
 jobs:
   build:
     name: EAS build (Android APK)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Refuse early if the token is missing
-        # Checked before anything is installed. Without this the run spends
-        # two minutes on setup and then fails inside eas-cli with a message
-        # about authentication that reads like a bug rather than a missing
+        # Before anything is installed. Without this the run spends two
+        # minutes on setup and then fails inside eas-cli with an
+        # authentication message that reads like a bug rather than a missing
         # secret.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
-            echo "::error::EXPO_TOKEN is not set. Add it under Settings → Secrets and variables → Actions → New repository secret. Create the token at expo.dev → Account settings → Access tokens."
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Settings → Secrets and variables → Actions → New repository secret. Create the token at expo.dev → Account settings → Access tokens."
             exit 1
           fi
 
       - name: Reject an address that cannot work on a phone
         # `localhost` on a phone is the phone. An APK built against it
         # installs, opens, looks correct and reaches nothing — and the person
-        # holding the phone has no way to tell that from a server being down.
-        # app.config.js refuses this too; catching it here saves the queue.
+        # holding it cannot tell that from a server being down. app.config.js
+        # refuses this too; catching it here saves the queue.
         env:
           API_BASE_URL: ${{ inputs.api_base_url }}
         run: |
           case "$API_BASE_URL" in
             http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*)
-              echo "::error::$API_BASE_URL points at the phone itself. Use the address of a server the phone can reach."
+              echo "::error::$API_BASE_URL points at the phone itself. Use an address the phone can reach."
               exit 1 ;;
           esac
           case "$API_BASE_URL" in
@@ -90,29 +98,118 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build the APK
+      - name: Link the EAS project
+        # `eas init` cannot write into a dynamic config — it only edits
+        # app.json — so on a fresh account it creates the project, prints the
+        # id and leaves placing it to us. app.config.js reads EAS_PROJECT_ID,
+        # so putting it in the environment is enough and nothing has to be
+        # committed. `|| true` because a project that already exists makes
+        # this a no-op that exits non-zero on some versions.
         working-directory: apps/mobile
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        run: |
+          set +e
+          if [ -n "$EAS_PROJECT_ID" ]; then
+            echo "Using EAS_PROJECT_ID from repository variables"
+            echo "EAS_PROJECT_ID=$EAS_PROJECT_ID" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ -f eas-project.json ]; then
+            echo "Using apps/mobile/eas-project.json"
+            exit 0
+          fi
+          echo "No project id configured — asking EAS to create or link one"
+          npx eas-cli@latest init --non-interactive --force 2>&1 | tee /tmp/init.log
+          ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/init.log | head -1)
+          if [ -n "$ID" ]; then
+            echo "Linked project $ID"
+            echo "EAS_PROJECT_ID=$ID" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Could not determine the EAS project id automatically; the build step will report what is missing."
+          fi
+
+      - name: Build the APK on EAS
+        id: build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           API_BASE_URL: ${{ inputs.api_base_url }}
           APP_ENV: ${{ inputs.profile }}
-          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
-        # --non-interactive because nobody is watching a terminal here, and
-        # --wait so the run does not report success while the build is still
-        # queued. The build page link is printed either way.
+        # --json puts the build record on stdout and the progress on stderr,
+        # so the artifact URL can be read without scraping a progress bar.
+        # --wait so the job does not report success while the build is queued.
         run: |
-          eas build \
+          set -o pipefail
+          npx eas-cli@latest build \
             --platform android \
             --profile "${{ inputs.profile }}" \
             --non-interactive \
-            --wait
+            --wait \
+            --json > build.json
+          BUILD_URL=$(jq -r '.[0].artifacts.buildUrl // empty' build.json)
+          APK_URL=$(jq -r '.[0].artifacts.applicationArchiveUrl // empty' build.json)
+          PAGE=$(jq -r '.[0].id // empty' build.json)
+          echo "apk_url=${APK_URL:-$BUILD_URL}" >> "$GITHUB_OUTPUT"
+          echo "build_id=$PAGE" >> "$GITHUB_OUTPUT"
+          if [ -z "${APK_URL:-$BUILD_URL}" ]; then
+            echo "::error::EAS finished but reported no artifact. Full record:"
+            cat build.json
+            exit 1
+          fi
 
-      - name: Print where to get it
-        if: always()
+      - name: Download the APK
+        working-directory: apps/mobile
+        env:
+          APK_URL: ${{ steps.build.outputs.apk_url }}
+        # Fetched here rather than left on EAS so it lands on the run page as
+        # a file. `--fail` so a 404 is an error rather than an HTML page
+        # saved with an .apk extension, which installs as nothing and
+        # explains itself to nobody.
         run: |
-          echo "### Where the APK is" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Open <https://expo.dev/accounts>, pick the TuTak project, then **Builds**." >> "$GITHUB_STEP_SUMMARY"
-          echo "The newest build has a QR code and a **Download** button." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Scan the QR with the Pixel's camera, or open the link on the Pixel and tap Download." >> "$GITHUB_STEP_SUMMARY"
-          echo "Android will ask for permission to install from this source — that is expected for an app that did not come from Play." >> "$GITHUB_STEP_SUMMARY"
+          curl --fail --location --output tutak.apk "$APK_URL"
+          ls -la tutak.apk
+          file tutak.apk || true
+          # An APK is a zip. If this is not one, something upstream handed us
+          # a redirect page and the artifact would be useless on a phone.
+          if ! head -c 2 tutak.apk | grep -q 'PK'; then
+            echo "::error::What was downloaded is not an APK."
+            head -c 400 tutak.apk
+            exit 1
+          fi
+
+      - name: Attach the APK to this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: tutak-android-${{ inputs.profile }}
+          path: apps/mobile/tutak.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Where to get it
+        if: always()
+        env:
+          APK_URL: ${{ steps.build.outputs.apk_url }}
+          BUILD_ID: ${{ steps.build.outputs.build_id }}
+        run: |
+          {
+            echo "## The APK"
+            echo ""
+            if [ -n "$APK_URL" ]; then
+              echo "**On this page:** scroll to **Artifacts** and download **tutak-android-${{ inputs.profile }}**."
+              echo ""
+              echo "**Direct from EAS:** [$APK_URL]($APK_URL)"
+              echo ""
+              echo "Build id: \`$BUILD_ID\`"
+            else
+              echo "No artifact was produced — the build step above says why."
+            fi
+            echo ""
+            echo "### Installing on the phone"
+            echo ""
+            echo "Open the link on the Android device and tap the downloaded file."
+            echo "Android will ask permission to install from this source; that is expected for an app that did not come from Play."
+            echo ""
+            echo "This build talks to \`${{ inputs.api_base_url }}\`."
+          } >> "$GITHUB_STEP_SUMMARY"

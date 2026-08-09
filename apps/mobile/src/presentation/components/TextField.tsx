@@ -57,6 +57,25 @@ export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, 
           <Text style={[text.body, { color: color.textSecondary }]}>{prefix}</Text>
         ) : null}
         <TextInput
+          /*
+           * Android's autofill service is told to leave these alone.
+           *
+           * On the phone this was reported from, touching any field made all
+           * three light up at once and blink, and typing became impossible.
+           * The app cannot produce that: each field owns its own focus state
+           * and only the focused one draws a ring. What draws on all of them
+           * at once is the autofill service — it activates on touch,
+           * highlights every field it believes it can fill, and on some
+           * Samsung builds holds the focus while it decides.
+           *
+           * `autoComplete` stays: it is also what selects the right keyboard
+           * and drives the iOS suggestion bar. This switches off only the
+           * Android overlay that was competing for the focus.
+           *
+           * If a password manager turns out to matter more than this, change
+           * it here, per field, rather than by removing the hints.
+           */
+          importantForAutofill="no"
           placeholderTextColor={color.textTertiary}
           // Without this the OS paints a black caret on a black field, and
           // the user cannot see where they are typing.

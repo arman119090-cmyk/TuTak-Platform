@@ -130,6 +130,58 @@ jobs:
             echo "::warning::Could not determine the EAS project id automatically; the build step will report what is missing."
           fi
 
+      - name: Put the address where the build can see it
+        # The one that cost two failed builds. Setting API_BASE_URL on this
+        # job is enough for the CLI to read app.config.js *here*, so the
+        # bundle uploads and everything looks fine — and then EAS re-reads the
+        # same config on its own machine, where this job's environment does
+        # not exist. app.config.js refuses to produce a preview build without
+        # an address, so the build died in the "Read app config" phase with
+        # nothing but "Unknown error" to show for it.
+        #
+        # What crosses that boundary is the build profile's `env` block in
+        # eas.json. The value is a run-time input, so it is written in here
+        # rather than committed: a URL baked into the repository is stale the
+        # next time the demonstration moves.
+        working-directory: apps/mobile
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -e
+          tmp=$(mktemp)
+          jq --arg p "$PROFILE" --arg url "$API_BASE_URL" \
+            '.build[$p].env.API_BASE_URL = $url' eas.json > "$tmp"
+          mv "$tmp" eas.json
+          echo "Profile that will be built:"
+          jq --arg p "$PROFILE" '.build[$p]' eas.json
+          # EAS takes the project from git, so a change left only in the
+          # working tree may not reach the builder. This commit exists for the
+          # length of this job and is never pushed anywhere.
+          git -c user.email=actions@github.com -c user.name='GitHub Actions' \
+            commit -q -m "ci: point $PROFILE at $API_BASE_URL" -- eas.json
+          echo "eas.json committed locally for this build only"
+
+      - name: Read the app config the way EAS will read it
+        # Deliberately hostile: it throws away this job's environment and
+        # keeps only what the build profile carries, which is exactly what the
+        # builder gets. If app.config.js is going to refuse, it refuses here
+        # in five seconds instead of twenty minutes into a queued cloud build
+        # whose error message names a phase and nothing else.
+        working-directory: apps/mobile
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -e
+          # Only the profile's own variables — API_BASE_URL is deliberately
+          # not set on this step.
+          eval "$(jq -r --arg p "$PROFILE" \
+            '.build[$p].env // {} | to_entries[] | "export \(.key)=\(.value|@sh)"' eas.json)"
+          echo "APP_ENV=$APP_ENV"
+          echo "API_BASE_URL=$API_BASE_URL"
+          npx expo config --type public --json > /dev/null
+          echo "app config reads cleanly with only the profile's environment"
+
       - name: Build the APK on EAS
         id: build
         working-directory: apps/mobile
@@ -171,7 +223,18 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           echo "=== what EAS recorded about the most recent build ==="
-          npx eas-cli@latest build:list --limit 1 --json --non-interactive || true
+          npx eas-cli@latest build:list --limit 1 --json --non-interactive > record.json 2>/dev/null || true
+          cat record.json || true
+          echo ""
+          echo "=== the build's own logs ==="
+          # The record carries signed URLs to the log files. Printing them
+          # here is the difference between "Unknown error, see the logs" and
+          # knowing which line of app.config.js threw — which matters because
+          # the person reading this may have no way to open expo.dev.
+          for url in $(jq -r '.[0].logFiles[]? // empty' record.json 2>/dev/null); do
+            echo "--- $url"
+            curl --fail --silent --location "$url" | tail -n 80 || echo "(could not fetch)"
+          done
           echo ""
           echo "=== the CLI's own output, if any ==="
           cat build.json 2>/dev/null || echo "(no build.json — the CLI exited before writing one)"

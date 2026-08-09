@@ -1,5 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
-import { Currency, LedgerAccountType, PaymentStatus, PostingDirection } from '@prisma/client';
+import {
+  Currency,
+  LedgerAccountType,
+  PaymentStatus,
+  PostingDirection,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, Money, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -43,6 +49,21 @@ export interface RefundResult {
  *  3. **A refund is never an edit.** Postings are immutable; a refund posts a
  *     new, reversing transaction that points back at the original.
  */
+/**
+ * Did this come from the (actorId, idempotencyKey) unique index?
+ *
+ * Narrow deliberately: a blanket "P2002 means already done" would also
+ * swallow a collision on `ledgerTransactionId`, which is a real bug and must
+ * not be reported to the caller as a successful replay.
+ */
+function isKeyCollision(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== 'P2002') return false;
+  const target = err.meta?.target;
+  const fields = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
+  return fields.some((f) => f.includes('idempotencyKey'));
+}
+
 @Injectable()
 export class RefundEngineService {
   private readonly logger = new Logger(RefundEngineService.name);
@@ -64,9 +85,7 @@ export class RefundEngineService {
     }
 
     const remaining = payment.amount.minus(payment.refundedAmount);
-    const amount = params.amount
-      ? parsePositiveMoney(params.amount, 'refund amount')
-      : remaining;
+    const amount = params.amount ? parsePositiveMoney(params.amount, 'refund amount') : remaining;
 
     if (amount.greaterThan(remaining)) {
       throw new BadRequestException(
@@ -83,7 +102,14 @@ export class RefundEngineService {
         key: params.idempotencyKey,
         request: { paymentId: payment.id, amount: amount.toString(), reason: params.reason },
       },
-      () => this.executeRefund(payment.id, amount, params.reason),
+      () =>
+        this.executeRefund(
+          payment.id,
+          amount,
+          params.reason,
+          params.actorId,
+          params.idempotencyKey,
+        ),
     );
   }
 
@@ -91,7 +117,19 @@ export class RefundEngineService {
     paymentId: string,
     amount: Decimal,
     reason: string,
+    actorId: string,
+    idempotencyKey: string,
   ): Promise<RefundResult> {
+    // Has this key already produced a refund?
+    //
+    // `IdempotencyService` normally answers this and this branch never runs.
+    // It is here for when it cannot — the record lost while the refund it
+    // described survived, which a crash between the two transactions
+    // produces. Without it the retry refunds again, bounded by what remains
+    // refundable and no less wrong for that.
+    const already = await this.findByKey(actorId, idempotencyKey);
+    if (already) return this.toResult(already);
+
     const payment = await this.prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
 
     // The claim. Reading `refundedAmount` and writing it back are one
@@ -116,14 +154,52 @@ export class RefundEngineService {
     // release it, or the payment is left permanently under-refundable by the
     // amount of a refund that never happened.
     try {
-      return await this.postRefund(payment, amount, reason);
+      return await this.postRefund(payment, amount, reason, actorId, idempotencyKey);
     } catch (err) {
+      // Release the claim first, whatever went wrong. It was taken on the
+      // assumption a refund would follow, and none did.
       await this.prisma.payment.update({
         where: { id: paymentId },
         data: { refundedAmount: { decrement: amount } },
       });
+      // A collision on (actorId, idempotencyKey) is not a failure — it is
+      // this same refund arriving twice, and the unique index is what makes
+      // that impossible to get wrong rather than merely unlikely. Two
+      // attempts can both pass the lookup above if they are genuinely
+      // concurrent, or if one is a retry after the record was lost; the
+      // loser lands here and gets the winner's refund.
+      if (isKeyCollision(err)) {
+        const existing = await this.findByKey(actorId, idempotencyKey);
+        if (existing) return this.toResult(existing);
+      }
       throw err;
     }
+  }
+
+  private findByKey(actorId: string, idempotencyKey: string) {
+    return this.prisma.refund.findUnique({
+      where: { actorId_idempotencyKey: { actorId, idempotencyKey } },
+    });
+  }
+
+  private toResult(refund: {
+    id: string;
+    amount: Decimal;
+    bonusClawedBack: Decimal;
+    paymentId: string;
+  }): Promise<RefundResult> | RefundResult {
+    // Reconstructing the result of a refund that already happened, for the
+    // caller whose original response never arrived. `totalRefunded` is read
+    // from the payment rather than remembered, because other refunds may have
+    // landed since and the caller should see the truth, not a snapshot.
+    return this.prisma.payment
+      .findUniqueOrThrow({ where: { id: refund.paymentId } })
+      .then((payment) => ({
+        refundId: refund.id,
+        amount: refund.amount.toFixed(MONEY_SCALE),
+        totalRefunded: payment.refundedAmount.toFixed(MONEY_SCALE),
+        bonusClawedBack: refund.bonusClawedBack.toFixed(MONEY_SCALE),
+      }));
   }
 
   private async postRefund(
@@ -139,6 +215,8 @@ export class RefundEngineService {
     },
     amount: Decimal,
     reason: string,
+    actorId: string,
+    idempotencyKey: string,
   ): Promise<RefundResult> {
     const currency = payment.currency;
 
@@ -177,7 +255,11 @@ export class RefundEngineService {
           currency,
           // The mirror image of capture, scaled to the refunded slice.
           postings: [
-            { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: partnerShare },
+            {
+              accountId: partnerAccount.id,
+              direction: PostingDirection.DEBIT,
+              amount: partnerShare,
+            },
             {
               accountId: revenueAccount.id,
               direction: PostingDirection.DEBIT,
@@ -210,6 +292,8 @@ export class RefundEngineService {
           reason,
           bonusClawedBack,
           ledgerTransactionId: ledgerTransaction.id,
+          actorId,
+          idempotencyKey,
         },
       });
     });

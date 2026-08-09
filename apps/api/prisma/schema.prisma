@@ -1118,12 +1118,29 @@ model Refund {
   /// Points reclaimed from the customer, if the payment had already settled
   /// and accrued. Zero when it had not.
   bonusClawedBack     Decimal  @db.Decimal(18, 4) @default(0)
+  /// Who authorised this refund. Recorded on the row the money moved through
+  /// rather than only in the audit log, for the reason `Payout` gives about
+  /// `confirmedByUserId`: an audit log can be argued with, a column cannot.
+  actorId             String?
+  /// The caller's idempotency key.
+  ///
+  /// `IdempotencyRecord` tracks these in a separate table written in a
+  /// separate transaction, and a crash between the two leaves a committed
+  /// refund whose key is gone. A retry then refunds again — bounded by what
+  /// remains refundable, which is not the same as safe: an operator who
+  /// authorised one 500 refund and got two has given away 1,000, and every
+  /// part of it was "within bounds". Demonstrated, not theorised: see
+  /// `refund-payout-key-durability.int-spec.ts`.
+  idempotencyKey      String?
   createdAt           DateTime @default(now())
 
   payment           Payment            @relation(fields: [paymentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
 
   @@index([paymentId])
+  /// Scoped to the actor, matching `IdempotencyService`'s `refund:<actorId>`
+  /// scope — two operators may legitimately choose the same key.
+  @@unique([actorId, idempotencyKey])
   @@map("refunds")
 }
 
@@ -1153,6 +1170,11 @@ model Payout {
   /// merely enforced at the time — an audit log can be argued with, a column
   /// on the row the money moved through cannot.
   confirmedByUserId   String?
+  /// The requester's idempotency key, for the same reason it is on `Refund`
+  /// and `Payment`: the record that tracks it lives in another table written
+  /// in another transaction, and a crash between the two loses it. A replayed
+  /// payout is bounded by what the partner is owed and still pays them twice.
+  idempotencyKey      String?
   createdAt           DateTime     @default(now())
   completedAt         DateTime?
 
@@ -1161,6 +1183,8 @@ model Payout {
   settlementLedgerTransaction LedgerTransaction? @relation("PayoutSettled", fields: [settlementLedgerTransactionId], references: [id])
 
   @@index([partnerId, status])
+  /// Matches `IdempotencyService`'s `payout:<actorId>` scope.
+  @@unique([requestedByUserId, idempotencyKey])
   @@map("payouts")
 }
 

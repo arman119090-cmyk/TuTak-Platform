@@ -316,6 +316,41 @@ credits, and no orphaned postings. Five regression tests in
 `payment-key-durability.int-spec.ts`; four of the five fail when the fix is
 reverted, which is what makes them worth having.
 
+### F-10 (Critical) — the same window paid refunds and payouts twice
+
+F-9 fixed capture. It did not fix `IdempotencyService`, and three other
+engines call it. Two of them hand money outward.
+
+**Found by asking where else.** `AcquirerSettlement` turned out to be safe —
+it has `reference @unique`, a natural key that refuses a duplicate. The EV
+stop path is safe too; its conditional claim on `stoppedAt` was built in the
+first round. `Refund` and `Payout` had nothing.
+
+**Confirmed by construction, not by racing.** Refund 500 of a 1,000 payment,
+delete the idempotency record the way the failure path does, retry the same
+key: a second refund, a different id, 1,000 returned on a 1,000 purchase that
+an operator authorised 500 against. Request a payout, delete the record,
+retry: the partner paid twice.
+
+Both are *bounded* — a refund by what remains refundable, a payout by what is
+owed — and bounded is not safe. Every part of that second 500 was within
+bounds.
+
+**Fix.** The same shape as F-9: the key on the row, under a unique index
+scoped to the actor. `Refund` also gains `actorId`, which it did not have —
+until now nothing on the refund row said who authorised it, only the audit
+log. The refund path releases its `refundedAmount` claim before returning the
+original, so a duplicate does not leave the payment permanently
+under-refundable.
+
+**The test that proved nothing.** The first version of this suite checked
+that the ledger still balanced after the replay. It passed *before* the fix.
+Debits equalled credits, every account agreed with a replay of its own
+postings, and the customer had been paid twice — because a duplicate refund
+is two complete, correct, balanced transactions. Asserting the *amount* is
+what turned it into a test. Three tests now, all three failing when the fix
+is reverted.
+
 ### The harness itself was wrong, and would have passed the bug
 
 The first chaos run printed **PASS** while that extra payment sat in the

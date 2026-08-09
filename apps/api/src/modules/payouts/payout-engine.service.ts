@@ -6,7 +6,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Currency, LedgerAccountType, PayoutStatus, PostingDirection } from '@prisma/client';
+import {
+  Currency,
+  LedgerAccountType,
+  PayoutStatus,
+  PostingDirection,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, Money, parsePositiveMoney } from '../../common/utils/money';
@@ -47,6 +53,21 @@ export interface PayoutResult {
  * is a conditional UPDATE against the account's own balance, so the check and
  * the write are one statement.
  */
+/**
+ * Did this come from the (requestedByUserId, idempotencyKey) unique index?
+ *
+ * Narrow on purpose: a blanket "P2002 means already done" would also swallow
+ * a collision on `ledgerTransactionId` or `settlementLedgerTransactionId`,
+ * both of which are real bugs that must not surface as a successful replay.
+ */
+function isKeyCollision(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== 'P2002') return false;
+  const target = err.meta?.target;
+  const fields = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
+  return fields.some((f) => f.includes('idempotencyKey'));
+}
+
 @Injectable()
 export class PayoutEngineService {
   private readonly logger = new Logger(PayoutEngineService.name);
@@ -93,7 +114,7 @@ export class PayoutEngineService {
         key: params.idempotencyKey,
         request: { partnerId: partner.id, amount: amount.toString(), currency },
       },
-      () => this.executePayout(partner.id, amount, currency, params.actorId),
+      () => this.executePayout(partner.id, amount, currency, params.actorId, params.idempotencyKey),
     );
   }
 
@@ -102,7 +123,18 @@ export class PayoutEngineService {
     amount: Decimal,
     currency: Currency,
     actorId: string,
+    idempotencyKey: string,
   ): Promise<PayoutResult> {
+    // Has this key already produced a payout?
+    //
+    // `IdempotencyService` normally answers this. This is for when it
+    // cannot — its record lost while the payout it described survived, which
+    // is what a crash between the two transactions leaves behind. A retry
+    // without this pays the partner a second time, bounded only by what they
+    // are still owed.
+    const already = await this.findByKey(actorId, idempotencyKey);
+    if (already) return this.toResult(already, currency);
+
     const [payableAccount, clearingAccount] = await Promise.all([
       this.ledger.accountFor({
         type: LedgerAccountType.PARTNER_PAYABLE,
@@ -112,66 +144,82 @@ export class PayoutEngineService {
       this.ledger.accountFor({ type: LedgerAccountType.BANK_CLEARING, currency }),
     ]);
 
-    const payout = await this.prisma.$transaction(async (tx) => {
-      // The whole concurrency story, in one line. `FOR UPDATE` holds this
-      // account's row until the transaction commits, so a second payout
-      // request against the same partner blocks here and then re-reads a
-      // balance that already reflects the first one. Without it, both would
-      // read the same pre-payout balance, both would find it sufficient, and
-      // the partner would be paid twice.
-      //
-      // A conditional UPDATE would be the usual alternative, but not here:
-      // `ledger.post` below moves this same balance, so a claim that also
-      // moved it would double-count. Locking states the intent — exclude
-      // concurrent readers — without touching the number.
-      const locked = await tx.$queryRaw<Array<{ balance: string }>>`
+    let payout;
+    try {
+      payout = await this.prisma.$transaction(async (tx) => {
+        // The whole concurrency story, in one line. `FOR UPDATE` holds this
+        // account's row until the transaction commits, so a second payout
+        // request against the same partner blocks here and then re-reads a
+        // balance that already reflects the first one. Without it, both would
+        // read the same pre-payout balance, both would find it sufficient, and
+        // the partner would be paid twice.
+        //
+        // A conditional UPDATE would be the usual alternative, but not here:
+        // `ledger.post` below moves this same balance, so a claim that also
+        // moved it would double-count. Locking states the intent — exclude
+        // concurrent readers — without touching the number.
+        const locked = await tx.$queryRaw<Array<{ balance: string }>>`
         SELECT balance FROM "ledger_accounts" WHERE id = ${payableAccount.id} FOR UPDATE
       `;
 
-      // Credit-normal: a payable of 9,750 is stored as -9,750.
-      const available = new Decimal(locked[0]?.balance ?? 0).negated();
-      if (available.lessThan(amount)) {
-        throw new ConflictException(
-          `Payout of ${amount.toString()} exceeds the ${available.toString()} available to this partner`,
+        // Credit-normal: a payable of 9,750 is stored as -9,750.
+        const available = new Decimal(locked[0]?.balance ?? 0).negated();
+        if (available.lessThan(amount)) {
+          throw new ConflictException(
+            `Payout of ${amount.toString()} exceeds the ${available.toString()} available to this partner`,
+          );
+        }
+
+        const created = await tx.payout.create({
+          data: {
+            partnerId,
+            amount,
+            status: PayoutStatus.REQUESTED,
+            requestedByUserId: actorId,
+            idempotencyKey,
+          },
+        });
+
+        const ledgerTransaction = await this.ledger.post(
+          {
+            kind: 'payout.requested',
+            sourceType: 'Payout',
+            sourceId: created.id,
+            currency,
+            postings: [
+              { accountId: payableAccount.id, direction: PostingDirection.DEBIT, amount },
+              { accountId: clearingAccount.id, direction: PostingDirection.CREDIT, amount },
+            ],
+            events: [
+              {
+                aggregateType: 'Payout',
+                aggregateId: created.id,
+                eventType: 'payout.requested',
+                payload: { payoutId: created.id, partnerId, amount: amount.toString() },
+              },
+            ],
+          },
+          tx,
         );
+
+        return tx.payout.update({
+          where: { id: created.id },
+          data: { ledgerTransactionId: ledgerTransaction.id },
+        });
+      });
+    } catch (err) {
+      // A collision on (requestedByUserId, idempotencyKey) is this same
+      // payout arriving twice, not a failure. Two attempts reach the INSERT
+      // when they are genuinely concurrent or when one is a retry after the
+      // idempotency record was lost; the loser's transaction rolls back
+      // whole — ledger postings included — and it returns the winner's
+      // payout rather than an error the caller cannot act on.
+      if (isKeyCollision(err)) {
+        const existing = await this.findByKey(actorId, idempotencyKey);
+        if (existing) return this.toResult(existing, currency);
       }
-
-      const created = await tx.payout.create({
-        data: {
-          partnerId,
-          amount,
-          status: PayoutStatus.REQUESTED,
-          requestedByUserId: actorId,
-        },
-      });
-
-      const ledgerTransaction = await this.ledger.post(
-        {
-          kind: 'payout.requested',
-          sourceType: 'Payout',
-          sourceId: created.id,
-          currency,
-          postings: [
-            { accountId: payableAccount.id, direction: PostingDirection.DEBIT, amount },
-            { accountId: clearingAccount.id, direction: PostingDirection.CREDIT, amount },
-          ],
-          events: [
-            {
-              aggregateType: 'Payout',
-              aggregateId: created.id,
-              eventType: 'payout.requested',
-              payload: { payoutId: created.id, partnerId, amount: amount.toString() },
-            },
-          ],
-        },
-        tx,
-      );
-
-      return tx.payout.update({
-        where: { id: created.id },
-        data: { ledgerTransactionId: ledgerTransaction.id },
-      });
-    });
+      throw err;
+    }
 
     const remaining = await this.availableBalance(partnerId, currency);
     this.logger.log(`Payout ${payout.id} requested: ${amount.toString()} to partner ${partnerId}`);
@@ -181,6 +229,36 @@ export class PayoutEngineService {
       amount: amount.toFixed(MONEY_SCALE),
       status: payout.status,
       remainingBalance: remaining.toFixed(MONEY_SCALE),
+    };
+  }
+
+  private findByKey(actorId: string, idempotencyKey: string) {
+    return this.prisma.payout.findUnique({
+      where: { requestedByUserId_idempotencyKey: { requestedByUserId: actorId, idempotencyKey } },
+    });
+  }
+
+  /**
+   * Rebuilds the answer for a caller whose original response never arrived.
+   *
+   * The remaining balance is read now rather than remembered: other payouts
+   * and settlements may have moved it since, and the caller is better served
+   * by what is true than by what was true.
+   */
+  private async toResult(
+    payout: { id: string; amount: Decimal; status: PayoutStatus; partnerId: string },
+    currency: Currency,
+  ): Promise<PayoutResult> {
+    const account = await this.ledger.accountFor({
+      type: LedgerAccountType.PARTNER_PAYABLE,
+      partnerId: payout.partnerId,
+      currency,
+    });
+    return {
+      payoutId: payout.id,
+      amount: payout.amount.toFixed(MONEY_SCALE),
+      status: payout.status,
+      remainingBalance: new Decimal(account.balance).negated().toFixed(MONEY_SCALE),
     };
   }
 
@@ -346,7 +424,9 @@ export class PayoutEngineService {
 
     const actorIds = [
       ...new Set(
-        payouts.flatMap((p) => [p.requestedByUserId, p.confirmedByUserId]).filter((id): id is string => !!id),
+        payouts
+          .flatMap((p) => [p.requestedByUserId, p.confirmedByUserId])
+          .filter((id): id is string => !!id),
       ),
     ];
     const actors = actorIds.length
@@ -362,8 +442,12 @@ export class PayoutEngineService {
       // Null when nobody is recorded; the raw id when the actor is not a
       // user row (a script, or a seeded fixture) — which is itself worth
       // seeing rather than hiding behind a dash.
-      requestedByName: p.requestedByUserId ? (nameOf.get(p.requestedByUserId) ?? p.requestedByUserId) : null,
-      confirmedByName: p.confirmedByUserId ? (nameOf.get(p.confirmedByUserId) ?? p.confirmedByUserId) : null,
+      requestedByName: p.requestedByUserId
+        ? (nameOf.get(p.requestedByUserId) ?? p.requestedByUserId)
+        : null,
+      confirmedByName: p.confirmedByUserId
+        ? (nameOf.get(p.confirmedByUserId) ?? p.confirmedByUserId)
+        : null,
     }));
   }
 }

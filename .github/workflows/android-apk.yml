@@ -159,6 +159,23 @@ jobs:
             exit 1
           fi
 
+      - name: Say why EAS failed
+        # A build that fails on EAS leaves the CLI printing "Build failed" and
+        # a link — which is no use to somebody reading this from a phone, and
+        # no use at all if the link is unreachable from where they are. The
+        # record holds the phase that failed and the message; print it here so
+        # the run explains itself.
+        if: failure() && steps.build.outcome == 'failure'
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          echo "=== what EAS recorded about the most recent build ==="
+          npx eas-cli@latest build:list --limit 1 --json --non-interactive || true
+          echo ""
+          echo "=== the CLI's own output, if any ==="
+          cat build.json 2>/dev/null || echo "(no build.json — the CLI exited before writing one)"
+
       - name: Download the APK
         working-directory: apps/mobile
         env:

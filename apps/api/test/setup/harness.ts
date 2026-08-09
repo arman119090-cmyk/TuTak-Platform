@@ -1,5 +1,5 @@
 import { ConfigModule } from '@nestjs/config';
-import { EventEmitterModule } from '@nestjs/event-emitter';
+import { EventEmitter2, EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import configuration from '../../src/config/configuration';
@@ -63,6 +63,65 @@ export interface TestHarness {
   close(): Promise<void>;
 }
 
+/**
+ * An emitter that remembers what it started, so a test can wait for it.
+ *
+ * Domain events are dispatched with `emit`, which returns the moment the
+ * listeners are *called* rather than when they finish. In production that is
+ * right: nobody should wait on a welcome notification. In a test it means a
+ * listener can still be writing a notification row while the next test
+ * truncates the table it is writing to — which surfaced as a stream of
+ * `notifications_userId_fkey` violations for users that no longer existed,
+ * and, on a loaded CI runner, as a deadlock between that INSERT and the
+ * TRUNCATE. PostgreSQL resolves a deadlock by killing one side; when it chose
+ * the TRUNCATE, the suite failed somewhere unrelated to whatever had actually
+ * gone wrong.
+ *
+ * This does not change what the application does. It changes only what the
+ * harness knows: `settle()` waits until the work the app started is finished,
+ * which is the precondition every truncation silently assumed.
+ */
+class SettleableEventEmitter extends EventEmitter2 {
+  private readonly inFlight = new Set<Promise<unknown>>();
+
+  override emit(event: string | symbol, ...values: unknown[]): boolean {
+    const pending = this.emitAsync(event, ...values);
+    this.inFlight.add(pending);
+    // Rejections are the listener's business — every one of them already
+    // catches and logs. This only tracks completion.
+    void pending.catch(() => undefined).finally(() => this.inFlight.delete(pending));
+    return true;
+  }
+
+  /** Resolves once nothing the app started is still running. */
+  async settle(): Promise<void> {
+    // A loop rather than a single await: a listener may emit further events.
+    while (this.inFlight.size > 0) {
+      await Promise.allSettled([...this.inFlight]);
+    }
+  }
+}
+
+/**
+ * The emitter belonging to the harness currently under test.
+ *
+ * Module-level so `truncateAll` can reach it without every one of the thirty
+ * suites that call it having to thread an argument through.
+ */
+let activeEmitter: SettleableEventEmitter | null = null;
+
+/**
+ * Waits for everything the application started to finish, without touching
+ * any data.
+ *
+ * `truncateAll` does this first; a test that wants to *look* at what a
+ * listener wrote calls it directly, since truncation would then remove the
+ * evidence.
+ */
+export async function settleEvents(): Promise<void> {
+  await activeEmitter?.settle();
+}
+
 /** Tables holding reference data that survives per-test truncation. */
 const PRESERVED_TABLES = new Set(['roles', 'permissions', 'role_permissions', '_prisma_migrations']);
 
@@ -70,6 +129,7 @@ export async function createTestHarness(): Promise<TestHarness> {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
 
   const alerts = new RecordingAlertChannel();
+  const emitter = new SettleableEventEmitter();
 
   const moduleRef = await Test.createTestingModule({
     imports: [
@@ -105,11 +165,17 @@ export async function createTestHarness(): Promise<TestHarness> {
     .useValue(prisma)
     .overrideProvider(ALERT_CHANNEL)
     .useValue(alerts)
+    // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
+    // instance, so replacing the instance is enough — no listener needs to
+    // know it happened.
+    .overrideProvider(EventEmitter2)
+    .useValue(emitter)
     .compile();
 
   // TestingModule *is* an application context — no HTTP adapter is created,
   // so the suites exercise the services directly with no server listening.
   await moduleRef.init();
+  activeEmitter = emitter;
 
   const redis = moduleRef.get<Redis>(REDIS_CLIENT);
 
@@ -126,6 +192,10 @@ export async function createTestHarness(): Promise<TestHarness> {
       if (keys.length) await redis.del(...keys);
     },
     async close() {
+      // Anything still running would otherwise write into a database the
+      // next file is about to reset.
+      await emitter.settle();
+      if (activeEmitter === emitter) activeEmitter = null;
       // ioredis doesn't implement OnModuleDestroy, so Nest's own shutdown
       // hooks never reach it — left unclosed, the open TCP handle keeps the
       // Jest worker alive after every test in the file has finished.
@@ -144,6 +214,11 @@ export async function createTestHarness(): Promise<TestHarness> {
  * would show up as a flaky balance assertion much later.
  */
 export async function truncateAll(prisma: PrismaClient) {
+  // Wait for the application to go quiet first. Truncating underneath a
+  // listener that is still writing is what produced the foreign-key noise and
+  // the TRUNCATE/INSERT deadlock described on `SettleableEventEmitter`.
+  await activeEmitter?.settle();
+
   const rows = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public'
   `;

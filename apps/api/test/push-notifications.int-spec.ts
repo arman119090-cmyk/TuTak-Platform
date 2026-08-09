@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DevicePlatform, PrismaClient } from '@prisma/client';
 import { NotificationsService } from '../src/modules/notifications/notifications.service';
 import { PushDispatchService } from '../src/modules/notifications/push-dispatch.service';
@@ -8,7 +9,7 @@ import {
   PushProvider,
 } from '../src/infrastructure/push/push-provider.interface';
 import { createCustomer } from './setup/fixtures';
-import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { TestHarness, createTestHarness, settleEvents, truncateAll } from './setup/harness';
 
 /**
  * Push delivery.
@@ -225,5 +226,103 @@ describe('Push notifications (integration)', () => {
     });
 
     expect(sent[0]![0]!.data).toEqual({ notificationId: notification.id });
+  });
+});
+
+/**
+ * The event path, which nothing covered.
+ *
+ * Every test above calls `NotificationsService.send` directly. Nothing
+ * asserted that a domain event actually reaches the listener that calls it —
+ * so replacing the emitter in the harness (see `SettleableEventEmitter`)
+ * could have silenced notifications entirely and the suite would still have
+ * been green. That is the failure mode this file exists to make impossible.
+ */
+describe('Notifications reach the listener that writes them (integration)', () => {
+  let harness: TestHarness;
+  let prisma: PrismaClient;
+  let events: EventEmitter2;
+
+  beforeAll(async () => {
+    harness = await createTestHarness();
+    prisma = harness.prisma;
+    events = harness.app.get(EventEmitter2);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  afterAll(async () => {
+    await harness.close();
+  });
+
+  beforeEach(async () => {
+    await truncateAll(prisma);
+  });
+
+  it('writes a welcome notification when a registration is announced', async () => {
+    const { user } = await createCustomer(prisma);
+
+    events.emit('auth.user.registered', { userId: user.id });
+
+    // No sleep and no polling: `truncateAll` waits for the same work, so if
+    // this needed a timer the next test would be racing it.
+    await settleEvents();
+
+    const rows = await prisma.notification.findMany({ where: { userId: user.id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.titleKey).toBe('notifications.welcomeTitle');
+  });
+
+  it('does not truncate out from under a listener that is still writing', async () => {
+    // The property, stated as an ordering rather than a duration.
+    //
+    // The race this prevents does not reproduce on demand: on this machine
+    // the listener always happened to finish first, and the failure appeared
+    // only on a loaded CI runner, as a deadlock between the TRUNCATE and the
+    // INSERT it collided with. An earlier version of this test asserted "no
+    // rows leaked", which passed with or without the fix. A second version
+    // gave the listener a 150ms delay and *also* passed without the fix,
+    // because truncating thirty-eight tables takes about that long. Both were
+    // worthless, and both looked fine.
+    //
+    // So the listener blocks until this test releases it, and the assertion
+    // is that truncation has not finished while it is still blocked. There is
+    // no duration to lose a race against.
+    const notifications = harness.app.get(NotificationsService);
+    let release: () => void = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    jest.spyOn(notifications, 'send').mockImplementation(async () => {
+      await blocked;
+      return {} as never;
+    });
+
+    const { user } = await createCustomer(prisma);
+    events.emit('auth.user.registered', { userId: user.id });
+
+    let truncated = false;
+    const truncating = truncateAll(prisma).then(() => {
+      truncated = true;
+    });
+
+    // A second is far longer than truncation needs, so if it were going to
+    // run ahead of the listener it would have done so by now.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    try {
+      expect(truncated).toBe(false);
+    } finally {
+      // Released whatever the assertion decided. Without this, a regression
+      // leaves the listener blocked forever and the suite hangs instead of
+      // failing — which is how a broken guarantee turns into a CI timeout
+      // that says nothing about what broke.
+      release();
+      await truncating;
+    }
+
+    expect(truncated).toBe(true);
   });
 });

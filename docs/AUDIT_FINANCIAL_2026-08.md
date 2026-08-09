@@ -3,14 +3,19 @@
 Scope: the money. Bonus lifecycle, ledger atomicity, idempotency, concurrency,
 the charging lifecycle, partner accounting, and recovery from interruption.
 
-Method: attack the running code with the two things the existing suites never
-did — **operations in flight at the same time**, and **numbers that do not
-divide evenly**. Every finding below was reproduced by a test that failed
-before the fix and passes after it. Nothing here was concluded by reading
+Method: attack the running code with whatever the existing suites had not.
+That started as **operations in flight at the same time** and **numbers that
+do not divide evenly**, and became, round by round, killing the database
+mid-transaction, generating orderings nobody would write down, and finally
+leaving the API alone and attacking the screens that call it. Every finding
+below was reproduced by a test that failed before the fix and passes after
+it — checked by removing the fix again, which is how three tests in round
+five were found to be worthless. Nothing here was concluded by reading
 alone.
 
-State audited: `ff96a6a`, 446 integration tests passing. State after:
-`8851561`, 522 integration tests passing.
+State audited: `ff96a6a`, 446 integration tests passing. State after round
+four: `8851561`, 627 API tests passing. Round five moved to the clients —
+after it, 627 API, 65 mobile, 28 admin, 9 partner.
 
 ---
 
@@ -18,22 +23,42 @@ State audited: `ff96a6a`, 446 integration tests passing. State after:
 
 | | Found | Fixed | Verified by test |
 | --- | --- | --- | --- |
-| Critical | 3 | 3 | yes |
-| High | 4 | 4 | yes |
-| Medium | 1 | 1 | yes |
+| Critical | 5 | 5 | yes |
+| High | 5 | 5 | yes |
+| Medium | 3 | 3 | yes |
 | Blockers raised, later closed | 2 | 2 | yes |
 
-Three rounds. The first attacked the money paths; the second attacked
-authorization by object id, database-level enforcement, and whether a failure
-reaches a human; the third built the two things the first round could only
-report as blockers. F-7 and F-8 come from the second — see §Round two.
+Five rounds, each attacking in a way the previous one did not — which is the
+only reason each found anything, and the reason to expect a sixth would too.
 
-The financial core proper — payments, settlement, refunds, payouts,
-reconciliation — held everything thrown at it. Its claims are conditional
-updates, its arithmetic rounds explicitly, and its concurrency was already
-tested. **Every defect found was in the loyalty and EV paths**, which are
-older, and which had drifted from the conventions the financial core
-established later.
+1. **The money paths**, concurrently and with awkward amounts. F-1 to F-6.
+2. **Production readiness**: authorization by object id, database-level
+   enforcement, whether a failure reaches a human. F-7, F-8 — see §Round two.
+3. **The database goes away mid-transaction.** F-9, F-10, both Critical, both
+   invisible to every previous round because no previous round had killed
+   anything.
+4. **Random sequences with invariants checked after every step.** F-11, found
+   by an ordering nobody had thought to write down.
+5. **The client, not the server.** F-12, F-13 — two server guarantees that
+   could only be reached through a cooperating client, and one that was not
+   cooperating.
+
+Where the defects were, by round, because the answer changed:
+
+Rounds one and two found everything in the **loyalty and EV paths** — older
+code that had drifted from the conventions the financial core established
+later. The financial core proper held everything those rounds threw at it:
+conditional-update claims, explicit rounding, concurrency already tested.
+
+Round three found two Criticals **inside that same financial core**, so the
+sentence this paragraph used to contain — that every defect was in the older
+paths — did not survive the first round that attacked in a genuinely new way.
+It is left visible here rather than quietly deleted, because the pattern is
+the finding: what an audit has not attacked reads exactly like what an audit
+has cleared.
+
+Round five found its two **outside the API altogether**, in the operator's
+browser, where no amount of server-side testing could have reached them.
 
 ---
 
@@ -412,6 +437,94 @@ already declared clean.
 
 ---
 
+## Round five: the client undoes the server
+
+Every round so far attacked the API. That is where the money is, and it is
+also where all the protection was verified — which turned out to be the
+limitation, because two of the guarantees the server offers can only be
+reached through a client that cooperates, and one of them did not.
+
+This round asked a different question: **if the server is right, can the
+screen still lose money?**
+
+### F-12 (High) — a timed-out refund could be paid twice from the admin panel
+
+**What was wrong.** `apps/admin/src/lib/api/financeApi.ts` minted a fresh
+idempotency key inside each request function, with a comment arguing the case:
+a retry the operator starts deliberately is a new refund, not a replay of the
+last one.
+
+That argument assumes the operator can tell a refusal from a lost answer. They
+cannot. `httpClient` gives up after fifteen seconds. A refund that commits on
+the server at sixteen — a cold instance, a slow ledger transaction, a proxy
+that drops the connection — arrives on screen as
+`timeout of 15000ms exceeded`. The money moved. The screen says it failed. The
+only sensible thing to do with a failed refund is try it again, and the second
+attempt carried a different key.
+
+**Why none of the server's protection helped.** F-9 and F-10 put the caller's
+key on the money row itself under a unique index, so a *repeated* key cannot
+produce a second refund. Nothing in that design can engage against a client
+that never repeats one. The guarantee was real and unreachable.
+
+It reached three operations: refunds, payout requests, and acquirer
+settlements — every write on the admin panel that moves money.
+
+**The fix.** The key now identifies the operator's intention rather than the
+HTTP attempt. `useIdempotencyKey` holds one for as long as the operation would
+do the same thing and mints a new one when it would not: a different payment,
+a different amount, a different partner. A refund's *reason* is deliberately
+excluded from that identity — rewording a note is not authorising a second
+refund, and an operator who improves the wording after a timeout must not
+thereby pay twice. Each API function takes the key as a required argument, so
+a new call site cannot omit one.
+
+**The mobile app already knew this.** `ScanQrScreen` mints one key when the QR
+code is scanned and holds it across retries, and its comment names the double
+charge that taught it. The same defect, in the same shape, had been found and
+fixed on the customer side and left standing on the operator side — where the
+amounts are larger and the payee is not the person holding the phone. Worth
+recording as the lesson of this round: a fix is not finished when the place it
+was found is fixed.
+
+### F-13 (Medium) — a dismissed dialog confirmed the payout anyway
+
+Confirming a payout asked for the bank reference with
+`window.prompt('Bank reference?') ?? 'unknown'`. Escape and Cancel both return
+null, so dismissing the dialog did not cancel anything — it confirmed the
+transfer and recorded the reference as the literal string `unknown`. Money
+marked as sent to a partner's bank, against a reference that can never be
+matched to a statement. `Mark failed` had the same shape with `unspecified`.
+
+Confirmation is the second half of the two-person rule and the one action on
+that screen that has to be deliberate. A cancelled dialog is the plainest way
+a person can say no, and the screen read it as yes.
+
+The prompt now runs before the mutation and a null answer ends it. An empty
+answer is treated differently on purpose — they pressed OK, so they get a
+sentence explaining what the reference is for, rather than silence.
+
+### The tests were wrong first, in a way worth recording
+
+Three of the five payout tests were written in a form that passed whether or
+not the bug was present: a mutation does not call its `mutationFn`
+synchronously, so `expect(confirmPayout).not.toHaveBeenCalled()` asserted
+immediately after the click is true either way. They only became worth having
+once the click was allowed to settle first.
+
+This was caught by the standing practice of removing each fix and watching its
+test fail. Three of them did not. That is the second time in this document a
+harness has had to be fixed before it could find anything — and both times the
+harness was green.
+
+### What this round could not check
+
+The admin panel now has page-level tests; the partner dashboard has no write
+that moves money, so there was nothing of this kind to find there. Neither
+dashboard has been driven by a human against a live API since these changes.
+
+---
+
 ## Round two: production readiness
 
 A second pass over the areas the first did not reach — authorization by
@@ -536,7 +649,7 @@ been done.
 
 **Two things this audit cannot tell you.** It was performed by the code's own
 author, which is worth less than an independent review — and the pattern
-across three rounds is consistent: each round finds real defects in areas the
+across five rounds is consistent: each round finds real defects in areas the
 previous round passed, because each round attacks in a way the previous one
 did not. That is evidence the remaining unknown defects are the ones these
 particular attacks do not reach, which is an argument for an external review

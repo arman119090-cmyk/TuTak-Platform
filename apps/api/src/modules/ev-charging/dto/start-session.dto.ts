@@ -24,10 +24,10 @@ export class StopSessionDto {
    * failed": it gets the same refusal either way. With a key, the retry gets
    * the original result back.
    *
-   * Not required, because the shipped mobile app does not send one and
-   * making it mandatory would break every installed copy. A client that
-   * sends one gets the stronger guarantee; one that does not is exactly as
-   * safe as before.
+   * Not required on the wire, so a client that predates the key is exactly
+   * as safe as it was before. The mobile app now always sends one, derived
+   * from the session rather than the clock so that it survives the app being
+   * killed between the timeout and the retry.
    */
   @IsOptional()
   @IsString()

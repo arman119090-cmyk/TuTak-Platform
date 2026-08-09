@@ -41,6 +41,12 @@ export interface StartEvSessionRequestDto {
 export interface StopEvSessionRequestDto {
   /** Points to spend against the session's cost. Omit to pay in full. */
   bonusAmountToApply?: string;
+  /**
+   * Identifies the stop so a retry after a lost answer returns the original
+   * result instead of being refused. Optional on the wire for the sake of any
+   * client that predates it; the mobile app always sends one.
+   */
+  idempotencyKey?: string;
 }
 
 export interface EvSessionDto {

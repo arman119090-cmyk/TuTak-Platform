@@ -36,12 +36,20 @@ export const evApi = {
     return data.data;
   },
 
-  async stopSession(sessionId: string, bonusAmountToApply?: string) {
-    // The key is omitted rather than sent as undefined: the API validates
+  /**
+   * @param idempotencyKey identifies the stop, not the attempt. Derive it
+   * from the session and the bonus rather than the clock — see
+   * `EvSessionScreen`, which explains why a value that survives the app being
+   * killed is worth more here than a random one.
+   */
+  async stopSession(sessionId: string, idempotencyKey: string, bonusAmountToApply?: string) {
+    // The bonus is omitted rather than sent as undefined: the API validates
     // with `forbidNonWhitelisted`, and axios drops undefined values, but
     // being explicit keeps the intent readable — "pay in full" is the
     // absence of a bonus, not a bonus of nothing.
-    const body: StopEvSessionRequestDto = bonusAmountToApply ? { bonusAmountToApply } : {};
+    const body: StopEvSessionRequestDto = bonusAmountToApply
+      ? { bonusAmountToApply, idempotencyKey }
+      : { idempotencyKey };
     const { data } = await httpClient.post<ApiEnvelope<EvSessionDto>>(
       `/ev/sessions/${sessionId}/stop`,
       body,

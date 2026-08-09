@@ -54,8 +54,26 @@ export function EvSessionScreen() {
 
   const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
 
+  /**
+   * The key for this stop, derived rather than generated.
+   *
+   * A random key held in state would be lost the moment the app is killed —
+   * and being killed is exactly what happens on a phone: the customer's
+   * request times out at a charge point with poor signal, they force-close
+   * the app out of frustration, reopen it, and press stop again. A key built
+   * from the session and the bonus is the same key on the other side of that,
+   * so the server recognises the retry and hands back the original stop
+   * instead of billing a second one.
+   *
+   * The session id is already unique, so nothing random is needed. The bonus
+   * is in the key because it changes what the stop costs: a customer who
+   * decides to spend points after a failed attempt is asking for something
+   * different, and must not be answered with the earlier result.
+   */
+  const stopKey = `ev-stop-${session?.id ?? 'none'}-${bonusToApply.trim() || 'full'}`;
+
   const stop = useMutation({
-    mutationFn: () => evApi.stopSession(session!.id, bonusToApply.trim() || undefined),
+    mutationFn: () => evApi.stopSession(session!.id, stopKey, bonusToApply.trim() || undefined),
     onSuccess: async (stopped) => {
       await queryClient.invalidateQueries({ queryKey: ['ev-active-session'] });
       await queryClient.invalidateQueries({ queryKey: ['ev-stations'] });

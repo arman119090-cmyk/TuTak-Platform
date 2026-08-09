@@ -38,11 +38,21 @@
 #
 # ## Cost
 #
-# On Render's free tiers this runs at no cost, with two consequences worth
-# knowing before an investor opens the link: free services sleep after
-# inactivity and take ~30 seconds to wake, and the free database expires
-# after 30 days. For a demo somebody is expected to open unannounced, put
-# the API on the cheapest paid instance and leave the dashboards free.
+# Everything here is on a free tier, so applying this blueprint cannot
+# charge anybody and does not need a card. That is the right default for a
+# first attempt: the failure mode of a wrong guess should be a wasted
+# afternoon, not a bill.
+#
+# Two consequences to know before an investor opens the link:
+#
+#   - free services sleep after ~15 minutes idle and take 30-50 seconds to
+#     wake, which is a long silence on a shared screen;
+#   - the free database expires after 30 days.
+#
+# Before a meeting that is actually scheduled, open tutak-api in Render and
+# move it to the cheapest paid instance — one click, no redeploy needed, and
+# it stops sleeping. Leave the dashboards free; they wake with the first
+# request and nobody is watching them load.
 
 databases:
   - name: tutak-db
@@ -64,7 +74,9 @@ services:
   - type: web
     name: tutak-api
     runtime: docker
-    plan: starter
+    # Free so a first deploy cannot cost anything. See the note at the top
+    # about moving this one service up before a scheduled demonstration.
+    plan: free
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
     healthCheckPath: /health

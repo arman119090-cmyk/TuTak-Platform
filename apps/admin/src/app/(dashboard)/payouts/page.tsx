@@ -18,6 +18,7 @@ import {
 } from '@tutak/design/web';
 import { Role } from '@tutak/shared-types';
 import { financeApi, type Payout } from '@/lib/api/financeApi';
+import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { useAuthStore } from '@/lib/stores/authStore';
 
@@ -58,8 +59,13 @@ export default function PayoutsPage() {
     queryClient.invalidateQueries({ queryKey: ['partner-payouts', partnerId] });
   };
 
+  // A different partner or a different amount is a different intention and
+  // gets its own key; the same pair retried after a timeout keeps it, which
+  // is what lets the server recognise the retry instead of paying twice.
+  const payoutKey = useIdempotencyKey([partnerId, amount]);
+
   const request = useMutation({
-    mutationFn: () => financeApi.requestPayout(partnerId, amount),
+    mutationFn: () => financeApi.requestPayout(partnerId, amount, payoutKey),
     onSuccess: () => {
       setAmount('');
       setError(null);

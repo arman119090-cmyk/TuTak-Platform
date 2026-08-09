@@ -18,6 +18,7 @@ import {
 } from '@tutak/design/web';
 import { financeApi, type PaymentRow } from '@/lib/api/financeApi';
 import { partnersApi } from '@/lib/api/partnersApi';
+import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
 
 export default function RefundsPage() {
   const queryClient = useQueryClient();
@@ -34,8 +35,13 @@ export default function RefundsPage() {
     queryFn: () => financeApi.searchPayments({ partnerId: partnerId || undefined }),
   });
 
+  // The payment and the amount are what the refund would *do*; the reason is
+  // a note on it. Leaving the reason out means an operator who reworded it
+  // after a timeout retries the same refund rather than authorising a second.
+  const refundKey = useIdempotencyKey([target?.id ?? null, amount]);
+
   const refund = useMutation({
-    mutationFn: () => financeApi.refund(target!.id, reason, amount || undefined),
+    mutationFn: () => financeApi.refund(target!.id, reason, refundKey, amount || undefined),
     onSuccess: (r) => {
       setDone(
         `Refunded ${r.amount}. Total refunded on this payment is now ${r.totalRefunded}` +

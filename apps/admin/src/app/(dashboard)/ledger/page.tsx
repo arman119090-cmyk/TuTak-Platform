@@ -16,6 +16,7 @@ import {
   Tr,
 } from '@tutak/design/web';
 import { financeApi } from '@/lib/api/financeApi';
+import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
 
 /**
  * `balance` is stored DEBIT-positive / CREDIT-negative, not normalized per
@@ -71,12 +72,18 @@ export default function LedgerPage() {
     queryFn: financeApi.acquirerSettlements,
   });
 
+  // Every field here identifies the money: a settlement of a different
+  // amount, against a different bank reference, or on a different day is a
+  // different event.
+  const settlementKey = useIdempotencyKey([amount, reference.trim(), settledOn]);
+
   const recordSettlement = useMutation({
     mutationFn: () =>
       financeApi.recordAcquirerSettlement({
         amount,
         reference: reference.trim(),
         settledOn: new Date(settledOn).toISOString(),
+        idempotencyKey: settlementKey,
       }),
     onSuccess: async () => {
       setAmount('');

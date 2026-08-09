@@ -89,26 +89,34 @@ export interface RefundResult {
 }
 
 /**
- * A fresh key per attempt, so a retry the operator initiates deliberately is
- * a new refund rather than a replay of the last one. Retrying a *failed*
- * request safely is the server's job; this is the client saying "I mean it
- * again", which is a different thing.
+ * Every operation that moves money takes its idempotency key as an argument
+ * rather than minting one here.
+ *
+ * This file used to generate a fresh key inside each call, which meant the
+ * key described the HTTP attempt instead of the operator's intention — and a
+ * request that timed out client-side after succeeding on the server came back
+ * as a failure, was pressed again, and paid twice. `useIdempotencyKey`
+ * explains the failure in full.
+ *
+ * Required, not optional, so a new call site cannot quietly omit it.
  */
-const newIdempotencyKey = () =>
-  `adm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
 export const financeApi = {
   async searchPayments(filter: { partnerId?: string; userId?: string }): Promise<PaymentRow[]> {
     const { data } = await httpClient.get('/payments/search', { params: filter });
     return data.data;
   },
 
-  async refund(paymentId: string, reason: string, amount?: string): Promise<RefundResult> {
+  async refund(
+    paymentId: string,
+    reason: string,
+    idempotencyKey: string,
+    amount?: string,
+  ): Promise<RefundResult> {
     const { data } = await httpClient.post('/refunds', {
       paymentId,
       reason,
       ...(amount ? { amount } : {}),
-      idempotencyKey: newIdempotencyKey(),
+      idempotencyKey,
     });
     return data.data;
   },
@@ -152,11 +160,11 @@ export const financeApi = {
     return data.data;
   },
 
-  async requestPayout(partnerId: string, amount: string) {
+  async requestPayout(partnerId: string, amount: string, idempotencyKey: string) {
     const { data } = await httpClient.post('/payouts', {
       partnerId,
       amount,
-      idempotencyKey: newIdempotencyKey(),
+      idempotencyKey,
     });
     return data.data;
   },
@@ -181,11 +189,13 @@ export const financeApi = {
     return data.data;
   },
 
-  async recordAcquirerSettlement(input: { amount: string; reference: string; settledOn: string }) {
-    const { data } = await httpClient.post('/payouts/acquirer/settlements', {
-      ...input,
-      idempotencyKey: newIdempotencyKey(),
-    });
+  async recordAcquirerSettlement(input: {
+    amount: string;
+    reference: string;
+    settledOn: string;
+    idempotencyKey: string;
+  }) {
+    const { data } = await httpClient.post('/payouts/acquirer/settlements', input);
     return data.data;
   },
 };

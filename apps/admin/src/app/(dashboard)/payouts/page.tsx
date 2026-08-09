@@ -75,13 +75,59 @@ export default function PayoutsPage() {
   });
 
   const resolve = useMutation({
-    mutationFn: ({ id, outcome }: { id: string; outcome: 'paid' | 'failed' }) =>
+    mutationFn: ({
+      id,
+      outcome,
+      detail,
+    }: {
+      id: string;
+      outcome: 'paid' | 'failed';
+      detail: string;
+    }) =>
       outcome === 'paid'
-        ? financeApi.confirmPayout(id, window.prompt('Bank reference?') ?? 'unknown')
-        : financeApi.failPayout(id, window.prompt('Failure reason?') ?? 'unspecified'),
+        ? financeApi.confirmPayout(id, detail)
+        : financeApi.failPayout(id, detail),
     onSuccess: invalidate,
     onError: (e: Error) => setError(e.message),
   });
+
+  /**
+   * Asks first, and treats "no" as no.
+   *
+   * The prompt used to live inside the mutation as
+   * `window.prompt('Bank reference?') ?? 'unknown'`. Pressing Escape or
+   * Cancel returns null, so a dismissed dialog confirmed the payout anyway
+   * and recorded the bank reference as the literal string "unknown" — money
+   * marked as sent, against a reference that can never be matched to a
+   * statement, because somebody changed their mind half a second too late.
+   *
+   * Confirming a payout is the second half of the two-person rule. It is the
+   * one action on this screen that must be deliberate, and a cancelled dialog
+   * is the clearest statement of intent a person can make.
+   */
+  const askThenResolve = (id: string, outcome: 'paid' | 'failed') => {
+    setError(null);
+    const answer = window.prompt(
+      outcome === 'paid'
+        ? 'Bank reference for this transfer?'
+        : 'Why did this payout fail?',
+    );
+    if (answer === null) return;
+
+    const detail = answer.trim();
+    if (!detail) {
+      // Empty is not the same as cancelled — they pressed OK — so it gets an
+      // answer rather than silence.
+      setError(
+        outcome === 'paid'
+          ? 'A bank reference is required: it is what reconciles this payout against the statement.'
+          : 'A reason is required, so the partner can be told why.',
+      );
+      return;
+    }
+
+    resolve.mutate({ id, outcome, detail });
+  };
 
   const rows: Payout[] = payouts ?? [];
 
@@ -209,14 +255,14 @@ export default function PayoutsPage() {
                           variant="secondary"
                           disabled={p.requestedByUserId === user?.id}
                           aria-label={`Confirm the ${Number(p.amount).toLocaleString('en-US')} payout requested by ${p.requestedByName ?? 'an unknown admin'}`}
-                          onClick={() => resolve.mutate({ id: p.id, outcome: 'paid' })}
+                          onClick={() => askThenResolve(p.id, 'paid')}
                         >
                           Confirm
                         </Button>
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => resolve.mutate({ id: p.id, outcome: 'failed' })}
+                          onClick={() => askThenResolve(p.id, 'failed')}
                         >
                           Mark failed
                         </Button>

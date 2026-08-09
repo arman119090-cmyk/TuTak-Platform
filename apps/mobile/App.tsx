@@ -40,11 +40,22 @@ const navigationTheme = {
 };
 
 function Root() {
-  const { user, isHydrated, hydrate } = useAuthStore();
+  const { user, hydrate } = useAuthStore();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    hydrate().then(() => setReady(true));
+    // This is the only gate between the splash screen and the app, so it has
+    // to open however hydration turns out. A rejected promise here shows the
+    // logo forever, with no error and no way out — the failure the browser
+    // build shipped with once already. The store is written so it cannot
+    // reject; this does not rely on that staying true.
+    //
+    // The `catch` is what makes it safe, not the ordering: `finally` alone
+    // passes the rejection along to nobody, which is an unhandled rejection
+    // and a red box on top of an app that did start.
+    hydrate()
+      .catch(() => undefined)
+      .then(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -53,7 +64,12 @@ function Root() {
   // chance of being allowed.
   usePushRegistration();
 
-  if (!ready || !isHydrated) {
+  // One latch, not two. This used to also require the store's `isHydrated`,
+  // which is only raised on the success path — so any failure inside
+  // hydration left both flags disagreeing and the splash screen up. `ready`
+  // means "hydration has settled", which is the actual question being asked
+  // here, and it is answered whichever way hydration went.
+  if (!ready) {
     return <SplashScreen />;
   }
 

@@ -46,6 +46,19 @@ export const useAuthStore = create<AuthState>((set) => ({
   deviceId: '',
   isHydrated: false,
 
+  /**
+   * Hydration cannot be allowed to reject.
+   *
+   * `parseUser` above covers one way this used to strand the app on its
+   * splash. Storage itself is the other: reads are guarded in the adapter
+   * now, but the device-id write below is a write, and a device whose
+   * keystore refuses one would otherwise take the whole app down with it —
+   * over an identifier that only needs to be stable, not durable.
+   *
+   * So the write is allowed to fail and the generated id is kept for this
+   * run. `isHydrated` is set on every path, because whatever went wrong,
+   * the answer is the login screen and not a logo forever.
+   */
   hydrate: async () => {
     const [accessToken, refreshToken, storedDeviceId, storedUser] = await Promise.all([
       getItem(ACCESS_TOKEN_KEY),
@@ -57,7 +70,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     let deviceId = storedDeviceId;
     if (!deviceId) {
       deviceId = generateDeviceId();
-      await setItem(DEVICE_ID_KEY, deviceId);
+      try {
+        await setItem(DEVICE_ID_KEY, deviceId);
+      } catch {
+        // Kept in memory for this run; a new one is generated next launch.
+      }
     }
 
     set({

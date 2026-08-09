@@ -19,6 +19,38 @@ describe('secureStorage (native)', () => {
     expect(mockedSecureStore.getItemAsync).toHaveBeenCalledWith('tutak.accessToken');
   });
 
+  it('reports an unreadable entry as absent rather than throwing', async () => {
+    // The Keystore is not a map that always answers. An entry written before
+    // an OS upgrade, or restored onto a different handset, cannot be
+    // decrypted and `getItemAsync` throws. That throw lands during hydration,
+    // before the first screen, and used to leave the app on its splash with
+    // no way forward — the same failure the browser build shipped with, on
+    // the platform that actually ships.
+    mockedSecureStore.getItemAsync.mockRejectedValue(
+      new Error('Could not decrypt the value for key tutak.refreshToken'),
+    );
+
+    await expect(getItem('tutak.refreshToken')).resolves.toBeNull();
+  });
+
+  it('lets a failed write through to the caller', async () => {
+    // Deliberately not symmetrical with the read. A swallowed write would
+    // make a login look successful and then lose it on the next launch, with
+    // nothing anywhere saying why; the screen that asked for the write can
+    // tell the person, which hydration cannot.
+    mockedSecureStore.setItemAsync.mockRejectedValue(new Error('Keystore is full'));
+
+    await expect(setItem('tutak.accessToken', 'token-x')).rejects.toThrow(/Keystore is full/);
+  });
+
+  it('lets a failed delete through to the caller', async () => {
+    // A logout that silently fails to erase a refresh token is worse than a
+    // logout that reports it could not.
+    mockedSecureStore.deleteItemAsync.mockRejectedValue(new Error('denied'));
+
+    await expect(deleteItem('tutak.refreshToken')).rejects.toThrow(/denied/);
+  });
+
   it('writes and deletes through to the OS keystore', async () => {
     mockedSecureStore.setItemAsync.mockResolvedValue();
     mockedSecureStore.deleteItemAsync.mockResolvedValue();

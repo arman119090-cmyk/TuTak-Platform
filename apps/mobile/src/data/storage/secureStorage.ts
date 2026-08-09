@@ -22,10 +22,41 @@ import * as SecureStore from 'expo-secure-store';
  * actually ships on. Read the web file for what is given up there.
  */
 
+/**
+ * A read that fails is "no session", not a crash.
+ *
+ * The Keystore is not merely a map that always answers. An entry written
+ * before an OS upgrade, or restored onto a different handset from a backup,
+ * can no longer be decrypted, and `getItemAsync` throws rather than returning
+ * null. That throw arrives during hydration — before the first screen — and
+ * the app stops on its splash with the logo showing and no way forward, not
+ * even to log out.
+ *
+ * The web adapter has been defended against exactly this since the browser
+ * build hit it. The native one had not been, on the platform the product
+ * actually ships to.
+ *
+ * Degrading to null puts the person on the login screen, where signing in
+ * writes a fresh value over the unreadable one. They lose a session; they do
+ * not lose the app.
+ */
 export async function getItem(key: string): Promise<string | null> {
-  return SecureStore.getItemAsync(key);
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
 }
 
+/**
+ * Writes and deletes still throw, deliberately.
+ *
+ * A swallowed write would let a login look successful and then vanish on the
+ * next launch, with nothing anywhere saying why; a swallowed delete would
+ * leave a refresh token on a phone whose owner pressed "log out". Both are
+ * called from screens that can report a failure to the person in front of
+ * them, which hydration cannot.
+ */
 export async function setItem(key: string, value: string): Promise<void> {
   await SecureStore.setItemAsync(key, value);
 }

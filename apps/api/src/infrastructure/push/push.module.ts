@@ -20,7 +20,13 @@ import { PUSH_PROVIDER } from './push-provider.interface';
           // notifications instead of delivering them would look healthy
           // while every customer wondered why their phone stayed silent —
           // and unlike a verification code, nobody reports the absence.
-          if (isProduction) {
+          //
+          // Exempt in demo mode alongside the acquirer and the carrier: a
+          // demonstration has no push credentials either, and there is
+          // nobody waiting for a notification that never arrives. This one
+          // was found by trying to boot a demo rather than by reading the
+          // code, which is the argument for booting it.
+          if (isProduction && !config.get('demoMode', { infer: true })) {
             throw new Error(
               'PUSH_ENABLED must be true in production, with PUSH_ENDPOINT configured — ' +
                 'notifications cannot be delivered otherwise.',

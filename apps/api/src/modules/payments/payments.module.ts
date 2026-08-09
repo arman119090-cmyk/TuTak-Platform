@@ -31,10 +31,20 @@ import { SandboxPspAdapter } from './sandbox-psp.adapter';
         // Same discipline as SmsModule: a fake acquirer that quietly
         // approved every charge in production would be a lot worse than a
         // process that refuses to start.
-        if (config.get('nodeEnv', { infer: true }) === 'production') {
+        //
+        // Demo mode is the one exception, and it is not a loophole: it is an
+        // explicit variable, it is announced at boot, and `/health` reports
+        // it, so a deployment cannot be running on a fake acquirer without
+        // saying so to anyone who asks. A demonstration has to charge
+        // something; what it must never do is let anyone believe the charge
+        // was real.
+        const isProduction = config.get('nodeEnv', { infer: true }) === 'production';
+        if (isProduction && !config.get('demoMode', { infer: true })) {
           throw new Error(
             'PaymentsModule: no production PSP adapter is configured. Refusing to boot ' +
-              'with the sandbox adapter in production — see docs/FINANCIAL_CORE_DESIGN.md.',
+              'with the sandbox adapter in production — see docs/FINANCIAL_CORE_DESIGN.md. ' +
+              'For a public demonstration set DEMO_MODE=true, which permits the sandbox ' +
+              'and announces itself.',
           );
         }
         return sandbox;

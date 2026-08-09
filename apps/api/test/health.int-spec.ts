@@ -22,7 +22,17 @@ describe('HealthController (integration)', () => {
   });
 
   it('reports live without touching any dependency', () => {
-    expect(health.live()).toEqual({ status: 'ok' });
+    expect(health.live()).toEqual({ status: 'ok', demoMode: false });
+  });
+
+  it('says whether it is a demonstration', () => {
+    // An instance running on the sandbox acquirer must be able to be asked
+    // what it is, from outside, by anyone — a dashboard deciding whether to
+    // show a banner, or a person wondering whether the payments they are
+    // looking at were real. The test harness is not a demo, so this is
+    // false here; what matters is that the field exists and is answered.
+    expect(health.live()).toHaveProperty('demoMode');
+    expect(typeof health.live().demoMode).toBe('boolean');
   });
 
   it('reports ready when the database and Redis are both reachable', async () => {
@@ -47,6 +57,7 @@ describe('HealthController readiness under a failing dependency', () => {
     const failingController = new HealthController(
       { $queryRaw: () => Promise.reject(new Error('connection refused')) } as never,
       { ping: () => Promise.resolve('PONG') } as never,
+      { get: () => false } as never,
     );
 
     await expect(failingController.ready()).rejects.toThrow(HttpException);

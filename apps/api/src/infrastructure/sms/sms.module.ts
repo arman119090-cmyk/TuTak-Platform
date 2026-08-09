@@ -19,7 +19,13 @@ import { SMS_PROVIDER } from './sms-provider.interface';
           // Refusing to boot is the point. A production deployment that falls
           // back to logging codes would appear healthy while every user who
           // needed a verification or reset code was silently locked out.
-          if (isProduction) {
+          //
+          // A demonstration has no carrier contract either, and the same
+          // lockout applies there — which is why the demo is seeded with
+          // accounts that are already verified, and why the walkthrough tells
+          // whoever is looking to sign in with one rather than register.
+          // See docs/INVESTOR_DEMO_RU.md.
+          if (isProduction && !config.get('demoMode', { infer: true })) {
             throw new Error(
               'SMS_ENDPOINT must be configured in production — verification and password ' +
                 'reset codes cannot be delivered without a carrier.',

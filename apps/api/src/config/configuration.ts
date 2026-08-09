@@ -1,5 +1,29 @@
 export interface AppConfig {
   nodeEnv: string;
+  /**
+   * A public demonstration, running every production protection, on a fake
+   * acquirer.
+   *
+   * There are two deployments this platform already knows how to be: a
+   * developer's machine, where anything goes, and production, where the
+   * process refuses to start unless a real acquirer and a real SMS carrier
+   * are configured. Showing the product to somebody is neither. It has to be
+   * reachable from the open internet — so it needs the CORS allowlist, the
+   * security headers, the rate limits and the secret validation that only
+   * production turns on — while having no acquirer contract and no carrier,
+   * which is exactly what production refuses to boot without.
+   *
+   * Demo mode is that third state, and it is deliberately awkward to enter:
+   * it is an explicit environment variable that nothing else implies, it is
+   * announced in a banner at boot, and it is reported by `/health` so a
+   * dashboard can label itself. Nothing here relaxes a security control. The
+   * only thing it permits is the fake acquirer and the console SMS provider,
+   * which is the difference between a demonstration and a lie about one.
+   *
+   * **No real money can move in this mode, and nobody should be told
+   * otherwise.**
+   */
+  demoMode: boolean;
   port: number;
   database: { url: string };
   redis: { url: string };
@@ -94,6 +118,10 @@ export interface AppConfig {
 
 export default (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
+  // Compared against the exact string, so an unset variable, an empty one,
+  // `1`, or `yes` all leave it off. Something this consequential should
+  // require someone to have typed the word.
+  demoMode: process.env.DEMO_MODE === 'true',
   port: parseInt(process.env.PORT ?? '4000', 10),
   database: {
     url: process.env.DATABASE_URL ?? '',

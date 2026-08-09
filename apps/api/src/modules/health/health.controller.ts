@@ -1,6 +1,8 @@
 import { Controller, Get, HttpException, HttpStatus, Inject, VERSION_NEUTRAL } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { Public } from '../../common/decorators/public.decorator';
+import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.module';
 
@@ -15,6 +17,7 @@ export class HealthController {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   /**
@@ -24,7 +27,12 @@ export class HealthController {
    */
   @Get()
   live() {
-    return { status: 'ok' };
+    // `demoMode` is reported here rather than only in the boot log so that a
+    // deployment can be asked what it is, from outside, by anyone — a
+    // dashboard deciding whether to show a banner, or a person wondering
+    // whether the payments they are looking at were real. An instance
+    // running on a fake acquirer should never be able to keep that quiet.
+    return { status: 'ok', demoMode: this.config.get('demoMode', { infer: true }) };
   }
 
   /**

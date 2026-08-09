@@ -99,6 +99,29 @@ async function bootstrap() {
     `TuTak API listening on port ${port}` +
       (tracingEnabled ? ' (tracing on)' : ''),
   );
+
+  // Loud on purpose, and at the end so it is the last thing in the log
+  // rather than buried under Nest's route table. Somebody reading these logs
+  // to work out why a payment never reached the bank should not have to
+  // discover the acquirer was fake — it should be the first thing they see.
+  if (config.get('demoMode', { infer: true })) {
+    /* eslint-disable no-console */
+    console.log('');
+    console.log('  ╔════════════════════════════════════════════════════════════╗');
+    console.log('  ║  DEMO MODE — no real money can move through this instance  ║');
+    console.log('  ╠════════════════════════════════════════════════════════════╣');
+    console.log('  ║  Payments run on the sandbox acquirer: every charge is      ║');
+    console.log('  ║  simulated and nothing reaches a bank.                      ║');
+    console.log('  ║  SMS codes are written to this log, not delivered.          ║');
+    console.log('  ║                                                            ║');
+    console.log('  ║  Every other protection is on: CORS allowlist, security     ║');
+    console.log('  ║  headers, rate limits, secret validation.                   ║');
+    console.log('  ║                                                            ║');
+    console.log('  ║  Unset DEMO_MODE before this becomes a real deployment.     ║');
+    console.log('  ╚════════════════════════════════════════════════════════════╝');
+    console.log('');
+    /* eslint-enable no-console */
+  }
 }
 
 // `void` is the explicit acknowledgement that nothing awaits the top-level

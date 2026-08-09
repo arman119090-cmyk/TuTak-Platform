@@ -7,6 +7,9 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "API_BASE_URL": "http://localhost:4000/v1",
         "APP_ENV": "development"
@@ -15,16 +18,20 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
-        "API_BASE_URL": "REPLACE_WITH_STAGING_API_URL",
         "APP_ENV": "preview"
       }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
-        "API_BASE_URL": "REPLACE_WITH_PRODUCTION_API_URL",
         "APP_ENV": "production"
       }
     }

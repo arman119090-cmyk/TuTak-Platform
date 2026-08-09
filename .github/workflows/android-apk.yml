@@ -1,0 +1,118 @@
+# Builds the Android APK on EAS, triggered from a browser.
+#
+# The reason this workflow exists rather than a line in a README: an EAS build
+# needs the Expo account that owns the project, and the people who need this
+# APK have phones, not computers. `eas build` is a CLI, and a CLI is a
+# computer. GitHub's "Run workflow" button is not — it is a button, on a web
+# page, that works on a phone.
+#
+# So the whole flow becomes: add one secret once, press Run, wait, open the
+# link EAS prints. docs/ANDROID_APK_RU.md walks through it with the screens
+# named.
+#
+# ## What you need before the first run
+#
+#   EXPO_TOKEN   repository secret — expo.dev → Account settings → Access
+#                tokens → Create. A robot token is enough; it does not need
+#                to be your personal login.
+#
+# The API address is asked for at run time rather than stored, because it
+# changes: a demonstration deployed today has a different URL than the one
+# deployed next month, and a stale value baked into a workflow produces an
+# app that installs and reaches nothing.
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'API address the app will talk to, ending in /v1 (e.g. https://tutak-api-xxxx.onrender.com/v1)'
+        required: true
+        type: string
+      profile:
+        description: 'preview = standalone app, works on its own. development = needs a Metro server on a computer.'
+        required: true
+        default: preview
+        type: choice
+        options: [preview, development]
+
+jobs:
+  build:
+    name: EAS build (Android APK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse early if the token is missing
+        # Checked before anything is installed. Without this the run spends
+        # two minutes on setup and then fails inside eas-cli with a message
+        # about authentication that reads like a bug rather than a missing
+        # secret.
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN is not set. Add it under Settings → Secrets and variables → Actions → New repository secret. Create the token at expo.dev → Account settings → Access tokens."
+            exit 1
+          fi
+
+      - name: Reject an address that cannot work on a phone
+        # `localhost` on a phone is the phone. An APK built against it
+        # installs, opens, looks correct and reaches nothing — and the person
+        # holding the phone has no way to tell that from a server being down.
+        # app.config.js refuses this too; catching it here saves the queue.
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
+          case "$API_BASE_URL" in
+            http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*)
+              echo "::error::$API_BASE_URL points at the phone itself. Use the address of a server the phone can reach."
+              exit 1 ;;
+          esac
+          case "$API_BASE_URL" in
+            */v1) : ;;
+            *) echo "::error::$API_BASE_URL does not end in /v1 — every request would 404." ; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build the APK
+        working-directory: apps/mobile
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+          APP_ENV: ${{ inputs.profile }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        # --non-interactive because nobody is watching a terminal here, and
+        # --wait so the run does not report success while the build is still
+        # queued. The build page link is printed either way.
+        run: |
+          eas build \
+            --platform android \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --wait
+
+      - name: Print where to get it
+        if: always()
+        run: |
+          echo "### Where the APK is" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Open <https://expo.dev/accounts>, pick the TuTak project, then **Builds**." >> "$GITHUB_STEP_SUMMARY"
+          echo "The newest build has a QR code and a **Download** button." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scan the QR with the Pixel's camera, or open the link on the Pixel and tap Download." >> "$GITHUB_STEP_SUMMARY"
+          echo "Android will ask for permission to install from this source — that is expected for an app that did not come from Play." >> "$GITHUB_STEP_SUMMARY"

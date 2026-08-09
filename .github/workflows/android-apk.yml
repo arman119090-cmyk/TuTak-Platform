@@ -153,6 +153,16 @@ jobs:
           jq --arg p "$PROFILE" --arg url "$API_BASE_URL" \
             '.build[$p].env.API_BASE_URL = $url' eas.json > "$tmp"
           mv "$tmp" eas.json
+          # The project id crosses the same boundary and was making the same
+          # trip on the same missing bus: the builder logged
+          # "extra.eas.projectId is missing" while this job had it in its
+          # environment the whole time.
+          if [ -n "$EAS_PROJECT_ID" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg id "$EAS_PROJECT_ID" \
+              '.build[$p].env.EAS_PROJECT_ID = $id' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
           echo "Profile that will be built:"
           jq --arg p "$PROFILE" '.build[$p]' eas.json
           # EAS takes the project from git, so a change left only in the
@@ -233,7 +243,15 @@ jobs:
           # the person reading this may have no way to open expo.dev.
           for url in $(jq -r '.[0].logFiles[]? // empty' record.json 2>/dev/null); do
             echo "--- $url"
-            curl --fail --silent --location "$url" | tail -n 80 || echo "(could not fetch)"
+            # --compressed: these are stored brotli-compressed, and without it
+            # curl prints the compressed bytes, which is how the first attempt
+            # at reading them produced a screenful of noise.
+            # Each line is a JSON record; the message is the only part worth
+            # reading here.
+            curl --fail --silent --location --compressed "$url" \
+              | jq -r 'select(.msg) | "\(.phase // "?"): \(.msg)"' 2>/dev/null \
+              | tail -n 120 \
+              || echo "(could not fetch or parse)"
           done
           echo ""
           echo "=== the CLI's own output, if any ==="

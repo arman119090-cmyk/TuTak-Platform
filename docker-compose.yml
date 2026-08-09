@@ -4,14 +4,43 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # WAL archiving is on here, in the file people copy onto a server,
+    # because turning it on later does not help: point-in-time recovery can
+    # only go back as far as the archive, and the archive starts when you
+    # switch it on. A database that has been running unarchived for a month
+    # can be recovered to "the last nightly dump" and nowhere else.
+    #
+    # The cost locally is a 16 MB file per filled segment in a volume. The
+    # benefit is that the recovery drill (scripts/pitr-rehearse.sh) can be
+    # run against this stack rather than only against production.
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/usr/local/bin/tutak-pitr-archive.sh "%p" "%f"
+      # replica is already the default and is enough for archive-based PITR;
+      # stated so a future edit does not lower it to `minimal`, which makes
+      # the archive unusable while everything still appears to work.
+      - -c
+      - wal_level=replica
     environment:
       POSTGRES_USER: tutak
       POSTGRES_PASSWORD: tutak_dev_password
       POSTGRES_DB: tutak
+      # archive_command inherits the postmaster's environment, which is this.
+      PITR_ARCHIVE_DIR: /var/lib/tutak/wal-archive
     ports:
       - "5432:5432"
     volumes:
       - tutak_postgres_data:/var/lib/postgresql/data
+      # A separate volume on purpose. WAL that lives on the same disk as the
+      # data it protects is not a backup of that data — one failed disk takes
+      # both. On a real deployment this should be a mount of somewhere else
+      # entirely: object storage, another host, anything that does not fail
+      # at the same moment.
+      - tutak_wal_archive:/var/lib/tutak/wal-archive
+      - ./scripts/pitr-archive.sh:/usr/local/bin/tutak-pitr-archive.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tutak -d tutak"]
       interval: 5s
@@ -175,3 +204,4 @@ services:
 
 volumes:
   tutak_postgres_data:
+  tutak_wal_archive:

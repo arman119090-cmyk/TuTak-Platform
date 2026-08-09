@@ -282,9 +282,6 @@ age --decrypt -i <private-key> backups/tutak-<stamp>.dump.age > restored.dump
 
 ### What the scripts do not do
 
-- **Point-in-time recovery.** A nightly dump loses up to a day; PITR loses
-  seconds. Every managed Postgres offers it — turn it on. These scripts are
-  the second copy, not the first line.
 - **Off-host storage.** `backups/` is on the same disk as everything else,
   which is no help when that disk is the thing that failed. Ship the dumps
   somewhere else — object storage, another region — and encrypt them: a
@@ -297,6 +294,132 @@ age --decrypt -i <private-key> backups/tutak-<stamp>.dump.age > restored.dump
 
 `BACKUP_RETAIN_DAYS` (default 14) prunes older dumps from the output
 directory.
+
+## 7c. Point-in-time recovery
+
+A nightly dump loses up to a day. PITR loses seconds, and it is the only
+mechanism that answers the question an incident actually asks: *put the
+database back to 14:52, just before the bad migration ran.*
+
+**If you are on a managed Postgres — RDS, Cloud SQL, Neon, Supabase — turn
+their PITR on and stop reading here.** It is a checkbox, it is continuously
+tested by the provider, and it does not need any of the scripts below. This
+section is for a self-hosted cluster, which is what `docker-compose.yml`
+describes.
+
+### How the pieces fit
+
+PITR is two things that are useless separately:
+
+| | what it is | taken by |
+| --- | --- | --- |
+| **Base backup** | a physical copy of the cluster's files | `scripts/pitr-basebackup.sh` |
+| **WAL archive** | every change since, segment by segment | `scripts/pitr-archive.sh`, called by Postgres |
+
+Recovery unpacks a base and replays WAL on top of it up to the moment you
+name. Note that `backup.sh`'s `pg_dump` **cannot** serve as the base: a dump
+is a logical export with no blocks for WAL to replay onto. Keep both — they
+fail in different ways, and the second mechanism is what you reach for when
+the first cannot be restored.
+
+### Turning it on
+
+`docker-compose.yml` already does this. On a cluster you manage yourself:
+
+```conf
+# postgresql.conf
+archive_mode = on
+archive_command = '/usr/local/bin/tutak-pitr-archive.sh "%p" "%f"'
+wal_level = replica            # the default; never lower it to `minimal`
+```
+
+```conf
+# /etc/tutak/pitr.env — readable by the postgres user
+PITR_ARCHIVE_DIR=/var/lib/tutak/wal-archive
+BACKUP_AGE_RECIPIENT=age1...   # optional, and see the warning below
+```
+
+Restart, then take the first base backup — **in that order**. A base taken
+before archiving is on can only ever restore to the instant it was taken;
+`pitr-basebackup.sh` refuses to run in that state rather than hand you a
+backup with that hidden in it.
+
+```bash
+./scripts/pitr-basebackup.sh /mnt/backups/base
+```
+
+Schedule it weekly. Between base backups the archive is what covers you, so
+the base cadence sets how much WAL must be replayed during a recovery, not
+how much data you can lose.
+
+### Recovering
+
+```bash
+./scripts/pitr-restore.sh \
+  --base /mnt/backups/base/base-20260809T031500Z \
+  --target '2026-08-09T14:52:07Z' \
+  --into /var/lib/tutak/recovered
+```
+
+It recovers into a **separate** data directory and starts it on a
+**separate** port (5433 by default). It never writes to the live database.
+That is deliberate: you get one attempt at choosing the target time, and
+choosing it wrong after overwriting production leaves nothing to try again
+from. Recover alongside, read both, then decide.
+
+Aim slightly *before* the damage. `recovery_target_inclusive` defaults to on,
+so a target equal to the bad transaction's commit time replays it.
+
+### Rehearse it, on a schedule
+
+```bash
+./scripts/pitr-rehearse.sh
+```
+
+The drill writes rows, takes a base, writes more rows, records a safe point,
+destroys the rows, recovers to the safe point in a second cluster, and
+asserts that the post-base rows came back and the post-accident row did not.
+It works on a table it creates for the purpose — nothing real is at risk —
+and it fails loudly if `pg_stat_archiver.failed_count` is anything but zero.
+
+Run it after any change to the archive location, the backup schedule, the
+Postgres version, or the machine holding the backups. Those four are what
+break a chain that worked last month.
+
+**Rehearsing found a real trap.** On Debian and Ubuntu, `postgresql.conf`,
+`pg_hba.conf` and `pg_ident.conf` live in `/etc/postgresql/<ver>/<cluster>/`,
+*not* in the data directory — so a perfectly good `pg_basebackup` unpacks
+into a cluster that will not start, with only `could not access the server
+configuration file` to explain itself. `pitr-restore.sh` now writes a minimal
+config when the base has none. Discovering that during a real 03:00 incident
+would have cost the time it takes to work out what is missing.
+
+### Two things to watch
+
+- **A failing `archive_command` is an outage on a timer.** Postgres keeps
+  retrying and holds the segment in `pg_wal`, so the disk fills rather than
+  the data being lost — which is the right trade, and still an outage.
+  Monitor `pg_stat_archiver.last_failed_time` and alert on it.
+- **Encrypt, and then make sure you can decrypt.** The WAL carries the rows
+  themselves; encrypting the nightly dump while leaving the archive in the
+  clear protects yesterday and publishes today. Set `BACKUP_AGE_RECIPIENT`
+  and rehearse with the real private key from the machine that would do the
+  restoring. Note that the stock `postgres:*-alpine` image has no `age`
+  binary — encrypting in-container means building an image that carries one.
+  An encrypted archive whose key nobody can find is indistinguishable from
+  no archive.
+
+### Pruning
+
+Never delete WAL newer than the oldest base backup you still intend to use;
+that base becomes unrestorable the moment you do. `pitr-basebackup.sh`
+deliberately does not touch the archive for this reason. `pg_archivecleanup`
+does it correctly when you point it at the `START_WAL` of your oldest live
+base:
+
+```bash
+pg_archivecleanup /var/lib/tutak/wal-archive "$(cat /mnt/backups/base/base-<oldest>/START_WAL)"
+```
 
 ## 7a. Account deletion
 

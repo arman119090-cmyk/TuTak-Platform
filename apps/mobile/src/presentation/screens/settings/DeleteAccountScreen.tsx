@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,10 +74,6 @@ export function DeleteAccountScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
       <Screen title={t('settings.deleteAccount')}>
         <Surface>
           <View style={styles.heading}>
@@ -139,7 +135,6 @@ export function DeleteAccountScreen({ navigation }: Props) {
           />
         </View>
       </Screen>
-    </KeyboardAvoidingView>
   );
 }
 

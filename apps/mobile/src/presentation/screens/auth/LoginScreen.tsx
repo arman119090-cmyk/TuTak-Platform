@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
+import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -16,6 +18,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 export function LoginScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { color, space, text, layout } = useTheme();
+  const compact = useCompactLayout();
   const { deviceId, setSession } = useAuthStore();
 
   const [phone, setPhone] = useState('');
@@ -39,18 +42,15 @@ export function LoginScreen({ navigation }: Props) {
   const canSubmit = phone.length >= 8 && password.length >= 8 && !loading;
 
   return (
-    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
+    <SafeAreaView
+      style={[styles.flex, { backgroundColor: color.background }]}
+      edges={['top', 'bottom']}
+    >
+        <KeyboardAwareScroll
           contentContainerStyle={[
             styles.content,
-            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[10] },
+            { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
           ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
         >
           {/* Jako appears once, at the top, as the mark — not decoration. */}
           <Jako size={52} />
@@ -58,7 +58,7 @@ export function LoginScreen({ navigation }: Props) {
           <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
             {t('auth.welcomeBack')}
           </Text>
-          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], marginBottom: space[8] }]}>
+          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] }]}>
             {t('auth.loginSubtitle')}
           </Text>
 
@@ -107,8 +107,7 @@ export function LoginScreen({ navigation }: Props) {
               <Text style={[text.label, { color: color.primary }]}>{t('auth.register')}</Text>
             </Pressable>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScroll>
     </SafeAreaView>
   );
 }

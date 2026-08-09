@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
+import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -16,6 +18,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ResetPassword'>;
 export function ResetPasswordScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const { color, space, text, layout } = useTheme();
+  const compact = useCompactLayout();
   const { phone } = route.params;
 
   const [code, setCode] = useState('');
@@ -41,18 +44,15 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
   const canSubmit = code.length === 6 && newPassword.length >= 8 && !loading;
 
   return (
-    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
+    <SafeAreaView
+      style={[styles.flex, { backgroundColor: color.background }]}
+      edges={['top', 'bottom']}
+    >
+        <KeyboardAwareScroll
           contentContainerStyle={[
             styles.content,
-            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[10] },
+            { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
           ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
         >
           <Text style={[text.titleLg, { color: color.textPrimary }]}>
             {t('auth.resetPasswordTitle')}
@@ -60,7 +60,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
           <Text
             style={[
               text.bodySm,
-              { color: color.textSecondary, marginTop: space[2], marginBottom: space[8] },
+              { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] },
             ]}
           >
             {t('auth.otpSubtitle', { phone })}
@@ -90,8 +90,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
             loading={loading}
             disabled={!canSubmit}
           />
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScroll>
     </SafeAreaView>
   );
 }

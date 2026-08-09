@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
@@ -42,10 +42,6 @@ export function ChangePasswordScreen({ navigation }: Props) {
   const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && !loading;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
       <Screen title={t('settings.changePassword')}>
         <TextField
           label={t('auth.currentPassword')}
@@ -71,10 +67,5 @@ export function ChangePasswordScreen({ navigation }: Props) {
           disabled={!canSubmit}
         />
       </Screen>
-    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-});

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text } from 'react-native';
+import { Alert, Text } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -80,10 +80,6 @@ export function VerifyPhoneScreen({ navigation }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
       <Screen title={t('auth.otpTitle')} subtitle={t('auth.verifyPhoneSubtitle', { phone: user?.phone })}>
         {!codeSent ? (
           <Button label={t('auth.sendVerificationCode')} onPress={handleSendCode} loading={sending} />
@@ -113,10 +109,5 @@ export function VerifyPhoneScreen({ navigation }: Props) {
           </>
         )}
       </Screen>
-    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-});

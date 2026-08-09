@@ -1,7 +1,8 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../app/theme/ThemeProvider';
+import { KeyboardAwareScroll } from './KeyboardAwareScroll';
 
 interface Props {
   children: React.ReactNode;
@@ -30,15 +31,12 @@ export function Screen({
   bleed,
 }: Props) {
   const { color, space, text, layout } = useTheme();
-  const Container = scroll ? ScrollView : View;
 
-  return (
-    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]} edges={['top']}>
-      <Container
-        style={styles.flex}
-        contentContainerStyle={scroll ? { paddingBottom: layout.tabBarHeight } : undefined}
-        showsVerticalScrollIndicator={false}
-      >
+  // A scrolling screen gets the app's keyboard behaviour for free — several
+  // settings screens used to wrap this component in a `KeyboardAvoidingView`
+  // of their own, each one repeating the same Android mistake.
+  const body = (
+    <>
         {title ? (
           <View
             style={[
@@ -69,7 +67,18 @@ export function Screen({
         >
           {children}
         </View>
-      </Container>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]} edges={['top']}>
+      {scroll ? (
+        <KeyboardAwareScroll contentContainerStyle={{ paddingBottom: layout.tabBarHeight }}>
+          {body}
+        </KeyboardAwareScroll>
+      ) : (
+        <View style={styles.flex}>{body}</View>
+      )}
     </SafeAreaView>
   );
 }

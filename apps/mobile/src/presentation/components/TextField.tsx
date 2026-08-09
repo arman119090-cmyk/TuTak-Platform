@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
+import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
 
 interface Props extends TextInputProps {
   label: string;
@@ -20,14 +21,18 @@ interface Props extends TextInputProps {
  * what a greyed control looks like everywhere else; a barely-lit well reads
  * as empty and waiting, which is what it is.
  */
-export function TextField({ label, error, hint, prefix, style, ...rest }: Props) {
+export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, ...rest }: Props) {
   const { color, space, radius, text, glass, premium } = useTheme();
   const [focused, setFocused] = useState(false);
+  const wrapper = useRef<View>(null);
+  // Scrolls this field clear of the keyboard when it is tapped. A no-op on a
+  // screen that does not scroll.
+  const ensureVisible = useEnsureVisibleOnFocus();
 
   const borderColor = error ? color.dangerFill : focused ? color.borderFocus : glass.border;
 
   return (
-    <View style={{ marginBottom: space[4] }}>
+    <View ref={wrapper} style={{ marginBottom: space[4] }}>
       <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2] }]}>
         {label}
       </Text>
@@ -56,8 +61,15 @@ export function TextField({ label, error, hint, prefix, style, ...rest }: Props)
           // Without this the OS paints a black caret on a black field, and
           // the user cannot see where they are typing.
           selectionColor={premium.brand.light}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={(event) => {
+            setFocused(true);
+            ensureVisible(wrapper.current);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            onBlur?.(event);
+          }}
           style={[styles.input, text.body, { color: color.textPrimary }, style]}
           {...rest}
         />
@@ -77,8 +89,12 @@ export function TextField({ label, error, hint, prefix, style, ...rest }: Props)
 }
 
 const styles = StyleSheet.create({
-  field: { flexDirection: 'row', alignItems: 'center', height: 54, borderWidth: 1 },
-  input: { flex: 1, height: '100%' },
+  // `minHeight`, not `height`. A fixed 54 clipped the text on a phone with
+  // the system font scale turned up — the control kept its size and the
+  // characters lost theirs. The field grows instead; nothing else about it
+  // changes at the default scale.
+  field: { flexDirection: 'row', alignItems: 'center', minHeight: 54, borderWidth: 1 },
+  input: { flex: 1, paddingVertical: 14 },
   ring: {
     shadowOpacity: 0.25,
     shadowRadius: 12,

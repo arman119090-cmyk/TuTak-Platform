@@ -351,6 +351,52 @@ is two complete, correct, balanced transactions. Asserting the *amount* is
 what turned it into a test. Three tests now, all three failing when the fix
 is reverted.
 
+## Round four: sequences nobody thought to write down
+
+Every suite up to here tests a scenario somebody imagined. Both Criticals
+above were found by attacking in a way no previous round had, not by looking
+harder at what was covered — so the next thing to try was a generator that
+does not know what a bug looks like and only knows what must stay true.
+
+`money-sequence-fuzz.int-spec.ts` runs seeded random sequences of capture,
+refund, settlement, outbox drain, payout request and payout confirmation, and
+checks every invariant after every step. Amounts are deliberately awkward
+(`333.33`, not `1000`), refusals are counted rather than avoided, and the
+seed is printed so a failure is a test case rather than a ghost.
+
+Run at 20 seeds × 400 steps. Three seeds failed, all on the same thing.
+
+### F-11 (Medium) — a refund could leave a partner owing the platform, silently
+
+**The sequence.** A partner earns, the platform pays them out in full, and
+only *then* is the customer refunded. The refund debits a payable the payout
+already emptied, so the account crosses zero: the platform is out of pocket
+and the partner owes the difference.
+
+**Nothing is broken by this.** The ledger balances, the postings are right,
+and `requestPayout` already refuses a partner whose balance is against them —
+verified, not assumed. The gap was that **nobody was told.** Money outside
+the platform that only a person can retrieve is a write-off if that person
+never hears about it, and the only way to notice was to read the ledger
+account.
+
+`RefundEngineService` now raises a `warning` alert keyed on the partner — one
+conversation, not one notification per refund — naming the amount owed. It
+cannot fail a refund: the money has already moved and the customer is owed
+their money regardless of whether the notification lands.
+
+**My invariant was also wrong**, and worth recording as such. It asserted a
+partner payable could never go positive. That state is legitimate, and the
+generator disproved the assertion on its third seed. What replaced it is the
+bound that does hold: a partner can never owe more than the platform ever
+paid them, which would mean a refund reversed money that was never sent.
+
+Four tests in `refund-partner-debit.int-spec.ts`, including one asserting
+silence in the ordinary case — an alert that fires on every partial refund
+would be worse than none.
+
+After the fix: 20 seeds × 400 steps, clean.
+
 ### The harness itself was wrong, and would have passed the bug
 
 The first chaos run printed **PASS** while that extra payment sat in the

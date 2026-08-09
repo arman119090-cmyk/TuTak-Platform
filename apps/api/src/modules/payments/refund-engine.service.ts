@@ -9,6 +9,7 @@ import {
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, Money, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
@@ -73,6 +74,7 @@ export class RefundEngineService {
     private readonly ledger: LedgerService,
     private readonly bonusEngine: BonusEngineService,
     private readonly idempotency: IdempotencyService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async refund(params: RefundParams): Promise<RefundResult> {
@@ -298,6 +300,8 @@ export class RefundEngineService {
       });
     });
 
+    await this.warnIfPartnerNowOwesUs(payment.partnerId, currency, refund.id);
+
     const totalRefunded = payment.refundedAmount.plus(amount);
     this.logger.log(
       `Refunded ${amount.toString()} of payment ${payment.id} (total ${totalRefunded.toString()})`,
@@ -309,6 +313,66 @@ export class RefundEngineService {
       totalRefunded: totalRefunded.toFixed(MONEY_SCALE),
       bonusClawedBack: bonusClawedBack.toFixed(MONEY_SCALE),
     };
+  }
+
+  /**
+   * A refund can leave a partner owing the platform money, and somebody has
+   * to be told.
+   *
+   * The sequence is ordinary: a partner earns, the platform pays them, and a
+   * customer is refunded afterwards. The refund debits a payable that the
+   * payout already drained, so the account goes from credit-normal to
+   * positive — the platform is now out of pocket and must recover the
+   * difference from the partner.
+   *
+   * Nothing was broken by this. The ledger balances, the postings are
+   * correct, and `requestPayout` will refuse the partner while the balance
+   * is against them. What was missing is the part where anyone finds out:
+   * the money is outside the platform and only a person can get it back.
+   * Recovering it is a conversation, and a conversation nobody knows to have
+   * is a write-off.
+   *
+   * Found by `money-sequence-fuzz.int-spec.ts`, which proposed the ordering
+   * on its own — no hand-written test had put a refund after a payout that
+   * emptied the balance.
+   */
+  private async warnIfPartnerNowOwesUs(
+    partnerId: string,
+    currency: Currency,
+    refundId: string,
+  ): Promise<void> {
+    try {
+      const account = await this.ledger.accountFor({
+        type: LedgerAccountType.PARTNER_PAYABLE,
+        partnerId,
+        currency,
+      });
+      const owedToUs = new Decimal(account.balance);
+      if (owedToUs.lessThanOrEqualTo(0)) return;
+
+      await this.alerts.fire({
+        severity: 'warning',
+        // Keyed on the partner, not the refund: a run of refunds against one
+        // partner is one conversation, not twenty notifications.
+        key: `partner.in-debit:${partnerId}`,
+        title: 'A refund left a partner owing the platform',
+        body:
+          `Partner ${partnerId} now owes ${owedToUs.toFixed(MONEY_SCALE)} ${currency}. ` +
+          'This happens when a payout drained their balance before a refund reversed the ' +
+          'payment behind it. Payouts to them are already refused while the balance is ' +
+          'against them; recovering the money is a human conversation.',
+        context: { partnerId, owed: owedToUs.toFixed(MONEY_SCALE), currency, refundId },
+      });
+    } catch (err) {
+      // Never fail a refund because telling someone about it failed. The
+      // money has already moved and the customer is owed their refund; a
+      // missed notification is recoverable, a thrown exception here would
+      // roll back nothing and confuse everything.
+      this.logger.warn(
+        `Could not check whether partner ${partnerId} is now in debit: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**

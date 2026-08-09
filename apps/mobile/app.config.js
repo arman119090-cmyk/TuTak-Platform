@@ -5,6 +5,24 @@
  * API_BASE_URL per profile; this file just forwards whatever is in the
  * environment at build time.
  */
+/**
+ * `eas init` cannot write into a dynamic config — it can only edit app.json —
+ * so it prints the project id and leaves placing it to you. Rather than make
+ * that a manual edit of this file, the id is read from either the
+ * EAS_PROJECT_ID environment variable or an `eas-project.json` next to this
+ * file, whichever is present. `apps/mobile/README.md` has the one command
+ * that writes it. A project id is not a secret; it is an account-specific
+ * value, which is why the repository does not carry one.
+ */
+function easProjectId() {
+  if (process.env.EAS_PROJECT_ID) return process.env.EAS_PROJECT_ID;
+  try {
+    return require('./eas-project.json').projectId;
+  } catch {
+    return undefined;
+  }
+}
+
 module.exports = ({ config }) => ({
   ...config,
   name: 'TuTak',
@@ -36,6 +54,16 @@ module.exports = ({ config }) => ({
     package: 'am.tutak.app',
     permissions: ['CAMERA'],
   },
+  // The browser target is a convenience for looking at the app on a laptop —
+  // it is stated explicitly so a future Expo default cannot silently move the
+  // build onto a different bundler than the one the native builds use.
+  web: {
+    bundler: 'metro',
+    output: 'single',
+    // Without this every page load logs a 404 for the favicon the browser
+    // asks for on its own.
+    favicon: './assets/icon.png',
+  },
   plugins: [
     [
       'expo-camera',
@@ -48,8 +76,7 @@ module.exports = ({ config }) => ({
     apiBaseUrl: process.env.API_BASE_URL ?? 'http://localhost:4000/v1',
     appEnv: process.env.APP_ENV ?? 'development',
     eas: {
-      // Filled in by `eas init`; absent until the project is registered with EAS.
-      projectId: process.env.EAS_PROJECT_ID,
+      projectId: easProjectId(),
     },
   },
 });

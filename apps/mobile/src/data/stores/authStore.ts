@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
 import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
+import { deleteItem, getItem, setItem } from '../storage/secureStorage';
 
 const ACCESS_TOKEN_KEY = 'tutak.accessToken';
 const REFRESH_TOKEN_KEY = 'tutak.refreshToken';
@@ -23,6 +23,22 @@ function generateDeviceId(): string {
   return `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * Hydration runs before the first screen, so anything that throws in here
+ * leaves the app on its splash forever with no way out — the user cannot even
+ * log out, because logging out is behind a screen that never renders. A
+ * half-written or hand-edited storage entry is enough to cause that, so a
+ * value that will not parse is treated as no session rather than as a crash.
+ */
+function parseUser(raw: string | null): AuthenticatedUserDto | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AuthenticatedUserDto;
+  } catch {
+    return null;
+  }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   accessToken: null,
@@ -32,49 +48,49 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   hydrate: async () => {
     const [accessToken, refreshToken, storedDeviceId, storedUser] = await Promise.all([
-      SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
-      SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
-      SecureStore.getItemAsync(DEVICE_ID_KEY),
-      SecureStore.getItemAsync(USER_KEY),
+      getItem(ACCESS_TOKEN_KEY),
+      getItem(REFRESH_TOKEN_KEY),
+      getItem(DEVICE_ID_KEY),
+      getItem(USER_KEY),
     ]);
 
     let deviceId = storedDeviceId;
     if (!deviceId) {
       deviceId = generateDeviceId();
-      await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceId);
+      await setItem(DEVICE_ID_KEY, deviceId);
     }
 
     set({
       accessToken,
       refreshToken,
       deviceId,
-      user: storedUser ? (JSON.parse(storedUser) as AuthenticatedUserDto) : null,
+      user: parseUser(storedUser),
       isHydrated: true,
     });
   },
 
   setSession: async (user, tokens) => {
     await Promise.all([
-      SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken),
-      SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken),
-      SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)),
+      setItem(ACCESS_TOKEN_KEY, tokens.accessToken),
+      setItem(REFRESH_TOKEN_KEY, tokens.refreshToken),
+      setItem(USER_KEY, JSON.stringify(user)),
     ]);
     set({ user, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
   },
 
   setTokens: async (tokens) => {
     await Promise.all([
-      SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken),
-      SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken),
+      setItem(ACCESS_TOKEN_KEY, tokens.accessToken),
+      setItem(REFRESH_TOKEN_KEY, tokens.refreshToken),
     ]);
     set({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
   },
 
   clear: async () => {
     await Promise.all([
-      SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
-      SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
-      SecureStore.deleteItemAsync(USER_KEY),
+      deleteItem(ACCESS_TOKEN_KEY),
+      deleteItem(REFRESH_TOKEN_KEY),
+      deleteItem(USER_KEY),
     ]);
     set({ user: null, accessToken: null, refreshToken: null });
   },

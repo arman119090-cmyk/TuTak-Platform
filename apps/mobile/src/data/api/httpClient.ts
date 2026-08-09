@@ -2,9 +2,12 @@ import axios, { AxiosError } from 'axios';
 import Constants from 'expo-constants';
 import type { AuthResponseDto, AuthTokensDto } from '@tutak/shared-types';
 import { useAuthStore } from '../stores/authStore';
+import { resolveApiBaseUrl } from './apiBaseUrl';
 
-const API_BASE_URL =
-  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ?? 'http://localhost:4000/v1';
+const API_BASE_URL = resolveApiBaseUrl(
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ?? 'http://localhost:4000/v1',
+  (Constants.expoConfig as { hostUri?: string } | null | undefined)?.hostUri,
+);
 
 export const httpClient = axios.create({
   baseURL: API_BASE_URL,

@@ -9,6 +9,22 @@ const API_BASE_URL = resolveApiBaseUrl(
   (Constants.expoConfig as { hostUri?: string } | null | undefined)?.hostUri,
 );
 
+/**
+ * Where `/health` lives, which is not under the version prefix.
+ *
+ * The API serves its health probe version-neutral on purpose: an
+ * orchestrator checks a fixed path, and `/v1/health` would break the moment
+ * the API version moved. So `httpClient.get('/health')` — which axios
+ * resolves against the `.../v1` base — asks for `/v1/health` and gets a 404.
+ *
+ * That silently defeated the demo-mode check: the button that appears only
+ * when the server says it is a demonstration would never have appeared,
+ * because the question was being asked at an address that does not exist.
+ * Caught by a deployment team pointing out that their health route had no
+ * `/v1` either.
+ */
+export const healthUrl = API_BASE_URL.replace(/\/v\d+\/?$/, '') + '/health';
+
 export const httpClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15_000,

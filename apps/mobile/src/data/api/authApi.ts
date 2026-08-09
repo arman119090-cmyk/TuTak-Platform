@@ -11,7 +11,7 @@ import type {
   RequestPasswordResetRequestDto,
   SuccessResponseDto,
 } from '@tutak/shared-types';
-import { httpClient, ApiEnvelope } from './httpClient';
+import { healthUrl, httpClient, ApiEnvelope } from './httpClient';
 
 export const authApi = {
   async register(dto: RegisterRequestDto & { deviceId: string }) {
@@ -28,7 +28,9 @@ export const authApi = {
    */
   async isDemoDeployment(): Promise<boolean> {
     try {
-      const { data } = await httpClient.get<{ demoMode?: boolean }>('/health');
+      // Absolute, because health is not under the version prefix the
+      // client's base URL carries. See `healthUrl`.
+      const { data } = await httpClient.get<{ demoMode?: boolean }>(healthUrl);
       return data?.demoMode === true;
     } catch {
       // Unreachable, older, or not a demo — either way, no shortcut.

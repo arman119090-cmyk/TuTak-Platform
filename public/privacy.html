@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TuTak — Privacy Policy</title>
+    <meta
+      name="description"
+      content="What TuTak collects, why, how long it is kept, and how to get it deleted."
+    />
+    <!--
+      Self-contained, no external requests. Both stores require a privacy
+      policy reachable without installing the app, and a page that depends on
+      a CDN or a font host is a page that can be unreachable at review time.
+
+      Every retention figure below is read from the code, not invented:
+      apps/api/src/config/configuration.ts holds the defaults and
+      apps/api/src/modules/retention/retention.service.ts is what enforces
+      them. If those change, this page has to change with them — a privacy
+      policy that disagrees with the sweep is worse than none.
+    -->
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --surface: rgba(255, 255, 255, 0.05);
+        --border: rgba(255, 255, 255, 0.1);
+        --text: #f5f6fa;
+        --muted: #a2a6b8;
+        --brand: #5b8cff;
+        --brand-2: #a05bff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+      h1 {
+        font-size: clamp(1.75rem, 5vw, 2.5rem);
+        line-height: 1.15;
+        margin: 0 0 0.5rem;
+        background: linear-gradient(120deg, var(--brand), var(--brand-2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; }
+      h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; color: var(--brand); }
+      p, li { color: var(--muted); }
+      strong { color: var(--text); }
+      .updated { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        margin: 1.5rem 0;
+      }
+      table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
+      th, td {
+        text-align: left;
+        padding: 0.6rem 0.5rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th { color: var(--text); font-weight: 600; }
+      td { color: var(--muted); }
+      a { color: var(--brand); }
+      .scroll { overflow-x: auto; }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.07);
+        padding: 0.1rem 0.35rem;
+        border-radius: 5px;
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="updated">TuTak · Last updated 9 August 2026</p>
+
+      <div class="card">
+        <p>
+          <strong>Before publishing:</strong> replace <code>[OPERATOR]</code>,
+          <code>[ADDRESS]</code> and <code>[CONTACT EMAIL]</code> below with the
+          legal entity that actually operates TuTak, and have a lawyer review
+          the result against Armenian data-protection law and, if you serve
+          users in the EU, the GDPR. This page describes what the software
+          genuinely does — every retention period is taken from the running
+          code — but describing the software correctly is not the same as
+          being legally sufficient.
+        </p>
+      </div>
+
+      <p>
+        TuTak is a loyalty and payments app: you pay at partner merchants,
+        earn points, and charge an electric vehicle. This page explains what
+        we hold about you, why we need it, how long we keep it, and how to
+        make us delete it.
+      </p>
+
+      <h2>Who is responsible</h2>
+      <p>
+        <strong>[OPERATOR]</strong>, [ADDRESS], Armenia, is the controller of
+        the personal data described here. Questions, requests and complaints:
+        <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a>.
+      </p>
+
+      <h2>What we collect, and why</h2>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Why we need it</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Phone number</strong></td>
+              <td>It is your account. We send a verification code to it, and it is how support identifies you.</td>
+            </tr>
+            <tr>
+              <td><strong>Name</strong>, and <strong>email</strong> if you give one</td>
+              <td>Shown on receipts and used to contact you about your account. Email is optional.</td>
+            </tr>
+            <tr>
+              <td><strong>Password</strong></td>
+              <td>Stored only as an Argon2 hash. Nobody at TuTak can read it, including us.</td>
+            </tr>
+            <tr>
+              <td><strong>Payments</strong> — amount, merchant, time, and a reference from the acquirer</td>
+              <td>To take the payment, to pay the merchant, to calculate your points, and to handle refunds and disputes. <strong>We never see or store your card number</strong> — the payment provider gives us a token instead.</td>
+            </tr>
+            <tr>
+              <td><strong>Points ledger</strong></td>
+              <td>Every accrual, spend and expiry, so your balance can be explained rather than merely asserted.</td>
+            </tr>
+            <tr>
+              <td><strong>Charging sessions</strong> — station, energy, cost, time</td>
+              <td>To run and bill the session. When the station belongs to a roaming partner, the session is reconciled against their record.</td>
+            </tr>
+            <tr>
+              <td><strong>Device identifier and push token</strong></td>
+              <td>To keep you signed in on this device, to send you notifications about your own activity, and to spot somebody else signing in from a device you have never used.</td>
+            </tr>
+            <tr>
+              <td><strong>Language</strong></td>
+              <td>To show the app in Armenian, Russian or English.</td>
+            </tr>
+            <tr>
+              <td><strong>Security records</strong> — sign-in attempts, fraud signals, administrator actions</td>
+              <td>To detect account takeover and abuse, and to have a record of who changed what.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <p>
+          <strong>What we do not do.</strong> We do not sell your data. We do
+          not share it with advertisers. We do not track you across other apps
+          or websites. There are no third-party analytics or advertising SDKs
+          in the app.
+        </p>
+      </div>
+
+      <h2>Camera and notifications</h2>
+      <p>
+        The app asks for your <strong>camera</strong> only to scan a payment QR
+        code. Frames are read on your phone to find the code and are never
+        uploaded or stored. It asks for <strong>notifications</strong> only
+        after you have signed in, to tell you about your own payments, points
+        and charging sessions. Both are optional; the rest of the app works
+        without them.
+      </p>
+
+      <h2>Who else sees it</h2>
+      <ul>
+        <li><strong>The merchant you paid</strong> sees that payment — amount, time, and enough to identify it — because they have to be able to refund it.</li>
+        <li><strong>Our payment provider</strong> processes the card. They hold the card details; we hold their token.</li>
+        <li><strong>Charging network operators</strong> receive the session details for stations they run, so the session can be authorised and billed.</li>
+        <li><strong>Our SMS provider</strong> receives your phone number to deliver verification codes.</li>
+        <li><strong>Authorities</strong>, where the law requires it and to the extent it requires it.</li>
+      </ul>
+      <p>A merchant never sees your other merchants, and never sees your card.</p>
+
+      <h2>How long we keep it</h2>
+      <p>These periods are enforced by an automated sweep, not by intention:</p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Kept for</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Read notifications</td><td>90 days</td></tr>
+            <tr><td>Expired sign-in sessions</td><td>90 days</td></tr>
+            <tr><td>Verification codes and password-reset codes</td><td>30 days after they expire</td></tr>
+            <tr><td>Used and expired payment QR codes</td><td>90 days</td></tr>
+            <tr><td>Financial records — payments, points ledger, refunds, settlements</td><td><strong>Retained as accounting records</strong>, for the period Armenian law requires, even after you delete your account</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Deleting your account</h2>
+      <p>
+        In the app: <strong>Settings → Delete account</strong>. Or write to
+        <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a> from the phone
+        number on the account. Full instructions, including what survives and
+        why, are on the <a href="./account-deletion.html">account deletion
+        page</a>.
+      </p>
+      <p>
+        You get a <strong>30-day grace period</strong>: the account is
+        deactivated immediately and you can sign in during those 30 days to
+        cancel. After that, your personal details are anonymised
+        irreversibly — name, phone, email and device identifiers are removed.
+      </p>
+      <p>
+        <strong>Your financial records are not deleted, and cannot be.</strong>
+        A payment is a record of money moving between you, a merchant and a
+        bank. It is an accounting record that the law requires be kept, and
+        deleting it would also erase the merchant's record of their own
+        income. What we do instead is sever it from you: the transaction
+        remains, your identity does not.
+      </p>
+
+      <h2>Your rights</h2>
+      <ul>
+        <li><strong>See what we hold.</strong> Ask, and we will send it to you.</li>
+        <li><strong>Correct it.</strong> Most of it you can edit in the app; for anything else, ask.</li>
+        <li><strong>Delete it.</strong> As above, subject to the accounting records we are required to keep.</li>
+        <li><strong>Object or restrict.</strong> Tell us and we will stop, unless we are required to continue.</li>
+        <li><strong>Complain.</strong> To us first, please — but you may go to the data-protection authority instead or as well.</li>
+      </ul>
+      <p>Write to <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a>. We answer within 30 days.</p>
+
+      <h2>Security</h2>
+      <p>
+        Traffic is encrypted in transit. Passwords are Argon2 hashes. On your
+        phone, your session lives in the iOS Keychain or the Android Keystore,
+        which the operating system encrypts. Backups of our database are
+        encrypted before they leave the machine that made them. Access to
+        production data is restricted and every administrator action is
+        recorded.
+      </p>
+      <p>
+        No system is perfectly secure. If a breach affects you, we will tell
+        you and the authority, promptly and specifically.
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        TuTak is not for people under 18. We do not knowingly hold data about
+        children. If you believe we have, write to us and we will remove it.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If this policy changes materially we will tell you in the app before
+        it takes effect. The date at the top is always the date of the version
+        you are reading.
+      </p>
+
+      <footer>
+        <p>
+          TuTak · <a href="./account-deletion.html">Delete your account</a> ·
+          <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a>
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>

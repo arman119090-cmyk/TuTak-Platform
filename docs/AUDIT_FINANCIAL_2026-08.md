@@ -25,7 +25,7 @@ after it, 627 API, 65 mobile, 28 admin, 9 partner.
 | --- | --- | --- | --- |
 | Critical | 5 | 5 | yes |
 | High | 5 | 5 | yes |
-| Medium | 3 | 3 | yes |
+| Medium | 4 | 4 | yes |
 | Blockers raised, later closed | 2 | 2 | yes |
 
 Five rounds, each attacking in a way the previous one did not — which is the
@@ -39,9 +39,9 @@ only reason each found anything, and the reason to expect a sixth would too.
    anything.
 4. **Random sequences with invariants checked after every step.** F-11, found
    by an ordering nobody had thought to write down.
-5. **The client, not the server.** F-12, F-13 — two server guarantees that
-   could only be reached through a cooperating client, and one that was not
-   cooperating.
+5. **The client, not the server.** F-12, F-13, F-14 — server guarantees that
+   can only be reached through a cooperating client, and three clients that
+   were not cooperating.
 
 Where the defects were, by round, because the answer changed:
 
@@ -503,6 +503,34 @@ a person can say no, and the screen read it as yes.
 The prompt now runs before the mutation and a null answer ends it. An empty
 answer is treated differently on purpose — they pressed OK, so they get a
 sentence explaining what the reference is for, rather than silence.
+
+### F-14 (Medium) — stopping a charge never used the key the API added for it
+
+F-2, at the top of this document, was a double-tapped stop that billed twice.
+The API grew an idempotency key for stop in response and left it optional,
+with a comment stating the reason: *"the shipped mobile app does not send one
+and making it mandatory would break every installed copy."*
+
+There is no installed copy. The first APK was built the same day this round
+ran. The justification for leaving the protection unused had expired without
+anyone noticing, and the endpoint's only client still sent nothing.
+
+**The key is derived, not generated**, which is stronger than what the admin
+panel can manage. A random key in component state is lost when the app is
+killed — and being killed is what happens at a charge point: the request times
+out on bad signal, the customer force-closes the app, reopens it, presses stop
+again. `ev-stop-<session>-<bonus>` is the same key on the other side of that.
+The bonus is part of the identity because it changes what the stop costs.
+
+The server side was already covered by `ev-lifecycle-probe.int-spec.ts`,
+including a stranger attempting to reuse someone else's key. What was missing
+was a client that used it at all.
+
+**Three apps, one defect.** `ScanQrScreen` had this shape and was fixed when a
+double charge exposed it. The admin panel had it. Stopping a charge had it.
+Each was fixed where it was found and nowhere else — which is what makes it
+worth stating as a rule rather than three incidents: when a client-side defect
+is found, the question is which other clients share it.
 
 ### The tests were wrong first, in a way worth recording
 

@@ -65,8 +65,10 @@ export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, 
            * The app cannot produce that: each field owns its own focus state
            * and only the focused one draws a ring. What draws on all of them
            * at once is the autofill service — it activates on touch,
-           * highlights every field it believes it can fill, and on some
-           * Samsung builds holds the focus while it decides.
+           * highlights every field it believes it can fill, and can hold the
+           * focus while it decides which. Reported on a Xiaomi handset; the
+           * service is part of Android rather than any vendor's shell, so the
+           * behaviour is not specific to one make.
            *
            * `autoComplete` stays: it is also what selects the right keyboard
            * and drives the iOS suggestion bar. This switches off only the

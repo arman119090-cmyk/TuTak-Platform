@@ -1,6 +1,7 @@
 import type { AccountDeletionService } from '../users/account-deletion.service';
 import type { BonusEngineService } from '../wallet/bonus-engine.service';
 import type { EvReservationsService } from '../ev-charging/ev-reservations.service';
+import type { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation.service';
 import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
@@ -26,6 +27,7 @@ export interface SweepDependencies {
   sessions: EvSessionsService;
   outbox: OutboxService;
   reconciliation: ReconciliationService;
+  cdrs: EvCdrReconciliationService;
   accountDeletion: AccountDeletionService;
   retention: RetentionService;
 }
@@ -144,6 +146,17 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 4 * 60 * 60_000,
     lockTtlMs: 4 * 60_000,
     run: ({ sessions }) => sessions.expireStaleSessions(),
+  },
+  {
+    name: 'ev.reconcile-roaming-cdrs',
+    why: "Settles a roaming session against the charge-point operator who actually delivered it. Without this the platform bills a partner network's energy on a client-reported reading that nothing external corroborates, and an overcharge is never returned.",
+    // Every five minutes. A CPO settles a CDR minutes to hours after the plug
+    // comes out, so this is a poll rather than a deadline — frequent enough
+    // that a customer owed money gets it back the same day.
+    repeat: { every: 5 * 60_000 },
+    maxSilenceMs: 30 * 60_000,
+    lockTtlMs: 4 * 60_000,
+    run: ({ cdrs }) => cdrs.reconcilePending(),
   },
   {
     name: 'account.anonymize-deleted',

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   BonusEntryType,
+  EvCdrReconciliation,
   EvConnectorStatus,
   EvReservationStatus,
   EvSessionStatus,
@@ -22,6 +23,7 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
 import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
+import { IdempotencyService } from '../ledger/idempotency.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -99,6 +101,7 @@ export class EvSessionsService {
     private readonly phoneVerification: PhoneVerificationService,
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
     private readonly alerts: AlertsService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   async start(dto: StartSessionDto, userId: string) {
@@ -255,7 +258,36 @@ export class EvSessionsService {
     });
   }
 
+  /**
+   * Stops a session, at most once per idempotency key.
+   *
+   * The claim inside `stopOnce` already makes two simultaneous stops safe.
+   * What it cannot do is tell a client whose request timed out *while the
+   * server was working* whether the charge went through: a retry gets
+   * "already being stopped", which is indistinguishable from a genuine
+   * error. A key turns that retry into the original answer.
+   *
+   * Optional, because the shipped mobile app does not send one and making it
+   * mandatory would break every installed copy. Without a key the behaviour
+   * is exactly what it was.
+   */
   async stop(sessionId: string, userId: string, dto: StopSessionDto) {
+    if (!dto.idempotencyKey) {
+      return this.stopOnce(sessionId, userId, dto);
+    }
+    return this.idempotency.run(
+      {
+        // Scoped to the caller: a bare key would let one account replay
+        // another's stop and receive their session's figures.
+        scope: `ev-stop:${userId}`,
+        key: dto.idempotencyKey,
+        request: { sessionId, bonusAmountToApply: dto.bonusAmountToApply ?? null },
+      },
+      () => this.stopOnce(sessionId, userId, dto),
+    );
+  }
+
+  private async stopOnce(sessionId: string, userId: string, dto: StopSessionDto) {
     const session = await this.prisma.evSession.findUnique({
       where: { id: sessionId },
       include: { connector: { include: { station: true } } },
@@ -381,6 +413,15 @@ export class EvSessionsService {
             totalTimeSec: session.startedAt
               ? Math.max(0, Math.round((Date.now() - session.startedAt.getTime()) / 1000))
               : 0,
+            // On our own stations there is one meter and it is ours, so there
+            // is nothing to reconcile. On a roaming station the operator owns
+            // the cable and their settled CDR is the authoritative record of
+            // what was delivered — it arrives minutes to hours later, so the
+            // session is marked as awaiting it and
+            // `ev.reconcile-roaming-cdrs` picks it up.
+            reconciliation: session.connector.ocpiEvseUid
+              ? EvCdrReconciliation.PENDING
+              : EvCdrReconciliation.NOT_APPLICABLE,
           },
         });
       });

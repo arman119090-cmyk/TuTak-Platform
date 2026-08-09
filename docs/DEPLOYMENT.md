@@ -252,6 +252,34 @@ Run the rehearsal on a schedule, not once. A backup nobody has restored is a
 hypothesis, and the moment you need it is the worst moment to discover the
 dump has been empty for three weeks.
 
+### Encryption
+
+Set `BACKUP_AGE_RECIPIENT` to an [age](https://age-encryption.org) public key
+and every dump is encrypted as it is written; the plaintext is shredded, not
+just unlinked. `BACKUP_GPG_RECIPIENT` does the same through gpg if that is
+what your organisation already uses. Without either, the script still runs
+and prints a warning — the dump contains every phone number and every
+password hash on the platform, in a file whose whole purpose is to be copied
+somewhere else.
+
+Public-key on purpose: the machine taking backups holds only the key that can
+*write* them. Somebody who takes that machine gets tomorrow's backups and not
+yesterday's.
+
+```
+BACKUP_AGE_RECIPIENT=age1...        # public key; the private key lives elsewhere
+```
+
+**Decide who holds the private key before you need it.** An encrypted backup
+whose key nobody can find is indistinguishable from no backup at all, and you
+find that out on the worst day. Rehearse the restore with the real key, from
+the machine that would actually do it:
+
+```
+age --decrypt -i <private-key> backups/tutak-<stamp>.dump.age > restored.dump
+./scripts/restore.sh --verify restored.dump
+```
+
 ### What the scripts do not do
 
 - **Point-in-time recovery.** A nightly dump loses up to a day; PITR loses

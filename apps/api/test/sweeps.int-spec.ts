@@ -62,6 +62,7 @@ describe('Sweeps (integration)', () => {
   const reconciliation = {
     reconcile: jest.fn((_params: { periodStart: Date }) => record('reconciliation')()),
   };
+  const cdrs = { reconcilePending: jest.fn(record('ev.reconcile-cdrs')) };
   const accountDeletion = { anonymizeDue: jest.fn(record('account.anonymize')) };
   const retention = { prune: jest.fn(record('retention.prune')) };
 
@@ -96,6 +97,7 @@ describe('Sweeps (integration)', () => {
             sessions,
             outbox,
             reconciliation,
+            cdrs,
             accountDeletion,
             retention,
           },

@@ -8,6 +8,7 @@ import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { RetentionModule } from '../retention/retention.module';
 import { UsersModule } from '../users/users.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation.service';
 import { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import { OutboxService } from '../ledger/outbox.service';
@@ -55,6 +56,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         EvSessionsService,
         OutboxService,
         ReconciliationService,
+        EvCdrReconciliationService,
         AccountDeletionService,
         RetentionService,
       ],
@@ -64,6 +66,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         sessions: EvSessionsService,
         outbox: OutboxService,
         reconciliation: ReconciliationService,
+        cdrs: EvCdrReconciliationService,
         accountDeletion: AccountDeletionService,
         retention: RetentionService,
       ): SweepDependencies => ({
@@ -72,6 +75,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         sessions,
         outbox,
         reconciliation,
+        cdrs,
         accountDeletion,
         retention,
       }),

@@ -1,9 +1,11 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TransactionsModule } from '../transactions/transactions.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { SecurityModule } from '../security/security.module';
 import { AuthModule } from '../auth/auth.module';
 import { EvChargingController } from './ev-charging.controller';
+import { EvCdrReconciliationService } from './ev-cdr-reconciliation.service';
 import { EvReservationsService } from './ev-reservations.service';
 import { EvSessionsService } from './ev-sessions.service';
 import { EvStationsService } from './ev-stations.service';
@@ -14,12 +16,20 @@ import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
 
 @Module({
-  imports: [WalletModule, TransactionsModule, SecurityModule, forwardRef(() => AuthModule)],
+  imports: [
+    WalletModule,
+    TransactionsModule,
+    SecurityModule,
+    // For the idempotency lease on stopping a session.
+    LedgerModule,
+    forwardRef(() => AuthModule),
+  ],
   controllers: [EvChargingController],
   providers: [
     EvStationsService,
     EvSessionsService,
     EvReservationsService,
+    EvCdrReconciliationService,
     {
       // Real client when a roaming partner is configured, refusal when not.
       //
@@ -44,6 +54,11 @@ import { AppConfig } from '../../config/configuration';
       },
     },
   ],
-  exports: [EvStationsService, EvSessionsService, EvReservationsService],
+  exports: [
+    EvStationsService,
+    EvSessionsService,
+    EvReservationsService,
+    EvCdrReconciliationService,
+  ],
 })
 export class EvChargingModule {}

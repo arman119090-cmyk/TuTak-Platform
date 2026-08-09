@@ -757,6 +757,31 @@ model EvReservation {
 /// Charge Detail Record — placeholder for OCPI CDR ingestion once a real
 /// CPO/eMSP roaming partner (e.g. FastCharge) is connected. `raw` retains
 /// the untouched upstream payload for reconciliation/dispute handling.
+/// How a roaming session's own figures compare with the charge-point
+/// operator's settled ones.
+///
+/// On TuTak's own stations our meter is the only meter and there is nothing
+/// to reconcile. On a roaming station the CPO's CDR is the authoritative
+/// record of what was delivered — they own the hardware — and billing from
+/// a client-reported reading without ever checking it against theirs is how
+/// a platform ends up owing a network money it cannot account for.
+enum EvCdrReconciliation {
+  /// Our own station. Our meter is authoritative; nothing to compare.
+  NOT_APPLICABLE
+  /// Roaming, and the CPO has not settled the CDR yet. They take minutes to
+  /// hours, so this is the normal state immediately after a session.
+  PENDING
+  /// The CPO agrees with what we billed, within tolerance.
+  MATCHED
+  /// The CPO delivered less than we billed. The difference was returned.
+  CORRECTED
+  /// The CPO delivered more than we billed. Deliberately not corrected
+  /// automatically — see `EvCdrReconciliationService`.
+  UNDERBILLED
+  /// The CPO never produced a CDR. A human has to ask them why.
+  UNAVAILABLE
+}
+
 model EvCdr {
   id           String   @id @default(uuid())
   sessionId    String   @unique
@@ -767,8 +792,21 @@ model EvCdr {
   raw          Json?
   createdAt    DateTime @default(now())
 
+  reconciliation EvCdrReconciliation @default(NOT_APPLICABLE)
+  /// What the CPO said was delivered, once they have said it. Kept beside
+  /// our own figures rather than overwriting them: the disagreement is the
+  /// thing worth being able to look at afterwards.
+  cpoEnergyKwh   Decimal?            @db.Decimal(10, 3)
+  cpoCost        Decimal?            @db.Decimal(18, 4)
+  reconciledAt   DateTime?
+  /// How many times we have asked. A CDR that never arrives must stop being
+  /// polled and start being somebody's problem.
+  fetchAttempts  Int                 @default(0)
+
   session EvSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  /// The sweep asks for roaming CDRs still awaiting the CPO, oldest first.
+  @@index([reconciliation, createdAt])
   @@map("ev_cdrs")
 }
 

@@ -191,6 +191,7 @@ describe('Alerting (integration)', () => {
           // Neither is reachable from `onFailed`, which is all this suite
           // drives — and the bundle is now one parameter, so adding a sweep
           // no longer changes this constructor's shape.
+          cdrs: undefined as never,
           accountDeletion: undefined as never,
           retention: undefined as never,
         },

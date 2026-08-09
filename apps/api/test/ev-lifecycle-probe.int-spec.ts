@@ -212,6 +212,54 @@ describe('EV lifecycle probe (integration)', () => {
     });
   });
 
+  describe('stopping with an idempotency key', () => {
+    it('returns the original result to a retry instead of an error', async () => {
+      // The case the claim alone cannot serve: the request timed out on the
+      // client while the server was finishing it. Without a key the retry is
+      // told the session cannot be stopped, which reads exactly like a
+      // genuine failure — so the app cannot tell the customer whether they
+      // were charged.
+      const { user, connector } = await scenario();
+      const session = await sessions.start({ connectorId: connector.id }, user.id);
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '14', user.id);
+
+      const first = await sessions.stop(session.id, user.id, { idempotencyKey: 'stop-retry-1' });
+      const retry = await sessions.stop(session.id, user.id, { idempotencyKey: 'stop-retry-1' });
+
+      expect(retry).toEqual(first);
+      expect(retry.cost).toBe('1400');
+      // And exactly one bill, which is the part that would cost real money.
+      expect(await prisma.transaction.count({ where: { type: 'EV_CHARGING' } })).toBe(1);
+    });
+
+    it('still refuses a second stop when no key is sent', async () => {
+      // The shipped app sends no key. Its behaviour must be unchanged.
+      const { user, connector } = await scenario();
+      const session = await sessions.start({ connectorId: connector.id }, user.id);
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '14', user.id);
+      await sessions.stop(session.id, user.id, {});
+
+      await expect(sessions.stop(session.id, user.id, {})).rejects.toThrow(/cannot be stopped/);
+    });
+
+    it("does not let one customer replay another customer's key", async () => {
+      const { user, connector } = await scenario();
+      const session = await sessions.start({ connectorId: connector.id }, user.id);
+      await backdate(session.id);
+      await sessions.reportMeterValue(session.id, '14', user.id);
+      await sessions.stop(session.id, user.id, { idempotencyKey: 'shared-key' });
+
+      // Keys are scoped per caller. A global namespace would hand this
+      // stranger the other customer's session figures.
+      const stranger = await createCustomer(prisma, { phone: '+37477850001' });
+      await expect(
+        sessions.stop(session.id, stranger.user.id, { idempotencyKey: 'shared-key' }),
+      ).rejects.toThrow();
+    });
+  });
+
   describe('reservations', () => {
     it('lets the holder start on a bay reserved for them', async () => {
       const { user, connector } = await scenario();

@@ -566,6 +566,37 @@ Two operational consequences worth knowing:
 Read replicas for analytics and transaction history are the next step after
 that, and neither requires a change to the module boundaries.
 
+### This has now actually been run
+
+Until August 2026 the paragraphs above were a design claim: the sweeps were
+*built* to tolerate more than one instance and had only ever run on one. Two
+API processes were booted against a single Postgres and a single Redis and
+driven with real traffic. What was observed:
+
+| Check | Result |
+| --- | --- |
+| Both instances healthy, zero errors in either log across the whole run | ✅ |
+| Recurring schedule after both booted and both upserted it | 10 jobs, not 20 |
+| Sweep heartbeat rows | one row per job, shared |
+| A token minted by instance A, presented to instance B | accepted |
+| Same idempotency key sent to both **simultaneously** | A captured, B refused with 409 "already in progress" |
+| Same idempotency key sent to B **after A finished** | returned A's payment id — no second charge |
+| 51 captured payments split across both instances | 51 `payment.captured` ledger transactions, and **zero** payments with any other count |
+| Duplicate settlements per partner and period | none |
+| Outbox after the run | fully drained, 0 unprocessed |
+| Double-entry invariant | debit 127,710.0000 = credit 127,710.0000, difference exactly 0 |
+
+The one-to-one column is the one that matters. Two workers competing for the
+same outbox rows produced exactly one ledger transaction per payment — which
+is what `FOR UPDATE SKIP LOCKED` is for, now demonstrated rather than
+assumed.
+
+**What this does not prove.** Both instances were on one machine, so the
+network between them was loopback: no partition, no clock skew, no
+cross-availability-zone latency. Postgres and Redis were each a single
+instance — this exercised two *application* replicas, not a database
+failover. And the run lasted minutes, not days.
+
 Two numbers to set deliberately before adding instances, both measured in
 `docs/LOAD_TEST.md`:
 

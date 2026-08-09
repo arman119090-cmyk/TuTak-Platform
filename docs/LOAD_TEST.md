@@ -41,50 +41,58 @@ is not the part that can lose money.
 
 ## Results
 
-Measured on the development container — 4 × Xeon @ 2.80GHz, 15.7 GiB, Node
+**Re-measured 9 August 2026** against the current code, after the financial
+audit rounds. The previous figures predated every fix in
+`AUDIT_FINANCIAL_2026-08.md` and were left in place long enough to be
+misleading; these replace them.
+
+Measured on the development container — 4 × Xeon @ 2.10GHz, 15.7 GiB, Node
 22.22, Postgres 16.13 — with Postgres, the API process and the load generator
-all sharing those four cores. Treat these as a shape, not a capacity plan; see
+all sharing those four cores. The box is a slower one than the earlier runs
+used (2.10 vs 2.80 GHz), so read these against each other, not against the
+numbers they replaced. Treat these as a shape, not a capacity plan; see
 [What these numbers are not](#what-these-numbers-are-not).
 
 ### Concurrency 32
 
 | Phase | Throughput | p50 | p95 | p99 | Failed |
 |---|---|---|---|---|---|
-| Payment capture | 146.5 /s | 204 ms | 307 ms | 380 ms | 0 / 2225 |
-| Idempotent replay | 1325.8 /s | 24 ms | 31 ms | 34 ms | 0 / 13271 |
-| Outbox drain (settlement) | 44.3 events/s | — | — | — | 0 dead-lettered |
-| Contended payouts, one partner | 112.0 /s | 109 ms | 310 ms | 526 ms | 0 / 1132 |
+| Payment capture | 143.2 /s | 201 ms | 348 ms | 438 ms | 0 / 2168 |
+| Idempotent replay | 1636.3 /s | 19 ms | 24 ms | 27 ms | 0 / 16378 |
+| Outbox drain (settlement) | 45.3 events/s | — | — | — | 0 dead-lettered |
+| Contended payouts, one partner | 119.3 /s | 95 ms | 289 ms | 531 ms | 0 / 1206 |
 
-Ledger after the run: 5 accounts, 13,399 postings, **sum 0.0000**, every
-account agreeing with a replay of its postings. 1,132 payouts of 10 AMD moved
-exactly 11,320 AMD out of the partner's payable — no double payment, no
+Ledger after the run: 5 accounts, 13,262 postings, **sum 0.0000**, every
+account agreeing with a replay of its postings. 1,206 payouts of 10 AMD moved
+exactly 12,060 AMD out of the partner's payable — no double payment, no
 shortfall.
 
 ### Concurrency 64
 
 | Phase | Throughput | p50 | p95 | p99 | Failed |
 |---|---|---|---|---|---|
-| Payment capture | 141.8 /s | 436 ms | 585 ms | 661 ms | 0 / 2167 |
-| Idempotent replay | 1420.5 /s | 45 ms | 56 ms | 65 ms | 0 / 14243 |
-| Outbox drain (settlement) | 45.5 events/s | — | — | — | 0 dead-lettered |
-| Contended payouts, one partner | 110.6 /s | 105 ms | 330 ms | 542 ms | 0 / 1117 |
+| Payment capture | 154.6 /s | 399 ms | 517 ms | 590 ms | 0 / 2372 |
+| Idempotent replay | 1652.0 /s | 38 ms | 46 ms | 50 ms | 0 / 16546 |
+| Outbox drain (settlement) | 45.0 events/s | — | — | — | 0 dead-lettered |
+| Contended payouts, one partner | 109.4 /s | 114 ms | 302 ms | 442 ms | 0 / 1107 |
 
-Ledger after the run: 13,079 postings, **sum 0.0000**, no drift. 1,117 payouts
-moved exactly 11,170 AMD.
+Ledger after the run: 14,084 postings, **sum 0.0000**, no drift. 1,107 payouts
+moved exactly 11,070 AMD.
 
 ## Reading them
 
 **The system is already saturated at 32 in flight.** Doubling concurrency
-bought nothing — throughput moved 146 → 142 /s, inside the noise — while
-median latency doubled (204 → 436 ms). That is a queue, not a capacity
+bought almost nothing — throughput moved 143 → 155 /s, an 8% gain for a
+doubling — while median latency doubled exactly, 201 → 399 ms. That is a queue, not a capacity
 increase: the extra 32 workers spend their time waiting. The binding constraint is the Prisma connection pool,
 which is unset and therefore defaults to `num_cpus × 2 + 1` — nine connections
 on this box. Raising `connection_limit` in `DATABASE_URL` is the first knob to
-turn, and the second is more cores, because at 147 captures/s Postgres, the
+turn, and the second is more cores, because at 150 captures/s Postgres, the
 node process and the load generator are contending for the same four.
 
 **The idempotent replay path is nine times cheaper than the real thing**
-(1326 /s vs 147 /s, p99 34 ms vs 380 ms). This is the number that matters most
+(1636 /s vs 143 /s, p99 27 ms vs 438 ms — eleven times the throughput at a
+sixteenth of the tail latency). This is the number that matters most
 for a mobile app on Armenian mobile data, because a phone that does not hear
 back retries, and the retry is the common case rather than the exception. A
 replay reads one row by unique key and returns the stored response body; it
@@ -102,13 +110,13 @@ for behaviour that is entirely correct. Both are now
 which returns a count of zero instead of raising. The runs above emit **zero
 ERROR lines**.
 
-**Settlement drains at 44 events/s, about a third of the rate captures are
+**Settlement drains at 45 events/s, under a third of the rate captures are
 produced under saturation.** This is the weakest number in the report and the
 one worth watching. It is not currently a problem — the platform's real volume
 is a few hundred payments a day and the backlog clears in seconds — but under
 sustained peak the queue grows.
 
-One drainer is 44/s. The drain claims its batch with `FOR UPDATE SKIP LOCKED`
+One drainer is 45/s. The drain claims its batch with `FOR UPDATE SKIP LOCKED`
 under a lease, which is exactly what makes several drainers safe: a second one
 picks up different events rather than fighting for the same ones. It was the
 advisory lock around the sweep, not the query, that capped settlement at one
@@ -119,7 +127,7 @@ the single-drainer figure: it is the floor, and the floor is what a capacity
 question needs.
 
 **Contended payouts serialize, and that is the design.** 16 workers all take
-`FOR UPDATE` on one partner's payable balance, so they go one at a time; 112/s
+`FOR UPDATE` on one partner's payable balance, so they go one at a time; 119/s
 through a lock held across a ledger post is healthy. The number to check here
 was never throughput, it was `owed after` — which stayed positive in both runs.
 A partner cannot be overpaid by racing the endpoint.

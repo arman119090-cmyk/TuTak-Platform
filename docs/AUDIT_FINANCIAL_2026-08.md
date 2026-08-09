@@ -273,6 +273,64 @@ mobile app depends on, which is more than an audit should change unasked.
 
 ---
 
+## Round three: the database goes away mid-transaction
+
+Crash recovery had been tested by interrupting sagas *in process* — throwing
+at a chosen line and checking the compensation. That covers the
+application's own logic and says nothing about Postgres itself stopping
+halfway through. `scripts/chaos-postgres.sh` now does the second one: it
+drives real captures through the engines and stops the cluster with
+`-m immediate`, which is as close to a power cut as a script gets.
+
+### F-9 (Critical) — a crash mid-capture let the customer be charged twice
+
+**Found by:** the first run of the chaos driver. 5,220 captures reported
+success, every one backed by a ledger transaction — and **5,261 payments
+against 5,260 completed idempotency records**. One payment existed whose
+idempotency key had been forgotten.
+
+**Why.** `IdempotencyService.execute` runs the work, then marks the record
+COMPLETED **in a separate transaction**, and on failure *deletes* the record
+so the next attempt can claim cleanly. Each half is reasonable alone. Together
+they leave a window: the payment commits, the record is then deleted or never
+completed, and the key's only memory is gone. A client whose request timed out
+retries — which is the common case on mobile data, not the exception — and the
+retry finds nothing to replay.
+
+**Confirmed deterministically**, not by racing for a 1-in-5,000 interleaving:
+capture a payment, delete its idempotency record the way the failure path
+does, retry with the same key. Two payments. `DOUBLE CHARGE CONFIRMED`.
+
+**Fix.** The key now lives on the payment itself under
+`@@unique([userId, idempotencyKey])`. The record table becomes an
+optimisation and the database becomes the guarantee — a second charge is
+refused whatever happened to the record. `executeCapture` looks the key up
+before charging, and treats a collision on that index as "this already
+happened" and returns the original payment. Scoped to the user, because two
+customers may legitimately choose the same key.
+
+**Verified after the fix:** the same chaos run, same outage, now reports
+**5,265 payments against 5,265 completed records** — exactly equal — with
+every reported success backed by a ledger transaction, debits equal to
+credits, and no orphaned postings. Five regression tests in
+`payment-key-durability.int-spec.ts`; four of the five fail when the fix is
+reverted, which is what makes them worth having.
+
+### The harness itself was wrong, and would have passed the bug
+
+The first chaos run printed **PASS** while that extra payment sat in the
+data. Its duplicate check compared payment count against *distinct keys
+attempted* — but nearly every attempt fails during an outage, so that ceiling
+was 35,000 and the check could never fire. It now compares payments against
+completed records, one to one, and separately refuses any payment stored
+without a key.
+
+Worth recording plainly: a green harness proved nothing here. The defect was
+found by reading numbers that did not add up in output the harness had
+already declared clean.
+
+---
+
 ## Round two: production readiness
 
 A second pass over the areas the first did not reach — authorization by

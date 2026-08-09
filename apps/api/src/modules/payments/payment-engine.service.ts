@@ -1,5 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Currency, LedgerAccountType, PostingDirection, PaymentStatus } from '@prisma/client';
+import {
+  Currency,
+  LedgerAccountType,
+  PostingDirection,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { randomUUID } from 'crypto';
 import { MONEY_SCALE, Money, parsePositiveMoney } from '../../common/utils/money';
@@ -8,6 +14,21 @@ import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
 import { PartnersService } from '../partners/partners.service';
 import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
+
+/**
+ * Did this error come from the (userId, idempotencyKey) unique index?
+ *
+ * Narrow on purpose. A blanket "P2002 means already charged" would also
+ * swallow a collision on `ledgerTransactionId` or `accruedLotId`, which are
+ * real bugs that must not be reported to the caller as a successful replay.
+ */
+function isKeyCollision(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== 'P2002') return false;
+  const target = err.meta?.target;
+  const fields = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
+  return fields.some((f) => f.includes('idempotencyKey'));
+}
 
 export interface CapturePaymentParams {
   userId: string;
@@ -96,6 +117,16 @@ export class PaymentEngineService {
   }): Promise<PaymentResult> {
     const { userId, partner, amount, currency, sourceToken, idempotencyKey } = params;
 
+    // Before anything is charged: has this key already produced a payment?
+    //
+    // `IdempotencyService` normally answers this and this branch never runs.
+    // It exists for the case where it cannot — the record was lost while the
+    // payment it described survived. Killing Postgres mid-capture produces
+    // exactly that: the failure path deletes the record, the committed
+    // payment stays, and without this check the retry charges again.
+    const already = await this.findByKey(userId, idempotencyKey);
+    if (already) return this.toResult(already);
+
     // Outside any local transaction on purpose: an acquirer call is a network
     // round trip to a system this process does not control, and holding a
     // Postgres transaction open across it would tie up a connection for as
@@ -112,6 +143,7 @@ export class PaymentEngineService {
           commissionAmount: new Decimal(0),
           status: PaymentStatus.DECLINED,
           declineReason: result.declineReason,
+          idempotencyKey,
         },
       });
       return this.toResult(payment);
@@ -136,53 +168,84 @@ export class PaymentEngineService {
     // The Payment row and its ledger transaction are created in one
     // database transaction so a CAPTURED payment can never exist without
     // the money movement that is supposed to back it, or vice versa.
-    return this.prisma.$transaction(async (tx) => {
-      const paymentId = randomUUID();
+    //
+    // The unique index on (userId, idempotencyKey) is what makes a second
+    // charge impossible rather than merely unlikely. Two attempts that both
+    // get past the lookup above — because they are genuinely concurrent, or
+    // because one is a retry after a lost record — race to this INSERT, and
+    // the loser's whole transaction rolls back, ledger postings included.
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const paymentId = randomUUID();
 
-      const ledgerTransaction = await this.ledger.post(
-        {
-          kind: 'payment.captured',
-          sourceType: 'Payment',
-          sourceId: paymentId,
-          currency,
-          postings: [
-            { accountId: pspAccount.id, direction: PostingDirection.DEBIT, amount },
-            { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: partnerNet },
-            { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: commission },
-          ],
-          events: [
-            {
-              aggregateType: 'Payment',
-              aggregateId: paymentId,
-              eventType: 'payment.captured',
-              payload: {
-                paymentId,
-                userId,
-                partnerId: partner.id,
-                amount: amount.toString(),
-                commissionAmount: commission.toString(),
+        const ledgerTransaction = await this.ledger.post(
+          {
+            kind: 'payment.captured',
+            sourceType: 'Payment',
+            sourceId: paymentId,
+            currency,
+            postings: [
+              { accountId: pspAccount.id, direction: PostingDirection.DEBIT, amount },
+              {
+                accountId: partnerAccount.id,
+                direction: PostingDirection.CREDIT,
+                amount: partnerNet,
               },
-            },
-          ],
-        },
-        tx,
-      );
+              {
+                accountId: revenueAccount.id,
+                direction: PostingDirection.CREDIT,
+                amount: commission,
+              },
+            ],
+            events: [
+              {
+                aggregateType: 'Payment',
+                aggregateId: paymentId,
+                eventType: 'payment.captured',
+                payload: {
+                  paymentId,
+                  userId,
+                  partnerId: partner.id,
+                  amount: amount.toString(),
+                  commissionAmount: commission.toString(),
+                },
+              },
+            ],
+          },
+          tx,
+        );
 
-      const payment = await tx.payment.create({
-        data: {
-          id: paymentId,
-          userId,
-          partnerId: partner.id,
-          amount,
-          currency,
-          commissionAmount: commission,
-          status: PaymentStatus.CAPTURED,
-          pspReference: result.pspReference,
-          ledgerTransactionId: ledgerTransaction.id,
-        },
+        const payment = await tx.payment.create({
+          data: {
+            id: paymentId,
+            userId,
+            partnerId: partner.id,
+            amount,
+            currency,
+            commissionAmount: commission,
+            status: PaymentStatus.CAPTURED,
+            pspReference: result.pspReference,
+            ledgerTransactionId: ledgerTransaction.id,
+            idempotencyKey,
+          },
+        });
+
+        return this.toResult(payment);
       });
+    } catch (err) {
+      if (!isKeyCollision(err)) throw err;
+      const existing = await this.findByKey(userId, idempotencyKey);
+      // The row must be there — the constraint that just fired is what
+      // wrote it. If it somehow is not, re-throwing is right: silently
+      // charging again is the one outcome that must never happen.
+      if (!existing) throw err;
+      return this.toResult(existing);
+    }
+  }
 
-      return this.toResult(payment);
+  private findByKey(userId: string, idempotencyKey: string) {
+    return this.prisma.payment.findUnique({
+      where: { userId_idempotencyKey: { userId, idempotencyKey } },
     });
   }
 

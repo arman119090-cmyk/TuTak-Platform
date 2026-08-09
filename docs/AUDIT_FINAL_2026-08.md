@@ -1,3 +1,24 @@
+> ## ⚠️ Superseded — kept as a record, not as a description of the platform
+>
+> This report was written on 6 August 2026 against commit `9190116`, and its
+> three structural blockers — **no payment layer, no durable outbox,
+> replica-unsafe scheduling** — have all been built and tested since. Read as
+> current, it is actively misleading: it says the platform cannot collect
+> money, and the platform collects money.
+>
+> | Blocker here | Where it stands now |
+> | --- | --- |
+> | C-1 no payment collection or settlement | Built: capture, settlement, refunds, payouts, reconciliation — `docs/FINANCIAL_CORE_DESIGN.md` |
+> | H-2 fire-and-forget domain events | Durable transactional outbox with `FOR UPDATE SKIP LOCKED` |
+> | Replica-unsafe scheduling | BullMQ sweeps; two instances verified — `docs/DEPLOYMENT.md` §11 |
+>
+> **For the current state of the money paths, read
+> `docs/AUDIT_FINANCIAL_2026-08.md`.** For what is still open, read the
+> "Remaining" section there and `docs/WEAK_SPOTS_RU.md`.
+>
+> What still holds from this document is its method and its warning about
+> self-assessment, both of which have aged better than its findings.
+
 # TuTak — final audit report, August 2026
 
 State audited: commit `9190116` + adversarial probe suite. **263 tests passing**

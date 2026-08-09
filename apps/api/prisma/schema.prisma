@@ -1003,6 +1003,19 @@ model Payment {
   /// rather than a metadata lookup, because a refund has to find exactly the
   /// points this payment created in order to claw back the right ones.
   accruedLotId        String?   @unique
+  /// The caller's idempotency key, carried on the payment itself.
+  ///
+  /// `IdempotencyRecord` already tracks these, but it is a separate table
+  /// written in a separate transaction, and a crash between the two leaves a
+  /// committed payment whose record is gone — after which a retry with the
+  /// same key charges the customer again. That is not hypothetical: killing
+  /// Postgres mid-capture produced exactly one such payment, and replaying
+  /// its key produced a second charge.
+  ///
+  /// Storing the key here makes the record an optimisation and the database
+  /// the guarantee. Nullable because payments written before this column
+  /// existed have no key, and Postgres permits many NULLs in a unique index.
+  idempotencyKey      String?
   createdAt           DateTime      @default(now())
 
   user              User               @relation(fields: [userId], references: [id])
@@ -1020,6 +1033,10 @@ model Payment {
   /// heaviest recurring load on the database, which is a bad way to find out.
   /// Status leads because the grouping is by status within a time window.
   @@index([status, createdAt])
+  /// Scoped to the user, matching `IdempotencyRecord`'s `payment:<userId>`
+  /// scope: two different customers may legitimately send the same key, and
+  /// a key is only ever a promise about one caller's own retries.
+  @@unique([userId, idempotencyKey])
   @@map("payments")
 }
 

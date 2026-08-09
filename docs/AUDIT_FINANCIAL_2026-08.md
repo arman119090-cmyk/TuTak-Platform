@@ -10,7 +10,7 @@ before the fix and passes after it. Nothing here was concluded by reading
 alone.
 
 State audited: `ff96a6a`, 446 integration tests passing. State after:
-`9e02396`, 506 integration tests passing.
+`8851561`, 522 integration tests passing.
 
 ---
 
@@ -21,11 +21,12 @@ State audited: `ff96a6a`, 446 integration tests passing. State after:
 | Critical | 3 | 3 | yes |
 | High | 4 | 4 | yes |
 | Medium | 1 | 1 | yes |
-| Not fixed — see §Blockers | 2 | — | — |
+| Blockers raised, later closed | 2 | 2 | yes |
 
-Two rounds. The first attacked the money paths; the second attacked
+Three rounds. The first attacked the money paths; the second attacked
 authorization by object id, database-level enforcement, and whether a failure
-reaches a human. F-7 and F-8 come from the second — see §Round two.
+reaches a human; the third built the two things the first round could only
+report as blockers. F-7 and F-8 come from the second — see §Round two.
 
 The financial core proper — payments, settlement, refunds, payouts,
 reconciliation — held everything thrown at it. Its claims are conditional
@@ -214,9 +215,28 @@ detection and payout blocking. Nothing new was found there.
 
 ---
 
-## Blockers — not fixed, and why
+## Blockers — since closed
 
-### B-1 — The roaming CDR loop is unbuilt · NOT VERIFIED
+Both were reported as blockers in the first round and built in the third. The
+original text is kept below each, because what a blocker *was* is the useful
+record.
+
+### B-1 — The roaming CDR loop · **CLOSED**
+
+`ev.reconcile-roaming-cdrs` polls the operator for the settled CDR and
+compares it against what was billed. An overcharge is corrected and returned
+automatically — transaction down, over-accrued points clawed back in
+proportion, over-applied points returned. An undercharge is recorded and
+alerted but **never** silently taken: reaching into a customer's wallet days
+later for a figure they never saw is a second charge, not a correction. A CDR
+that never arrives gives up after twelve attempts and alerts.
+
+Covered by 13 tests. Still **NOT VERIFIED against a real CPO** — the adapter
+is exercised through a stub, because no operator is connected.
+
+*Original finding:*
+
+### B-1 (as first reported) — The roaming CDR loop is unbuilt · NOT VERIFIED
 
 `OcpiAdapter.fetchCdr` is declared and **called from nowhere**. The platform
 bills from meter values reported to its own API. For a roaming session the
@@ -232,7 +252,16 @@ and until it does, the request's section 3 — delayed, duplicate,
 out-of-order and missing CDRs from a provider — is untestable because there
 is no inbound CDR path to test.
 
-### B-2 — The EV stop path has no idempotency key · partially mitigated
+### B-2 — The EV stop path has no idempotency key · **CLOSED**
+
+`StopSessionDto` takes an optional `idempotencyKey`. A client that sends one
+gets the original result back on a retry instead of an error; one that does
+not — including every currently installed copy of the app — behaves exactly as
+before. Keys are scoped per caller, so one customer cannot replay another's.
+
+*Original finding:*
+
+### B-2 (as first reported) — no idempotency key · partially mitigated
 
 F-2 makes a concurrent double-stop safe, and a sequential one was already
 refused. But unlike the QR path, the EV stop accepts no client-supplied
@@ -310,12 +339,12 @@ so the alert is not belt-and-braces.
 
 ## Verification
 
-Everything below was executed on this machine, at `9e02396`.
+Everything below was executed on this machine, at `8851561`.
 
 | Check | Result |
 | --- | --- |
 | `pnpm --filter @tutak/api test:unit` | 77 passed |
-| `pnpm --filter @tutak/api test:int` | **506 passed**, 43 suites |
+| `pnpm --filter @tutak/api test:int` | **522 passed**, 44 suites |
 | `pnpm --filter @tutak/mobile test` | 41 passed |
 | `pnpm --filter @tutak/admin test` | 14 passed |
 | `pnpm --filter @tutak/partner test` | 9 passed |
@@ -324,10 +353,10 @@ Everything below was executed on this machine, at `9e02396`.
 | `pnpm build` | clean, 3 apps |
 | `pnpm audit --audit-level moderate` | 3 high, 1 moderate — all build-time deps of the mobile app or Swagger, none on a request path (unchanged, see `WEAK_SPOTS_RU.md` §3) |
 
-**Tests added: 54** across seven new suites — `concurrency-probe` (14),
+**Tests added: 70** across eight new suites — `concurrency-probe` (14),
 `money-rounding` (6), `ev-lifecycle-probe` (12), `crash-recovery` (9),
-`partner-reconstruction` (3), `reservation-race` (7), `idor-sweep` (9).
-Integration total went 446 → 506.
+`partner-reconstruction` (3), `reservation-race` (7), `idor-sweep` (9),
+`ev-cdr-reconciliation` (13). Integration total went 446 → 522.
 
 **CI, at `6b3ad06`:** both jobs green
 ([run 31280421849](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/31280421849)).
@@ -356,10 +385,15 @@ before it acts rather than checking and hoping. Concurrency, idempotency,
 partial failure and abandonment are all covered by tests that fail when the
 protection is removed.
 
-**For EV charging with roaming partners: no.** B-1 is a gap in an
-integration that would carry real money, and billing a roaming session
-without reconciling the CPO's CDR means the platform's figure and the
-network's figure can disagree with nothing to catch it.
+**For EV charging with roaming partners: the code is ready; the integration
+is unproven.** B-1 is built and tested — a roaming session is now reconciled
+against the operator's own CDR, and a disagreement is either returned or
+escalated. What cannot be claimed is that it works against a *real* CPO:
+every test drives a stubbed adapter, because no operator is connected. Before
+the first roaming station carries money, run a handful of real sessions
+against the operator's sandbox and confirm the CDRs come back in the shape
+the adapter expects. That is an afternoon, not a project — but it has not
+been done.
 
 **Two things this audit cannot tell you.** It was performed by the code's own
 author, which is worth less than an independent review — and the pattern

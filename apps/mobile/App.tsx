@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider } from 'react-i18next';
 import { tutakTheme } from '@tutak/design';
 
+import { ErrorBoundary } from './src/app/ErrorBoundary';
 import i18n from './src/app/i18n/i18n';
 import { ThemeProvider } from './src/app/theme/ThemeProvider';
 import { AuthNavigator } from './src/app/navigation/AuthNavigator';
@@ -83,14 +84,19 @@ function Root() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    // Outermost on purpose: a failure anywhere below — the theme, i18n, the
+    // navigator, a screen — becomes a readable message rather than a blank
+    // screen or a redraw nobody can diagnose from a photograph.
+    <ErrorBoundary>
+      <SafeAreaProvider>
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
             <Root />
           </ThemeProvider>
         </QueryClientProvider>
-      </I18nextProvider>
-    </SafeAreaProvider>
+        </I18nextProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

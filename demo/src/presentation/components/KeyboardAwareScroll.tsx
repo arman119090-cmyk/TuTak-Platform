@@ -1,18 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
-import {
-  Keyboard,
-  KeyboardAvoidingView,
-  LayoutChangeEvent,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Platform,
-  ScrollView,
-  ScrollViewProps,
-  StyleSheet,
-  View,
-  findNodeHandle,
-} from 'react-native';
-import { logEvent } from '../../diagnostics/eventLog';
+import React, { createContext, useCallback, useContext } from 'react';
+import { ScrollView, ScrollViewProps, StyleSheet, View } from 'react-native';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -58,6 +45,14 @@ interface FormScrollValue {
 }
 
 const FormScrollContext = createContext<FormScrollValue | null>(null);
+
+/**
+ * Nothing scrolls a field into view while the apparatus is out.
+ *
+ * A no-op rather than a removed context, so `TextField` needs no change and
+ * whatever comes back can come back here alone.
+ */
+const NO_SCROLLING: FormScrollValue = { ensureVisible: () => undefined };
 
 /**
  * Used by `TextField`. Safe to call whether or not there is a scrolling
@@ -123,26 +118,6 @@ export function scrollTargetFor(g: RevealGeometry): number | null {
 }
 
 /**
- * How long Android is given to stop changing its mind about the keyboard.
- *
- * One appearance produces several `keyboardDidShow` events: an approximate
- * height first, a corrected one after, and another when the suggestion strip
- * appears. Acting on each of them is several scrolls where one was wanted.
- * 200ms is longer than the gap between those reports and shorter than a person
- * moving between fields.
- */
-const KEYBOARD_SETTLE_MS = 200;
-
-/**
- * How long a smooth scroll is assumed to take.
- *
- * React Native does not say when `scrollTo({ animated: true })` has finished,
- * so this stands in for it. A second scroll issued mid-animation cancels the
- * first and restarts, which is visible as a jerk.
- */
-const SCROLL_ANIMATION_MS = 300;
-
-/**
  * How far a new target has to be from the last one to be worth acting on.
  *
  * The keyboard's reported height moves by five to ten points between its own
@@ -186,221 +161,64 @@ export function KeyboardAwareScroll({
   children,
   contentContainerStyle,
   style,
-  onLayout,
-  onScroll,
   ...rest
 }: KeyboardAwareScrollProps) {
-  const scrollRef = useRef<ScrollView>(null);
-  /** How tall the scrollable window is *right now* — it shrinks with the keyboard. */
-  const viewportHeight = useRef(0);
-  const scrollY = useRef(0);
-  /** Re-consulted when the keyboard finishes opening, not only on focus. */
-  const focusedNode = useRef<View | null>(null);
-  /** The last offset actually scrolled to, so near-identical repeats are dropped. */
-  const lastTarget = useRef<number | null>(null);
-  /** Raised for the length of a smooth scroll, so a second one cannot cut it short. */
-  const isScrolling = useRef(false);
-  /** Timers, held so they can be cleared on unmount rather than firing into nothing. */
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Set when a scroll was refused only because another was still animating. */
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Declared before `reveal` so the retry below can call it, and assigned from
-  // `reveal` itself. A plain recursive `useCallback` cannot refer to the
-  // callback it is defining.
-  const revealRef = useRef<(node: View | null) => void>(() => undefined);
-
-  const reveal = useCallback((node: View | null) => {
-    const scroll = scrollRef.current;
-    if (!node || !scroll || viewportHeight.current === 0) return;
-
-    const inner = findNodeHandle(scroll.getInnerViewNode?.() ?? null);
-    if (inner == null) return;
-
-    node.measureLayout(
-      inner,
-      (_x, y, _width, height) => {
-        const target = scrollTargetFor({
-          fieldTop: y,
-          fieldHeight: height,
-          viewportHeight: viewportHeight.current,
-          scrollY: scrollY.current,
-        });
-        if (target === null) {
-          // Logged too. "The app decided not to scroll" and "the app never
-          // got here" look identical in a log that only records actions, and
-          // they point at different faults.
-          logEvent('scroll skipped (in view)');
-          return;
-        }
-
-        if (!shouldIssueScroll({ target, lastTarget: lastTarget.current, isScrolling: isScrolling.current })) {
-          // Which guard refused is the useful part: `busy` means scrolls are
-          // arriving faster than they finish, `same` means the keyboard is
-          // still settling. Different faults, same appearance.
-          if (isScrolling.current) {
-            // `busy` must be retried, and `same` must not.
-            //
-            // The debounced reveal is the *only* one that measures the window
-            // with the keyboard already in it — the one on focus runs against
-            // the full-height viewport, before anything has moved. Dropping it
-            // because a scroll happened to still be animating leaves the field
-            // under the keyboard with nothing scheduled to correct it, which
-            // is precisely the failure this component exists to prevent.
-            //
-            // One hop is enough to terminate: the lock is cleared at most
-            // SCROLL_ANIMATION_MS after it was raised, and it was raised no
-            // later than now, so by the time this fires it is down. A further
-            // retry only happens if a *new* scroll was issued meanwhile, which
-            // is progress rather than a loop.
-            //
-            // `same` is a genuine decision that nothing needs to move, and
-            // retrying it would reinstate the repetition the epsilon exists to
-            // stop.
-            logEvent('scroll skipped (busy) → retry');
-            if (retryTimer.current) clearTimeout(retryTimer.current);
-            retryTimer.current = setTimeout(() => {
-              revealRef.current(node);
-            }, SCROLL_ANIMATION_MS);
-          } else {
-            logEvent('scroll skipped (same)');
-          }
-          return;
-        }
-
-        logEvent(`scroll y=${Math.round(target)}`);
-        lastTarget.current = target;
-        isScrolling.current = true;
-        if (scrollTimer.current) clearTimeout(scrollTimer.current);
-        scrollTimer.current = setTimeout(() => {
-          isScrolling.current = false;
-        }, SCROLL_ANIMATION_MS);
-
-        scroll.scrollTo({ y: target, animated: true });
-      },
-      () => {
-        // The node can be gone by the time this resolves. A field that
-        // unmounts while focusing is odd; it is not worth a crash.
-      },
-    );
-  }, []);
-
-  revealRef.current = reveal;
-
-  const ensureVisible = useCallback(
-    (node: View | null) => {
-      focusedNode.current = node;
-      // A tap is one event and needs no settling — the delay belongs to the
-      // keyboard's own reports, not to the person.
-      lastTarget.current = null;
-      reveal(node);
-    },
-    [reveal],
-  );
-
-  useEffect(() => {
-    // Focus fires before the keyboard has finished animating, so the viewport
-    // measured at that moment is still the full-height one. Running again on
-    // `keyboardDidShow` is what makes the field reliably visible rather than
-    // usually visible.
-    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
-      // The height is the point. Android reports a first approximate value
-      // and then a corrected one, and reports again when the suggestion strip
-      // appears — so a run of `kbShow` at two or three different heights is
-      // ordinary, and a run of forty is the fault.
-      logEvent(`kbShow h=${Math.round(event.endCoordinates?.height ?? 0)}`);
-
-      // Debounced, not acted on directly. Each report restarts the clock, so a
-      // burst of them produces one `reveal` after the burst rather than one
-      // per report — and the one that runs measures the keyboard's final
-      // height instead of an intermediate guess.
-      if (settleTimer.current) clearTimeout(settleTimer.current);
-      settleTimer.current = setTimeout(() => {
-        reveal(focusedNode.current);
-      }, KEYBOARD_SETTLE_MS);
-    });
-    const hidden = Keyboard.addListener('keyboardDidHide', () => {
-      logEvent('kbHide');
-      // A pending reveal for a keyboard that has gone would scroll to a field
-      // nobody is in.
-      if (settleTimer.current) clearTimeout(settleTimer.current);
-      // A retry for a keyboard that has gone would scroll to a field nobody
-      // is in, exactly as a pending reveal would.
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-      focusedNode.current = null;
-      lastTarget.current = null;
-    });
-    return () => {
-      shown.remove();
-      hidden.remove();
-      // Both timers hold a closure over a scroll view that is going away. A
-      // pending one firing after unmount is a scroll into nothing at best.
-      if (settleTimer.current) clearTimeout(settleTimer.current);
-      if (scrollTimer.current) clearTimeout(scrollTimer.current);
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-    };
-  }, [reveal]);
-
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      viewportHeight.current = event.nativeEvent.layout.height;
-      onLayout?.(event);
-    },
-    [onLayout],
-  );
-
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      scrollY.current = event.nativeEvent.contentOffset.y;
-      onScroll?.(event);
-    },
-    [onScroll],
-  );
-
-  const value = useMemo<FormScrollValue>(() => ({ ensureVisible }), [ensureVisible]);
-
+  /*
+   * Stripped to a plain scrolling list, on purpose, and this is a measurement
+   * rather than a fix.
+   *
+   * ## Why
+   *
+   * Six attempts have now failed to make these forms typeable on Android:
+   * `keyboardDismissMode`, a debounce on `keyboardDidShow`, an epsilon on the
+   * scroll target, a lock during the scroll animation, a retry after that
+   * lock, and switching autofill off. Each was reasoned from the source, each
+   * was consistent with the evidence, and the fault survived all six on three
+   * different handsets — including in the demonstration build, which has no
+   * network, no server and no autofill service to blame.
+   *
+   * That last one is the fact that matters: it is this component, and nothing
+   * outside it.
+   *
+   * Everything removed here was added in `9ad672a` or later. What was NOT
+   * removed by any of the six attempts, and what `git log -S` confirms has
+   * been touched exactly once — in `9ad672a` itself — is
+   * `KeyboardAvoidingView behavior="padding"`. On Android that view measures
+   * the keyboard's overlap against its own frame and adds padding to match. If
+   * the window is also resized for the keyboard, the frame shrinks, the
+   * overlap recomputes, the padding changes, and the frame changes again: a
+   * layout that cannot settle. A field inside a view re-laying-out every frame
+   * is a field that flickers and cannot hold a keyboard.
+   *
+   * So the whole apparatus goes, at once, and what remains is the simplest
+   * thing that can possibly work. If the forms are usable now, the fault is in
+   * what was removed and it can be reintroduced one piece at a time. If they
+   * are still not, then it is not this component at all and six rounds have
+   * been spent in the wrong file — which is worth knowing after one build
+   * rather than after a seventh guess.
+   *
+   * ## The cost, stated plainly
+   *
+   * The keyboard can now cover the submit button on a short screen. The form
+   * scrolls, so the button is reachable; it is simply not moved out of the way
+   * for you. That was the problem `9ad672a` set out to fix, and it is a much
+   * smaller problem than a form nobody can type into.
+   */
   return (
-    <FormScrollContext.Provider value={value}>
-      <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        <ScrollView
-          ref={scrollRef}
-          style={[styles.flex, style]}
-          contentContainerStyle={[styles.content, contentContainerStyle]}
-          keyboardShouldPersistTaps="handled"
-          /*
-           * Android dismisses nothing when this view scrolls, and that is not
-           * a preference — `on-drag` and `reveal()` cannot both exist here.
-           *
-           * This component scrolls itself, programmatically, every time the
-           * keyboard appears: `keyboardDidShow` calls `reveal()`, which calls
-           * `scrollTo`. Android's `on-drag` closes the keyboard when the list
-           * scrolls, and does not distinguish a scroll the app asked for from
-           * one a finger caused. So: tap a field, the keyboard opens,
-           * `keyboardDidShow` fires, the app scrolls, `on-drag` closes the
-           * keyboard — and the field still holds focus, so the IME comes
-           * straight back and the whole thing repeats. The screen flickers and
-           * nothing can be typed.
-           *
-           * Reported on two different handsets, on the four screens that use
-           * this component — which are the four sign-in screens, the only ones
-           * where anything is typed before an account exists. Invisible to
-           * every check here: react-native-web has no IME, so the browser
-           * drive that now runs in CI cannot see it, and neither can Jest.
-           *
-           * `interactive` on iOS is a swipe-down gesture, not a reaction to
-           * scrolling, so it does not have this problem and is worth keeping.
-           */
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
-          showsVerticalScrollIndicator={false}
-          onLayout={handleLayout}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          {...rest}
-        >
-          {children}
-        </ScrollView>
-      </KeyboardAvoidingView>
+    <FormScrollContext.Provider value={NO_SCROLLING}>
+      <ScrollView
+        style={[styles.flex, style]}
+        contentContainerStyle={[styles.content, contentContainerStyle]}
+        // The only prop kept from the original. Without it the first tap on a
+        // button while the keyboard is open merely closes the keyboard, and
+        // has to be repeated — which reads as the button being broken. It
+        // cannot cause a loop: it changes what a tap does, not what the layout
+        // does.
+        keyboardShouldPersistTaps="handled"
+        {...rest}
+      >
+        {children}
+      </ScrollView>
     </FormScrollContext.Provider>
   );
 }
@@ -409,7 +227,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   // `flexGrow`, not `flex`: the content keeps its natural height and only
   // stretches to fill a tall screen. With `flex: 1` a form taller than the
-  // window would be compressed instead of scrolled, which is the failure this
-  // file exists to prevent.
+  // window would be compressed instead of scrolled.
   content: { flexGrow: 1 },
 });

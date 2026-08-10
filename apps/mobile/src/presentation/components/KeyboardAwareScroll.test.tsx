@@ -52,20 +52,38 @@ function asPlatform(os: 'ios' | 'android', run: () => void) {
 }
 
 describe('KeyboardAwareScroll', () => {
-  it('avoids the keyboard by padding on Android, where it used to do nothing', () => {
+  /**
+   * Nothing is between this list and the keyboard any more, and that is the
+   * assertion.
+   *
+   * Six fixes failed to make these forms typeable on Android. What none of
+   * them touched — and what `git log -S` shows has been changed exactly once,
+   * in the commit the trouble started with — was `KeyboardAvoidingView`. It
+   * has been removed along with everything else clever in this component, so
+   * the remaining layout is one a browser could render.
+   *
+   * If the forms work now, the fault is in what was removed and can be put
+   * back a piece at a time, each piece having to earn its way past this test.
+   * If they still do not, it was never this component.
+   */
+  it('puts nothing between the list and the keyboard', () => {
     asPlatform('android', () => {
       renderScroll();
-      // `undefined` is the regression, and Android is the only place it shows:
-      // an edge-to-edge window is not resized for the keyboard, so nothing
-      // moves and the submit button stays underneath it.
-      expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.behavior).toBe('padding');
+      expect(screen.UNSAFE_queryByType(KeyboardAvoidingView)).toBeNull();
+    });
+    asPlatform('ios', () => {
+      renderScroll();
+      expect(screen.UNSAFE_queryByType(KeyboardAvoidingView)).toBeNull();
     });
   });
 
-  it('avoids the keyboard by padding on iOS as well', () => {
-    asPlatform('ios', () => {
+  it('leaves the keyboard alone when the list scrolls', () => {
+    // Undefined, not 'none': the prop is gone rather than set to a value.
+    // Anything that closes a keyboard in reaction to layout is exactly the
+    // class of thing being ruled out.
+    asPlatform('android', () => {
       renderScroll();
-      expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.behavior).toBe('padding');
+      expect(screen.UNSAFE_getByType(ScrollView).props.keyboardDismissMode).toBeUndefined();
     });
   });
 
@@ -88,36 +106,6 @@ describe('KeyboardAwareScroll', () => {
     // lets a long one extend past the fold. `flex: 1` would squash it.
     expect(content.flexGrow).toBe(1);
     expect(content.flex).toBeUndefined();
-  });
-
-  it('never dismisses the keyboard when this view scrolls on Android', () => {
-    // This test used to assert `on-drag`, and passing was the problem.
-    //
-    // `on-drag` closes the keyboard whenever the list scrolls, and Android
-    // does not distinguish a scroll the app asked for from one a finger
-    // caused. This component asks for one on every `keyboardDidShow`. The two
-    // together are a loop: keyboard opens, app scrolls the field into view,
-    // `on-drag` closes the keyboard, the field still holds focus so the IME
-    // returns, and round again. On a handset that is a screen that flickers
-    // and a form that cannot be typed into — reported on two different
-    // devices, on the four sign-in screens, which are the four screens that
-    // use this component.
-    //
-    // Written as two literals rather than the expression the component uses,
-    // which would agree with itself whatever it said — and named for the
-    // property that matters rather than for the value, because the value was
-    // the bug.
-    asPlatform('android', () => {
-      renderScroll();
-      expect(screen.UNSAFE_getByType(ScrollView).props.keyboardDismissMode).toBe('none');
-    });
-    // iOS keeps `interactive`: that is a downward swipe on the keyboard
-    // itself, not a reaction to the list moving, so it cannot close a keyboard
-    // the app has just scrolled a field under.
-    asPlatform('ios', () => {
-      renderScroll();
-      expect(screen.UNSAFE_getByType(ScrollView).props.keyboardDismissMode).toBe('interactive');
-    });
   });
 
 });

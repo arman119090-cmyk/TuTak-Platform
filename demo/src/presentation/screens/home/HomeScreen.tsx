@@ -60,6 +60,9 @@ export function HomeScreen({ navigation }: Props) {
           <HomeHeader
             firstName={user?.firstName}
             onNotifications={() => navigation.navigate('Notifications')}
+            // The avatar is where every other app keeps the account, so it
+            // goes to the profile tab rather than nowhere.
+            onProfile={() => navigation.navigate('Settings')}
           />
         </View>
 

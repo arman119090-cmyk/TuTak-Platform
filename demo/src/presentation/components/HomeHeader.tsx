@@ -25,9 +25,17 @@ import { useTheme } from '../../app/theme/ThemeProvider';
 export function HomeHeader({
   firstName,
   onNotifications,
+  onProfile,
 }: {
   firstName?: string;
   onNotifications: () => void;
+  /**
+   * Opens the profile. Required rather than optional: the avatar is round,
+   * brand-coloured and sits in the corner where every other app puts an
+   * account button, so it reads as tappable whether or not it is one. It was
+   * not — a plain `View` — and people tapped it and nothing happened.
+   */
+  onProfile: () => void;
 }) {
   const { color, space, radius, text, glass, premium } = useTheme();
   const { t } = useTranslation();
@@ -40,9 +48,14 @@ export function HomeHeader({
         <View style={[styles.row, { paddingHorizontal: space[4] }]}>
           <View style={styles.identity}>
             {/* Ring first, disc inside it — see the note above. */}
-            <View
-              style={[
+            <Pressable
+              onPress={onProfile}
+              accessibilityRole="button"
+              accessibilityLabel={t('nav.profile')}
+              hitSlop={8}
+              style={({ pressed }) => [
                 styles.ring,
+                { opacity: pressed ? 0.7 : 1 },
                 {
                   backgroundColor: premium.brand.primary + '2E', // ~18% alpha
                   shadowColor: premium.brand.primary,
@@ -56,7 +69,7 @@ export function HomeHeader({
                   <Ionicons name="person" size={20} color={color.textInverse} />
                 )}
               </View>
-            </View>
+            </Pressable>
 
             <View style={{ marginLeft: space[3] }}>
               <Text style={[text.title, { color: color.textPrimary }]}>TuTak</Text>

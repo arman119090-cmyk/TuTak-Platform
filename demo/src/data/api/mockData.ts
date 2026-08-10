@@ -393,19 +393,29 @@ export function freshMockState(): MockState {
       },
     ],
 
-    // One session already running, so the charging screen has something to
-    // show without anybody having to start one first.
+    // Finished, not running.
+    //
+    // It used to start already charging, on the reasoning that the charging
+    // screen would then have something to show. What it actually did was open
+    // the demonstration halfway through the story: a banner saying "charging
+    // now" sits above the station list, and the first thing somebody looks for
+    // — how do I connect and start — is the one thing they cannot find,
+    // because from the app's point of view they already did it.
+    //
+    // A completed session gives the history screen something real and leaves
+    // the interesting path walkable: pick a station, pick a bay, start, watch
+    // it charge, stop it.
     sessions: [
       {
         id: 'session-1',
         connectorId: 'conn-2',
         userId: MOCK_USER.id,
-        status: EvSessionStatus.CHARGING,
-        startedAt: minutesAgo(24),
-        stoppedAt: null,
+        status: EvSessionStatus.COMPLETED,
+        startedAt: minutesAgo(94),
+        stoppedAt: minutesAgo(24),
         energyKwh: '11.4',
         cost: '1083',
-        bonusEarned: null,
+        bonusEarned: '32.49',
         ocpiCdrId: null,
       },
     ],

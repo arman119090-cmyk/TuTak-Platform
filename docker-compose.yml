@@ -104,6 +104,11 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in a .env file — see apps/api/.env.example}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in a .env file — see apps/api/.env.example}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      # Off unless asked for. Demo mode opens the passwordless demo sign-in
+      # and permits the sandbox acquirer, so it is a deliberate choice rather
+      # than something a local stack acquires by accident. The CI job sets it
+      # to drive the mobile bundle; see tests/e2e/mobile-demo.e2e.ts.
+      DEMO_MODE: ${DEMO_MODE:-false}
       SMS_ENDPOINT: ${SMS_ENDPOINT:-}
       SMS_AUTH_SCHEME: ${SMS_AUTH_SCHEME:-basic}
       SMS_USERNAME: ${SMS_USERNAME:-}

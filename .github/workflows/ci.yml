@@ -183,6 +183,8 @@ jobs:
           JWT_ACCESS_SECRET=ci-access-secret-not-used-outside-continuous-integration
           JWT_REFRESH_SECRET=ci-refresh-secret-not-used-outside-continuous-integration
           DEMO_PASSWORD=CiDemoPassword-2026!
+          DEMO_MODE=true
+          CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:8099
           ENVFILE
           docker compose up -d
           for i in $(seq 1 90); do
@@ -207,6 +209,33 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
           DEMO_PASSWORD='CiDemoPassword-2026!' pnpm e2e
+
+      # Everything above this line tests the mobile app's source with the
+      # network mocked. Nothing built it and let it talk to a server, and a
+      # bug lived in that gap: the client read the demo probe one level
+      # shallower than the envelope the API sends, so the demo sign-in button
+      # never appeared on any deployment. The request succeeded, so nothing
+      # threw and no test failed.
+      #
+      # This bundles the app the way a release bundles it and drives the
+      # result against the stack already running above. react-native-web is
+      # not Android — it shares the screens, stores and API client, not the
+      # native modules or the keyboard — so this covers the client's own
+      # logic and is not a substitute for installing an APK.
+      - name: Drive the built mobile app against the stack
+        run: |
+          scripts/mobile-web-serve.sh http://localhost:4000/v1 8099 > mobile-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:8099/ && break
+            # Bundling is the slow half and the half that fails. Its log is
+            # the only place that says why, so print it rather than reporting
+            # a timeout with no cause.
+            [ "$i" = 60 ] && { echo "the mobile bundle never came up:"; cat mobile-web.log; exit 1; }
+            sleep 5
+          done
+          MOBILE_WEB_URL=http://localhost:8099 DEMO_PASSWORD='CiDemoPassword-2026!' \
+            pnpm exec playwright test --config tests/e2e/playwright.config.ts \
+              --project=e2e --no-deps mobile-demo
 
       # A backup script nobody has run is not a backup script. The stack is
       # already up and seeded, so this costs seconds and proves the dump is

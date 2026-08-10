@@ -30,8 +30,17 @@ export const authApi = {
     try {
       // Absolute, because health is not under the version prefix the
       // client's base URL carries. See `healthUrl`.
-      const { data } = await httpClient.get<{ demoMode?: boolean }>(healthUrl);
-      return data?.demoMode === true;
+      //
+      // Enveloped like every other response: the API's transform interceptor
+      // wraps the probe too, so the answer is at `data.data`, not `data`.
+      // Reading the unwrapped shape here returned `undefined === true` on a
+      // healthy demo server and hid the button on every deployment — the
+      // request succeeded, so the `catch` below never ran and nothing said a
+      // word. Driving the built app is what caught it; no unit test did,
+      // because the tests around this file only ever checked the URL.
+      const { data } =
+        await httpClient.get<ApiEnvelope<{ status: string; demoMode?: boolean }>>(healthUrl);
+      return data?.data?.demoMode === true;
     } catch {
       // Unreachable, older, or not a demo — either way, no shortcut.
       return false;

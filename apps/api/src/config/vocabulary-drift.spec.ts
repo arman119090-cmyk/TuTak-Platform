@@ -5,6 +5,7 @@ import {
   BonusEntryType,
   EvSessionStatus,
   LedgerDirection,
+  ReferralInviteStatus,
   TransactionStatus,
   TransactionType,
 } from '@tutak/shared-types';
@@ -54,6 +55,7 @@ describe('the shared types mirror the schema', () => {
     ['TransactionType', TransactionType],
     ['TransactionStatus', TransactionStatus],
     ['EvSessionStatus', EvSessionStatus],
+    ['ReferralInviteStatus', ReferralInviteStatus],
   ])('%s', (name, declared) => {
     // Equality, not containment, in both directions. A type that omits a
     // value lets a client write a branch that misses it; a type that invents
@@ -73,6 +75,7 @@ describe('every value a customer can see has a label in every language', () => {
     ['transactionType', TransactionType as unknown as Record<string, string>],
     ['transactionStatus', TransactionStatus as unknown as Record<string, string>],
     ['evStatus', EvSessionStatus as unknown as Record<string, string>],
+    ['referralStatus', ReferralInviteStatus as unknown as Record<string, string>],
   ];
 
   for (const locale of SUPPORTED_LOCALES) {

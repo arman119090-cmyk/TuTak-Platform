@@ -3,7 +3,14 @@
   "compilerOptions": {
     // Tests are type-checked but never emitted, so the build's rootDir
     // restriction (src only) must not apply to them.
-    "rootDir": ".",
+    //
+    // The workspace root, not `.`: `vocabulary-drift.spec.ts` compares this
+    // app's Prisma schema against the shared packages every client compiles
+    // against, which means importing across package boundaries. Narrowing
+    // rootDir to apps/api would reject those imports, and the only way to
+    // satisfy it would be to stop checking the thing worth checking. Nothing
+    // is emitted from this config, so widening it costs nothing.
+    "rootDir": "../..",
     "noEmit": true,
     "incremental": false,
     "types": ["jest", "node"]

@@ -51,7 +51,6 @@ describe('Demo sign-in (integration)', () => {
   const withDemoMode = (on: boolean) =>
     jest.spyOn(config, 'get').mockImplementation(((key: string, ...rest: unknown[]) => {
       if (key === 'demoMode') return on;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (ConfigService.prototype.get as any).call(config, key, ...rest);
     }) as never);
 

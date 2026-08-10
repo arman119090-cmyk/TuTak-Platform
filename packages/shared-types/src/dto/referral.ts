@@ -1,3 +1,5 @@
+import { ReferralInviteStatus } from '../enums/referral';
+
 export interface ReferralCodeDto {
   code: string;
   userId: string;
@@ -10,7 +12,7 @@ export interface ReferralInviteDto {
   id: string;
   referrerUserId: string;
   refereeUserId: string;
-  status: 'PENDING' | 'QUALIFIED' | 'REWARDED' | 'EXPIRED' | 'FRAUD_BLOCKED';
+  status: ReferralInviteStatus;
   qualifyingAction: string | null;
   rewardAmount: string | null;
   createdAt: string;

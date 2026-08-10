@@ -96,7 +96,43 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eas-cli@latest init --non-interactive --force || true
 
+      # A cancelled job does not cancel the build. The first attempt hit the
+      # 60-minute job timeout while EAS was still compiling; EAS carried on and
+      # very likely finished minutes later, with the artifact sitting there and
+      # nobody asking for it. Starting a fresh build in that situation queues
+      # behind the free tier again and costs another half hour for a file that
+      # already exists.
+      #
+      # So: look first. Only a build that FINISHED and carries an artifact is
+      # reused, and its id and commit are printed so the reuse is visible
+      # rather than assumed.
+      - name: Reuse a finished build if EAS already has one
+        id: existing
+        working-directory: demo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest build:list --platform android --limit 5 \
+            --non-interactive --json > list.json 2>/dev/null || echo '[]' > list.json
+          node -e "
+            let builds = [];
+            try { builds = require('./list.json'); } catch { builds = []; }
+            if (!Array.isArray(builds)) builds = [];
+            const done = builds.find(b =>
+              b.status === 'FINISHED' &&
+              (b.artifacts?.buildUrl || b.artifacts?.applicationArchiveUrl));
+            if (done) {
+              const url = done.artifacts.buildUrl || done.artifacts.applicationArchiveUrl;
+              console.log('Reusing build ' + done.id + ' from commit ' + (done.gitCommitHash || 'unknown'));
+              console.log('APK_URL: ' + url);
+              require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'apk_url=' + url + '\n');
+            } else {
+              console.log('No finished build to reuse; one will be started.');
+            }
+          "
+
       - name: Build the APK on EAS
+        if: steps.existing.outputs.apk_url == ''
         id: build
         working-directory: demo
         env:
@@ -116,12 +152,21 @@ jobs:
           echo "BUILD_ID: $ID"
           echo "apk_url=$URL" >> "$GITHUB_OUTPUT"
 
+      # Either source: a build started here, or one EAS already had.
+      - name: Settle on one URL
+        id: apk
+        run: |
+          URL="${{ steps.build.outputs.apk_url }}"
+          [ -n "$URL" ] || URL="${{ steps.existing.outputs.apk_url }}"
+          echo "APK_URL: $URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
       - name: Download the APK
-        if: steps.build.outputs.apk_url != ''
-        run: curl -fL -o tutak-demo.apk "${{ steps.build.outputs.apk_url }}"
+        if: steps.apk.outputs.url != ''
+        run: curl -fL -o tutak-demo.apk "${{ steps.apk.outputs.url }}"
 
       - name: Attach the APK to this run
-        if: steps.build.outputs.apk_url != ''
+        if: steps.apk.outputs.url != ''
         uses: actions/upload-artifact@v4
         with:
           name: tutak-demo-apk
@@ -133,8 +178,8 @@ jobs:
           {
             echo "## The demo APK"
             echo ""
-            if [ -n "${{ steps.build.outputs.apk_url }}" ]; then
-              echo "**Direct:** ${{ steps.build.outputs.apk_url }}"
+            if [ -n "${{ steps.apk.outputs.url }}" ]; then
+              echo "**Direct:** ${{ steps.apk.outputs.url }}"
               echo ""
               echo "**On this page:** scroll to **Artifacts** → **tutak-demo-apk**."
             else

@@ -254,6 +254,18 @@ jobs:
             [ "$i" = 60 ] && { echo "the mobile bundle never came up:"; cat mobile-web.log; exit 1; }
             sleep 5
           done
+          # Asserted before the browser opens, because a failure here is a
+          # stack problem and looks identical to a client problem once it
+          # reaches Playwright. The last time this step went red the cause was
+          # `DEMO_PASSWORD` never reaching the api container, and the visible
+          # symptom was a button that did not do anything.
+          echo "--- what the app will be told ---"
+          curl -fsS http://localhost:4000/health
+          echo
+          curl -fsS -o /dev/null -w 'demo-session: %{http_code}\n' \
+            -X POST http://localhost:4000/v1/auth/demo-session \
+            -H 'Content-Type: application/json' -d '{"deviceId":"ci-preflight"}'
+
           MOBILE_WEB_URL=http://localhost:8099 DEMO_PASSWORD='CiDemoPassword-2026!' \
             pnpm exec playwright test --config tests/e2e/playwright.config.ts \
               --project=e2e --no-deps mobile-demo
@@ -286,6 +298,10 @@ jobs:
             test-results/
           retention-days: 7
 
+      # Short on purpose. This used to be `--tail 100` across five services,
+      # which is over a thousand lines of routine boot output appended *after*
+      # the failing step — so the assertion that failed was invisible at the
+      # end of the log, which is where anybody looks first.
       - name: Stack logs on failure
         if: failure()
-        run: docker compose logs --tail 100
+        run: docker compose logs --tail 25

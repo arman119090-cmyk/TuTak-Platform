@@ -42,7 +42,13 @@ jobs:
   build:
     name: EAS build (demo APK)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 was not enough. The first build of a new EAS project has no cache and
+    # waits in the free tier's queue behind whatever else that account has
+    # running — which on the first attempt was another build of this
+    # repository's own, started minutes earlier. The job died at the timeout
+    # with the APK still compiling on Expo's side, which reads like a failure
+    # and is only a deadline.
+    timeout-minutes: 120
     steps:
       - name: Refuse early if the token is missing
         env:

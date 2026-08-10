@@ -258,11 +258,11 @@
     "PENDING_PROMOTION": "Became available"
   },
   "referralStatus": {
-    "PENDING": "Waiting for first payment",
-    "QUALIFIED": "Qualified",
-    "REWARDED": "Rewarded",
-    "EXPIRED": "Expired",
-    "FRAUD_BLOCKED": "Blocked"
+    "PENDING": "Waiting for their first purchase",
+    "QUALIFIED": "They bought — your points are on the way",
+    "REWARDED": "Points credited to you",
+    "EXPIRED": "The invitation expired",
+    "FRAUD_BLOCKED": "Rejected by a fraud check"
   },
   "evStatus": {
     "RESERVED": "Reserved",

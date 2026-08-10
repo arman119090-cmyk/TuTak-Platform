@@ -258,11 +258,11 @@
     "PENDING_PROMOTION": "Стали доступны"
   },
   "referralStatus": {
-    "PENDING": "Ждём первый платёж",
-    "QUALIFIED": "Условие выполнено",
-    "REWARDED": "Вознаграждён",
-    "EXPIRED": "Истекло",
-    "FRAUD_BLOCKED": "Заблокировано"
+    "PENDING": "Ждём первую покупку",
+    "QUALIFIED": "Друг купил — баллы в пути",
+    "REWARDED": "Баллы вам начислены",
+    "EXPIRED": "Срок приглашения истёк",
+    "FRAUD_BLOCKED": "Отклонено проверкой"
   },
   "evStatus": {
     "RESERVED": "Забронировано",

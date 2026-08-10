@@ -99,6 +99,18 @@ export function SettingsScreen() {
       <SectionHeader title={t('settings.security')} />
       <Surface padded={false}>
         <View style={{ paddingHorizontal: space[5] }}>
+          {/*
+            A second way in. Inviting people is how a loyalty programme grows,
+            and it was reachable from exactly one place: a tile on the home
+            screen. Somebody who did not happen to notice that tile concluded
+            the feature did not exist — which is what happened.
+          */}
+          <ListRow
+            title={t('referral.inviteFriends')}
+            leading={<SettingIcon name="gift-outline" />}
+            trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+            onPress={() => navigation.navigate('Referral')}
+          />
           <ListRow
             title={t('settings.notifications')}
             leading={<SettingIcon name="notifications-outline" />}

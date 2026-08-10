@@ -85,7 +85,6 @@ export function RegisterScreen({ navigation }: Props) {
                 label={t('auth.firstName')}
                 value={firstName}
                 onChangeText={setFirstName}
-                autoComplete="given-name"
               />
             </View>
             <View style={styles.flex}>
@@ -93,7 +92,6 @@ export function RegisterScreen({ navigation }: Props) {
                 label={t('auth.lastName')}
                 value={lastName}
                 onChangeText={setLastName}
-                autoComplete="family-name"
               />
             </View>
           </View>

@@ -98,6 +98,27 @@ export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, 
           }}
           style={[styles.input, text.body, { color: color.textPrimary }, style]}
           {...rest}
+          /*
+           * After the spread on purpose: this wins over anything a screen
+           * passes, so no field anywhere can opt back in.
+           *
+           * `importantForAutofill="no"` above was expected to be enough and
+           * was not. Android's autofill service still recognises a field it
+           * has an `autofillHints` value for — which is what `autoComplete`
+           * compiles to — and highlights every field it believes it can fill.
+           * That is what puts a wash of colour across several fields at once
+           * while React's own `focused` state names exactly one, and it is why
+           * a photograph of the fault looked like the app lighting two fields
+           * that the app cannot light.
+           *
+           * The cost is real and is accepted deliberately: password managers
+           * can no longer fill these fields, the iOS suggestion bar is quiet,
+           * and an SMS code has to be typed rather than offered. A form that
+           * can be filled in slowly beats one that cannot be filled in at all.
+           * If a device is ever confirmed clean, this is the first thing to
+           * put back — per field, not by deleting the line.
+           */
+          autoComplete="off"
         />
       </View>
 

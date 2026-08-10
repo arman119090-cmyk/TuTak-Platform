@@ -97,7 +97,6 @@ export function LoginScreen({ navigation }: Props) {
             value={phone}
             onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
             keyboardType="number-pad"
-            autoComplete="tel"
             placeholder="00 000 000"
             maxLength={8}
           />
@@ -106,7 +105,6 @@ export function LoginScreen({ navigation }: Props) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
-            autoComplete="password"
             placeholder="••••••••"
             error={error ?? undefined}
           />

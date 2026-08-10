@@ -122,6 +122,66 @@ export function scrollTargetFor(g: RevealGeometry): number | null {
   return Math.abs(target - g.scrollY) >= 1 ? target : null;
 }
 
+/**
+ * How long Android is given to stop changing its mind about the keyboard.
+ *
+ * One appearance produces several `keyboardDidShow` events: an approximate
+ * height first, a corrected one after, and another when the suggestion strip
+ * appears. Acting on each of them is several scrolls where one was wanted.
+ * 200ms is longer than the gap between those reports and shorter than a person
+ * moving between fields.
+ */
+const KEYBOARD_SETTLE_MS = 200;
+
+/**
+ * How long a smooth scroll is assumed to take.
+ *
+ * React Native does not say when `scrollTo({ animated: true })` has finished,
+ * so this stands in for it. A second scroll issued mid-animation cancels the
+ * first and restarts, which is visible as a jerk.
+ */
+const SCROLL_ANIMATION_MS = 300;
+
+/**
+ * How far a new target has to be from the last one to be worth acting on.
+ *
+ * The keyboard's reported height moves by five to ten points between its own
+ * reports, so a target recomputed from it moves by the same amount. Below this
+ * the difference is the IME correcting itself rather than the field needing to
+ * move.
+ */
+const TARGET_EPSILON = 5;
+
+/** Everything that decides whether a scroll request is worth issuing. */
+export interface ScrollGate {
+  target: number;
+  /** The last target actually scrolled to, or null if none yet. */
+  lastTarget: number | null;
+  /** Whether a smooth scroll is believed to still be running. */
+  isScrolling: boolean;
+}
+
+/**
+ * Whether to issue this scroll.
+ *
+ * Separate from the component because it is the whole decision and because
+ * `reveal` can only be driven through `measureLayout`, which needs a native
+ * node no test environment here can produce. Written as a function rather than
+ * as three conditions inside a callback so the rules are checked against real
+ * code instead of against a copy of themselves.
+ */
+export function shouldIssueScroll(gate: ScrollGate): boolean {
+  // A scroll started less than an animation ago is still moving. Interrupting
+  // it restarts the animation from wherever it had got to, which is the jerk.
+  if (gate.isScrolling) return false;
+
+  // The first scroll of an interaction always happens: there is nothing to
+  // compare against and the field genuinely needs revealing.
+  if (gate.lastTarget === null) return true;
+
+  return Math.abs(gate.target - gate.lastTarget) >= TARGET_EPSILON;
+}
+
 export function KeyboardAwareScroll({
   children,
   contentContainerStyle,
@@ -136,6 +196,13 @@ export function KeyboardAwareScroll({
   const scrollY = useRef(0);
   /** Re-consulted when the keyboard finishes opening, not only on focus. */
   const focusedNode = useRef<View | null>(null);
+  /** The last offset actually scrolled to, so near-identical repeats are dropped. */
+  const lastTarget = useRef<number | null>(null);
+  /** Raised for the length of a smooth scroll, so a second one cannot cut it short. */
+  const isScrolling = useRef(false);
+  /** Timers, held so they can be cleared on unmount rather than firing into nothing. */
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reveal = useCallback((node: View | null) => {
     const scroll = scrollRef.current;
@@ -153,15 +220,31 @@ export function KeyboardAwareScroll({
           viewportHeight: viewportHeight.current,
           scrollY: scrollY.current,
         });
-        if (target !== null) {
-          logEvent(`scroll y=${Math.round(target)}`);
-          scroll.scrollTo({ y: target, animated: true });
-        } else {
+        if (target === null) {
           // Logged too. "The app decided not to scroll" and "the app never
           // got here" look identical in a log that only records actions, and
           // they point at different faults.
-          logEvent('scroll skipped');
+          logEvent('scroll skipped (in view)');
+          return;
         }
+
+        if (!shouldIssueScroll({ target, lastTarget: lastTarget.current, isScrolling: isScrolling.current })) {
+          // Which guard refused is the useful part: `busy` means scrolls are
+          // arriving faster than they finish, `same` means the keyboard is
+          // still settling. Different faults, same appearance.
+          logEvent(isScrolling.current ? 'scroll skipped (busy)' : 'scroll skipped (same)');
+          return;
+        }
+
+        logEvent(`scroll y=${Math.round(target)}`);
+        lastTarget.current = target;
+        isScrolling.current = true;
+        if (scrollTimer.current) clearTimeout(scrollTimer.current);
+        scrollTimer.current = setTimeout(() => {
+          isScrolling.current = false;
+        }, SCROLL_ANIMATION_MS);
+
+        scroll.scrollTo({ y: target, animated: true });
       },
       () => {
         // The node can be gone by the time this resolves. A field that
@@ -173,6 +256,9 @@ export function KeyboardAwareScroll({
   const ensureVisible = useCallback(
     (node: View | null) => {
       focusedNode.current = node;
+      // A tap is one event and needs no settling — the delay belongs to the
+      // keyboard's own reports, not to the person.
+      lastTarget.current = null;
       reveal(node);
     },
     [reveal],
@@ -189,15 +275,31 @@ export function KeyboardAwareScroll({
       // appears — so a run of `kbShow` at two or three different heights is
       // ordinary, and a run of forty is the fault.
       logEvent(`kbShow h=${Math.round(event.endCoordinates?.height ?? 0)}`);
-      reveal(focusedNode.current);
+
+      // Debounced, not acted on directly. Each report restarts the clock, so a
+      // burst of them produces one `reveal` after the burst rather than one
+      // per report — and the one that runs measures the keyboard's final
+      // height instead of an intermediate guess.
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(() => {
+        reveal(focusedNode.current);
+      }, KEYBOARD_SETTLE_MS);
     });
     const hidden = Keyboard.addListener('keyboardDidHide', () => {
       logEvent('kbHide');
+      // A pending reveal for a keyboard that has gone would scroll to a field
+      // nobody is in.
+      if (settleTimer.current) clearTimeout(settleTimer.current);
       focusedNode.current = null;
+      lastTarget.current = null;
     });
     return () => {
       shown.remove();
       hidden.remove();
+      // Both timers hold a closure over a scroll view that is going away. A
+      // pending one firing after unmount is a scroll into nothing at best.
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      if (scrollTimer.current) clearTimeout(scrollTimer.current);
     };
   }, [reveal]);
 

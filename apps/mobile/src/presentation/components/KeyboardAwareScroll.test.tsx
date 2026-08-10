@@ -1,7 +1,7 @@
 import React from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
 import { render, screen } from '@testing-library/react-native';
-import { KeyboardAwareScroll, scrollTargetFor } from './KeyboardAwareScroll';
+import { KeyboardAwareScroll, scrollTargetFor, shouldIssueScroll } from './KeyboardAwareScroll';
 import { TextField } from './TextField';
 import { ThemeProvider } from '../../app/theme/ThemeProvider';
 
@@ -169,6 +169,51 @@ describe('scrollTargetFor', () => {
     expect(
       scrollTargetFor({ viewportHeight: 600, scrollY: 100, fieldTop: 700, fieldHeight: 54 }),
     ).toBe(170);
+  });
+});
+
+/**
+ * The three guards in front of `scrollTo`, checked against the real function
+ * the component calls rather than a copy of its conditions.
+ *
+ * They exist because Android reports the keyboard's height several times per
+ * appearance — approximate, corrected, then again for the suggestion strip —
+ * and each report recomputes a target five to ten points from the last. One
+ * scroll per report is several scrolls where one was wanted, each cancelling
+ * the animation of the one before it.
+ */
+describe('shouldIssueScroll', () => {
+  it('always scrolls the first time, with nothing to compare against', () => {
+    expect(shouldIssueScroll({ target: 170, lastTarget: null, isScrolling: false })).toBe(true);
+  });
+
+  it('refuses while a scroll is still animating', () => {
+    // Interrupting a smooth scroll restarts it from wherever it had reached,
+    // which is the jerk. Even a target far from the last one waits.
+    expect(shouldIssueScroll({ target: 400, lastTarget: 170, isScrolling: true })).toBe(false);
+  });
+
+  it('refuses the first scroll of an interaction too if one is already running', () => {
+    expect(shouldIssueScroll({ target: 170, lastTarget: null, isScrolling: true })).toBe(false);
+  });
+
+  it.each([
+    ['identical', 170],
+    ['a point away', 171],
+    ['just under the epsilon', 174.9],
+    ['just under the epsilon, downwards', 165.1],
+  ])('refuses a target %s from the last one', (_case, target) => {
+    // Five points is the keyboard correcting its own reported height, not the
+    // field needing to move.
+    expect(shouldIssueScroll({ target, lastTarget: 170, isScrolling: false })).toBe(false);
+  });
+
+  it.each([
+    ['exactly the epsilon', 175],
+    ['well beyond it', 400],
+    ['beyond it, upwards', 100],
+  ])('scrolls for a target %s from the last one', (_case, target) => {
+    expect(shouldIssueScroll({ target, lastTarget: 170, isScrolling: false })).toBe(true);
   });
 });
 

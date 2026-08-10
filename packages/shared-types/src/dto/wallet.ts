@@ -20,7 +20,27 @@ export interface BonusLedgerEntryDto {
   walletId: string;
   type: BonusEntryType;
   direction: LedgerDirection;
+  /** Magnitude of the movement. Never negative; `direction` carries the sign. */
   amount: string;
+
+  /**
+   * Signed effect on each of the wallet's three buckets.
+   *
+   * The API has always sent these; this type did not declare them, so no
+   * client could read them. That mattered: it is exactly the information the
+   * wallet screen needed to describe a NEUTRAL entry, and without it the
+   * screen had only `direction` to go on and got the sign wrong.
+   *
+   * The schema states the invariant these hold to:
+   *
+   *     availableDelta + pendingDelta + reservedDelta
+   *       === +amount (CREDIT) | -amount (DEBIT) | 0 (NEUTRAL)
+   */
+  availableDelta: string;
+  pendingDelta: string;
+  reservedDelta: string;
+
+  /** Total outstanding points — available + pending + reserved — afterwards. */
   balanceAfter: string;
   relatedLotId: string | null;
   relatedReservationId: string | null;

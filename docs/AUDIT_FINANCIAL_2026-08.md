@@ -24,12 +24,16 @@ after it, 627 API, 65 mobile, 28 admin, 9 partner.
 | | Found | Fixed | Verified by test |
 | --- | --- | --- | --- |
 | Critical | 5 | 5 | yes |
-| High | 5 | 5 | yes |
-| Medium | 4 | 4 | yes |
+| High | 6 | 6 | yes |
+| Medium | 7 | 7 | yes |
+| Low | 1 | 1 | yes |
 | Blockers raised, later closed | 2 | 2 | yes |
 
-Five rounds, each attacking in a way the previous one did not — which is the
-only reason each found anything, and the reason to expect a sixth would too.
+Six rounds, each attacking in a way the previous one did not — which is the
+only reason each found anything, and the reason to expect a seventh would
+too. Round six is the evidence for that sentence rather than an illustration
+of it: it was written after round five predicted a sixth would find
+something, and it found four.
 
 1. **The money paths**, concurrently and with awkward amounts. F-1 to F-6.
 2. **Production readiness**: authorization by object id, database-level
@@ -42,6 +46,10 @@ only reason each found anything, and the reason to expect a sixth would too.
 5. **The client, not the server.** F-12, F-13, F-14 — server guarantees that
    can only be reached through a cooperating client, and three clients that
    were not cooperating.
+6. **The mobile app, built, against a running server.** F-15 to F-19 — found
+   by doing the one thing no round had done: bundling the app and looking at
+   the screen. Every mobile test until then ran against source with the
+   network mocked, which tests what the author believed the server sends.
 
 Where the defects were, by round, because the answer changed:
 
@@ -59,6 +67,13 @@ has cleared.
 
 Round five found its two **outside the API altogether**, in the operator's
 browser, where no amount of server-side testing could have reached them.
+
+Round six found its four in the **customer's own app**, and specifically in
+the gap between what the API sends and what the client's types said it sends
+— a gap that is invisible to both sides' tests, because each is internally
+consistent with a different belief. It also produced the one finding in this
+document that a customer would notice unaided: their points history reporting
+a loss that never happened.
 
 ---
 
@@ -550,6 +565,160 @@ harness was green.
 The admin panel now has page-level tests; the partner dashboard has no write
 that moves money, so there was nothing of this kind to find there. Neither
 dashboard has been driven by a human against a live API since these changes.
+
+---
+
+## Round six: the app, built, against a server that was running
+
+Round five attacked the clients by reading and testing their source. This
+round did the thing that had never been done to the mobile app in eight
+months of work: **built it, pointed it at a live API, and looked at the
+screen.**
+
+Every mobile test before this ran against source with the network mocked —
+which means each one asserts that a component behaves correctly when handed
+*the response its author believed the server sends*. That belief was the
+untested part, and four defects were living in it. None of them could have
+been found by adding more of the same tests, and all four were visible within
+ninety seconds of opening the app.
+
+The harness is `scripts/mobile-web-serve.sh` plus `tests/e2e/mobile-demo.e2e.ts`,
+and CI now runs it against the stack it already boots. react-native-web is not
+Android — it shares the screens, navigation, stores and API client, and shares
+none of the native modules, the keyboard or the Keystore — so this covers the
+client's own logic and is not a substitute for installing an APK.
+
+### F-15 (High) — the wallet reported a customer's own points as a loss
+
+**What was wrong.** `WalletScreen` rendered each bonus ledger row as
+`direction === 'CREDIT' ? +amount : -amount`. The bonus ledger has three
+directions. `NEUTRAL` marks the entries that move points between a wallet's
+own buckets — pending to available, available to reserved — where the total
+before and after is identical.
+
+The demo customer's history read, in order:
+
+```
+Became available    −302.5
+Earned on purchase  +302.5
+```
+
+Both lines describe the same 302.5 points. The first says they were taken
+away. `RESERVE_HOLD` read the same way: starting a payment appeared to cost
+150 points that were still in the wallet.
+
+*Consequence:* a customer reconciling their own balance against their own
+history cannot. Every reservation and every promotion out of the cooling-off
+window shows as a deduction, so the history sums to less than the balance
+above it. Nothing was actually mispaid — the server's ledger was right
+throughout — which is precisely why no server-side test could see it.
+
+*Root cause:* `LedgerDirection` in `@tutak/shared-types` declared CREDIT and
+DEBIT. The database has had three values since reservations were built. A
+two-way branch over a two-valued type is exhaustive; the type was wrong, so
+the branch looked right.
+
+*Fix:* the enum now mirrors the schema, and `ledgerAmountFor` makes the
+decision in one place — a transfer is shown with no sign, because nothing was
+gained or lost.
+
+### F-16 (Medium) — three ledger types were shown to customers as raw database enums
+
+`bonusEntryType` had labels for eight of the eleven values. The wallet screen
+looks its labels up dynamically with a `defaultValue` fallback, so the three
+without one rendered as `PENDING_PROMOTION` and `RESERVE_HOLD` — in a list
+whose other rows read "Earned on purchase" and "Spent on payment", in all
+three languages.
+
+Same root cause as F-15: `BonusEntryType` in shared-types was short by the
+same three members, so nobody writing translations had any reason to think
+they were missing.
+
+### F-17 (Medium) — the demo sign-in button could never appear, on any server
+
+`isDemoDeployment()` asked `/health` and read `data.demoMode`. Every response
+this API sends is enveloped as `{ data: {...}, timestamp }`. So the
+expression evaluated `undefined === true` against a perfectly healthy demo
+server, and the button it gates was invisible everywhere.
+
+*Why nothing caught it:* the request **succeeded**. The `catch` that would
+have reported trouble never ran, nothing logged, and the function's contract
+— "returns false when this is not a demo" — was satisfied by the failure. The
+tests around that file checked how the URL is derived and stopped there.
+
+This is the second time in this document a defect hid inside a success path.
+The first was F-8, a rollback that itself failed, silently.
+
+### F-18 (Low) — the QR countdown contradicted itself in three languages
+
+`qr.expiresIn` was written as "Expires in {{seconds}}s" and handed a value
+formatted as `14:57`. The screen read "Expires in 14:57s"; the Russian
+string, "Истекает через 14:57 с", says fourteen and a half thousand seconds.
+
+Trivial on its own, and included because it is the same failure as the three
+above in miniature: a value and the words around it disagreed, and no test
+had ever looked at the two together.
+
+### F-19 (Medium) — a merchant was handed the idempotency keys of its customers' payments
+
+Not found by the screen — found by asking what the endpoints behind it
+actually send, once the four above had established that the client's types
+and the wire were two different documents.
+
+`TransactionsService.history` returned the whole Prisma row. Two endpoints
+read it: `/transactions/me`, a customer's own history, and
+`/partners/:id/transactions`, which is a merchant reading **other people's**
+transactions. Both were receiving `idempotencyKey` — the identifier that
+replays a request — for every row.
+
+*What saves it from being worse:* keys are scoped to the owning user
+(`@@unique([userId, idempotencyKey])`), a constraint added in an earlier
+round precisely because a global key would let one account replay another's.
+So a merchant holding a customer's key cannot spend it. The containment is in
+the schema, not in this query, and publishing the key anyway is gratuitous.
+
+*The lasting problem was the default.* `findMany` with no projection
+publishes every column, so the question "should a customer see this?" is
+answered by whoever last added a field to the model, silently, in the
+affirmative. The query now selects exactly the fields `TransactionDto`
+declares, and `transaction-disclosure.int-spec.ts` asserts the key set in
+both directions — extra fields are the leak, missing fields break every
+screen just as quietly.
+
+Separately, `BonusLedgerEntryDto` was missing `availableDelta`,
+`pendingDelta` and `reservedDelta`, which the API has always sent. Those are
+the wallet's own numbers and belong to the customer; the type simply did not
+mention them, so no client could read the one piece of information that would
+have made F-15 impossible to get wrong. They are declared now, with the
+invariant the schema states.
+
+### What this round changed about the tests
+
+Four defects, one shape: the vocabulary is declared in the Prisma schema,
+restated in `@tutak/shared-types` for every client, and labelled in three
+locales, and **nothing checked that the three agree.**
+
+`apps/api/src/config/vocabulary-drift.spec.ts` now does. The schema is the
+authority; the shared types must match it exactly in both directions; every
+value a customer can see must have a real label in Armenian, Russian and
+English; and the three locales must interpolate the same placeholders.
+Removing `NEUTRAL`, deleting one Russian label, and restoring the old
+`{{seconds}}` string each fail exactly the assertion that covers them.
+
+`ReferralInviteStatus` was promoted from an inline union to an enum for no
+other reason than to bring the last customer-visible status list under that
+guard.
+
+### What this round could not check
+
+The APK. Everything here was verified in a browser against a live API on the
+same machine. The keyboard behaviour on a physical Android phone, the
+reported flicker, and the Keystore path remain unverified by anything but a
+person holding a handset — and the flicker in particular is still open, with
+`importantForAutofill="no"` an unconfirmed hypothesis.
+
+No TuTak API is deployed anywhere. Demo sign-in works end to end against a
+server I started; it has never been run against one anybody else can reach.
 
 ---
 

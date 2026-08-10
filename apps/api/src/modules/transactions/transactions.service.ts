@@ -154,6 +154,36 @@ export class TransactionsService {
 
     const items = await this.prisma.transaction.findMany({
       where,
+      // Exactly the fields `TransactionDto` declares, and no others.
+      //
+      // This used to return the row. Two endpoints read it — a customer's own
+      // history, and the list a merchant sees for their partner, which is
+      // other people's transactions. Both were getting `idempotencyKey`,
+      // which is a control identifier for replaying a request and is of no
+      // use to either of them. Keys are scoped to the owning user
+      // (`@@unique([userId, idempotencyKey])`), so a merchant holding a
+      // customer's key cannot replay it — the containment is in the schema,
+      // not in this query, and handing it out anyway is gratuitous.
+      //
+      // The lasting reason for the projection is the next column. `select`
+      // means a field added to the model reaches a client only when somebody
+      // decides it should; `findMany` without one means the default is
+      // publication, and nothing fails when that default is wrong.
+      select: {
+        id: true,
+        userId: true,
+        partnerId: true,
+        type: true,
+        status: true,
+        amount: true,
+        currency: true,
+        bonusAppliedAmount: true,
+        bonusEarnedAmount: true,
+        description: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+      },
       take: query.limit,
       ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
       orderBy: { createdAt: 'desc' },

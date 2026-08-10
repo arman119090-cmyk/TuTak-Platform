@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Generates `preview/` — the standalone Expo app.
+# Generates `demo/` — the standalone Expo app.
 #
 # ## Why this exists
 #
@@ -11,33 +11,33 @@
 # sibling packages are. Every one of those is a wall for somebody who wants to
 # look at the interface on their phone.
 #
-# So `preview/` is an ordinary Expo app: plain dependencies, no workspace, no
+# So `demo/` is an ordinary Expo app: plain dependencies, no workspace, no
 # monorepo, no server. `npm install && npx expo start` and it runs.
 #
 # ## Why it is generated rather than written
 #
 # A hand-written second copy of an app is a copy that diverges, and the
 # divergence is discovered by the person the copy was made for. This script
-# copies; `preview/` is committed so that a ZIP download works; and CI
+# copies; `demo/` is committed so that a ZIP download works; and CI
 # regenerates and diffs, so a change to the app that is not reflected in the
-# preview fails the build instead of being found on a phone.
+# demo fails the build instead of being found on a phone.
 #
 # Run it after changing anything under apps/mobile or packages/{design,i18n,
 # shared-types}:
 #
-#   scripts/build-preview-app.sh
+#   scripts/build-demo-app.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
-OUT="$ROOT/preview"
+OUT="$ROOT/demo"
 
 # Everything except `node_modules` and the lockfile. Neither is generated
 # here: node_modules is expensive to rebuild, and package-lock.json is what
 # makes the install reproducible for whoever downloads the ZIP — resolving
 # ranges afresh on their machine is exactly the class of surprise this whole
 # directory exists to avoid. Regenerate the lock with `npm install` in
-# `preview/` after the dependency list changes.
+# `demo/` after the dependency list changes.
 if [ -d "$OUT" ]; then
   find "$OUT" -mindepth 1 -maxdepth 1 \
     ! -name node_modules ! -name package-lock.json -exec rm -rf {} +
@@ -52,8 +52,8 @@ cp -R "$ROOT/apps/mobile/assets" "$OUT/assets"
 cp "$ROOT/apps/mobile/App.tsx" "$OUT/App.tsx"
 cp "$ROOT/apps/mobile/index.ts" "$OUT/index.ts"
 
-# Tests are not part of a preview and they would drag in jest-expo, which is
-# a large install for something nobody runs from here.
+# Tests are not part of a demonstration and they would drag in jest-expo, which
+# is a large install for something nobody runs from here.
 find "$OUT/src" -name '*.test.ts' -delete
 find "$OUT/src" -name '*.test.tsx' -delete
 
@@ -68,7 +68,7 @@ done
 # ── package.json ───────────────────────────────────────────────────────────
 # Dependencies come from apps/mobile with the three `workspace:*` entries
 # removed, plus whatever the vendored packages need at runtime. Generated from
-# the real file so a version bump in the app cannot leave the preview behind.
+# the real file so a version bump in the app cannot leave the demo behind.
 node - "$ROOT" "$OUT" <<'NODE'
 const fs = require('fs');
 const path = require('path');
@@ -94,7 +94,7 @@ fs.writeFileSync(
   path.join(out, 'package.json'),
   JSON.stringify(
     {
-      name: 'tutak-preview',
+      name: 'tutak-demo',
       version: app.version,
       private: true,
       main: 'index.ts',
@@ -132,25 +132,25 @@ fs.writeFileSync(
     {
       expo: {
         name: 'TuTak',
-        slug: 'tutak-preview',
+        slug: 'tutak-demo',
         version: '0.1.0',
         orientation: 'portrait',
         icon: './assets/icon.png',
         userInterfaceStyle: 'dark',
-        scheme: 'tutakpreview',
+        scheme: 'tutakdemo',
         splash: {
           image: './assets/splash-icon.png',
           resizeMode: 'contain',
           backgroundColor: '#0A0A0F',
         },
         assetBundlePatterns: ['**/*'],
-        ios: { supportsTablet: false, bundleIdentifier: 'am.tutak.preview' },
+        ios: { supportsTablet: false, bundleIdentifier: 'am.tutak.demo' },
         android: {
           adaptiveIcon: {
             foregroundImage: './assets/adaptive-icon.png',
             backgroundColor: '#0A0A0F',
           },
-          package: 'am.tutak.preview',
+          package: 'am.tutak.demo',
           permissions: ['CAMERA'],
         },
         web: { bundler: 'metro', output: 'single', favicon: './assets/icon.png' },
@@ -164,13 +164,18 @@ fs.writeFileSync(
           ],
         ],
         extra: {
-          // The whole reason this app needs nothing installed. Read by
-          // src/data/api/httpClient.ts.
+          // Both halves of the gate in src/data/api/mockGate.ts. Neither can
+          // be produced by apps/mobile/app.config.js — `useMocks` is pinned
+          // false there and `appEnv: 'demo'` makes it refuse to build — so a
+          // transport that accepts any credentials cannot reach a build
+          // anybody installs as TuTak.
           useMocks: true,
-          // Present but never reached: with `useMocks` the transport is
-          // replaced before a request leaves the app.
+          appEnv: 'demo',
+          // Present and never reached: the transport is replaced before a
+          // request leaves the app. `.invalid` is reserved by RFC 2606 and
+          // resolves nowhere, so a mistake here fails rather than reaching
+          // somebody's server.
           apiBaseUrl: 'http://offline.invalid/v1',
-          appEnv: 'preview-mock',
         },
       },
     },
@@ -184,7 +189,7 @@ NODE
 cat > "$OUT/metro.config.js" <<'JS'
 // Ordinary single-project Metro config, plus the three aliases that let the
 // copied source keep importing `@tutak/design` and friends without being
-// edited. See scripts/build-preview-app.sh.
+// edited. See scripts/build-demo-app.sh.
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
@@ -225,9 +230,9 @@ cat > "$OUT/tsconfig.json" <<'JSON'
 JSON
 
 # The instructions the person downloading the ZIP reads first. Kept beside
-# this script rather than inside `preview/`, because everything inside
-# `preview/` is deleted and rewritten on every run.
-cp "$ROOT/scripts/preview-README.md" "$OUT/README.md"
+# this script rather than inside `demo/`, because everything inside
+# `demo/` is deleted and rewritten on every run.
+cp "$ROOT/scripts/demo-README.md" "$OUT/README.md"
 
 cat > "$OUT/.gitignore" <<'TXT'
 node_modules/
@@ -235,4 +240,4 @@ node_modules/
 dist/
 TXT
 
-echo "preview/ regenerated from apps/mobile + packages/{design,i18n,shared-types}"
+echo "demo/ regenerated from apps/mobile + packages/{design,i18n,shared-types}"

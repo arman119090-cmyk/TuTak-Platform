@@ -1,6 +1,6 @@
 // Ordinary single-project Metro config, plus the three aliases that let the
 // copied source keep importing `@tutak/design` and friends without being
-// edited. See scripts/build-preview-app.sh.
+// edited. See scripts/build-demo-app.sh.
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 

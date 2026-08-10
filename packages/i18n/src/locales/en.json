@@ -112,7 +112,8 @@
     "expiredMessage": "This code has expired. Generate a new one to pay.",
     "cameraTitle": "Camera access needed",
     "cameraMessage": "TuTak uses your camera only to read QR codes for payments.",
-    "allowCamera": "Allow camera"
+    "allowCamera": "Allow camera",
+    "demoSimulateScan": "Simulate a scan (demo)"
   },
   "ev": {
     "stations": "Charging stations",

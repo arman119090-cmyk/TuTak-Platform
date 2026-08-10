@@ -22,7 +22,7 @@ import { MOCK_USER, freshMockState, mockTokens, type MockState } from './mockDat
  *
  * ## Switched on by configuration, never by build type
  *
- * `app.json` in `preview/` sets `extra.useMocks`. Nothing infers it from
+ * `app.json` in `demo/` sets `extra.useMocks`. Nothing infers it from
  * `__DEV__` — a development build pointed at a real API must reach that API,
  * and a preview must never reach one by accident.
  */

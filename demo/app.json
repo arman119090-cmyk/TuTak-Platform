@@ -1,12 +1,12 @@
 {
   "expo": {
     "name": "TuTak",
-    "slug": "tutak-preview",
+    "slug": "tutak-demo",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "tutakpreview",
+    "scheme": "tutakdemo",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -17,14 +17,14 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "am.tutak.preview"
+      "bundleIdentifier": "am.tutak.demo"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A0A0F"
       },
-      "package": "am.tutak.preview",
+      "package": "am.tutak.demo",
       "permissions": [
         "CAMERA"
       ]
@@ -45,8 +45,8 @@
     ],
     "extra": {
       "useMocks": true,
-      "apiBaseUrl": "http://offline.invalid/v1",
-      "appEnv": "preview-mock"
+      "appEnv": "demo",
+      "apiBaseUrl": "http://offline.invalid/v1"
     }
   }
 }

@@ -10,6 +10,7 @@ import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { Jako } from '../../components/Jako';
+import { DemoOnly } from '../../components/DemoOnly';
 import { qrApi } from '../../../data/api/qrApi';
 import { describeApiError } from '../../../data/api/errors';
 import { walletApi } from '../../../data/api/walletApi';
@@ -243,6 +244,20 @@ export function ScanQrScreen() {
             ))}
           </View>
           <Text style={[text.body, styles.scanHint]}>{t('qr.scanHint')}</Text>
+
+          {/* Only in the demonstration app, where there is no merchant to
+              issue a code and the walkthrough would otherwise stop here.
+              Renders nothing in any build that talks to a real API — see
+              components/DemoOnly.tsx. */}
+          <DemoOnly>
+            <View style={styles.demoScan}>
+              <Button
+                label={t('qr.demoSimulateScan')}
+                onPress={() => handleScan({ data: 'TUTAK-DEMO-MERCHANT-CODE' })}
+                variant="secondary"
+              />
+            </View>
+          </DemoOnly>
         </View>
       </SafeAreaView>
     </View>
@@ -290,6 +305,7 @@ function cornerStyle(corner: 'tl' | 'tr' | 'bl' | 'br') {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  demoScan: { width: '100%', marginTop: 24 },
   scannerOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   reticle: { width: 260, height: 260 },
   corner: { position: 'absolute', width: 40, height: 40 },

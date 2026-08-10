@@ -104,24 +104,24 @@ jobs:
       - name: Mobile tests
         run: pnpm --filter @tutak/mobile test
 
-      # `preview/` is a generated copy of the mobile app with the workspace
+      # `demo/` is a generated copy of the mobile app with the workspace
       # taken out, so that somebody can download the repository as a ZIP and
       # run `npm install && npx expo start` with nothing else installed. A
       # generated copy that nobody regenerates is a copy that lies, and the
       # person who finds out is the one who was given it. So: regenerate, and
       # fail if the result differs from what is committed.
-      - name: The preview app matches the app it was generated from
+      - name: The demo app matches the app it was generated from
         run: |
-          scripts/build-preview-app.sh
-          if ! git diff --quiet -- preview; then
-            echo "preview/ is out of date. Run scripts/build-preview-app.sh and commit the result."
-            git diff --stat -- preview
+          scripts/build-demo-app.sh
+          if ! git diff --quiet -- demo; then
+            echo "demo/ is out of date. Run scripts/build-demo-app.sh and commit the result."
+            git diff --stat -- demo
             exit 1
           fi
           # An untracked file means a new source file never reached the copy.
-          if [ -n "$(git status --porcelain -- preview)" ]; then
-            echo "preview/ has files that are not committed:"
-            git status --porcelain -- preview
+          if [ -n "$(git status --porcelain -- demo)" ]; then
+            echo "demo/ has files that are not committed:"
+            git status --porcelain -- demo
             exit 1
           fi
 

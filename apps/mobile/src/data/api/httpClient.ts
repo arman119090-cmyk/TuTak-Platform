@@ -4,6 +4,7 @@ import type { AuthResponseDto, AuthTokensDto } from '@tutak/shared-types';
 import { useAuthStore } from '../stores/authStore';
 import { resolveApiBaseUrl } from './apiBaseUrl';
 import { mockAdapter } from './mockAdapter';
+import { shouldUseMocks } from './mockGate';
 
 const API_BASE_URL = resolveApiBaseUrl(
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ?? 'http://localhost:4000/v1',
@@ -29,21 +30,19 @@ export const healthUrl = API_BASE_URL.replace(/\/v\d+\/?$/, '') + '/health';
 /**
  * Whether this build talks to memory instead of to a server.
  *
- * Set by `preview/app.json`, which is the standalone Expo app used to look at
- * the interface on a phone with nothing installed but Expo Go. It is read
- * from configuration and never inferred from `__DEV__`: a development build
- * pointed at a real API must reach that API, and a preview must never reach
- * one by accident.
+ * Two independent flags have to agree, and `app.config.js` cannot produce
+ * either of them. See `mockGate.ts` for why one boolean was not enough
+ * distance between a demonstration and an authentication bypass.
  */
-const USE_MOCKS = Constants.expoConfig?.extra?.useMocks === true;
+const USE_MOCKS = shouldUseMocks(Constants.expoConfig?.extra);
 
 export const httpClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15_000,
   // The transport is the only thing swapped. Every interceptor below, every
   // envelope, every DTO and every screen above is the same code that talks to
-  // the real API — which is the point, because a preview is used to decide
-  // whether the product is right.
+  // the real API — which is the point, because a demonstration is used to
+  // decide whether the product is right.
   ...(USE_MOCKS ? { adapter: mockAdapter } : {}),
 });
 

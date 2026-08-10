@@ -53,14 +53,20 @@ export function Screen({
    * reported from "Invite a friend", and true of all nine.
    *
    * `canGoBack` rather than a prop on every screen, because a prop is
-   * something the next screen can forget. It is false on the tab roots — the
-   * tab navigator has no history of its own and the stack beneath it holds
-   * only `Main` — so Home, Wallet and Settings get no arrow, which is right.
+   * something the next screen can forget.
+   *
+   * The tab roots are excluded by navigator type, not by `canGoBack`. A bottom
+   * tab navigator keeps a history of visited tabs and answers `canGoBack()`
+   * with true once you have switched once — so Wallet drew an arrow that
+   * jumped sideways to whichever tab you came from. That is not what a back
+   * arrow means anywhere else in the app, and it appeared and disappeared
+   * depending on route taken, which is worse than either.
    *
    * The Android hardware back button always worked. This is for the people who
    * do not use it, and for iOS, which has none.
    */
-  const canGoBack = !hideBack && navigation.canGoBack();
+  const isTabRoot = navigation.getState()?.type === 'tab';
+  const canGoBack = !hideBack && !isTabRoot && navigation.canGoBack();
 
   // A scrolling screen gets the app's keyboard behaviour for free — several
   // settings screens used to wrap this component in a `KeyboardAvoidingView`

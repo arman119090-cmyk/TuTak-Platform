@@ -16,7 +16,8 @@
     "comingSoon": "Coming soon",
     "amd": "AMD",
     "points": "points",
-    "somethingWentWrong": "Something went wrong. Please try again."
+    "somethingWentWrong": "Something went wrong. Please try again.",
+    "clear": "Clear"
   },
   "auth": {
     "welcomeBack": "Welcome back",
@@ -218,7 +219,8 @@
     "home": "Home",
     "pay": "Pay",
     "charge": "Charge",
-    "profile": "Profile"
+    "profile": "Profile",
+    "partners": "Partners"
   },
   "home": {
     "greeting": "Welcome back",
@@ -272,5 +274,28 @@
     "COMPLETED": "Completed",
     "INVALID": "Invalid",
     "CANCELLED": "Cancelled"
+  },
+  "partners": {
+    "title": "Partners",
+    "nearYou": "Near you",
+    "searchPlaceholder": "Shop, café, street…",
+    "all": "All",
+    "emptyTitle": "Nothing here yet",
+    "emptyNearby": "No partners nearby yet. We add new ones every week.",
+    "emptyFiltered": "Nothing matched that. Try a different filter.",
+    "clearFilters": "Clear filters",
+    "loadFailed": "Could not load partners. Check your connection.",
+    "howToEarn": "Pay through TuTak and earn {{percent}}% back in points.",
+    "approximateLocation": "Shown from the centre of Yerevan. Drag the map to look around."
+  },
+  "partnerCategory": {
+    "grocery": "Groceries",
+    "cafe": "Cafés",
+    "restaurant": "Restaurants",
+    "pharmacy": "Pharmacies",
+    "fuel": "Fuel",
+    "ev_charging": "Charging",
+    "beauty": "Beauty",
+    "other": "Other"
   }
 }

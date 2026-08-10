@@ -22,9 +22,14 @@ import { Screen } from './Screen';
 // when the factory runs.
 const mockGoBack = jest.fn();
 let mockCanGoBack = true;
+let mockNavigatorType = 'stack';
 
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ canGoBack: () => mockCanGoBack, goBack: mockGoBack }),
+  useNavigation: () => ({
+    canGoBack: () => mockCanGoBack,
+    goBack: mockGoBack,
+    getState: () => ({ type: mockNavigatorType }),
+  }),
 }));
 
 jest.mock('react-native-safe-area-context', () => {
@@ -52,6 +57,7 @@ describe('Screen', () => {
   beforeEach(() => {
     mockGoBack.mockClear();
     mockCanGoBack = true;
+    mockNavigatorType = 'stack';
   });
 
   it('offers a way back from a screen that was pushed', () => {
@@ -66,8 +72,20 @@ describe('Screen', () => {
   });
 
   it('draws nothing on a screen there is nothing behind', () => {
-    // The tab roots. An arrow that does nothing is worse than no arrow.
+    // An arrow that does nothing is worse than no arrow.
     mockCanGoBack = false;
+    renderScreen();
+    expect(screen.queryByLabelText('Back')).toBeNull();
+  });
+
+  it('draws nothing on a tab root, even once the tabs have a history', () => {
+    // A bottom tab navigator remembers which tabs you visited and answers
+    // `canGoBack()` with true after the first switch. Trusting that put an
+    // arrow on Wallet that jumped sideways to whichever tab you arrived
+    // from — a back arrow that means something different from every other
+    // back arrow in the app, and only sometimes.
+    mockNavigatorType = 'tab';
+    mockCanGoBack = true;
     renderScreen();
     expect(screen.queryByLabelText('Back')).toBeNull();
   });

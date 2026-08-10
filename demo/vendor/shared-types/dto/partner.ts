@@ -48,3 +48,58 @@ export interface PartnerAnalyticsDto {
   totalBonusRedeemed: string;
   uniqueCustomers: number;
 }
+
+/**
+ * A place a customer can walk into, as the customer's app sees it.
+ *
+ * Deliberately not `PartnerDto`. That one carries the legal name, the tax id,
+ * the platform's commission and whether payouts are blocked — a partner's own
+ * business, and none of a shopper's. This is what a shopper needs to decide
+ * where to go: the name on the sign, what they get back, and how far it is.
+ *
+ * One entry per *branch*, not per partner: a chain with four shops is four
+ * pins on a map, and the distance is the whole point of the screen.
+ */
+export interface NearbyPartnerDto {
+  /** The branch. Distinct from `partnerId` — a chain shares the latter. */
+  id: string;
+  partnerId: string;
+  /** The name on the sign, never the legal one. */
+  name: string;
+  /** Which branch of it, e.g. "Northern Avenue". */
+  branchName: string;
+  category: PartnerCategory;
+  address: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  /**
+   * What the customer earns here, as a percentage — 5 means 5%.
+   *
+   * Converted from basis points on the server rather than in the client. The
+   * client showing "300%" because it forgot to divide is exactly the class of
+   * mistake this codebase has already shipped once, in the other direction.
+   */
+  cashbackPercent: number;
+  /** Straight-line kilometres from the point asked about, to one decimal. */
+  distanceKm: number;
+}
+
+/**
+ * The categories a customer can filter by.
+ *
+ * A closed set, because it drives an icon and a filter chip — an unknown
+ * string would render as a blank pin. `OTHER` is where anything unrecognised
+ * lands, so a new category on the server degrades to a visible generic entry
+ * rather than to nothing at all.
+ */
+export enum PartnerCategory {
+  GROCERY = 'grocery',
+  CAFE = 'cafe',
+  RESTAURANT = 'restaurant',
+  PHARMACY = 'pharmacy',
+  FUEL = 'fuel',
+  EV_CHARGING = 'ev_charging',
+  BEAUTY = 'beauty',
+  OTHER = 'other',
+}

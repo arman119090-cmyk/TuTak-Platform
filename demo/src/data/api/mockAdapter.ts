@@ -147,6 +147,40 @@ function handle(
     case 'POST /notifications/push-token':
       return envelope({ success: true });
 
+    // ── Partners ────────────────────────────────────────────────────────
+    /*
+     * Filtered here rather than returned wholesale.
+     *
+     * The temptation is to hand back all twelve and let the screen sort it
+     * out — and then the chips and the search box appear to work while doing
+     * nothing, because the screen was never the thing filtering. The demo's
+     * job is to answer "does this screen work", so the filters have to be
+     * exercised end to end, on the same query parameters the API takes.
+     */
+    case 'GET /partners/nearby': {
+      const params = (config.params ?? {}) as {
+        category?: string;
+        q?: string;
+        radiusKm?: number | string;
+      };
+      const needle = (params.q ?? '').trim().toLowerCase();
+      const radiusKm = Number(params.radiusKm ?? 10);
+
+      return envelope(
+        state.partners
+          .filter((p) => (params.category ? p.category === params.category : true))
+          .filter((p) =>
+            needle
+              ? [p.name, p.branchName, p.address].some((field) =>
+                  field.toLowerCase().includes(needle),
+                )
+              : true,
+          )
+          .filter((p) => p.distanceKm <= radiusKm)
+          .sort((a, b) => a.distanceKm - b.distanceKm),
+      );
+    }
+
     // ── EV ──────────────────────────────────────────────────────────────
     case 'GET /ev/stations':
     case 'GET /ev/stations/nearby':

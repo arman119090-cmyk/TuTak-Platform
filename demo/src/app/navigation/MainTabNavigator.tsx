@@ -8,7 +8,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { HomeScreen } from '../../presentation/screens/home/HomeScreen';
 import { WalletScreen } from '../../presentation/screens/wallet/WalletScreen';
 import { MyQrScreen } from '../../presentation/screens/qr/MyQrScreen';
-import { EvStationsScreen } from '../../presentation/screens/ev/EvStationsScreen';
+import { PartnersScreen } from '../../presentation/screens/partners/PartnersScreen';
 import { SettingsScreen } from '../../presentation/screens/settings/SettingsScreen';
 import type { MainTabParamList } from './types';
 
@@ -19,7 +19,7 @@ const ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap, key
   Home: ['home-outline', 'home'],
   Wallet: ['wallet-outline', 'wallet'],
   Pay: ['qr-code-outline', 'qr-code'],
-  EvCharging: ['flash-outline', 'flash'],
+  Partners: ['map-outline', 'map'],
   Settings: ['person-outline', 'person'],
 };
 
@@ -67,7 +67,7 @@ export function MainTabNavigator() {
           tabBarIcon: ({ focused }) => <PayTabIcon focused={focused} />,
         }}
       />
-      <Tab.Screen name="EvCharging" component={EvStationsScreen} options={{ title: t('nav.charge') }} />
+      <Tab.Screen name="Partners" component={PartnersScreen} options={{ title: t('nav.partners') }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: t('nav.profile') }} />
     </Tab.Navigator>
   );

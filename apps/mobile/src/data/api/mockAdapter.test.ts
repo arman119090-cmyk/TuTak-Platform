@@ -159,6 +159,65 @@ describe('mockAdapter', () => {
     });
   });
 
+  describe('the partner map', () => {
+    /*
+     * The chips and the search box are the demo's most easily faked controls:
+     * hand back all twelve partners regardless and they appear to work while
+     * doing nothing at all. These go through `config.params`, which is what
+     * `partnersApi` actually sends.
+     */
+    const nearby = (params: Record<string, unknown> = {}) =>
+      mockAdapter({
+        ...request('get', '/partners/nearby'),
+        params: { lat: 40.1776, lng: 44.5126, radiusKm: 25, ...params },
+      } as InternalAxiosRequestConfig);
+
+    it('returns the nearest partner first', async () => {
+      const rows = (await nearby()).data.data as Array<{ distanceKm: number }>;
+      expect(rows.length).toBeGreaterThan(5);
+
+      const distances = rows.map((r) => r.distanceKm);
+      expect(distances).toEqual([...distances].sort((a, b) => a - b));
+    });
+
+    it('puts each partner somewhere different, so the map is not one stack', async () => {
+      const rows = (await nearby()).data.data as Array<{ latitude: number; longitude: number }>;
+      const points = new Set(rows.map((r) => `${r.latitude},${r.longitude}`));
+      expect(points.size).toBe(rows.length);
+    });
+
+    it('filters by category', async () => {
+      const rows = (await nearby({ category: 'cafe' })).data.data as Array<{ category: string }>;
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => r.category === 'cafe')).toBe(true);
+    });
+
+    it('searches the name, the branch and the street, case-insensitively', async () => {
+      const byName = (await nearby({ q: 'SAS' })).data.data as Array<{ name: string }>;
+      expect(byName.every((r) => r.name.toLowerCase().includes('sas'))).toBe(true);
+      expect(byName.length).toBeGreaterThan(0);
+
+      const byStreet = (await nearby({ q: 'комитаса' })).data.data as unknown[];
+      expect(byStreet.length).toBeGreaterThan(0);
+    });
+
+    it('honours the radius', async () => {
+      const all = (await nearby({ radiusKm: 25 })).data.data as unknown[];
+      const close = (await nearby({ radiusKm: 1 })).data.data as Array<{ distanceKm: number }>;
+
+      expect(close.length).toBeLessThan(all.length);
+      expect(close.every((r) => r.distanceKm <= 1)).toBe(true);
+    });
+
+    it('finds nothing for a search that matches nothing, rather than everything', async () => {
+      // An empty-string check written the wrong way round turns "no match"
+      // into "no filter", which reads to a tester as a search box that does
+      // not work at all.
+      const rows = (await nearby({ q: 'zzzzz' })).data.data as unknown[];
+      expect(rows).toEqual([]);
+    });
+  });
+
   it('moves the wallet when a QR code is paid, so the preview is not inert', async () => {
     const before = (await call('get', '/wallet/me')).data.data.availableBonus;
 

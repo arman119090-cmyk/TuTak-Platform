@@ -122,8 +122,16 @@ jobs:
             let builds = [];
             try { builds = require('./list.json'); } catch { builds = []; }
             if (!Array.isArray(builds)) builds = [];
+            // The commit has to match. Without this check the step happily
+            // served an APK built from a different commit — it did, once, and
+            // handed the owner the very build they had just reported as
+            // broken, with a release note claiming it was the new one. A
+            // stale demonstration presented as current is worse than no
+            // demonstration: it makes a fix look like a failure.
+            const wanted = process.env.GITHUB_SHA;
             const done = builds.find(b =>
               b.status === 'FINISHED' &&
+              b.gitCommitHash === wanted &&
               (b.artifacts?.buildUrl || b.artifacts?.applicationArchiveUrl));
             if (done) {
               const url = done.artifacts.buildUrl || done.artifacts.applicationArchiveUrl;
@@ -131,7 +139,7 @@ jobs:
               console.log('APK_URL: ' + url);
               require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'apk_url=' + url + '\n');
             } else {
-              console.log('No finished build to reuse; one will be started.');
+              console.log('No finished build for ' + wanted + ' to reuse; one will be started.');
             }
           "
 

@@ -34,6 +34,10 @@ name: Build demo APK
 on:
   workflow_dispatch:
 
+# Needed to publish the APK as a release asset.
+permissions:
+  contents: write
+
 concurrency:
   group: demo-apk
   cancel-in-progress: false
@@ -173,13 +177,49 @@ jobs:
           path: tutak-demo.apk
           retention-days: 30
 
+      # A release asset, because the other two routes both failed for the
+      # person who needs the file.
+      #
+      # The EAS link is on expo.dev, which is not reachable everywhere and is
+      # blocked outright from some networks. The Actions artifact is a .zip
+      # behind a GitHub login, which on a phone means signing in and then
+      # unpacking an archive. A release asset is a plain file on github.com
+      # with no login at all — the one host that is reachable if any of this
+      # is.
+      #
+      # A single moving tag rather than a version per build: the point is a
+      # link that keeps working, not a history of demonstrations.
+      - name: Publish the APK where a phone can actually reach it
+        if: steps.apk.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Notes written to a file rather than inlined: a multi-line --notes
+          # argument inside a YAML block scalar ends the block at the first
+          # blank line, which is a broken workflow rather than a broken
+          # release.
+          cat > notes.md <<'NOTES'
+          Installs as **TuTak Demo** (`am.tutak.demo`), alongside the real TuTak rather than over it — neither overwrites the other.
+
+          Needs no server: every screen answers from the app's own memory, and any credentials are accepted. No SMS, no sign-in, no API.
+          NOTES
+          sed -i 's/^          //' notes.md
+          echo "" >> notes.md
+          echo "Built from commit ${{ github.sha }}." >> notes.md
+
+          gh release delete demo-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create demo-latest tutak-demo.apk \
+            --title "TuTak Demo (Android)" --notes-file notes.md
+
       - name: Where to get it
         run: |
           {
             echo "## The demo APK"
             echo ""
             if [ -n "${{ steps.apk.outputs.url }}" ]; then
-              echo "**Direct:** ${{ steps.apk.outputs.url }}"
+              echo "**Download (no login):** https://github.com/${{ github.repository }}/releases/download/demo-latest/tutak-demo.apk"
+              echo ""
+              echo "**From EAS:** ${{ steps.apk.outputs.url }}"
               echo ""
               echo "**On this page:** scroll to **Artifacts** → **tutak-demo-apk**."
             else

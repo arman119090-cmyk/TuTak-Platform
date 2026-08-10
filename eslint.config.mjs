@@ -29,6 +29,14 @@ export default tseslint.config(
       // esbuild output for the screenshot harness — a generated bundle, not
       // source anyone edits.
       'tools/preview/mobile/bundle.js',
+      // `demo/` is a byte-for-byte copy of apps/mobile made by
+      // scripts/build-demo-app.sh, and apps/mobile lints itself with its own
+      // config — one that has the React plugins loaded. Linting the copy here
+      // means linting React source under a Node config: the first thing that
+      // fails is an `eslint-disable` comment naming `react-hooks/exhaustive-deps`,
+      // a rule this config has never heard of. Two configs disagreeing about
+      // one file is not a finding, and the original is already covered.
+      'demo/**',
     ],
   },
 

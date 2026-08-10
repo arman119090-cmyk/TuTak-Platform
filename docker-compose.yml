@@ -109,6 +109,20 @@ services:
       # than something a local stack acquires by accident. The CI job sets it
       # to drive the mobile bundle; see tests/e2e/mobile-demo.e2e.ts.
       DEMO_MODE: ${DEMO_MODE:-false}
+      # The demo customer's password, and the flag that seeds them.
+      #
+      # `DEMO_MODE` alone was not enough and the gap was invisible: the seeder
+      # is run with `docker compose exec -e DEMO_PASSWORD=...`, which sets the
+      # variable for that one command, so the *running API* never had it. The
+      # demo sign-in endpoint reads it at request time, found nothing, and
+      # answered 404 — so the button appeared, the tap failed, and the screen
+      # said "demo sign-in is not available on this server" against a stack
+      # that had just seeded the demo customer.
+      #
+      # Empty by default: with `DEMO_MODE` off nothing reads it, and a blank
+      # value keeps the endpoint refusing rather than guessing.
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      DEMO_SEED: ${DEMO_SEED:-false}
       SMS_ENDPOINT: ${SMS_ENDPOINT:-}
       SMS_AUTH_SCHEME: ${SMS_AUTH_SCHEME:-basic}
       SMS_USERNAME: ${SMS_USERNAME:-}

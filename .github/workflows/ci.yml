@@ -226,6 +226,7 @@ jobs:
       # dashboards and the API together — everything above tests one side or
       # the other.
       - name: End-to-end tests
+        id: e2e
         run: |
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
@@ -313,10 +314,15 @@ jobs:
             test-results/
           retention-days: 7
 
-      # Short on purpose. This used to be `--tail 100` across five services,
-      # which is over a thousand lines of routine boot output appended *after*
-      # the failing step — so the assertion that failed was invisible at the
-      # end of the log, which is where anybody looks first.
+      # Only when the *stack* is what failed.
+      #
+      # This used to run on any failure, and it is the reason four rounds were
+      # spent unable to read why the mobile step went red: even trimmed, five
+      # services' worth of boot output is printed after the failing step and
+      # pushes the failing assertion out of the end of the log, which is where
+      # anybody looks first. Container logs diagnose a container problem; when
+      # the browser is what failed, they are noise standing in front of the
+      # answer.
       - name: Stack logs on failure
-        if: failure()
+        if: failure() && steps.e2e.outcome == 'failure'
         run: docker compose logs --tail 25

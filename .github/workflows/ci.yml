@@ -266,9 +266,24 @@ jobs:
             -X POST http://localhost:4000/v1/auth/demo-session \
             -H 'Content-Type: application/json' -d '{"deviceId":"ci-preflight"}'
 
+          # Written to a file and summarised on failure. Playwright's own
+          # output is fine; the problem is that everything after this step —
+          # container logs, three buildx post-jobs — pushes it out of the part
+          # of the log anybody reads. Two rounds were spent not being able to
+          # see which assertion failed.
+          set +e
           MOBILE_WEB_URL=http://localhost:8099 DEMO_PASSWORD='CiDemoPassword-2026!' \
             pnpm exec playwright test --config tests/e2e/playwright.config.ts \
-              --project=e2e --no-deps mobile-demo
+              --project=e2e --no-deps mobile-demo 2>&1 | tee playwright-mobile.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "=============== why the mobile drive failed ==============="
+            grep -E '✘|Error:|expect\(|Timeout:|Received|unexpected value|at /home' \
+              playwright-mobile.log | head -25
+            echo "=============== end ======================================="
+          fi
+          exit "$status"
 
       # A backup script nobody has run is not a backup script. The stack is
       # already up and seeded, so this costs seconds and proves the dump is

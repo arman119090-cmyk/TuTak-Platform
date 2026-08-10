@@ -24,6 +24,27 @@ services:
       # the archive unusable while everything still appears to work.
       - -c
       - wal_level=replica
+    # The archive directory is a named volume, and Docker creates one owned by
+    # root — while Postgres runs as `postgres` and cannot write into it. The
+    # result is `archive command failed ... Permission denied` on every
+    # segment, forever: WAL piles up in pg_wal, the archive stays empty, and
+    # point-in-time recovery is a feature that exists only in this file. It
+    # had been failing once a second for the life of every CI run, in a log
+    # nobody read, which is exactly how a backup turns out not to exist on the
+    # day it is needed.
+    #
+    # The image starts as root and steps down to `postgres` inside
+    # docker-entrypoint.sh, so this is the one moment a chown can happen. It
+    # warns rather than refuses: a local stack that will not start because of
+    # its archive is worse than one that starts and says so.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        chown postgres:postgres /var/lib/tutak/wal-archive 2>/dev/null
+        || echo "warning: cannot chown the WAL archive — archiving will fail and PITR will have nothing to restore from" >&2;
+        exec docker-entrypoint.sh "$$@"
+      - --
     environment:
       POSTGRES_USER: tutak
       POSTGRES_PASSWORD: tutak_dev_password

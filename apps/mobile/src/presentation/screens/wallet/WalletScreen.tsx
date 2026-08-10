@@ -13,8 +13,8 @@ import { StatePill } from '../../components/StatePill';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { walletApi } from '../../../data/api/walletApi';
-import { formatDate, formatPoints, formatSigned } from '../../utils/format';
-import { bonusStateFor } from '../../utils/transactionPresentation';
+import { formatDate, formatPoints } from '../../utils/format';
+import { bonusStateFor, ledgerAmountFor } from '../../utils/transactionPresentation';
 
 export function WalletScreen() {
   const { t } = useTranslation();
@@ -126,18 +126,22 @@ export function WalletScreen() {
           ) : ledger.items.length === 0 ? (
             <EmptyState title={t('wallet.noTransactions')} />
           ) : (
-            ledger.items.map((entry, i) => (
-              <ListRow
-                key={entry.id}
-                title={t(`bonusEntryType.${entry.type}`, { defaultValue: entry.type })}
-                subtitle={formatDate(entry.createdAt)}
-                value={formatSigned(
-                  entry.direction === 'CREDIT' ? entry.amount : `-${entry.amount}`,
-                )}
-                valueTone={entry.direction === 'CREDIT' ? 'positive' : 'default'}
-                last={i === ledger.items.length - 1}
-              />
-            ))
+            ledger.items.map((entry, i) => {
+              // Three directions, not two — a transfer between the wallet's
+              // own buckets is shown unsigned, because nothing was gained or
+              // lost. See `ledgerAmountFor`.
+              const amount = ledgerAmountFor(entry.direction, entry.amount);
+              return (
+                <ListRow
+                  key={entry.id}
+                  title={t(`bonusEntryType.${entry.type}`, { defaultValue: entry.type })}
+                  subtitle={formatDate(entry.createdAt)}
+                  value={amount.value}
+                  valueTone={amount.tone}
+                  last={i === ledger.items.length - 1}
+                />
+              );
+            })
           )}
         </View>
       </Surface>

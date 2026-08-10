@@ -103,7 +103,7 @@
     "confirmPayment": "Подтвердить оплату",
     "paymentSuccess": "Оплата прошла успешно",
     "paymentFailed": "Оплата не удалась",
-    "expiresIn": "Истекает через {{seconds}} с",
+    "expiresIn": "Истекает через {{time}}",
     "scanHint": "Наведите камеру на QR-код TuTak",
     "confirmSubtitle": "Проверьте детали перед оплатой.",
     "merchantCode": "Код продавца",
@@ -251,7 +251,10 @@
     "REDEMPTION_QR_PAYMENT": "Списано при оплате",
     "REDEMPTION_EV_CHARGING": "Списано за зарядку",
     "EXPIRY": "Истекло",
-    "REVERSAL": "Отменено"
+    "REVERSAL": "Отменено",
+    "RESERVE_HOLD": "Удержано для оплаты",
+    "RESERVE_RELEASE": "Удержание снято",
+    "PENDING_PROMOTION": "Стали доступны"
   },
   "referralStatus": {
     "PENDING": "Ждём первый платёж",

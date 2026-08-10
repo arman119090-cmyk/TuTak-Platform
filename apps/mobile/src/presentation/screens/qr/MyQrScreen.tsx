@@ -165,7 +165,7 @@ export function MyQrScreen() {
                 { color: secondsLeft < 60 ? color.pendingText : color.textSecondary },
               ]}
             >
-              {t('qr.expiresIn', { seconds: formatCountdown(secondsLeft) })}
+              {t('qr.expiresIn', { time: formatCountdown(secondsLeft) })}
             </Text>
           </View>
         ) : null}
@@ -190,6 +190,13 @@ export function MyQrScreen() {
   );
 }
 
+/**
+ * Minutes and seconds, so the placeholder it fills is `time` and not
+ * `seconds`. The string used to end in a unit — "Expires in {{seconds}}s" —
+ * while being handed `14:57`, and the screen read "Expires in 14:57s". All
+ * three locales carried the same contradiction; the Russian one said
+ * "14:57 с", which reads as fourteen and a half thousand seconds.
+ */
 function formatCountdown(total: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;

@@ -103,7 +103,7 @@
     "confirmPayment": "Confirm payment",
     "paymentSuccess": "Payment successful",
     "paymentFailed": "Payment failed",
-    "expiresIn": "Expires in {{seconds}}s",
+    "expiresIn": "Expires in {{time}}",
     "scanHint": "Point your camera at a TuTak QR code",
     "confirmSubtitle": "Check the details before you pay.",
     "merchantCode": "Merchant code",
@@ -251,7 +251,10 @@
     "REDEMPTION_QR_PAYMENT": "Spent on payment",
     "REDEMPTION_EV_CHARGING": "Spent on charging",
     "EXPIRY": "Expired",
-    "REVERSAL": "Reversed"
+    "REVERSAL": "Reversed",
+    "RESERVE_HOLD": "Held for payment",
+    "RESERVE_RELEASE": "Hold released",
+    "PENDING_PROMOTION": "Became available"
   },
   "referralStatus": {
     "PENDING": "Waiting for first payment",

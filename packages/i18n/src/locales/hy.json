@@ -103,7 +103,7 @@
     "confirmPayment": "Հաստատել վճարումը",
     "paymentSuccess": "Վճարումը հաջողվեց",
     "paymentFailed": "Վճարումը ձախողվեց",
-    "expiresIn": "Ավարտվում է {{seconds}} վրկ-ից",
+    "expiresIn": "Ավարտվում է {{time}}-ից",
     "scanHint": "Ուղղեք տեսախցիկը TuTak QR կոդին",
     "confirmSubtitle": "Ստուգեք տվյալները նախքան վճարելը։",
     "merchantCode": "Վաճառողի կոդը",
@@ -251,7 +251,10 @@
     "REDEMPTION_QR_PAYMENT": "Ծախսված վճարման ժամանակ",
     "REDEMPTION_EV_CHARGING": "Ծախսված լիցքավորման համար",
     "EXPIRY": "Ժամկետանց",
-    "REVERSAL": "Հետ շրջված"
+    "REVERSAL": "Հետ շրջված",
+    "RESERVE_HOLD": "Պահված է վճարման համար",
+    "RESERVE_RELEASE": "Պահումը հանված է",
+    "PENDING_PROMOTION": "Դարձել են հասանելի"
   },
   "referralStatus": {
     "PENDING": "Սպասում ենք առաջին վճարմանը",

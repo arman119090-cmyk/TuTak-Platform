@@ -24,16 +24,27 @@ after it, 627 API, 65 mobile, 28 admin, 9 partner.
 | | Found | Fixed | Verified by test |
 | --- | --- | --- | --- |
 | Critical | 5 | 5 | yes |
-| High | 6 | 6 | yes |
+| High | 8 | 8 | six of eight |
 | Medium | 7 | 7 | yes |
 | Low | 1 | 1 | yes |
 | Blockers raised, later closed | 2 | 2 | yes |
 
-Six rounds, each attacking in a way the previous one did not — which is the
-only reason each found anything, and the reason to expect a seventh would
+The two exceptions are F-20 and F-21, and they are exceptions for a reason
+worth stating rather than hiding in a tick. Both are configuration of the
+container stack, which no test in this repository runs — this sandbox has no
+Docker. F-20's check is the CI step that found it, which is red for an
+unrelated reason at the time of writing. F-21's check is the absence of the
+archive failures from the Postgres log in the next run, which is an
+observation, not an assertion. Neither is as good as a test, and saying so is
+cheaper than discovering it later.
+
+Seven rounds, each attacking in a way the previous one did not — which is the
+only reason each found anything, and the reason to expect an eighth would
 too. Round six is the evidence for that sentence rather than an illustration
 of it: it was written after round five predicted a sixth would find
-something, and it found four.
+something, and it found four. Round seven was not an attack at all — it was
+reading the build output that had been scrolling past all along — and it
+found two more.
 
 1. **The money paths**, concurrently and with awkward amounts. F-1 to F-6.
 2. **Production readiness**: authorization by object id, database-level
@@ -50,6 +61,9 @@ something, and it found four.
    by doing the one thing no round had done: bundling the app and looking at
    the screen. Every mobile test until then ran against source with the
    network mocked, which tests what the author believed the server sends.
+7. **The output nobody was reading.** F-20, F-21 — a demo stack that could
+   not sign anybody in, and point-in-time recovery that had never archived a
+   segment. Both had been printing their own failure on every run.
 
 Where the defects were, by round, because the answer changed:
 
@@ -719,6 +733,111 @@ person holding a handset — and the flicker in particular is still open, with
 
 No TuTak API is deployed anywhere. Demo sign-in works end to end against a
 server I started; it has never been run against one anybody else can reach.
+
+---
+
+## Round seven: the things a green CI was not checking
+
+Not an attack this time. This round started as an errand — read the build
+that had been running all along — and turned into two defects that had been
+live for as long as the features they belong to. Both share a shape: a
+capability that is configured but never exercised, failing in a log nobody
+reads.
+
+It also exposed something about the tooling rather than the product, recorded
+at the end because it cost more than either defect.
+
+### F-20 (High) — the demo stack could not sign anybody in
+
+`docker-compose.yml` passed `DEMO_MODE` to the API and not `DEMO_PASSWORD`.
+The seeder receives it through `docker compose exec -e DEMO_PASSWORD=…`,
+which sets the variable for that one command — so the **running** API never
+had it. `/auth/demo-session` reads it per request, found nothing, and
+answered 404.
+
+*What made it invisible:* nothing was broken enough to look broken. The
+server reported `demoMode: true`, so the app offered the button; the tap
+failed; the screen said "demo sign-in is not available on this server" —
+against a stack that had just finished seeding the demo customer. Every
+component behaved exactly as designed.
+
+*Scope:* not a test-only problem. `scripts/demo-up.sh` and
+`docs/TESTING_RU.md` send people to that same stack, so anybody who followed
+the documentation and pressed the demo button got the same 404. This is the
+path an investor demonstration runs on.
+
+*Found by* reproducing the CI step locally — booting the API with CI's
+environment and running the same Playwright command — rather than by reading
+the code, which is where three earlier guesses had been aimed. The page
+snapshot showed the button present and the sign-in rejected, which located
+the fault at the endpoint instead of the client.
+
+`DEMO_PASSWORD` and `DEMO_SEED` are now declared on the api service, empty by
+default so a non-demo stack is unchanged and the endpoint keeps refusing
+rather than guessing.
+
+### F-21 (High) — point-in-time recovery had never archived a single segment
+
+From the Postgres container's log, on every run of the stack:
+
+```
+archive command failed with exit code 1
+cp: can't create '/var/lib/tutak/wal-archive/…part.212': Permission denied
+archiving write-ahead log file "…" failed too many times, will try again later
+```
+
+Docker creates a named volume owned by root. Postgres runs as `postgres`.
+`archive_command` therefore failed on **every** segment, once a second, for
+the entire life of every stack this repository has ever started.
+
+*Consequence:* `archive_mode=on` has been a setting rather than a capability.
+WAL accumulated in `pg_wal` and the archive stayed empty, so recovery could
+reach the last nightly dump and no further — which is precisely the gap PITR
+exists to close, and precisely the gap somebody discovers at the worst
+possible moment.
+
+*Why nothing complained:* Postgres's behaviour here is correct. A failing
+archive command must not lose data, so it keeps the segment and retries
+forever. The only symptom is a log line. `scripts/pitr-rehearse.sh` refuses
+to pass while `failed_count` is non-zero — but the rehearsal is not in CI,
+so nothing ever asked.
+
+*Fix:* the image starts as root and steps down inside
+`docker-entrypoint.sh`, which is the one moment a chown can happen. It warns
+rather than refuses: a local stack that will not start because of its archive
+is worse than one that starts and says so.
+
+*Verified* by the disappearance of those lines from the Postgres log in the
+next run — not by running it locally, because this sandbox has no Docker.
+
+### The tooling was the expensive part, and that is a finding too
+
+Six attempts were spent unable to read **why** a step failed. Everything that
+runs after a failing step — an artifact upload, three buildx post-jobs,
+container cleanup, and a `docker compose logs` that ran on any failure rather
+than on a stack failure — pushed the failing assertion past the end of the
+log, and the end of the log is what the API returns.
+
+Two rounds of that were spent on the wrong question ("what is wrong with the
+test?") because the answer was not visible. The step now writes its verdict
+to an annotation on the check itself, which is the same two lines however
+long the job log grows.
+
+The general lesson is the one this document keeps relearning in different
+costumes: **a signal nobody can read is not a signal.** A failing archive
+command, a 404 behind a button that still appears, and an assertion buried
+under a hundred lines of cleanup are the same defect wearing three hats.
+
+### Still open at the end of this round
+
+- The mobile-drive CI step is red and its cause has not yet been read. It is
+  a check added in round six, not a regression in the product; the rest of
+  the pipeline — lint, typecheck, unit, integration, mobile, both dashboards,
+  build, and the generated-demo check — is green.
+- The flickering input fields on a physical Android handset. Three hypotheses
+  have been wrong. It will not be guessed at a fourth time; it needs a screen
+  recording, which distinguishes a layout loop from the OS drawing over the
+  app, and those have different fixes.
 
 ---
 

@@ -14,6 +14,7 @@ import { AuditService } from '../audit/audit.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
+import { NearbyPartnersQueryDto } from './dto/nearby-partners.query.dto';
 import { PartnersService } from './partners.service';
 
 @ApiTags('partners')
@@ -49,6 +50,30 @@ export class PartnersController {
     return isPlatformAdmin(user)
       ? this.partnersService.list()
       : this.partnersService.listPublic();
+  }
+
+  /**
+   * Where a customer can spend, near where they are standing.
+   *
+   * Declared before `:id` on purpose. Nest matches routes in the order they
+   * are declared, so a `@Get('nearby')` placed after `@Get(':id')` is never
+   * reached — "nearby" is a perfectly good id as far as the router is
+   * concerned, and the endpoint would 404 with nothing wrong in it.
+   *
+   * No `@RequirePermissions`. Every signed-in customer needs this; it is the
+   * screen that answers "where are my points worth something". What it returns
+   * is only what is on the shop's sign — see `NearbyPartnerDto` for what is
+   * deliberately left out.
+   */
+  @Get('nearby')
+  nearby(@Query() query: NearbyPartnersQueryDto) {
+    return this.partnersService.listNearbyBranches({
+      lat: query.lat,
+      lng: query.lng,
+      radiusKm: query.radiusKm ?? 10,
+      category: query.category,
+      q: query.q,
+    });
   }
 
   @Get(':id')

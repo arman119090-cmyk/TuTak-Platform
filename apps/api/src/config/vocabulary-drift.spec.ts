@@ -5,10 +5,12 @@ import {
   BonusEntryType,
   EvSessionStatus,
   LedgerDirection,
+  PartnerCategory,
   ReferralInviteStatus,
   TransactionStatus,
   TransactionType,
 } from '@tutak/shared-types';
+import { PARTNER_CATEGORIES } from '../modules/partners/geo';
 
 /**
  * The vocabulary has to say the same thing in three places.
@@ -62,6 +64,31 @@ describe('the shared types mirror the schema', () => {
     // one lets a client handle a case the database can never produce, which
     // reads as coverage and is not.
     expect(typeMembers(declared as unknown as Record<string, string>)).toEqual(prismaEnum(name));
+  });
+});
+
+describe('the partner categories are the same list on both sides', () => {
+  /**
+   * This one is not schema-backed, and that is why it needs guarding harder
+   * than the enums above.
+   *
+   * `Partner.category` is a free-text column in Prisma, so there is no
+   * authority to compare against — the closed set lives in two hand-written
+   * places instead. The API cannot import `@tutak/shared-types` at all (its
+   * `rootDir` is `apps/api/src`, and a cross-workspace import fails the build
+   * with TS6059), so `apps/api/src/modules/partners/geo.ts` keeps its own
+   * copy. This spec compiles under a different tsconfig and can see both.
+   *
+   * The failure it prevents is quiet: add a category on the server only and
+   * `toPartnerCategory` starts returning a value the client's `PartnerCategory`
+   * does not contain, so the map draws a pin with no icon and the filter chip
+   * for it does not exist. Add one on the client only and the chip is there,
+   * filters on a value the server will never return, and shows an empty map.
+   */
+  it('geo.ts and PartnerCategory agree in both directions', () => {
+    expect([...PARTNER_CATEGORIES].sort()).toEqual(
+      typeMembers(PartnerCategory as unknown as Record<string, string>),
+    );
   });
 });
 

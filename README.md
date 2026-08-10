@@ -16,12 +16,33 @@ apps/
 packages/
   shared-types/  TypeScript enums + DTOs shared by every app
   i18n/          hy/ru/en translation resources shared by every app
+preview/       generated standalone Expo app — runs with no backend at all
 docker-compose.yml   Postgres + Redis + api + both dashboards
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data model, the
 bonus engine's design, module boundaries, and the production-readiness
 roadmap (what's real today vs. what a millions-of-users launch still needs).
+
+## Just want to see the app on your phone?
+
+`preview/` is an ordinary Expo app — no Docker, no PostgreSQL, no Redis, no
+Prisma, no `.env`, no migrations, no server of any kind. It runs on data
+built into it.
+
+```
+cd preview
+npm install
+npx expo start
+```
+
+Scan the QR code with Expo Go and tap **"Enter the demo"** on the sign-in
+screen. Instructions in Russian, including what to do when something goes
+wrong: [`preview/README.md`](preview/README.md).
+
+It is generated from `apps/mobile` by `scripts/build-preview-app.sh`, and CI
+fails if the two have drifted — so what you look at there is the app, not a
+mock-up of it. Only the transport is replaced.
 
 ## Try it: the whole platform in one command
 

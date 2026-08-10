@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "TuTak",
+    "slug": "tutak-preview",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "tutakpreview",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0F"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "am.tutak.preview"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "am.tutak.preview",
+      "permissions": [
+        "CAMERA"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TuTak needs camera access to scan QR codes for payments.",
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "extra": {
+      "useMocks": true,
+      "apiBaseUrl": "http://offline.invalid/v1",
+      "appEnv": "preview-mock"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
 import { render, screen } from '@testing-library/react-native';
-import { KeyboardAwareScroll } from './KeyboardAwareScroll';
+import { KeyboardAwareScroll, scrollTargetFor } from './KeyboardAwareScroll';
 import { TextField } from './TextField';
 import { ThemeProvider } from '../../app/theme/ThemeProvider';
 
@@ -90,17 +90,85 @@ describe('KeyboardAwareScroll', () => {
     expect(content.flex).toBeUndefined();
   });
 
-  it('dismisses the keyboard on drag on Android, interactively on iOS', () => {
-    // Written as two literals rather than the same expression the component
-    // uses, which would agree with itself whatever it said.
+  it('never dismisses the keyboard when this view scrolls on Android', () => {
+    // This test used to assert `on-drag`, and passing was the problem.
+    //
+    // `on-drag` closes the keyboard whenever the list scrolls, and Android
+    // does not distinguish a scroll the app asked for from one a finger
+    // caused. This component asks for one on every `keyboardDidShow`. The two
+    // together are a loop: keyboard opens, app scrolls the field into view,
+    // `on-drag` closes the keyboard, the field still holds focus so the IME
+    // returns, and round again. On a handset that is a screen that flickers
+    // and a form that cannot be typed into — reported on two different
+    // devices, on the four sign-in screens, which are the four screens that
+    // use this component.
+    //
+    // Written as two literals rather than the expression the component uses,
+    // which would agree with itself whatever it said — and named for the
+    // property that matters rather than for the value, because the value was
+    // the bug.
     asPlatform('android', () => {
       renderScroll();
-      expect(screen.UNSAFE_getByType(ScrollView).props.keyboardDismissMode).toBe('on-drag');
+      expect(screen.UNSAFE_getByType(ScrollView).props.keyboardDismissMode).toBe('none');
     });
+    // iOS keeps `interactive`: that is a downward swipe on the keyboard
+    // itself, not a reaction to the list moving, so it cannot close a keyboard
+    // the app has just scrolled a field under.
     asPlatform('ios', () => {
       renderScroll();
       expect(screen.UNSAFE_getByType(ScrollView).props.keyboardDismissMode).toBe('interactive');
     });
+  });
+
+});
+
+/**
+ * The other half of the loop, and the half that survives a change of platform.
+ *
+ * This is the real function the component calls — not a copy of its arithmetic
+ * written here, which would agree with itself whatever either one said. It is
+ * exported for exactly that reason: the alternative is driving it through
+ * `measureLayout`, which needs a native node no test environment here can
+ * produce.
+ */
+describe('scrollTargetFor', () => {
+  const visible = { viewportHeight: 600, scrollY: 0 };
+
+  it('scrolls a field hidden below the keyboard just far enough to clear it', () => {
+    // Field occupies 700..754; the visible area ends at 600. It needs to end
+    // 16pt above the fold: 754 + 16 - 600.
+    expect(scrollTargetFor({ ...visible, fieldTop: 700, fieldHeight: 54 })).toBe(170);
+  });
+
+  it('scrolls back up to a field above the top of the visible area', () => {
+    expect(scrollTargetFor({ viewportHeight: 600, scrollY: 300, fieldTop: 100, fieldHeight: 54 })).toBe(84);
+  });
+
+  it('never scrolls past the top', () => {
+    expect(scrollTargetFor({ viewportHeight: 600, scrollY: 10, fieldTop: 4, fieldHeight: 54 })).toBe(0);
+  });
+
+  it('leaves a field that is already fully visible exactly where it is', () => {
+    expect(scrollTargetFor({ ...visible, fieldTop: 100, fieldHeight: 54 })).toBeNull();
+  });
+
+  it('does not ask to scroll to the offset the list is already at', () => {
+    // `keyboardDidShow` fires more than once on Android — the IME reports a
+    // new height when its suggestion strip appears — and two measurements of
+    // one layout can differ by a fraction of a point. Without this, that is
+    // one scroll request per firing, forever.
+    const target = scrollTargetFor({ viewportHeight: 600, scrollY: 170, fieldTop: 700, fieldHeight: 54 });
+    expect(target).toBeNull();
+
+    // Half a point of measurement noise is still nothing to do.
+    expect(
+      scrollTargetFor({ viewportHeight: 600, scrollY: 169.6, fieldTop: 700, fieldHeight: 54 }),
+    ).toBeNull();
+
+    // A real difference still moves.
+    expect(
+      scrollTargetFor({ viewportHeight: 600, scrollY: 100, fieldTop: 700, fieldHeight: 54 }),
+    ).toBe(170);
   });
 });
 

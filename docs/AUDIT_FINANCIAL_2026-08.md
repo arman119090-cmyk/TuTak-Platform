@@ -24,7 +24,7 @@ after it, 627 API, 65 mobile, 28 admin, 9 partner.
 | | Found | Fixed | Verified by test |
 | --- | --- | --- | --- |
 | Critical | 5 | 5 | yes |
-| High | 8 | 8 | six of eight |
+| High | 9 | 9 | seven of nine |
 | Medium | 8 | 8 | yes |
 | Low | 1 | 1 | yes |
 | Blockers raised, later closed | 2 | 2 | yes |
@@ -885,12 +885,81 @@ catch the class of bug that had already shipped twice. A check that cannot
 fail for the right reason is worth its own finding — for four rounds, this one
 could only fail for the wrong one.
 
+### F-23 (High) — the sign-in forms could not be typed into on Android
+
+Two props, forty lines apart in one component, that cannot both exist:
+
+```
+keyboardDismissMode = 'on-drag'                       (Android)
+keyboardDidShow → reveal() → scroll.scrollTo({ animated: true })
+```
+
+`on-drag` closes the keyboard when the list scrolls, and Android does not
+distinguish a scroll the app asked for from one a finger caused. This component
+asks for one on every `keyboardDidShow`. So: tap a field, the keyboard opens,
+`keyboardDidShow` fires, the app scrolls the field clear of the keyboard,
+`on-drag` closes the keyboard — and the field still holds focus, so the IME
+comes back and the cycle repeats. The screen flickers and nothing can be typed.
+
+*Scope:* the four screens that use `KeyboardAwareScroll`, which are the four
+sign-in screens — the only ones where anything is typed before an account
+exists. So the failure sits on the path every single user takes first, and
+there is no way past it.
+
+*What made it invisible, and what made it expensive.* Both props arrived
+together in `9ad672a`, which fixed a real problem (the keyboard covering the
+submit button). The first report of flickering came 52 minutes later. Three
+hypotheses were spent on the wrong component — the last of them wrote
+`importantForAutofill="no"` into `TextField` on the theory that Android's
+autofill service was highlighting every field at once. A photograph showing two
+fields lit simultaneously was read as confirming that theory, because the app
+demonstrably cannot light two fields itself: `focused` is per-field state and
+only the focused field draws a ring.
+
+That reasoning was sound and the conclusion was wrong. It rested on one
+handset, and "the app cannot do this" quietly became "the OS must be doing it".
+What broke it was the owner reporting the same behaviour on a **second** device
+*and* that the keyboard could not be opened at all. An autofill overlay does not
+stop a keyboard from opening. One device is a firmware story; two devices and a
+keyboard that will not open is the app.
+
+*And the test suite was holding the bug in place.* There was a test named
+"dismisses the keyboard on drag on Android", asserting `'on-drag'` — written in
+the same commit, from the same belief, passing throughout. It has been renamed
+for the property that matters rather than the value, because the value was the
+defect.
+
+*Fix:* Android dismisses nothing when this view scrolls. iOS keeps
+`interactive`, which is a downward swipe on the keyboard rather than a reaction
+to the list moving, so it cannot close a keyboard the app has just scrolled a
+field under. Separately, the scroll decision moved into an exported pure
+function that returns `null` when the list is already where it needs to be —
+`keyboardDidShow` fires more than once on Android, and two measurements of one
+layout can differ by a fraction of a point, which is enough to keep any
+residual loop alive.
+
+*Verified* by removing each half and watching the matching test fail, then
+restoring both. **Not verified on a handset** — there is no Android device
+here, and this is the fourth attempt at this bug, so that distinction is worth
+more than usual. What is different this time is that the mechanism predicts the
+symptom that falsified the previous three: a keyboard that opens and closes
+rather than a decoration drawn over the fields.
+
+*The general shape*, which this document has now recorded three times in one
+round: react-native-web has no IME, so the browser drive added in round six —
+the check built precisely to catch client bugs against a live server — cannot
+see this class at all, and neither can Jest. Every automated check in this
+repository passed on every one of the days this bug made the app unusable.
+
 ### Still open at the end of this round
 
-- The flickering input fields on a physical Android handset. Three hypotheses
-  have been wrong. It will not be guessed at a fourth time; it needs a screen
-  recording, which distinguishes a layout loop from the OS drawing over the
-  app, and those have different fixes.
+- Whether F-23 is the whole of the flickering. Three hypotheses before it were
+  wrong, and this one is unverified on hardware — it is a mechanism that
+  explains every symptom including the one that falsified the others, which is
+  not the same as a fix somebody has watched work. It needs installing on the
+  two handsets that showed the fault. If it flickers still, the next step is
+  not a fifth hypothesis: it is a build that logs focus and keyboard events
+  with timestamps, so what comes back is a record rather than an impression.
 
 ---
 

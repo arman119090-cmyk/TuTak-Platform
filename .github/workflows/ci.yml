@@ -279,10 +279,22 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
+            summary=$(grep -E '✘|Error:|expect\(|Timeout:|Received|unexpected value' \
+              playwright-mobile.log | head -12 | sed 's/\x1b\[[0-9;]*m//g')
+
             echo "=============== why the mobile drive failed ==============="
-            grep -E '✘|Error:|expect\(|Timeout:|Received|unexpected value|at /home' \
-              playwright-mobile.log | head -25
+            printf '%s\n' "$summary"
             echo "=============== end ======================================="
+
+            # Also as an annotation. The step log is not a reliable place to
+            # read this from: three buildx post-jobs and an artifact upload
+            # run after any failure and push the assertion past the end of
+            # what the API and the web UI show without scrolling. An
+            # annotation is attached to the check itself and is the same two
+            # lines however long the job log gets. Newlines encoded as %0A,
+            # which is how the workflow-command syntax carries them.
+            printf '::error title=mobile-demo failed::%s\n' \
+              "$(printf '%s' "$summary" | sed ':a;N;$!ba;s/\n/%0A/g')"
           fi
           exit "$status"
 

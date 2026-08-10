@@ -131,7 +131,14 @@ fs.writeFileSync(
   JSON.stringify(
     {
       expo: {
-        name: 'TuTak',
+        // "TuTak Demo", not "TuTak". This app accepts any credentials and
+        // answers every request from memory. Installed under the product's own
+        // name, next to the product's own icon, it is an authentication bypass
+        // that somebody will eventually mistake for the real thing — including
+        // whoever is holding the phone. The android package is `am.tutak.demo`
+        // for the same reason: the two can sit side by side and neither can
+        // overwrite the other.
+        name: 'TuTak Demo',
         slug: 'tutak-demo',
         version: '0.1.0',
         orientation: 'portrait',
@@ -203,6 +210,28 @@ config.resolver.extraNodeModules = {
 
 module.exports = config;
 JS
+
+# ── Build profile ──────────────────────────────────────────────────────────
+# So this can be an installable APK and not only an `npx expo start` project.
+#
+# Somebody evaluating the product needs to tap through it on a phone, and the
+# real app cannot do that without a deployed API — which is a separate, slower
+# problem. This one answers itself from memory, so an APK of it works with no
+# server, no database and no SMS carrier.
+#
+# There is no `production` profile here on purpose. Nothing about this app
+# should ever be submitted to a store: it accepts any credentials by design.
+cat > "$OUT/eas.json" <<'JSON'
+{
+  "cli": { "version": ">= 12.0.0", "appVersionSource": "remote" },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" }
+    }
+  }
+}
+JSON
 
 cat > "$OUT/babel.config.js" <<'JS'
 module.exports = function (api) {

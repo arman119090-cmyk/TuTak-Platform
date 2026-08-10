@@ -74,6 +74,27 @@ function refuseDemoEnv(appEnv) {
   }
 }
 
+/**
+ * Whether this build carries the diagnostic overlay.
+ *
+ * Refused outright for `production`. The overlay covers the lower part of
+ * every screen and prints field labels, and a diagnostic surface in a shipped
+ * app is the kind of thing that gets noticed by a store reviewer rather than
+ * by us. Same reasoning as `refuseDemoEnv`: make the wrong combination
+ * impossible to build rather than unlikely to be built.
+ */
+function diagnosticsEnabled() {
+  const on = process.env.DIAGNOSTICS === '1';
+  if (on && (process.env.APP_ENV ?? 'development') === 'production') {
+    throw new Error(
+      'DIAGNOSTICS=1 with APP_ENV=production. The diagnostic overlay draws over the app and ' +
+        'names every field on screen; it belongs in the `diagnostic` build profile and nowhere ' +
+        'that anybody installs as TuTak.',
+    );
+  }
+  return on;
+}
+
 function apiBaseUrl() {
   const appEnv = process.env.APP_ENV ?? 'development';
   refuseDemoEnv(appEnv);
@@ -164,6 +185,23 @@ module.exports = ({ config }) => ({
   extra: {
     apiBaseUrl: apiBaseUrl(),
     appEnv: process.env.APP_ENV ?? 'development',
+    /**
+     * The on-screen event log. Only the `diagnostic` EAS profile sets this,
+     * and it refuses to combine with production below.
+     *
+     * It exists because four hypotheses about the flickering fields have been
+     * wrong, each reasoned from this source and each falsified by the next
+     * fact from a handset. The overlay replaces "what does it look like" with
+     * a timestamped list of what actually happened.
+     */
+    diagnostics: diagnosticsEnabled(),
+    /**
+     * Shown by the overlay. The single most expensive question in this whole
+     * episode has been "which version is on the phone" — a build that states
+     * its own commit cannot be mistaken for the one before it. EAS sets the
+     * first variable on its own builders; the second covers a local run.
+     */
+    commit: process.env.EAS_BUILD_GIT_COMMIT_HASH ?? process.env.GITHUB_SHA ?? '',
     // Pinned, not omitted. An absent key and a false one behave identically
     // today; only one of them still says no if a future edit starts merging
     // `extra` from somewhere else.

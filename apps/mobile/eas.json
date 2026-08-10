@@ -24,6 +24,16 @@
         "APP_ENV": "preview"
       }
     },
+    "diagnostic": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "preview",
+        "DIAGNOSTICS": "1"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "android": {

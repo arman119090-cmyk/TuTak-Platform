@@ -12,6 +12,7 @@ import {
   View,
   findNodeHandle,
 } from 'react-native';
+import { logEvent } from '../../diagnostics/eventLog';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -74,6 +75,53 @@ export interface KeyboardAwareScrollProps extends ScrollViewProps {
 /** Breathing room between the bottom of a focused field and the keyboard. */
 const FIELD_CLEARANCE = 16;
 
+/** What `reveal` measured, in the scroll view's own coordinates. */
+export interface RevealGeometry {
+  /** Top of the focused field. */
+  fieldTop: number;
+  fieldHeight: number;
+  /** Height of the visible area — smaller once the keyboard has taken its share. */
+  viewportHeight: number;
+  /** Where the list is scrolled to right now. */
+  scrollY: number;
+}
+
+/**
+ * Where the list should scroll to so the focused field clears the keyboard,
+ * or `null` when it should not scroll at all.
+ *
+ * Pulled out of the component because it is the whole decision, and because
+ * the alternative is testing it through `measureLayout`, which needs a native
+ * node no test environment here can produce. A copy of this arithmetic written
+ * inside a test would agree with itself whatever either one said.
+ *
+ * The `null` cases are the ones that matter. A scroll to the offset the list
+ * already occupies is not a no-op: `keyboardDidShow` fires more than once on
+ * Android — the IME reports a new height when its suggestion strip appears —
+ * and two measurements of one layout can differ by a fraction of a point. One
+ * scroll request per firing, forever, is what that costs, and this component
+ * has already been half of one self-sustaining loop.
+ */
+export function scrollTargetFor(g: RevealGeometry): number | null {
+  const fieldBottom = g.fieldTop + g.fieldHeight + FIELD_CLEARANCE;
+  const visibleBottom = g.scrollY + g.viewportHeight;
+
+  // Nothing measured in constants: where the field is, how tall the visible
+  // area is after the keyboard took its share, and where the list is already
+  // scrolled to. A field that is already fully visible is left exactly where
+  // it is — scrolling under someone's fingers when nothing needed to move is
+  // its own kind of broken.
+  let target: number | null = null;
+  if (fieldBottom > visibleBottom) {
+    target = fieldBottom - g.viewportHeight;
+  } else if (g.fieldTop < g.scrollY) {
+    target = Math.max(g.fieldTop - FIELD_CLEARANCE, 0);
+  }
+
+  if (target === null) return null;
+  return Math.abs(target - g.scrollY) >= 1 ? target : null;
+}
+
 export function KeyboardAwareScroll({
   children,
   contentContainerStyle,
@@ -99,18 +147,20 @@ export function KeyboardAwareScroll({
     node.measureLayout(
       inner,
       (_x, y, _width, height) => {
-        const fieldBottom = y + height + FIELD_CLEARANCE;
-        const visibleBottom = scrollY.current + viewportHeight.current;
-
-        // Nothing measured in constants: where the field is, how tall the
-        // visible area is after the keyboard took its share, and where the
-        // list is already scrolled to. A field that is already fully visible
-        // is left exactly where it is — scrolling under someone's fingers
-        // when nothing needed to move is its own kind of broken.
-        if (fieldBottom > visibleBottom) {
-          scroll.scrollTo({ y: fieldBottom - viewportHeight.current, animated: true });
-        } else if (y < scrollY.current) {
-          scroll.scrollTo({ y: Math.max(y - FIELD_CLEARANCE, 0), animated: true });
+        const target = scrollTargetFor({
+          fieldTop: y,
+          fieldHeight: height,
+          viewportHeight: viewportHeight.current,
+          scrollY: scrollY.current,
+        });
+        if (target !== null) {
+          logEvent(`scroll y=${Math.round(target)}`);
+          scroll.scrollTo({ y: target, animated: true });
+        } else {
+          // Logged too. "The app decided not to scroll" and "the app never
+          // got here" look identical in a log that only records actions, and
+          // they point at different faults.
+          logEvent('scroll skipped');
         }
       },
       () => {
@@ -133,8 +183,16 @@ export function KeyboardAwareScroll({
     // measured at that moment is still the full-height one. Running again on
     // `keyboardDidShow` is what makes the field reliably visible rather than
     // usually visible.
-    const shown = Keyboard.addListener('keyboardDidShow', () => reveal(focusedNode.current));
+    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
+      // The height is the point. Android reports a first approximate value
+      // and then a corrected one, and reports again when the suggestion strip
+      // appears — so a run of `kbShow` at two or three different heights is
+      // ordinary, and a run of forty is the fault.
+      logEvent(`kbShow h=${Math.round(event.endCoordinates?.height ?? 0)}`);
+      reveal(focusedNode.current);
+    });
     const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      logEvent('kbHide');
       focusedNode.current = null;
     });
     return () => {
@@ -169,7 +227,30 @@ export function KeyboardAwareScroll({
           style={[styles.flex, style]}
           contentContainerStyle={[styles.content, contentContainerStyle]}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          /*
+           * Android dismisses nothing when this view scrolls, and that is not
+           * a preference — `on-drag` and `reveal()` cannot both exist here.
+           *
+           * This component scrolls itself, programmatically, every time the
+           * keyboard appears: `keyboardDidShow` calls `reveal()`, which calls
+           * `scrollTo`. Android's `on-drag` closes the keyboard when the list
+           * scrolls, and does not distinguish a scroll the app asked for from
+           * one a finger caused. So: tap a field, the keyboard opens,
+           * `keyboardDidShow` fires, the app scrolls, `on-drag` closes the
+           * keyboard — and the field still holds focus, so the IME comes
+           * straight back and the whole thing repeats. The screen flickers and
+           * nothing can be typed.
+           *
+           * Reported on two different handsets, on the four screens that use
+           * this component — which are the four sign-in screens, the only ones
+           * where anything is typed before an account exists. Invisible to
+           * every check here: react-native-web has no IME, so the browser
+           * drive that now runs in CI cannot see it, and neither can Jest.
+           *
+           * `interactive` on iOS is a swipe-down gesture, not a reaction to
+           * scrolling, so it does not have this problem and is worth keeping.
+           */
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
           showsVerticalScrollIndicator={false}
           onLayout={handleLayout}
           onScroll={handleScroll}

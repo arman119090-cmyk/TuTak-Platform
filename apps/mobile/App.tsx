@@ -15,6 +15,7 @@ import { RootNavigator } from './src/app/navigation/RootNavigator';
 import { SplashScreen } from './src/presentation/screens/SplashScreen';
 import { useAuthStore } from './src/data/stores/authStore';
 import { usePushRegistration } from './src/app/usePushRegistration';
+import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -78,6 +79,12 @@ function Root() {
     <NavigationContainer theme={navigationTheme}>
       <StatusBar style="light" />
       {user ? <RootNavigator /> : <AuthNavigator />}
+      {/*
+        Inside the navigator so it sits over whatever screen is showing, and
+        last so nothing paints over it. Renders `null` in every build except
+        the `diagnostic` profile — see `isDiagnosticBuild`.
+      */}
+      <DiagnosticOverlay />
     </NavigationContainer>
   );
 }

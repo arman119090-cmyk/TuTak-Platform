@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { useWindowDimensions } from 'react-native';
+import { logEvent } from '../../diagnostics/eventLog';
 
 /**
  * Whether this screen is short enough that decorative vertical space has to
@@ -16,8 +18,37 @@ import { useWindowDimensions } from 'react-native';
  *
  * A hook rather than a constant because it has to react — an Android phone
  * can be rotated, and a foldable changes height without being rotated at all.
+ *
+ * ## Why it is instrumented
+ *
+ * On Android the window height also changes when the keyboard opens. So this
+ * hook re-evaluates mid-interaction, and if a device's height crosses 700 at
+ * that moment the whole form re-lays-out — different top padding, different
+ * spacing — while the keyboard is animating. That is a candidate for the
+ * flickering that four hypotheses have missed, and it is untested because
+ * nothing here has a window at all.
+ *
+ * It is a candidate, not a conclusion. The log records the height and the
+ * flag so a screenshot can settle it, rather than a fifth guess.
  */
 export function useCompactLayout(): boolean {
   const { height } = useWindowDimensions();
-  return height < 700;
+  const compact = height < 700;
+  const previous = useRef<{ height: number; compact: boolean } | null>(null);
+
+  useEffect(() => {
+    const last = previous.current;
+    if (last && last.height === height) return;
+
+    previous.current = { height, compact };
+    // The flip is the interesting part, so it is called out rather than left
+    // to be worked out from the number.
+    logEvent(
+      last && last.compact !== compact
+        ? `win h=${Math.round(height)} compact→${compact}`
+        : `win h=${Math.round(height)}`,
+    );
+  }, [height, compact]);
+
+  return compact;
 }

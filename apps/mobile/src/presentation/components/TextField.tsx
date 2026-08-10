@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
+import { logEvent } from '../../diagnostics/eventLog';
 
 interface Props extends TextInputProps {
   label: string;
@@ -83,11 +84,15 @@ export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, 
           // the user cannot see where they are typing.
           selectionColor={premium.brand.light}
           onFocus={(event) => {
+            // The label, never the value. A password in a screenshot would be
+            // a far worse bug than the one being chased.
+            logEvent(`focus ${label}`);
             setFocused(true);
             ensureVisible(wrapper.current);
             onFocus?.(event);
           }}
           onBlur={(event) => {
+            logEvent(`blur  ${label}`);
             setFocused(false);
             onBlur?.(event);
           }}

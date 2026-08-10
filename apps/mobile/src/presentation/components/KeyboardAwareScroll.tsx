@@ -12,6 +12,7 @@ import {
   View,
   findNodeHandle,
 } from 'react-native';
+import { logEvent } from '../../diagnostics/eventLog';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -153,7 +154,13 @@ export function KeyboardAwareScroll({
           scrollY: scrollY.current,
         });
         if (target !== null) {
+          logEvent(`scroll y=${Math.round(target)}`);
           scroll.scrollTo({ y: target, animated: true });
+        } else {
+          // Logged too. "The app decided not to scroll" and "the app never
+          // got here" look identical in a log that only records actions, and
+          // they point at different faults.
+          logEvent('scroll skipped');
         }
       },
       () => {
@@ -176,8 +183,16 @@ export function KeyboardAwareScroll({
     // measured at that moment is still the full-height one. Running again on
     // `keyboardDidShow` is what makes the field reliably visible rather than
     // usually visible.
-    const shown = Keyboard.addListener('keyboardDidShow', () => reveal(focusedNode.current));
+    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
+      // The height is the point. Android reports a first approximate value
+      // and then a corrected one, and reports again when the suggestion strip
+      // appears — so a run of `kbShow` at two or three different heights is
+      // ordinary, and a run of forty is the fault.
+      logEvent(`kbShow h=${Math.round(event.endCoordinates?.height ?? 0)}`);
+      reveal(focusedNode.current);
+    });
     const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      logEvent('kbHide');
       focusedNode.current = null;
     });
     return () => {

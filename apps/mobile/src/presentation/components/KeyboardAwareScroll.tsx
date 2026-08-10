@@ -203,6 +203,13 @@ export function KeyboardAwareScroll({
   /** Timers, held so they can be cleared on unmount rather than firing into nothing. */
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set when a scroll was refused only because another was still animating. */
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Declared before `reveal` so the retry below can call it, and assigned from
+  // `reveal` itself. A plain recursive `useCallback` cannot refer to the
+  // callback it is defining.
+  const revealRef = useRef<(node: View | null) => void>(() => undefined);
 
   const reveal = useCallback((node: View | null) => {
     const scroll = scrollRef.current;
@@ -232,7 +239,33 @@ export function KeyboardAwareScroll({
           // Which guard refused is the useful part: `busy` means scrolls are
           // arriving faster than they finish, `same` means the keyboard is
           // still settling. Different faults, same appearance.
-          logEvent(isScrolling.current ? 'scroll skipped (busy)' : 'scroll skipped (same)');
+          if (isScrolling.current) {
+            // `busy` must be retried, and `same` must not.
+            //
+            // The debounced reveal is the *only* one that measures the window
+            // with the keyboard already in it — the one on focus runs against
+            // the full-height viewport, before anything has moved. Dropping it
+            // because a scroll happened to still be animating leaves the field
+            // under the keyboard with nothing scheduled to correct it, which
+            // is precisely the failure this component exists to prevent.
+            //
+            // One hop is enough to terminate: the lock is cleared at most
+            // SCROLL_ANIMATION_MS after it was raised, and it was raised no
+            // later than now, so by the time this fires it is down. A further
+            // retry only happens if a *new* scroll was issued meanwhile, which
+            // is progress rather than a loop.
+            //
+            // `same` is a genuine decision that nothing needs to move, and
+            // retrying it would reinstate the repetition the epsilon exists to
+            // stop.
+            logEvent('scroll skipped (busy) → retry');
+            if (retryTimer.current) clearTimeout(retryTimer.current);
+            retryTimer.current = setTimeout(() => {
+              revealRef.current(node);
+            }, SCROLL_ANIMATION_MS);
+          } else {
+            logEvent('scroll skipped (same)');
+          }
           return;
         }
 
@@ -252,6 +285,8 @@ export function KeyboardAwareScroll({
       },
     );
   }, []);
+
+  revealRef.current = reveal;
 
   const ensureVisible = useCallback(
     (node: View | null) => {
@@ -290,6 +325,9 @@ export function KeyboardAwareScroll({
       // A pending reveal for a keyboard that has gone would scroll to a field
       // nobody is in.
       if (settleTimer.current) clearTimeout(settleTimer.current);
+      // A retry for a keyboard that has gone would scroll to a field nobody
+      // is in, exactly as a pending reveal would.
+      if (retryTimer.current) clearTimeout(retryTimer.current);
       focusedNode.current = null;
       lastTarget.current = null;
     });
@@ -300,6 +338,7 @@ export function KeyboardAwareScroll({
       // pending one firing after unmount is a scroll into nothing at best.
       if (settleTimer.current) clearTimeout(settleTimer.current);
       if (scrollTimer.current) clearTimeout(scrollTimer.current);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
     };
   }, [reveal]);
 

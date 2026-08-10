@@ -46,4 +46,18 @@ echo
 echo "Serving $OUT on http://localhost:$PORT"
 echo "The API must allow http://localhost:$PORT in CORS_ORIGINS, or every"
 echo "request from the page is refused by the browser before it is sent."
-exec npx --yes http-server -p "$PORT" -c-1 --silent "$OUT"
+# The directory comes first, which is what `http-server --help` documents
+# ("usage: http-server [path] [options]") and which this had backwards.
+#
+# `--silent` is not declared boolean in http-server's option parsing, so a
+# trailing path is taken as its *value* rather than as the root. `argv._` ends
+# up empty and http-server falls back to its default root — which is `./public`
+# when that directory exists, and this repository has one: two legal pages.
+#
+# So the bundle was exported correctly and then never served. What answered on
+# this port was a directory listing of `public/`, which is a 200, which is all
+# the readiness check asked for. Every run of the mobile drive since it was
+# added has been pointing a browser at that listing and reporting that the demo
+# button never appeared. Verified both ways: with the path last the served
+# title is "Index of /", with the path first it is "TuTak".
+exec npx --yes http-server "$OUT" -p "$PORT" -c-1 --silent

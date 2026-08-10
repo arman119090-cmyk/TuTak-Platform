@@ -247,12 +247,27 @@ jobs:
       - name: Drive the built mobile app against the stack
         run: |
           scripts/mobile-web-serve.sh http://localhost:4000/v1 8099 > mobile-web.log 2>&1 &
+          # Ready means "the app is on this port", not "something answered".
+          #
+          # A 200 was the whole check, and a 200 is what a directory listing
+          # returns. `http-server` was being given the export directory after
+          # `--silent`, which takes it as that flag's value rather than as the
+          # root, so it fell back to its default root — `./public`, which in
+          # this repository holds two legal pages. The readiness loop passed on
+          # the first try, the browser opened a file listing, and the failure
+          # was reported as "the demo entry never appeared". Every run of this
+          # step since it was added had been driving that listing.
           for i in $(seq 1 60); do
-            curl -fsS -o /dev/null http://localhost:8099/ && break
+            if curl -fsS http://localhost:8099/ | grep -q '<title>TuTak</title>'; then break; fi
             # Bundling is the slow half and the half that fails. Its log is
             # the only place that says why, so print it rather than reporting
             # a timeout with no cause.
-            [ "$i" = 60 ] && { echo "the mobile bundle never came up:"; cat mobile-web.log; exit 1; }
+            if [ "$i" = 60 ]; then
+              echo "the mobile bundle never came up, or what came up was not the app:"
+              curl -fsS http://localhost:8099/ | head -20 || true
+              cat mobile-web.log
+              exit 1
+            fi
             sleep 5
           done
           # Asserted before the browser opens, because a failure here is a

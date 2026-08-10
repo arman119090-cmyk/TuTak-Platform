@@ -25,18 +25,18 @@ after it, 627 API, 65 mobile, 28 admin, 9 partner.
 | --- | --- | --- | --- |
 | Critical | 5 | 5 | yes |
 | High | 8 | 8 | six of eight |
-| Medium | 7 | 7 | yes |
+| Medium | 8 | 8 | yes |
 | Low | 1 | 1 | yes |
 | Blockers raised, later closed | 2 | 2 | yes |
 
 The two exceptions are F-20 and F-21, and they are exceptions for a reason
 worth stating rather than hiding in a tick. Both are configuration of the
 container stack, which no test in this repository runs — this sandbox has no
-Docker. F-20's check is the CI step that found it, which is red for an
-unrelated reason at the time of writing. F-21's check is the absence of the
-archive failures from the Postgres log in the next run, which is an
-observation, not an assertion. Neither is as good as a test, and saying so is
-cheaper than discovering it later.
+Docker. F-20's check is the CI step that found it, which was itself broken
+(F-22) and has since been repaired and observed to pass. F-21's check is the
+absence of the archive failures from the Postgres log in the next run, which is
+an observation, not an assertion. Neither is as good as a test, and saying so
+is cheaper than discovering it later.
 
 Seven rounds, each attacking in a way the previous one did not — which is the
 only reason each found anything, and the reason to expect an eighth would
@@ -44,7 +44,8 @@ too. Round six is the evidence for that sentence rather than an illustration
 of it: it was written after round five predicted a sixth would find
 something, and it found four. Round seven was not an attack at all — it was
 reading the build output that had been scrolling past all along — and it
-found two more.
+found three more, the last of them a check that had never once done the thing
+it was named after.
 
 1. **The money paths**, concurrently and with awkward amounts. F-1 to F-6.
 2. **Production readiness**: authorization by object id, database-level
@@ -61,9 +62,12 @@ found two more.
    by doing the one thing no round had done: bundling the app and looking at
    the screen. Every mobile test until then ran against source with the
    network mocked, which tests what the author believed the server sends.
-7. **The output nobody was reading.** F-20, F-21 — a demo stack that could
-   not sign anybody in, and point-in-time recovery that had never archived a
-   segment. Both had been printing their own failure on every run.
+7. **The output nobody was reading.** F-20, F-21, F-22 — a demo stack that
+   could not sign anybody in, point-in-time recovery that had never archived a
+   segment, and a check that had been driving a directory listing instead of
+   the app. The first two had been printing their own failure on every run;
+   the third had been reporting a failure of the wrong component, which is
+   worse, because it sent four rounds of work to the wrong place.
 
 Where the defects were, by round, because the answer changed:
 
@@ -828,12 +832,61 @@ costumes: **a signal nobody can read is not a signal.** A failing archive
 command, a 404 behind a button that still appears, and an assertion buried
 under a hundred lines of cleanup are the same defect wearing three hats.
 
+### F-22 (Medium) — the mobile drive had never once loaded the mobile app
+
+The step that exists to build the app and run it against a live server had
+been driving a directory listing of `public/` — two legal pages — since the
+day it was added.
+
+```
+scripts/mobile-web-serve.sh:  npx http-server -p 8099 -c-1 --silent "$OUT"
+```
+
+`--silent` is not declared boolean in http-server's option parsing, so the
+trailing path is taken as that flag's *value* rather than as the root.
+`argv._` comes out empty, http-server falls back to its default root — `./public`
+when that directory exists, and this repository has one — and serves the two
+legal pages from it. The export itself was always correct; it was simply never
+the thing on the port.
+
+*What made it invisible:* the readiness check was `curl -fsS -o /dev/null
+http://localhost:8099/`, and a directory listing is a 200. It passed on the
+first attempt, every time. The browser then opened a file listing, found no
+demo button, and the step reported *"the demo entry never appeared — the app
+asked the server and either could not reach it or misread the answer"* — a
+message about the client, pointing at the client, describing something the
+client was never given a chance to do. Four rounds of guessing followed, all
+aimed at the client and the stack. Both were fine throughout.
+
+*Found by* reproducing the step locally without Docker — API from `dist/`,
+Redis and Postgres already running, the demo customer's password aligned by
+hand — and then reading the Playwright error context, which is an accessibility
+snapshot of the page. It said `heading "Index of /"`. Nothing else in the run
+said anything at all.
+
+*Fix:* the path goes first, which is what `http-server --help` documents. And
+the readiness check now asserts the app is on the port rather than that
+something is:
+
+```
+curl -fsS http://localhost:8099/ | grep -q '<title>TuTak</title>'
+```
+
+*Verified* both ways in the same session: with the path last the served title
+is `Index of /` and the spec fails at the same assertion CI failed at; with the
+path first the title is `TuTak` and the spec passes in 2.2 seconds — demo
+button found, session created, tokens in `localStorage`, `/wallet/me` read, no
+uncaught errors. That is also the first time the mobile app has been driven
+against a live API and got in.
+
+*Why it is Medium and not High:* nothing shipped wrong. The product was never
+broken by this; a check was, and it was a check whose whole purpose was to
+catch the class of bug that had already shipped twice. A check that cannot
+fail for the right reason is worth its own finding — for four rounds, this one
+could only fail for the wrong one.
+
 ### Still open at the end of this round
 
-- The mobile-drive CI step is red and its cause has not yet been read. It is
-  a check added in round six, not a regression in the product; the rest of
-  the pipeline — lint, typecheck, unit, integration, mobile, both dashboards,
-  build, and the generated-demo check — is green.
 - The flickering input fields on a physical Android handset. Three hypotheses
   have been wrong. It will not be guessed at a fourth time; it needs a screen
   recording, which distinguishes a layout loop from the OS drawing over the

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
+import { BackButton } from '../../components/BackButton';
 import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -54,6 +55,9 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
             { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
           ]}
         >
+          {/* Every navigator here sets headerShown: false, so this is the
+              only way off the screen besides Android's hardware button. */}
+          <BackButton />
           <Text style={[text.titleLg, { color: color.textPrimary }]}>
             {t('auth.resetPasswordTitle')}
           </Text>

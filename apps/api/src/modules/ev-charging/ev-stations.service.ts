@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { haversineKm } from '../../common/utils/geo';
 import { CreateConnectorDto } from './dto/create-connector.dto';
 import { CreateStationDto } from './dto/create-station.dto';
 
@@ -33,18 +34,30 @@ export class EvStationsService {
     return connector;
   }
 
-  /** Simple bounding-box "nearby" search — swap for PostGIS ST_DWithin at scale. */
+  /**
+   * Simple bounding-box "nearby" search — swap for PostGIS ST_DWithin at
+   * scale. The box only narrows what the database scans; `distanceKm` below
+   * is the real, round-earth distance, computed the same way
+   * `PartnersService.listNearby` computes it for partner branches, so a
+   * merged map/list of stations and partners can sort the two together by
+   * one consistent number.
+   */
   async listNearby(lat: number, lng: number, radiusKm = 10) {
     const latDelta = radiusKm / 111;
     const lngDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
 
-    return this.prisma.evStation.findMany({
+    const stations = await this.prisma.evStation.findMany({
       where: {
         latitude: { gte: lat - latDelta, lte: lat + latDelta },
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
       },
       include: { connectors: true },
     });
+
+    return stations
+      .map((s) => ({ ...s, distanceKm: haversineKm(lat, lng, s.latitude, s.longitude) }))
+      .filter((s) => s.distanceKm <= radiusKm)
+      .sort((a, b) => a.distanceKm - b.distanceKm);
   }
 
   listAll() {

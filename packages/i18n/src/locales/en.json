@@ -220,7 +220,7 @@
     "pay": "Pay",
     "charge": "Charge",
     "profile": "Profile",
-    "partners": "Partners"
+    "partners": "Map"
   },
   "home": {
     "greeting": "Welcome back",
@@ -276,10 +276,11 @@
     "CANCELLED": "Cancelled"
   },
   "partners": {
-    "title": "Partners",
+    "title": "Map",
     "nearYou": "Near you",
     "searchPlaceholder": "Shop, café, street…",
     "all": "All",
+    "stations": "Stations",
     "emptyTitle": "Nothing here yet",
     "emptyNearby": "No partners nearby yet. We add new ones every week.",
     "emptyFiltered": "Nothing matched that. Try a different filter.",

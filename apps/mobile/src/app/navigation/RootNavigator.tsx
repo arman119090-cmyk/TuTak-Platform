@@ -7,7 +7,6 @@ import { ScanQrScreen } from '../../presentation/screens/qr/ScanQrScreen';
 import { NotificationsScreen } from '../../presentation/screens/notifications/NotificationsScreen';
 import { TransactionHistoryScreen } from '../../presentation/screens/transactions/TransactionHistoryScreen';
 import { ReferralScreen } from '../../presentation/screens/referral/ReferralScreen';
-import { EvStationsScreen } from '../../presentation/screens/ev/EvStationsScreen';
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
@@ -61,14 +60,6 @@ export function RootNavigator() {
         name="Referral"
         component={ReferralScreen}
         options={{ title: t('referral.inviteFriends'), headerShown: false }}
-      />
-      {/* Charging left the tab bar so the partner map could have its place.
-          Pushed rather than a tab root, which also means <Screen> draws it a
-          back arrow — see the note in that component. */}
-      <Stack.Screen
-        name="EvStations"
-        component={EvStationsScreen}
-        options={{ title: t('ev.stations'), headerShown: false }}
       />
       <Stack.Screen
         name="EvHistory"

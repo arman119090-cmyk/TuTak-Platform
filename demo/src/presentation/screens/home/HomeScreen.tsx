@@ -111,7 +111,12 @@ export function HomeScreen({ navigation }: Props) {
         >
           <QuickAction icon="qr-code" label={t('qr.myQr')} onPress={() => navigation.navigate('Main', { screen: 'Pay' } as never)} />
           <QuickAction icon="scan" label={t('qr.scanQr')} onPress={() => navigation.navigate('ScanQr')} />
-          <QuickAction icon="flash" label={t('ev.stations')} tone="reserved" onPress={() => navigation.navigate('EvStations')} />
+          <QuickAction
+            icon="flash"
+            label={t('ev.stations')}
+            tone="reserved"
+            onPress={() => navigation.navigate('Main', { screen: 'Partners', params: { filter: 'stations' } } as never)}
+          />
           <QuickAction icon="gift" label={t('referral.invite')} tone="pending" onPress={() => navigation.navigate('Referral')} />
         </View>
 

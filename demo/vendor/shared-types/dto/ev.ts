@@ -15,6 +15,8 @@ export interface EvStationDto {
   longitude: number;
   ocpiLocationId: string | null;
   connectors: EvConnectorDto[];
+  /** Only set by `GET /ev/stations/nearby` — absent from `listStations`/`listAll`. */
+  distanceKm?: number;
 }
 
 export interface EvConnectorDto {

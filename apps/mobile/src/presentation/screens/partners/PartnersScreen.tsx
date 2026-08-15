@@ -1,78 +1,210 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import type { NearbyPartnerDto, PartnerCategory } from '@tutak/shared-types';
+import type {
+  EvConnectorDto,
+  EvStationDto,
+  NearbyPartnerDto,
+  PartnerCategory,
+} from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
+import type { MainTabParamList, RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { SectionHeader } from '../../components/SectionHeader';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
+import { StatePill } from '../../components/StatePill';
 import { TileMap, type MapMarker } from '../../components/map/TileMap';
 import { partnersApi } from '../../../data/api/partnersApi';
+import { evApi } from '../../../data/api/evApi';
+import { evStatusTone } from '../../utils/transactionPresentation';
+import { formatAmd } from '../../utils/format';
 import { DEFAULT_CENTRE, useApproximateLocation } from './useApproximateLocation';
 import { CATEGORY_ICONS, CATEGORY_ORDER, formatDistance } from './categories';
 import { PartnerPin } from './PartnerPin';
+import { StationPin } from './StationPin';
+
+type PartnersRoute = RouteProp<MainTabParamList, 'Partners'>;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+/** What the chip strip can be narrowed to. Stations are not a `PartnerCategory`
+ * — they are TuTak's own charging network, a different thing from the
+ * `EV_CHARGING` partner category (third-party shops that sell charging-adjacent
+ * goods) — so it is its own arm of the union rather than a value inside it. */
+type Filter = { kind: 'all' } | { kind: 'category'; value: PartnerCategory } | { kind: 'stations' };
+
+type MapItem =
+  | { kind: 'partner'; id: string; distanceKm: number; partner: NearbyPartnerDto }
+  | { kind: 'station'; id: string; distanceKm: number; station: EvStationDto };
 
 /**
- * Where the customer's points are worth something.
+ * One map for everywhere a customer's points are worth something.
  *
- * The screen the product was missing: a loyalty app whose partners could only
- * be discovered by walking past one. Map on top, filters under it, the list
- * below — and the two halves are one selection, so tapping a pin scrolls the
- * card into view and tapping a card lights up its pin.
+ * Stations and partners used to be two separate places in this app — a
+ * station list with no map, reached only from a home-screen button, and this
+ * screen showing partners alone. The mockups draw one map instead: green pins
+ * for TuTak's own charging stations, coloured pins for partner categories,
+ * "Станции" just another chip in the same strip, one "Рядом с вами" list
+ * carrying both kinds of card. This screen is that merge — see
+ * `docs/DESIGN_HANDOFF_RU.md` §0 for the decision.
  *
  * The search runs against the server rather than filtering what is already
  * loaded. A client-side filter over the first 300 rows silently searches a
  * subset, and "not found" from a search box is a statement about the whole
- * directory, not about what happened to be nearby.
+ * directory, not about what happened to be nearby. It only searches partners
+ * by name — the placeholder says as much ("Магазин, кафе, улица…") — a
+ * station's name is rarely what someone types.
  */
 export function PartnersScreen() {
   const { t } = useTranslation();
   const { color, space, text, radius, glass } = useTheme();
+  const route = useRoute<PartnersRoute>();
+  const navigation = useNavigation<Nav>();
+  const queryClient = useQueryClient();
 
-  const [category, setCategory] = useState<PartnerCategory | null>(null);
+  const [filter, setFilter] = useState<Filter>(
+    route.params?.filter === 'stations' ? { kind: 'stations' } : { kind: 'all' },
+  );
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const listRef = useRef<ScrollView>(null);
   const cardOffsets = useRef<Record<string, number>>({});
 
+  // The home screen's "Начать зарядку" quick action always wants the
+  // stations chip active, even if this tab was already open on a different
+  // filter — a param object is a fresh reference on every navigate call, so
+  // this fires each time the button is pressed, not just on first mount.
+  React.useEffect(() => {
+    if (route.params?.filter === 'stations') setFilter({ kind: 'stations' });
+  }, [route.params]);
+
   const centre = useApproximateLocation();
   const query = useDebounced(search, 350);
 
+  const showPartners = filter.kind !== 'stations';
+  const showStations = filter.kind === 'all' || filter.kind === 'stations';
+
   const partners = useQuery({
-    queryKey: ['partners', 'nearby', centre.lat, centre.lng, category, query],
+    queryKey: [
+      'partners',
+      'nearby',
+      centre.lat,
+      centre.lng,
+      filter.kind === 'category' ? filter.value : null,
+      query,
+    ],
     queryFn: () =>
       partnersApi.nearby({
         lat: centre.lat,
         lng: centre.lng,
         radiusKm: 25,
-        ...(category ? { category } : {}),
+        ...(filter.kind === 'category' ? { category: filter.value } : {}),
         ...(query ? { q: query } : {}),
       }),
+    enabled: showPartners,
   });
 
-  // Memoised rather than `partners.data ?? []`, which is a fresh array on
-  // every render and so re-derives every marker — and re-frames the map — on
-  // each keystroke in the search box.
-  const rows = useMemo(() => partners.data ?? [], [partners.data]);
+  const stations = useQuery({
+    queryKey: ['ev-stations', 'nearby', centre.lat, centre.lng],
+    queryFn: () => evApi.nearbyStations(centre.lat, centre.lng, 25),
+    enabled: showStations,
+  });
+
+  // A customer can only be charging in one place at a time, and the API
+  // enforces it. Knowing about it here turns a confusing rejection into a
+  // banner that takes them back to the session they already have.
+  const activeSession = useQuery({
+    queryKey: ['ev-active-session'],
+    queryFn: evApi.activeSession,
+  });
+
+  const start = useMutation({
+    mutationFn: (connectorId: string) => evApi.startSession({ connectorId }),
+    onSuccess: async (session) => {
+      await queryClient.invalidateQueries({ queryKey: ['ev-stations'] });
+      queryClient.setQueryData(['ev-active-session'], session);
+      navigation.navigate('EvSession', { session });
+    },
+    onError: (err: unknown) => {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        t('common.somethingWentWrong');
+      Alert.alert(t('ev.couldNotStart'), message);
+    },
+  });
+
+  // Memoised rather than `.data ?? []`, which is a fresh array on every
+  // render and so re-derives every marker — and re-frames the map — on each
+  // keystroke in the search box.
+  const partnerRows = useMemo(() => (showPartners ? (partners.data ?? []) : []), [
+    showPartners,
+    partners.data,
+  ]);
+  const stationRows = useMemo(() => (showStations ? (stations.data ?? []) : []), [
+    showStations,
+    stations.data,
+  ]);
+
+  const items: MapItem[] = useMemo(() => {
+    const merged: MapItem[] = [
+      ...partnerRows.map((p) => ({
+        kind: 'partner' as const,
+        id: p.id,
+        distanceKm: p.distanceKm,
+        partner: p,
+      })),
+      ...stationRows.map((s) => ({
+        kind: 'station' as const,
+        id: s.id,
+        distanceKm: s.distanceKm ?? 0,
+        station: s,
+      })),
+    ];
+    return merged.sort((a, b) => a.distanceKm - b.distanceKm);
+  }, [partnerRows, stationRows]);
 
   const markers: MapMarker[] = useMemo(
     () =>
-      rows.map((row) => ({
-        id: row.id,
-        position: { lat: row.latitude, lng: row.longitude },
-        render: (selected) => (
-          <PartnerPin
-            category={row.category}
-            cashbackPercent={row.cashbackPercent}
-            selected={selected}
-          />
-        ),
-      })),
-    [rows],
+      items.map((item) =>
+        item.kind === 'partner'
+          ? {
+              id: item.id,
+              position: { lat: item.partner.latitude, lng: item.partner.longitude },
+              render: (selected: boolean) => (
+                <PartnerPin
+                  category={item.partner.category}
+                  cashbackPercent={item.partner.cashbackPercent}
+                  selected={selected}
+                />
+              ),
+            }
+          : {
+              id: item.id,
+              position: { lat: item.station.latitude, lng: item.station.longitude },
+              render: (selected: boolean) => (
+                <StationPin
+                  freeConnectors={item.station.connectors.filter((c) => c.status === 'AVAILABLE').length}
+                  totalConnectors={item.station.connectors.length}
+                  selected={selected}
+                />
+              ),
+            },
+      ),
+    [items],
   );
 
   const selectFromMap = (id: string) => {
@@ -84,6 +216,10 @@ export function PartnersScreen() {
       listRef.current?.scrollTo({ y: Math.max(0, offset - 80), animated: true });
     }
   };
+
+  const isLoading = (showPartners && partners.isLoading) || (showStations && stations.isLoading);
+  const isError = (showPartners && partners.isError) || (showStations && stations.isError);
+  const hasFilter = Boolean(search) || filter.kind !== 'all';
 
   return (
     <Screen title={t('partners.title')} scroll={false}>
@@ -127,9 +263,6 @@ export function PartnersScreen() {
             placeholderTextColor={color.textTertiary}
             style={[text.body, styles.input, { color: color.textPrimary }]}
             returnKeyType="search"
-            // Same reasoning as `TextField`: Android's autofill service has no
-            // business in a search box, and offering to fill it is what made
-            // every field on the auth screens light up at once.
             autoComplete="off"
             autoCorrect={false}
             importantForAutofill="no"
@@ -153,64 +286,110 @@ export function PartnersScreen() {
         >
           <Chip
             label={t('partners.all')}
-            active={category === null}
-            onPress={() => setCategory(null)}
+            active={filter.kind === 'all'}
+            onPress={() => setFilter({ kind: 'all' })}
+          />
+          <Chip
+            label={t('partners.stations')}
+            icon="flash-outline"
+            active={filter.kind === 'stations'}
+            onPress={() => setFilter(filter.kind === 'stations' ? { kind: 'all' } : { kind: 'stations' })}
           />
           {CATEGORY_ORDER.map((value) => (
             <Chip
               key={value}
               label={t(`partnerCategory.${value}`)}
               icon={CATEGORY_ICONS[value]}
-              active={category === value}
-              onPress={() => setCategory(category === value ? null : value)}
+              active={filter.kind === 'category' && filter.value === value}
+              onPress={() =>
+                setFilter(
+                  filter.kind === 'category' && filter.value === value
+                    ? { kind: 'all' }
+                    : { kind: 'category', value },
+                )
+              }
             />
           ))}
         </ScrollView>
 
+        {activeSession.data ? (
+          <Pressable
+            onPress={() => navigation.navigate('EvSession', { session: activeSession.data ?? undefined })}
+          >
+            <Surface style={{ marginBottom: space[3], backgroundColor: color.availableSurface }}>
+              <View style={styles.cardRow}>
+                <Ionicons name="flash" size={20} color={color.availableText} />
+                <View style={[styles.flex, { marginLeft: space[3] }]}>
+                  <Text style={[text.headline, { color: color.availableText }]}>
+                    {t('ev.chargingNow')}
+                  </Text>
+                  <Text style={[text.caption, { color: color.availableText, marginTop: space[1] }]}>
+                    {t('ev.tapToManage')}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={color.availableText} />
+              </View>
+            </Surface>
+          </Pressable>
+        ) : null}
+
         <SectionHeader title={t('partners.nearYou')} />
 
-        {partners.isLoading ? (
+        {isLoading ? (
           <>
             <Skeleton height={84} style={{ marginBottom: space[3] }} />
             <Skeleton height={84} style={{ marginBottom: space[3] }} />
             <Skeleton height={84} />
           </>
-        ) : partners.isError ? (
+        ) : isError ? (
           <EmptyState
             title={t('common.error')}
             message={t('partners.loadFailed')}
             actionLabel={t('common.retry')}
-            onAction={() => partners.refetch()}
+            onAction={() => {
+              if (showPartners) partners.refetch();
+              if (showStations) stations.refetch();
+            }}
           />
-        ) : rows.length === 0 ? (
+        ) : items.length === 0 ? (
           <EmptyState
             title={t('partners.emptyTitle')}
-            message={
-              search || category ? t('partners.emptyFiltered') : t('partners.emptyNearby')
-            }
-            {...(search || category
+            message={hasFilter ? t('partners.emptyFiltered') : t('partners.emptyNearby')}
+            {...(hasFilter
               ? {
                   actionLabel: t('partners.clearFilters'),
                   onAction: () => {
                     setSearch('');
-                    setCategory(null);
+                    setFilter({ kind: 'all' });
                   },
                 }
               : {})}
           />
         ) : (
-          rows.map((row) => (
+          items.map((item) => (
             <View
-              key={row.id}
+              key={item.id}
               onLayout={(e) => {
-                cardOffsets.current[row.id] = e.nativeEvent.layout.y;
+                cardOffsets.current[item.id] = e.nativeEvent.layout.y;
               }}
             >
-              <PartnerCard
-                partner={row}
-                selected={row.id === selectedId}
-                onPress={() => setSelectedId(row.id === selectedId ? null : row.id)}
-              />
+              {item.kind === 'partner' ? (
+                <PartnerCard
+                  partner={item.partner}
+                  selected={item.id === selectedId}
+                  onPress={() => setSelectedId(item.id === selectedId ? null : item.id)}
+                />
+              ) : (
+                <StationCard
+                  station={item.station}
+                  distanceKm={item.distanceKm}
+                  selected={item.id === selectedId}
+                  onPress={() => setSelectedId(item.id === selectedId ? null : item.id)}
+                  onStart={(c) => start.mutate(c.id)}
+                  startingConnectorId={start.isPending ? (start.variables ?? null) : null}
+                  disabled={!!activeSession.data || start.isPending}
+                />
+              )}
             </View>
           ))
         )}
@@ -292,18 +471,152 @@ function PartnerCard({
         </View>
 
         {selected ? (
-          <Text
-            style={[
-              text.bodySm,
-              { color: color.textSecondary, marginTop: space[3] },
-            ]}
-          >
+          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[3] }]}>
             {t('partners.howToEarn', { percent: partner.cashbackPercent })}
           </Text>
         ) : null}
       </Surface>
     </Pressable>
   );
+}
+
+function StationCard({
+  station,
+  distanceKm,
+  selected,
+  onPress,
+  onStart,
+  startingConnectorId,
+  disabled,
+}: {
+  station: EvStationDto;
+  distanceKm: number;
+  selected: boolean;
+  onPress: () => void;
+  onStart: (connector: EvConnectorDto) => void;
+  startingConnectorId: string | null;
+  disabled: boolean;
+}) {
+  const { color, space, text, radius, glass, premium } = useTheme();
+  const { t } = useTranslation();
+
+  const free = station.connectors.filter((c) => c.status === 'AVAILABLE').length;
+  const total = station.connectors.length;
+  const anyFree = free > 0;
+
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button">
+      <Surface
+        style={{
+          marginBottom: space[3],
+          ...(selected ? { borderColor: premium.brand.primary, borderWidth: 1 } : {}),
+        }}
+      >
+        <View style={styles.cardRow}>
+          <View
+            style={[
+              styles.cardIcon,
+              {
+                backgroundColor: anyFree ? color.availableSurface : color.surfaceSunken,
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <Ionicons
+              name="flash"
+              size={20}
+              color={anyFree ? color.availableText : color.textTertiary}
+            />
+          </View>
+
+          <View style={[styles.flex, { marginLeft: space[3] }]}>
+            <Text style={[text.headline, { color: color.textPrimary }]} numberOfLines={1}>
+              {station.name}
+            </Text>
+            <Text
+              style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}
+              numberOfLines={1}
+            >
+              {station.address}
+            </Text>
+          </View>
+
+          {/* Matches PartnerCard's trailing column — a station's headline
+              number is free bays rather than a cashback percent, but the
+              distance underneath it is the same measure on both card types,
+              which is what lets one sorted list hold both. */}
+          <View style={styles.trailing}>
+            <StatePill
+              state={anyFree ? 'available' : 'pending'}
+              label={t('ev.connectorsFree', { free, total })}
+            />
+            <Text style={[text.caption, { color: color.textTertiary, marginTop: 2 }]}>
+              {formatDistance(distanceKm)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Connector strip: type, power and price at a glance — and the tap
+            target that starts a session. An unavailable bay stays visible but
+            inert, because "there is a CCS2 here and someone is using it" is
+            different information from "there is no CCS2 here". */}
+        <View style={[styles.connectors, { marginTop: space[4], gap: space[2] }]}>
+          {station.connectors.map((c) => {
+            const startable = c.status === 'AVAILABLE' && !disabled;
+            const starting = startingConnectorId === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                onPress={() => onStart(c)}
+                disabled={!startable || starting}
+                accessibilityRole="button"
+                accessibilityLabel={t('ev.startAt', {
+                  connector: c.connectorType.replace('_', ' '),
+                  station: station.name,
+                })}
+                style={({ pressed }) => [
+                  styles.connector,
+                  {
+                    borderColor: startable ? glass.border : color.border,
+                    backgroundColor: startable && pressed ? glass.light : 'transparent',
+                    opacity: startable || starting ? 1 : 0.55,
+                    borderRadius: radius.md,
+                    paddingHorizontal: space[3],
+                    paddingVertical: space[2],
+                    gap: space[2],
+                  },
+                ]}
+              >
+                {starting ? (
+                  <ActivityIndicator size="small" color={color.primary} />
+                ) : (
+                  <View style={[styles.statusDot, { backgroundColor: dotFor(c.status, color) }]} />
+                )}
+                <Text style={[text.caption, { color: color.textPrimary }]}>
+                  {c.connectorType.replace('_', ' ')}
+                </Text>
+                <Text style={[text.caption, { color: color.textTertiary }]}>
+                  {Number(c.powerKw)} kW · {formatAmd(c.pricePerKwh)}
+                </Text>
+                {startable ? (
+                  <Ionicons name="play-circle" size={16} color={color.primary} />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      </Surface>
+    </Pressable>
+  );
+}
+
+function dotFor(status: string, color: ReturnType<typeof useTheme>['color']) {
+  const tone = evStatusTone(status);
+  return tone === 'available'
+    ? color.availableFill
+    : tone === 'reserved'
+      ? color.reservedFill
+      : color.textTertiary;
 }
 
 function Chip({
@@ -379,4 +692,7 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   cardIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   trailing: { alignItems: 'flex-end' },
+  connectors: { flexDirection: 'row', flexWrap: 'wrap' },
+  connector: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
 });

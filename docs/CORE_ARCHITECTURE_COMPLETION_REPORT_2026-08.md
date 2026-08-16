@@ -337,9 +337,10 @@ Reproduced from `docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md` §4:
 
 Branch: `claude/tutak-loyalty-mvp-e485jm`. This work is layered on top of
 the already-committed migration-plan document
-(`docs: migration plan for the core business architecture spec`). All
-implementation described above is committed in <COMMIT_COUNT> follow-up
-commit(s) on the same branch; working tree is clean after each. Nothing has
-been pushed beyond what the user has already reviewed at the time this
-report is read — push status should be confirmed against `git status`
-at the moment of reading, not assumed from this document.
+(`docs: migration plan for the core business architecture spec`,
+commit `e318bf7`). All implementation described above is committed in one
+follow-up commit, `0414085` ("feat(core): implement core business
+architecture spec..."), 44 files changed. Working tree is clean as of that
+commit. Nothing has been pushed to the remote by this session — push
+status should be confirmed against `git status`/`git log origin/...` at
+the moment this report is read, not assumed from this document.

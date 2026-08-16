@@ -117,7 +117,9 @@ describe('Partner integrations (integration)', () => {
         websiteUrl: 'https://example.am',
       });
 
-      expect(() => controller.verifyWebsite(owner, integration.id)).toThrow(ForbiddenException);
+      expect(() => controller.verifyWebsite(owner, partner.id, integration.id)).toThrow(
+        ForbiddenException,
+      );
     });
   });
 
@@ -202,9 +204,39 @@ describe('Partner integrations (integration)', () => {
         websiteUrl: 'https://example.am',
       });
 
-      const verified = await controller.verifyWebsite(await admin(), integration.id);
+      const verified = await controller.verifyWebsite(await admin(), partner.id, integration.id);
       expect(verified.status).toBe(PartnerIntegrationStatus.ACTIVE);
       expect(verified.websiteVerifiedAt).not.toBeNull();
+    });
+
+    /**
+     * Launch-readiness audit (2026-08-16): `markWebsiteVerified` read
+     * `integrationId` alone and never checked it actually belonged to the
+     * URL's `partnerId` — the same class of mismatch `create()` already
+     * guards against for `partnerBranchId` (see "rejects a branch that
+     * belongs to a different partner" above). Not a live escalation (only a
+     * platform admin, who may already act on any partner, reaches this
+     * route) but a wrong id in the URL used to silently activate a
+     * *different* partner's integration instead of failing.
+     */
+    it('refuses to verify an integration that belongs to a different partner', async () => {
+      const partner = await createPartner(prisma);
+      const otherPartner = await createPartner(prisma);
+      const owner = await ownerOf(partner.id);
+      const integration = await controller.create(owner, partner.id, {
+        type: PartnerIntegrationType.WEBSITE,
+        websiteUrl: 'https://example.am',
+      });
+
+      await expect(
+        controller.verifyWebsite(await admin(), otherPartner.id, integration.id),
+      ).rejects.toThrow(BadRequestException);
+
+      const unchanged = await prisma.partnerIntegration.findUniqueOrThrow({
+        where: { id: integration.id },
+      });
+      expect(unchanged.status).toBe(PartnerIntegrationStatus.PENDING_VERIFICATION);
+      expect(unchanged.websiteVerifiedAt).toBeNull();
     });
 
     /**
@@ -225,9 +257,9 @@ describe('Partner integrations (integration)', () => {
       const owner = await ownerOf(partner.id);
       const integration = await controller.create(owner, partner.id, { type });
 
-      await expect(controller.verifyWebsite(await admin(), integration.id)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        controller.verifyWebsite(await admin(), partner.id, integration.id),
+      ).rejects.toThrow(BadRequestException);
 
       const unchanged = await prisma.partnerIntegration.findUniqueOrThrow({
         where: { id: integration.id },

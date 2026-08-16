@@ -32,9 +32,10 @@ export class PartnerIntegrationsController {
   @Post(':integrationId/verify-website')
   verifyWebsite(
     @CurrentUser() admin: RequestUser,
+    @Param('partnerId') partnerId: string,
     @Param('integrationId') integrationId: string,
   ) {
     assertPlatformAdmin(admin, 'Verifying a partner website');
-    return this.integrations.markWebsiteVerified(integrationId, admin.id);
+    return this.integrations.markWebsiteVerified(partnerId, integrationId, admin.id);
   }
 }

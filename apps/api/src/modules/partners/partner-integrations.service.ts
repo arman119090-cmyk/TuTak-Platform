@@ -83,7 +83,7 @@ export class PartnerIntegrationsService {
    * auto-trusted), so which admin attested to which URL, and when, has to
    * be on the record.
    */
-  async markWebsiteVerified(integrationId: string, actorUserId: string) {
+  async markWebsiteVerified(partnerId: string, integrationId: string, actorUserId: string) {
     // GitHub issue #28 (MEDIUM, 2026-08-16): this used to update any
     // integration by id straight to ACTIVE with no type check. An
     // API/POS/EV_CHARGING/OCPI row — none of which have any real
@@ -97,6 +97,19 @@ export class PartnerIntegrationsService {
     });
     if (!existing) {
       throw new BadRequestException('Integration not found');
+    }
+    // Launch-readiness audit (2026-08-16): the route is
+    // `partners/:partnerId/integrations/:integrationId/verify-website`, but
+    // this method never checked that `integrationId` actually belongs to
+    // `partnerId` — the same `dto.partnerBranchId` mismatch this file
+    // already guards against in `create()`. Not currently reachable by
+    // anyone but a platform admin (who may act on any partner regardless),
+    // so no live privilege escalation existed, but a wrong id in the URL
+    // silently activated a *different* partner's integration instead of
+    // failing — worth closing as the route's own authorization surface, not
+    // just its type surface.
+    if (existing.partnerId !== partnerId) {
+      throw new BadRequestException('This integration does not belong to the given partner');
     }
     if (existing.type !== PartnerIntegrationType.WEBSITE) {
       throw new BadRequestException(

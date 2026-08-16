@@ -1,5 +1,11 @@
 # TuTak core business architecture — post-implementation hardening report
 
+> **Extended, not superseded, by `docs/LAUNCH_READINESS_2026-08-16.md`.**
+> Everything below stayed accurate through 20 further commits (OTP-first
+> auth, the PurchaseIntent UI, the QR→PurchaseIntent migration, the Partner
+> Integrations dashboard) — that document re-verifies all of it and records
+> what changed since.
+
 Companion to `docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md` (legacy-conflict
 classification, architectural decisions) and
 `docs/CORE_ARCHITECTURE_COMPLETION_REPORT_2026-08.md` (the original

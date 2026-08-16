@@ -409,4 +409,43 @@ describe('Referral abuse (integration)', () => {
       );
     });
   });
+
+  /**
+   * Launch-readiness audit finding: "exactly one owner" for a referral code
+   * and an invite's referrer (documented in schema.prisma, enforced only by
+   * every current call site writing a single field) had no database backing
+   * — unlike `ledger_accounts_single_owner`, the identical shape of
+   * invariant for `LedgerAccount.userId`/`partnerId`. Application code never
+   * hits this path today, so these tests go around it deliberately, the same
+   * way `ledger.int-spec.ts` proves `ledger_postings` is append-only by
+   * attempting the forbidden write directly with raw SQL.
+   */
+  describe('single-owner database constraints', () => {
+    it('refuses a referral code with both a user and a partner owner', async () => {
+      const person = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `INSERT INTO "referral_codes" (id, "userId", "partnerId", code)
+           VALUES (gen_random_uuid(), '${person.user.id}', '${partner.id}', 'DUAL-OWNER-CODE')`,
+        ),
+      ).rejects.toThrow(/referral_codes_single_owner/);
+    });
+
+    it('refuses a referral invite with both a user and a partner referrer', async () => {
+      const referrerUser = await createCustomer(prisma);
+      const referrerPartner = await createPartner(prisma);
+      const referee = await createCustomer(prisma);
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `INSERT INTO "referral_invites"
+             (id, "referrerUserId", "referrerPartnerId", "refereeUserId")
+           VALUES
+             (gen_random_uuid(), '${referrerUser.user.id}', '${referrerPartner.id}', '${referee.user.id}')`,
+        ),
+      ).rejects.toThrow(/referral_invites_single_referrer/);
+    });
+  });
 });

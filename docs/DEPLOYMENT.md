@@ -19,6 +19,7 @@ deliberate, and it is the shape of the remaining work: none of it is code.
 | An SMS carrier (`SMS_ENDPOINT`) | `SmsModule` | A verification code written to stdout is indistinguishable from one that was delivered — until a real user is locked out by it. |
 | Push delivery (`PUSH_ENABLED=true`) | `PushModule` | Nobody reports a notification they never knew was coming, so a silently disabled channel stays broken indefinitely. |
 | `CORS_ORIGINS` | `main.ts` | An unset value used to mean "reflect any origin", which with credentials enabled is a fully permissive CORS policy. |
+| `REDIS_URL` | `RedisModule` | The variable has a `redis://localhost:6379` default so local dev never needs an env file — the same default in production would silently point advisory locks and the sweep queue at an empty local instance instead of the real shared one. Added 2026-08-16, launch-readiness pass. |
 
 `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are validated at 32 characters
 minimum by `env.validation.ts` in every environment.

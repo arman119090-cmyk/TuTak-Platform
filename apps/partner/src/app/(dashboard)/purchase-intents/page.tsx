@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PurchaseIntentStatus } from '@tutak/shared-types';
+import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
+import { PurchaseIntentDto, PurchaseIntentStatus } from '@tutak/shared-types';
 import { Badge, Button, EmptyState, Input, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
@@ -23,6 +23,101 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
     <Badge tone={secondsLeft < 60 ? 'danger' : 'pending'}>
       {m}:{String(s).padStart(2, '0')}
     </Badge>
+  );
+}
+
+/** True once the client clock alone is enough to know the window is over — used to disable Confirm/Reject before the server agrees. */
+function useExpired(expiresAt: string): boolean {
+  const [expired, setExpired] = useState(() => +new Date(expiresAt) <= Date.now());
+  useEffect(() => {
+    if (expired) return;
+    const id = setInterval(() => {
+      if (+new Date(expiresAt) <= Date.now()) setExpired(true);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt, expired]);
+  return expired;
+}
+
+function IntentRow({
+  intent,
+  confirm,
+  reject,
+  rejecting,
+  reasonCode,
+  setReasonCode,
+  onStartReject,
+  onCancelReject,
+}: {
+  intent: PurchaseIntentDto;
+  confirm: UseMutationResult<PurchaseIntentDto, unknown, string>;
+  reject: UseMutationResult<PurchaseIntentDto, unknown, string>;
+  rejecting: boolean;
+  reasonCode: string;
+  setReasonCode: (v: string) => void;
+  onStartReject: () => void;
+  onCancelReject: () => void;
+}) {
+  // The 3-minute window is a server rule (reject() now enforces it the
+  // same way confirm() always has — see purchase-intents.service.ts), but
+  // a cashier should never be able to *tap* Confirm/Reject on a row the
+  // client already knows is past its deadline: disabling here avoids a
+  // request that can only ever come back as "this intent has expired."
+  const expired = useExpired(intent.expiresAt);
+
+  return (
+    <Tr>
+      <Td className="font-mono text-[12px] text-faint">{intent.id.slice(-8).toUpperCase()}</Td>
+      <Td align="right" className="tabular font-medium">
+        {num(intent.grossAmount)} ֏
+      </Td>
+      <Td align="right" className="tabular">
+        {Number(intent.bonusAmountRequested) > 0 ? (
+          <span className="text-reserved-text">−{num(intent.bonusAmountRequested)}</span>
+        ) : (
+          <span className="text-faint">—</span>
+        )}
+      </Td>
+      <Td>
+        <Countdown expiresAt={intent.expiresAt} />
+      </Td>
+      <Td align="right">
+        {expired ? (
+          <span className="text-[12px] text-faint">Expiring…</span>
+        ) : rejecting ? (
+          <div className="flex items-center justify-end gap-2">
+            <Input
+              autoFocus
+              placeholder="Reason"
+              value={reasonCode}
+              onChange={(e) => setReasonCode(e.target.value)}
+              className="h-8 w-40 text-[13px]"
+            />
+            <Button
+              size="sm"
+              variant="destructive"
+              loading={reject.isPending}
+              disabled={!reasonCode}
+              onClick={() => reject.mutate(intent.id)}
+            >
+              Confirm decline
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onCancelReject}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={onStartReject}>
+              Reject
+            </Button>
+            <Button size="sm" loading={confirm.isPending} onClick={() => confirm.mutate(intent.id)}>
+              Confirm
+            </Button>
+          </div>
+        )}
+      </Td>
+    </Tr>
   );
 }
 
@@ -63,6 +158,15 @@ export default function PurchaseIntentsPage() {
       setReasonCode('');
       queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] });
     },
+    // A reject can now fail because the 3-minute window closed underneath
+    // it (the server expires the row instead of rejecting it past
+    // deadline) — the row still needs to leave this queue, it just didn't
+    // leave it the way this tap intended.
+    onError: () => {
+      setRejectingId(null);
+      setReasonCode('');
+      queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] });
+    },
   });
 
   const items = intents ?? [];
@@ -92,69 +196,20 @@ export default function PurchaseIntentsPage() {
           </thead>
           <tbody>
             {items.map((intent) => (
-              <Tr key={intent.id}>
-                <Td className="font-mono text-[12px] text-faint">
-                  {intent.id.slice(-8).toUpperCase()}
-                </Td>
-                <Td align="right" className="tabular font-medium">
-                  {num(intent.grossAmount)} ֏
-                </Td>
-                <Td align="right" className="tabular">
-                  {Number(intent.bonusAmountRequested) > 0 ? (
-                    <span className="text-reserved-text">−{num(intent.bonusAmountRequested)}</span>
-                  ) : (
-                    <span className="text-faint">—</span>
-                  )}
-                </Td>
-                <Td>
-                  <Countdown expiresAt={intent.expiresAt} />
-                </Td>
-                <Td align="right">
-                  {rejectingId === intent.id ? (
-                    <div className="flex items-center justify-end gap-2">
-                      <Input
-                        autoFocus
-                        placeholder="Reason"
-                        value={reasonCode}
-                        onChange={(e) => setReasonCode(e.target.value)}
-                        className="h-8 w-40 text-[13px]"
-                      />
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        loading={reject.isPending}
-                        disabled={!reasonCode}
-                        onClick={() => reject.mutate(intent.id)}
-                      >
-                        Confirm decline
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          setRejectingId(null);
-                          setReasonCode('');
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-end gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => setRejectingId(intent.id)}>
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        loading={confirm.isPending}
-                        onClick={() => confirm.mutate(intent.id)}
-                      >
-                        Confirm
-                      </Button>
-                    </div>
-                  )}
-                </Td>
-              </Tr>
+              <IntentRow
+                key={intent.id}
+                intent={intent}
+                confirm={confirm}
+                reject={reject}
+                rejecting={rejectingId === intent.id}
+                reasonCode={reasonCode}
+                setReasonCode={setReasonCode}
+                onStartReject={() => setRejectingId(intent.id)}
+                onCancelReject={() => {
+                  setRejectingId(null);
+                  setReasonCode('');
+                }}
+              />
             ))}
           </tbody>
         </Table>

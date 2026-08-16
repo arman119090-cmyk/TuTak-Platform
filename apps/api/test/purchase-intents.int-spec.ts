@@ -277,6 +277,42 @@ describe('PurchaseIntents (integration)', () => {
       expect(second.rejectedAt?.getTime()).toBe(first.rejectedAt?.getTime());
     });
 
+    /**
+     * NEXT_CLAUDE_TASK.md requirement 11 / GitHub issue #28: `confirm()`
+     * has always self-checked `expiresAt` before settling; `reject()` did
+     * not, so a cashier's decline arriving after the 3-minute window but
+     * before the sweep had processed the row flipped it straight to
+     * REJECTED instead of EXPIRED — the wrong terminal state for a window
+     * that had already closed.
+     */
+    it('reject() past the 3-minute window expires the intent instead of rejecting it', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      // Past its window, but not yet touched by the sweep — the exact race
+      // a cashier's late tap actually hits in production.
+      await prisma.purchaseIntent.update({
+        where: { id: intent.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      await expect(
+        purchaseIntents.reject(intent.id, staff.id, { reasonCode: 'CUSTOMER_CANCELLED' }),
+      ).rejects.toThrow('This purchase intent has expired');
+
+      const final = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(final.status).toBe(PurchaseIntentStatus.EXPIRED);
+      expect(final.rejectionReason).toBeNull();
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000'); // fully released either way
+    });
+
     it('expireStale() releases an unconfirmed intent past its 3-minute window', async () => {
       const { user, wallet } = await fundedCustomer('1000');
       const partner = await createPartner(prisma);

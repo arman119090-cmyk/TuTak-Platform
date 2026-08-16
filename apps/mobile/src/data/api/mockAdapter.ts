@@ -386,7 +386,13 @@ function handle(
         confirmedAt: new Date().toISOString(),
       };
       state.purchaseIntents = state.purchaseIntents.map((pi) => (pi.id === id ? confirmed : pi));
-      const greenShare = String(Math.round(Number(confirmed.grossAmount) * 0.05 * 100) / 100);
+      // Canonical split (docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md):
+      // the negotiated rate defines the *contribution pool*, not the
+      // customer's GREEN bonus directly — GREEN is only 20% of that pool.
+      // This used to credit the whole pool as GREEN, showing a demo
+      // purchase's immediately-available bonus at 5x the canonical amount.
+      const pool = Number(confirmed.grossAmount) * (confirmed.negotiatedRateBps / 10_000);
+      const greenShare = String(Math.round(pool * 0.2 * 100) / 100);
       state.wallet = {
         ...state.wallet,
         availableBonus: sum(state.wallet.availableBonus, greenShare),

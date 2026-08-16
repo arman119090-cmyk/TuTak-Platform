@@ -117,7 +117,7 @@ detail preserved in the agent's report; summarized here:
 | # | Path | Base | Formula | Ledger | Self-dealing check | Classification |
 |---|------|------|---------|--------|---------------------|-----------------|
 | 1 | `POST /purchase-intents/:id/confirm` | gross | 20/30/20/30 pool | Full, atomic (fixed this pass) | `isAffiliated` | **CURRENT CANONICAL** |
-| 2 | `POST /qr/redeem` | net/paid | flat accrual rate | Only if `FEATURE_QR_LEDGER_MIRROR=true` (off by default) | `isAffiliated` (was `isMember` — **fixed 2026-08-16**, same gap class) | **COMPATIBILITY ADAPTER** — kept running deliberately (migration doc §3); economics divergence is **BUSINESS DECISION REQUIRED** |
+| 2 | `POST /qr/redeem` | net/paid | flat accrual rate | Only if `FEATURE_QR_LEDGER_MIRROR=true` (off by default) | `isAffiliated` (was `isMember` — **fixed 2026-08-16**, same gap class) | **COMPATIBILITY ADAPTER, no longer reachable from the normal customer purchase flow (fixed 2026-08-16, `docs/NEXT_CLAUDE_TASK.md`).** `ScanQrScreen.tsx` used to call `qrApi.redeem()` directly; it now parses the scanned code as a static, amount-free partner identifier (`TUTAK-PAY:<partnerId>`) and opens a `PurchaseIntent` instead — the customer enters the amount themselves, a cashier can only confirm/reject it, and settlement runs the same canonical §12-16 pool split as every other PurchaseIntent. The partner dashboard's "Payment QR" page was changed the same way: it used to collect an amount and issue a `DYNAMIC_INVOICE`; it now shows the same static partner code, no amount entry. The backend endpoint, DTOs, and mock handler are untouched and still work — kept exactly as before for whatever legacy compatibility still needs them — they're just no longer wired to any UI a normal customer reaches. |
 | 3 | `POST /ev/sessions/:id/stop` | net/paid | flat accrual rate | Never | Session unblocked, bonus **earning** denied via `isAffiliated` — **fixed 2026-08-16**, revised same day by explicit business decision not to block the session itself | **FASTCHARGE-OCPI SPECIAL CASE** for the metering mechanics; also the first working example of the integrated-partner auto-finalization rule — see §M item 8 |
 | 4 | `POST /payments` → settlement job | net-of-refund | flat accrual rate | Yes | **Was none — fixed this pass** | Pre-existing, unrelated "Financial Core" subsystem (predates tonight's spec); **fixed** as the same vulnerability class already closed twice elsewhere |
 | 5 | `POST /refunds` | reversal of #4 | reversal | Yes | N/A, admin-only | CURRENT CANONICAL for its own pipeline |
@@ -629,6 +629,49 @@ surfaced by this pass's broader entry-point/registration audits:
    and the trust boundary around a path that mints real money — held for a
    dedicated, explicitly-scoped session once a real partner integration
    exists to specify against.
+9. ~~**Normal customer QR purchase used the legacy `qr/redeem` financial
+   path instead of `PurchaseIntent`**~~ — **RESOLVED 2026-08-16**
+   (`docs/NEXT_CLAUDE_TASK.md`). `ScanQrScreen.tsx` (mobile) and the
+   partner dashboard's "Payment QR" page both used to carry an amount
+   through the scan — a cashier typed it in, generated a `DYNAMIC_INVOICE`,
+   and the customer's scan charged it directly via
+   `QrPaymentsService.redeem()`'s flat-rate formula. Neither side of the
+   code now carries an amount: the partner dashboard shows a static
+   `TUTAK-PAY:<partnerId>` payload (no expiry, no per-purchase issuance);
+   scanning it opens `CreatePurchaseIntentScreen`, where the customer
+   enters the gross amount and optional bonus spend themselves, exactly
+   like the map's existing "Pay here" button. Settlement runs
+   `PurchaseIntentsService`'s canonical §12-16 pool split — no second
+   formula was introduced. `qrApi.redeem()`/`qrApi.issue()` and the
+   `/qr/redeem`/`/qr/issue` backend endpoints are untouched (row #2 of §D's
+   table), just no longer reachable from either client. Regression:
+   `ScanQrScreen.test.tsx` proves the scan handler never calls
+   `qrApi.redeem`; `partnerPayQr.test.ts` covers the payload parser.
+10. ~~**`reject()` had no expiry check, unlike `confirm()`**~~ —
+    **RESOLVED 2026-08-16** (`docs/NEXT_CLAUDE_TASK.md` requirement 11;
+    independently confirmed by GitHub issue #28). A cashier's decline
+    arriving after the 3-minute window but before the sweep reached the row
+    flipped it straight to `REJECTED` instead of `EXPIRED` — the wrong
+    terminal state for a decision made outside its valid window.
+    `reject()` now self-checks `expiresAt` and calls the same `expireOne`
+    `confirm()` already used, verified via `git stash` to reproduce the
+    exact pre-fix `REJECTED` outcome and pass after the fix
+    (`purchase-intents.int-spec.ts` › "reject() past the 3-minute window
+    expires the intent instead of rejecting it"). The partner dashboard's
+    queue also now disables Confirm/Reject locally the moment its own
+    countdown reaches zero, rather than waiting on a request that could
+    only ever come back as "already expired."
+11. ~~**Demo PurchaseIntent auto-confirm credited the whole contribution
+    pool as GREEN, not the 20% canonical slice**~~ — **RESOLVED
+    2026-08-16** (`docs/NEXT_CLAUDE_TASK.md` requirement 12; GitHub issue
+    #28 LOW finding). `mockAdapter.ts`'s auto-confirm branch computed
+    `grossAmount × 0.05` directly as the customer's available GREEN bonus;
+    for a 5% partner rate that is the entire contribution pool, five times
+    the canonical 20% share. Fixed to derive the pool from the intent's own
+    snapshotted `negotiatedRateBps` and take 20% of it, matching
+    `PurchaseIntentsService.settlePurchase()`'s real math. Regression:
+    `mockAdapter.test.ts` › "credits the canonical 20% GREEN share..."
+    pins `partner-sas`'s real 5% mock rate and asserts 100, not 500.
 
 ## N. Legal/accounting items
 

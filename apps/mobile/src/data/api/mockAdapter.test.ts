@@ -159,6 +159,43 @@ describe('mockAdapter', () => {
     });
   });
 
+  describe('purchase intents', () => {
+    afterEach(() => jest.useRealTimers());
+
+    /**
+     * NEXT_CLAUDE_TASK.md item 12 / audit issue #28: the demo auto-confirm
+     * used to credit the *entire* contribution pool as GREEN — for a 5%
+     * partner rate on a 10,000 gross purchase that was 500, when the
+     * canonical split (20/30/20/30) makes only 20% of the pool immediately
+     * available, i.e. 100. Pinned to `partner-sas`'s real mock rate (5%,
+     * `cashbackPercent: 5` in mockData.ts) so this fails the moment either
+     * number drifts.
+     */
+    it('credits the canonical 20% GREEN share on auto-confirm, not the whole contribution pool', async () => {
+      const created = (
+        await call('post', '/purchase-intents', { partnerId: 'partner-sas', grossAmount: '10000' })
+      ).data.data;
+      expect(created.negotiatedRateBps).toBe(500); // pool = 10000 * 5% = 500
+
+      const before = Number((await call('get', '/wallet/me')).data.data.availableBonus);
+
+      // Fakes only `Date`, not `setTimeout` — the adapter's own LATENCY_MS
+      // delay still needs real timers to resolve, or every `call()` below
+      // hangs forever waiting on a `setTimeout` that fake time never fires.
+      jest.useFakeTimers({ doNotFake: ['setTimeout', 'setImmediate', 'nextTick', 'clearTimeout'] });
+      jest.setSystemTime(Date.now() + 5000);
+      const confirmed = (await call('get', `/purchase-intents/${created.id}`)).data.data;
+      jest.useRealTimers();
+
+      expect(confirmed.status).toBe('CONFIRMED');
+      const after = Number((await call('get', '/wallet/me')).data.data.availableBonus);
+      const credited = Math.round((after - before) * 100) / 100;
+
+      expect(credited).toBe(100); // 20% of the 500 pool
+      expect(credited).not.toBe(500); // the pre-fix value (the whole pool)
+    });
+  });
+
   describe('the partner map', () => {
     /*
      * The chips and the search box are the demo's most easily faked controls:

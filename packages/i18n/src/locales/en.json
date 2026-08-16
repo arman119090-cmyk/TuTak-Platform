@@ -122,7 +122,8 @@
     "cameraTitle": "Camera access needed",
     "cameraMessage": "TuTak uses your camera only to read QR codes for payments.",
     "allowCamera": "Allow camera",
-    "demoSimulateScan": "Simulate a scan (demo)"
+    "demoSimulateScan": "Simulate a scan (demo)",
+    "invalidCode": "This isn't a TuTak partner code. Ask staff for the payment code and try again."
   },
   "ev": {
     "stations": "Charging stations",

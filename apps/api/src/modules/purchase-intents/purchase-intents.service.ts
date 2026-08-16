@@ -492,11 +492,23 @@ export class PurchaseIntentsService {
    * Spec §26: staff reject and give a reason; nothing about the
    * customer-entered amounts is ever rewritten by staff — only accepted or
    * refused as a whole.
+   *
+   * The 3-minute window is enforced here exactly as `confirm()` enforces
+   * it — expire first, then refuse the action — because without this check
+   * a cashier could still reject an intent whose deadline had already
+   * passed but that the expiry sweep hadn't reached yet: the row would end
+   * up `REJECTED` by a decision made outside the window it was valid for,
+   * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
+   * confirmed by independent audit — GitHub issue #28).
    */
   async reject(intentId: string, staffUserId: string, dto: RejectPurchaseIntentDto) {
     const intent = await this.findByIdOrThrow(intentId);
     if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
       return intent; // idempotent, same reasoning as confirm()
+    }
+    if (intent.expiresAt < new Date()) {
+      await this.expireOne(intent);
+      throw new BadRequestException('This purchase intent has expired');
     }
 
     const claimed = await this.prisma.purchaseIntent.updateMany({

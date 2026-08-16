@@ -16,6 +16,7 @@ import { TransactionsService } from '../src/modules/transactions/transactions.se
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../src/modules/wallet/deferred-bonus-lot.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
+import { Decimal } from '@prisma/client/runtime/library';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
@@ -690,6 +691,74 @@ describe('PurchaseIntents (integration)', () => {
       const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: user.id } });
       expect(lot.status).toBe(DeferredBonusLotStatus.DEFERRED);
       expect(lot.progressTurnover.toFixed(4)).toBe('0.0000'); // not 10000 — its own purchase never counts
+    });
+
+    it('sums both contributions when two purchases advance the same open lot concurrently, never losing one', async () => {
+      // GitHub issue #28: `advanceExistingLots` used to read
+      // `progressTurnover`, compute `old + grossAmount` in application
+      // code, and write that absolute value back. The enclosing
+      // `settlePurchase` transaction runs at Postgres's default READ
+      // COMMITTED, not Serializable, so two purchases confirmed at the
+      // same instant — both progressing this same lot — could each read
+      // the same starting value and the second commit would silently
+      // overwrite the first's contribution instead of stacking on it.
+      //
+      // Driven directly against `DeferredBonusLotService`, with each
+      // transaction's timing explicitly controlled, rather than through
+      // two full `purchaseIntents.confirm()` calls: the race window this
+      // bug depends on — T2 reading before T1 commits, then T2's write
+      // blocking on T1's row lock and finally landing *after* T1 — is real
+      // but narrow relative to everything else `settlePurchase` does
+      // first (reservation settle, transaction completion, green accrual),
+      // so relying on `Promise.all` incidental scheduling to hit it would
+      // make this test flaky rather than a reliable proof either way.
+      const { user } = await createCustomer(prisma);
+      const lot = await prisma.deferredBonusLot.create({
+        data: {
+          userId: user.id,
+          sourceTransactionId: 'seed-tx',
+          amount: '150',
+          requiredTurnover: '54000',
+          progressTurnover: '0',
+          deadline: new Date(Date.now() + 90 * 24 * 60 * 60_000),
+        },
+      });
+
+      let releaseFirst: () => void = () => undefined;
+      const heldOpen = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      // T1: advances the lot by 10000, then stays open — holding its row
+      // lock on the lot — until explicitly released below.
+      const first = prisma.$transaction(async (tx) => {
+        await deferredLots.advanceExistingLots(user.id, new Decimal('10000'), tx);
+        await heldOpen;
+      });
+
+      // Give T1 time to complete its read-and-write and reach `heldOpen`
+      // before T2 starts. T2 now reads the lot with T1's write uncommitted
+      // and therefore invisible under READ COMMITTED — the exact stale
+      // read the bug depends on.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const second = prisma.$transaction(async (tx) => {
+        await deferredLots.advanceExistingLots(user.id, new Decimal('15000'), tx);
+      });
+
+      // T2's own write now blocks on T1's row lock. Give it time to reach
+      // and block there before releasing T1.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      releaseFirst();
+      await Promise.all([first, second]);
+
+      const lotAfter = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      // Well under the 54000 threshold, so this stays a clean addition
+      // check — no unlock-race complexity mixed in. The old buggy code
+      // reliably produces 15000 here (T2's write, computed from its stale
+      // pre-T1 read, overwrites T1's committed 10000); the fix produces
+      // the true sum regardless of which side's write lands last.
+      expect(lotAfter.progressTurnover.toFixed(4)).toBe('25000.0000');
+      expect(lotAfter.status).toBe(DeferredBonusLotStatus.DEFERRED);
     });
 
     it('advances every existing open lot before creating the new one, in that order', async () => {

@@ -45,23 +45,36 @@ export class DeferredBonusLotService {
     });
 
     for (const lot of lots) {
-      const progress = lot.progressTurnover.plus(grossAmount);
-      if (progress.lessThan(lot.requiredTurnover)) {
-        await tx.deferredBonusLot.update({
-          where: { id: lot.id },
-          data: { progressTurnover: progress },
-        });
+      // Atomic DB-side increment, not a read-modify-write of a JS-computed
+      // absolute value: the enclosing transaction (PurchaseIntentsService
+      // .settlePurchase) runs at Postgres's default READ COMMITTED, not
+      // Serializable, so two purchases confirmed concurrently for the same
+      // customer — each progressing this same lot — would otherwise both
+      // read the same starting `progressTurnover`, both compute their own
+      // "old + this purchase's amount", and the second UPDATE to commit
+      // would silently overwrite the first's contribution rather than
+      // stacking on top of it, permanently losing turnover the customer
+      // genuinely earned. `{ increment: grossAmount }` is evaluated by
+      // Postgres against the row's current value at write time, so this is
+      // correct regardless of isolation level or how many purchases land at
+      // once.
+      const updated = await tx.deferredBonusLot.update({
+        where: { id: lot.id },
+        data: { progressTurnover: { increment: grossAmount } },
+      });
+      if (updated.progressTurnover.lessThan(updated.requiredTurnover)) {
         continue;
       }
 
       // Threshold crossed: unlock. Conditional on still being DEFERRED so a
       // concurrent second purchase applying to the same lot cannot unlock it
       // twice — mirrors the claim-then-act pattern the rest of this
-      // codebase uses for exactly this reason.
+      // codebase uses for exactly this reason. `progressTurnover` was
+      // already committed atomically above; nothing left to set here but
+      // the status transition.
       const claimed = await tx.deferredBonusLot.updateMany({
         where: { id: lot.id, status: DeferredBonusLotStatus.DEFERRED },
         data: {
-          progressTurnover: progress,
           status: DeferredBonusLotStatus.AVAILABLE,
           unlockedAt: now,
         },

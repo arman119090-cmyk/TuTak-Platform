@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PartnerStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { isCommissionRateBps } from '../../common/validators/is-commission-rate-bps.validator';
 import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { haversineKm, toPartnerCategory, type NearbyPartner } from './geo';
@@ -10,6 +11,12 @@ export class PartnersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreatePartnerDto) {
+    // The DTO already validates this; re-checked here so a caller that
+    // builds a Partner without going through the HTTP boundary (a script, a
+    // future internal service) still can't write an off-grid rate.
+    if (!isCommissionRateBps(dto.bonusAccrualRateBps)) {
+      throw new BadRequestException('bonusAccrualRateBps must be on the 0.5% commission grid');
+    }
     const ownerRole = await this.prisma.role.findUniqueOrThrow({
       where: { name: RoleName.PARTNER_OWNER },
     });
@@ -66,6 +73,9 @@ export class PartnersService {
    * partner's owner immediately — approval controls trading, not membership.
    */
   async apply(dto: ApplyPartnerDto, applicantUserId: string) {
+    if (!isCommissionRateBps(dto.bonusAccrualRateBps)) {
+      throw new BadRequestException('bonusAccrualRateBps must be on the 0.5% commission grid');
+    }
     const ownerRole = await this.prisma.role.findUniqueOrThrow({
       where: { name: RoleName.PARTNER_OWNER },
     });

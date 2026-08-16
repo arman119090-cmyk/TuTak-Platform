@@ -1,4 +1,5 @@
-import { IsInt, IsString, Length, Max, Min } from 'class-validator';
+import { IsString, Length } from 'class-validator';
+import { IsCommissionRateBps } from '../../../common/validators/is-commission-rate-bps.validator';
 
 /**
  * Self-service application — spec §2. Unlike `CreatePartnerDto` (admin-only,
@@ -30,8 +31,6 @@ export class ApplyPartnerDto {
    * self-set — this is a starting point for that conversation, applied only
    * once an admin approves.
    */
-  @IsInt()
-  @Min(0)
-  @Max(10_000)
+  @IsCommissionRateBps()
   bonusAccrualRateBps: number;
 }

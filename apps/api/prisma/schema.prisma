@@ -654,7 +654,11 @@ model Partner {
   displayName              String
   taxId                    String        @unique
   category                 String
-  bonusAccrualRateBps      Int           @default(300) // basis points, e.g. 300 = 3%
+  /// Basis points, e.g. 300 = 3%. Restricted to the fixed rate card — 0.5%
+  /// steps from 0.5% to 20% (50..2000, step 50) — enforced by
+  /// `IsCommissionRateBps` at the API boundary and by
+  /// `partners_commission_rate_on_grid` (CHECK) at the database boundary.
+  bonusAccrualRateBps      Int           @default(300)
   /// The platform's cut of a captured payment, in basis points. Independent
   /// of bonusAccrualRateBps — one prices what the customer earns, the other
   /// what the platform keeps, and conflating them would make either one

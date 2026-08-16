@@ -292,12 +292,22 @@ export class PurchaseIntentsService {
     const policy = this.config.get('purchasePolicy', { infer: true });
 
     // Spec §12: the pool is gross × the *snapshotted* negotiated rate — not
-    // whatever the partner's rate is today.
-    const pool = intent.grossAmount.times(intent.negotiatedRateBps).dividedBy(10_000);
+    // whatever the partner's rate is today. Rounded down to the column's own
+    // 4-decimal-place precision up front, not left as a raw product: green/
+    // deferred/referrerShare are each independently truncated below, and
+    // tutakBase is defined as whatever's left rather than independently
+    // rounded — so the four legs always sum to exactly `pool` by
+    // construction. Rounding only `pool` and letting all four legs be
+    // independently truncated used to leave a residue of up to
+    // 3 × 0.0001 that the debit (the raw, unrounded pool) didn't match,
+    // which `LedgerService.post` correctly rejected as an unbalanced
+    // transaction — deterministically, for any gross/rate combination whose
+    // product didn't happen to divide evenly across all three truncations.
+    const pool = roundIssued(intent.grossAmount.times(intent.negotiatedRateBps).dividedBy(10_000));
     const green = roundIssued(pool.times(policy.poolGreenBps).dividedBy(10_000));
     const deferred = roundIssued(pool.times(policy.poolDeferredBps).dividedBy(10_000));
     const referrerShare = roundIssued(pool.times(policy.poolReferrerBps).dividedBy(10_000));
-    const tutakBase = roundIssued(pool.times(policy.poolTutakBps).dividedBy(10_000));
+    const tutakBase = pool.minus(green).minus(deferred).minus(referrerShare);
 
     // Read-only, and safe to resolve before the transaction: an attribution
     // is immutable once created (spec §5), so it cannot change between this

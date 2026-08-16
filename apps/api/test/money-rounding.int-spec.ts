@@ -1,9 +1,22 @@
-import { BonusEntryType, PrismaClient, TransactionStatus } from '@prisma/client';
+import {
+  BonusEntryType,
+  PostingDirection,
+  PrismaClient,
+  PurchaseIntentStatus,
+  RoleName,
+  TransactionStatus,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
+import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { MONEY_SCALE } from '../src/common/utils/money';
+import {
+  COMMISSION_RATE_MAX_BPS,
+  COMMISSION_RATE_MIN_BPS,
+  COMMISSION_RATE_STEP_BPS,
+} from '../src/common/validators/is-commission-rate-bps.validator';
 import { createCustomer, createDynamicInvoiceQr, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
@@ -36,6 +49,7 @@ describe('Money rounding (integration)', () => {
   let sessions: EvSessionsService;
   let qr: QrPaymentsService;
   let engine: BonusEngineService;
+  let purchaseIntents: PurchaseIntentsService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -43,6 +57,7 @@ describe('Money rounding (integration)', () => {
     sessions = harness.app.get(EvSessionsService);
     qr = harness.app.get(QrPaymentsService);
     engine = harness.app.get(BonusEngineService);
+    purchaseIntents = harness.app.get(PurchaseIntentsService);
   });
 
   afterAll(async () => {
@@ -101,7 +116,9 @@ describe('Money rounding (integration)', () => {
 
     it('accrues a storable number of points on that bill', async () => {
       const { user, wallet } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, { bonusAccrualRateBps: 333 });
+      // 350 bps (3.5%) is on the commission-rate grid; 333 (the value this
+      // test used before the grid existed) is not.
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 350 });
       const connector = await createEvConnector(prisma, {
         partnerId: partner.id,
         pricePerKwh: '100.25',
@@ -112,13 +129,13 @@ describe('Money rounding (integration)', () => {
       await sessions.reportMeterValue(session.id, '25.123', user.id);
       const result = await sessions.stop(session.id, user.id, {});
 
-      // 2518.5808 × 333 ÷ 10000 = 83.86874064 — eight decimals before rounding.
+      // 2518.5808 × 350 ÷ 10000 = 88.150328 — six decimals before rounding.
       const earned = new Decimal(result.bonusEarned);
       assertStorable(earned, 'bonus earned');
-      expect(earned.toString()).toBe('83.8687');
+      expect(earned.toString()).toBe('88.1503');
 
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('83.8687');
+      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('88.1503');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
@@ -145,7 +162,9 @@ describe('Money rounding (integration)', () => {
   describe('QR payments', () => {
     it('accrues on an amount whose commission does not divide evenly', async () => {
       const { user, wallet } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, { bonusAccrualRateBps: 333 });
+      // 350 bps (3.5%) is on the commission-rate grid; 333 (the value this
+      // test used before the grid existed) is not.
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 350 });
       const code = await createDynamicInvoiceQr(prisma, {
         partnerId: partner.id,
         amount: '1234.5678',
@@ -153,16 +172,16 @@ describe('Money rounding (integration)', () => {
 
       const result = await qr.redeem({ token: code.token, idempotencyKey: 'round-1' }, user.id);
 
-      // 1234.5678 × 333 ÷ 10000 = 41.11110774 → 41.1111.
-      expect(result.bonusEarned).toBe('41.1111');
+      // 1234.5678 × 350 ÷ 10000 = 43.209873 → 43.2098.
+      expect(result.bonusEarned).toBe('43.2098');
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('41.1111');
+      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('43.2098');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
     it('accrues on the paid portion when points cover part of the bill', async () => {
       const { user, wallet } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, { bonusAccrualRateBps: 333 });
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 350 });
       await engine.accrue({
         walletId: wallet.id,
         type: BonusEntryType.ACCRUAL_PURCHASE,
@@ -180,17 +199,17 @@ describe('Money rounding (integration)', () => {
       );
 
       // Points never earn points: only the 1000 actually paid does.
-      // 1000 × 333 ÷ 10000 = 33.3.
-      expect(result.bonusEarned).toBe('33.3');
+      // 1000 × 350 ÷ 10000 = 35.
+      expect(result.bonusEarned).toBe('35');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
     it('rounds an accrual too small to store down to nothing, without failing the payment', async () => {
-      // 0.0001 × 1 bps ÷ 10⁴ is 10⁻⁸ — real, and smaller than the platform
-      // can record. The payment must still go through; the customer simply
-      // earns nothing on a hundredth of a luma.
+      // 0.0001 × 50 bps (the grid's floor) ÷ 10⁴ is 5×10⁻⁷ — real, and
+      // smaller than the platform can record. The payment must still go
+      // through; the customer simply earns nothing on a fraction of a luma.
       const { user, wallet } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, { bonusAccrualRateBps: 1 });
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 50 });
       const code = await createDynamicInvoiceQr(prisma, {
         partnerId: partner.id,
         amount: '0.0001',
@@ -202,6 +221,77 @@ describe('Money rounding (integration)', () => {
       const charge = await prisma.transaction.findFirstOrThrow({ where: { userId: user.id } });
       expect(charge.status).toBe(TransactionStatus.COMPLETED);
       await assertWalletIntegrity(prisma, wallet.id);
+    });
+  });
+
+  describe('PurchaseIntent settlement across the commission-rate grid', () => {
+    const staffMember = async (partnerId: string) => {
+      const { user } = await createCustomer(prisma);
+      const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_OWNER } });
+      await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId } });
+      return user;
+    };
+
+    const GRID = Array.from(
+      { length: (COMMISSION_RATE_MAX_BPS - COMMISSION_RATE_MIN_BPS) / COMMISSION_RATE_STEP_BPS + 1 },
+      (_, i) => COMMISSION_RATE_MIN_BPS + i * COMMISSION_RATE_STEP_BPS,
+    );
+
+    /**
+     * Before `pool` was rounded up front (see `settlePurchase`), it was
+     * computed unrounded and only each of the four split legs was truncated
+     * independently — the legs then summed to slightly less than the
+     * (unrounded) debit for any gross/rate combination whose product didn't
+     * happen to divide evenly across all three truncations, and
+     * `LedgerService.post` correctly rejected the resulting unbalanced
+     * transaction, permanently stranding the purchase. Every other test in
+     * this codebase uses a rate and gross that divides evenly — 5000 × 500 ÷
+     * 10000 = 250, no remainder anywhere — which is why this was never
+     * caught. This sweeps every rate the commission grid now allows against
+     * one deliberately awkward amount.
+     */
+    it.each(GRID)('settles a %p bps purchase of an awkward gross amount', async (bps) => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: bps });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1234.57' },
+        user.id,
+      );
+
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+      expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
+
+      // The debit and the credits are one balanced transaction — if they
+      // didn't sum to zero, `confirm` above would already have thrown and
+      // rolled back. Checked again here explicitly rather than only
+      // inferred from "it didn't throw".
+      const postings = await prisma.ledgerPosting.findMany({
+        where: { transaction: { sourceType: 'PurchaseIntent', sourceId: intent.id } },
+      });
+      const sumBy = (direction: PostingDirection) =>
+        postings
+          .filter((p) => p.direction === direction)
+          .reduce((sum, p) => sum.plus(p.amount), new Decimal(0));
+      expect(sumBy(PostingDirection.DEBIT).toString()).toBe(sumBy(PostingDirection.CREDIT).toString());
+    });
+
+    it.each([
+      [COMMISSION_RATE_MIN_BPS, '999.99'],
+      [COMMISSION_RATE_MAX_BPS, '1'],
+      [1050, '54321.13'],
+    ])('settles %p bps against gross %p — grid boundaries × more awkward amounts', async (bps, gross) => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: bps as number });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: gross as string },
+        user.id,
+      );
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+      expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
     });
   });
 });

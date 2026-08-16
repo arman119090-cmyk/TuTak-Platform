@@ -1,4 +1,5 @@
-import { IsInt, IsString, IsUUID, Length, Max, Min } from 'class-validator';
+import { IsString, IsUUID, Length } from 'class-validator';
+import { IsCommissionRateBps } from '../../../common/validators/is-commission-rate-bps.validator';
 
 export class CreatePartnerDto {
   @IsString()
@@ -17,9 +18,7 @@ export class CreatePartnerDto {
   @Length(2, 50)
   category: string;
 
-  @IsInt()
-  @Min(0)
-  @Max(10_000)
+  @IsCommissionRateBps()
   bonusAccrualRateBps: number;
 
   @IsUUID()

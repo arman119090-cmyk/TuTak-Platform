@@ -74,7 +74,9 @@ describe('Adversarial probe (integration)', () => {
   describe('bonus inflation', () => {
     it('cannot mint through a merchant invoice loop', async () => {
       const { user: staff, wallet: staffWallet } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, { bonusAccrualRateBps: 10_000 });
+      // 2000 (20%) is the commission-rate grid's ceiling — the most
+      // generous rate an attacker could actually have on their partner.
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 2000 });
       await prisma.partnerMembership.create({
         data: { partnerId: partner.id, userId: staff.id },
       });
@@ -96,7 +98,8 @@ describe('Adversarial probe (integration)', () => {
 
     it('cannot mint through repeated EV sessions on one connector', async () => {
       const { user, wallet } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, { bonusAccrualRateBps: 10_000 });
+      // 2000 (20%) is the commission-rate grid's ceiling — see the note above.
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 2000 });
       const connector = await createEvConnector(prisma, {
         partnerId: partner.id,
         pricePerKwh: '100.00',
@@ -118,9 +121,9 @@ describe('Adversarial probe (integration)', () => {
         await sessions.stop(session.id, user.id, {}).catch(() => undefined);
       }
 
-      // 50 kW for an hour, 100 AMD/kWh, at a 100% rate is ~5,750 a session.
-      // Ten of those is the honest ceiling; anything far above means a claim
-      // larger than the connector could deliver got through.
+      // 50 kW for an hour, 100 AMD/kWh, at the grid's 20% ceiling is ~1,150
+      // a session. Ten of those is the honest ceiling; anything far above
+      // means a claim larger than the connector could deliver got through.
       const issued = await totalIssued();
       expect(issued.lessThan(new Decimal('100000'))).toBe(true);
       await assertWalletIntegrity(prisma, wallet.id);

@@ -1,5 +1,6 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import { EvSessionStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
+import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
+import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
 import { MOCK_USER, freshMockState, mockTokens, type MockState } from './mockData';
 
 /**
@@ -112,7 +113,14 @@ function handle(
     case 'POST /auth/password-reset/confirm':
     case 'POST /auth/verify-phone/request':
     case 'POST /auth/verify-phone/confirm':
+    case 'POST /auth/register/request-otp':
+    case 'POST /auth/login/request-otp':
       return envelope({ success: true });
+
+    // Any code is accepted, same as the login/register mocks above.
+    case 'POST /auth/register/verify-otp':
+    case 'POST /auth/login/verify-otp':
+      return envelope({ user: MOCK_USER, tokens: mockTokens() });
 
     case 'DELETE /users/me':
       return envelope({
@@ -257,6 +265,40 @@ function handle(
       });
     }
 
+    // ── Purchase intents ───────────────────────────────────────────────
+    case 'POST /purchase-intents': {
+      const dto = body<{
+        partnerId: string;
+        partnerBranchId?: string;
+        grossAmount: string;
+        bonusAmountRequested?: string;
+      }>(config);
+      const partner = state.partners.find((p) => p.partnerId === dto.partnerId);
+      const bonusAmountRequested = dto.bonusAmountRequested ?? '0';
+      const intent: PurchaseIntentDto = {
+        id: `pi-${Date.now()}`,
+        customerId: MOCK_USER.id,
+        partnerId: dto.partnerId,
+        partnerBranchId: dto.partnerBranchId ?? null,
+        status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+        grossAmount: dto.grossAmount,
+        bonusAmountRequested,
+        ordinaryPaymentRemainder: String(
+          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
+        ),
+        negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
+        maxBonusPaymentPercent: 50,
+        confirmedByUserId: null,
+        rejectionReason: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+        confirmedAt: null,
+        rejectedAt: null,
+      };
+      state.purchaseIntents = [intent, ...state.purchaseIntents];
+      return envelope(intent);
+    }
+
     default:
       break;
   }
@@ -303,6 +345,95 @@ function handle(
       updatedAt: new Date().toISOString(),
     };
     return envelope(stopped);
+  }
+
+  const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
+  if (method === 'GET' && getPurchaseIntent) {
+    const id = getPurchaseIntent[1]!;
+    // Falls back to a freshly-minted one rather than 404ing: the status
+    // screen always passes an id this adapter itself issued from
+    // POST /purchase-intents, so the only caller that can ask for one this
+    // adapter never created is the route-completeness test.
+    const existing: PurchaseIntentDto = state.purchaseIntents.find((pi) => pi.id === id) ?? {
+      id,
+      customerId: MOCK_USER.id,
+      partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+      partnerBranchId: null,
+      status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+      grossAmount: '5000',
+      bonusAmountRequested: '0',
+      ordinaryPaymentRemainder: '5000',
+      negotiatedRateBps: 500,
+      maxBonusPaymentPercent: 50,
+      confirmedByUserId: null,
+      rejectionReason: null,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+      confirmedAt: null,
+      rejectedAt: null,
+    };
+
+    // No cashier exists in the demo, so the poll itself plays that part —
+    // a few seconds after creation, the next poll finds it confirmed. Real
+    // confirmation is the partner dashboard's job; this only has to prove
+    // the customer's screen reacts to a status change it did not cause.
+    const ageMs = Date.now() - new Date(existing.createdAt).getTime();
+    if (existing.status === PurchaseIntentStatus.AWAITING_CONFIRMATION && ageMs > 4000) {
+      const confirmed: PurchaseIntentDto = {
+        ...existing,
+        status: PurchaseIntentStatus.CONFIRMED,
+        confirmedByUserId: 'mock-cashier',
+        confirmedAt: new Date().toISOString(),
+      };
+      state.purchaseIntents = state.purchaseIntents.map((pi) => (pi.id === id ? confirmed : pi));
+      // Canonical split (docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md):
+      // the negotiated rate defines the *contribution pool*, not the
+      // customer's GREEN bonus directly — GREEN is only 20% of that pool.
+      // This used to credit the whole pool as GREEN, showing a demo
+      // purchase's immediately-available bonus at 5x the canonical amount.
+      const pool = Number(confirmed.grossAmount) * (confirmed.negotiatedRateBps / 10_000);
+      const greenShare = String(Math.round(pool * 0.2 * 100) / 100);
+      state.wallet = {
+        ...state.wallet,
+        availableBonus: sum(state.wallet.availableBonus, greenShare),
+        lifetimeEarned: sum(state.wallet.lifetimeEarned, greenShare),
+        version: state.wallet.version + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      return envelope(confirmed);
+    }
+
+    return envelope(existing);
+  }
+
+  // GitHub issue #28 (HIGH, 2026-08-16): the QR-scanned PurchaseIntent path
+  // resolves the partner from the server before showing an amount field —
+  // see CreatePurchaseIntentScreen's `partnersApi.get(partnerId)` call.
+  // Falls back to a synthesized record rather than 404ing for the same
+  // reason `getPurchaseIntent` above does: the route-completeness test
+  // asks for an id this adapter never created.
+  const getPartner = /^\/partners\/([^/]+)$/.exec(path);
+  if (method === 'GET' && getPartner) {
+    const id = getPartner[1]!;
+    const match = state.partners.find((p) => p.partnerId === id);
+    const partner: PartnerPublicDto = match
+      ? {
+          id: match.partnerId,
+          displayName: match.name,
+          category: match.category,
+          bonusAccrualRateBps: Math.round(match.cashbackPercent * 100),
+          isActive: true,
+          createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+        }
+      : {
+          id,
+          displayName: 'Demo Partner',
+          category: 'retail',
+          bonusAccrualRateBps: 500,
+          isActive: true,
+          createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+        };
+    return envelope(partner);
   }
 
   return {

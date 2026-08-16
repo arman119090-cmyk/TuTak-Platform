@@ -1,10 +1,13 @@
-import type { EvSessionDto } from '@tutak/shared-types';
+import type { EvSessionDto, PurchaseIntentDto } from '@tutak/shared-types';
 
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
   ForgotPassword: undefined;
   ResetPassword: { phone: string };
+  /** Item 3: the OTP-first alternative to Register/Login, phone -> SMS code -> account. */
+  OtpRegister: undefined;
+  OtpLogin: undefined;
 };
 
 export type MainTabParamList = {
@@ -34,4 +37,13 @@ export type RootStackParamList = {
   ChangePassword: undefined;
   VerifyPhone: undefined;
   DeleteAccount: undefined;
+  /** Spec §7: the customer has picked a partner (a map card's "Pay" action)
+      and now enters the gross amount and, optionally, how much bonus to
+      apply — the intent itself does not exist yet. */
+  CreatePurchaseIntent: { partnerId: string; partnerBranchId?: string; partnerName?: string };
+  /** The intent already exists; this screen only tracks it to a terminal
+      state. Passed through so the screen renders instantly, the same way
+      `EvSession` receives its session — it re-polls for the authoritative
+      status either way. */
+  PurchaseIntentStatus: { intent: PurchaseIntentDto };
 };

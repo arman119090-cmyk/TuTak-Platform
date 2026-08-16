@@ -6,6 +6,7 @@ import type {
   EvStationDto,
   NearbyPartnerDto,
   NotificationDto,
+  PurchaseIntentDto,
   ReferralCodeDto,
   ReferralInviteDto,
   TransactionDto,
@@ -99,6 +100,7 @@ export interface MockState {
   notifications: NotificationDto[];
   referralCode: ReferralCodeDto;
   invites: ReferralInviteDto[];
+  purchaseIntents: PurchaseIntentDto[];
 }
 
 const WALLET_ID = 'mock-wallet-1';
@@ -668,6 +670,8 @@ export function freshMockState(): MockState {
         qualifiedAt: null,
       },
     ],
+
+    purchaseIntents: [],
   };
 }
 

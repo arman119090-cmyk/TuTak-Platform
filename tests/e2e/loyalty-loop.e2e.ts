@@ -15,10 +15,22 @@ import {
  * The loop the whole product exists for: a merchant raises an invoice, a
  * customer pays it, and points appear.
  *
- * The merchant half runs through the real dashboard, because the QR screen
- * is what a cashier actually uses. The customer half runs through the API,
- * because scanning is a camera on a phone and there is no browser equivalent
- * to drive — but it is the same endpoint the app calls, with the same token.
+ * Was written against the old flat-rate QR flow: the merchant typed an
+ * amount into the QR screen and generated a one-time invoice; the customer
+ * "scanned" it by calling the redeem endpoint with the resulting token.
+ * `docs/NEXT_CLAUDE_TASK.md` replaced that with the PurchaseIntent flow the
+ * rest of this suite already assumes (`money-movement.e2e.ts`'s payments,
+ * `docs/LAUNCH_READINESS_2026-08-16.md` §C): the partner's QR is now a
+ * static, amount-free `TUTAK-PAY:<partnerId>` code, the customer enters the
+ * amount themselves and creates the `PurchaseIntent`, and the partner's
+ * dashboard confirms it — see `apps/partner/.../qr/page.tsx` (no more
+ * amount input) and `apps/partner/.../purchase-intents/page.tsx` (the new
+ * confirm queue). This test now exercises that flow instead: the merchant
+ * half moved from "generate the QR" to "confirm the request," and the
+ * customer half stays on the API for the same reason as before — scanning
+ * is a camera on a phone with no browser equivalent to drive, and creating
+ * a PurchaseIntent is the same endpoint the app calls once it has resolved
+ * the scanned code to a partner id.
  */
 test.describe('QR payment loop', () => {
   // Signed in once, in auth.setup.ts. Re-authenticating per test would spend
@@ -31,44 +43,41 @@ test.describe('QR payment loop', () => {
     const adminToken = await apiLogin(PHONES.admin, 'admin');
     const customerToken = await apiLogin(PHONES.customer, 'customer');
 
+    const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
+    const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
+
     const before = await api<{ availableBonus: string; lifetimeEarned: string }>(
       customerToken,
       '/wallet/me',
     );
 
-    // ── The merchant, in the browser ─────────────────────────────────────
-    await page.goto(`${PARTNER}/qr`);
-
-    await page.locator('form input').first().fill('7000');
-    await page.getByRole('button', { name: /generate qr/i }).click();
-
-    // The token is what the customer's camera would read. It is rendered on
-    // the page once the invoice exists.
-    const tokenText = page.locator('[data-testid="qr-token"]');
-    await expect(tokenText).toBeVisible({ timeout: 20_000 });
-    const token = (await tokenText.innerText()).trim();
-    expect(token.length).toBeGreaterThan(10);
-
     // ── The customer, through the API the app calls ──────────────────────
-    const redemption = await api<{
-      transactionId: string;
-      amountCharged: string;
-      bonusEarned: string;
-    }>(customerToken, '/qr/redeem', {
+    // Scanning the partner's static code and typing the amount both happen
+    // on the phone; this is the same POST /purchase-intents call the app
+    // makes once it has resolved TUTAK-PAY:<partnerId>.
+    const intent = await api<{ id: string }>(customerToken, '/purchase-intents', {
       method: 'POST',
-      body: { token, idempotencyKey: unique('e2e-qr') },
+      body: { partnerId: cafe.id, grossAmount: '7000' },
     });
 
-    expect(redemption.amountCharged).toBe('7000');
-    // Cafe Yerevan accrues at 5%.
-    expect(Number(redemption.bonusEarned)).toBeCloseTo(350, 4);
+    // ── The merchant, in the browser ─────────────────────────────────────
+    await page.goto(`${PARTNER}/purchase-intents`);
+    const row = page.locator('tr', { hasText: intent.id.slice(-8).toUpperCase() });
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await row.getByRole('button', { name: /^confirm$/i }).click();
+    // Confirmed rows drop out of the AWAITING_CONFIRMATION queue this page
+    // filters on.
+    await expect(row).toBeHidden({ timeout: 20_000 });
 
     // ── What the customer sees afterwards ────────────────────────────────
     const after = await api<{ availableBonus: string; lifetimeEarned: string }>(
       customerToken,
       '/wallet/me',
     );
-    expect(Number(after.lifetimeEarned) - Number(before.lifetimeEarned)).toBeCloseTo(350, 4);
+    // Cafe Yerevan accrues at 5%, so the contribution pool is 350 — but the
+    // customer's immediate GREEN share is only 20% of that pool (spec
+    // §12-14), not the whole thing.
+    expect(Number(after.lifetimeEarned) - Number(before.lifetimeEarned)).toBeCloseTo(70, 4);
 
     // ── What the merchant sees afterwards ────────────────────────────────
     await page.goto(`${PARTNER}/transactions`);

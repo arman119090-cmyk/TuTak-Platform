@@ -101,6 +101,31 @@ jobs:
       - name: Integration tests
         run: pnpm --filter @tutak/api test:int
 
+      # Applying every migration in order (just above) only proves the
+      # migration history is internally consistent — it says nothing about
+      # whether `schema.prisma` itself still matches what that history
+      # produces. Editing the schema file without running `prisma migrate
+      # dev` to generate the matching migration is the classic way those two
+      # drift apart, and nothing before this step would have caught it: the
+      # app would keep working locally (Prisma Client is generated from
+      # schema.prisma directly) right up until a real deploy applied the
+      # migration history and got a database shaped differently from what
+      # the code assumes. `tutak_test` already has the full history applied
+      # from the step above, so this diffs that live result against the
+      # schema file with no separate shadow database needed.
+      - name: Migration drift check
+        run: |
+          cd apps/api
+          if ! pnpm exec prisma migrate diff \
+            --from-url "$TEST_DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code; then
+            echo "::error::schema.prisma does not match what prisma/migrations produces." \
+              "Run 'pnpm --filter @tutak/api prisma:generate' after adding a migration for" \
+              "every schema.prisma change, then commit the migration."
+            exit 1
+          fi
+
       - name: Mobile tests
         run: pnpm --filter @tutak/mobile test
 

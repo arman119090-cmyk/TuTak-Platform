@@ -23,8 +23,11 @@ export const REFRESH_COOKIE = 'tutak_rt';
 export function refreshCookieOptions(expiresAt: Date): CookieOptions {
   return {
     httpOnly: true,
-    // Cookies are only sent over TLS outside development, where there is none.
-    secure: process.env.NODE_ENV === 'production',
+    // Cookies are only sent over TLS outside development, where there is
+    // none. `staging` counts as outside development here too — it is a real
+    // deployment a browser reaches over the network, not a developer's own
+    // machine (docs/DEPLOYMENT.md §1).
+    secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging',
     sameSite: 'strict',
     // Scoped to the only routes that ever need it, so it is not attached to
     // every API call and cannot leak through an unrelated handler.

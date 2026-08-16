@@ -1,94 +1,59 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
+import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
-import { Jako } from '../../components/Jako';
 import { DemoOnly } from '../../components/DemoOnly';
-import { qrApi } from '../../../data/api/qrApi';
-import { describeApiError } from '../../../data/api/errors';
-import { walletApi } from '../../../data/api/walletApi';
-import { formatAmd, formatPoints } from '../../utils/format';
+import { parsePartnerPayQr } from '../../utils/partnerPayQr';
 
-type Stage = 'scanning' | 'confirm' | 'success';
-
-interface Receipt {
-  amountCharged: string;
-  bonusApplied: string;
-  bonusEarned: string;
-}
-
+/**
+ * NEXT_CLAUDE_TASK.md requirement 1: scanning a partner's payment code opens
+ * a `PurchaseIntent`, not the legacy `qrApi.redeem()` charge. The code
+ * itself carries no amount and settles nothing by being scanned — it only
+ * identifies which partner the customer is standing in front of. The
+ * customer enters the amount (and, optionally, how much bonus to spend) on
+ * `CreatePurchaseIntentScreen`; a cashier can only confirm or reject what
+ * the customer entered — see that screen and
+ * `apps/partner/.../purchase-intents/page.tsx` for the rest of the flow.
+ *
+ * `qrApi.redeem()` and the old confirm/receipt stages this screen used to
+ * carry are gone from the *normal* flow, not deleted from the codebase —
+ * the backend endpoint still exists for whatever legacy compatibility
+ * needs it (`docs/NEXT_CLAUDE_TASK.md` requirement 10), it's just no longer
+ * reachable from here.
+ */
 export function ScanQrScreen() {
   const { t } = useTranslation();
   const { color, space, text, radius, layout } = useTheme();
-  const queryClient = useQueryClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [permission, requestPermission] = useCameraPermissions();
-
-  const [stage, setStage] = useState<Stage>('scanning');
-  const [token, setToken] = useState<string | null>(null);
-  const [paymentKey, setPaymentKey] = useState<string | null>(null);
-  const [applyBonus, setApplyBonus] = useState(false);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
-
-  const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
-  // Kept as the decimal string the API returned. Number() round-trips lose
-  // precision and can emit exponential notation, which the server rejects.
-  const availableBonus = wallet?.availableBonus ?? '0';
-  const hasBonus = Number(availableBonus) > 0;
+  const [scanned, setScanned] = useState(false);
+  const [invalid, setInvalid] = useState(false);
 
   const handleScan = ({ data }: { data: string }) => {
-    if (token) return;
-    setToken(data);
-    // One key per payment attempt, minted when the code is scanned and held
-    // across retries. Deriving it from Date.now() at confirm time produced a
-    // fresh key every tap, so the server's idempotency could never match and
-    // a double-tap on a reusable merchant code charged twice.
-    setPaymentKey(`${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
-    setStage('confirm');
-  };
-
-  const handleConfirm = async () => {
-    if (!token || !paymentKey) return;
-    setProcessing(true);
-    setError(null);
-    try {
-      const result = await qrApi.redeem({
-        token,
-        bonusAmountToApply: applyBonus && hasBonus ? availableBonus : undefined,
-        idempotencyKey: paymentKey,
-      });
-      setReceipt(result);
-      setStage('success');
-      queryClient.invalidateQueries({ queryKey: ['wallet'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    } catch (err) {
-      // The server explains why a payment was refused — insufficient balance,
-      // an expired code, a bonus larger than the bill. Swallowing that left
-      // the customer with "payment failed" and no idea what to change.
-      setError(describeApiError(err) ?? t('qr.paymentFailed'));
-    } finally {
-      setProcessing(false);
+    if (scanned) return;
+    const parsed = parsePartnerPayQr(data);
+    if (!parsed) {
+      setInvalid(true);
+      return;
     }
+    setScanned(true);
+    navigation.replace('CreatePurchaseIntent', { partnerId: parsed.partnerId });
   };
 
-  const reset = () => {
-    setToken(null);
-    setPaymentKey(null);
-    setReceipt(null);
-    setApplyBonus(false);
-    setError(null);
-    setStage('scanning');
+  const retry = () => {
+    setInvalid(false);
+    setScanned(false);
   };
 
-  // ── Permission gate ───────────────────────────────────────────────────
   if (!permission) return <Screen title={t('qr.scanQr')}><View /></Screen>;
 
   if (!permission.granted) {
@@ -120,113 +85,27 @@ export function ScanQrScreen() {
     );
   }
 
-  // ── Success receipt ───────────────────────────────────────────────────
-  if (stage === 'success' && receipt) {
+  if (invalid) {
     return (
-      <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
-        <View style={[styles.successWrap, { padding: layout.screenPaddingX }]}>
-          <View
+      <Screen title={t('qr.scanQr')}>
+        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+          <Ionicons name="alert-circle-outline" size={32} color={color.dangerText} />
+          <Text
             style={[
-              styles.successMark,
-              { backgroundColor: color.availableSurface, borderRadius: radius.full },
+              text.bodySm,
+              { color: color.textSecondary, textAlign: 'center', marginTop: space[4] },
             ]}
           >
-            <Ionicons name="checkmark" size={40} color={color.availableText} />
-          </View>
-
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
-            {t('qr.paymentSuccess')}
-          </Text>
-          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
-            {formatAmd(receipt.amountCharged)}
-          </Text>
-
-          <Surface style={{ width: '100%', marginTop: space[8] }}>
-            <ReceiptRow
-              label={t('qr.applyBonus')}
-              value={`−${formatPoints(receipt.bonusApplied)}`}
-              tone={Number(receipt.bonusApplied) > 0 ? 'reserved' : 'muted'}
-            />
-            <View style={[styles.divider, { backgroundColor: color.border, marginVertical: space[3] }]} />
-            <ReceiptRow
-              label={t('bonus.earned')}
-              value={`+${formatPoints(receipt.bonusEarned)}`}
-              tone="available"
-            />
-          </Surface>
-
-          <View style={{ width: '100%', marginTop: space[8], gap: space[3] }}>
-            <Button label={t('common.done')} onPress={reset} />
-          </View>
-
-          <View style={{ marginTop: space[8], opacity: 0.35 }}>
-            <Jako size={32} />
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Confirmation ──────────────────────────────────────────────────────
-  if (stage === 'confirm') {
-    return (
-      <Screen title={t('qr.confirmPayment')} subtitle={t('qr.confirmSubtitle')}>
-        <Surface>
-          <Text style={[text.caption, { color: color.textSecondary }]}>{t('qr.merchantCode')}</Text>
-          <Text
-            style={[text.bodySm, { color: color.textPrimary, marginTop: space[1] }]}
-            numberOfLines={1}
-          >
-            {token?.slice(0, 24)}…
+            {t('qr.invalidCode')}
           </Text>
         </Surface>
-
-        {hasBonus ? (
-          <Pressable onPress={() => setApplyBonus((v) => !v)} accessibilityRole="switch">
-            <Surface style={{ marginTop: space[4] }}>
-              <View style={styles.toggleRow}>
-                <View style={styles.flex}>
-                  <Text style={[text.body, { color: color.textPrimary }]}>
-                    {t('qr.applyBonus')}
-                  </Text>
-                  <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>
-                    {t('qr.availableToSpend', { amount: formatPoints(availableBonus) })}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.checkbox,
-                    {
-                      borderColor: applyBonus ? color.primary : color.borderStrong,
-                      backgroundColor: applyBonus ? color.primary : 'transparent',
-                      borderRadius: radius.sm,
-                    },
-                  ]}
-                >
-                  {applyBonus ? (
-                    <Ionicons name="checkmark" size={16} color={color.textInverse} />
-                  ) : null}
-                </View>
-              </View>
-            </Surface>
-          </Pressable>
-        ) : null}
-
-        {error ? (
-          <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[4] }]}>
-            {error}
-          </Text>
-        ) : null}
-
-        <View style={{ marginTop: space[7], gap: space[3] }}>
-          <Button label={t('qr.confirmPayment')} onPress={handleConfirm} loading={processing} />
-          <Button label={t('common.cancel')} onPress={reset} variant="tertiary" />
+        <View style={{ marginTop: space[5] }}>
+          <Button label={t('common.retry')} onPress={retry} variant="secondary" />
         </View>
       </Screen>
     );
   }
 
-  // ── Scanner ───────────────────────────────────────────────────────────
   return (
     <View style={[styles.flex, { backgroundColor: '#000' }]}>
       <CameraView
@@ -245,45 +124,20 @@ export function ScanQrScreen() {
           </View>
           <Text style={[text.body, styles.scanHint]}>{t('qr.scanHint')}</Text>
 
-          {/* Only in the demonstration app, where there is no merchant to
-              issue a code and the walkthrough would otherwise stop here.
-              Renders nothing in any build that talks to a real API — see
-              components/DemoOnly.tsx. */}
+          {/* Only in the demonstration app, where there is no printed
+              partner code to point a camera at. Renders nothing in any
+              build that talks to a real API — see components/DemoOnly.tsx. */}
           <DemoOnly>
             <View style={styles.demoScan}>
               <Button
                 label={t('qr.demoSimulateScan')}
-                onPress={() => handleScan({ data: 'TUTAK-DEMO-MERCHANT-CODE' })}
+                onPress={() => handleScan({ data: 'TUTAK-PAY:partner-sas' })}
                 variant="secondary"
               />
             </View>
           </DemoOnly>
         </View>
       </SafeAreaView>
-    </View>
-  );
-}
-
-function ReceiptRow({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: 'available' | 'reserved' | 'muted';
-}) {
-  const { color, text } = useTheme();
-  const toneColor = {
-    available: color.availableText,
-    reserved: color.reservedText,
-    muted: color.textSecondary,
-  }[tone];
-
-  return (
-    <View style={styles.receiptRow}>
-      <Text style={[text.bodySm, { color: color.textSecondary }]}>{label}</Text>
-      <Text style={[text.headline, { color: toneColor }]}>{value}</Text>
     </View>
   );
 }
@@ -310,11 +164,5 @@ const styles = StyleSheet.create({
   reticle: { width: 260, height: 260 },
   corner: { position: 'absolute', width: 40, height: 40 },
   scanHint: { color: '#FFFFFF', marginTop: 32, textAlign: 'center', opacity: 0.9 },
-  successWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  successMark: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center' },
-  receiptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  divider: { height: StyleSheet.hairlineWidth },
-  toggleRow: { flexDirection: 'row', alignItems: 'center' },
-  checkbox: { width: 24, height: 24, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   permIcon: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
 });

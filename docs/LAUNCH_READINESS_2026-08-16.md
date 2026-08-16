@@ -239,3 +239,185 @@ are in scope for this pass's re-verification but are not re-described here:
 partner-identity resolution before PurchaseIntent amount entry
 (`f61769c`), and the partner dashboard's QR code becoming a real scannable
 symbol (`544c871`) — both re-confirmed clean in §C.
+
+---
+
+## I. CI/CD and staging readiness — follow-up pass (2026-08-16)
+
+The next step named in §A's own framing: this repository's GitHub Actions
+history, not just its local test suites, and the production/staging
+configuration split. Scope was CI correctness and deployment-config
+hardening only — no business logic, no product features.
+
+### I.1 What was actually broken
+
+Checking the live GitHub Actions runs (not just running suites locally, which
+this pass's own predecessor had stopped short of) found CI red on every push
+on `claude/tutak-loyalty-mvp-e485jm`, for two real, unrelated reasons:
+
+1. **`demo/` had drifted from `apps/mobile`.** `demo/` is a generated,
+   flattened standalone copy (`scripts/build-demo-app.sh`) that CI's
+   "demo app matches the app it was generated from" step diffs against a
+   fresh regeneration. Several `apps/mobile` / `packages/{design,i18n,
+   shared-types}` commits had landed without re-running the generator.
+   Fixed by regenerating `demo/` and committing the result — mechanical
+   sync, no manual edits.
+2. **`tests/e2e/loyalty-loop.e2e.ts`'s first test targeted a UI flow that no
+   longer exists.** It drove the old flat-rate QR screen (merchant types an
+   amount, generates a one-time invoice, customer redeems the token) that
+   this same document's §D/prior commits replaced with the PurchaseIntent
+   flow (partner's QR is now a static, amount-free `TUTAK-PAY:<partnerId>`
+   code; the customer enters the amount and creates the intent; the partner
+   confirms it from a queue). Rewritten to exercise the current flow and
+   verified against the actual settlement math (`purchase-intents.service.ts`
+   `settlePurchase()`): a 7000 AMD gross purchase at Cafe Yerevan's
+   `bonusAccrualRateBps=500` and the default `poolGreenBps=2000` yields
+   `pool = 7000 × negotiatedRateBps / 10000`, `green bonus = pool × 2000 /
+   10000` — the test asserts the customer's `lifetimeEarned` increases by
+   exactly that, not the old flat-rate figure.
+
+Both were genuine defects with no shared cause — CI had simply not been
+checked against real runs since before both regressions landed.
+
+### I.2 CI additions
+
+**Migration drift check** — a new step in `.github/workflows/ci.yml`,
+immediately after integration tests, running
+`prisma migrate diff --from-url <the already-migrated test DB> --to-schema-datamodel prisma/schema.prisma --exit-code`.
+Editing `schema.prisma` without generating the matching migration is
+invisible to every other check (Prisma Client is generated from the schema
+file directly, so the app keeps working locally) right up until a real
+deploy applies the migration history and gets a database shaped differently
+from what the code assumes. Verified both directions locally: clean schema
+exits 0 ("No difference detected"), and a schema field added without a
+migration (temporarily, for this test, then reverted) is correctly caught
+and exits 2.
+
+Tests, typecheck, lint, dependency audit, unit tests, integration tests
+(real Postgres/Redis service containers), the demo-sync check, mobile/
+admin/partner suites, and a full monorepo build were already present in
+`.github/workflows/ci.yml` before this pass — see §B of
+`docs/HARDENING_AUDIT_2026-08-16.md` and the workflow file itself. This
+pass's addition is the migration-drift step; nothing else in the pipeline's
+shape changed.
+
+### I.3 Staging readiness
+
+`docs/DEPLOYMENT.md` §1 (prior wording) recommended running a staging
+rehearsal environment with `NODE_ENV=development`, on the reasoning that
+staging legitimately has no acquirer contract or SMS carrier yet and
+`production`'s boot guards for those would make it un-bootable. True as far
+as it went, but `development` also silently disables three checks that have
+nothing to do with commercial credentials and everything to do with a
+server real traffic can reach: the CORS-must-be-configured boot guard, the
+Swagger UI (exposing the entire API surface, admin routes included, at
+`/docs` to anyone who finds the URL), and the refresh cookie's `Secure`
+flag (sent over plain HTTP without it). A staging box is a real network
+endpoint; treating it like a laptop for these three checks was the gap.
+
+Fixed by adding a genuine `staging` value to the `NODE_ENV` enum
+(`env.validation.ts`) and gating exactly those three checks — not the
+commercial ones — on "production or staging" instead of "production only"
+(`main.ts`'s CORS/Swagger guards, `refresh-cookie.ts`'s `secure` flag).
+`SmsModule`/`PushModule`/`PaymentsModule`/`RedisModule`'s boot-refusal
+guards stay keyed to `production` alone, deliberately — staging still
+should not need a live carrier or acquirer just to boot.
+
+Verified against a real running instance (native Node process, not
+Docker — see §I.5), not just by reading the code:
+
+| Check | Result |
+|---|---|
+| `NODE_ENV=staging`, `CORS_ORIGINS` unset | Throws at boot, exit 1: `CORS_ORIGINS must list the allowed origins outside development` |
+| `NODE_ENV=staging`, `CORS_ORIGINS` set | Boots; `GET /health` → 200 |
+| `NODE_ENV=staging`, same boot | `GET /docs` → 404 (Swagger not mounted) |
+| `NODE_ENV=staging`, real login | `Set-Cookie: tutak_rt=...; HttpOnly; Secure; SameSite=Strict` |
+| `NODE_ENV=staging`, no `SMS_ENDPOINT`/PSP/Push credentials | Boots normally (these guards correctly stay production-only) |
+
+`docs/DEPLOYMENT.md` §1 rewritten to describe the three-way split
+(development / staging / production) and which guards apply to which,
+replacing the stale "run staging as development" advice.
+
+### I.4 Configuration, secrets, Postgres/Redis audit
+
+No new defects found beyond §I.3 — this was a re-confirmation of
+`docs/DEPLOYMENT.md`'s existing account (§1, §4, §11), cross-checked against
+the current code rather than assumed:
+
+- **Postgres**: `DATABASE_URL` required, no default (`env.validation.ts`);
+  migrations applied via `prisma migrate deploy` (§3); backups covered in
+  §7/§7c (encrypted at rest, PITR documented). No change needed.
+- **Redis**: `REDIS_URL` defaults to `redis://localhost:6379` for local dev
+  convenience; `RedisModule` throws at boot in `production` if that default
+  is still in effect, so a forgotten env var fails loudly instead of
+  silently pointing the sweep queue and advisory locks at an empty local
+  instance (added in the prior pass, re-confirmed here, not changed).
+- **Secrets**: `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` both enforced at
+  32+ characters in every environment via `class-validator`
+  (`env.validation.ts`) — confirmed still in force.
+- **CORS/Swagger/cookie**: see §I.3 — the one real gap found, now fixed.
+
+### I.5 What still requires external credentials or infrastructure
+
+Unchanged from `docs/DEPLOYMENT.md` §1's own account — this pass did not
+remove any of these requirements, and none of them are engineering work
+left undone:
+
+- **A real payment acquirer/PSP contract** — `PaymentsModule` refuses to
+  boot in `production` without one; the sandbox adapter is intentionally
+  unsafe outside demo/staging use.
+- **An SMS carrier account** (`SMS_ENDPOINT`/`SMS_USERNAME`/`SMS_TOKEN`) —
+  `SmsModule` likewise refuses to boot in `production` without one.
+- **Push delivery credentials** — an Expo project with `PUSH_ACCESS_TOKEN`
+  for enhanced security once traffic justifies it (`PushModule`).
+- **A real `CORS_ORIGINS`, `REDIS_URL`, and TLS-terminated hostname** for
+  whatever staging/production host is chosen — none of this repository's
+  code can supply those; they are deployment-target decisions.
+- **An actual host to deploy to** and a container registry target for
+  `.github/workflows/docker-publish.yml` (currently pushes to GHCR on
+  `main`/tags — needs a real deployment target subscribed to those images).
+- **A monitoring/alerting recipient** for the alerts already wired up in
+  code (§5a) — the code emits them; who receives them in staging/production
+  is an operational decision, not a code gap.
+
+One item is specific to *this development environment*, not to production
+or staging: this sandbox's outbound network policy blocks Docker registry
+pulls (CDN-backed registry hosts return `403` through the environment's
+proxy allowlist), so this pass's e2e/migration-drift verification (§I.1,
+§I.3) ran against natively-installed Postgres/Redis and plain Node/Next.js
+processes instead of the full `docker-compose` stack. This has no bearing
+on GitHub Actions CI, which runs in GitHub's own runners with normal
+registry access, or on a real deployment target — it only affected how
+verification was performed inside this particular session.
+
+### I.6 Test results, this pass
+
+| Command | Result |
+|---|---|
+| `npx tsc --noEmit -p tsconfig.build.json` (apps/api) | PASS |
+| `npx tsc --noEmit -p tsconfig.spec.json` (apps/api) | PASS |
+| `npx eslint src test` (apps/api) | PASS — 0 problems |
+| `npx jest --selectProjects integration unit --testTimeout=30000` (apps/api) | PASS — 62 suites / 760 tests |
+| `npx tsc --noEmit -p tests/e2e/tsconfig.json` | PASS |
+| `npx eslint` (tests/e2e) | PASS |
+| Full e2e suite against a live local stack (native Postgres/Redis, built api/admin/partner) | PASS — 11/11 across `loyalty-loop.e2e.ts` + `money-movement.e2e.ts` |
+| `prisma migrate diff --exit-code` — no drift | Exit 0, "No difference detected" |
+| `prisma migrate diff --exit-code` — induced drift (reverted after) | Exit 2, correctly detected |
+| Live boot, `NODE_ENV=staging`, no `CORS_ORIGINS` | Throws, exit 1 (expected) |
+| Live boot, `NODE_ENV=staging`, `CORS_ORIGINS` set | Boots; `/health` 200, `/docs` 404, `Secure` cookie confirmed |
+
+### I.7 Files changed this pass
+
+- `demo/` — regenerated via `scripts/build-demo-app.sh` (mechanical sync,
+  no manual edits).
+- `tests/e2e/loyalty-loop.e2e.ts` — first test in the `'QR payment loop'`
+  block rewritten against the current PurchaseIntent flow.
+- `.github/workflows/ci.yml` — added the migration drift check.
+- `apps/api/src/config/env.validation.ts` — added `Staging` to the
+  `Environment` enum.
+- `apps/api/src/main.ts` — CORS-required and Swagger-disable guards now key
+  on `production || staging` instead of `production` alone.
+- `apps/api/src/modules/auth/refresh-cookie.ts` — refresh cookie `secure`
+  flag now also set under `staging`.
+- `docs/DEPLOYMENT.md` §1 — rewritten for the three-way environment split.
+- This document.

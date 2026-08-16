@@ -35,7 +35,16 @@ async function bootstrap() {
   });
   const config = app.get(ConfigService<AppConfig, true>);
 
-  const isProduction = config.get('nodeEnv', { infer: true }) === 'production';
+  const nodeEnv = config.get('nodeEnv', { infer: true });
+  const isProduction = nodeEnv === 'production';
+  // `staging` (docs/DEPLOYMENT.md §1) is a real deployment reachable over
+  // the network, not a developer's own machine — it needs the same
+  // network-facing hardening `production` needs (CORS enforcement, Swagger
+  // off) even though it is deliberately exempt from the *commercial*
+  // boot guards (SmsModule/PushModule/PaymentsModule/RedisModule), which
+  // stay keyed to `production` alone since staging legitimately has no
+  // live carrier or acquirer.
+  const isPublicFacing = isProduction || nodeEnv === 'staging';
   app.useLogger(new StructuredLogger(isProduction));
 
   app.use(helmet());
@@ -44,11 +53,11 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // Reflecting any origin while sending credentials is a misconfiguration, and
-  // CORS_ORIGINS is not required by env validation — so a production deploy
-  // that forgot it used to become fully permissive in silence (§M5).
+  // CORS_ORIGINS is not required by env validation — so a deployment that
+  // forgot it used to become fully permissive in silence (§M5).
   const origins = config.get('cors.origins', { infer: true });
-  if (config.get('nodeEnv', { infer: true }) === 'production' && origins.length === 0) {
-    throw new Error('CORS_ORIGINS must list the allowed origins in production');
+  if (isPublicFacing && origins.length === 0) {
+    throw new Error('CORS_ORIGINS must list the allowed origins outside development');
   }
   app.enableCors({
     origin: origins.length ? origins : true,
@@ -71,7 +80,7 @@ async function bootstrap() {
     }),
   );
 
-  if (config.get('nodeEnv', { infer: true }) !== 'production') {
+  if (!isPublicFacing) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('TuTak API')
       .setDescription('TuTak loyalty ecosystem — backend API')

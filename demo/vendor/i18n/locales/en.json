@@ -42,6 +42,14 @@
     "passwordHint": "At least 8 characters.",
     "noAccountYet": "Don't have an account?",
     "haveAccount": "Already have an account?",
+    "useSmsCodeInstead": "Use an SMS code instead",
+    "useEmailPasswordInstead": "Use phone and password instead",
+    "otpRegisterTitle": "Create your account",
+    "otpRegisterSubtitle": "Enter your phone number and we'll text you a code — no password needed.",
+    "otpRegisterCodeSubtitle": "Enter the 6-digit code we sent to {{phone}}",
+    "otpRegisterButton": "Create account",
+    "otpLoginTitle": "Log in with a code",
+    "otpLoginSubtitle": "Enter your phone number and we'll text you a one-time code.",
     "forgotPasswordTitle": "Reset your password",
     "forgotPasswordSubtitle": "Enter your phone number and we'll send you a reset code.",
     "sendResetCode": "Send reset code",
@@ -114,7 +122,8 @@
     "cameraTitle": "Camera access needed",
     "cameraMessage": "TuTak uses your camera only to read QR codes for payments.",
     "allowCamera": "Allow camera",
-    "demoSimulateScan": "Simulate a scan (demo)"
+    "demoSimulateScan": "Simulate a scan (demo)",
+    "invalidCode": "This isn't a TuTak partner code. Ask staff for the payment code and try again."
   },
   "ev": {
     "stations": "Charging stations",
@@ -236,7 +245,8 @@
     "BONUS_REDEMPTION": "Bonus spent",
     "REFERRAL_REWARD": "Referral reward",
     "REFUND": "Refund",
-    "MANUAL_ADJUSTMENT": "Adjustment"
+    "MANUAL_ADJUSTMENT": "Adjustment",
+    "PARTNER_PURCHASE": "Purchase at partner"
   },
   "transactionStatus": {
     "INITIATED": "Initiated",
@@ -251,8 +261,10 @@
     "ACCRUAL_REFERRAL": "Referral reward",
     "ACCRUAL_PROMOTION": "Promotion",
     "ACCRUAL_MANUAL_ADJUSTMENT": "Adjustment",
+    "ACCRUAL_DEFERRED": "Deferred bonus unlocked",
     "REDEMPTION_QR_PAYMENT": "Spent on payment",
     "REDEMPTION_EV_CHARGING": "Spent on charging",
+    "REDEMPTION_PARTNER_PURCHASE": "Spent at partner",
     "EXPIRY": "Expired",
     "REVERSAL": "Reversed",
     "RESERVE_HOLD": "Held for payment",
@@ -298,5 +310,25 @@
     "ev_charging": "Charging",
     "beauty": "Beauty",
     "other": "Other"
+  },
+  "purchaseIntent": {
+    "createTitle": "New purchase",
+    "statusTitle": "Purchase status",
+    "grossAmount": "Amount",
+    "bonusAmount": "Bonus to apply",
+    "expiryNotice": "The cashier has 3 minutes to confirm this purchase before it expires.",
+    "submit": "Send to cashier",
+    "createFailed": "Could not create the purchase",
+    "partnerLoadFailed": "Couldn't verify this business. Please try scanning the code again.",
+    "partnerInactive": "This business isn't accepting TuTak payments right now.",
+    "awaiting": "Waiting for the cashier to confirm",
+    "confirmed": "Purchase confirmed",
+    "rejected": "Purchase declined",
+    "expired": "This purchase was not confirmed in time and has expired.",
+    "payHere": "Pay here",
+    "youPay": "You pay",
+    "purchaseId": "Purchase ID",
+    "createNew": "Create new purchase",
+    "goHome": "Go home"
   }
 }

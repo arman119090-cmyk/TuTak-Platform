@@ -126,6 +126,15 @@ export function LoginScreen({ navigation }: Props) {
             />
           </View>
 
+          <View style={{ marginTop: space[3] }}>
+            <Button
+              label={t('auth.useSmsCodeInstead')}
+              variant="secondary"
+              onPress={() => navigation.replace('OtpLogin')}
+              disabled={loading}
+            />
+          </View>
+
           {demoAvailable ? (
             <View style={{ marginTop: space[5] }}>
               <Button

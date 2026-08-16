@@ -10,15 +10,31 @@ most of it.
 
 ## 1. What production refuses to run without
 
-Three modules throw at boot rather than start in a degraded state. This is
-deliberate, and it is the shape of the remaining work: none of it is code.
+`NODE_ENV` has three real values: `development` (a laptop), `staging` (a real
+deployment, reachable over the network, that has not signed a commercial
+contract yet), and `production`. The guards below split along that line —
+some care whether a human can reach the server over the network, others care
+whether the server can move real money or send a real SMS — and staging
+answers those two questions differently.
+
+**Guards that apply to `staging` and `production` alike** — reachability, not
+commerce:
+
+| Requirement | Enforced by | Why it is not a warning |
+|---|---|---|
+| `CORS_ORIGINS` | `main.ts` | An unset value used to mean "reflect any origin", which with credentials enabled is a fully permissive CORS policy. |
+| Swagger UI disabled | `main.ts` | `/docs` documents the entire API surface, including every admin route. Fine on a laptop; not fine on a URL anyone can guess. |
+| Refresh cookie `Secure` flag | `refresh-cookie.ts` | A cookie sent over plain HTTP is interceptable on the network path. `staging` is a real network hop even without a production contract behind it. |
+
+**Guards that stay `production`-only** — a rehearsal environment legitimately
+has none of these yet, and gating them the same way would make staging
+undeployable rather than safe:
 
 | Requirement | Enforced by | Why it is not a warning |
 |---|---|---|
 | A real acquirer | `PaymentsModule` | A sandbox adapter approves every charge. In production that is a platform that reports money it never took. |
 | An SMS carrier (`SMS_ENDPOINT`) | `SmsModule` | A verification code written to stdout is indistinguishable from one that was delivered — until a real user is locked out by it. |
 | Push delivery (`PUSH_ENABLED=true`) | `PushModule` | Nobody reports a notification they never knew was coming, so a silently disabled channel stays broken indefinitely. |
-| `CORS_ORIGINS` | `main.ts` | An unset value used to mean "reflect any origin", which with credentials enabled is a fully permissive CORS policy. |
 | `REDIS_URL` | `RedisModule` | The variable has a `redis://localhost:6379` default so local dev never needs an env file — the same default in production would silently point advisory locks and the sweep queue at an empty local instance instead of the real shared one. Added 2026-08-16, launch-readiness pass. |
 
 `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are validated at 32 characters
@@ -26,8 +42,11 @@ minimum by `env.validation.ts` in every environment.
 
 So the first production deploy is blocked on commercial decisions — an
 acquirer contract, a carrier account, an Expo project — not on engineering.
-Until those exist, the only honest deployment is a staging environment
-running with `NODE_ENV=development`, which is what the demo stack already is.
+Until those exist, run the rehearsal environment with `NODE_ENV=staging` (not
+`development` — see above) and a real `CORS_ORIGINS`; that gets CORS
+enforcement, no exposed Swagger UI, and a `Secure` refresh cookie without
+requiring a live carrier or acquirer. `NODE_ENV=development` is for a
+developer's own machine only.
 
 ---
 

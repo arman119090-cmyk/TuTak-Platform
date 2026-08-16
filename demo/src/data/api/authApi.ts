@@ -8,8 +8,12 @@ import type {
   DeleteAccountResponseDto,
   LoginRequestDto,
   RegisterRequestDto,
+  RequestLoginOtpRequestDto,
   RequestPasswordResetRequestDto,
+  RequestRegistrationOtpRequestDto,
   SuccessResponseDto,
+  VerifyLoginOtpRequestDto,
+  VerifyRegistrationOtpRequestDto,
 } from '@tutak/shared-types';
 import { healthUrl, httpClient, ApiEnvelope } from './httpClient';
 
@@ -120,6 +124,40 @@ export const authApi = {
   async confirmPhoneVerification(dto: ConfirmPhoneVerificationRequestDto) {
     const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
       '/auth/verify-phone/confirm',
+      dto,
+    );
+    return data.data;
+  },
+
+  // ── OTP-first registration/login ──────────────────────────────────────
+
+  async requestRegistrationOtp(dto: RequestRegistrationOtpRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/register/request-otp',
+      dto,
+    );
+    return data.data;
+  },
+
+  async verifyRegistrationOtp(dto: VerifyRegistrationOtpRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<AuthResponseDto>>(
+      '/auth/register/verify-otp',
+      dto,
+    );
+    return data.data;
+  },
+
+  async requestLoginOtp(dto: RequestLoginOtpRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<SuccessResponseDto>>(
+      '/auth/login/request-otp',
+      dto,
+    );
+    return data.data;
+  },
+
+  async verifyLoginOtp(dto: VerifyLoginOtpRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<AuthResponseDto>>(
+      '/auth/login/verify-otp',
       dto,
     );
     return data.data;

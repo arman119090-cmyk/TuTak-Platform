@@ -3,6 +3,20 @@ import { IsEnum, IsInt, IsOptional, IsString, MinLength, validateSync } from 'cl
 
 enum Environment {
   Development = 'development',
+  /**
+   * Launch-readiness audit (2026-08-16): `docs/DEPLOYMENT.md` §1 recommends
+   * running staging as `development`, since staging legitimately has no real
+   * SMS carrier/acquirer/Redis and should not be blocked booting by the
+   * same guards `production` needs for those. But `development` also turns
+   * off two things that have nothing to do with commercial credentials and
+   * everything to do with a server real traffic can reach: the
+   * CORS-must-be-configured boot guard (`main.ts`) and disabling the
+   * Swagger UI, which then exposes the entire API surface at `/docs` to
+   * whoever finds a staging URL. A real `Staging` value lets those two stay
+   * on without also demanding a live carrier/acquirer contract just to boot
+   * a rehearsal environment.
+   */
+  Staging = 'staging',
   Production = 'production',
   Test = 'test',
 }

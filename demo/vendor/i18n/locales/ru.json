@@ -42,6 +42,14 @@
     "passwordHint": "Минимум 8 символов.",
     "noAccountYet": "Ещё нет аккаунта?",
     "haveAccount": "Уже есть аккаунт?",
+    "useSmsCodeInstead": "Войти по СМС-коду",
+    "useEmailPasswordInstead": "Использовать телефон и пароль",
+    "otpRegisterTitle": "Создать аккаунт",
+    "otpRegisterSubtitle": "Введите номер телефона — мы пришлём код по СМС. Пароль не нужен.",
+    "otpRegisterCodeSubtitle": "Введите 6-значный код, отправленный на {{phone}}",
+    "otpRegisterButton": "Создать аккаунт",
+    "otpLoginTitle": "Вход по коду",
+    "otpLoginSubtitle": "Введите номер телефона — мы пришлём одноразовый код по СМС.",
     "forgotPasswordTitle": "Восстановление пароля",
     "forgotPasswordSubtitle": "Введите номер телефона, и мы отправим код для сброса пароля.",
     "sendResetCode": "Отправить код",
@@ -114,7 +122,8 @@
     "cameraTitle": "Нужен доступ к камере",
     "cameraMessage": "TuTak использует камеру только для считывания QR-кодов при оплате.",
     "allowCamera": "Разрешить камеру",
-    "demoSimulateScan": "Сымитировать сканирование (демо)"
+    "demoSimulateScan": "Сымитировать сканирование (демо)",
+    "invalidCode": "Это не код партнёра TuTak. Попросите персонал показать код оплаты и попробуйте снова."
   },
   "ev": {
     "stations": "Зарядные станции",
@@ -236,7 +245,8 @@
     "BONUS_REDEMPTION": "Списаны бонусы",
     "REFERRAL_REWARD": "Реферальное вознаграждение",
     "REFUND": "Возврат",
-    "MANUAL_ADJUSTMENT": "Корректировка"
+    "MANUAL_ADJUSTMENT": "Корректировка",
+    "PARTNER_PURCHASE": "Покупка у партнёра"
   },
   "transactionStatus": {
     "INITIATED": "Создан",
@@ -251,8 +261,10 @@
     "ACCRUAL_REFERRAL": "Реферальный бонус",
     "ACCRUAL_PROMOTION": "Акция",
     "ACCRUAL_MANUAL_ADJUSTMENT": "Корректировка",
+    "ACCRUAL_DEFERRED": "Открыт отложенный бонус",
     "REDEMPTION_QR_PAYMENT": "Списано при оплате",
     "REDEMPTION_EV_CHARGING": "Списано за зарядку",
+    "REDEMPTION_PARTNER_PURCHASE": "Списано у партнёра",
     "EXPIRY": "Истекло",
     "REVERSAL": "Отменено",
     "RESERVE_HOLD": "Удержано для оплаты",
@@ -298,5 +310,25 @@
     "ev_charging": "Зарядка",
     "beauty": "Красота",
     "other": "Другое"
+  },
+  "purchaseIntent": {
+    "createTitle": "Новая покупка",
+    "statusTitle": "Статус покупки",
+    "grossAmount": "Сумма",
+    "bonusAmount": "Списать баллов",
+    "expiryNotice": "У кассира есть 3 минуты, чтобы подтвердить покупку, иначе она истечёт.",
+    "submit": "Отправить кассиру",
+    "createFailed": "Не удалось создать покупку",
+    "partnerLoadFailed": "Не удалось проверить этого партнёра. Попробуйте отсканировать код ещё раз.",
+    "partnerInactive": "Этот партнёр сейчас не принимает платежи через TuTak.",
+    "awaiting": "Ожидаем подтверждения кассира",
+    "confirmed": "Покупка подтверждена",
+    "rejected": "Покупка отклонена",
+    "expired": "Покупка не была подтверждена вовремя и истекла.",
+    "payHere": "Оплатить здесь",
+    "youPay": "Вы платите",
+    "purchaseId": "ID покупки",
+    "createNew": "Создать новую покупку",
+    "goHome": "На главную"
   }
 }

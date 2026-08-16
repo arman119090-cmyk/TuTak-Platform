@@ -42,6 +42,14 @@
     "passwordHint": "Առնվազն 8 նիշ։",
     "noAccountYet": "Դեռ հաշիվ չունե՞ք",
     "haveAccount": "Արդեն ունե՞ք հաշիվ",
+    "useSmsCodeInstead": "Մուտք գործել SMS կոդով",
+    "useEmailPasswordInstead": "Օգտագործել հեռախոսահամար և գաղտնաբառ",
+    "otpRegisterTitle": "Ստեղծել հաշիվ",
+    "otpRegisterSubtitle": "Մուտքագրեք հեռախոսահամարը՝ մենք կուղարկենք կոդ SMS-ով։ Գաղտնաբառ պետք չէ։",
+    "otpRegisterCodeSubtitle": "Մուտքագրեք {{phone}} համարին ուղարկված 6-նիշանոց կոդը",
+    "otpRegisterButton": "Ստեղծել հաշիվ",
+    "otpLoginTitle": "Մուտք կոդով",
+    "otpLoginSubtitle": "Մուտքագրեք հեռախոսահամարը՝ մենք կուղարկենք միանվագ կոդ SMS-ով։",
     "forgotPasswordTitle": "Վերականգնել գաղտնաբառը",
     "forgotPasswordSubtitle": "Մուտքագրեք ձեր հեռախոսահամարը, և մենք կուղարկենք գաղտնաբառի վերականգնման կոդ։",
     "sendResetCode": "Ուղարկել կոդը",
@@ -114,7 +122,8 @@
     "cameraTitle": "Անհրաժեշտ է տեսախցիկի հասանելիություն",
     "cameraMessage": "TuTak-ը տեսախցիկն օգտագործում է միայն վճարման QR կոդերը կարդալու համար։",
     "allowCamera": "Թույլատրել տեսախցիկը",
-    "demoSimulateScan": "Նմանակել սկանավորումը (դեմո)"
+    "demoSimulateScan": "Նմանակել սկանավորումը (դեմո)",
+    "invalidCode": "Սա TuTak գործընկերոջ կոդ չէ։ Խնդրեք անձնակազմից վճարման կոդը և կրկին փորձեք։"
   },
   "ev": {
     "stations": "Լիցքակայաններ",
@@ -236,7 +245,8 @@
     "BONUS_REDEMPTION": "Ծախսված բոնուս",
     "REFERRAL_REWARD": "Հրավերի պարգև",
     "REFUND": "Վերադարձ",
-    "MANUAL_ADJUSTMENT": "Ճշգրտում"
+    "MANUAL_ADJUSTMENT": "Ճշգրտում",
+    "PARTNER_PURCHASE": "Գնում գործընկերոջ մոտ"
   },
   "transactionStatus": {
     "INITIATED": "Սկսված",
@@ -251,8 +261,10 @@
     "ACCRUAL_REFERRAL": "Հրավերի բոնուս",
     "ACCRUAL_PROMOTION": "Ակցիա",
     "ACCRUAL_MANUAL_ADJUSTMENT": "Ճշգրտում",
+    "ACCRUAL_DEFERRED": "Բացված է հետաձգված բոնուսը",
     "REDEMPTION_QR_PAYMENT": "Ծախսված վճարման ժամանակ",
     "REDEMPTION_EV_CHARGING": "Ծախսված լիցքավորման համար",
+    "REDEMPTION_PARTNER_PURCHASE": "Ծախսված գործընկերոջ մոտ",
     "EXPIRY": "Ժամկետանց",
     "REVERSAL": "Հետ շրջված",
     "RESERVE_HOLD": "Պահված է վճարման համար",
@@ -298,5 +310,25 @@
     "ev_charging": "Լիցքավորում",
     "beauty": "Գեղեցկություն",
     "other": "Այլ"
+  },
+  "purchaseIntent": {
+    "createTitle": "Նոր գնում",
+    "statusTitle": "Գնման կարգավիճակ",
+    "grossAmount": "Գումար",
+    "bonusAmount": "Կիրառվող բոնուս",
+    "expiryNotice": "Դրամարկղի աշխատակիցն ունի 3 րոպե՝ գնումը հաստատելու համար, հակառակ դեպքում այն կկորցնի ուժը։",
+    "submit": "Ուղարկել դրամարկղին",
+    "createFailed": "Չհաջողվեց ստեղծել գնումը",
+    "partnerLoadFailed": "Չհաջողվեց ստուգել գործընկերոջը։ Խնդրում ենք կրկին սկանավորել կոդը։",
+    "partnerInactive": "Այս գործընկերն այժմ չի ընդունում TuTak վճարումներ։",
+    "awaiting": "Սպասում ենք դրամարկղի հաստատմանը",
+    "confirmed": "Գնումը հաստատված է",
+    "rejected": "Գնումը մերժվել է",
+    "expired": "Այս գնումը ժամանակին չի հաստատվել և ժամկետանց է։",
+    "payHere": "Վճարել այստեղ",
+    "youPay": "Դուք վճարում եք",
+    "purchaseId": "Գնման ID",
+    "createNew": "Ստեղծել նոր գնում",
+    "goHome": "Դեպի գլխավոր"
   }
 }

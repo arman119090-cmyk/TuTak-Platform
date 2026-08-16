@@ -6,6 +6,8 @@ export enum TransactionType {
   REFERRAL_REWARD = 'REFERRAL_REWARD',
   REFUND = 'REFUND',
   MANUAL_ADJUSTMENT = 'MANUAL_ADJUSTMENT',
+  /** The core-business spec's standard QR/PurchaseIntent purchase flow. */
+  PARTNER_PURCHASE = 'PARTNER_PURCHASE',
 }
 
 export enum TransactionStatus {

@@ -865,6 +865,54 @@ describe('PurchaseIntents (integration)', () => {
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share, never the deferred one
     });
+
+    it('recognizes an expired lot\'s value as TuTak revenue, releasing the liability booked for it at purchase time', async () => {
+      // Business decision (GitHub Issue #28 audit follow-up, 2026-08-16,
+      // hardening-audit §N item 1): an expired lot's value becomes TuTak
+      // revenue, not a silent write-off.
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 }); // pool = 500
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: user.id } });
+      expect(lot.amount.toFixed(4)).toBe('150.0000'); // deferred, 30% of the 500 pool
+
+      await prisma.deferredBonusLot.update({
+        where: { id: lot.id },
+        data: { deadline: new Date(Date.now() - 1000) },
+      });
+      await deferredLots.expireOverdueLots();
+
+      // postContributionLedger already credited BONUS_LIABILITY 250 (green
+      // 100 + deferred 150, no referrer) and PLATFORM_REVENUE 250 (tutak
+      // base 150 + the referrerless share 100) at confirmation. Expiry
+      // debits BONUS_LIABILITY 150 (releasing the deferred share, never to
+      // be paid out) and credits PLATFORM_REVENUE the same 150.
+      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'BONUS_LIABILITY' },
+      });
+      expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('-100.0000'); // -250 + 150
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PLATFORM_REVENUE' },
+      });
+      expect(revenueAccount.balance.toFixed(4)).toBe('-400.0000'); // -250 + -150
+
+      const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+        where: { kind: 'deferred_bonus.expired', sourceId: lot.id },
+        include: { postings: true },
+      });
+      expect(ledgerTx.postings).toHaveLength(2);
+      const net = ledgerTx.postings.reduce(
+        (acc, p) => acc + (p.direction === 'DEBIT' ? 1 : -1) * Number(p.amount),
+        0,
+      );
+      expect(net).toBe(0);
+    });
   });
 
   // ── Settlement ledger — spec §22-24 ───────────────────────────────────

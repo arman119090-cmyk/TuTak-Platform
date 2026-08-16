@@ -1,9 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BonusEntryType, DeferredBonusLotStatus, Prisma } from '@prisma/client';
+import {
+  BonusEntryType,
+  DeferredBonusLotStatus,
+  LedgerAccountType,
+  PostingDirection,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { LedgerService } from '../ledger/ledger.service';
 import { BonusEngineService } from './bonus-engine.service';
 
 type Tx = Prisma.TransactionClient;
@@ -27,6 +34,7 @@ export class DeferredBonusLotService {
     private readonly prisma: PrismaService,
     private readonly bonusEngine: BonusEngineService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly ledger: LedgerService,
   ) {}
 
   /**
@@ -130,19 +138,67 @@ export class DeferredBonusLotService {
 
   /**
    * Spec §16: a lot whose deadline passes before it qualifies is released —
-   * the customer's entitlement to it lapses. This is a product/ledger state
-   * transition only; it does not post any revenue recognition for TuTak.
-   * TODO: LEGAL / ACCOUNTING REVIEW REQUIRED — see
-   * docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §5.
+   * the customer's entitlement to it lapses. CONFIRMED business decision
+   * (2026-08-16, hardening-audit §N item 1): the released value is
+   * recognized as TuTak revenue at the moment it expires — see `expireOne`
+   * for the ledger posting this now makes, atomically with the state
+   * transition.
    */
   async expireOverdueLots(): Promise<number> {
-    const result = await this.prisma.deferredBonusLot.updateMany({
+    const overdue = await this.prisma.deferredBonusLot.findMany({
       where: { status: DeferredBonusLotStatus.DEFERRED, deadline: { lt: new Date() } },
-      data: { status: DeferredBonusLotStatus.EXPIRED, expiredAt: new Date() },
     });
-    if (result.count > 0) {
-      this.logger.log(`Expired ${result.count} deferred bonus lot(s) past their deadline`);
+    let count = 0;
+    for (const lot of overdue) {
+      if (await this.expireOne(lot)) count += 1;
     }
-    return result.count;
+    if (count > 0) {
+      this.logger.log(`Expired ${count} deferred bonus lot(s) past their deadline`);
+    }
+    return count;
+  }
+
+  /**
+   * One lot's expiry, claimed and posted atomically: `postContributionLedger`
+   * already credited `BONUS_LIABILITY` for this lot's `amount` back when the
+   * originating purchase confirmed (spec §14's deferred share is part of
+   * that posting's `customerLiability` leg regardless of whether the lot
+   * ever unlocks) — the ledger has been carrying this as a liability to the
+   * customer since day one, even though the wallet itself never reflected it
+   * as spendable (see the class docblock). Expiry without qualifying means
+   * that liability will never be paid out, so it is released here — DEBIT
+   * `BONUS_LIABILITY` — and the same amount becomes TuTak's own revenue —
+   * CREDIT `PLATFORM_REVENUE` — in one transaction with the `EXPIRED`
+   * claim, so a lot can never end up expired without the matching revenue
+   * recognized, or vice versa.
+   */
+  private async expireOne(lot: { id: string; amount: Decimal }): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.deferredBonusLot.updateMany({
+        where: { id: lot.id, status: DeferredBonusLotStatus.DEFERRED },
+        data: { status: DeferredBonusLotStatus.EXPIRED, expiredAt: new Date() },
+      });
+      if (claimed.count === 0) return false;
+
+      if (lot.amount.greaterThan(0)) {
+        const [bonusLiabilityAccount, revenueAccount] = await Promise.all([
+          this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+          this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+        ]);
+        await this.ledger.post(
+          {
+            kind: 'deferred_bonus.expired',
+            sourceType: 'DeferredBonusLot',
+            sourceId: lot.id,
+            postings: [
+              { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: lot.amount },
+              { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: lot.amount },
+            ],
+          },
+          tx,
+        );
+      }
+      return true;
+    });
   }
 }

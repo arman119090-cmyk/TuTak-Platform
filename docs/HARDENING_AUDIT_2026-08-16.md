@@ -488,9 +488,13 @@ Carried forward from the original implementation's own report (§K of
 `CORE_ARCHITECTURE_COMPLETION_REPORT_2026-08.md`), plus two new items
 surfaced by this pass's broader entry-point/registration audits:
 
-1. `PartnerIntegration` website-verification method (spec §3) — no
-   technical method specified; verification stays a manual admin
-   attestation.
+1. ~~`PartnerIntegration` website-verification method (spec §3)~~ —
+   **RESOLVED 2026-08-16** (Arman's decision, follow-up to GitHub Issue
+   #28). Manual admin attestation is confirmed as the permanent method, not
+   a placeholder awaiting a technical one — no code change. `verifyWebsite`
+   in `partner-integrations.service.ts` and `.controller.ts` stay as they
+   are; the audit trail added earlier this pass (§J MEDIUM finding) already
+   records who attested.
 2. ~~**Referral Challenge funding source** (spec §20)~~ — **RESOLVED
    2026-08-16** (GitHub Issue #28 Finding 1, both halves). Spendability:
    rewards are immediately spendable, no pending/lock period, no code
@@ -524,13 +528,23 @@ surfaced by this pass's broader entry-point/registration audits:
 
 ## N. Legal/accounting items
 
-Unchanged from the original report:
-
-1. Whether an expired `DeferredBonusLot`'s released value is recognized as
-   TuTak revenue at expiry (spec §16) — still
-   `TODO: LEGAL / ACCOUNTING REVIEW REQUIRED` at
-   `deferred-bonus-lot.service.ts`. Implemented only as a
-   `DEFERRED → EXPIRED` state transition; no automatic revenue posting.
+1. ~~Whether an expired `DeferredBonusLot`'s released value is recognized as
+   TuTak revenue at expiry (spec §16)~~ — **RESOLVED 2026-08-16** (Arman's
+   decision, follow-up to GitHub Issue #28): yes, recognized as revenue.
+   `expireOverdueLots`/`expireOne` in `deferred-bonus-lot.service.ts` now
+   post a `LedgerService` transaction — DEBIT `BONUS_LIABILITY` / CREDIT
+   `PLATFORM_REVENUE`, the lot's `amount` — atomically with the
+   `DEFERRED → EXPIRED` claim, for every lot found. The debit releases the
+   liability `postContributionLedger` already booked for this lot's
+   deferred share back at purchase confirmation (spec §14's deferred share
+   is part of that posting's `customerLiability` leg unconditionally,
+   whether or not the lot ever unlocks — see the class docblock), so a lot
+   can never end up `EXPIRED` without the matching revenue recognized, or
+   vice versa. Regression test: `test/purchase-intents.int-spec.ts` ›
+   "recognizes an expired lot's value as TuTak revenue, releasing the
+   liability booked for it at purchase time" — git-stash-confirmed to fail
+   against the pre-fix code (`BONUS_LIABILITY` never released, showing
+   `-250.0000` instead of `-100.0000`) and pass against the fix.
 
 ## O. Files changed during this hardening pass
 

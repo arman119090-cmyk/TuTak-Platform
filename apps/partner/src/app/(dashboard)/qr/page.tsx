@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Button, PageHeader, Surface } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { buildPartnerPayQrPayload } from '@/lib/partnerPayQr';
@@ -17,7 +18,21 @@ import { buildPartnerPayQrPayload } from '@/lib/partnerPayQr';
  * old flat accrual rate; that path stayed alive for legacy compatibility
  * (`qrApi.issue`/`qrApi.redeem` still exist on the backend) but is no
  * longer how a normal purchase is meant to happen.
+ *
+ * GitHub issue #28 (HIGH, 2026-08-16): this page used to print `payload` as
+ * plain text only — nothing a camera could actually scan, despite the
+ * copy telling merchants to "print it or display it at the till". Fixed by
+ * rendering the same, unmodified payload as a real QR symbol
+ * (`QRCodeSVG`), so what a customer's phone scans is exactly what
+ * `parsePartnerPayQr` on the mobile side expects. The text payload stays
+ * as a manual fallback (typed in, or copy/pasted) for when a scan isn't
+ * possible. The plate is hardcoded white with near-black modules, not
+ * theme-driven — a QR symbol is dark-on-light by spec, and plenty of
+ * cheap merchant handhelds refuse an inverted one.
  */
+const QR_DARK = '#0A0D14';
+const QR_LIGHT = '#FFFFFF';
+
 export default function QrPage() {
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
@@ -44,7 +59,23 @@ export default function QrPage() {
               Always active — this code never expires
             </div>
 
-            <div className="mx-auto mt-2 rounded-tutak-lg bg-canvas p-4 text-left">
+            <div
+              data-testid="partner-pay-qr-image"
+              className="mx-auto flex w-fit items-center justify-center rounded-tutak-lg p-4"
+              style={{ backgroundColor: QR_LIGHT }}
+            >
+              <QRCodeSVG
+                value={payload}
+                size={200}
+                level="M"
+                marginSize={2}
+                bgColor={QR_LIGHT}
+                fgColor={QR_DARK}
+                title="Payment QR code"
+              />
+            </div>
+
+            <div className="mx-auto mt-4 rounded-tutak-lg bg-canvas p-4 text-left">
               <div className="mb-1.5 text-[12px] font-medium text-muted">Payment code</div>
               <code
                 data-testid="partner-pay-code"

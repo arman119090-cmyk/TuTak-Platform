@@ -17,12 +17,14 @@
     "@tutak/shared-types": "workspace:*",
     "axios": "^1.19.0",
     "next": "^16.3.0",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/react": "^16.3.2",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",
     "@types/react": "~19.2.2",

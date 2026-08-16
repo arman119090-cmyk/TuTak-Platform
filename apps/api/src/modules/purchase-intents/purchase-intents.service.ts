@@ -41,6 +41,24 @@ type Tx = Prisma.TransactionClient;
  *  - the partner's contribution and bonus-redemption-compensation ledger
  *    entries, kept as two separate postings rather than one netted figure
  *    (spec §23).
+ *
+ * Business rule (2026-08-16, Arman): `confirm()`/`reject()` — the manual
+ * cashier action below — applies only to *non-integrated* partners. A
+ * *verified integrated* partner (API, POS, EV/OCPI — a `PartnerIntegration`
+ * at `PartnerIntegrationStatus.ACTIVE`) is meant to have its own confirmed
+ * integration event finalize the transaction and bonus accrual directly,
+ * with no cashier confirmation step at all — the same canonical settlement
+ * this method runs, just triggered by the integration rather than a tap.
+ * `EvSessionsService.stopOnce()` is the first working example of exactly
+ * this shape, though it predates `PartnerIntegration` and doesn't reference
+ * it. This rule is recorded here as policy, not yet wired to a generic
+ * event-ingestion path for API/POS: `PartnerIntegration` today is a pure
+ * registry with zero downstream readers (confirmed by inspection), and no
+ * real API/POS partner has specified how it would authenticate, what an
+ * event contains, or how replay/idempotency is handled. Building that
+ * without a genuine specification would be inventing a protocol, not
+ * implementing a business rule — see docs/HARDENING_AUDIT_2026-08-16.md §M
+ * item 8.
  */
 @Injectable()
 export class PurchaseIntentsService {

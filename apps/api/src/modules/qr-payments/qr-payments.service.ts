@@ -106,13 +106,22 @@ export class QrPaymentsService {
     return qr;
   }
 
-  /** Only an admin or a member of the partner may issue a merchant-scoped QR code. */
+  /**
+   * Only an admin or someone affiliated with the partner may issue a
+   * merchant-scoped QR code. `isAffiliated` rather than the narrower
+   * `isMember`: the latter only sees `PartnerMembership`, created solely
+   * for a partner's founding owner, so staff onboarded the real way — via
+   * `AdminService.assignRole`, which creates only a partner-scoped
+   * `UserRole` — could not issue an invoice for their own employer at all.
+   * Same fix as `PurchaseIntentsService.create()`'s ownership check,
+   * applied here for authorization rather than self-dealing prevention.
+   */
   private async assertCanIssueForPartner(issuer: RequestUser, partnerId: string) {
     const isAdmin = issuer.roles.includes('ADMIN') || issuer.roles.includes('SUPER_ADMIN');
     if (isAdmin) return;
 
-    const isMember = await this.partnersService.isMember(partnerId, issuer.id);
-    if (!isMember) {
+    const isAffiliated = await this.partnersService.isAffiliated(partnerId, issuer.id);
+    if (!isAffiliated) {
       throw new ForbiddenException('You are not authorized to issue QR codes for this partner');
     }
   }
@@ -150,11 +159,20 @@ export class QrPaymentsService {
     // raise one against themselves for an amount they choose and collect the
     // accrual on it — 50,000 points a call at a 5% rate, repeatable. Blocking
     // just the issuer would also leave two staff members issuing for each
-    // other, so membership is what is checked, not identity.
+    // other, so affiliation is what is checked, not identity.
+    //
+    // `isAffiliated` rather than `isMember`: the latter only sees
+    // `PartnerMembership`, created solely for a partner's founding owner —
+    // a staff member onboarded the real way, via `AdminService.assignRole`
+    // (which creates only a partner-scoped `UserRole`), would pass an
+    // `isMember` check entirely and could redeem a colleague's invoice for
+    // themselves. Same fix already applied to
+    // `PurchaseIntentsService.create()`, `PaymentEngineService.capture()`,
+    // and `EvSessionsService`'s bonus-earning guard.
     if (qr.issuedByUserId && qr.issuedByUserId === payerUserId) {
       throw new BadRequestException('You cannot redeem a code you issued yourself');
     }
-    if (qr.partnerId && (await this.partnersService.isMember(qr.partnerId, payerUserId))) {
+    if (qr.partnerId && (await this.partnersService.isAffiliated(qr.partnerId, payerUserId))) {
       throw new BadRequestException(
         'You cannot redeem a code issued by the partner you belong to',
       );

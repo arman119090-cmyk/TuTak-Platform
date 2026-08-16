@@ -117,19 +117,28 @@ detail preserved in the agent's report; summarized here:
 | # | Path | Base | Formula | Ledger | Self-dealing check | Classification |
 |---|------|------|---------|--------|---------------------|-----------------|
 | 1 | `POST /purchase-intents/:id/confirm` | gross | 20/30/20/30 pool | Full, atomic (fixed this pass) | `isAffiliated` | **CURRENT CANONICAL** |
-| 2 | `POST /qr/redeem` | net/paid | flat accrual rate | Only if `FEATURE_QR_LEDGER_MIRROR=true` (off by default) | `isMember` | **COMPATIBILITY ADAPTER** — kept running deliberately (migration doc §3); economics divergence is **BUSINESS DECISION REQUIRED** |
-| 3 | `POST /ev/sessions/:id/stop` | net/paid | flat accrual rate | Never | **None** | **FASTCHARGE-OCPI SPECIAL CASE** for the metering mechanics; the missing self-dealing check is a genuine gap, **reported, not fixed** — see §J |
+| 2 | `POST /qr/redeem` | net/paid | flat accrual rate | Only if `FEATURE_QR_LEDGER_MIRROR=true` (off by default) | `isAffiliated` (was `isMember` — **fixed 2026-08-16**, same gap class) | **COMPATIBILITY ADAPTER** — kept running deliberately (migration doc §3); economics divergence is **BUSINESS DECISION REQUIRED** |
+| 3 | `POST /ev/sessions/:id/stop` | net/paid | flat accrual rate | Never | Session unblocked, bonus **earning** denied via `isAffiliated` — **fixed 2026-08-16**, revised same day by explicit business decision not to block the session itself | **FASTCHARGE-OCPI SPECIAL CASE** for the metering mechanics; also the first working example of the integrated-partner auto-finalization rule — see §M item 8 |
 | 4 | `POST /payments` → settlement job | net-of-refund | flat accrual rate | Yes | **Was none — fixed this pass** | Pre-existing, unrelated "Financial Core" subsystem (predates tonight's spec); **fixed** as the same vulnerability class already closed twice elsewhere |
 | 5 | `POST /refunds` | reversal of #4 | reversal | Yes | N/A, admin-only | CURRENT CANONICAL for its own pipeline |
 | 6 | `POST /wallet/admin/adjust` | caller-set, capped | flat | No | N/A, admin-only | LEGACY BUT STILL REQUIRED; no ledger posting is a minor **BUSINESS DECISION REQUIRED** item |
-| 7 | Referral Challenge reward | fixed | flat one-time | No (deliberate — see §E) | inherited from trigger | CURRENT CANONICAL (working as designed) |
+| 7 | Referral Challenge reward | fixed | flat one-time | Yes — funded from `PLATFORM_REVENUE` (**resolved 2026-08-16**, see §E/§J) | inherited from trigger | CURRENT CANONICAL (working as designed) |
 
 **No old endpoint bypasses the current financial rules that this pass could
 find and safely fix.** Three distinct bonus-accrual formulas (gross×pool-split
 vs. net×flat-rate vs. net-of-refund×flat-rate) coexist for what a customer
 experiences as "the same kind of purchase" — this is a genuine product/finance
 decision, not an engineering defect, and is recorded in §M rather than
-resolved by invention.
+resolved by invention. **Re-audited 2026-08-16** (Arman's explicit
+instruction to check for a *second* new formula, not to migrate the existing
+three): still exactly three, unchanged in shape. Every fix made since the
+first draft of this table — the QR/EV self-dealing gaps, the
+DeferredBonusLot expiry revenue posting, the Referral Challenge funding —
+touched authorization or added a *missing* ledger posting to an *existing*
+formula; none introduced a new accrual formula or changed how any of the
+three compute their base or rate. Confirmed by re-reading
+`qr-payments.service.ts`, `ev-sessions.service.ts`, and
+`purchase-intents.service.ts` end to end, not by re-running old notes.
 
 ## E. Referral review
 
@@ -571,6 +580,28 @@ surfaced by this pass's broader entry-point/registration audits:
    `PartnersService.isAffiliated()`, gated the same way an unverified phone
    already is; spending previously-earned bonus is untouched. No
    FastCharge/OCPI redesign — see §H for full detail.
+8. **New: integrated-partner auto-finalization (policy recorded, not yet
+   implemented), 2026-08-16 (Arman's decision).** For a *non-integrated*
+   partner, `PurchaseIntent`'s manual cashier `confirm()`/`reject()` (spec
+   §7-9) is and remains the mechanism. For a *verified integrated* partner
+   (API, POS, EV/OCPI — a `PartnerIntegration` at
+   `PartnerIntegrationStatus.ACTIVE`), the intent is that a confirmed
+   integration event finalizes the transaction and bonus accrual directly,
+   using the same canonical settlement rules, with no cashier confirmation
+   step. `EvSessionsService.stopOnce()` already does exactly this shape for
+   EV/OCPI — it predates `PartnerIntegration` and doesn't reference it, but
+   satisfies the rule as written. Recorded as policy in
+   `purchase-intents.service.ts`'s class docblock and here, deliberately
+   **not** implemented as a generic API/POS event-ingestion endpoint this
+   pass, per Arman's explicit instruction: `PartnerIntegration` today is a
+   pure registry with zero downstream readers (confirmed by grep across the
+   whole codebase — nothing reads `PartnerIntegrationStatus.ACTIVE`
+   anywhere), and no real API/POS partner has specified authentication,
+   event shape, or replay/idempotency handling. Building an auto-confirm
+   endpoint without that specification would be inventing both a protocol
+   and the trust boundary around a path that mints real money — held for a
+   dedicated, explicitly-scoped session once a real partner integration
+   exists to specify against.
 
 ## N. Legal/accounting items
 

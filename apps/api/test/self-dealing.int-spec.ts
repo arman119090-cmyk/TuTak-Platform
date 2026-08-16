@@ -109,6 +109,45 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
+    it('lets staff added via a partner-scoped role, not only via PartnerMembership, issue an invoice', async () => {
+      // AdminService.assignRole — the real staff-onboarding path — creates
+      // only a UserRole, never a PartnerMembership. Before this fix,
+      // assertCanIssueForPartner's isMember() check would have refused this
+      // legitimate cashier entirely — a functional bug, not just a
+      // self-dealing gap.
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
+      await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId: partner.id } });
+
+      await expect(
+        qrPayments.issue(
+          { type: QrCodeType.DYNAMIC_INVOICE, partnerId: partner.id, amount: '5000' },
+          asUser(user.id, [RoleName.PARTNER_STAFF]),
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('refuses staff added via a partner-scoped role from redeeming a colleague\'s invoice', async () => {
+      const { user: issuerStaff, partner } = await insider();
+      const { user: roleStaff, wallet } = await createCustomer(prisma);
+      const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
+      await prisma.userRole.create({ data: { userId: roleStaff.id, roleId: role.id, partnerId: partner.id } });
+
+      const code = await qrPayments.issue(
+        { type: QrCodeType.DYNAMIC_INVOICE, partnerId: partner.id, amount: '1000000' },
+        asUser(issuerStaff.id, [RoleName.PARTNER_OWNER]),
+      );
+
+      await expect(
+        qrPayments.redeem({ token: code.token, idempotencyKey: 'insider-3' }, roleStaff.id),
+      ).rejects.toThrow(/cannot redeem a code issued by the partner you belong to/);
+
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.pendingBonus.toFixed(4)).toBe('0.0000');
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
     it('records the issuer on every code, not only on user pay tokens', async () => {
       const { user, partner } = await insider();
 

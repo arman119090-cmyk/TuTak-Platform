@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PurchaseIntentStatus as Status } from '@tutak/shared-types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -25,7 +26,7 @@ import { formatAmd, formatPoints } from '../../utils/format';
 export function PurchaseIntentStatusScreen() {
   const { t } = useTranslation();
   const { color, space, text, radius, layout } = useTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'PurchaseIntentStatus'>>();
   const queryClient = useQueryClient();
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
@@ -109,6 +110,13 @@ export function PurchaseIntentStatusScreen() {
     );
   }
 
+  const createAnother = () => {
+    navigation.replace('CreatePurchaseIntent', {
+      partnerId: intent.partnerId,
+      partnerBranchId: intent.partnerBranchId ?? undefined,
+    });
+  };
+
   if (status === Status.REJECTED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
@@ -119,6 +127,9 @@ export function PurchaseIntentStatusScreen() {
           <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
             {t('purchaseIntent.rejected')}
           </Text>
+          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
+            {formatAmd(intent.grossAmount)}
+          </Text>
           {intent.rejectionReason ? (
             <Text
               style={[text.bodySm, { color: color.textSecondary, textAlign: 'center', marginTop: space[2] }]}
@@ -127,8 +138,9 @@ export function PurchaseIntentStatusScreen() {
             </Text>
           ) : null}
         </Surface>
-        <View style={{ marginTop: space[6] }}>
-          <Button label={t('common.done')} onPress={done} />
+        <View style={{ marginTop: space[6], gap: space[3] }}>
+          <Button label={t('purchaseIntent.createNew')} onPress={createAnother} />
+          <Button label={t('purchaseIntent.goHome')} onPress={done} variant="tertiary" />
         </View>
       </Screen>
     );
@@ -138,12 +150,19 @@ export function PurchaseIntentStatusScreen() {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
         <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
-          <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
+          <Ionicons name="time-outline" size={32} color={color.pendingText} />
+          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[4] }]}>
+            {formatAmd(intent.grossAmount)}
+          </Text>
+          <Text
+            style={[text.bodySm, { color: color.textSecondary, textAlign: 'center', marginTop: space[2] }]}
+          >
             {t('purchaseIntent.expired')}
           </Text>
         </Surface>
-        <View style={{ marginTop: space[6] }}>
-          <Button label={t('common.done')} onPress={done} />
+        <View style={{ marginTop: space[6], gap: space[3] }}>
+          <Button label={t('purchaseIntent.createNew')} onPress={createAnother} />
+          <Button label={t('purchaseIntent.goHome')} onPress={done} variant="tertiary" />
         </View>
       </Screen>
     );
@@ -159,6 +178,14 @@ export function PurchaseIntentStatusScreen() {
         </Text>
         <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
           {formatAmd(intent.grossAmount)}
+        </Text>
+        {Number(intent.bonusAmountRequested) > 0 ? (
+          <Text style={[text.bodySm, { color: color.reservedText, marginTop: space[2] }]}>
+            −{formatPoints(intent.bonusAmountRequested)} {t('qr.applyBonus').toLowerCase()}
+          </Text>
+        ) : null}
+        <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
+          {t('purchaseIntent.purchaseId')}: {intent.id.slice(-8).toUpperCase()}
         </Text>
         {secondsLeft !== null ? (
           <View

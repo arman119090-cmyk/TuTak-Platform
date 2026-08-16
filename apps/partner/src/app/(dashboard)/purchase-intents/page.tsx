@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PurchaseIntentStatus } from '@tutak/shared-types';
 import { Badge, Button, EmptyState, Input, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
@@ -9,6 +9,22 @@ import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
 
 const num = (v: string | number | undefined) =>
   Number(v ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/,/g, ' ');
+
+function Countdown({ expiresAt }: { expiresAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const secondsLeft = Math.max(0, Math.floor((+new Date(expiresAt) - now) / 1000));
+  const m = Math.floor(secondsLeft / 60);
+  const s = secondsLeft % 60;
+  return (
+    <Badge tone={secondsLeft < 60 ? 'danger' : 'pending'}>
+      {m}:{String(s).padStart(2, '0')}
+    </Badge>
+  );
+}
 
 /**
  * Spec §7 steps 9-11 / §25-26: the cashier's queue. Amount, bonus, and the
@@ -67,15 +83,19 @@ export default function PurchaseIntentsPage() {
         <Table>
           <thead>
             <tr>
+              <Th>ID</Th>
               <Th align="right">Amount</Th>
               <Th align="right">Bonus requested</Th>
-              <Th>Expires</Th>
+              <Th>Expires in</Th>
               <Th align="right">Action</Th>
             </tr>
           </thead>
           <tbody>
             {items.map((intent) => (
               <Tr key={intent.id}>
+                <Td className="font-mono text-[12px] text-faint">
+                  {intent.id.slice(-8).toUpperCase()}
+                </Td>
                 <Td align="right" className="tabular font-medium">
                   {num(intent.grossAmount)} ֏
                 </Td>
@@ -87,12 +107,7 @@ export default function PurchaseIntentsPage() {
                   )}
                 </Td>
                 <Td>
-                  <Badge tone="pending">
-                    {new Date(intent.expiresAt).toLocaleTimeString('en-US', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Badge>
+                  <Countdown expiresAt={intent.expiresAt} />
                 </Td>
                 <Td align="right">
                   {rejectingId === intent.id ? (

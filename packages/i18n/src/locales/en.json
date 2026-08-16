@@ -314,6 +314,10 @@
     "confirmed": "Purchase confirmed",
     "rejected": "Purchase declined",
     "expired": "This purchase was not confirmed in time and has expired.",
-    "payHere": "Pay here"
+    "payHere": "Pay here",
+    "youPay": "You pay",
+    "purchaseId": "Purchase ID",
+    "createNew": "Create new purchase",
+    "goHome": "Go home"
   }
 }

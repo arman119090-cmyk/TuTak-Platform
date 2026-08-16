@@ -13,7 +13,7 @@ import { TextField } from '../../components/TextField';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { walletApi } from '../../../data/api/walletApi';
 import { describeApiError } from '../../../data/api/errors';
-import { formatPoints } from '../../utils/format';
+import { formatAmd, formatPoints } from '../../utils/format';
 
 /**
  * Spec §7 steps 1-8: the customer enters the amounts themselves, on the
@@ -81,6 +81,19 @@ export function CreatePurchaseIntentScreen() {
         <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}>
           {error}
         </Text>
+      ) : null}
+
+      {grossValid ? (
+        <Surface style={{ marginTop: space[4] }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[text.bodySm, { color: color.textSecondary }]}>
+              {t('purchaseIntent.youPay')}
+            </Text>
+            <Text style={[text.headline, { color: color.textPrimary }]}>
+              {formatAmd(Math.max(0, Number(grossAmount || 0) - Number(bonusAmount || 0)))}
+            </Text>
+          </View>
+        </Surface>
       ) : null}
 
       <Surface style={{ marginTop: space[4] }}>

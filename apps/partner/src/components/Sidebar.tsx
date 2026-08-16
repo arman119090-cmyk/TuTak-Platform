@@ -13,6 +13,7 @@ const NAV: NavItem[] = [
   { href: '/purchase-intents', label: 'Purchase requests', icon: <NavIcon d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 13l2 2 4-4" /> },
   { href: '/earnings', label: 'Earnings', icon: <NavIcon d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" /> },
   { href: '/ev-stations', label: 'EV stations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
+  { href: '/integrations', label: 'Integrations', icon: <NavIcon d="M8 12a4 4 0 1 1 8 0 4 4 0 0 1-8 0ZM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /> },
 ];
 
 function NavIcon({ d }: { d: string }) {

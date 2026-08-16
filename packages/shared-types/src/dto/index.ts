@@ -7,3 +7,4 @@ export * from './partner';
 export * from './referral';
 export * from './notification';
 export * from './purchase-intent';
+export * from './partner-integration';

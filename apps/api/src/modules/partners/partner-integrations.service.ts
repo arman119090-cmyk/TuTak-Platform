@@ -84,6 +84,26 @@ export class PartnerIntegrationsService {
    * be on the record.
    */
   async markWebsiteVerified(integrationId: string, actorUserId: string) {
+    // GitHub issue #28 (MEDIUM, 2026-08-16): this used to update any
+    // integration by id straight to ACTIVE with no type check. An
+    // API/POS/EV_CHARGING/OCPI row — none of which have any real
+    // activation path or specification — could be flipped ACTIVE by
+    // calling this endpoint with its id, which is dangerous the moment
+    // anything downstream starts trusting ACTIVE as permission to
+    // auto-finalize a transaction (see the integrated-partner
+    // auto-finalization policy recorded on `PurchaseIntentsService`).
+    const existing = await this.prisma.partnerIntegration.findUnique({
+      where: { id: integrationId },
+    });
+    if (!existing) {
+      throw new BadRequestException('Integration not found');
+    }
+    if (existing.type !== PartnerIntegrationType.WEBSITE) {
+      throw new BadRequestException(
+        'Only a WEBSITE integration can be activated through website verification',
+      );
+    }
+
     const integration = await this.prisma.partnerIntegration.update({
       where: { id: integrationId },
       data: { status: PartnerIntegrationStatus.ACTIVE, websiteVerifiedAt: new Date() },

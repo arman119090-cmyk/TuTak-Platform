@@ -206,6 +206,35 @@ describe('Partner integrations (integration)', () => {
       expect(verified.status).toBe(PartnerIntegrationStatus.ACTIVE);
       expect(verified.websiteVerifiedAt).not.toBeNull();
     });
+
+    /**
+     * GitHub issue #28 (MEDIUM, 2026-08-16): `markWebsiteVerified` updated
+     * any integration by id straight to ACTIVE with no type check, so an
+     * API/POS/EV_CHARGING/OCPI row — none of which have a real activation
+     * path — could be flipped ACTIVE through this endpoint. Dangerous the
+     * moment anything downstream trusts ACTIVE as permission to
+     * auto-finalize a transaction.
+     */
+    it.each([
+      PartnerIntegrationType.API,
+      PartnerIntegrationType.POS,
+      PartnerIntegrationType.EV_CHARGING,
+      PartnerIntegrationType.OCPI,
+    ])('refuses to activate a %s integration through website verification', async (type) => {
+      const partner = await createPartner(prisma);
+      const owner = await ownerOf(partner.id);
+      const integration = await controller.create(owner, partner.id, { type });
+
+      await expect(controller.verifyWebsite(await admin(), integration.id)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      const unchanged = await prisma.partnerIntegration.findUniqueOrThrow({
+        where: { id: integration.id },
+      });
+      expect(unchanged.status).toBe(PartnerIntegrationStatus.NOT_CONNECTED);
+      expect(unchanged.websiteVerifiedAt).toBeNull();
+    });
   });
 
   it('lists newest first, matching what the dashboard renders as "current" per type', async () => {

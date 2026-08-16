@@ -672,6 +672,24 @@ surfaced by this pass's broader entry-point/registration audits:
     `PurchaseIntentsService.settlePurchase()`'s real math. Regression:
     `mockAdapter.test.ts` › "credits the canonical 20% GREEN share..."
     pins `partner-sas`'s real 5% mock rate and asserts 100, not 500.
+12. ~~**`verify-website` could activate a non-WEBSITE integration**~~ —
+    **RESOLVED 2026-08-16** (GitHub issue #28 MEDIUM finding). Distinct
+    from item 1 above, which is about *whether* manual admin attestation
+    is the right verification method — this is about `markWebsiteVerified`
+    never checking `type` at all: given any integration id it updated the
+    row straight to `ACTIVE`, so an admin calling the endpoint with an
+    API/POS/EV_CHARGING/OCPI integration's id — none of which have a real
+    activation path or specification — flipped it `ACTIVE` too. Dangerous
+    specifically because §M item 8's integrated-partner auto-finalization
+    policy is defined in terms of `PartnerIntegrationStatus.ACTIVE`; a
+    falsely-active row is exactly the state that policy would eventually
+    trust. Fixed by fetching the row first and refusing with
+    `BadRequestException` unless `type === WEBSITE`, before any write.
+    Regression: `partner-integrations.int-spec.ts` › "refuses to activate
+    a %s integration through website verification" (API/POS/EV_CHARGING/
+    OCPI, `it.each`), verified via `git stash` to reproduce the exact
+    pre-fix outcome (the row ends up `ACTIVE` with `websiteVerifiedAt`
+    set) and pass after the fix.
 
 ## N. Legal/accounting items
 

@@ -21,9 +21,18 @@ export class PartnerIntegrationsService {
     });
   }
 
-  create(partnerId: string, dto: CreateIntegrationDto) {
+  async create(partnerId: string, dto: CreateIntegrationDto) {
     if (dto.type === PartnerIntegrationType.WEBSITE && !dto.websiteUrl) {
       throw new BadRequestException('websiteUrl is required for a WEBSITE integration');
+    }
+
+    if (dto.partnerBranchId) {
+      const branch = await this.prisma.partnerBranch.findUnique({
+        where: { id: dto.partnerBranchId },
+      });
+      if (!branch || branch.partnerId !== partnerId) {
+        throw new BadRequestException('This branch does not belong to the given partner');
+      }
     }
 
     return this.prisma.partnerIntegration.create({

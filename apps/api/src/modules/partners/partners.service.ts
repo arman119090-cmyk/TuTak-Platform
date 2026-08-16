@@ -225,6 +225,26 @@ export class PartnersService {
   }
 
   /**
+   * True if this user is affiliated with this partner *at all* — either a
+   * `PartnerMembership` row (only ever created for the founding owner, by
+   * `create`/`apply` above) or a partner-scoped `UserRole` (how every other
+   * staff member — OWNER, MANAGER, or STAFF added later — actually gets
+   * attached to a partner, via `AdminService.assignRole`, which does not
+   * also create a `PartnerMembership`). `isMember` alone under-detects for
+   * exactly that reason: checking it in isolation would only ever catch a
+   * partner's founding owner, not staff added afterward. Used for
+   * self-dealing checks, where under-detecting is a real financial hole,
+   * not merely a UX gap.
+   */
+  async isAffiliated(partnerId: string, userId: string): Promise<boolean> {
+    const [membership, role] = await Promise.all([
+      this.prisma.partnerMembership.findUnique({ where: { partnerId_userId: { partnerId, userId } } }),
+      this.prisma.userRole.findFirst({ where: { partnerId, userId } }),
+    ]);
+    return !!membership || !!role;
+  }
+
+  /**
    * Toggles trading on or off for a partner that has already been through
    * onboarding. Keeps `status` in step with `isActive` — ACTIVE while
    * trading, SUSPENDED while switched off — so the two never disagree about

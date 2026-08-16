@@ -13,7 +13,6 @@ import { PartnersService } from '../src/modules/partners/partners.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../src/modules/wallet/deferred-bonus-lot.service';
-import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
@@ -38,7 +37,6 @@ describe('PurchaseIntents (integration)', () => {
   let partnersController: PartnersController;
   let engine: BonusEngineService;
   let deferredLots: DeferredBonusLotService;
-  let ledger: LedgerService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -48,7 +46,6 @@ describe('PurchaseIntents (integration)', () => {
     partnersController = harness.app.get(PartnersController);
     engine = harness.app.get(BonusEngineService);
     deferredLots = harness.app.get(DeferredBonusLotService);
-    ledger = harness.app.get(LedgerService);
   });
 
   afterAll(async () => {
@@ -136,6 +133,18 @@ describe('PurchaseIntents (integration)', () => {
       expect(
         (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).availableBonus.toFixed(4),
       ).toBe('1000.0000'); // 2000 - 1000 held
+    });
+
+    it('refuses to create a purchase intent for a partner the customer belongs to', async () => {
+      const partner = await createPartner(prisma);
+      const owner = await staffMember(partner.id, [RoleName.PARTNER_OWNER]);
+
+      // Same reasoning as QrPaymentsService.redeem's self-dealing check:
+      // a partner's own staff must not be able to fabricate a purchase
+      // against their own partner and pocket the pool's bonus share.
+      await expect(
+        purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, owner.id),
+      ).rejects.toThrow(/partner you belong to/);
     });
 
     it('refuses to create a purchase intent against a partner still pending approval', async () => {

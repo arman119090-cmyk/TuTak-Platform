@@ -268,13 +268,18 @@ payment flow and OCPI adapter selection as before this work began.
 - **No retroactive rate changes**: the commercial snapshot test in §G is
   the direct proof; a partner cannot retroactively change what an
   already-created intent will settle for.
-- **No new authorization holes**: `PurchaseIntentsController` reuses the
-  existing `assertPartnerScope`/`hasPartnerScope` helpers exactly as every
-  other partner-scoped controller does; `commercial-settings` adds an
-  explicit OWNER-tier check beyond the permission system because
-  `PARTNER_MANAGE` alone does not distinguish OWNER from MANAGER/STAFF (the
-  same class of gap flagged in `docs/AUDIT_2026-08-B.md` §H5, closed here
-  proactively rather than left to a future audit).
+- **`PurchaseIntentsController` reuses the existing `assertPartnerScope`/
+  `hasPartnerScope` helpers** exactly as every other partner-scoped
+  controller does; `commercial-settings` adds an explicit OWNER-tier check
+  beyond the permission system because `PARTNER_MANAGE` alone does not
+  distinguish OWNER from MANAGER/STAFF (the same class of gap flagged in
+  `docs/AUDIT_2026-08-B.md` §H5, closed here proactively rather than left
+  to a future audit).
+- **One self-dealing hole was found and fixed post-implementation** — see
+  §O below. Scope/permission checks alone were not enough; a self-dealing
+  check specific to the money-moving action was required and had been
+  missed on first pass, exactly the shape of gap this section exists to
+  catch.
 - **Residual risk, not closed by this work**: `PurchaseIntentsController`
   has no mobile UI wired to it yet, so it is reachable only via direct API
   calls until a client exists — not a vulnerability, but worth noting it is
@@ -340,7 +345,78 @@ the already-committed migration-plan document
 (`docs: migration plan for the core business architecture spec`,
 commit `e318bf7`). All implementation described above is committed in one
 follow-up commit, `0414085` ("feat(core): implement core business
-architecture spec..."), 44 files changed. Working tree is clean as of that
-commit. Nothing has been pushed to the remote by this session — push
-status should be confirmed against `git status`/`git log origin/...` at
-the moment this report is read, not assumed from this document.
+architecture spec..."), 44 files changed. A second commit,
+`2bf6a69`, filled in the final test tally in this report. Working tree is
+clean as of that commit and both were pushed to `origin/claude/tutak-loyalty-mvp-e485jm`.
+A subsequent security audit (§O) added a third commit fixing one HIGH
+finding. Push status should be confirmed against `git status`/`git log
+origin/...` at the moment this report is read, not assumed from this
+document.
+
+## O. Post-completion security audit
+
+Run against `git diff e318bf7^..HEAD -- apps/api packages` (this feature's
+full diff) using the same methodology as `/security-review`: an
+exploration pass against established codebase patterns, followed by
+independent verification of each candidate finding by direct code
+inspection before anything was reported or fixed.
+
+**1 HIGH finding, fixed:**
+
+`purchase-intents.service.ts` had no self-dealing check. Spec-compliant
+partner onboarding (`POST /partners/apply`, self-service) plus the
+existing `AdminService.assignRole` staff-grant path meant a partner's own
+staff member — including its own founding owner — could call
+`POST /purchase-intents` against their own partner with an arbitrary
+`grossAmount`, then confirm it with their own staff identity via
+`POST /purchase-intents/:id/confirm`. `assertPartnerScope` correctly
+allows this, because the staff member genuinely is scoped to that
+partner — scope was never the missing check. What was missing was the
+same self-dealing check `QrPaymentsService.redeem` already carries and
+explains in its own comment: "anyone on the partner's side who can raise
+an invoice can raise one against themselves for an amount they choose and
+collect the accrual on it." Unlike the QR flow, nothing in the new
+PurchaseIntent path checked this at all, so `settlePurchase` would run in
+full — green bonus into the same user's own wallet, a `DeferredBonusLot`
+opened, ledger entries posted against the partner's own `PARTNER_PAYABLE`
+account for a purchase that never happened. Repeatable at will.
+
+Fixed in `purchase-intents.service.ts:create()` with a check mirroring
+the QR flow's — but *not* by reusing `PartnersService.isMember` as-is.
+Tracing how partner staff actually get attached to a partner in this
+codebase surfaced a second, deeper gap: `PartnerMembership` (what
+`isMember` checks) is only ever created for a partner's founding owner,
+by `PartnersService.create`/`apply`. Every other staff member — anyone
+added later via `AdminService.assignRole`, which is the only path that
+exists for it — gets a partner-scoped `UserRole` row and no
+`PartnerMembership` row at all. A self-dealing check built on `isMember`
+alone would have caught only the founding owner and let every other
+partner-scoped role sail straight through, which the first version of the
+new regression test caught immediately (it failed against a
+`PARTNER_OWNER` created exactly the way this codebase's own staff-grant
+path creates one). Fixed by adding
+`PartnersService.isAffiliated(partnerId, userId)` — checks both
+`PartnerMembership` and any partner-scoped `UserRole` — and using that
+instead. This is scoped to the new check only; the pre-existing QR flow's
+`isMember` calls were not touched, since that is outside this diff and
+outside this audit's stated scope, and is noted here rather than silently
+left for whoever does the next audit pass.
+
+Regression test: `purchase-intents.int-spec.ts` › "lifecycle" › "refuses
+to create a purchase intent for a partner the customer belongs to" — uses
+the same `staffMember()` fixture (which grants a role the way
+`AdminService.assignRole` actually does, with no `PartnerMembership` row)
+that first exposed the gap in `isMember`.
+
+**1 LOW/informational finding, fixed:**
+
+`PartnerIntegrationsService.create()` did not verify `partnerBranchId`
+belongs to `partnerId`, unlike the identical check already present in
+`PurchaseIntentsService.create()`. Currently low-impact — no money-moving
+or trust-sensitive logic in this diff reads that field yet, it is
+explicitly an unbuilt extension point — but closed to match the sibling
+pattern before anything is built on top of it.
+
+Full backend suite re-run after both fixes: **59 test suites, 700 tests,
+all passing** (700, not 699 — the one new self-dealing regression test).
+Typecheck and lint clean.

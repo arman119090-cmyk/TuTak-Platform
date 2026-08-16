@@ -88,6 +88,24 @@ export class PurchaseIntentsService {
     // see PartnersService.findActiveOrThrow.
     const partner = await this.partnersService.findActiveOrThrow(dto.partnerId);
 
+    // A purchase needs two parties, and neither of them may be the
+    // merchant. Same reasoning `QrPaymentsService.redeem` already applies
+    // to the old flow: accrual is funded by the partner, so anyone on the
+    // partner's side who can create a PurchaseIntent can raise one against
+    // themselves for an amount they choose, confirm it with their own
+    // staff identity, and collect the pool's green/deferred/referrer share
+    // on a purchase that never happened. Affiliation is what is checked,
+    // not identity, so two staff members transacting with each other is
+    // blocked too, not just self-confirmation — and `isAffiliated` (not
+    // the narrower `isMember`) is used deliberately, since most staff are
+    // attached to a partner via a partner-scoped role, not a
+    // `PartnerMembership` row.
+    if (await this.partnersService.isAffiliated(partner.id, customerId)) {
+      throw new BadRequestException(
+        'You cannot create a purchase intent for a partner you belong to',
+      );
+    }
+
     if (dto.partnerBranchId) {
       const branch = await this.prisma.partnerBranch.findUnique({
         where: { id: dto.partnerBranchId },

@@ -28,6 +28,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { PartnersModule } from './modules/partners/partners.module';
+import { PurchaseIntentsModule } from './modules/purchase-intents/purchase-intents.module';
 import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
 import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
 import { AdminModule } from './modules/admin/admin.module';
@@ -72,6 +73,7 @@ import { SweepsModule } from './modules/sweeps/sweeps.module';
     ReferralModule,
     TransactionsModule,
     PartnersModule,
+    PurchaseIntentsModule,
     QrPaymentsModule,
     EvChargingModule,
     AdminModule,

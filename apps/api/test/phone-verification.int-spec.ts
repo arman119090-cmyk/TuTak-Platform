@@ -190,11 +190,18 @@ describe('Phone verification (integration)', () => {
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
-    it('refuses a referral reward when either side is unverified', async () => {
+    it('refuses a Referral Challenge reward when either side is unverified', async () => {
       const referrer = await unverified();
       const referee = await createCustomer(prisma);
       await prisma.referralInvite.create({
         data: { referrerUserId: referrer.user.id, refereeUserId: referee.user.id },
+      });
+      const participant = await prisma.referralChallengeParticipant.create({
+        data: {
+          referrerUserId: referrer.user.id,
+          refereeUserId: referee.user.id,
+          requiredAmount: '10000',
+        },
       });
 
       const partner = await createPartner(prisma);
@@ -202,23 +209,37 @@ describe('Phone verification (integration)', () => {
         userId: referee.user.id,
         partnerId: partner.id,
         type: TransactionType.QR_PAYMENT,
-        amount: '5000',
+        amount: '10000',
       });
       await transactions.markCompleted(tx.id);
 
-      // An unverified referrer is a farm's collection account.
-      expect(await referral.handleQualifyingTransaction(referee.user.id, tx.id)).toBeNull();
+      // An unverified referrer is a farm's collection account. Progress
+      // still crosses the threshold — the gate is on the reward, not on
+      // whether a real purchase happened — but stays IN_PROGRESS rather
+      // than being claimed, so a later purchase after verification can still
+      // reward it.
+      await referral.advanceChallengeProgress(referee.user.id, tx.id);
+      expect((await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } })).status).toBe(
+        'IN_PROGRESS',
+      );
       expect(
         (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } }))
           .lifetimeEarned.toFixed(4),
       ).toBe('0.0000');
     });
 
-    it('pays the referral once both sides are verified', async () => {
+    it('pays the Referral Challenge once both sides are verified', async () => {
       const referrer = await createCustomer(prisma);
       const referee = await createCustomer(prisma);
       await prisma.referralInvite.create({
         data: { referrerUserId: referrer.user.id, refereeUserId: referee.user.id },
+      });
+      await prisma.referralChallengeParticipant.create({
+        data: {
+          referrerUserId: referrer.user.id,
+          refereeUserId: referee.user.id,
+          requiredAmount: '10000',
+        },
       });
 
       const partner = await createPartner(prisma);
@@ -226,13 +247,17 @@ describe('Phone verification (integration)', () => {
         userId: referee.user.id,
         partnerId: partner.id,
         type: TransactionType.QR_PAYMENT,
-        amount: '5000',
+        amount: '10000',
       });
       await transactions.markCompleted(tx.id);
-      await referral.handleQualifyingTransaction(referee.user.id, tx.id);
+      await referral.advanceChallengeProgress(referee.user.id, tx.id);
 
       expect(
         (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } }))
+          .lifetimeEarned.toFixed(4),
+      ).toBe('1000.0000');
+      expect(
+        (await prisma.wallet.findUniqueOrThrow({ where: { id: referee.wallet.id } }))
           .lifetimeEarned.toFixed(4),
       ).toBe('1000.0000');
     });

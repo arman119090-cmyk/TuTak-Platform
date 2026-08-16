@@ -22,6 +22,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
+import { ReferralService } from '../referral/referral.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAccessPayload } from './strategies/jwt.strategy';
@@ -49,6 +50,7 @@ export class AuthService {
     private readonly auditService: AuditService,
     private readonly events: EventEmitter2,
     private readonly fraudDetection: FraudDetectionService,
+    private readonly referralService: ReferralService,
   ) {}
 
   async register(dto: RegisterDto, meta: RequestMeta) {
@@ -77,14 +79,14 @@ export class AuthService {
       });
 
       if (dto.referralCode) {
-        const referrer = await tx.referralCode.findUnique({
-          where: { code: dto.referralCode },
-        });
-        if (referrer && referrer.userId !== created.id) {
-          await tx.referralInvite.create({
-            data: { referrerUserId: referrer.userId, refereeUserId: created.id },
-          });
-        }
+        // Spec §5: referrer may be a USER or a PARTNER, and either way this
+        // is the only moment attribution is ever written — see
+        // `ReferralService.createAttribution` for why that is true by
+        // construction, not just by convention.
+        await this.referralService.createAttribution(
+          { refereeUserId: created.id, referrerCode: dto.referralCode },
+          tx,
+        );
       }
 
       await tx.device.create({

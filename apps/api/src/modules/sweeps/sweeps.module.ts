@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
 import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { PurchaseIntentsModule } from '../purchase-intents/purchase-intents.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { RetentionModule } from '../retention/retention.module';
 import { UsersModule } from '../users/users.module';
@@ -12,10 +13,12 @@ import { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation
 import { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import { OutboxService } from '../ledger/outbox.service';
+import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { RetentionService } from '../retention/retention.service';
 import { AccountDeletionService } from '../users/account-deletion.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
+import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { SweepsHeartbeatService } from './sweeps.heartbeat.service';
 import { SWEEPS_QUEUE, SWEEP_DEPENDENCIES, SweepDependencies } from './sweeps.jobs';
 import { SweepsProcessor } from './sweeps.processor';
@@ -40,6 +43,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
     WalletModule,
     EvChargingModule,
     LedgerModule,
+    PurchaseIntentsModule,
     ReconciliationModule,
     RetentionModule,
     UsersModule,
@@ -59,6 +63,8 @@ import { SweepsScheduler } from './sweeps.scheduler';
         EvCdrReconciliationService,
         AccountDeletionService,
         RetentionService,
+        DeferredBonusLotService,
+        PurchaseIntentsService,
       ],
       useFactory: (
         bonus: BonusEngineService,
@@ -69,6 +75,8 @@ import { SweepsScheduler } from './sweeps.scheduler';
         cdrs: EvCdrReconciliationService,
         accountDeletion: AccountDeletionService,
         retention: RetentionService,
+        deferredBonusLots: DeferredBonusLotService,
+        purchaseIntents: PurchaseIntentsService,
       ): SweepDependencies => ({
         bonus,
         reservations,
@@ -78,6 +86,8 @@ import { SweepsScheduler } from './sweeps.scheduler';
         cdrs,
         accountDeletion,
         retention,
+        deferredBonusLots,
+        purchaseIntents,
       }),
     },
     SweepsProcessor,

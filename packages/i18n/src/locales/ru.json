@@ -236,7 +236,8 @@
     "BONUS_REDEMPTION": "Списаны бонусы",
     "REFERRAL_REWARD": "Реферальное вознаграждение",
     "REFUND": "Возврат",
-    "MANUAL_ADJUSTMENT": "Корректировка"
+    "MANUAL_ADJUSTMENT": "Корректировка",
+    "PARTNER_PURCHASE": "Покупка у партнёра"
   },
   "transactionStatus": {
     "INITIATED": "Создан",
@@ -251,8 +252,10 @@
     "ACCRUAL_REFERRAL": "Реферальный бонус",
     "ACCRUAL_PROMOTION": "Акция",
     "ACCRUAL_MANUAL_ADJUSTMENT": "Корректировка",
+    "ACCRUAL_DEFERRED": "Открыт отложенный бонус",
     "REDEMPTION_QR_PAYMENT": "Списано при оплате",
     "REDEMPTION_EV_CHARGING": "Списано за зарядку",
+    "REDEMPTION_PARTNER_PURCHASE": "Списано у партнёра",
     "EXPIRY": "Истекло",
     "REVERSAL": "Отменено",
     "RESERVE_HOLD": "Удержано для оплаты",

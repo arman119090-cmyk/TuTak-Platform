@@ -1,9 +1,11 @@
 import type { AccountDeletionService } from '../users/account-deletion.service';
 import type { BonusEngineService } from '../wallet/bonus-engine.service';
+import type { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import type { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import type { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation.service';
 import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
+import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
 
@@ -30,6 +32,8 @@ export interface SweepDependencies {
   cdrs: EvCdrReconciliationService;
   accountDeletion: AccountDeletionService;
   retention: RetentionService;
+  deferredBonusLots: DeferredBonusLotService;
+  purchaseIntents: PurchaseIntentsService;
 }
 
 export interface SweepDefinition {
@@ -177,6 +181,25 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 26 * 60 * 60_000,
     lockTtlMs: 15 * 60_000,
     run: ({ retention }) => retention.prune(),
+  },
+  {
+    name: 'deferred-bonus.expire-lots',
+    why: "Spec §16: a deferred lot whose deadline passes before it reaches its turnover threshold releases the customer's entitlement to it. Unswept, an overdue lot just sits DEFERRED forever and the product state never catches up with the deadline that already passed.",
+    repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 4 * 60 * 60_000,
+    lockTtlMs: 4 * 60_000,
+    run: ({ deferredBonusLots }) => deferredBonusLots.expireOverdueLots(),
+  },
+  {
+    name: 'purchase-intent.expire',
+    why: 'Spec §7: a PurchaseIntent awaiting staff confirmation holds a bonus reservation. If nobody confirms or rejects it within the timeout, the hold must release back to AVAILABLE on its own — otherwise a customer who walked away from the till keeps their points stuck for good.',
+    repeat: { every: 30_000 },
+    // Short tolerance: the whole point of the 3-minute timeout is that a
+    // customer at a till is not left waiting past it, so this sweep falling
+    // silent for more than a few minutes is worth paging on.
+    maxSilenceMs: 5 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ purchaseIntents }) => purchaseIntents.expireStale(),
   },
   {
     name: 'reconciliation.nightly',

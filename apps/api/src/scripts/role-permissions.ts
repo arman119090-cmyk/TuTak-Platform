@@ -11,10 +11,29 @@ import { PermissionName, RoleName } from '@prisma/client';
  */
 export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
   CUSTOMER: [PermissionName.WALLET_READ, PermissionName.QR_REDEEM],
-  PARTNER_STAFF: [PermissionName.QR_ISSUE, PermissionName.PARTNER_TRANSACTIONS_READ],
+  // The cashier tier — spec: docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3.
+  // Confirms/rejects PurchaseIntents as ordinary work; no PARTNER_MANAGE, so
+  // no route to the negotiated rate or the bonus-payment cap.
+  PARTNER_STAFF: [
+    PermissionName.QR_ISSUE,
+    PermissionName.PARTNER_TRANSACTIONS_READ,
+    PermissionName.PURCHASE_INTENT_CONFIRM,
+  ],
+  // The manager tier: broader day-to-day operational reach than STAFF, but
+  // — like STAFF — still no PARTNER_MANAGE. "Operational access appropriate
+  // to scope, but no unrestricted access to critical contractual/banking
+  // configuration" is the spec's own phrase for this tier.
+  PARTNER_MANAGER: [
+    PermissionName.QR_ISSUE,
+    PermissionName.PARTNER_TRANSACTIONS_READ,
+    PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.EV_STATION_MANAGE,
+    PermissionName.ANALYTICS_READ,
+  ],
   PARTNER_OWNER: [
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
+    PermissionName.PURCHASE_INTENT_CONFIRM,
     PermissionName.PARTNER_MANAGE,
     PermissionName.EV_STATION_MANAGE,
     PermissionName.ANALYTICS_READ,

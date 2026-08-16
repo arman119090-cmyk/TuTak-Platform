@@ -114,9 +114,69 @@ export interface AppConfig {
      */
     qrLedgerMirror: boolean;
   };
+  /**
+   * Every number the new core-business spec fixes, in one place, per its own
+   * §37 ("Centralized business configuration") and §12/§13/§18. Read by
+   * `PurchaseIntentService`, `DeferredBonusLotService` and `ReferralService`
+   * — nowhere else should hardcode one of these values.
+   *
+   * See docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md for why these replace
+   * (rather than extend) the old `REFERRAL_COMMISSION_MODEL_RU.md` figures.
+   */
+  purchasePolicy: {
+    /** Spec §7. How long a PurchaseIntent waits for staff confirmation. */
+    intentTimeoutSeconds: number;
+    /**
+     * Spec §12. Fractions of `grossAmount × negotiatedRateBps` that go to,
+     * respectively: the customer's immediate green bonus, the customer's
+     * deferred/locked bonus, the direct referrer (or TuTak if none), and
+     * TuTak itself. Basis points so the four are exact integers that sum to
+     * 10 000 — `PurchasePolicyService` asserts this at boot rather than
+     * trusting the deployment config.
+     */
+    poolGreenBps: number;
+    poolDeferredBps: number;
+    poolReferrerBps: number;
+    poolTutakBps: number;
+    /** Spec §13. Deferred lot unlock window, in months. */
+    deferredWindowMonths: number;
+    /** Spec §13. Cumulative gross turnover required to unlock a deferred lot. */
+    deferredRequiredTurnover: string;
+    /** Spec §18. Cumulative gross turnover to qualify a Referral Challenge participant. */
+    challengeQualificationAmount: string;
+    /** Spec §18. Paid to the inviter AND, separately, to the qualifying referee. */
+    challengeRewardAmount: string;
+    /** Spec §18. "First 3 qualified friends" — this is the 3. */
+    challengeSlotLimit: number;
+  };
 }
 
-export default (): AppConfig => ({
+/**
+ * Refuses to boot on a pool split that cannot represent 100% of the
+ * contribution pool — the same "fail loudly at startup, not silently at
+ * settlement time" discipline this file already applies to CORS and the SMS
+ * provider. A typo in one env var here would otherwise mint or destroy value
+ * on every single purchase and nobody would notice until reconciliation.
+ */
+function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
+  const total =
+    policy.poolGreenBps + policy.poolDeferredBps + policy.poolReferrerBps + policy.poolTutakBps;
+  if (total !== 10_000) {
+    throw new Error(
+      `purchasePolicy pool split must sum to 10000 basis points, got ${total} ` +
+        `(green ${policy.poolGreenBps} + deferred ${policy.poolDeferredBps} + ` +
+        `referrer ${policy.poolReferrerBps} + tutak ${policy.poolTutakBps})`,
+    );
+  }
+}
+
+export default (): AppConfig => {
+  const config = buildConfig();
+  assertPoolSplitSums(config.purchasePolicy);
+  return config;
+};
+
+const buildConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   // Compared against the exact string, so an unset variable, an empty one,
   // `1`, or `yes` all leave it off. Something this consequential should
@@ -256,5 +316,34 @@ export default (): AppConfig => ({
     // Opt-in, and it must stay that way until a full settlement cycle has
     // reconciled clean.
     qrLedgerMirror: process.env.FEATURE_QR_LEDGER_MIRROR === 'true',
+  },
+  purchasePolicy: {
+    // 3 minutes, per spec §7 — long enough for a cashier mid-queue to glance
+    // at their phone, short enough that a customer at the till is not left
+    // standing on a stale hold.
+    intentTimeoutSeconds: parseInt(
+      process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180',
+      10,
+    ),
+    // 20/30/20/30, per spec §12, in basis points of the contribution pool
+    // (not of the gross purchase — the pool is gross × negotiatedRateBps
+    // first, then split this way).
+    poolGreenBps: parseInt(process.env.PURCHASE_POOL_GREEN_BPS ?? '2000', 10),
+    poolDeferredBps: parseInt(process.env.PURCHASE_POOL_DEFERRED_BPS ?? '3000', 10),
+    poolReferrerBps: parseInt(process.env.PURCHASE_POOL_REFERRER_BPS ?? '2000', 10),
+    poolTutakBps: parseInt(process.env.PURCHASE_POOL_TUTAK_BPS ?? '3000', 10),
+    // 3 months / 54 000 AMD cumulative, per spec §13.
+    deferredWindowMonths: parseInt(
+      process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3',
+      10,
+    ),
+    deferredRequiredTurnover: process.env.DEFERRED_BONUS_REQUIRED_TURNOVER ?? '54000',
+    // 10 000 AMD cumulative, no deadline, per spec §18.
+    challengeQualificationAmount:
+      process.env.REFERRAL_CHALLENGE_QUALIFICATION_AMOUNT ?? '10000',
+    // 1000 AMD to each side, per spec §18.
+    challengeRewardAmount: process.env.REFERRAL_CHALLENGE_REWARD_AMOUNT ?? '1000',
+    // First 3 qualified friends, per spec §18.
+    challengeSlotLimit: parseInt(process.env.REFERRAL_CHALLENGE_SLOT_LIMIT ?? '3', 10),
   },
 });

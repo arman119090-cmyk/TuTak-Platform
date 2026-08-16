@@ -236,7 +236,8 @@
     "BONUS_REDEMPTION": "Ծախսված բոնուս",
     "REFERRAL_REWARD": "Հրավերի պարգև",
     "REFUND": "Վերադարձ",
-    "MANUAL_ADJUSTMENT": "Ճշգրտում"
+    "MANUAL_ADJUSTMENT": "Ճշգրտում",
+    "PARTNER_PURCHASE": "Գնում գործընկերոջ մոտ"
   },
   "transactionStatus": {
     "INITIATED": "Սկսված",
@@ -251,8 +252,10 @@
     "ACCRUAL_REFERRAL": "Հրավերի բոնուս",
     "ACCRUAL_PROMOTION": "Ակցիա",
     "ACCRUAL_MANUAL_ADJUSTMENT": "Ճշգրտում",
+    "ACCRUAL_DEFERRED": "Բացված է հետաձգված բոնուսը",
     "REDEMPTION_QR_PAYMENT": "Ծախսված վճարման ժամանակ",
     "REDEMPTION_EV_CHARGING": "Ծախսված լիցքավորման համար",
+    "REDEMPTION_PARTNER_PURCHASE": "Ծախսված գործընկերոջ մոտ",
     "EXPIRY": "Ժամկետանց",
     "REVERSAL": "Հետ շրջված",
     "RESERVE_HOLD": "Պահված է վճարման համար",

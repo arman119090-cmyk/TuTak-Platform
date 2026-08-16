@@ -22,7 +22,14 @@ datasource db {
 
 enum RoleName {
   CUSTOMER
+  /// Cashier tier, in the sense of docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md
+  /// §3 — minimal operational access, cannot touch commercial configuration.
   PARTNER_STAFF
+  /// New tier between STAFF and OWNER: broader day-to-day operational access
+  /// (issuing, EV station operation, analytics) but — like STAFF — no
+  /// PARTNER_MANAGE, so no route to the negotiated rate or the bonus-payment
+  /// cap. Only PARTNER_OWNER can touch those.
+  PARTNER_MANAGER
   PARTNER_OWNER
   ADMIN
   SUPER_ADMIN
@@ -50,6 +57,11 @@ enum PermissionName {
   /// it exposes every account on the platform, so it is not given out with
   /// ordinary analytics access.
   LEDGER_READ
+  /// Confirm or reject a PurchaseIntent on behalf of a partner. Deliberately
+  /// separate from PARTNER_MANAGE: every tier of staff (owner, manager,
+  /// cashier) does this as their ordinary job, while only PARTNER_MANAGE
+  /// reaches the negotiated rate and the bonus-payment cap.
+  PURCHASE_INTENT_CONFIRM
 }
 
 model Role {
@@ -101,54 +113,59 @@ model UserRole {
 }
 
 model User {
-  id               String    @id @default(uuid())
-  phone            String    @unique
-  email            String?   @unique
-  passwordHash     String
-  firstName        String
-  lastName         String
-  locale           String    @default("hy")
-  isPhoneVerified  Boolean   @default(false)
-  isActive         Boolean   @default(true)
-  failedLoginCount Int       @default(0)
-  lockedUntil      DateTime?
+  id                 String    @id @default(uuid())
+  phone              String    @unique
+  email              String?   @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  locale             String    @default("hy")
+  isPhoneVerified    Boolean   @default(false)
+  isActive           Boolean   @default(true)
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
   /// Set when a credential was issued by someone other than the account
   /// owner (seeding, an operator reset). Login succeeds but every other
   /// route is refused until the password is changed, so a bootstrap
   /// credential can never become a working one.
-  mustChangePassword Boolean @default(false)
+  mustChangePassword Boolean   @default(false)
   passwordChangedAt  DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   /// When the customer asked to be deleted. Access ends at this instant —
   /// every auth path already refuses on it. The personal data survives until
   /// `anonymizedAt`, because a refund or a chargeback can still arrive
   /// against a payment made before this moment and has to post somewhere.
-  deletedAt        DateTime?
+  deletedAt          DateTime?
   /// When the personal fields were actually scrubbed. Set by the
   /// `account.anonymize-deleted` sweep once the grace window has elapsed;
   /// the row itself is never removed, because the ledger postings and audit
   /// entries that reference it must not be.
-  anonymizedAt     DateTime?
+  anonymizedAt       DateTime?
 
-  roles             UserRole[]
-  wallet            Wallet?
-  devices           Device[]
-  refreshTokens     RefreshToken[]
-  transactions      Transaction[]
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  issuedQrCodes     QrCode[]              @relation("QrIssuedBy")
-  partnerMembership PartnerMembership[]
-  referralCode      ReferralCode?
-  referralsMade     ReferralInvite[]      @relation("Referrer")
-  referredBy        ReferralInvite?       @relation("Referee")
-  evSessions        EvSession[]
-  evReservations    EvReservation[]
-  fraudSignals      FraudSignal[]
-  passwordResets    PasswordResetToken[]
-  phoneVerifications PhoneVerificationToken[]
-  payments          Payment[]
+  roles                     UserRole[]
+  wallet                    Wallet?
+  devices                   Device[]
+  refreshTokens             RefreshToken[]
+  transactions              Transaction[]
+  auditLogs                 AuditLog[]
+  notifications             Notification[]
+  issuedQrCodes             QrCode[]                       @relation("QrIssuedBy")
+  partnerMembership         PartnerMembership[]
+  referralCode              ReferralCode?
+  referralsMade             ReferralInvite[]               @relation("Referrer")
+  referredBy                ReferralInvite?                @relation("Referee")
+  deferredBonusLots         DeferredBonusLot[]
+  challengesReferred        ReferralChallengeParticipant[] @relation("ChallengeReferrer")
+  challengeParticipation    ReferralChallengeParticipant?  @relation("ChallengeReferee")
+  purchaseIntentsAsCustomer PurchaseIntent[]               @relation("PurchaseIntentCustomer")
+  purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
+  evSessions                EvSession[]
+  evReservations            EvReservation[]
+  fraudSignals              FraudSignal[]
+  passwordResets            PasswordResetToken[]
+  phoneVerifications        PhoneVerificationToken[]
+  payments                  Payment[]
 
   @@index([createdAt])
   /// The anonymisation sweep asks for "deleted, not yet scrubbed", which is a
@@ -246,23 +263,23 @@ model PasswordResetToken {
 // ─────────────────────────────────────────────────────────────────────────
 
 model Wallet {
-  id                 String   @id @default(uuid())
-  userId             String   @unique
+  id             String   @id @default(uuid())
+  userId         String   @unique
   // Materialized, read-optimized cache — always recomputed transactionally
   // alongside the ledger/lot writes that back it. Source of truth is
   // BonusLot + BonusReservation + BonusLedgerEntry below.
-  availableBonus     Decimal  @default(0) @db.Decimal(18, 4)
-  pendingBonus       Decimal  @default(0) @db.Decimal(18, 4)
-  reservedBonus      Decimal  @default(0) @db.Decimal(18, 4)
-  lifetimeEarned     Decimal  @default(0) @db.Decimal(18, 4)
-  lifetimeSpent      Decimal  @default(0) @db.Decimal(18, 4)
-  version            Int      @default(0) // optimistic locking
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  availableBonus Decimal  @default(0) @db.Decimal(18, 4)
+  pendingBonus   Decimal  @default(0) @db.Decimal(18, 4)
+  reservedBonus  Decimal  @default(0) @db.Decimal(18, 4)
+  lifetimeEarned Decimal  @default(0) @db.Decimal(18, 4)
+  lifetimeSpent  Decimal  @default(0) @db.Decimal(18, 4)
+  version        Int      @default(0) // optimistic locking
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lots         BonusLot[]
-  reservations BonusReservation[]
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lots          BonusLot[]
+  reservations  BonusReservation[]
   ledgerEntries BonusLedgerEntry[]
 
   @@map("wallets")
@@ -293,8 +310,14 @@ enum BonusEntryType {
   ACCRUAL_REFERRAL
   ACCRUAL_PROMOTION
   ACCRUAL_MANUAL_ADJUSTMENT
+  /// A DeferredBonusLot unlocking into real, spendable points — kept distinct
+  /// from ACCRUAL_PURCHASE so a wallet's history can tell "earned now" from
+  /// "earned months ago, released today".
+  ACCRUAL_DEFERRED
   REDEMPTION_QR_PAYMENT
   REDEMPTION_EV_CHARGING
+  /// Bonus spent settling a confirmed PurchaseIntent — spec §7.
+  REDEMPTION_PARTNER_PURCHASE
   EXPIRY
   REVERSAL
   RESERVE_HOLD
@@ -306,19 +329,19 @@ enum BonusEntryType {
 /// FIFO consumption against lots is what lets us expire the *oldest*
 /// points first and gives an accurate "expiring soon" view.
 model BonusLot {
-  id                String         @id @default(uuid())
-  walletId          String
-  type              BonusEntryType
-  status            BonusLotStatus @default(PENDING)
-  originalAmount    Decimal        @db.Decimal(18, 4)
-  remainingAmount   Decimal        @db.Decimal(18, 4)
+  id                  String         @id @default(uuid())
+  walletId            String
+  type                BonusEntryType
+  status              BonusLotStatus @default(PENDING)
+  originalAmount      Decimal        @db.Decimal(18, 4)
+  remainingAmount     Decimal        @db.Decimal(18, 4)
   sourceTransactionId String?
-  availableAt       DateTime // when PENDING -> AVAILABLE (cooling-off window)
-  expiresAt         DateTime
-  createdAt         DateTime       @default(now())
+  availableAt         DateTime // when PENDING -> AVAILABLE (cooling-off window)
+  expiresAt           DateTime
+  createdAt           DateTime       @default(now())
 
-  wallet       Wallet                      @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  allocations  BonusReservationAllocation[]
+  wallet      Wallet                       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  allocations BonusReservationAllocation[]
 
   @@index([walletId, status])
   @@index([expiresAt])
@@ -335,17 +358,17 @@ enum BonusReservationStatus {
 /// A hold against AVAILABLE lots, placed while a QR payment / EV session is
 /// in flight, so the same points can never be double-spent concurrently.
 model BonusReservation {
-  id                  String                  @id @default(uuid())
+  id                  String                 @id @default(uuid())
   walletId            String
-  amount              Decimal                 @db.Decimal(18, 4)
-  status              BonusReservationStatus  @default(ACTIVE)
+  amount              Decimal                @db.Decimal(18, 4)
+  status              BonusReservationStatus @default(ACTIVE)
   reasonTransactionId String?
   expiresAt           DateTime
   settledAt           DateTime?
   releasedAt          DateTime?
-  createdAt           DateTime                @default(now())
+  createdAt           DateTime               @default(now())
 
-  wallet      Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  wallet      Wallet                       @relation(fields: [walletId], references: [id], onDelete: Cascade)
   allocations BonusReservationAllocation[]
 
   @@index([walletId, status])
@@ -355,10 +378,10 @@ model BonusReservation {
 /// Join table recording exactly which lots (and how much of each) back a
 /// given reservation, so releasing/settling can credit/debit the right lots.
 model BonusReservationAllocation {
-  id             String           @id @default(uuid())
-  reservationId  String
-  lotId          String
-  amount         Decimal          @db.Decimal(18, 4)
+  id            String  @id @default(uuid())
+  reservationId String
+  lotId         String
+  amount        Decimal @db.Decimal(18, 4)
 
   reservation BonusReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   lot         BonusLot         @relation(fields: [lotId], references: [id], onDelete: Cascade)
@@ -385,30 +408,30 @@ enum LedgerDirection {
 /// so a change that breaks reconstruction fails CI rather than silently
 /// corrupting reporting.
 model BonusLedgerEntry {
-  id                  String          @id @default(uuid())
-  walletId            String
-  type                BonusEntryType
-  direction           LedgerDirection
+  id        String          @id @default(uuid())
+  walletId  String
+  type      BonusEntryType
+  direction LedgerDirection
   /// Absolute magnitude of the movement; never negative.
-  amount              Decimal         @db.Decimal(18, 4)
+  amount    Decimal         @db.Decimal(18, 4)
 
   /// Signed effect of this entry on each wallet bucket.
   /// Invariant: availableDelta + pendingDelta + reservedDelta
   ///            == +amount (CREDIT) | -amount (DEBIT) | 0 (NEUTRAL)
-  availableDelta      Decimal         @default(0) @db.Decimal(18, 4)
-  pendingDelta        Decimal         @default(0) @db.Decimal(18, 4)
-  reservedDelta       Decimal         @default(0) @db.Decimal(18, 4)
+  availableDelta Decimal @default(0) @db.Decimal(18, 4)
+  pendingDelta   Decimal @default(0) @db.Decimal(18, 4)
+  reservedDelta  Decimal @default(0) @db.Decimal(18, 4)
 
   /// Total outstanding points (available + pending + reserved) after this
   /// entry was applied. One meaning, everywhere — previously this column
   /// meant "available + pending" in accruals and "available" elsewhere.
-  balanceAfter        Decimal         @db.Decimal(18, 4)
+  balanceAfter Decimal @db.Decimal(18, 4)
 
-  relatedLotId        String?
+  relatedLotId         String?
   relatedReservationId String?
-  sourceTransactionId String?
-  metadata            Json?
-  createdAt           DateTime        @default(now())
+  sourceTransactionId  String?
+  metadata             Json?
+  createdAt            DateTime @default(now())
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
@@ -429,6 +452,10 @@ enum TransactionType {
   REFERRAL_REWARD
   REFUND
   MANUAL_ADJUSTMENT
+  /// A confirmed PurchaseIntent — spec §7. Distinct from QR_PAYMENT: the
+  /// latter settles instantly on scan, this one only becomes COMPLETED after
+  /// partner staff confirm it.
+  PARTNER_PURCHASE
 }
 
 enum TransactionStatus {
@@ -446,28 +473,28 @@ enum Currency {
 }
 
 model Transaction {
-  id                  String             @id @default(uuid())
-  userId              String
-  partnerId           String?
-  type                TransactionType
-  status              TransactionStatus  @default(INITIATED)
-  amount               Decimal           @db.Decimal(18, 4)
-  currency            Currency           @default(AMD)
-  bonusAppliedAmount   Decimal           @default(0) @db.Decimal(18, 4)
-  bonusEarnedAmount    Decimal           @default(0) @db.Decimal(18, 4)
-  description          String?
+  id                 String            @id @default(uuid())
+  userId             String
+  partnerId          String?
+  type               TransactionType
+  status             TransactionStatus @default(INITIATED)
+  amount             Decimal           @db.Decimal(18, 4)
+  currency           Currency          @default(AMD)
+  bonusAppliedAmount Decimal           @default(0) @db.Decimal(18, 4)
+  bonusEarnedAmount  Decimal           @default(0) @db.Decimal(18, 4)
+  description        String?
   /// Scoped to the owning user, not global. A globally-unique key let one
   /// account replay another account's key and receive that account's
   /// transaction back, and let an attacker squat a key to turn a victim's
   /// future payment into a silent no-op.
-  idempotencyKey       String?
-  metadata             Json?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  idempotencyKey     String?
+  metadata           Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  user    User     @relation(fields: [userId], references: [id])
-  partner Partner? @relation(fields: [partnerId], references: [id])
-  qrCode  QrCode?
+  user      User       @relation(fields: [userId], references: [id])
+  partner   Partner?   @relation(fields: [partnerId], references: [id])
+  qrCode    QrCode?
   evSession EvSession?
 
   @@unique([userId, idempotencyKey])
@@ -495,62 +522,195 @@ enum QrCodeStatus {
 }
 
 model QrCode {
-  id                 String       @id @default(uuid())
-  type               QrCodeType
-  status             QrCodeStatus @default(ACTIVE)
-  token               String      @unique
-  issuedByUserId      String?
-  partnerId           String?
-  amount              Decimal?    @db.Decimal(18, 4)
-  expiresAt           DateTime
-  redeemedTransactionId String?   @unique
-  createdAt           DateTime   @default(now())
+  id                    String       @id @default(uuid())
+  type                  QrCodeType
+  status                QrCodeStatus @default(ACTIVE)
+  token                 String       @unique
+  issuedByUserId        String?
+  partnerId             String?
+  amount                Decimal?     @db.Decimal(18, 4)
+  expiresAt             DateTime
+  redeemedTransactionId String?      @unique
+  createdAt             DateTime     @default(now())
 
   issuedBy            User?        @relation("QrIssuedBy", fields: [issuedByUserId], references: [id])
-  partner              Partner?    @relation(fields: [partnerId], references: [id])
-  redeemedTransaction  Transaction? @relation(fields: [redeemedTransactionId], references: [id])
+  partner             Partner?     @relation(fields: [partnerId], references: [id])
+  redeemedTransaction Transaction? @relation(fields: [redeemedTransactionId], references: [id])
 
   @@index([status, expiresAt])
   @@map("qr_codes")
+}
+
+enum PurchaseIntentStatus {
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+  EXPIRED
+}
+
+/// Spec §7-9: the new standard purchase flow. Customer scans a partner/branch
+/// QR, enters the gross amount and how much of it to pay with bonus, and a
+/// member of partner staff confirms or rejects within `expiresAt`. Additive
+/// alongside `QrCode`/`redeem()` — see
+/// docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3 for why the older,
+/// synchronous flow is left running rather than replaced tonight.
+///
+/// Everything below `negotiatedRateBps` is the commercial snapshot spec §8
+/// asks for: captured once at creation, read-only afterwards, so a later
+/// change to the partner's rate or cap can never alter a live or historical
+/// intent.
+model PurchaseIntent {
+  id              String               @id @default(uuid())
+  customerId      String
+  partnerId       String
+  partnerBranchId String?
+  status          PurchaseIntentStatus @default(AWAITING_CONFIRMATION)
+
+  grossAmount              Decimal @db.Decimal(18, 4)
+  bonusAmountRequested     Decimal @default(0) @db.Decimal(18, 4)
+  /// = grossAmount - bonusAmountRequested, stored rather than derived so the
+  /// figure the customer saw at scan time is exactly what is on record.
+  ordinaryPaymentRemainder Decimal @db.Decimal(18, 4)
+
+  negotiatedRateBps      Int
+  maxBonusPaymentPercent Int
+
+  bonusReservationId  String?
+  sourceTransactionId String?
+  /// Individual staff identity of whoever confirmed or rejected — spec §25/§33.
+  confirmedByUserId   String?
+  rejectionReason     String?
+
+  /// Set once, at confirmation. A repeat confirm call with the same key
+  /// becomes a lookup rather than a second execution — spec §7's idempotency
+  /// requirement, same pattern as `Transaction.idempotencyKey`.
+  confirmationIdempotencyKey String? @unique
+
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  confirmedAt DateTime?
+  rejectedAt  DateTime?
+
+  customer    User           @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
+  partner     Partner        @relation(fields: [partnerId], references: [id])
+  branch      PartnerBranch? @relation(fields: [partnerBranchId], references: [id])
+  confirmedBy User?          @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+
+  @@index([partnerId, status])
+  @@index([status, expiresAt])
+  @@index([customerId, status])
+  @@map("purchase_intents")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Partners
 // ─────────────────────────────────────────────────────────────────────────
 
+/// Onboarding lifecycle — spec: docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §2.
+/// `isActive` (below) stays the single field every existing read site checks;
+/// `status` is the richer state this drives it from, kept in sync by
+/// `PartnersService` on every transition so nothing that already reads
+/// `isActive` has to change.
+enum PartnerStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
 model Partner {
-  id                    String   @id @default(uuid())
-  legalName             String
-  displayName           String
-  taxId                 String   @unique
-  category              String
-  bonusAccrualRateBps   Int      @default(300) // basis points, e.g. 300 = 3%
+  id                       String        @id @default(uuid())
+  legalName                String
+  displayName              String
+  taxId                    String        @unique
+  category                 String
+  bonusAccrualRateBps      Int           @default(300) // basis points, e.g. 300 = 3%
   /// The platform's cut of a captured payment, in basis points. Independent
   /// of bonusAccrualRateBps — one prices what the customer earns, the other
   /// what the platform keeps, and conflating them would make either one
   /// impossible to change without affecting the other.
-  paymentCommissionRateBps Int   @default(250) // 2.5%
-  isActive              Boolean  @default(true)
+  paymentCommissionRateBps Int           @default(250) // 2.5%
+  /// Spec §11: the partner's own ceiling on how much of a purchase may be
+  /// paid with bonus points, 0-100. Only PARTNER_OWNER may change it — see
+  /// `partners.controller.ts`. Defaults to 100 (no cap), which is exactly
+  /// today's behaviour before this field existed — see the migration doc's
+  /// conflict table for why no lower default or platform-wide ceiling was
+  /// invented.
+  maxBonusPaymentPercent   Int           @default(100)
+  status                   PartnerStatus @default(ACTIVE)
+  isActive                 Boolean       @default(true)
   /// Set by reconciliation when this partner's ledger balance disagrees with
   /// the bank statement. Blocks payouts until a human clears it — paying out
   /// against a balance known to be wrong is the one thing worse than not
   /// paying out at all.
-  payoutsBlockedAt      DateTime?
-  payoutsBlockedReason  String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  payoutsBlockedAt         DateTime?
+  payoutsBlockedReason     String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
-  memberships PartnerMembership[]
-  branches    PartnerBranch[]
-  transactions Transaction[]
-  qrCodes     QrCode[]
-  evStations  EvStation[]
-  userRoles   UserRole[]
-  payments    Payment[]
-  settlements Settlement[]
-  payouts     Payout[]
+  memberships         PartnerMembership[]
+  branches            PartnerBranch[]
+  integrations        PartnerIntegration[]
+  transactions        Transaction[]
+  qrCodes             QrCode[]
+  evStations          EvStation[]
+  userRoles           UserRole[]
+  payments            Payment[]
+  settlements         Settlement[]
+  payouts             Payout[]
+  purchaseIntents     PurchaseIntent[]
+  /// Set only when this partner is itself a direct referrer (spec §21) —
+  /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
+  referralCode        ReferralCode?
+  referralInvitesMade ReferralInvite[]     @relation("PartnerReferrer")
 
   @@map("partners")
+}
+
+/// Spec §3. What a partner can accept payment/data through. Deliberately
+/// generic-typed with a JSON `configuration` blob per spec's own instruction
+/// not to fully build every future integration tonight — only the extension
+/// point. `WEBSITE` is the one type with fields of its own, because domain
+/// trust has a lifecycle (verified or not) that a JSON blob cannot express
+/// as a queryable, constrained state — see `websiteVerifiedAt`.
+enum PartnerIntegrationType {
+  QR_PURCHASE
+  WEBSITE
+  API
+  POS
+  EV_CHARGING
+  OCPI
+}
+
+enum PartnerIntegrationStatus {
+  NOT_CONNECTED
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+model PartnerIntegration {
+  id                String                   @id @default(uuid())
+  partnerId         String
+  partnerBranchId   String?
+  type              PartnerIntegrationType
+  status            PartnerIntegrationStatus @default(NOT_CONNECTED)
+  configuration     Json?
+  /// WEBSITE only. TODO: BUSINESS DECISION REQUIRED — the actual
+  /// verification method (DNS TXT record, meta tag, file upload...) is not
+  /// specified anywhere yet; until it is, a URL here can reach ACTIVE only
+  /// through PENDING_VERIFICATION and a manual admin action, never
+  /// automatically — see docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §4.
+  websiteUrl        String?
+  websiteVerifiedAt DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  partner Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  branch  PartnerBranch? @relation(fields: [partnerBranchId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId])
+  @@map("partner_integrations")
 }
 
 model PartnerMembership {
@@ -576,7 +736,9 @@ model PartnerBranch {
   longitude Float
   createdAt DateTime @default(now())
 
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partner         Partner              @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  integrations    PartnerIntegration[]
+  purchaseIntents PurchaseIntent[]
 
   @@map("partner_branches")
 }
@@ -585,13 +747,19 @@ model PartnerBranch {
 // Referral Engine
 // ─────────────────────────────────────────────────────────────────────────
 
+/// A code belongs to exactly one of a User or a Partner (spec §21: a partner
+/// may be a direct referrer too) — enforced in `ReferralService`, not by a DB
+/// check constraint, to avoid depending on a Prisma preview feature this
+/// project has not otherwise opted into.
 model ReferralCode {
   id        String   @id @default(uuid())
-  userId    String   @unique
+  userId    String?  @unique
+  partnerId String?  @unique
   code      String   @unique
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partner Partner? @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
   @@map("referral_codes")
 }
@@ -604,22 +772,114 @@ enum ReferralInviteStatus {
   FRAUD_BLOCKED
 }
 
+enum ReferrerType {
+  USER
+  PARTNER
+}
+
+/// Attribution record — who referred whom, set once at registration and
+/// never changed (spec §5: immutable). This is *not* where either reward
+/// mechanic is computed or paid: the recurring 20%-of-pool share (spec §6)
+/// happens per purchase in `PurchaseIntentService`, reading this row only to
+/// know who to pay; the Referral Challenge (spec §18) tracks its own
+/// progress entirely on `ReferralChallengeParticipant`. `status` /
+/// `qualifyingAction` / `rewardAmount` / `qualifiedAt` / `rewardedAt` below
+/// are what this model used *before* the Challenge got its own table — a
+/// flat one-time reward tracked right here. Current code never writes them;
+/// they are read-only history for rows created before this migration. See
+/// docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3.
 model ReferralInvite {
-  id                String                @id @default(uuid())
-  referrerUserId    String
-  refereeUserId     String                @unique
-  status            ReferralInviteStatus  @default(PENDING)
+  id                String               @id @default(uuid())
+  referrerType      ReferrerType         @default(USER)
+  /// Exactly one of these two is set, matching `referrerType`.
+  referrerUserId    String?
+  referrerPartnerId String?
+  refereeUserId     String               @unique
+  /// @deprecated Legacy pre-Challenge reward tracking — see the model
+  /// docblock. Left in place rather than dropped so historical rows stay
+  /// readable; not written by any current code path.
+  status            ReferralInviteStatus @default(PENDING)
   qualifyingAction  String?
-  rewardAmount      Decimal?              @db.Decimal(18, 4)
-  createdAt         DateTime              @default(now())
+  rewardAmount      Decimal?             @db.Decimal(18, 4)
+  createdAt         DateTime             @default(now())
   qualifiedAt       DateTime?
   rewardedAt        DateTime?
 
-  referrer User @relation("Referrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
-  referee  User @relation("Referee", fields: [refereeUserId], references: [id], onDelete: Cascade)
+  referrer        User?    @relation("Referrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referrerPartner Partner? @relation("PartnerReferrer", fields: [referrerPartnerId], references: [id], onDelete: Cascade)
+  referee         User     @relation("Referee", fields: [refereeUserId], references: [id], onDelete: Cascade)
 
   @@index([referrerUserId])
+  @@index([referrerPartnerId])
   @@map("referral_invites")
+}
+
+enum DeferredBonusLotStatus {
+  DEFERRED
+  AVAILABLE
+  EXPIRED
+}
+
+/// Spec §13-16. The "black"/deferred 30% pool share. Deliberately does
+/// **not** touch `Wallet`/`BonusLot` at creation — see the migration doc §3
+/// for why reusing `BonusLot`'s time-based PENDING→AVAILABLE sweep would be
+/// wrong for a turnover-gated unlock. A real, spendable `BonusLot` is only
+/// created (via `BonusEngineService.accrue`) at the moment this unlocks.
+model DeferredBonusLot {
+  id                  String                 @id @default(uuid())
+  userId              String
+  sourceTransactionId String
+  amount              Decimal                @db.Decimal(18, 4)
+  status              DeferredBonusLotStatus @default(DEFERRED)
+  requiredTurnover    Decimal                @db.Decimal(18, 4)
+  /// Cumulative eligible gross purchases applied to this lot so far. Spec
+  /// §14: no monthly minimum, purely cumulative within the window.
+  progressTurnover    Decimal                @default(0) @db.Decimal(18, 4)
+  createdAt           DateTime               @default(now())
+  deadline            DateTime
+  unlockedAt          DateTime?
+  expiredAt           DateTime?
+  /// The BonusLot created when this unlocked, for traceability. Null until
+  /// (and unless) that happens.
+  grantedBonusLotId   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, deadline])
+  @@map("deferred_bonus_lots")
+}
+
+enum ReferralChallengeParticipantStatus {
+  IN_PROGRESS
+  QUALIFIED
+  REWARDED
+}
+
+/// Spec §18-20, "first 3 qualified friends". One row per (referrer, referee)
+/// pair, created alongside the `ReferralInvite` for that referee and tracking
+/// its own cumulative-turnover progress independently of the recurring
+/// referral share. `rewardedAt` is only ever set for a referrer's first
+/// three participants to reach QUALIFIED — enforced with a count check inside
+/// a Serializable transaction (see `ReferralService.tryClaimChallengeSlot`),
+/// the same concurrency idiom `BonusEngineService.reserve` already uses,
+/// rather than a new primitive.
+model ReferralChallengeParticipant {
+  id             String                             @id @default(uuid())
+  referrerUserId String
+  refereeUserId  String                             @unique
+  status         ReferralChallengeParticipantStatus @default(IN_PROGRESS)
+  requiredAmount Decimal                            @db.Decimal(18, 4)
+  progressAmount Decimal                            @default(0) @db.Decimal(18, 4)
+  qualifiedAt    DateTime?
+  rewardedAt     DateTime?
+  createdAt      DateTime                           @default(now())
+
+  referrer User @relation("ChallengeReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referee  User @relation("ChallengeReferee", fields: [refereeUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerUserId, status])
+  @@map("referral_challenge_participants")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -666,15 +926,15 @@ model EvStation {
 }
 
 model EvConnector {
-  id           String             @id @default(uuid())
-  stationId    String
-  ocpiEvseUid  String?            @unique
+  id            String            @id @default(uuid())
+  stationId     String
+  ocpiEvseUid   String?           @unique
   connectorType EvConnectorType
-  status       EvConnectorStatus  @default(AVAILABLE)
-  powerKw      Decimal            @db.Decimal(8, 2)
-  pricePerKwh  Decimal            @db.Decimal(10, 2)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  status        EvConnectorStatus @default(AVAILABLE)
+  powerKw       Decimal           @db.Decimal(8, 2)
+  pricePerKwh   Decimal           @db.Decimal(10, 2)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   station      EvStation       @relation(fields: [stationId], references: [id], onDelete: Cascade)
   sessions     EvSession[]
@@ -695,26 +955,26 @@ enum EvSessionStatus {
 }
 
 model EvSession {
-  id                 String          @id @default(uuid())
-  connectorId        String
-  userId             String
-  reservationId      String?         @unique
-  status             EvSessionStatus @default(AUTHORIZED)
-  startedAt          DateTime?
-  stoppedAt          DateTime?
-  energyKwh          Decimal?        @db.Decimal(10, 3)
-  cost               Decimal?        @db.Decimal(18, 4)
-  bonusEarnedAmount  Decimal?        @db.Decimal(18, 4)
-  transactionId      String?         @unique
-  ocpiCdrId          String?         @unique
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  id                String          @id @default(uuid())
+  connectorId       String
+  userId            String
+  reservationId     String?         @unique
+  status            EvSessionStatus @default(AUTHORIZED)
+  startedAt         DateTime?
+  stoppedAt         DateTime?
+  energyKwh         Decimal?        @db.Decimal(10, 3)
+  cost              Decimal?        @db.Decimal(18, 4)
+  bonusEarnedAmount Decimal?        @db.Decimal(18, 4)
+  transactionId     String?         @unique
+  ocpiCdrId         String?         @unique
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  connector    EvConnector    @relation(fields: [connectorId], references: [id])
-  user         User           @relation(fields: [userId], references: [id])
-  reservation  EvReservation? @relation(fields: [reservationId], references: [id])
-  transaction  Transaction?   @relation(fields: [transactionId], references: [id])
-  cdr          EvCdr?
+  connector   EvConnector    @relation(fields: [connectorId], references: [id])
+  user        User           @relation(fields: [userId], references: [id])
+  reservation EvReservation? @relation(fields: [reservationId], references: [id])
+  transaction Transaction?   @relation(fields: [transactionId], references: [id])
+  cdr         EvCdr?
 
   @@index([userId, createdAt])
   @@index([connectorId, status])
@@ -730,13 +990,13 @@ enum EvReservationStatus {
 }
 
 model EvReservation {
-  id          String               @id @default(uuid())
+  id          String              @id @default(uuid())
   connectorId String
   userId      String
-  status      EvReservationStatus  @default(PENDING)
+  status      EvReservationStatus @default(PENDING)
   startAt     DateTime
   expiresAt   DateTime
-  createdAt   DateTime             @default(now())
+  createdAt   DateTime            @default(now())
 
   connector EvConnector @relation(fields: [connectorId], references: [id])
   user      User        @relation(fields: [userId], references: [id])
@@ -889,11 +1149,11 @@ model LedgerTransaction {
   reversesId String?  @unique
   postedAt   DateTime @default(now())
 
-  postings         LedgerPosting[]
-  payment          Payment?
-  refund           Refund?
-  payoutRequested  Payout?         @relation("PayoutRequested")
-  payoutSettled    Payout?         @relation("PayoutSettled")
+  postings           LedgerPosting[]
+  payment            Payment?
+  refund             Refund?
+  payoutRequested    Payout?             @relation("PayoutRequested")
+  payoutSettled      Payout?             @relation("PayoutSettled")
   acquirerSettlement AcquirerSettlement?
 
   @@index([sourceType, sourceId])
@@ -943,7 +1203,7 @@ model OutboxEvent {
 /// finds the row, sees the first is still running, and refuses rather than
 /// starting a parallel execution of the same money movement.
 model IdempotencyRecord {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   /// Scoped per actor. A global key let one account replay another's — the
   /// mistake already made once on Transaction.idempotencyKey.
   scope        String
@@ -953,7 +1213,7 @@ model IdempotencyRecord {
   requestHash  String
   status       String
   responseBody Json?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
   completedAt  DateTime?
 
   @@unique([scope, key])
@@ -994,7 +1254,7 @@ model Payment {
   /// a payment being refunded past what was captured is a conditional UPDATE
   /// on this column, not a read-then-write in application code — two
   /// concurrent refunds must not each read the same stale total.
-  refundedAmount      Decimal       @db.Decimal(18, 4) @default(0)
+  refundedAmount      Decimal       @default(0) @db.Decimal(18, 4)
   /// Set when the nightly settlement batch has claimed this payment. Also the
   /// claim itself: a payment moves into exactly one settlement, once.
   settlementId        String?
@@ -1002,7 +1262,7 @@ model Payment {
   /// The bonus lot settlement issued for this payment, if any. A direct link
   /// rather than a metadata lookup, because a refund has to find exactly the
   /// points this payment created in order to claw back the right ones.
-  accruedLotId        String?   @unique
+  accruedLotId        String?       @unique
   /// The caller's idempotency key, carried on the payment itself.
   ///
   /// `IdempotencyRecord` already tracks these, but it is a separate table
@@ -1024,6 +1284,10 @@ model Payment {
   settlement        Settlement?        @relation(fields: [settlementId], references: [id])
   refunds           Refund[]
 
+  /// Scoped to the user, matching `IdempotencyRecord`'s `payment:<userId>`
+  /// scope: two different customers may legitimately send the same key, and
+  /// a key is only ever a promise about one caller's own retries.
+  @@unique([userId, idempotencyKey])
   @@index([userId])
   @@index([partnerId])
   @@index([settlementId])
@@ -1033,10 +1297,6 @@ model Payment {
   /// heaviest recurring load on the database, which is a bad way to find out.
   /// Status leads because the grouping is by status within a time window.
   @@index([status, createdAt])
-  /// Scoped to the user, matching `IdempotencyRecord`'s `payment:<userId>`
-  /// scope: two different customers may legitimately send the same key, and
-  /// a key is only ever a promise about one caller's own retries.
-  @@unique([userId, idempotencyKey])
   @@map("payments")
 }
 
@@ -1057,10 +1317,10 @@ model Settlement {
   /// UTC midnight of the day being settled.
   periodStart      DateTime
   periodEnd        DateTime
-  grossAmount      Decimal  @db.Decimal(18, 4) @default(0)
-  commissionAmount Decimal  @db.Decimal(18, 4) @default(0)
-  netAmount        Decimal  @db.Decimal(18, 4) @default(0)
-  bonusAccrued     Decimal  @db.Decimal(18, 4) @default(0)
+  grossAmount      Decimal  @default(0) @db.Decimal(18, 4)
+  commissionAmount Decimal  @default(0) @db.Decimal(18, 4)
+  netAmount        Decimal  @default(0) @db.Decimal(18, 4)
+  bonusAccrued     Decimal  @default(0) @db.Decimal(18, 4)
   paymentCount     Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1117,7 +1377,7 @@ model Refund {
   ledgerTransactionId String?  @unique
   /// Points reclaimed from the customer, if the payment had already settled
   /// and accrued. Zero when it had not.
-  bonusClawedBack     Decimal  @db.Decimal(18, 4) @default(0)
+  bonusClawedBack     Decimal  @default(0) @db.Decimal(18, 4)
   /// Who authorised this refund. Recorded on the row the money moved through
   /// rather than only in the audit log, for the reason `Payout` gives about
   /// `confirmedByUserId`: an audit log can be argued with, a column cannot.
@@ -1137,10 +1397,10 @@ model Refund {
   payment           Payment            @relation(fields: [paymentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
 
-  @@index([paymentId])
   /// Scoped to the actor, matching `IdempotencyService`'s `refund:<actorId>`
   /// scope — two operators may legitimately choose the same key.
   @@unique([actorId, idempotencyKey])
+  @@index([paymentId])
   @@map("refunds")
 }
 
@@ -1152,39 +1412,39 @@ enum PayoutStatus {
 
 /// A transfer of a partner's payable balance to their bank.
 model Payout {
-  id                  String       @id @default(uuid())
-  partnerId           String
-  amount              Decimal      @db.Decimal(18, 4)
-  status              PayoutStatus
-  bankReference       String?
-  failureReason       String?
-  ledgerTransactionId String?      @unique
+  id                            String       @id @default(uuid())
+  partnerId                     String
+  amount                        Decimal      @db.Decimal(18, 4)
+  status                        PayoutStatus
+  bankReference                 String?
+  failureReason                 String?
+  ledgerTransactionId           String?      @unique
   /// The posting that drained BANK_CLEARING when the bank confirmed. Kept
   /// separate from `ledgerTransactionId` because a payout moves money twice
   /// — out of the partner's balance, then out of the platform's — and both
   /// halves need to be traceable to the row that caused them.
-  settlementLedgerTransactionId String? @unique
-  requestedByUserId   String?
+  settlementLedgerTransactionId String?      @unique
+  requestedByUserId             String?
   /// Who confirmed the bank actually sent it. Recorded separately from the
   /// requester so the two-person rule is auditable after the fact rather than
   /// merely enforced at the time — an audit log can be argued with, a column
   /// on the row the money moved through cannot.
-  confirmedByUserId   String?
+  confirmedByUserId             String?
   /// The requester's idempotency key, for the same reason it is on `Refund`
   /// and `Payment`: the record that tracks it lives in another table written
   /// in another transaction, and a crash between the two loses it. A replayed
   /// payout is bounded by what the partner is owed and still pays them twice.
-  idempotencyKey      String?
-  createdAt           DateTime     @default(now())
-  completedAt         DateTime?
+  idempotencyKey                String?
+  createdAt                     DateTime     @default(now())
+  completedAt                   DateTime?
 
-  partner           Partner            @relation(fields: [partnerId], references: [id])
-  ledgerTransaction LedgerTransaction? @relation("PayoutRequested", fields: [ledgerTransactionId], references: [id])
+  partner                     Partner            @relation(fields: [partnerId], references: [id])
+  ledgerTransaction           LedgerTransaction? @relation("PayoutRequested", fields: [ledgerTransactionId], references: [id])
   settlementLedgerTransaction LedgerTransaction? @relation("PayoutSettled", fields: [settlementLedgerTransactionId], references: [id])
 
-  @@index([partnerId, status])
   /// Matches `IdempotencyService`'s `payout:<actorId>` scope.
   @@unique([requestedByUserId, idempotencyKey])
+  @@index([partnerId, status])
   @@map("payouts")
 }
 
@@ -1280,19 +1540,26 @@ enum AuditAction {
   /// entry, and the userId in it, are what remain of the person: enough to
   /// answer "did we delete them, and when", and nothing else.
   ACCOUNT_ANONYMIZED
+  /// Spec §33: every step of a PurchaseIntent's life is independently
+  /// auditable — who confirmed it, from which branch, against which
+  /// commercial snapshot.
+  PURCHASE_INTENT_CREATED
+  PURCHASE_INTENT_CONFIRMED
+  PURCHASE_INTENT_REJECTED
+  PURCHASE_INTENT_EXPIRED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.
 model AuditLog {
-  id           String      @id @default(uuid())
-  actorUserId  String?
-  action       AuditAction
-  entityType   String
-  entityId     String?
-  metadata     Json?
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime    @default(now())
+  id          String      @id @default(uuid())
+  actorUserId String?
+  action      AuditAction
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
 
   actor User? @relation(fields: [actorUserId], references: [id])
 
@@ -1320,15 +1587,15 @@ enum FraudSignalSeverity {
 }
 
 model FraudSignal {
-  id                  String               @id @default(uuid())
-  userId              String?
-  type                FraudSignalType
-  severity            FraudSignalSeverity
+  id                   String              @id @default(uuid())
+  userId               String?
+  type                 FraudSignalType
+  severity             FraudSignalSeverity
   relatedTransactionId String?
-  metadata            Json?
-  createdAt           DateTime             @default(now())
-  resolvedAt          DateTime?
-  resolvedByUserId    String?
+  metadata             Json?
+  createdAt            DateTime            @default(now())
+  resolvedAt           DateTime?
+  resolvedByUserId     String?
 
   user User? @relation(fields: [userId], references: [id])
 

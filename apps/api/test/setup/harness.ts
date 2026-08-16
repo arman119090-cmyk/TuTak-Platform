@@ -15,6 +15,7 @@ import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
 import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
+import { PurchaseIntentsModule } from '../../src/modules/purchase-intents/purchase-intents.module';
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
 import { PaymentsModule } from '../../src/modules/payments/payments.module';
@@ -148,6 +149,7 @@ export async function createTestHarness(): Promise<TestHarness> {
       UsersModule,
       AdminModule,
       ReferralModule,
+      PurchaseIntentsModule,
       NotificationsModule,
       AuthModule,
       SecurityModule,

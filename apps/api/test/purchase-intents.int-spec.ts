@@ -1,0 +1,680 @@
+import {
+  BonusEntryType,
+  BonusLotStatus,
+  BonusReservationStatus,
+  DeferredBonusLotStatus,
+  PrismaClient,
+  PurchaseIntentStatus,
+  RoleName,
+  TransactionStatus,
+} from '@prisma/client';
+import { PartnersController } from '../src/modules/partners/partners.controller';
+import { PartnersService } from '../src/modules/partners/partners.service';
+import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
+import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
+import { DeferredBonusLotService } from '../src/modules/wallet/deferred-bonus-lot.service';
+import { LedgerService } from '../src/modules/ledger/ledger.service';
+import { RequestUser } from '../src/modules/auth/types/request-user.type';
+import { createCustomer, createPartner } from './setup/fixtures';
+import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+
+/**
+ * The core-business spec's standard purchase flow — §7-16, §22-24 — end to
+ * end against the real database. Everything below exercises
+ * `PurchaseIntentsService` and its collaborators exactly as
+ * `PurchaseIntentsController` calls them; only the staff-role restriction
+ * test goes through the controller layer, because that check lives there.
+ *
+ * docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3 records why this flow is
+ * additive alongside `POST /qr/redeem` rather than a replacement — the
+ * FastCharge/EV suites are untouched by this file and keep proving the old
+ * path still works.
+ */
+describe('PurchaseIntents (integration)', () => {
+  let harness: TestHarness;
+  let prisma: PrismaClient;
+  let purchaseIntents: PurchaseIntentsService;
+  let partners: PartnersService;
+  let partnersController: PartnersController;
+  let engine: BonusEngineService;
+  let deferredLots: DeferredBonusLotService;
+  let ledger: LedgerService;
+
+  beforeAll(async () => {
+    harness = await createTestHarness();
+    prisma = harness.prisma;
+    purchaseIntents = harness.app.get(PurchaseIntentsService);
+    partners = harness.app.get(PartnersService);
+    partnersController = harness.app.get(PartnersController);
+    engine = harness.app.get(BonusEngineService);
+    deferredLots = harness.app.get(DeferredBonusLotService);
+    ledger = harness.app.get(LedgerService);
+  });
+
+  afterAll(async () => {
+    await harness.close();
+  });
+
+  beforeEach(async () => {
+    await truncateAll(prisma);
+  });
+
+  const fundedCustomer = async (available: string) => {
+    const { user, wallet } = await createCustomer(prisma);
+    await engine.accrue({
+      walletId: wallet.id,
+      type: BonusEntryType.ACCRUAL_PURCHASE,
+      amount: available,
+      pendingHours: 0,
+    });
+    return { user, wallet };
+  };
+
+  const staffMember = async (partnerId: string, roles: RoleName[] = [RoleName.PARTNER_OWNER]) => {
+    const { user } = await createCustomer(prisma);
+    const role = await prisma.role.findUniqueOrThrow({ where: { name: roles[0]! } });
+    await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId } });
+    return user;
+  };
+
+  const asRequestUser = (id: string, roles: RoleName[], partnerId: string): RequestUser =>
+    ({
+      id,
+      phone: '+37400000000',
+      roles,
+      permissions: [],
+      partnerScopes: Object.fromEntries(roles.map((r) => [r, [partnerId]])),
+      mustChangePassword: false,
+    }) as RequestUser;
+
+  // ── Lifecycle — spec §7 ───────────────────────────────────────────────
+
+  describe('lifecycle', () => {
+    it('creates an AWAITING_CONFIRMATION intent with no bonus, and posts nothing to the ledger yet', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+
+      expect(intent.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+      expect(intent.ordinaryPaymentRemainder.toFixed(4)).toBe('10000.0000');
+      expect(intent.negotiatedRateBps).toBe(500);
+      expect(await prisma.ledgerTransaction.count()).toBe(0);
+    });
+
+    it('rejects a bonus request above the partner max_bonus_payment_percent', async () => {
+      const { user } = await fundedCustomer('5000');
+      const partner = await createPartner(prisma);
+      await partners.updateCommercialSettings(partner.id, { maxBonusPaymentPercent: 30 });
+
+      await expect(
+        purchaseIntents.create(
+          { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '5000' },
+          user.id,
+        ),
+      ).rejects.toThrow(/at most 30%/);
+    });
+
+    it('reserves the requested bonus at creation, before confirmation', async () => {
+      const { user, wallet } = await fundedCustomer('2000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '1000' },
+        user.id,
+      );
+
+      expect(intent.bonusReservationId).not.toBeNull();
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
+      expect(reservation.amount.toFixed(4)).toBe('1000.0000');
+      expect(
+        (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).availableBonus.toFixed(4),
+      ).toBe('1000.0000'); // 2000 - 1000 held
+    });
+
+    it('refuses to create a purchase intent against a partner still pending approval', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await prisma.partner.create({
+        data: {
+          legalName: 'Pending LLC',
+          displayName: 'Pending',
+          taxId: 'pending-tax-id',
+          category: 'retail',
+          status: 'PENDING_APPROVAL',
+          isActive: false,
+        },
+      });
+
+      await expect(
+        purchaseIntents.create({ partnerId: partner.id, grossAmount: '5000' }, user.id),
+      ).rejects.toThrow(/not currently active/);
+    });
+
+    it('confirm() settles the reservation, completes the transaction, and pays the pool', async () => {
+      const { user, wallet } = await fundedCustomer('2000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '1000' },
+        user.id,
+      );
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+
+      expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
+      expect(confirmed.confirmedByUserId).toBe(staff.id);
+
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.SETTLED);
+
+      const transaction = await prisma.transaction.findUniqueOrThrow({
+        where: { id: intent.sourceTransactionId! },
+      });
+      expect(transaction.status).toBe(TransactionStatus.COMPLETED);
+
+      // Pool = 10000 * 5% = 500; green (20%) = 100, immediately AVAILABLE.
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      // 2000 funded - 1000 reserved-and-spent + 100 green = 1100.
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1100.0000');
+    });
+
+    it('confirm() is idempotent — a second call returns the same state without re-crediting', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      // Pool = 500, green = 100. Confirmed exactly once, not twice.
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000');
+      expect(walletAfter.lifetimeEarned.toFixed(4)).toBe('100.0000');
+    });
+
+    it('confirm() under a concurrent double-call pays the pool exactly once', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+
+      await Promise.all([
+        purchaseIntents.confirm(intent.id, staff.id),
+        purchaseIntents.confirm(intent.id, staff.id),
+      ]);
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.lifetimeEarned.toFixed(4)).toBe('100.0000');
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(1);
+    });
+
+    it('reject() releases the bonus reservation and fails the transaction', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      const rejected = await purchaseIntents.reject(intent.id, staff.id, {
+        reasonCode: 'CUSTOMER_CANCELLED',
+      });
+
+      expect(rejected.status).toBe(PurchaseIntentStatus.REJECTED);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000'); // fully released
+      const transaction = await prisma.transaction.findUniqueOrThrow({
+        where: { id: intent.sourceTransactionId! },
+      });
+      expect(transaction.status).toBe(TransactionStatus.FAILED);
+    });
+
+    it('reject() is idempotent, same as confirm()', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000' },
+        user.id,
+      );
+      const first = await purchaseIntents.reject(intent.id, staff.id, { reasonCode: 'OTHER' });
+      const second = await purchaseIntents.reject(intent.id, staff.id, { reasonCode: 'OTHER' });
+
+      expect(first.status).toBe(PurchaseIntentStatus.REJECTED);
+      expect(second.rejectedAt?.getTime()).toBe(first.rejectedAt?.getTime());
+    });
+
+    it('expireStale() releases an unconfirmed intent past its 3-minute window', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      // Force it past its window rather than waiting three real minutes.
+      await prisma.purchaseIntent.update({
+        where: { id: intent.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      const count = await purchaseIntents.expireStale();
+
+      expect(count).toBe(1);
+      const expired = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(expired.status).toBe(PurchaseIntentStatus.EXPIRED);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+    });
+  });
+
+  // ── Commercial snapshot — spec §8 ─────────────────────────────────────
+
+  describe('commercial snapshot', () => {
+    it('confirm() uses the rate frozen at creation, unaffected by a later partner rate change', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+
+      // The partner's rate changes after the intent was created but before
+      // it is confirmed — the snapshot must win.
+      await prisma.partner.update({ where: { id: partner.id }, data: { bonusAccrualRateBps: 1000 } });
+
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      // Still computed from the 5% snapshot: pool 500, green 100 — not 1000/200.
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000');
+    });
+  });
+
+  // ── Pool base and split — spec §9/§12 ─────────────────────────────────
+
+  describe('pool base and split', () => {
+    it('computes the pool from the full gross amount, not the post-bonus remainder', async () => {
+      const { user, wallet } = await fundedCustomer('4000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      // 10000 gross, 4000 paid with bonus — the pool must still be 10000*5%,
+      // not 6000*5%.
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '4000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      // Pool = 500, green (20%) = 100. 4000 spent + 100 earned = 4100 - 4000 = 100.
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000');
+    });
+
+    it('splits the pool 20% green / 30% deferred / 20% referrer / 30% TuTak', async () => {
+      const referrer = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER1' } });
+      const { user: referee } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: referrer.user.id, refereeUserId: referee.id },
+      });
+
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 }); // pool = 500
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        referee.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
+      expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // green, 20% of 500
+
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: referee.id } });
+      expect(lot.amount.toFixed(4)).toBe('150.0000'); // deferred, 30% of 500
+      expect(lot.requiredTurnover.toFixed(4)).toBe('54000.0000');
+
+      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
+      expect(referrerWallet.availableBonus.toFixed(4)).toBe('100.0000'); // referrer, 20% of 500
+
+      const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      // TuTak's 30% base (150) is the only thing left in revenue — the
+      // referrer's cut went to the referrer, not to TuTak.
+      expect(revenueAccount.balance.negated().toFixed(4)).toBe('150.0000');
+      // Partner owed 10000 (gross of the sale itself is out of scope here —
+      // this ledger only carries the pool) less by the 500 contribution.
+      expect(partnerAccount.balance.toFixed(4)).toBe('500.0000');
+    });
+
+    it('credits the user referrer recurring green bonus on every subsequent purchase, no cap', async () => {
+      const referrer = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER2' } });
+      const { user: referee } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: referrer.user.id, refereeUserId: referee.id },
+      });
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      for (let i = 0; i < 3; i += 1) {
+        const intent = await purchaseIntents.create(
+          { partnerId: partner.id, grossAmount: '10000' },
+          referee.id,
+        );
+        await purchaseIntents.confirm(intent.id, staff.id);
+      }
+
+      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
+      // 100 AMD referrer share on each of three purchases — recurring, not one-time.
+      expect(referrerWallet.availableBonus.toFixed(4)).toBe('300.0000');
+    });
+
+    it('credits a partner referrer only via the settlement ledger, never a wallet bonus', async () => {
+      const referrerPartner = await createPartner(prisma, { displayName: 'Referrer Co' });
+      await prisma.referralCode.create({ data: { partnerId: referrerPartner.id, code: 'TP-REFER1' } });
+      const { user: referee } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: {
+          referrerType: 'PARTNER',
+          referrerPartnerId: referrerPartner.id,
+          refereeUserId: referee.id,
+        },
+      });
+
+      const sellingPartner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(sellingPartner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: sellingPartner.id, grossAmount: '10000' },
+        referee.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      // No wallet exists at all for a partner — the only place a partner
+      // referrer's cut can land is its own PARTNER_PAYABLE ledger account.
+      const referrerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: referrerPartner.id },
+      });
+      expect(referrerAccount.balance.negated().toFixed(4)).toBe('100.0000'); // 20% of 500
+
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
+      expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share
+    });
+
+    it('routes the referrer share to TuTak revenue when the customer has no referrer', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      // TuTak base (150) + referrer share that has nowhere else to go (100) = 250.
+      expect(revenueAccount.balance.negated().toFixed(4)).toBe('250.0000');
+    });
+  });
+
+  // ── Deferred bonus lots — spec §13-16 ─────────────────────────────────
+
+  describe('deferred bonus lots', () => {
+    it('creates a new lot from this purchase’s own deferred share, never counting the purchase toward it', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      // Gross 10000, pool 500, deferred share (30%) = 150 — far under the
+      // 54000 threshold, so it must stay locked.
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: user.id } });
+      expect(lot.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(lot.progressTurnover.toFixed(4)).toBe('0.0000'); // not 10000 — its own purchase never counts
+    });
+
+    it('advances every existing open lot before creating the new one, in that order', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      // First purchase opens lot A (150 AMD deferred, progress 0).
+      const first = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(first.id, staff.id);
+      const lotA = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: user.id } });
+
+      // Second purchase of 44000 gross advances lot A by 44000 (still short
+      // of 54000) and opens lot B with its own 30% share.
+      const second = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '44000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(second.id, staff.id);
+
+      const lotAAfter = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lotA.id } });
+      expect(lotAAfter.progressTurnover.toFixed(4)).toBe('44000.0000');
+      expect(lotAAfter.status).toBe(DeferredBonusLotStatus.DEFERRED); // not yet unlocked
+
+      const lots = await prisma.deferredBonusLot.findMany({ where: { userId: user.id } });
+      expect(lots).toHaveLength(2);
+
+      // A third purchase of 10000 crosses lot A's 54000 threshold (44000 + 10000)
+      // and unlocks it into spendable, available points.
+      const third = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(third.id, staff.id);
+
+      const lotAUnlocked = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lotA.id } });
+      expect(lotAUnlocked.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      expect(lotAUnlocked.grantedBonusLotId).not.toBeNull();
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      const deferredGrant = await prisma.bonusLot.findFirstOrThrow({
+        where: { id: lotAUnlocked.grantedBonusLotId! },
+      });
+      expect(deferredGrant.status).toBe(BonusLotStatus.AVAILABLE);
+      expect(deferredGrant.originalAmount.toFixed(4)).toBe('150.0000');
+      // The wallet actually holds it as spendable green points now.
+      expect(walletAfter.availableBonus.greaterThanOrEqualTo(deferredGrant.originalAmount)).toBe(true);
+    });
+
+    it('unlocks in a single purchase when gross alone clears the threshold — no monthly minimum', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      // Open a lot first (150 AMD deferred share, progress 0).
+      const opener = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(opener.id, staff.id);
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: user.id } });
+
+      // One single purchase of 54000 gross — spec §13 requires cumulative
+      // turnover, explicitly not a per-period minimum, so one purchase is
+      // enough on its own.
+      const big = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '54000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(big.id, staff.id);
+
+      const unlocked = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(unlocked.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.greaterThanOrEqualTo(lot.amount)).toBe(true);
+    });
+
+    it('expireOverdueLots releases entitlement past the deadline without granting the bonus', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: user.id } });
+
+      await prisma.deferredBonusLot.update({
+        where: { id: lot.id },
+        data: { deadline: new Date(Date.now() - 1000) },
+      });
+
+      const count = await deferredLots.expireOverdueLots();
+
+      expect(count).toBe(1);
+      const expired = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(expired.status).toBe(DeferredBonusLotStatus.EXPIRED);
+      expect(expired.grantedBonusLotId).toBeNull();
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share, never the deferred one
+    });
+  });
+
+  // ── Settlement ledger — spec §22-24 ───────────────────────────────────
+
+  describe('settlement ledger', () => {
+    it('posts the contribution and the bonus-redemption compensation as two separate, unnetted entries', async () => {
+      const { user } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '1000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const transactions = await prisma.ledgerTransaction.findMany({
+        where: { sourceType: 'PurchaseIntent', sourceId: intent.id },
+      });
+      const kinds = transactions.map((t) => t.kind).sort();
+      expect(kinds).toEqual(['partner.bonus_redemption_compensation', 'partner.contribution']);
+
+      // Sign convention: PARTNER_PAYABLE is credit-normal (balance stored
+      // negated). The 500 contribution reduces what is owed by 500; the 1000
+      // bonus-redemption compensation increases it by 1000 — net +500 owed.
+      const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+      });
+      expect(partnerAccount.balance.negated().toFixed(4)).toBe('500.0000');
+    });
+
+    it('never posts a redemption-compensation entry when no bonus was spent', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const transactions = await prisma.ledgerTransaction.findMany({
+        where: { sourceType: 'PurchaseIntent', sourceId: intent.id },
+      });
+      expect(transactions.map((t) => t.kind)).toEqual(['partner.contribution']);
+    });
+  });
+
+  // ── Staff-role restriction — spec §11/§25/§33 ─────────────────────────
+
+  describe('staff-role restriction', () => {
+    it('lets the partner OWNER change the bonus-payment cap', async () => {
+      const partner = await createPartner(prisma);
+      const owner = await staffMember(partner.id, [RoleName.PARTNER_OWNER]);
+
+      const updated = await partnersController.updateCommercialSettings(
+        asRequestUser(owner.id, [RoleName.PARTNER_OWNER], partner.id),
+        partner.id,
+        { maxBonusPaymentPercent: 40 },
+      );
+
+      expect(updated.maxBonusPaymentPercent).toBe(40);
+    });
+
+    it('refuses a CASHIER (STAFF) attempting to change the bonus-payment cap', async () => {
+      const partner = await createPartner(prisma);
+      const cashier = await staffMember(partner.id, [RoleName.PARTNER_STAFF]);
+
+      await expect(
+        partnersController.updateCommercialSettings(
+          asRequestUser(cashier.id, [RoleName.PARTNER_STAFF], partner.id),
+          partner.id,
+          { maxBonusPaymentPercent: 40 },
+        ),
+      ).rejects.toThrow(/Only the partner owner/);
+
+      // Untouched — the default from createPartner's fixture.
+      const unchanged = await partners.findByIdOrThrow(partner.id);
+      expect(unchanged.maxBonusPaymentPercent).toBe(100);
+    });
+
+    it('refuses a MANAGER attempting to change the bonus-payment cap', async () => {
+      const partner = await createPartner(prisma);
+      const manager = await staffMember(partner.id, [RoleName.PARTNER_MANAGER]);
+
+      await expect(
+        partnersController.updateCommercialSettings(
+          asRequestUser(manager.id, [RoleName.PARTNER_MANAGER], partner.id),
+          partner.id,
+          { maxBonusPaymentPercent: 40 },
+        ),
+      ).rejects.toThrow(/Only the partner owner/);
+    });
+
+    it('records the individual confirming staff member’s identity on the intent', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const staffA = await staffMember(partner.id, [RoleName.PARTNER_STAFF]);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1000' },
+        user.id,
+      );
+      const confirmed = await purchaseIntents.confirm(intent.id, staffA.id);
+
+      expect(confirmed.confirmedByUserId).toBe(staffA.id);
+    });
+  });
+});

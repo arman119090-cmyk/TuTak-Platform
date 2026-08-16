@@ -1,20 +1,44 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BonusEntryType, ReferralInviteStatus, TransactionStatus } from '@prisma/client';
+import {
+  BonusEntryType,
+  Prisma,
+  ReferralChallengeParticipantStatus,
+  ReferrerType,
+  TransactionStatus,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 
-/**
- * Floor on the purchase that qualifies a referral.
- *
- * The point is cost, not revenue: a reward worth 1000 points must not be
- * obtainable by fabricating a transaction worth one dram.
- */
-const QUALIFYING_MINIMUM_AMOUNT = new Decimal('1000');
+type Tx = Prisma.TransactionClient;
 
+export type ResolvedReferrer =
+  | { type: 'USER'; userId: string }
+  | { type: 'PARTNER'; partnerId: string };
+
+/**
+ * Two referral mechanics live here, and they are not the same thing — see
+ * docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3 for why one evolved from
+ * the other rather than both being written fresh.
+ *
+ * 1. **The recurring 20%-of-pool share** (spec §6). Paid on *every* eligible
+ *    confirmed purchase, for as long as the attribution exists — no cap, no
+ *    deadline. `resolveReferrer`/`creditUserReferrerShare` are its only job
+ *    here; the amount itself is computed by `PurchaseIntentService`, which
+ *    also owns the partner-referrer ledger leg, because that leg has to
+ *    balance against the same purchase's contribution posting in one atomic
+ *    transaction — see that service for why it is not split across two
+ *    `LedgerService.post()` calls.
+ * 2. **The Referral Challenge** (spec §18-20): a one-time 1000+1000 AMD
+ *    reward for a referrer's first three referees who *individually* reach
+ *    10 000 AMD cumulative purchases, no deadline. This is the direct
+ *    descendant of what used to be this file's only job — a flat one-time
+ *    reward on a referee's first qualifying purchase — restructured to
+ *    track cumulative progress and a hard three-slot limit instead.
+ */
 @Injectable()
 export class ReferralService {
   private readonly logger = new Logger(ReferralService.name);
@@ -30,7 +54,7 @@ export class ReferralService {
     return this.prisma.referralCode.findUniqueOrThrow({ where: { userId } });
   }
 
-  async listMyInvites(userId: string) {
+  listMyInvites(userId: string) {
     return this.prisma.referralInvite.findMany({
       where: { referrerUserId: userId },
       orderBy: { createdAt: 'desc' },
@@ -41,104 +65,297 @@ export class ReferralService {
   }
 
   /**
-   * Rewards a referrer when their referee makes a genuine first purchase.
-   *
-   * What counts as "genuine" is the whole security of this feature. It used to
-   * be any first COMPLETED transaction of any type and any amount, which — with
-   * unverified registration and a self-issuable QR code — made the reward a
-   * money printer: register a throwaway account with the attacker's code,
-   * self-pay one dram, collect the reward, repeat
-   * (docs/AUDIT_2026-08-B.md §C4). Qualification now requires:
-   *
-   *  * a real partner behind the transaction, so there is commerce to reward;
-   *  * an amount at or above a floor, so fabricating one is not free;
-   *  * a referrer who is not the referee.
-   *
-   * The claim and the accrual share one transaction, and the claim is a
-   * conditional update rather than a read-then-write. Without that, two
-   * concurrent completions both saw PENDING and both paid, and an accrual that
-   * succeeded before a failing status write left the invite payable forever
-   * (§C5).
+   * Who — if anyone — attributed `refereeUserId` at registration. Spec §5:
+   * set once, never reassigned; this is a lookup of that immutable record,
+   * not a decision.
    */
-  async handleQualifyingTransaction(refereeUserId: string, transactionId: string) {
+  async resolveReferrer(refereeUserId: string): Promise<ResolvedReferrer | null> {
     const invite = await this.prisma.referralInvite.findUnique({ where: { refereeUserId } });
-    if (!invite || invite.status !== ReferralInviteStatus.PENDING) {
-      return null;
+    if (!invite) return null;
+    if (invite.referrerType === ReferrerType.PARTNER && invite.referrerPartnerId) {
+      return { type: 'PARTNER', partnerId: invite.referrerPartnerId };
     }
-    if (invite.referrerUserId === refereeUserId) {
-      this.logger.warn(`Refusing self-referral on invite ${invite.id}`);
-      return null;
+    if (invite.referrerType === ReferrerType.USER && invite.referrerUserId) {
+      return { type: 'USER', userId: invite.referrerUserId };
+    }
+    return null;
+  }
+
+  /**
+   * Pays the recurring share to a USER referrer — spec §6: straight into
+   * GREEN/AVAILABLE, immediately, no cooling-off. (`pendingHours: 0`
+   * deliberately skips the ordinary accrual's pending window: that window
+   * exists to blunt fabricated-purchase farming on the *purchase itself*,
+   * which the referred purchase was already checked for before this is
+   * called — the referrer's cut of a real purchase should not additionally
+   * wait on its own clock.)
+   *
+   * The PARTNER-referrer case is deliberately not here — see the class
+   * docblock for why that leg is `PurchaseIntentService`'s to post.
+   */
+  async creditUserReferrerShare(
+    userId: string,
+    amount: Decimal,
+    sourceTransactionId: string,
+    tx: Tx,
+  ): Promise<void> {
+    if (amount.lessThanOrEqualTo(0)) return;
+    const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId } });
+    await this.bonusEngine.accrue(
+      {
+        walletId: wallet.id,
+        type: BonusEntryType.ACCRUAL_REFERRAL,
+        amount,
+        sourceTransactionId,
+        pendingHours: 0,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Creates the attribution record at registration — spec §5. Called once,
+   * from `AuthService.register`, and never again for the same referee: the
+   * unique constraint on `refereeUserId` is what makes "immutable" true
+   * rather than merely intended. Also opens a Referral Challenge slot for a
+   * USER referrer (spec §18) — a PARTNER referrer does not participate in
+   * the Challenge, only in the recurring share.
+   */
+  async createAttribution(
+    params: { refereeUserId: string; referrerCode: string },
+    tx: Tx,
+  ): Promise<void> {
+    const code = await tx.referralCode.findUnique({ where: { code: params.referrerCode } });
+    if (!code) return;
+
+    if (code.userId) {
+      if (code.userId === params.refereeUserId) return; // self-referral: not an error, just a no-op
+      await tx.referralInvite.create({
+        data: {
+          referrerType: ReferrerType.USER,
+          referrerUserId: code.userId,
+          refereeUserId: params.refereeUserId,
+        },
+      });
+      await tx.referralChallengeParticipant.create({
+        data: {
+          referrerUserId: code.userId,
+          refereeUserId: params.refereeUserId,
+          requiredAmount: this.config.get('purchasePolicy.challengeQualificationAmount', {
+            infer: true,
+          }),
+        },
+      });
+      return;
+    }
+
+    if (code.partnerId) {
+      await tx.referralInvite.create({
+        data: {
+          referrerType: ReferrerType.PARTNER,
+          referrerPartnerId: code.partnerId,
+          refereeUserId: params.refereeUserId,
+        },
+      });
+    }
+  }
+
+  /**
+   * Advances every Referral Challenge this user's purchase should count
+   * toward, and rewards qualification when it happens — spec §18-20. Driven
+   * by the same `transaction.completed` outbox event every transaction type
+   * already emits (see `ReferralListener`), so a QR payment and a confirmed
+   * PurchaseIntent both count without two separate wiring paths.
+   *
+   * No-ops instantly for the overwhelming majority of transactions — most
+   * users were never referred, or their Challenge already resolved — via a
+   * single indexed lookup before anything transactional happens.
+   */
+  async advanceChallengeProgress(refereeUserId: string, transactionId: string): Promise<void> {
+    const participant = await this.prisma.referralChallengeParticipant.findUnique({
+      where: { refereeUserId },
+    });
+    if (!participant || participant.status !== ReferralChallengeParticipantStatus.IN_PROGRESS) {
+      return;
+    }
+    // Defence in depth: `createAttribution` already refuses to create a
+    // self-referral row, so this should be unreachable in practice — but a
+    // forged row must not pay out double into one wallet just because the
+    // first line of defence was bypassed.
+    if (participant.referrerUserId === refereeUserId) {
+      this.logger.warn(`Refusing self-referral on challenge participant ${participant.id}`);
+      return;
     }
 
     const transaction = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
-      select: { partnerId: true, amount: true, status: true, userId: true },
+      select: { userId: true, partnerId: true, amount: true, status: true },
     });
     if (
       !transaction ||
       transaction.userId !== refereeUserId ||
       transaction.status !== TransactionStatus.COMPLETED ||
-      !transaction.partnerId ||
-      transaction.amount.lessThan(QUALIFYING_MINIMUM_AMOUNT)
+      // docs/AUDIT_2026-08-B.md §C4: a partnerless transaction is exactly
+      // the shape of the farming loop this suite closes — a self-issued QR
+      // redeemed against nothing, fabricating a COMPLETED row for free.
+      // There is no commerce behind it, so it does not count toward the
+      // Challenge either.
+      !transaction.partnerId
     ) {
-      return null;
+      return;
     }
 
-    // Both sides verified. An unverified referrer is a farm's collection
-    // account; an unverified referee is the fabricated signup it feeds on.
-    const [referrer, referee] = await Promise.all([
-      this.prisma.user.findUnique({
-        where: { id: invite.referrerUserId },
-        select: { isPhoneVerified: true },
-      }),
-      this.prisma.user.findUnique({
-        where: { id: refereeUserId },
-        select: { isPhoneVerified: true },
-      }),
+    // Serializable: two of a referrer's friends can qualify in the same
+    // instant, and the slot count below must not let both of them see "2 of
+    // 3 taken" and both claim the third. Retried on a serialization failure
+    // — Postgres aborts the loser of a genuine conflict rather than queuing
+    // it, and `await`ing both sides of that race must not mean one of them
+    // simply throws; see `LedgerService`'s own `withRetry` for the same
+    // reasoning applied to the ledger.
+    await this.runSerializable(async (tx) => {
+        const updated = await tx.referralChallengeParticipant.update({
+          where: { id: participant.id },
+          data: { progressAmount: { increment: transaction.amount } },
+        });
+
+        if (updated.progressAmount.lessThan(updated.requiredAmount)) return;
+
+        // Both sides verified, same as the flat one-time reward this evolved
+        // from required (docs/AUDIT_2026-08-B.md §C4/§C5): an unverified
+        // referrer is a farm's collection account, an unverified referee is
+        // the fabricated signup it feeds on. Left IN_PROGRESS rather than
+        // failing outright — a later purchase, after either side verifies,
+        // re-checks this and can still qualify normally.
+        const [referrer, referee] = await Promise.all([
+          tx.user.findUnique({ where: { id: participant.referrerUserId }, select: { isPhoneVerified: true } }),
+          tx.user.findUnique({ where: { id: refereeUserId }, select: { isPhoneVerified: true } }),
+        ]);
+        if (!referrer?.isPhoneVerified || !referee?.isPhoneVerified) {
+          this.logger.warn(
+            `Referral challenge ${participant.id} reached threshold but an unverified number is involved`,
+          );
+          return;
+        }
+
+        // Claim QUALIFIED first, conditionally — exactly one caller can move
+        // this participant out of IN_PROGRESS, mirroring the atomicity this
+        // file already relied on for the old one-time reward.
+        const claimed = await tx.referralChallengeParticipant.updateMany({
+          where: { id: participant.id, status: ReferralChallengeParticipantStatus.IN_PROGRESS },
+          data: { status: ReferralChallengeParticipantStatus.QUALIFIED, qualifiedAt: new Date() },
+        });
+        if (claimed.count === 0) return;
+
+        await this.tryRewardChallengeSlot(
+          participant.referrerUserId,
+          participant.refereeUserId,
+          transactionId,
+          tx,
+        );
+      });
+  }
+
+  /**
+   * Serializable `$transaction`, retried on a serialization failure or
+   * deadlock — the same retry `LedgerService` already applies to its own
+   * postings, for the same reason: Serializable isolation aborts the loser
+   * of a genuine conflict rather than queuing it, and the caller is expected
+   * to just try again with the same, still-valid arguments.
+   */
+  private async runSerializable<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(fn, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        const message = err instanceof Error ? err.message : '';
+        const retryable =
+          code === '40001' ||
+          code === '40P01' ||
+          /write conflict|deadlock|could not serialize/i.test(message);
+        if (!retryable || attempt === maxAttempts) throw err;
+        const delay = Math.floor(2 ** attempt * 5 * (0.5 + Math.random()));
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    // Unreachable — the loop above always returns or throws.
+    throw new Error('runSerializable exhausted retries without a result');
+  }
+
+  /**
+   * Spec §18: only a referrer's first three *qualified* participants are
+   * ever rewarded — qualification order, not invitation order, which is why
+   * this is checked here, at qualification time, rather than capped at
+   * `createAttribution`. A referrer with a hundred invitees can have a
+   * hundred `IN_PROGRESS`/`QUALIFIED` rows; at most three ever reach
+   * REWARDED.
+   */
+  private async tryRewardChallengeSlot(
+    referrerUserId: string,
+    refereeUserId: string,
+    sourceTransactionId: string,
+    tx: Tx,
+  ): Promise<void> {
+    const slotLimit = this.config.get('purchasePolicy.challengeSlotLimit', { infer: true });
+    const rewardedCount = await tx.referralChallengeParticipant.count({
+      where: { referrerUserId, status: ReferralChallengeParticipantStatus.REWARDED },
+    });
+    if (rewardedCount >= slotLimit) {
+      this.logger.log(
+        `Referral challenge for referrer ${referrerUserId}: referee ${refereeUserId} qualified but all ${slotLimit} slots are taken`,
+      );
+      return;
+    }
+
+    const claimed = await tx.referralChallengeParticipant.updateMany({
+      where: { referrerUserId, refereeUserId, status: ReferralChallengeParticipantStatus.QUALIFIED },
+      data: { status: ReferralChallengeParticipantStatus.REWARDED, rewardedAt: new Date() },
+    });
+    if (claimed.count === 0) return;
+
+    const rewardAmount = new Decimal(
+      this.config.get('purchasePolicy.challengeRewardAmount', { infer: true }),
+    );
+
+    const [referrerWallet, refereeWallet] = await Promise.all([
+      tx.wallet.findUniqueOrThrow({ where: { userId: referrerUserId } }),
+      tx.wallet.findUniqueOrThrow({ where: { userId: refereeUserId } }),
     ]);
-    if (!referrer?.isPhoneVerified || !referee?.isPhoneVerified) {
-      this.logger.warn(`Referral ${invite.id} not rewarded: an unverified number is involved`);
-      return null;
-    }
 
-    const rewardAmount = this.config.get('bonus.referralRewardAmount', { infer: true });
-
-    return this.prisma.$transaction(async (tx) => {
-      // Claim first, conditionally. Exactly one caller can move the invite out
-      // of PENDING, and whoever loses does nothing.
-      const claimed = await tx.referralInvite.updateMany({
-        where: { id: invite.id, status: ReferralInviteStatus.PENDING },
-        data: {
-          status: ReferralInviteStatus.REWARDED,
-          qualifyingAction: 'FIRST_QUALIFYING_PURCHASE',
-          qualifiedAt: new Date(),
-          rewardedAt: new Date(),
-          rewardAmount,
-        },
-      });
-      if (claimed.count === 0) return null;
-
-      const referrerWallet = await tx.wallet.findUniqueOrThrow({
-        where: { userId: invite.referrerUserId },
-      });
-
-      // Inside the same transaction, so a failure here rolls the claim back
-      // and the referral stays payable rather than vanishing.
-      await this.bonusEngine.accrue(
+    // Spec §19: this is a conditional promotional entitlement until the
+    // moment it is granted — never sitting in the wallet as spendable value
+    // before this. Once granted, both sides are ordinary GREEN/AVAILABLE
+    // bonus, immediately.
+    await Promise.all([
+      this.bonusEngine.accrue(
         {
           walletId: referrerWallet.id,
-          type: BonusEntryType.ACCRUAL_REFERRAL,
+          type: BonusEntryType.ACCRUAL_PROMOTION,
           amount: rewardAmount,
-          sourceTransactionId: transactionId,
-          metadata: { refereeUserId, inviteId: invite.id },
+          sourceTransactionId,
+          pendingHours: 0,
+          metadata: { challenge: 'referral', role: 'referrer', refereeUserId },
         },
         tx,
-      );
+      ),
+      this.bonusEngine.accrue(
+        {
+          walletId: refereeWallet.id,
+          type: BonusEntryType.ACCRUAL_PROMOTION,
+          amount: rewardAmount,
+          sourceTransactionId,
+          pendingHours: 0,
+          metadata: { challenge: 'referral', role: 'referee', referrerUserId },
+        },
+        tx,
+      ),
+    ]);
 
-      this.logger.log(
-        `Referral invite ${invite.id} rewarded ${rewardAmount} to ${invite.referrerUserId}`,
-      );
-      return tx.referralInvite.findUniqueOrThrow({ where: { id: invite.id } });
-    });
+    this.logger.log(
+      `Referral challenge slot filled: referrer ${referrerUserId} + referee ${refereeUserId}, ${rewardAmount} AMD each`,
+    );
   }
 }

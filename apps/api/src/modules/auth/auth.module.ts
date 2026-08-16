@@ -13,6 +13,7 @@ import { PasswordService } from './password.service';
 import { PhoneVerificationService } from './phone-verification.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SecurityModule } from '../security/security.module';
+import { ReferralModule } from '../referral/referral.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SecurityModule } from '../security/security.module';
     AuditModule,
     NotificationsModule,
     SecurityModule,
+    ReferralModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) => ({

@@ -371,20 +371,25 @@ describe('Adversarial probe (integration)', () => {
       const partner = await createPartner(prisma);
 
       // Twenty throwaway signups, each pointed at the farmer's code, each
-      // making the cheapest transaction that could possibly qualify.
+      // making the cheapest single transaction that could possibly reach the
+      // Referral Challenge's cumulative threshold on its own (default
+      // 10 000 AMD — see purchasePolicy.challengeQualificationAmount).
       for (let i = 0; i < 20; i += 1) {
         const { user: mule } = await createCustomer(prisma, { isPhoneVerified: false });
         await prisma.referralInvite.create({
           data: { referrerUserId: farmer.id, refereeUserId: mule.id },
         });
+        await prisma.referralChallengeParticipant.create({
+          data: { referrerUserId: farmer.id, refereeUserId: mule.id, requiredAmount: '10000' },
+        });
         const tx = await transactions.create({
           userId: mule.id,
           partnerId: partner.id,
           type: TransactionType.QR_PAYMENT,
-          amount: '5000',
+          amount: '10000',
         });
         await transactions.markCompleted(tx.id);
-        await referral.handleQualifyingTransaction(mule.id, tx.id).catch(() => undefined);
+        await referral.advanceChallengeProgress(mule.id, tx.id).catch(() => undefined);
       }
 
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: farmerWallet.id } });

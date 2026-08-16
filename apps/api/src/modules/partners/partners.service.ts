@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { RoleName } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { PartnerStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { haversineKm, toPartnerCategory, type NearbyPartner } from './geo';
 
@@ -21,6 +22,9 @@ export class PartnersService {
           taxId: dto.taxId,
           category: dto.category,
           bonusAccrualRateBps: dto.bonusAccrualRateBps,
+          // The admin path activates immediately — same behaviour as before
+          // this migration. `status` defaults to ACTIVE (see schema.prisma),
+          // so nothing here needs to say so explicitly.
         },
       });
 
@@ -32,8 +36,113 @@ export class PartnersService {
         data: { userId: dto.ownerUserId, roleId: ownerRole.id, partnerId: partner.id },
       });
 
+      // Active from the moment it exists — spec §21: a partner may be a
+      // direct referrer, and that needs a code to hand out.
+      await this.ensureReferralCode(partner.id, tx);
+
       return partner;
     });
+  }
+
+  /**
+   * Spec §21: a partner may be a direct referrer, same as a user. Idempotent
+   * — `partnerId` is `@unique` on `ReferralCode`, so calling this twice for
+   * the same partner (e.g. once from `create`, again if something ever
+   * re-runs `approve`) is a no-op the second time rather than an error.
+   */
+  private async ensureReferralCode(partnerId: string, tx: Prisma.TransactionClient) {
+    const existing = await tx.referralCode.findUnique({ where: { partnerId } });
+    if (existing) return existing;
+    return tx.referralCode.create({
+      data: { partnerId, code: `TP-${partnerId.slice(0, 8).toUpperCase()}` },
+    });
+  }
+
+  /**
+   * Self-service application — spec §2. Creates the partner in
+   * `PENDING_APPROVAL`, `isActive: false`: `findActiveOrThrow` refuses it,
+   * so no QR redemption, EV session, or PurchaseIntent confirmation can run
+   * against it until `approve()` is called. The applicant becomes the
+   * partner's owner immediately — approval controls trading, not membership.
+   */
+  async apply(dto: ApplyPartnerDto, applicantUserId: string) {
+    const ownerRole = await this.prisma.role.findUniqueOrThrow({
+      where: { name: RoleName.PARTNER_OWNER },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      const partner = await tx.partner.create({
+        data: {
+          legalName: dto.legalName,
+          displayName: dto.displayName,
+          taxId: dto.taxId,
+          category: dto.category,
+          bonusAccrualRateBps: dto.bonusAccrualRateBps,
+          status: PartnerStatus.PENDING_APPROVAL,
+          isActive: false,
+        },
+      });
+
+      await tx.partnerMembership.create({
+        data: { partnerId: partner.id, userId: applicantUserId },
+      });
+
+      await tx.userRole.create({
+        data: { userId: applicantUserId, roleId: ownerRole.id, partnerId: partner.id },
+      });
+
+      return partner;
+    });
+  }
+
+  /**
+   * Admin approval. Only a `PENDING_APPROVAL` partner may be approved —
+   * approving an already-active or rejected partner is refused rather than
+   * silently accepted, because the caller almost certainly meant something
+   * else (re-activating a suspended partner is `setActive(true)`, not this).
+   */
+  async approve(id: string) {
+    const partner = await this.findByIdOrThrow(id);
+    if (partner.status !== PartnerStatus.PENDING_APPROVAL) {
+      throw new ConflictException(
+        `Only a pending application can be approved (current status: ${partner.status})`,
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.partner.update({
+        where: { id },
+        data: { status: PartnerStatus.ACTIVE, isActive: true },
+      });
+      await this.ensureReferralCode(updated.id, tx);
+      return updated;
+    });
+  }
+
+  async reject(id: string, reason: string) {
+    const partner = await this.findByIdOrThrow(id);
+    if (partner.status !== PartnerStatus.PENDING_APPROVAL) {
+      throw new ConflictException(
+        `Only a pending application can be rejected (current status: ${partner.status})`,
+      );
+    }
+    return this.prisma.partner.update({
+      where: { id },
+      data: {
+        status: PartnerStatus.REJECTED,
+        isActive: false,
+        payoutsBlockedReason: reason,
+      },
+    });
+  }
+
+  /**
+   * Spec §11: only `maxBonusPaymentPercent` is writable here, and only by a
+   * partner's own OWNER (enforced by the controller, not this method — see
+   * the note on `PATCH /partners/:id/commercial-settings`). The negotiated
+   * rate itself stays admin-only and has no setter here at all.
+   */
+  updateCommercialSettings(id: string, data: { maxBonusPaymentPercent?: number }) {
+    return this.prisma.partner.update({ where: { id }, data });
   }
 
   findById(id: string) {
@@ -115,8 +224,31 @@ export class PartnersService {
     return !!membership;
   }
 
-  setActive(id: string, isActive: boolean) {
-    return this.prisma.partner.update({ where: { id }, data: { isActive } });
+  /**
+   * Toggles trading on or off for a partner that has already been through
+   * onboarding. Keeps `status` in step with `isActive` — ACTIVE while
+   * trading, SUSPENDED while switched off — so the two never disagree about
+   * whether a partner may transact.
+   *
+   * Refuses a partner still `PENDING_APPROVAL` or already `REJECTED`: those
+   * have their own transitions (`approve`/`reject`), and silently accepting
+   * either here would let a stray admin call activate a partner nobody
+   * approved, or "suspend" one that was never trading in the first place.
+   */
+  async setActive(id: string, isActive: boolean) {
+    const partner = await this.findByIdOrThrow(id);
+    if (partner.status === PartnerStatus.PENDING_APPROVAL || partner.status === PartnerStatus.REJECTED) {
+      throw new ConflictException(
+        `A partner with status ${partner.status} must go through approve/reject, not active/suspend`,
+      );
+    }
+    return this.prisma.partner.update({
+      where: { id },
+      data: {
+        isActive,
+        status: isActive ? PartnerStatus.ACTIVE : PartnerStatus.SUSPENDED,
+      },
+    });
   }
 
   /**

@@ -236,7 +236,8 @@
     "BONUS_REDEMPTION": "Bonus spent",
     "REFERRAL_REWARD": "Referral reward",
     "REFUND": "Refund",
-    "MANUAL_ADJUSTMENT": "Adjustment"
+    "MANUAL_ADJUSTMENT": "Adjustment",
+    "PARTNER_PURCHASE": "Purchase at partner"
   },
   "transactionStatus": {
     "INITIATED": "Initiated",
@@ -251,8 +252,10 @@
     "ACCRUAL_REFERRAL": "Referral reward",
     "ACCRUAL_PROMOTION": "Promotion",
     "ACCRUAL_MANUAL_ADJUSTMENT": "Adjustment",
+    "ACCRUAL_DEFERRED": "Deferred bonus unlocked",
     "REDEMPTION_QR_PAYMENT": "Spent on payment",
     "REDEMPTION_EV_CHARGING": "Spent on charging",
+    "REDEMPTION_PARTNER_PURCHASE": "Spent at partner",
     "EXPIRY": "Expired",
     "REVERSAL": "Reversed",
     "RESERVE_HOLD": "Held for payment",

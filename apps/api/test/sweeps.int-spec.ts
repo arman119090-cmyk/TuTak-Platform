@@ -65,6 +65,8 @@ describe('Sweeps (integration)', () => {
   const cdrs = { reconcilePending: jest.fn(record('ev.reconcile-cdrs')) };
   const accountDeletion = { anonymizeDue: jest.fn(record('account.anonymize')) };
   const retention = { prune: jest.fn(record('retention.prune')) };
+  const deferredBonusLots = { expireOverdueLots: jest.fn(record('deferred-bonus.expire-lots')) };
+  const purchaseIntents = { expireStale: jest.fn(record('purchase-intent.expire')) };
 
   beforeAll(async () => {
     // A keyspace of this suite's own, so a run here cannot disturb the
@@ -100,6 +102,8 @@ describe('Sweeps (integration)', () => {
             cdrs,
             accountDeletion,
             retention,
+            deferredBonusLots,
+            purchaseIntents,
           },
         },
       ],

@@ -12,13 +12,18 @@ import { AssignRoleDto } from './dto/assign-role.dto';
 const ROLE_RANK: Record<RoleName, number> = {
   [RoleName.CUSTOMER]: 0,
   [RoleName.PARTNER_STAFF]: 1,
-  [RoleName.PARTNER_OWNER]: 2,
-  [RoleName.ADMIN]: 3,
-  [RoleName.SUPER_ADMIN]: 4,
+  [RoleName.PARTNER_MANAGER]: 2,
+  [RoleName.PARTNER_OWNER]: 3,
+  [RoleName.ADMIN]: 4,
+  [RoleName.SUPER_ADMIN]: 5,
 };
 
 /** Roles that are meaningless without a partner, and roles that reject one. */
-const PARTNER_SCOPED_ROLES: RoleName[] = [RoleName.PARTNER_STAFF, RoleName.PARTNER_OWNER];
+const PARTNER_SCOPED_ROLES: RoleName[] = [
+  RoleName.PARTNER_STAFF,
+  RoleName.PARTNER_MANAGER,
+  RoleName.PARTNER_OWNER,
+];
 
 function rankOf(user: RequestUser): number {
   return user.roles.reduce((highest, role) => Math.max(highest, ROLE_RANK[role] ?? 0), -1);

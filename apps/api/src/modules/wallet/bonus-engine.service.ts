@@ -869,9 +869,9 @@ export class BonusEngineService {
       where: { id: transactionId },
       select: { type: true },
     });
-    return transaction?.type === 'EV_CHARGING'
-      ? BonusEntryType.REDEMPTION_EV_CHARGING
-      : BonusEntryType.REDEMPTION_QR_PAYMENT;
+    if (transaction?.type === 'EV_CHARGING') return BonusEntryType.REDEMPTION_EV_CHARGING;
+    if (transaction?.type === 'PARTNER_PURCHASE') return BonusEntryType.REDEMPTION_PARTNER_PURCHASE;
+    return BonusEntryType.REDEMPTION_QR_PAYMENT;
   }
 
   /** Exposed for reconciliation tooling and tests. */
@@ -880,8 +880,10 @@ export class BonusEngineService {
     BonusEntryType.ACCRUAL_REFERRAL,
     BonusEntryType.ACCRUAL_PROMOTION,
     BonusEntryType.ACCRUAL_MANUAL_ADJUSTMENT,
+    BonusEntryType.ACCRUAL_DEFERRED,
     BonusEntryType.REDEMPTION_QR_PAYMENT,
     BonusEntryType.REDEMPTION_EV_CHARGING,
+    BonusEntryType.REDEMPTION_PARTNER_PURCHASE,
     BonusEntryType.EXPIRY,
     BonusEntryType.REVERSAL,
   ];

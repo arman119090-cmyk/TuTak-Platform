@@ -1,8 +1,19 @@
-import { PrismaClient, ReferralInviteStatus, TransactionType } from '@prisma/client';
+import {
+  PrismaClient,
+  ReferralChallengeParticipantStatus,
+  TransactionType,
+} from '@prisma/client';
 import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+
+/**
+ * Spec §18: qualification is cumulative turnover (10 000 AMD by default), not
+ * a single-purchase flag — so the durability/redelivery tests below drive a
+ * `ReferralChallengeParticipant` through `advanceChallengeProgress` rather
+ * than the old flat one-time `ReferralInvite.status` reward this replaced.
+ */
 
 /**
  * The outbox, and what it fixes.
@@ -93,23 +104,29 @@ describe('Outbox (integration)', () => {
       const referrer = await createCustomer(prisma);
       const referee = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const invite = await prisma.referralInvite.create({
-        data: { referrerUserId: referrer.user.id, refereeUserId: referee.user.id },
+      const participant = await prisma.referralChallengeParticipant.create({
+        data: {
+          referrerUserId: referrer.user.id,
+          refereeUserId: referee.user.id,
+          requiredAmount: '10000',
+        },
       });
 
       // The transaction completes; the worker never gets to it. Before the
-      // outbox this referral was gone for good.
-      await completedPurchase(referee.user.id, partner.id);
+      // outbox this qualification was gone for good.
+      await completedPurchase(referee.user.id, partner.id, '10000');
       expect(
-        (await prisma.referralInvite.findUniqueOrThrow({ where: { id: invite.id } })).status,
-      ).toBe(ReferralInviteStatus.PENDING);
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } }))
+          .status,
+      ).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
 
       // A worker comes back.
       expect(await outbox.drain()).toBe(1);
 
       expect(
-        (await prisma.referralInvite.findUniqueOrThrow({ where: { id: invite.id } })).status,
-      ).toBe(ReferralInviteStatus.REWARDED);
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } }))
+          .status,
+      ).toBe(ReferralChallengeParticipantStatus.REWARDED);
       expect(
         (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } }))
           .lifetimeEarned.toFixed(4),
@@ -257,10 +274,14 @@ describe('Outbox (integration)', () => {
       const referrer = await createCustomer(prisma);
       const referee = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      await prisma.referralInvite.create({
-        data: { referrerUserId: referrer.user.id, refereeUserId: referee.user.id },
+      await prisma.referralChallengeParticipant.create({
+        data: {
+          referrerUserId: referrer.user.id,
+          refereeUserId: referee.user.id,
+          requiredAmount: '10000',
+        },
       });
-      await completedPurchase(referee.user.id, partner.id);
+      await completedPurchase(referee.user.id, partner.id, '10000');
 
       await outbox.drain();
       // Simulates a worker that ran the handler and died before marking the
@@ -268,11 +289,11 @@ describe('Outbox (integration)', () => {
       await prisma.outboxEvent.updateMany({ data: { processedAt: null, attempts: 0 } });
       await outbox.drain();
 
-      // Paid once. The invite claim is a conditional update, so redelivery
-      // finds it already claimed.
+      // Paid once. The participant's QUALIFIED→REWARDED claim is a
+      // conditional update, so redelivery finds it already claimed.
       expect(
         await prisma.bonusLedgerEntry.count({
-          where: { walletId: referrer.wallet.id, type: 'ACCRUAL_REFERRAL' },
+          where: { walletId: referrer.wallet.id, type: 'ACCRUAL_PROMOTION' },
         }),
       ).toBe(1);
     });

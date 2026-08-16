@@ -1,10 +1,11 @@
 import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AuditAction, PermissionName } from '@prisma/client';
+import { AuditAction, PermissionName, RoleName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import {
+  assertPartnerScope,
   assertPlatformAdmin,
   hasPartnerScope,
   isPlatformAdmin,
@@ -12,7 +13,10 @@ import {
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
+import { RejectPartnerDto } from './dto/reject-partner.dto';
+import { UpdateCommercialSettingsDto } from './dto/update-commercial-settings.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
 import { NearbyPartnersQueryDto } from './dto/nearby-partners.query.dto';
 import { PartnersService } from './partners.service';
@@ -120,6 +124,93 @@ export class PartnersController {
       entityType: 'Partner',
       entityId: partner.id,
       metadata: { displayName: partner.displayName },
+    });
+    return partner;
+  }
+
+  /**
+   * Self-service application — spec §2. Any authenticated customer may
+   * apply; the platform decides whether they trade. Creates the partner
+   * `PENDING_APPROVAL` — `findActiveOrThrow` refuses it everywhere until an
+   * admin calls `approve()`, so no QR/EV/PurchaseIntent path can run against
+   * it in the meantime.
+   */
+  @Post('apply')
+  async apply(@CurrentUser() applicant: RequestUser, @Body() dto: ApplyPartnerDto) {
+    const partner = await this.partnersService.apply(dto, applicant.id);
+    await this.auditService.record({
+      actorUserId: applicant.id,
+      action: AuditAction.PARTNER_CREATED,
+      entityType: 'Partner',
+      entityId: partner.id,
+      metadata: { displayName: partner.displayName, via: 'apply' },
+    });
+    return partner;
+  }
+
+  @Post(':id/approve')
+  @RequirePermissions(PermissionName.PARTNER_MANAGE)
+  async approvePartner(@CurrentUser() admin: RequestUser, @Param('id') id: string) {
+    assertPlatformAdmin(admin, 'Approving a partner application');
+    const partner = await this.partnersService.approve(id);
+    await this.auditService.record({
+      actorUserId: admin.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: partner.id,
+      metadata: { status: partner.status },
+    });
+    return partner;
+  }
+
+  @Post(':id/reject')
+  @RequirePermissions(PermissionName.PARTNER_MANAGE)
+  async rejectPartner(
+    @CurrentUser() admin: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: RejectPartnerDto,
+  ) {
+    assertPlatformAdmin(admin, 'Rejecting a partner application');
+    const partner = await this.partnersService.reject(id, dto.reason);
+    await this.auditService.record({
+      actorUserId: admin.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: partner.id,
+      metadata: { status: partner.status, reason: dto.reason },
+    });
+    return partner;
+  }
+
+  /**
+   * Spec §11: the partner's own bonus-payment cap. Scoped to the partner
+   * (any admin, or that partner's own people, may reach this route) but
+   * additionally restricted to the OWNER tier specifically — MANAGER and
+   * STAFF hold no permission that reaches here at all, and an OWNER who is
+   * not scoped to *this* partner is refused by `assertPartnerScope` before
+   * the role check ever runs.
+   */
+  @Patch(':id/commercial-settings')
+  async updateCommercialSettings(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateCommercialSettingsDto,
+  ) {
+    if (!isPlatformAdmin(user)) {
+      assertPartnerScope(user, id);
+      if (!user.roles.includes(RoleName.PARTNER_OWNER)) {
+        throw new ForbiddenException('Only the partner owner may change commercial settings');
+      }
+    }
+    const partner = await this.partnersService.updateCommercialSettings(id, {
+      maxBonusPaymentPercent: dto.maxBonusPaymentPercent,
+    });
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: partner.id,
+      metadata: { maxBonusPaymentPercent: partner.maxBonusPaymentPercent },
     });
     return partner;
   }

@@ -28,7 +28,7 @@ export class ReferralListener implements OnModuleInit {
     this.outbox.register('transaction.completed', async (payload) => {
       // Thrown errors are the signal to retry — the outbox backs off and
       // tries again rather than swallowing the failure.
-      await this.referralService.handleQualifyingTransaction(
+      await this.referralService.advanceChallengeProgress(
         payload.userId as string,
         payload.transactionId as string,
       );

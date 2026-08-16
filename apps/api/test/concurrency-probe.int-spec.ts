@@ -328,6 +328,68 @@ describe('Concurrency probe (integration)', () => {
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
+    /**
+     * GitHub issue #28 / launch-blocker closure (2026-08-16): every test
+     * above races two calls to the *same* method — settle vs settle,
+     * release vs release — and both were already caught, but only
+     * incidentally, by the `wallets_balances_non_negative` /
+     * `bonus_lots_amounts_sane` CHECK constraints: a single reservation's
+     * `reservedBonus` decrement, applied twice, always goes negative and
+     * Postgres refuses it regardless of whether the application code has
+     * its own guard. `settleReservation` and `releaseReservation`
+     * themselves used a plain, unconditional `bonusReservation.update`
+     * with no status predicate — a genuine check-then-write race — and it
+     * stayed invisible because nothing tested the *mixed* case with a
+     * second reservation in the wallet to absorb the double-decrement
+     * without tripping the CHECK constraint, which is exactly the
+     * reachable production shape: `PurchaseIntentsService.confirm()` calls
+     * `settleReservation` inside its own transaction while the
+     * independent `bonus.release-expired-reservations` sweep can call
+     * `releaseReservation` on the very same still-`ACTIVE` reservation if
+     * its snapshot predates the confirm's commit (a reservation's
+     * `expiresAt` is set before its owning intent's own, so it can become
+     * sweep-eligible while the intent is still confirmable) — and a real
+     * customer can easily hold two open reservations at once. This test
+     * fails against the pre-fix code: both branches commit on top of each
+     * other, and `r1` is left `RELEASED` even though its points were
+     * already spent by the winning `settleReservation` call.
+     */
+    it('settles exactly once when a settle and a release race the same reservation, with a second reservation open', async () => {
+      const { wallet } = await createCustomer(prisma);
+      await engine.accrue({
+        walletId: wallet.id,
+        type: BonusEntryType.ACCRUAL_PURCHASE,
+        amount: '1000',
+        pendingHours: 0,
+      });
+      const r1 = await engine.reserve(wallet.id, '400', 'tx-mixed-race-1');
+      // A second, untouched hold — its 400 is what would silently absorb
+      // r1's double-decrement without the CHECK constraint ever firing.
+      await engine.reserve(wallet.id, '400', 'tx-mixed-race-2');
+
+      const results = await Promise.allSettled([
+        engine.settleReservation(r1.reservationId),
+        engine.releaseReservation(r1.reservationId, 'purchase_intent_expired'),
+      ]);
+
+      expect(fulfilled(results)).toBe(1);
+      const r1Row = await prisma.bonusReservation.findUniqueOrThrow({ where: { id: r1.reservationId } });
+      const settled = r1Row.status === BonusReservationStatus.SETTLED;
+      expect(r1Row.status).toBe(
+        settled ? BonusReservationStatus.SETTLED : BonusReservationStatus.RELEASED,
+      );
+
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      // r2's 400 is still held throughout, whichever branch of r1 won.
+      expect(after.reservedBonus.toString()).toBe('400');
+      // Pre-reservation balance was 1000; 800 was held across r1+r2. If r1
+      // settled, its 400 was actually spent, leaving 200 available. If r1
+      // was released instead, its 400 came back, leaving 600 available.
+      expect(after.availableBonus.toString()).toBe(settled ? '200' : '600');
+      expect(after.lifetimeSpent.toString()).toBe(settled ? '400' : '0');
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
     it('does not let two reservations claim the same points', async () => {
       const { wallet } = await createCustomer(prisma);
       await engine.accrue({

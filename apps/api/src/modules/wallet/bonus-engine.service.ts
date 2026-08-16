@@ -341,6 +341,22 @@ export class BonusEngineService {
         throw new BadRequestException(`Reservation is not active (status: ${reservation.status})`);
       }
 
+      // Claimed with a conditional update, not a plain one: the expiry
+      // sweep and a partner's confirm can race on the same reservation
+      // (GitHub issue #28), and a plain `update` here would let whichever
+      // call commits second silently overwrite the first's SETTLED/
+      // RELEASED status and re-run its lot/wallet/ledger effects on top —
+      // returning a customer's just-spent points as available while the
+      // spend itself already went through. The conditional predicate makes
+      // the loser fail closed instead. Mirrored in `releaseReservation`.
+      const claimed = await client.bonusReservation.updateMany({
+        where: { id: reservationId, status: BonusReservationStatus.ACTIVE },
+        data: { status: BonusReservationStatus.SETTLED, settledAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException('Reservation is not active (status changed concurrently)');
+      }
+
       // A lot whose remainder is now zero has been fully spent.
       for (const allocation of reservation.allocations) {
         const lot = await client.bonusLot.findUniqueOrThrow({ where: { id: allocation.lotId } });
@@ -351,11 +367,6 @@ export class BonusEngineService {
           });
         }
       }
-
-      await client.bonusReservation.update({
-        where: { id: reservationId },
-        data: { status: BonusReservationStatus.SETTLED, settledAt: new Date() },
-      });
 
       await client.wallet.update({
         where: { id: reservation.walletId },
@@ -394,6 +405,17 @@ export class BonusEngineService {
         throw new BadRequestException(`Reservation is not active (status: ${reservation.status})`);
       }
 
+      // See settleReservation's matching comment — claimed conditionally so
+      // the loser of a race against a concurrent settle/release on this
+      // same reservation fails closed instead of clobbering it.
+      const claimed = await client.bonusReservation.updateMany({
+        where: { id: reservationId, status: BonusReservationStatus.ACTIVE },
+        data: { status: BonusReservationStatus.RELEASED, releasedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException('Reservation is not active (status changed concurrently)');
+      }
+
       for (const allocation of reservation.allocations) {
         await client.bonusLot.update({
           where: { id: allocation.lotId },
@@ -403,11 +425,6 @@ export class BonusEngineService {
           },
         });
       }
-
-      await client.bonusReservation.update({
-        where: { id: reservationId },
-        data: { status: BonusReservationStatus.RELEASED, releasedAt: new Date() },
-      });
 
       await client.wallet.update({
         where: { id: reservation.walletId },

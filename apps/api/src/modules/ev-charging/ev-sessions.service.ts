@@ -115,14 +115,11 @@ export class EvSessionsService {
     if (!connector.station.partner.isActive) {
       throw new BadRequestException('This charging network is not currently active');
     }
-    // Same self-dealing gap already closed in PurchaseIntentsService.create
-    // and PaymentEngineService.capture: a partner's own owner/staff must not
-    // be able to earn (or spend) TuTak bonus by charging at their own
-    // affiliated station — see PartnersService.isAffiliated for why this
-    // checks both PartnerMembership and partner-scoped UserRole.
-    if (await this.partners.isAffiliated(connector.station.partnerId, userId)) {
-      throw new BadRequestException('You cannot start a charging session at a partner you belong to');
-    }
+    // Business decision (2026-08-16, M7 revision): unlike QR, PurchaseIntent
+    // and Payments capture, a partner's own owner/staff MAY charge at their
+    // own affiliated station — the session itself is not blocked. What they
+    // must not do is earn a TuTak bonus benefit from it; that guard lives in
+    // stopOnce(), around the bonus-accrual computation, not here.
 
     if (dto.reservationId) {
       const reservation = await this.prisma.evReservation.findUnique({ where: { id: dto.reservationId } });
@@ -445,7 +442,18 @@ export class EvSessionsService {
         .assertCanEarn(userId)
         .then(() => true)
         .catch(() => false);
-      if (rateBps && canEarn) {
+      // Business decision (2026-08-16, M7 revision): an affiliated partner
+      // owner/staff may charge at their own station — start() does not
+      // block the session — but must receive no TuTak benefit from it. This
+      // is the one guard that enforces that: it suppresses earning only,
+      // the same way `canEarn` already suppresses it for an unverified
+      // phone. `bonusToApply` (spending bonus the customer already earned
+      // elsewhere) is untouched — that is not a benefit this session grants,
+      // and the instruction was explicitly not to block the session itself.
+      const affiliated = session.connector.station.partnerId
+        ? await this.partners.isAffiliated(session.connector.station.partnerId, userId)
+        : false;
+      if (rateBps && canEarn && !affiliated) {
         const paidPortion = cost.minus(bonusToApply);
         bonusEarned = roundIssued(paidPortion.times(rateBps).dividedBy(10_000));
         if (bonusEarned.greaterThan(0)) {

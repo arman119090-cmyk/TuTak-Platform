@@ -279,31 +279,44 @@ explicitly and repeatedly instructed not to do ("do NOT redesign
 FastCharge") — reported instead and held for its own explicitly-scoped
 session, which this is.
 
-**Fix, minimal and additive, no FastCharge/OCPI redesign:** one guard added
-to `start()`, immediately after the existing `isActive` check and before
-the connector-claiming transaction — `if (await
-this.partners.isAffiliated(connector.station.partnerId, userId)) throw new
-BadRequestException(...)`. Same `PartnersService.isAffiliated()` helper
-already used by `PurchaseIntentsService.create()` and
-`PaymentEngineService.capture()`, so the fix is consistent with precedent
-rather than a new pattern. Nothing else in the module changed: the OCPI
-remote-start/stop calls, meter-value ingestion, the physical-bounds
-ceiling, the stale-session sweep, and reservation handling are all
-untouched — the guard sits before any of that code runs, so a roaming
-session's OCPI semantics are unaffected. `EvChargingModule` now imports
-`PartnersModule` (no circular dependency — `PartnersModule` does not import
-`EvChargingModule`, directly or transitively).
+**First fix (superseded same day):** a hard block in `start()` refusing an
+affiliated user's session outright, mirroring QR/PurchaseIntent/Payments
+precedent exactly. **Revised by Arman's explicit business decision the same
+day:** "affiliated partner owners/staff may charge at their own station,
+but must receive no TuTak benefits from that session. Do not block the
+charging session itself." EV charging is treated differently from the
+other three flows on purpose — the session is allowed, only the bonus
+benefit is denied.
 
-Regression tests (`test/self-dealing.int-spec.ts`, new "EV charging"
-describe block, 3 tests): a `PartnerMembership`-affiliated owner is
-refused; staff added via a partner-scoped `UserRole` only (the actual
-`AdminService.assignRole` staff-onboarding shape, which never creates a
-`PartnerMembership`) is also refused, proving `isAffiliated` rather than
-the narrower `isMember` is in effect; an ordinary, unaffiliated customer
-can still charge normally. Git-stash-confirmed: both refusal tests fail
-against the pre-fix code (the session starts successfully) and pass
-against the fix. All 4 EV/OCPI integration-test files plus
-`self-dealing.int-spec.ts` (64 tests total) pass; full suite green.
+**Current fix, minimal and additive, no FastCharge/OCPI redesign:** the
+`start()` block was removed; instead one guard was added inside
+`stopOnce()`, in the bonus-earning computation only — `const affiliated =
+... isAffiliated(...); if (rateBps && canEarn && !affiliated) { ... }` —
+gating earning the exact same way `canEarn` (an unverified phone) already
+does. `bonusToApply` (spending bonus the customer already earned elsewhere)
+is deliberately untouched: it is not a benefit *this* session grants, and
+the instruction was explicitly not to block the session. Same
+`PartnersService.isAffiliated()` helper used elsewhere. Nothing else in the
+module changed — OCPI remote-start/stop, meter-value ingestion, the
+physical-bounds ceiling, the stale-session sweep, and reservation handling
+are all untouched. `EvChargingModule` still imports `PartnersModule` (no
+circular dependency).
+
+Regression tests (`test/self-dealing.int-spec.ts`, "EV charging" describe
+block, 5 tests): a `PartnerMembership`-affiliated owner can start *and
+complete* a session at their own connector; that session earns exactly
+`0` bonus and the wallet's `lifetimeEarned` stays `0.0000`; staff added via
+a partner-scoped `UserRole` only (the actual `AdminService.assignRole`
+staff-onboarding shape, which never creates a `PartnerMembership`) earns
+`0` the same way, proving `isAffiliated` rather than the narrower
+`isMember` is in effect; an ordinary unaffiliated customer still earns
+bonus normally; an affiliated staff member can still *spend* bonus they
+already earned elsewhere at their own station (session not blocked) while
+still earning `0` new bonus from it. Git-stash-confirmed against the
+previous (hard-block) fix: the new tests fail with "You cannot start a
+charging session at a partner you belong to" and pass once the block is
+replaced with the earning-only guard. All 4 EV/OCPI integration-test files
+plus `self-dealing.int-spec.ts` (66 tests total) pass; full suite green.
 
 ## I. Registration status
 
@@ -549,11 +562,15 @@ surfaced by this pass's broader entry-point/registration audits:
    and whether password should ever become optional (which requires
    designing an OTP-login path that doesn't exist).
 7. ~~**EV charging's missing self-dealing check**~~ — **RESOLVED
-   2026-08-16** in its own explicitly-scoped follow-up session (Arman's
-   direction). `EvSessionsService.start()` now uses the same
-   `PartnersService.isAffiliated()` guard as `PurchaseIntentsService.create()`
-   and `PaymentEngineService.capture()`. No FastCharge/OCPI redesign — see
-   §H for full detail.
+   2026-08-16** in its own explicitly-scoped follow-up session, with a
+   business-decision revision the same day. Unlike `PurchaseIntentsService
+   .create()`/`PaymentEngineService.capture()`, the session is NOT
+   blocked — an affiliated owner/staff MAY charge at their own station, per
+   Arman's explicit decision. `EvSessionsService.stopOnce()` instead
+   suppresses only bonus *earning* for that session via
+   `PartnersService.isAffiliated()`, gated the same way an unverified phone
+   already is; spending previously-earned bonus is untouched. No
+   FastCharge/OCPI redesign — see §H for full detail.
 
 ## N. Legal/accounting items
 

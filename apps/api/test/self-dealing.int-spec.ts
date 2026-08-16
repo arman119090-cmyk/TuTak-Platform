@@ -1,7 +1,8 @@
-import { EvSessionStatus, PrismaClient, QrCodeType, RoleName } from '@prisma/client';
+import { BonusEntryType, EvSessionStatus, PrismaClient, QrCodeType, RoleName } from '@prisma/client';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { EvReservationsService } from '../src/modules/ev-charging/ev-reservations.service';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
+import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { createCustomer, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
@@ -28,6 +29,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
   let qrPayments: QrPaymentsService;
   let sessions: EvSessionsService;
   let reservations: EvReservationsService;
+  let bonusEngine: BonusEngineService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -35,6 +37,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
     qrPayments = harness.app.get(QrPaymentsService);
     sessions = harness.app.get(EvSessionsService);
     reservations = harness.app.get(EvReservationsService);
+    bonusEngine = harness.app.get(BonusEngineService);
   });
 
   afterAll(async () => {
@@ -138,39 +141,93 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
   // ── Self-dealing through a charging session ────────────────────────────
 
   describe('EV charging', () => {
-    it('refuses a partner member starting a session at their own partner\'s connector', async () => {
+    // Business decision (2026-08-16, M7 revision): affiliated partner
+    // owners/staff MAY charge at their own station — the session itself is
+    // never blocked — but must receive no TuTak bonus benefit from it.
+
+    // 1 kWh: within METER_FLOOR_KWH, so it's accepted regardless of how
+    // little time has elapsed since the session started an instant ago.
+    const chargeToCompletion = async (userId: string, connectorId: string, energyKwh = '1') => {
+      const session = await sessions.start({ connectorId }, userId);
+      await sessions.reportMeterValue(session.id, energyKwh, userId);
+      return sessions.stop(session.id, userId, {});
+    };
+
+    it('lets a partner member start and complete a session at their own connector', async () => {
       const { user, partner } = await insider();
       const connector = await createEvConnector(prisma, { partnerId: partner.id });
 
-      await expect(sessions.start({ connectorId: connector.id }, user.id)).rejects.toThrow(
-        /cannot start a charging session at a partner you belong to/,
-      );
+      await expect(chargeToCompletion(user.id, connector.id)).resolves.toBeDefined();
     });
 
-    it('refuses staff added via a partner-scoped role, not only via PartnerMembership', async () => {
+    it('earns no bonus for a partner member charging at their own connector', async () => {
+      const { user, wallet, partner } = await insider(500); // 5% would normally accrue
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
+
+      const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% would be 5
+
+      expect(result.bonusEarned).toBe('0');
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.lifetimeEarned.toFixed(4)).toBe('0.0000');
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
+    it('earns no bonus for staff added via a partner-scoped role, not only via PartnerMembership', async () => {
       // AdminService.assignRole — the real staff-onboarding path — creates
       // only a UserRole, never a PartnerMembership (that row is only ever
       // created for a partner's founding owner via PartnersService.create/
       // apply). isMember() alone would miss this staff member entirely, the
       // same gap PurchaseIntentsService.create and PaymentEngineService
       // .capture were fixed for — see PartnersService.isAffiliated.
-      const { user } = await createCustomer(prisma);
+      const { user, wallet } = await createCustomer(prisma);
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
       await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId: partner.id } });
-      const connector = await createEvConnector(prisma, { partnerId: partner.id });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
-      await expect(sessions.start({ connectorId: connector.id }, user.id)).rejects.toThrow(
-        /cannot start a charging session at a partner you belong to/,
-      );
+      const result = await chargeToCompletion(user.id, connector.id);
+
+      expect(result.bonusEarned).toBe('0');
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.lifetimeEarned.toFixed(4)).toBe('0.0000');
+      await assertWalletIntegrity(prisma, wallet.id);
     });
 
-    it('still lets an ordinary customer charge at a partner they have no affiliation with', async () => {
-      const { user } = await createCustomer(prisma);
+    it('still lets an ordinary customer earn bonus charging at a partner they have no affiliation with', async () => {
+      const { user, wallet } = await createCustomer(prisma);
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
-      const connector = await createEvConnector(prisma, { partnerId: partner.id });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
-      await expect(sessions.start({ connectorId: connector.id }, user.id)).resolves.toBeDefined();
+      const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% = 5
+
+      expect(result.bonusEarned).toBe('5');
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.lifetimeEarned.toFixed(4)).toBe('5.0000');
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
+    it('still lets an affiliated staff member spend bonus they already earned elsewhere', async () => {
+      // The instruction was explicitly not to block the session — only to
+      // deny new earning from it. Spending previously-earned bonus is not a
+      // benefit this session grants, so it is untouched.
+      const { user, wallet, partner } = await insider(500);
+      // Grant pre-existing bonus from an unrelated source, bypassing the
+      // whole earn path — this test is only about spending, not earning.
+      await bonusEngine.accrue({
+        walletId: wallet.id,
+        type: BonusEntryType.ACCRUAL_PURCHASE,
+        amount: '50',
+        pendingHours: 0,
+      });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
+
+      const session = await sessions.start({ connectorId: connector.id }, user.id);
+      await sessions.reportMeterValue(session.id, '1', user.id); // cost 100
+      const result = await sessions.stop(session.id, user.id, { bonusAmountToApply: '50' });
+
+      expect(result.bonusApplied).toBe('50');
+      expect(result.bonusEarned).toBe('0'); // still no earning, even while spending
+      await assertWalletIntegrity(prisma, wallet.id);
     });
   });
 

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
   Currency,
   LedgerAccountType,
@@ -83,6 +83,17 @@ export class PaymentEngineService {
     // deactivated since the original charge should still surface that,
     // not silently hand back a stale success.
     const partner = await this.partners.findActiveOrThrow(params.partnerId);
+
+    // Same self-dealing concern `QrPaymentsService.redeem` and
+    // `PurchaseIntentsService.create` already guard against: this is the
+    // one purchase-finalizing path in the codebase that had no affiliation
+    // check at all, despite settlement (`SettlementService.settlePayment`)
+    // later accruing real bonus on it. `isAffiliated`, not the narrower
+    // `isMember`, so a partner's staff attached only via a partner-scoped
+    // role (not a `PartnerMembership` row) is caught too.
+    if (await this.partners.isAffiliated(partner.id, params.userId)) {
+      throw new BadRequestException('You cannot pay a partner you belong to');
+    }
 
     return this.idempotency.run<PaymentResult>(
       {

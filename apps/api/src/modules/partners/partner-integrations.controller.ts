@@ -25,7 +25,7 @@ export class PartnerIntegrationsController {
     @Body() dto: CreateIntegrationDto,
   ) {
     assertPartnerScope(user, partnerId);
-    return this.integrations.create(partnerId, dto);
+    return this.integrations.create(partnerId, dto, user.id);
   }
 
   /** Platform-admin-only, deliberately manual — see the service for why. */
@@ -35,6 +35,6 @@ export class PartnerIntegrationsController {
     @Param('integrationId') integrationId: string,
   ) {
     assertPlatformAdmin(admin, 'Verifying a partner website');
-    return this.integrations.markWebsiteVerified(integrationId);
+    return this.integrations.markWebsiteVerified(integrationId, admin.id);
   }
 }

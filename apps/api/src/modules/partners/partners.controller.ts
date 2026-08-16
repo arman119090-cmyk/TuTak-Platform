@@ -187,8 +187,20 @@ export class PartnersController {
    * (any admin, or that partner's own people, may reach this route) but
    * additionally restricted to the OWNER tier specifically — MANAGER and
    * STAFF hold no permission that reaches here at all, and an OWNER who is
-   * not scoped to *this* partner is refused by `assertPartnerScope` before
-   * the role check ever runs.
+   * not scoped to *this* partner is refused before the role check runs.
+   *
+   * The role check itself must be scoped to `id`, not just "holds
+   * PARTNER_OWNER somewhere" — `user.roles` is a flat set collapsed across
+   * every `UserRole` row the caller has, any partner. A user who is genuine
+   * STAFF at partner B and *also* OWNER of an unrelated partner A (e.g. via
+   * self-service `POST /partners/apply`, which grants OWNER immediately,
+   * before approval) would pass `user.roles.includes(PARTNER_OWNER)` and
+   * change partner B's commercial terms despite holding no ownership of B
+   * at all. `partnerScopes[PARTNER_OWNER]` is the same map
+   * `assertPartnerScope` itself reads from, so this checks OWNER *of this
+   * partner specifically* — the same "a permission/role name carries no
+   * scope" class of bug `partner-scope.ts`'s own docblock describes having
+   * been fixed once already, recurring here one level down.
    */
   @Patch(':id/commercial-settings')
   async updateCommercialSettings(
@@ -198,7 +210,7 @@ export class PartnersController {
   ) {
     if (!isPlatformAdmin(user)) {
       assertPartnerScope(user, id);
-      if (!user.roles.includes(RoleName.PARTNER_OWNER)) {
+      if (!user.partnerScopes[RoleName.PARTNER_OWNER]?.includes(id)) {
         throw new ForbiddenException('Only the partner owner may change commercial settings');
       }
     }

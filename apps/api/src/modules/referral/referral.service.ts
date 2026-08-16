@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AuditAction,
   BonusEntryType,
   Prisma,
   ReferralChallengeParticipantStatus,
@@ -108,6 +109,16 @@ export class ReferralService {
         amount,
         sourceTransactionId,
         pendingHours: 0,
+      },
+      tx,
+    );
+    await this.auditService.record(
+      {
+        actorUserId: userId,
+        action: AuditAction.BONUS_ACCRUED,
+        entityType: 'Wallet',
+        entityId: wallet.id,
+        metadata: { mechanism: 'referral_recurring_share', amount: amount.toString(), sourceTransactionId },
       },
       tx,
     );
@@ -329,6 +340,20 @@ export class ReferralService {
     // moment it is granted — never sitting in the wallet as spendable value
     // before this. Once granted, both sides are ordinary GREEN/AVAILABLE
     // bonus, immediately.
+    //
+    // TODO: BUSINESS DECISION REQUIRED — REFERRAL CHALLENGE FUNDING SOURCE.
+    // `bonusEngine.accrue` below only ever mints wallet-level points; there
+    // is deliberately no `LedgerService.post()` call anywhere in this
+    // method. That means this reward posts no PARTNER_PAYABLE debit, no
+    // PLATFORM_REVENUE credit, no BONUS_LIABILITY entry at all — it does
+    // not charge any partner and it is not drawn from the 20/30/20/30
+    // contribution pool (spec §20 explicitly forbids both). The two
+    // `accrue` calls are eligibility/entitlement only; they do not
+    // constitute real accounting until a funding source is chosen. Do not
+    // add a ledger posting here without that decision having been made —
+    // guessing a source (e.g. debiting PLATFORM_REVENUE unconditionally)
+    // would be inventing a business rule this repository is explicitly not
+    // authorized to invent.
     await Promise.all([
       this.bonusEngine.accrue(
         {
@@ -353,6 +378,26 @@ export class ReferralService {
         tx,
       ),
     ]);
+
+    // System-triggered, not a human actor — same reasoning
+    // `PurchaseIntentsService.expireOne` already applies to its own
+    // sweep-triggered audit entries: automated financial mutations are
+    // audit-worthy regardless of whether a person clicked anything.
+    await this.auditService.record(
+      {
+        action: AuditAction.BONUS_ACCRUED,
+        entityType: 'ReferralChallengeParticipant',
+        entityId: `${referrerUserId}:${refereeUserId}`,
+        metadata: {
+          mechanism: 'referral_challenge_reward',
+          referrerUserId,
+          refereeUserId,
+          rewardAmount: rewardAmount.toString(),
+          sourceTransactionId,
+        },
+      },
+      tx,
+    );
 
     this.logger.log(
       `Referral challenge slot filled: referrer ${referrerUserId} + referee ${refereeUserId}, ${rewardAmount} AMD each`,

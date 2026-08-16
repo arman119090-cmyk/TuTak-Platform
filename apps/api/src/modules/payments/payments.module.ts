@@ -13,9 +13,10 @@ import { PSP_ADAPTER } from './psp-adapter.interface';
 import { SandboxPspAdapter } from './sandbox-psp.adapter';
 
 /**
- * No controllers, matching `LedgerModule`: the payment engine is a service
- * other modules (checkout flows, once they exist) call into, not an HTTP
- * surface of its own yet.
+ * `PaymentsController`/`RefundsController` are live HTTP surfaces — `POST
+ * /payments` and `POST /refunds` are both reachable today, JWT-guarded. This
+ * comment previously claimed otherwise; corrected during the 2026-08
+ * hardening pass after the discrepancy was flagged in an entry-point audit.
  */
 @Module({
   imports: [LedgerModule, PartnersModule, WalletModule, AuditModule],

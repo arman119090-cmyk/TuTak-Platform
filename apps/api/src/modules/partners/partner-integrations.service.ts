@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { PartnerIntegrationStatus, PartnerIntegrationType, Prisma } from '@prisma/client';
+import { AuditAction, PartnerIntegrationStatus, PartnerIntegrationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 
 /**
@@ -12,7 +13,10 @@ import { CreateIntegrationDto } from './dto/create-integration.dto';
  */
 @Injectable()
 export class PartnerIntegrationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   list(partnerId: string) {
     return this.prisma.partnerIntegration.findMany({
@@ -21,7 +25,7 @@ export class PartnerIntegrationsService {
     });
   }
 
-  async create(partnerId: string, dto: CreateIntegrationDto) {
+  async create(partnerId: string, dto: CreateIntegrationDto, actorUserId: string) {
     if (dto.type === PartnerIntegrationType.WEBSITE && !dto.websiteUrl) {
       throw new BadRequestException('websiteUrl is required for a WEBSITE integration');
     }
@@ -35,7 +39,7 @@ export class PartnerIntegrationsService {
       }
     }
 
-    return this.prisma.partnerIntegration.create({
+    const integration = await this.prisma.partnerIntegration.create({
       data: {
         partnerId,
         partnerBranchId: dto.partnerBranchId,
@@ -53,6 +57,16 @@ export class PartnerIntegrationsService {
         configuration: dto.configuration as Prisma.InputJsonValue | undefined,
       },
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'PartnerIntegration',
+      entityId: integration.id,
+      metadata: { event: 'integration_created', partnerId, type: dto.type },
+    });
+
+    return integration;
   }
 
   /**
@@ -63,11 +77,26 @@ export class PartnerIntegrationsService {
    * the body of this method, not its shape, once the method is decided —
    * everything that reads `PartnerIntegrationStatus.ACTIVE` downstream stays
    * correct either way.
+   *
+   * Audited deliberately: this is the one human trust decision in the whole
+   * extension point (spec §3 says no partner-supplied URL is ever
+   * auto-trusted), so which admin attested to which URL, and when, has to
+   * be on the record.
    */
-  markWebsiteVerified(integrationId: string) {
-    return this.prisma.partnerIntegration.update({
+  async markWebsiteVerified(integrationId: string, actorUserId: string) {
+    const integration = await this.prisma.partnerIntegration.update({
       where: { id: integrationId },
       data: { status: PartnerIntegrationStatus.ACTIVE, websiteVerifiedAt: new Date() },
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'PartnerIntegration',
+      entityId: integration.id,
+      metadata: { event: 'website_verified', partnerId: integration.partnerId, websiteUrl: integration.websiteUrl },
+    });
+
+    return integration;
   }
 }

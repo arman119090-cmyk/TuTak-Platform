@@ -5,6 +5,7 @@ import {
   BonusEntryType,
   LedgerAccountType,
   PostingDirection,
+  Prisma,
   PurchaseIntentStatus,
   TransactionType,
 } from '@prisma/client';
@@ -22,6 +23,8 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { WalletService } from '../wallet/wallet.service';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+
+type Tx = Prisma.TransactionClient;
 
 /**
  * The new standard purchase flow — spec §7-16. Additive alongside the
@@ -222,31 +225,11 @@ export class PurchaseIntentsService {
       throw new BadRequestException('This purchase intent has expired');
     }
 
-    const claimed = await this.prisma.purchaseIntent.updateMany({
-      where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
-      data: {
-        status: PurchaseIntentStatus.CONFIRMED,
-        confirmedByUserId: staffUserId,
-        confirmedAt: new Date(),
-      },
-    });
-    if (claimed.count === 0) {
+    const outcome = await this.settlePurchase(intent, staffUserId);
+    if (outcome === 'already-resolved') {
       // Lost the race — someone else confirmed, rejected, or the sweep
       // expired it a moment ago.
       return this.findByIdOrThrow(intentId);
-    }
-
-    try {
-      await this.settlePurchase(intent, staffUserId);
-    } catch (err) {
-      // The status flip already committed outside this try — a failure
-      // here must not silently leave a CONFIRMED intent with none of its
-      // financial effects applied. Roll the intent itself back to a
-      // terminal, clearly-broken state rather than leaving it looking
-      // successful; the reservation/transaction compensation inside
-      // `settlePurchase` has already run by the time an error reaches here.
-      this.logger.error(`Purchase intent ${intentId} confirmed but settlement failed: ${err}`);
-      throw err;
     }
 
     await this.auditService.record({
@@ -260,10 +243,34 @@ export class PurchaseIntentsService {
     return this.findByIdOrThrow(intentId);
   }
 
+  /**
+   * Claims the intent and settles it as one atomic unit — the confirming
+   * status flip lives *inside* the same `$transaction` as every financial
+   * effect it authorizes, not before it. An earlier version flipped the
+   * status first, in its own statement, then ran the settlement in a
+   * separate transaction: a failure partway through the settlement left
+   * the intent permanently `CONFIRMED` with some or none of its financial
+   * effects actually applied — the exact "looks successful, isn't" state
+   * this method exists to make unreachable. Now a failure anywhere in the
+   * block below rolls back the claim along with everything else, so the
+   * intent is left exactly as it was — still `AWAITING_CONFIRMATION`, its
+   * reservation still `ACTIVE` — and is safe to retry with no manual
+   * compensation required.
+   *
+   * The same reasoning applies to `postContributionLedger` and
+   * `postRedemptionCompensation` below: both now take `tx` and pass it to
+   * `LedgerService.post`, matching the pattern every other financial
+   * engine in this codebase already uses (see `payment-engine.service.ts`).
+   * Without it, `LedgerService.post` opens its *own* independent
+   * transaction — so the ledger postings could commit permanently even if
+   * the rest of this settlement later failed and rolled back, or vice
+   * versa: a real accounting entry with no bonus ever reaching the
+   * customer's wallet.
+   */
   private async settlePurchase(
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
     staffUserId: string,
-  ): Promise<void> {
+  ): Promise<'settled' | 'already-resolved'> {
     const policy = this.config.get('purchasePolicy', { infer: true });
 
     // Spec §12: the pool is gross × the *snapshotted* negotiated rate — not
@@ -274,10 +281,26 @@ export class PurchaseIntentsService {
     const referrerShare = roundIssued(pool.times(policy.poolReferrerBps).dividedBy(10_000));
     const tutakBase = roundIssued(pool.times(policy.poolTutakBps).dividedBy(10_000));
 
+    // Read-only, and safe to resolve before the transaction: an attribution
+    // is immutable once created (spec §5), so it cannot change between this
+    // read and the transaction below using it.
     const referrer = await this.referralService.resolveReferrer(intent.customerId);
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
+        // Conditional on still being AWAITING_CONFIRMATION, exactly like
+        // the rest of this codebase's claim-then-act pattern — but now the
+        // claim and the act are the same atomic unit.
+        const claimed = await tx.purchaseIntent.updateMany({
+          where: { id: intent.id, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
+          data: {
+            status: PurchaseIntentStatus.CONFIRMED,
+            confirmedByUserId: staffUserId,
+            confirmedAt: new Date(),
+          },
+        });
+        if (claimed.count === 0) return 'already-resolved' as const;
+
         if (intent.bonusReservationId) {
           await this.bonusEngine.settleReservation(intent.bonusReservationId, tx);
         }
@@ -318,35 +341,27 @@ export class PurchaseIntentsService {
           );
         }
 
-        await this.postContributionLedger(intent, {
-          pool,
-          green,
-          deferred,
-          referrerShare,
-          tutakBase,
-          referrer,
-        });
+        await this.postContributionLedger(
+          intent,
+          { pool, green, deferred, referrerShare, tutakBase, referrer },
+          tx,
+        );
 
         if (intent.bonusAmountRequested.greaterThan(0)) {
-          await this.postRedemptionCompensation(intent);
+          await this.postRedemptionCompensation(intent, tx);
         }
+
+        return 'settled' as const;
       });
     } catch (err) {
-      // Undo what can still be undone: the reservation and the transaction.
-      // The pool distribution itself is all-or-nothing inside the
-      // transaction above, so nothing partial from it can exist to unwind.
-      if (intent.bonusReservationId) {
-        await this.bonusEngine
-          .compensateReservation(intent.bonusReservationId, 'purchase_intent_confirm_failed')
-          .catch((e) => this.logger.error(`Compensation failed for intent ${intent.id}: ${e}`));
-      }
-      await this.transactionsService
-        .markFailed(intent.sourceTransactionId!, 'purchase_intent_confirm_failed')
-        .catch(() => undefined);
+      // Nothing to unwind by hand: the transaction above is one atomic
+      // unit, so a failure anywhere in it rolled back the status claim
+      // together with the reservation settle, the accrual, the deferred
+      // lot and both ledger postings. The caller sees the error and the
+      // intent is left safely retryable.
+      this.logger.error(`Purchase intent ${intent.id} settlement failed and was rolled back: ${err}`);
       throw err;
     }
-
-    void staffUserId; // recorded on the intent row itself, not needed here
   }
 
   /**
@@ -366,6 +381,7 @@ export class PurchaseIntentsService {
       tutakBase: Decimal;
       referrer: { type: 'USER'; userId: string } | { type: 'PARTNER'; partnerId: string } | null;
     },
+    tx: Tx,
   ): Promise<void> {
     if (amounts.pool.lessThanOrEqualTo(0)) return;
 
@@ -404,45 +420,54 @@ export class PurchaseIntentsService {
         : []),
     ];
 
-    await this.ledger.post({
-      kind: 'partner.contribution',
-      sourceType: 'PurchaseIntent',
-      sourceId: intent.id,
-      postings,
-    });
+    await this.ledger.post(
+      {
+        kind: 'partner.contribution',
+        sourceType: 'PurchaseIntent',
+        sourceId: intent.id,
+        postings,
+      },
+      tx,
+    );
   }
 
   /**
    * Spec §2/§23's redemption-compensation leg — always a separate posting
    * from the contribution above, never netted into it.
    */
-  private async postRedemptionCompensation(intent: {
-    id: string;
-    partnerId: string;
-    bonusAmountRequested: Decimal;
-  }): Promise<void> {
+  private async postRedemptionCompensation(
+    intent: {
+      id: string;
+      partnerId: string;
+      bonusAmountRequested: Decimal;
+    },
+    tx: Tx,
+  ): Promise<void> {
     const [partnerAccount, bonusLiabilityAccount] = await Promise.all([
       this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }),
       this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
     ]);
 
-    await this.ledger.post({
-      kind: 'partner.bonus_redemption_compensation',
-      sourceType: 'PurchaseIntent',
-      sourceId: intent.id,
-      postings: [
-        {
-          accountId: bonusLiabilityAccount.id,
-          direction: PostingDirection.DEBIT,
-          amount: intent.bonusAmountRequested,
-        },
-        {
-          accountId: partnerAccount.id,
-          direction: PostingDirection.CREDIT,
-          amount: intent.bonusAmountRequested,
-        },
-      ],
-    });
+    await this.ledger.post(
+      {
+        kind: 'partner.bonus_redemption_compensation',
+        sourceType: 'PurchaseIntent',
+        sourceId: intent.id,
+        postings: [
+          {
+            accountId: bonusLiabilityAccount.id,
+            direction: PostingDirection.DEBIT,
+            amount: intent.bonusAmountRequested,
+          },
+          {
+            accountId: partnerAccount.id,
+            direction: PostingDirection.CREDIT,
+            amount: intent.bonusAmountRequested,
+          },
+        ],
+      },
+      tx,
+    );
   }
 
   /**

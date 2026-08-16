@@ -8,9 +8,11 @@ import {
   RoleName,
   TransactionStatus,
 } from '@prisma/client';
+import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { PartnersController } from '../src/modules/partners/partners.controller';
 import { PartnersService } from '../src/modules/partners/partners.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
+import { TransactionsService } from '../src/modules/transactions/transactions.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../src/modules/wallet/deferred-bonus-lot.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
@@ -37,6 +39,7 @@ describe('PurchaseIntents (integration)', () => {
   let partnersController: PartnersController;
   let engine: BonusEngineService;
   let deferredLots: DeferredBonusLotService;
+  let ledger: LedgerService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -46,6 +49,7 @@ describe('PurchaseIntents (integration)', () => {
     partnersController = harness.app.get(PartnersController);
     engine = harness.app.get(BonusEngineService);
     deferredLots = harness.app.get(DeferredBonusLotService);
+    ledger = harness.app.get(LedgerService);
   });
 
   afterAll(async () => {
@@ -53,6 +57,7 @@ describe('PurchaseIntents (integration)', () => {
   });
 
   beforeEach(async () => {
+    jest.restoreAllMocks();
     await truncateAll(prisma);
   });
 
@@ -292,6 +297,220 @@ describe('PurchaseIntents (integration)', () => {
       expect(expired.status).toBe(PurchaseIntentStatus.EXPIRED);
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+    });
+  });
+
+  // ── Financial transaction boundary ────────────────────────────────────
+
+  describe('financial transaction boundary', () => {
+    /**
+     * The core invariant a hardening pass exists to catch: a PurchaseIntent
+     * must never read as CONFIRMED — "this purchase succeeded" — while any
+     * of the financial effects that status implies (reservation settled,
+     * bonus accrued, deferred lot advanced, ledger posted) failed to
+     * commit. An earlier version flipped the status in its own statement
+     * before running settlement in a separate transaction, and separately
+     * posted both ledger entries via `LedgerService.post` with no `tx`
+     * argument — which opens its *own* independent transaction rather than
+     * joining the caller's. A failure late in settlement (here: the ledger
+     * write itself) left the intent stuck CONFIRMED with none of its
+     * financial effects applied and no way to retry, since `confirm()`
+     * treats a non-`AWAITING_CONFIRMATION` intent as already resolved.
+     */
+    it('rolls back the CONFIRMED status together with every financial effect if settlement fails partway through', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+
+      // Fails the ledger write itself — the last thing settlement does, and
+      // the exact call that used to run outside the transaction. If it were
+      // still outside, this would prove nothing: the reservation-settle,
+      // bonus accrual and deferred lot would already have committed by the
+      // time this throws. The assertions below are the actual proof.
+      jest.spyOn(ledger, 'post').mockRejectedValueOnce(new Error('ledger unavailable'));
+
+      await expect(purchaseIntents.confirm(intent.id, staff.id)).rejects.toThrow(
+        'ledger unavailable',
+      );
+
+      const afterFailure = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(afterFailure.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+      expect(afterFailure.confirmedByUserId).toBeNull();
+      expect(afterFailure.confirmedAt).toBeNull();
+
+      const transaction = await prisma.transaction.findUniqueOrThrow({
+        where: { id: intent.sourceTransactionId! },
+      });
+      expect(transaction.status).toBe(TransactionStatus.INITIATED);
+
+      expect(await prisma.ledgerTransaction.count()).toBe(0);
+      expect(await prisma.deferredBonusLot.count()).toBe(0);
+
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterFailure.availableBonus.toFixed(4)).toBe('0.0000');
+      expect(walletAfterFailure.lifetimeEarned.toFixed(4)).toBe('0.0000');
+
+      // And genuinely retryable — same intent, same staff, no manual
+      // compensation needed — because nothing partial was left behind.
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+      expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } }),
+      ).toBe(1);
+      const walletAfterRetry = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterRetry.availableBonus.toFixed(4)).toBe('100.0000'); // 20% of the 500 pool
+    });
+
+    it('rolls back the same way when the reservation/wallet-touching work fails, not just the ledger', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '500' },
+        user.id,
+      );
+
+      const transactions = harness.app.get(TransactionsService);
+      jest.spyOn(transactions, 'markCompleted').mockRejectedValueOnce(new Error('database went away'));
+
+      await expect(purchaseIntents.confirm(intent.id, staff.id)).rejects.toThrow(
+        'database went away',
+      );
+
+      const afterFailure = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(afterFailure.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+
+      // The bonus reservation taken at creation must still be ACTIVE — not
+      // settled, not compensated — exactly as it was before this attempt.
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterFailure.availableBonus.toFixed(4)).toBe('500.0000'); // still held, not released or spent
+      expect(walletAfterFailure.reservedBonus.toFixed(4)).toBe('500.0000');
+    });
+  });
+
+  // ── Concurrency and idempotency ────────────────────────────────────────
+
+  describe('concurrency and idempotency', () => {
+    it('lets only one of two concurrently-created intents reserve bonus that together would overdraw the wallet', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partnerA = await createPartner(prisma);
+      const partnerB = await createPartner(prisma);
+
+      // Each alone is affordable; together they are not. `BonusEngineService
+      // .reserve` runs Serializable, so one of the two must lose the race
+      // rather than both succeeding against a balance read before either
+      // committed.
+      const results = await Promise.allSettled([
+        purchaseIntents.create(
+          { partnerId: partnerA.id, grossAmount: '5000', bonusAmountRequested: '700' },
+          user.id,
+        ),
+        purchaseIntents.create(
+          { partnerId: partnerB.id, grossAmount: '5000', bonusAmountRequested: '700' },
+          user.id,
+        ),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      // Exactly one 700 hold — never both, never neither.
+      expect(walletAfter.reservedBonus.toFixed(4)).toBe('700.0000');
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('300.0000');
+    });
+
+    it('lets a confirm and a reject race on the same intent without double-processing', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        user.id,
+      );
+
+      const [confirmResult, rejectResult] = await Promise.allSettled([
+        purchaseIntents.confirm(intent.id, staff.id),
+        purchaseIntents.reject(intent.id, staff.id, { reasonCode: 'OTHER' }),
+      ]);
+
+      // Both calls resolve (reject/confirm are idempotent no-ops on a
+      // resolved intent, not errors) — what matters is they agree on
+      // exactly one final, terminal state, not two contradictory ones.
+      const final = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect([PurchaseIntentStatus.CONFIRMED, PurchaseIntentStatus.REJECTED]).toContain(final.status);
+
+      if (confirmResult.status === 'fulfilled' && confirmResult.value.status === PurchaseIntentStatus.CONFIRMED) {
+        expect(final.status).toBe(PurchaseIntentStatus.CONFIRMED);
+      }
+      if (rejectResult.status === 'fulfilled' && rejectResult.value.status === PurchaseIntentStatus.REJECTED) {
+        // Only reachable if confirm lost the race — the two outcomes are
+        // mutually exclusive by construction (both branches read the same
+        // final `intent`), so this asserts the same thing from the other side.
+        expect(final.status).toBe(PurchaseIntentStatus.REJECTED);
+      }
+
+      // Whichever won, the pool was applied at most once.
+      const ledgerTransactions = await prisma.ledgerTransaction.count({
+        where: { kind: 'partner.contribution' },
+      });
+      expect(ledgerTransactions).toBeLessThanOrEqual(1);
+      expect(ledgerTransactions).toBe(final.status === PurchaseIntentStatus.CONFIRMED ? 1 : 0);
+    });
+
+    it('lets an expiry sweep and a confirm race on the same intent without double-processing', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      // Past its window — a confirm arriving this late self-detects expiry
+      // and calls the same `expireOne` the sweep does (see `confirm()`'s own
+      // pre-check), so this is the actual production race: a customer's
+      // last-instant confirm and the periodic sweep both discovering the
+      // same overdue intent at once. A confirm that arrived *before* the
+      // deadline never overlaps with the sweep at all — `expireStale` only
+      // ever selects rows already past `expiresAt` — so that path has
+      // nothing to race against here.
+      await prisma.purchaseIntent.update({
+        where: { id: intent.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      const [confirmOutcome] = await Promise.allSettled([
+        purchaseIntents.confirm(intent.id, staff.id),
+        purchaseIntents.expireStale(),
+      ]);
+      expect(confirmOutcome.status).toBe('rejected'); // both paths agree: expired
+
+      const final = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(final.status).toBe(PurchaseIntentStatus.EXPIRED);
+
+      // The reservation was released exactly once — not left ACTIVE
+      // (leaked) and not double-released by both racing callers.
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.RELEASED);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+      expect(walletAfter.reservedBonus.toFixed(4)).toBe('0.0000');
     });
   });
 
@@ -670,6 +889,46 @@ describe('PurchaseIntents (integration)', () => {
           { maxBonusPaymentPercent: 40 },
         ),
       ).rejects.toThrow(/Only the partner owner/);
+    });
+
+    it('refuses a user who owns a different partner from changing this partner’s bonus-payment cap', async () => {
+      // The escalation this guards against: `user.roles` is a flat set
+      // collapsed across every UserRole row the caller holds, any partner.
+      // Someone who is genuine STAFF at partner B and *also* OWNER of an
+      // unrelated partner A (e.g. via self-service `POST /partners/apply`,
+      // which grants OWNER immediately) must not pass a check that only
+      // asks "does this user hold PARTNER_OWNER anywhere" — it has to ask
+      // "is this user OWNER of partner B specifically."
+      const partnerA = await createPartner(prisma, { displayName: 'Partner A (owned)' });
+      const partnerB = await createPartner(prisma, { displayName: 'Partner B (target)' });
+      const attacker = await staffMember(partnerB.id, [RoleName.PARTNER_STAFF]);
+      const ownerRole = await prisma.role.findUniqueOrThrow({
+        where: { name: RoleName.PARTNER_OWNER },
+      });
+      await prisma.userRole.create({
+        data: { userId: attacker.id, roleId: ownerRole.id, partnerId: partnerA.id },
+      });
+
+      const requestUser: RequestUser = {
+        id: attacker.id,
+        phone: '+37400000000',
+        roles: [RoleName.PARTNER_STAFF, RoleName.PARTNER_OWNER],
+        permissions: [],
+        partnerScopes: {
+          [RoleName.PARTNER_STAFF]: [partnerB.id],
+          [RoleName.PARTNER_OWNER]: [partnerA.id],
+        },
+        mustChangePassword: false,
+      };
+
+      await expect(
+        partnersController.updateCommercialSettings(requestUser, partnerB.id, {
+          maxBonusPaymentPercent: 40,
+        }),
+      ).rejects.toThrow(/Only the partner owner/);
+
+      const unchanged = await partners.findByIdOrThrow(partnerB.id);
+      expect(unchanged.maxBonusPaymentPercent).toBe(100);
     });
 
     it('records the individual confirming staff member’s identity on the intent', async () => {

@@ -8,6 +8,7 @@ import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { DemoSessionService } from './demo-session.service';
 import { AuthService } from './auth.service';
+import { AuthOtpService } from './auth-otp.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PasswordService } from './password.service';
 import { PhoneVerificationService } from './phone-verification.service';
@@ -32,7 +33,14 @@ import { ReferralModule } from '../referral/referral.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [DemoSessionService, AuthService, JwtStrategy, PasswordService, PhoneVerificationService],
+  providers: [
+    DemoSessionService,
+    AuthService,
+    AuthOtpService,
+    JwtStrategy,
+    PasswordService,
+    PhoneVerificationService,
+  ],
   exports: [AuthService, PasswordService, PhoneVerificationService],
 })
 export class AuthModule {}

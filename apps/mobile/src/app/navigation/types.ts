@@ -5,6 +5,9 @@ export type AuthStackParamList = {
   Register: undefined;
   ForgotPassword: undefined;
   ResetPassword: { phone: string };
+  /** Item 3: the OTP-first alternative to Register/Login, phone -> SMS code -> account. */
+  OtpRegister: undefined;
+  OtpLogin: undefined;
 };
 
 export type MainTabParamList = {

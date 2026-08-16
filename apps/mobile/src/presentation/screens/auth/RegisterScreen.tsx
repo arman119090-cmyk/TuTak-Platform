@@ -133,6 +133,12 @@ export function RegisterScreen({ navigation }: Props) {
               loading={loading}
               disabled={!canSubmit}
             />
+            <Button
+              label={t('auth.useSmsCodeInstead')}
+              variant="secondary"
+              onPress={() => navigation.replace('OtpRegister')}
+              disabled={loading}
+            />
           </View>
 
           <View style={[styles.footer, { marginTop: space[7], gap: space[1] }]}>

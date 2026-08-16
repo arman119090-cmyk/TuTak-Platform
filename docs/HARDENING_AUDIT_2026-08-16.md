@@ -354,13 +354,40 @@ account first and verifies (and gates earning on) phone ownership after.
 generic. What's missing is a live carrier account/credentials in this
 environment, which is deployment configuration, not a code gap.
 
-**BUSINESS DECISION REQUIRED:** (1) should registration require OTP
-*before* account/tokens are issued, overriding the documented
-stranding-tradeoff; (2) should password become fully optional, which
-requires designing an OTP-based login path that does not exist today;
-(3) should `firstName`/`lastName` become deferred profile completion
-(the update-profile path already supports this — only registration
-doesn't).
+**BUSINESS DECISION REQUIRED (RESOLVED 2026-08-16, item 3 of the follow-up
+directive):** Arman decided all three: (1) registration follows the
+OTP-first model — phone → SMS OTP → account, with tokens issued only after
+the code is confirmed; (2) password is fully optional — a new OTP-based
+login path exists alongside the original password path; (3)
+`firstName`/`lastName`/`email` are optional at registration, deferred to
+the existing profile-update endpoint.
+
+**IMPLEMENTED:** `AuthOtpToken` (new, purely-additive table — phone-keyed,
+`purpose: REGISTER | LOGIN`, since a first-time registrant has no `User`
+row for the existing userId-keyed `PhoneVerificationToken`/
+`PasswordResetToken` tables to key off) backs a new `AuthOtpService`
+(challenge issue/consume, same rate ceilings as `PhoneVerificationService`)
+and four new `AuthService`/`AuthController` endpoints:
+`POST /auth/register/request-otp`, `POST /auth/register/verify-otp`,
+`POST /auth/login/request-otp`, `POST /auth/login/verify-otp`. OTP
+registration creates the account with `isPhoneVerified: true` immediately
+(the code already proved phone ownership) and a real argon2 hash of an
+unguessable random value as `passwordHash` — deliberately *not* the raw,
+non-argon2 sentinel `account-deletion.service.ts` uses for the same
+"unusable password" idea, because a raw sentinel makes `argon2.verify()`
+throw instead of returning `false`, which would 500 a former OTP-only
+customer who later tries the password-login form instead of failing them
+cleanly with "incorrect password". Referral attribution is captured the
+same one-shot, immutable way `register()` already does it
+(`ReferralService.createAttribution` inside the same transaction). OTP
+login mirrors `PasswordService.requestReset`'s anti-enumeration contract:
+`request-otp` always reports success and never issues a real challenge for
+an unregistered or inactive number. The original `POST /auth/register` and
+`POST /auth/login` are untouched — both auth models coexist.
+Regression tests: `test/auth-otp.int-spec.ts` (18 cases — happy paths,
+referral capture, wrong/expired/replayed codes, rate ceilings,
+anti-enumeration, locked/deactivated accounts, and the argon2-vs-raw-hash
+distinction specifically).
 
 ## J. Security findings
 

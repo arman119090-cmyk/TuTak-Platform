@@ -71,6 +71,35 @@ export interface ConfirmPhoneVerificationRequestDto {
   code: string;
 }
 
+// ── OTP-first registration/login ──────────────────────────────────────────
+
+export interface RequestRegistrationOtpRequestDto {
+  phone: string;
+}
+
+export interface VerifyRegistrationOtpRequestDto {
+  phone: string;
+  code: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  locale?: string;
+  referralCode?: string;
+  deviceId: string;
+  deviceName?: string;
+}
+
+export interface RequestLoginOtpRequestDto {
+  phone: string;
+}
+
+export interface VerifyLoginOtpRequestDto {
+  phone: string;
+  code: string;
+  deviceId: string;
+  deviceName?: string;
+}
+
 /**
  * Deleting your own account.
  *

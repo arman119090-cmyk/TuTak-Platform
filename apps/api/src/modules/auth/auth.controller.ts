@@ -18,6 +18,12 @@ import {
   ConfirmPhoneDto,
   RequestPasswordResetDto,
 } from './dto/password.dto';
+import {
+  RequestLoginOtpDto,
+  RequestRegistrationOtpDto,
+  VerifyLoginOtpDto,
+  VerifyRegistrationOtpDto,
+} from './dto/otp.dto';
 import { PasswordService } from './password.service';
 import { PhoneVerificationService } from './phone-verification.service';
 import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from './refresh-cookie';
@@ -65,6 +71,63 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(dto, extractMeta(req));
+    setRefreshCookie(
+      res,
+      result.tokens.refreshToken,
+      new Date(result.tokens.refreshTokenExpiresAt),
+    );
+    return result;
+  }
+
+  /**
+   * Item 3: OTP-first registration. Phone -> SMS code -> account, no
+   * password. Same rate ceilings as verify-phone/request, since both hand
+   * out an SMS code to whoever asks.
+   */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 300_000 } })
+  @Post('register/request-otp')
+  requestRegistrationOtp(@Body() dto: RequestRegistrationOtpDto) {
+    return this.authService.requestRegistrationOtp(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 300_000 } })
+  @Post('register/verify-otp')
+  async verifyRegistrationOtp(
+    @Body() dto: VerifyRegistrationOtpDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.verifyRegistrationOtp(dto, extractMeta(req));
+    setRefreshCookie(
+      res,
+      result.tokens.refreshToken,
+      new Date(result.tokens.refreshTokenExpiresAt),
+    );
+    return result;
+  }
+
+  /**
+   * Item 3: OTP-first login for an existing account. Always reports
+   * success — the same anti-enumeration contract as password-reset/request.
+   */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 300_000 } })
+  @Post('login/request-otp')
+  requestLoginOtp(@Body() dto: RequestLoginOtpDto) {
+    return this.authService.requestLoginOtp(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 300_000 } })
+  @Post('login/verify-otp')
+  async verifyLoginOtp(
+    @Body() dto: VerifyLoginOtpDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.verifyLoginOtp(dto, extractMeta(req));
     setRefreshCookie(
       res,
       result.tokens.refreshToken,

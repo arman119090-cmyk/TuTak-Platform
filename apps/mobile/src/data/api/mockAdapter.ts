@@ -113,7 +113,14 @@ function handle(
     case 'POST /auth/password-reset/confirm':
     case 'POST /auth/verify-phone/request':
     case 'POST /auth/verify-phone/confirm':
+    case 'POST /auth/register/request-otp':
+    case 'POST /auth/login/request-otp':
       return envelope({ success: true });
+
+    // Any code is accepted, same as the login/register mocks above.
+    case 'POST /auth/register/verify-otp':
+    case 'POST /auth/login/verify-otp':
+      return envelope({ user: MOCK_USER, tokens: mockTokens() });
 
     case 'DELETE /users/me':
       return envelope({

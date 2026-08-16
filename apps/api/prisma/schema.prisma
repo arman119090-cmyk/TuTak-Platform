@@ -258,6 +258,35 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+enum AuthOtpPurpose {
+  REGISTER
+  LOGIN
+}
+
+/// A single-use OTP challenge for phone-first auth.
+///
+/// Keyed by phone, not userId — unlike PhoneVerificationToken and
+/// PasswordResetToken, this has to work for REGISTER before any User row
+/// exists. LOGIN reuses the same table rather than a second one because the
+/// challenge/consume/rate-limit shape is identical either way; `purpose`
+/// keeps a REGISTER code from being replayable as a LOGIN code and vice
+/// versa on the same number.
+model AuthOtpToken {
+  id         String          @id @default(uuid())
+  phone      String
+  purpose    AuthOtpPurpose
+  /// SHA-256 of the code delivered to the user. Never the code itself.
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int             @default(0)
+  createdAt  DateTime        @default(now())
+
+  @@index([phone, purpose, consumedAt])
+  @@index([expiresAt])
+  @@map("auth_otp_tokens")
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Wallet & Bonus Engine (event-sourced ledger with FIFO-expiring lots)
 // ─────────────────────────────────────────────────────────────────────────

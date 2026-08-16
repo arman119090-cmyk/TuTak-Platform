@@ -148,7 +148,7 @@ describe('mockAdapter', () => {
     }
 
     expect(unmocked).toEqual([]);
-  });
+  }, 15000); // Every discovered route pays LATENCY_MS in sequence; the route count keeps growing.
 
   it('rejects an unknown route instead of resolving with nothing', async () => {
     // Resolving would give the caller `undefined` and a blank screen. The

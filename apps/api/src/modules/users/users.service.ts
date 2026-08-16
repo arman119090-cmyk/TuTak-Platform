@@ -42,6 +42,7 @@ export class UsersService {
       firstName: string;
       lastName: string;
       locale: string;
+      isPhoneVerified?: boolean;
     },
     tx?: Prisma.TransactionClient,
   ) {

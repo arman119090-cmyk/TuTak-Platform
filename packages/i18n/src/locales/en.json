@@ -319,6 +319,8 @@
     "expiryNotice": "The cashier has 3 minutes to confirm this purchase before it expires.",
     "submit": "Send to cashier",
     "createFailed": "Could not create the purchase",
+    "partnerLoadFailed": "Couldn't verify this business. Please try scanning the code again.",
+    "partnerInactive": "This business isn't accepting TuTak payments right now.",
     "awaiting": "Waiting for the cashier to confirm",
     "confirmed": "Purchase confirmed",
     "rejected": "Purchase declined",

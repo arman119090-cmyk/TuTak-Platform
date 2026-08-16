@@ -1,5 +1,5 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import type { PurchaseIntentDto } from '@tutak/shared-types';
+import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
 import { MOCK_USER, freshMockState, mockTokens, type MockState } from './mockData';
 
@@ -404,6 +404,36 @@ function handle(
     }
 
     return envelope(existing);
+  }
+
+  // GitHub issue #28 (HIGH, 2026-08-16): the QR-scanned PurchaseIntent path
+  // resolves the partner from the server before showing an amount field —
+  // see CreatePurchaseIntentScreen's `partnersApi.get(partnerId)` call.
+  // Falls back to a synthesized record rather than 404ing for the same
+  // reason `getPurchaseIntent` above does: the route-completeness test
+  // asks for an id this adapter never created.
+  const getPartner = /^\/partners\/([^/]+)$/.exec(path);
+  if (method === 'GET' && getPartner) {
+    const id = getPartner[1]!;
+    const match = state.partners.find((p) => p.partnerId === id);
+    const partner: PartnerPublicDto = match
+      ? {
+          id: match.partnerId,
+          displayName: match.name,
+          category: match.category,
+          bonusAccrualRateBps: Math.round(match.cashbackPercent * 100),
+          isActive: true,
+          createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+        }
+      : {
+          id,
+          displayName: 'Demo Partner',
+          category: 'retail',
+          bonusAccrualRateBps: 500,
+          isActive: true,
+          createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+        };
+    return envelope(partner);
   }
 
   return {

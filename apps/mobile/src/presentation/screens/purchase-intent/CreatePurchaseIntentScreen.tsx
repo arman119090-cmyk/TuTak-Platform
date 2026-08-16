@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -11,17 +11,29 @@ import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
+import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
 import { describeApiError } from '../../../data/api/errors';
 import { formatAmd, formatPoints } from '../../utils/format';
 
 /**
  * Spec §7 steps 1-8: the customer enters the amounts themselves, on the
- * partner they already picked (a map card's "Pay" action passed `partnerId`
- * here). The amount is never editable again after this screen submits — the
- * next screen only tracks the intent to a terminal state, it cannot change
- * it — matching PurchaseIntentsService.create()'s server-side invariant that
- * a customer sets the figures once.
+ * partner they already picked. The amount is never editable again after
+ * this screen submits — the next screen only tracks the intent to a
+ * terminal state, it cannot change it — matching
+ * PurchaseIntentsService.create()'s server-side invariant that a customer
+ * sets the figures once.
+ *
+ * GitHub issue #28 (HIGH, 2026-08-16): `route.params.partnerName` is never
+ * a trusted value — a QR scan (`ScanQrScreen`) only ever supplies a bare
+ * `partnerId`, so relying on the param alone let a substituted or stale
+ * code reach this screen with no verified merchant identity shown before
+ * the customer commits an amount. This screen now always resolves the
+ * partner from the server (`GET /partners/:id`, the same public read
+ * `PartnersScreen` already trusts) and keeps the amount form disabled
+ * until that resolves to a name and an active business — `partnerName`
+ * is used only as an instant placeholder while that request is in flight,
+ * never as the thing actually shown once it resolves.
  */
 export function CreatePurchaseIntentScreen() {
   const { t } = useTranslation();
@@ -33,6 +45,14 @@ export function CreatePurchaseIntentScreen() {
   const [grossAmount, setGrossAmount] = useState('');
   const [bonusAmount, setBonusAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const {
+    data: partner,
+    isLoading: partnerLoading,
+    isError: partnerFailed,
+    refetch: refetchPartner,
+    isRefetching: partnerRetrying,
+  } = useQuery({ queryKey: ['partner', partnerId], queryFn: () => partnersApi.get(partnerId) });
 
   const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
   const availableBonus = wallet?.availableBonus ?? '0';
@@ -58,8 +78,62 @@ export function CreatePurchaseIntentScreen() {
 
   const grossValid = /^\d+(\.\d{1,4})?$/.test(grossAmount) && Number(grossAmount) > 0;
 
+  if (partnerLoading) {
+    return (
+      <Screen title={t('purchaseIntent.createTitle')} subtitle={partnerName}>
+        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+          <ActivityIndicator color={color.primary} />
+        </Surface>
+      </Screen>
+    );
+  }
+
+  if (partnerFailed) {
+    return (
+      <Screen title={t('purchaseIntent.createTitle')}>
+        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+          <Text style={[text.bodySm, { color: color.dangerText, textAlign: 'center' }]}>
+            {t('purchaseIntent.partnerLoadFailed')}
+          </Text>
+        </Surface>
+        <View style={{ marginTop: space[5] }}>
+          <Button
+            label={t('common.retry')}
+            onPress={() => refetchPartner()}
+            variant="secondary"
+            loading={partnerRetrying}
+          />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!partner) {
+    // Neither loading nor failed, yet no data — react-query's contract
+    // guarantees this doesn't happen, but the type doesn't, and silently
+    // falling through to `partner.isActive` below is exactly the kind of
+    // untrusted-identity gap this screen exists to close.
+    return (
+      <Screen title={t('purchaseIntent.createTitle')}>
+        <ActivityIndicator color={color.primary} />
+      </Screen>
+    );
+  }
+
+  if (!partner.isActive) {
+    return (
+      <Screen title={t('purchaseIntent.createTitle')} subtitle={partner.displayName}>
+        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+          <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
+            {t('purchaseIntent.partnerInactive')}
+          </Text>
+        </Surface>
+      </Screen>
+    );
+  }
+
   return (
-    <Screen title={t('purchaseIntent.createTitle')} subtitle={partnerName}>
+    <Screen title={t('purchaseIntent.createTitle')} subtitle={partner.displayName}>
       <TextField
         label={t('purchaseIntent.grossAmount')}
         keyboardType="decimal-pad"

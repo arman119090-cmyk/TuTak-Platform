@@ -1,4 +1,4 @@
-import type { NearbyPartnerDto, PartnerCategory } from '@tutak/shared-types';
+import type { NearbyPartnerDto, PartnerCategory, PartnerPublicDto } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export interface NearbyPartnersQuery {
@@ -29,6 +29,21 @@ export const partnersApi = {
         ...(query.q?.trim() ? { q: query.q.trim() } : {}),
       },
     });
+    return data.data;
+  },
+
+  /**
+   * The trusted record for one partner, straight from the server —
+   * never inferred from anything a QR code or route param claimed. See
+   * `CreatePurchaseIntentScreen`'s use of this: a scanned `TUTAK-PAY:<id>`
+   * code only ever carries an id, and this is what turns that id into a
+   * name and an active/inactive fact the customer can actually trust
+   * before committing an amount.
+   */
+  async get(partnerId: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerPublicDto>>(
+      `/partners/${partnerId}`,
+    );
     return data.data;
   },
 };

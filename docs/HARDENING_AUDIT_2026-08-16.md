@@ -268,15 +268,42 @@ transact through the new `PurchaseIntent` flow for a non-EV purchase with no
 code change needed — nothing in `PurchaseIntentsService` gates on
 integration type. All 4 EV/OCPI integration-test files (52 tests) pass.
 
-**One gap found, deliberately NOT fixed this pass:** `EvSessionsService`
-has no self-dealing/affiliation check at all — unlike QR, PurchaseIntent,
-and (after this pass) Payments capture, a partner's own staff can start and
-stop a charging session at their own station and collect bonus on it. This
-is reported here rather than fixed because it requires touching EV-charging
-code, which both the original spec and this hardening task explicitly and
-repeatedly instruct not to do ("do NOT redesign FastCharge"). Recommend a
-dedicated, explicitly-scoped follow-up session for this specific fix, framed
-as a security patch rather than a FastCharge redesign.
+**Gap found and FIXED, 2026-08-16 (§M item 7, explicitly-scoped follow-up
+session, Arman's direction).** `EvSessionsService.start()` had no self-
+dealing/affiliation check at all — unlike QR, PurchaseIntent, and (after
+the main hardening pass) Payments capture, a partner's own owner/staff
+could start a charging session at their own station and collect bonus on
+it. Deliberately not fixed in the main hardening pass because it meant
+touching EV-charging code, which both the original spec and that task
+explicitly and repeatedly instructed not to do ("do NOT redesign
+FastCharge") — reported instead and held for its own explicitly-scoped
+session, which this is.
+
+**Fix, minimal and additive, no FastCharge/OCPI redesign:** one guard added
+to `start()`, immediately after the existing `isActive` check and before
+the connector-claiming transaction — `if (await
+this.partners.isAffiliated(connector.station.partnerId, userId)) throw new
+BadRequestException(...)`. Same `PartnersService.isAffiliated()` helper
+already used by `PurchaseIntentsService.create()` and
+`PaymentEngineService.capture()`, so the fix is consistent with precedent
+rather than a new pattern. Nothing else in the module changed: the OCPI
+remote-start/stop calls, meter-value ingestion, the physical-bounds
+ceiling, the stale-session sweep, and reservation handling are all
+untouched — the guard sits before any of that code runs, so a roaming
+session's OCPI semantics are unaffected. `EvChargingModule` now imports
+`PartnersModule` (no circular dependency — `PartnersModule` does not import
+`EvChargingModule`, directly or transitively).
+
+Regression tests (`test/self-dealing.int-spec.ts`, new "EV charging"
+describe block, 3 tests): a `PartnerMembership`-affiliated owner is
+refused; staff added via a partner-scoped `UserRole` only (the actual
+`AdminService.assignRole` staff-onboarding shape, which never creates a
+`PartnerMembership`) is also refused, proving `isAffiliated` rather than
+the narrower `isMember` is in effect; an ordinary, unaffiliated customer
+can still charge normally. Git-stash-confirmed: both refusal tests fail
+against the pre-fix code (the session starts successfully) and pass
+against the fix. All 4 EV/OCPI integration-test files plus
+`self-dealing.int-spec.ts` (64 tests total) pass; full suite green.
 
 ## I. Registration status
 
@@ -521,10 +548,12 @@ surfaced by this pass's broader entry-point/registration audits:
    (§I) — whether to reverse the documented "create-then-verify" tradeoff,
    and whether password should ever become optional (which requires
    designing an OTP-login path that doesn't exist).
-7. **New: EV charging's missing self-dealing check** (§H) — a real gap,
-   deliberately not fixed this pass because fixing it means touching
-   FastCharge code, which is explicitly out of bounds here. Needs its own
-   explicitly-scoped session.
+7. ~~**EV charging's missing self-dealing check**~~ — **RESOLVED
+   2026-08-16** in its own explicitly-scoped follow-up session (Arman's
+   direction). `EvSessionsService.start()` now uses the same
+   `PartnersService.isAffiliated()` guard as `PurchaseIntentsService.create()`
+   and `PaymentEngineService.capture()`. No FastCharge/OCPI redesign — see
+   §H for full detail.
 
 ## N. Legal/accounting items
 

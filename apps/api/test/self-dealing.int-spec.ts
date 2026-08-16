@@ -135,6 +135,45 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
     });
   });
 
+  // ── Self-dealing through a charging session ────────────────────────────
+
+  describe('EV charging', () => {
+    it('refuses a partner member starting a session at their own partner\'s connector', async () => {
+      const { user, partner } = await insider();
+      const connector = await createEvConnector(prisma, { partnerId: partner.id });
+
+      await expect(sessions.start({ connectorId: connector.id }, user.id)).rejects.toThrow(
+        /cannot start a charging session at a partner you belong to/,
+      );
+    });
+
+    it('refuses staff added via a partner-scoped role, not only via PartnerMembership', async () => {
+      // AdminService.assignRole — the real staff-onboarding path — creates
+      // only a UserRole, never a PartnerMembership (that row is only ever
+      // created for a partner's founding owner via PartnersService.create/
+      // apply). isMember() alone would miss this staff member entirely, the
+      // same gap PurchaseIntentsService.create and PaymentEngineService
+      // .capture were fixed for — see PartnersService.isAffiliated.
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
+      await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId: partner.id } });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id });
+
+      await expect(sessions.start({ connectorId: connector.id }, user.id)).rejects.toThrow(
+        /cannot start a charging session at a partner you belong to/,
+      );
+    });
+
+    it('still lets an ordinary customer charge at a partner they have no affiliation with', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id });
+
+      await expect(sessions.start({ connectorId: connector.id }, user.id)).resolves.toBeDefined();
+    });
+  });
+
   // ── Unbounded sessions ─────────────────────────────────────────────────
 
   describe('session duration', () => {

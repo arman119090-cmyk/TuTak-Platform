@@ -24,6 +24,7 @@ import { FraudDetectionService } from '../security/fraud-detection.service';
 import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
+import { PartnersService } from '../partners/partners.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -102,6 +103,7 @@ export class EvSessionsService {
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
     private readonly alerts: AlertsService,
     private readonly idempotency: IdempotencyService,
+    private readonly partners: PartnersService,
   ) {}
 
   async start(dto: StartSessionDto, userId: string) {
@@ -112,6 +114,14 @@ export class EvSessionsService {
     if (!connector) throw new NotFoundException('Connector not found');
     if (!connector.station.partner.isActive) {
       throw new BadRequestException('This charging network is not currently active');
+    }
+    // Same self-dealing gap already closed in PurchaseIntentsService.create
+    // and PaymentEngineService.capture: a partner's own owner/staff must not
+    // be able to earn (or spend) TuTak bonus by charging at their own
+    // affiliated station — see PartnersService.isAffiliated for why this
+    // checks both PartnerMembership and partner-scoped UserRole.
+    if (await this.partners.isAffiliated(connector.station.partnerId, userId)) {
+      throw new BadRequestException('You cannot start a charging session at a partner you belong to');
     }
 
     if (dto.reservationId) {

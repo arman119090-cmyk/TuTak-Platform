@@ -6,3 +6,4 @@ export * from './ev';
 export * from './partner';
 export * from './referral';
 export * from './notification';
+export * from './purchase-intent';

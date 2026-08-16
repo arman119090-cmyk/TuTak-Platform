@@ -6,3 +6,4 @@ export * from './ev';
 export * from './audit';
 export * from './locale';
 export * from './referral';
+export * from './purchase-intent';

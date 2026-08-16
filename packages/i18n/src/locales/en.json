@@ -301,5 +301,19 @@
     "ev_charging": "Charging",
     "beauty": "Beauty",
     "other": "Other"
+  },
+  "purchaseIntent": {
+    "createTitle": "New purchase",
+    "statusTitle": "Purchase status",
+    "grossAmount": "Amount",
+    "bonusAmount": "Bonus to apply",
+    "expiryNotice": "The cashier has 3 minutes to confirm this purchase before it expires.",
+    "submit": "Send to cashier",
+    "createFailed": "Could not create the purchase",
+    "awaiting": "Waiting for the cashier to confirm",
+    "confirmed": "Purchase confirmed",
+    "rejected": "Purchase declined",
+    "expired": "This purchase was not confirmed in time and has expired.",
+    "payHere": "Pay here"
   }
 }

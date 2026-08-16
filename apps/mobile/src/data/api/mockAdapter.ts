@@ -1,5 +1,6 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import { EvSessionStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
+import type { PurchaseIntentDto } from '@tutak/shared-types';
+import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
 import { MOCK_USER, freshMockState, mockTokens, type MockState } from './mockData';
 
 /**
@@ -257,6 +258,40 @@ function handle(
       });
     }
 
+    // ── Purchase intents ───────────────────────────────────────────────
+    case 'POST /purchase-intents': {
+      const dto = body<{
+        partnerId: string;
+        partnerBranchId?: string;
+        grossAmount: string;
+        bonusAmountRequested?: string;
+      }>(config);
+      const partner = state.partners.find((p) => p.partnerId === dto.partnerId);
+      const bonusAmountRequested = dto.bonusAmountRequested ?? '0';
+      const intent: PurchaseIntentDto = {
+        id: `pi-${Date.now()}`,
+        customerId: MOCK_USER.id,
+        partnerId: dto.partnerId,
+        partnerBranchId: dto.partnerBranchId ?? null,
+        status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+        grossAmount: dto.grossAmount,
+        bonusAmountRequested,
+        ordinaryPaymentRemainder: String(
+          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
+        ),
+        negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
+        maxBonusPaymentPercent: 50,
+        confirmedByUserId: null,
+        rejectionReason: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+        confirmedAt: null,
+        rejectedAt: null,
+      };
+      state.purchaseIntents = [intent, ...state.purchaseIntents];
+      return envelope(intent);
+    }
+
     default:
       break;
   }
@@ -303,6 +338,59 @@ function handle(
       updatedAt: new Date().toISOString(),
     };
     return envelope(stopped);
+  }
+
+  const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
+  if (method === 'GET' && getPurchaseIntent) {
+    const id = getPurchaseIntent[1]!;
+    // Falls back to a freshly-minted one rather than 404ing: the status
+    // screen always passes an id this adapter itself issued from
+    // POST /purchase-intents, so the only caller that can ask for one this
+    // adapter never created is the route-completeness test.
+    const existing: PurchaseIntentDto = state.purchaseIntents.find((pi) => pi.id === id) ?? {
+      id,
+      customerId: MOCK_USER.id,
+      partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+      partnerBranchId: null,
+      status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+      grossAmount: '5000',
+      bonusAmountRequested: '0',
+      ordinaryPaymentRemainder: '5000',
+      negotiatedRateBps: 500,
+      maxBonusPaymentPercent: 50,
+      confirmedByUserId: null,
+      rejectionReason: null,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+      confirmedAt: null,
+      rejectedAt: null,
+    };
+
+    // No cashier exists in the demo, so the poll itself plays that part —
+    // a few seconds after creation, the next poll finds it confirmed. Real
+    // confirmation is the partner dashboard's job; this only has to prove
+    // the customer's screen reacts to a status change it did not cause.
+    const ageMs = Date.now() - new Date(existing.createdAt).getTime();
+    if (existing.status === PurchaseIntentStatus.AWAITING_CONFIRMATION && ageMs > 4000) {
+      const confirmed: PurchaseIntentDto = {
+        ...existing,
+        status: PurchaseIntentStatus.CONFIRMED,
+        confirmedByUserId: 'mock-cashier',
+        confirmedAt: new Date().toISOString(),
+      };
+      state.purchaseIntents = state.purchaseIntents.map((pi) => (pi.id === id ? confirmed : pi));
+      const greenShare = String(Math.round(Number(confirmed.grossAmount) * 0.05 * 100) / 100);
+      state.wallet = {
+        ...state.wallet,
+        availableBonus: sum(state.wallet.availableBonus, greenShare),
+        lifetimeEarned: sum(state.wallet.lifetimeEarned, greenShare),
+        version: state.wallet.version + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      return envelope(confirmed);
+    }
+
+    return envelope(existing);
   }
 
   return {

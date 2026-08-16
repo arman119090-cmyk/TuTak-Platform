@@ -24,6 +24,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { MainTabParamList, RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
+import { Button } from '../../components/Button';
 import { SectionHeader } from '../../components/SectionHeader';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
@@ -423,6 +424,7 @@ function PartnerCard({
 }) {
   const { color, space, text, radius, premium } = useTheme();
   const { t } = useTranslation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <Pressable onPress={onPress} accessibilityRole="button">
@@ -471,9 +473,25 @@ function PartnerCard({
         </View>
 
         {selected ? (
-          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[3] }]}>
-            {t('partners.howToEarn', { percent: partner.cashbackPercent })}
-          </Text>
+          <>
+            <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[3] }]}>
+              {t('partners.howToEarn', { percent: partner.cashbackPercent })}
+            </Text>
+            <View style={{ marginTop: space[3] }}>
+              <Button
+                label={t('purchaseIntent.payHere')}
+                size="sm"
+                fullWidth={false}
+                onPress={() =>
+                  navigation.navigate('CreatePurchaseIntent', {
+                    partnerId: partner.partnerId,
+                    partnerBranchId: partner.id,
+                    partnerName: partner.name,
+                  })
+                }
+              />
+            </View>
+          </>
         ) : null}
       </Surface>
     </Pressable>

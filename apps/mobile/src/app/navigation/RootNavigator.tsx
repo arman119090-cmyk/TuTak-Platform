@@ -12,6 +12,8 @@ import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
 import { DeleteAccountScreen } from '../../presentation/screens/settings/DeleteAccountScreen';
 import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
+import { CreatePurchaseIntentScreen } from '../../presentation/screens/purchase-intent/CreatePurchaseIntentScreen';
+import { PurchaseIntentStatusScreen } from '../../presentation/screens/purchase-intent/PurchaseIntentStatusScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -89,6 +91,16 @@ export function RootNavigator() {
         name="DeleteAccount"
         component={DeleteAccountScreen}
         options={{ title: t('settings.deleteAccount'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="CreatePurchaseIntent"
+        component={CreatePurchaseIntentScreen}
+        options={{ title: t('purchaseIntent.createTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="PurchaseIntentStatus"
+        component={PurchaseIntentStatusScreen}
+        options={{ title: t('purchaseIntent.statusTitle'), headerShown: false }}
       />
     </Stack.Navigator>
   );

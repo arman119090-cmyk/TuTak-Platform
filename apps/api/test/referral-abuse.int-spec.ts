@@ -200,6 +200,43 @@ describe('Referral abuse (integration)', () => {
       await assertWalletIntegrity(prisma, referee.wallet.id);
     });
 
+    it('funds the reward from TuTak platform revenue, backing the wallet liability with a real ledger posting', async () => {
+      // Business decision (GitHub Issue #28 Finding 1, 2026-08-16): TuTak
+      // funds the full 2000 AMD reward from its own company funds — no
+      // partner is charged, nothing is drawn from the 20/30/20/30 pool.
+      const { participant } = await invited();
+      await purchase(participant.refereeUserId, '4000');
+      await purchase(participant.refereeUserId, '6000');
+
+      const totalReward = (Number(rewardAmount) * 2).toFixed(4);
+
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PLATFORM_REVENUE' },
+      });
+      // DEBIT reduces TuTak's own revenue by the reward — the same account
+      // a purchase's TuTak-base share credits, just moving the other way.
+      expect(revenueAccount.balance.toFixed(4)).toBe(totalReward);
+
+      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'BONUS_LIABILITY' },
+      });
+      // CREDIT increases the platform's liability to the two wallets that
+      // just received spendable balance — negative in raw storage, same
+      // convention `postContributionLedger`'s customer-liability leg uses.
+      expect(bonusLiabilityAccount.balance.toFixed(4)).toBe(`-${totalReward}`);
+
+      const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+        where: { kind: 'referral.challenge_reward' },
+        include: { postings: true },
+      });
+      expect(ledgerTx.postings).toHaveLength(2);
+      const net = ledgerTx.postings.reduce(
+        (acc, p) => acc + (p.direction === 'DEBIT' ? 1 : -1) * Number(p.amount),
+        0,
+      );
+      expect(net).toBe(0);
+    });
+
     it('refuses a self-referral even if a participant row is forged', async () => {
       const { user, wallet } = await createCustomer(prisma);
       const participant = await prisma.referralChallengeParticipant.create({

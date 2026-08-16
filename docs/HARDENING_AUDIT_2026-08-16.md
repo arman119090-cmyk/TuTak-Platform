@@ -20,10 +20,13 @@ Not "everything is correct" — see §J for what was found and fixed, and §M/§
 for what remains open by design (business/legal decisions this repository is
 not authorized to invent). What this verdict means: every financial
 invariant in scope was traced against the actual production code (not
-assumed from tests or docs), one CRITICAL and three HIGH defects were found
-and fixed with regression tests that fail against the pre-fix code, the full
-test suite is green, and every unresolved item is named explicitly rather
-than hidden.
+assumed from tests or docs), one CRITICAL and four HIGH defects were found
+and fixed with regression tests that fail against the pre-fix code (the
+fourth HIGH — the `DeferredBonusLot` lost-update race — and the Referral
+Challenge funding-source business decision were both surfaced by an
+independent audit posted to GitHub Issue #28 after this pass's first draft
+and resolved as a follow-on to the same pass), the full test suite is
+green, and every unresolved item is named explicitly rather than hidden.
 
 ## B. Branch and commits
 
@@ -158,21 +161,36 @@ change was required. The comment above the `TODO` in `referral.service.ts`
 now records this decision explicitly so a future reader does not attempt to
 add the rejected pending-state fix.
 
-**Funding-source status: still `TODO: BUSINESS DECISION REQUIRED`** — this
-is a distinct question from spendability, above, and Arman's decision did
-not address it. Explicitly marked in code (`referral.service.ts`, inside
-`tryRewardChallengeSlot`, immediately above the two `accrue` calls).
-Verified directly: the method contains **no `LedgerService.post()` call
-anywhere** — it does not debit any `PARTNER_PAYABLE` account, does not
-credit `PLATFORM_REVENUE`, does not draw from the 20/30/20/30 contribution
-pool. The 2000 AMD reward is real, immediately spendable wallet value (per
-the decision above) that is not yet backed by a corresponding ledger
-posting — i.e. it is currently an unfunded liability from TuTak's own
-accounting perspective, exactly as Issue #28 warned. Resolving *this* half
-of the finding requires choosing which account absorbs the 2000 AMD before
-a ledger posting can be added; guessing (e.g. debiting `PLATFORM_REVENUE`
-unconditionally) would be inventing a business rule this repository is not
-authorized to invent.
+**Funding-source status: RESOLVED (2026-08-16, second business decision on
+GitHub Issue #28 Finding 1).** Arman's decision: **"TuTak funds the full
+2,000 AMD Referral Challenge reward (1,000 + 1,000) from TuTak's company
+funds."** `tryRewardChallengeSlot` now calls `LedgerService.post()`
+directly after the two `accrue` calls — one `referral.challenge_reward`
+transaction, DEBIT `PLATFORM_REVENUE` / CREDIT `BONUS_LIABILITY`, 2000 AMD,
+mirroring the exact posting-direction convention `postContributionLedger`
+already uses for its own TuTak-revenue and customer-liability legs. No
+partner is charged and nothing is drawn from the 20/30/20/30 pool, matching
+the decision. Regression test: `test/referral-abuse.int-spec.ts` › "funds
+the reward from TuTak platform revenue, backing the wallet liability with a
+real ledger posting" — git-stash-confirmed to fail against the pre-fix code
+(no `PLATFORM_REVENUE`/`BONUS_LIABILITY` account is ever created without
+the posting) and pass against the fix.
+
+Implementing this surfaced one more real defect, fixed alongside it:
+`LedgerService.accountFor()` always used the raw Prisma client to find/
+create an account, ignoring any transaction the caller was inside. Every
+existing caller runs under READ COMMITTED (`PurchaseIntentsService`'s
+`$transaction`), where each statement re-snapshots, so the gap was
+invisible there. `tryRewardChallengeSlot` runs inside
+`ReferralService.runSerializable` (Serializable isolation, snapshotted once
+at the start) — calling `accountFor` without `tx` created the account on a
+separate connection outside that snapshot, and the immediately-following
+`ledger.post(..., tx)` hit a live foreign key violation ("account not
+found") because the transaction's snapshot could not see a row a different
+connection had just committed. Fixed by giving `accountFor` an optional
+`tx` parameter (defaulting to the raw client, so every other caller is
+unaffected) and passing `tx` from the new call site. Full suite (708 tests)
+green after the fix.
 
 ## F. Deferred bonus review
 
@@ -316,16 +334,20 @@ despite the customer having actually crossed the required threshold.
 Fixed by switching to `{ increment: grossAmount }` (commit `cb679ff`); see
 §F for full detail and regression-test evidence.
 
-**BUSINESS DECISION REQUIRED → RESOLVED, no code change (GitHub Issue #28,
-independent audit, Finding 1).** The audit flagged that Referral Challenge
-rewards become spendable (`pendingHours: 0`) before a funding source is
-approved, and proposed adding a non-spendable `QUALIFIED`/`REWARD_ENTITLED`
-state. This repository declined to implement that fix unilaterally (it
-would invent new product behavior) and surfaced the question instead.
-Arman's decision (2026-08-16): rewards are immediately spendable with no
-pending/lock period — confirming the code's existing behavior was already
-correct. See §E for full detail; the narrower funding-source/ledger-posting
-question the same finding raised remains open (§M item 2).
+**BUSINESS DECISION REQUIRED → RESOLVED, both halves closed (GitHub Issue
+#28, independent audit, Finding 1).** The audit flagged that Referral
+Challenge rewards become spendable (`pendingHours: 0`) before a funding
+source is approved, and proposed adding a non-spendable
+`QUALIFIED`/`REWARD_ENTITLED` state. This repository declined to implement
+that fix unilaterally (it would invent new product behavior) and surfaced
+two separate questions instead. Both are now resolved by Arman:
+(1) *spendability* — rewards are immediately spendable with no pending/lock
+period, confirming the code's existing behavior was already correct, no
+code change; (2) *funding source* — TuTak funds the full 2000 AMD from its
+own company funds, implemented as a `LedgerService.post()` call debiting
+`PLATFORM_REVENUE` and crediting `BONUS_LIABILITY`, which also surfaced and
+fixed a real `LedgerService.accountFor()` transaction-scoping bug (see §E
+for both decisions and full detail).
 
 **CRITICAL — FIXED.** PurchaseIntent confirm/settlement was not one atomic
 unit (§C, §J-1 above). Commit `92940af`. Regression tests:
@@ -469,14 +491,15 @@ surfaced by this pass's broader entry-point/registration audits:
 1. `PartnerIntegration` website-verification method (spec §3) — no
    technical method specified; verification stays a manual admin
    attestation.
-2. **Referral Challenge funding source** (spec §20) — now explicitly
-   marked `TODO: BUSINESS DECISION REQUIRED` directly in code
-   (`referral.service.ts`), not just in this document. **Note:** the
-   related spendability question (GitHub Issue #28 Finding 1) was resolved
-   2026-08-16 — rewards are confirmed immediately spendable with no
-   pending/lock period, and required no code change. The funding-source
-   question (which account books the 2000 AMD liability) is narrower and
-   remains genuinely open.
+2. ~~**Referral Challenge funding source** (spec §20)~~ — **RESOLVED
+   2026-08-16** (GitHub Issue #28 Finding 1, both halves). Spendability:
+   rewards are immediately spendable, no pending/lock period, no code
+   change needed. Funding source: TuTak funds the full 2000 AMD from its
+   own company funds — `tryRewardChallengeSlot` now posts a
+   `LedgerService` transaction debiting `PLATFORM_REVENUE` and crediting
+   `BONUS_LIABILITY`. See §E and §J for full detail, including a real
+   `LedgerService.accountFor()` transaction-scoping bug this surfaced and
+   fixed.
 3. Staff amount-editing on `PurchaseIntent` confirm (spec §26) — not
    built, consistent with the old QR flow having none either.
 4. What happens to a partner's positive settlement balance on offboarding

@@ -256,13 +256,30 @@ export class LedgerService {
       : withRetry(() => this.prisma.$transaction(run), this.logger);
   }
 
-  /** Finds or creates an account. Concurrency-safe via the partial unique indexes. */
-  async accountFor(params: {
-    type: LedgerAccountType;
-    userId?: string;
-    partnerId?: string;
-    currency?: Currency;
-  }) {
+  /**
+   * Finds or creates an account. Concurrency-safe via the partial unique
+   * indexes.
+   *
+   * `tx` is optional and defaults to the raw client, matching every existing
+   * caller. Pass it when the caller's own enclosing transaction is
+   * Serializable (or otherwise snapshot-isolated): without it, the
+   * find/create round-trip runs on a separate connection outside that
+   * transaction's snapshot, and a caller that then posts to the
+   * just-created account inside the Serializable transaction hits a foreign
+   * key violation — the account exists in the database but not yet in that
+   * transaction's snapshot. READ COMMITTED callers (the default `post()`
+   * path) never hit this, since each statement there re-snapshots.
+   */
+  async accountFor(
+    params: {
+      type: LedgerAccountType;
+      userId?: string;
+      partnerId?: string;
+      currency?: Currency;
+    },
+    tx?: Tx,
+  ) {
+    const client = tx ?? this.prisma;
     const currency = params.currency ?? Currency.AMD;
     const where = {
       type: params.type,
@@ -271,7 +288,7 @@ export class LedgerService {
       currency,
     };
 
-    const existing = await this.prisma.ledgerAccount.findFirst({ where });
+    const existing = await client.ledgerAccount.findFirst({ where });
     if (existing) return existing;
 
     // `ON CONFLICT DO NOTHING`, so losing the race to a concurrent creator
@@ -279,8 +296,8 @@ export class LedgerService {
     // The account either exists now because we made it or because someone
     // else did a millisecond earlier; both are the same account, and neither
     // is worth an ERROR in the log.
-    await this.prisma.ledgerAccount.createMany({ data: [where], skipDuplicates: true });
-    return this.prisma.ledgerAccount.findFirstOrThrow({ where });
+    await client.ledgerAccount.createMany({ data: [where], skipDuplicates: true });
+    return client.ledgerAccount.findFirstOrThrow({ where });
   }
 
   /** Recomputes a balance from its postings. The reconciliation primitive. */

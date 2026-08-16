@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
   BonusEntryType,
+  LedgerAccountType,
+  PostingDirection,
   Prisma,
   ReferralChallengeParticipantStatus,
   ReferrerType,
@@ -12,6 +14,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { LedgerService } from '../ledger/ledger.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 
 type Tx = Prisma.TransactionClient;
@@ -49,6 +52,7 @@ export class ReferralService {
     private readonly bonusEngine: BonusEngineService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly auditService: AuditService,
+    private readonly ledger: LedgerService,
   ) {}
 
   getMyCode(userId: string) {
@@ -345,21 +349,16 @@ export class ReferralService {
     // and must not be changed to add a QUALIFIED/REWARD_ENTITLED non-
     // spendable state.
     //
-    // TODO: BUSINESS DECISION REQUIRED — REFERRAL CHALLENGE FUNDING SOURCE.
-    // (This is a separate question from spendability, above, and remains
-    // open.)
-    // `bonusEngine.accrue` below only ever mints wallet-level points; there
-    // is deliberately no `LedgerService.post()` call anywhere in this
-    // method. That means this reward posts no PARTNER_PAYABLE debit, no
-    // PLATFORM_REVENUE credit, no BONUS_LIABILITY entry at all — it does
-    // not charge any partner and it is not drawn from the 20/30/20/30
-    // contribution pool (spec §20 explicitly forbids both). The two
-    // `accrue` calls are eligibility/entitlement only; they do not
-    // constitute real accounting until a funding source is chosen. Do not
-    // add a ledger posting here without that decision having been made —
-    // guessing a source (e.g. debiting PLATFORM_REVENUE unconditionally)
-    // would be inventing a business rule this repository is explicitly not
-    // authorized to invent.
+    // Funding source — CONFIRMED business decision (2026-08-16, GitHub
+    // Issue #28 Finding 1): "TuTak funds the full 2,000 AMD Referral
+    // Challenge reward (1,000 + 1,000) from TuTak's company funds." No
+    // partner is charged and nothing is drawn from the 20/30/20/30
+    // contribution pool (spec §20 explicitly forbids both) — this is a
+    // marketing/promotional expense TuTak itself absorbs, mirrored below by
+    // debiting PLATFORM_REVENUE (TuTak's own funds) and crediting
+    // BONUS_LIABILITY by the same 2000 AMD the two `accrue` calls mint into
+    // the two wallets, so the liability this reward creates is backed by a
+    // real ledger entry rather than existing only at the wallet level.
     await Promise.all([
       this.bonusEngine.accrue(
         {
@@ -384,6 +383,30 @@ export class ReferralService {
         tx,
       ),
     ]);
+
+    // `tx` here is Serializable (`runSerializable`, the caller several
+    // frames up) — `accountFor` must be given it explicitly, or the
+    // find/create happens on a separate connection outside this
+    // transaction's snapshot and the `post()` below hits a foreign key
+    // violation on an account that exists in the database but not yet in
+    // this transaction's view of it. See `accountFor`'s docblock.
+    const [revenueAccount, bonusLiabilityAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+    ]);
+    const totalRewardAmount = rewardAmount.times(2);
+    await this.ledger.post(
+      {
+        kind: 'referral.challenge_reward',
+        sourceType: 'ReferralChallengeParticipant',
+        sourceId: `${referrerUserId}:${refereeUserId}`,
+        postings: [
+          { accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: totalRewardAmount },
+          { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: totalRewardAmount },
+        ],
+      },
+      tx,
+    );
 
     // System-triggered, not a human actor — same reasoning
     // `PurchaseIntentsService.expireOne` already applies to its own

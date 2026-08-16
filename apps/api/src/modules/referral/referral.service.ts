@@ -339,9 +339,15 @@ export class ReferralService {
     // Spec §19: this is a conditional promotional entitlement until the
     // moment it is granted — never sitting in the wallet as spendable value
     // before this. Once granted, both sides are ordinary GREEN/AVAILABLE
-    // bonus, immediately.
+    // bonus, immediately. CONFIRMED business decision (2026-08-16, GitHub
+    // Issue #28 Finding 1): no additional pending/lock period after
+    // REWARDED — `pendingHours: 0` below is intentional, not an oversight,
+    // and must not be changed to add a QUALIFIED/REWARD_ENTITLED non-
+    // spendable state.
     //
     // TODO: BUSINESS DECISION REQUIRED — REFERRAL CHALLENGE FUNDING SOURCE.
+    // (This is a separate question from spendability, above, and remains
+    // open.)
     // `bonusEngine.accrue` below only ever mints wallet-level points; there
     // is deliberately no `LedgerService.post()` call anywhere in this
     // method. That means this reward posts no PARTNER_PAYABLE debit, no

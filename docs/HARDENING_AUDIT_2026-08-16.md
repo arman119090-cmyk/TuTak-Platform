@@ -143,16 +143,36 @@ sides pass `isPhoneVerified`. Not spendable before qualification — verified
 directly: `bonusEngine.accrue` is only ever reached after the conditional
 `QUALIFIED → REWARDED` claim succeeds.
 
-**Funding-source status: `TODO: BUSINESS DECISION REQUIRED`, explicitly
-marked in code this pass** (`referral.service.ts`, inside
-`tryRewardChallengeSlot`, immediately above the two `accrue` calls). Verified
-directly: the method contains **no `LedgerService.post()` call anywhere** —
-it does not debit any `PARTNER_PAYABLE` account, does not credit
-`PLATFORM_REVENUE`, does not draw from the 20/30/20/30 contribution pool.
-The 2000 AMD reward is eligibility/entitlement only; it is not yet real
-accounting. This was true before this pass and remains true — the change
-this pass made was making that fact explicit and unmissable in the code
-itself, not just in this document.
+**Spendability status: RESOLVED (2026-08-16, business decision on GitHub
+Issue #28 Finding 1).** The independent audit's Finding 1 proposed adding a
+non-spendable `QUALIFIED`/`REWARD_ENTITLED` state so the 2000 AMD reward
+would not be spendable until a funding source was approved. This repository
+declined to implement that fix unilaterally (implementing it would have
+invented new product behavior not authorized by the spec text or this
+hardening pass's own rules) and instead surfaced the question. Arman's
+decision: **"Referral Challenge rewards (1,000 AMD + 1,000 AMD) become
+immediately spendable once earned. No pending/lock period."** This confirms
+the code's existing, unmodified behavior (`pendingHours: 0` on both
+`accrue` calls in `tryRewardChallengeSlot`) was already correct — no code
+change was required. The comment above the `TODO` in `referral.service.ts`
+now records this decision explicitly so a future reader does not attempt to
+add the rejected pending-state fix.
+
+**Funding-source status: still `TODO: BUSINESS DECISION REQUIRED`** — this
+is a distinct question from spendability, above, and Arman's decision did
+not address it. Explicitly marked in code (`referral.service.ts`, inside
+`tryRewardChallengeSlot`, immediately above the two `accrue` calls).
+Verified directly: the method contains **no `LedgerService.post()` call
+anywhere** — it does not debit any `PARTNER_PAYABLE` account, does not
+credit `PLATFORM_REVENUE`, does not draw from the 20/30/20/30 contribution
+pool. The 2000 AMD reward is real, immediately spendable wallet value (per
+the decision above) that is not yet backed by a corresponding ledger
+posting — i.e. it is currently an unfunded liability from TuTak's own
+accounting perspective, exactly as Issue #28 warned. Resolving *this* half
+of the finding requires choosing which account absorbs the 2000 AMD before
+a ledger posting can be added; guessing (e.g. debiting `PLATFORM_REVENUE`
+unconditionally) would be inventing a business rule this repository is not
+authorized to invent.
 
 ## F. Deferred bonus review
 
@@ -169,6 +189,23 @@ itself, not just in this document.
   `progressTurnover` at zero and is called *after* `advanceExistingLots`
   in the same transaction, so the purchase that creates a lot can never be
   the same purchase that advances it.
+- **Concurrency (CONFIRMED and fixed, 2026-08-16, GitHub Issue #28 Finding
+  2):** `advanceExistingLots` previously read `progressTurnover`, computed
+  `old + grossAmount` in application code, and wrote that absolute value
+  back. Two purchases settling concurrently against the same open lot could
+  both read the same starting value and the second write would silently
+  clobber the first's contribution rather than stacking on it — turnover
+  the customer genuinely earned would be permanently lost, potentially
+  causing a lot to expire despite the customer having actually crossed the
+  54 000 AMD threshold. Fixed by switching to Prisma's atomic
+  `{ increment: grossAmount }`, which Postgres evaluates against the row's
+  value at write time regardless of isolation level (commit `cb679ff`).
+  Verified with a deterministic held-transaction regression test
+  (`purchase-intents.int-spec.ts`, "sums both contributions when two
+  purchases advance the same open lot concurrently, never losing one") that
+  was git-stash-confirmed to fail against the pre-fix code with the exact
+  predicted wrong value (`15000.0000` instead of `25000.0000`) and pass
+  against the fix.
 
 ## G. Settlement review
 
@@ -263,7 +300,32 @@ doesn't).
 Ranked by what was found this pass; the earlier, narrower
 `/security-review` pass's two findings (PurchaseIntent self-dealing,
 financial-transaction-boundary) are included here for completeness since
-they are part of the same body of work, marked accordingly.
+they are part of the same body of work, marked accordingly. Two further
+findings (below, marked accordingly) came from an independent audit posted
+to GitHub Issue #28 after this document's first draft and were reviewed and
+resolved as a follow-on to this same hardening pass.
+
+**HIGH — CONFIRMED and FIXED (GitHub Issue #28, independent audit, Finding
+2).** `DeferredBonusLotService.advanceExistingLots` computed
+`progressTurnover` as a JS read-modify-write of an absolute value rather
+than an atomic DB increment — two purchases settling concurrently against
+the same open lot could both read the same starting turnover and the
+second write would silently overwrite (not add to) the first, permanently
+losing real customer turnover and potentially causing a lot to expire
+despite the customer having actually crossed the required threshold.
+Fixed by switching to `{ increment: grossAmount }` (commit `cb679ff`); see
+§F for full detail and regression-test evidence.
+
+**BUSINESS DECISION REQUIRED → RESOLVED, no code change (GitHub Issue #28,
+independent audit, Finding 1).** The audit flagged that Referral Challenge
+rewards become spendable (`pendingHours: 0`) before a funding source is
+approved, and proposed adding a non-spendable `QUALIFIED`/`REWARD_ENTITLED`
+state. This repository declined to implement that fix unilaterally (it
+would invent new product behavior) and surfaced the question instead.
+Arman's decision (2026-08-16): rewards are immediately spendable with no
+pending/lock period — confirming the code's existing behavior was already
+correct. See §E for full detail; the narrower funding-source/ledger-posting
+question the same finding raised remains open (§M item 2).
 
 **CRITICAL — FIXED.** PurchaseIntent confirm/settlement was not one atomic
 unit (§C, §J-1 above). Commit `92940af`. Regression tests:
@@ -409,7 +471,12 @@ surfaced by this pass's broader entry-point/registration audits:
    attestation.
 2. **Referral Challenge funding source** (spec §20) — now explicitly
    marked `TODO: BUSINESS DECISION REQUIRED` directly in code
-   (`referral.service.ts`), not just in this document.
+   (`referral.service.ts`), not just in this document. **Note:** the
+   related spendability question (GitHub Issue #28 Finding 1) was resolved
+   2026-08-16 — rewards are confirmed immediately spendable with no
+   pending/lock period, and required no code change. The funding-source
+   question (which account books the 2000 AMD liability) is narrower and
+   remains genuinely open.
 3. Staff amount-editing on `PurchaseIntent` confirm (spec §26) — not
    built, consistent with the old QR flow having none either.
 4. What happens to a partner's positive settlement balance on offboarding

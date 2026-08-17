@@ -30,18 +30,20 @@ jobs:
       - name: Generate Android project
         working-directory: demo-next
         run: npx expo prebuild --platform android --non-interactive
-      - name: Build installable debug APK
+      - name: Build standalone release APK
         working-directory: demo-next/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
       - name: Copy APK
-        run: cp demo-next/android/app/build/outputs/apk/debug/app-debug.apk tutak-demo-next.apk
-      - name: Verify APK
+        run: cp demo-next/android/app/build/outputs/apk/release/app-release.apk tutak-demo-next-standalone.apk
+      - name: Verify standalone APK and bundled JS
         run: |
-          test -s tutak-demo-next.apk
-          head -c 2 tutak-demo-next.apk | grep -q 'PK'
-          ls -lh tutak-demo-next.apk
+          test -s tutak-demo-next-standalone.apk
+          head -c 2 tutak-demo-next-standalone.apk | grep -q 'PK'
+          unzip -l tutak-demo-next-standalone.apk | tee apk-contents.txt
+          grep -Eq 'assets/(index.android.bundle|expo-router/.*|.*\.bundle)' apk-contents.txt
+          ls -lh tutak-demo-next-standalone.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: tutak-demo-next-apk
-          path: tutak-demo-next.apk
+          name: tutak-demo-next-standalone-apk
+          path: tutak-demo-next-standalone.apk
           retention-days: 30

@@ -6,14 +6,19 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { assertPartnerScope, hasPartnerScope } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
+import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
 @ApiTags('purchase-intents')
 @ApiBearerAuth()
 @Controller('purchase-intents')
 export class PurchaseIntentsController {
-  constructor(private readonly purchaseIntents: PurchaseIntentsService) {}
+  constructor(
+    private readonly purchaseIntents: PurchaseIntentsService,
+    private readonly purchaseIntentRefunds: PurchaseIntentRefundService,
+  ) {}
 
   /** Spec §7 steps 1-8. Any authenticated customer, for themselves. */
   @Post()
@@ -61,5 +66,38 @@ export class PurchaseIntentsController {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertPartnerScope(staff, intent.partnerId);
     return this.purchaseIntents.reject(id, staff.id, dto);
+  }
+
+  /**
+   * A TuTak-side refund of merchandise value against a confirmed purchase —
+   * never real money. Gated the same way confirm/reject are: any partner
+   * staff tier scoped to this intent's partner, since undoing a sale is
+   * ordinary work for whoever can process one.
+   */
+  @Post(':id/refund')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async refund(
+    @CurrentUser() staff: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: RefundPurchaseIntentDto,
+  ) {
+    const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    assertPartnerScope(staff, intent.partnerId);
+    return this.purchaseIntentRefunds.refund({
+      purchaseIntentId: id,
+      amount: dto.amount,
+      reason: dto.reason,
+      actorId: staff.id,
+      idempotencyKey: dto.idempotencyKey,
+    });
+  }
+
+  @Get(':id/refunds')
+  async listRefunds(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    if (intent.customerId !== user.id && !hasPartnerScope(user, intent.partnerId)) {
+      throw new ForbiddenException('You may not view this purchase intent');
+    }
+    return this.purchaseIntentRefunds.listForIntent(id);
   }
 }

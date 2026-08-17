@@ -522,6 +522,83 @@ export class BonusEngineService {
   }
 
   /**
+   * Restores a slice of previously-spent bonus as fresh, spendable value —
+   * the wallet-side half of a `PurchaseIntentRefundService` refund.
+   *
+   * Deliberately not `reverseSettlement`: that method restores into the
+   * *original* lots a reservation's allocations consumed, which is right for
+   * undoing a single failed saga in full, but a purchase can be refunded
+   * partially, more than once, and the amount restored each time is a
+   * proportional slice — not a fixed set of allocations to walk backwards.
+   * Tracking how much of each original lot a given partial refund has
+   * already reclaimed would need new bookkeeping this codebase does not have.
+   * Minting the restored amount into its own fresh lot sidesteps that
+   * entirely, keeps `assertLotsBackBalances` true the same way any other
+   * accrual does, and gives the customer a full, ordinary expiry window on
+   * points they are getting back through no fault of their own — arguably
+   * fairer than reviving a lot that was already most of the way to expiring.
+   *
+   * Unlike `accrue()`, this does not touch `lifetimeEarned` — nothing new was
+   * earned, previously-spent value is being given back — and it decrements
+   * `lifetimeSpent` instead, the same bucket `reverseSettlement` corrects.
+   */
+  async restoreSpentBonus(
+    walletId: string,
+    amount: Decimal | number | string,
+    sourceTransactionId: string,
+    reason: string,
+    tx?: Tx,
+  ) {
+    const target = parsePositiveMoney(amount, 'restore amount');
+
+    const run = async (client: Tx) => {
+      await this.assertFits(client, walletId, { available: target });
+
+      const bonusConfig = this.config.get('bonus', { infer: true });
+      const now = new Date();
+      const expiresAt = new Date(now);
+      expiresAt.setMonth(expiresAt.getMonth() + bonusConfig.expiryMonths);
+
+      const lot = await client.bonusLot.create({
+        data: {
+          walletId,
+          type: BonusEntryType.REVERSAL,
+          status: BonusLotStatus.AVAILABLE,
+          originalAmount: target,
+          remainingAmount: target,
+          sourceTransactionId,
+          availableAt: now,
+          expiresAt,
+        },
+      });
+
+      await client.wallet.update({
+        where: { id: walletId },
+        data: {
+          availableBonus: { increment: target },
+          lifetimeSpent: { decrement: target },
+          version: { increment: 1 },
+        },
+      });
+
+      await this.writeLedger(client, {
+        walletId,
+        type: BonusEntryType.REVERSAL,
+        direction: LedgerDirection.CREDIT,
+        amount: target,
+        delta: { available: target },
+        relatedLotId: lot.id,
+        sourceTransactionId,
+        metadata: { reason, reversedFrom: 'purchase_intent_refund' },
+      });
+
+      return lot;
+    };
+
+    return tx ? run(tx) : this.prisma.$transaction((t) => run(t));
+  }
+
+  /**
    * Rollback entry point for the payment sagas: returns a hold to the
    * customer whatever stage it reached. Callers must not have to know
    * whether their failure happened before or after settlement.
@@ -557,60 +634,59 @@ export class BonusEngineService {
    * them. Omitted, the whole unspent remainder goes, which is what a full
    * reversal needs.
    */
-  async reverseAccrualLot(lotId: string, reason: string, maxAmount?: Decimal) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const lot = await tx.bonusLot.findUniqueOrThrow({ where: { id: lotId } });
-        if (lot.status === BonusLotStatus.EXPIRED || lot.remainingAmount.isZero()) {
-          return null;
-        }
+  async reverseAccrualLot(lotId: string, reason: string, maxAmount?: Decimal, tx?: Tx) {
+    const run = async (client: Tx) => {
+      const lot = await client.bonusLot.findUniqueOrThrow({ where: { id: lotId } });
+      if (lot.status === BonusLotStatus.EXPIRED || lot.remainingAmount.isZero()) {
+        return null;
+      }
 
-        const amount = maxAmount
-          ? Decimal.min(maxAmount, lot.remainingAmount)
-          : lot.remainingAmount;
-        if (amount.lessThanOrEqualTo(0)) return null;
-        const drained = amount.equals(lot.remainingAmount);
-        const wasPending = lot.status === BonusLotStatus.PENDING;
+      const amount = maxAmount ? Decimal.min(maxAmount, lot.remainingAmount) : lot.remainingAmount;
+      if (amount.lessThanOrEqualTo(0)) return null;
+      const drained = amount.equals(lot.remainingAmount);
+      const wasPending = lot.status === BonusLotStatus.PENDING;
 
-        await tx.bonusLot.update({
-          where: { id: lot.id },
-          data: {
-            remainingAmount: { decrement: amount },
-            ...(drained ? { status: BonusLotStatus.CONSUMED } : {}),
-          },
-        });
+      await client.bonusLot.update({
+        where: { id: lot.id },
+        data: {
+          remainingAmount: { decrement: amount },
+          ...(drained ? { status: BonusLotStatus.CONSUMED } : {}),
+        },
+      });
 
-        await tx.wallet.update({
-          where: { id: lot.walletId },
-          data: {
-            ...(wasPending
-              ? { pendingBonus: { decrement: amount } }
-              : { availableBonus: { decrement: amount } }),
-            lifetimeEarned: { decrement: amount },
-            version: { increment: 1 },
-          },
-        });
+      await client.wallet.update({
+        where: { id: lot.walletId },
+        data: {
+          ...(wasPending
+            ? { pendingBonus: { decrement: amount } }
+            : { availableBonus: { decrement: amount } }),
+          lifetimeEarned: { decrement: amount },
+          version: { increment: 1 },
+        },
+      });
 
-        await this.writeLedger(tx, {
-          walletId: lot.walletId,
-          type: BonusEntryType.REVERSAL,
-          direction: LedgerDirection.DEBIT,
-          amount,
-          delta: wasPending ? { pending: amount.negated() } : { available: amount.negated() },
-          relatedLotId: lot.id,
-          sourceTransactionId: lot.sourceTransactionId,
-          metadata: {
-            reason,
-            reversedFrom: 'accrual',
-            clawedBack: amount.toString(),
-            accrued: lot.originalAmount.toString(),
-          },
-        });
+      await this.writeLedger(client, {
+        walletId: lot.walletId,
+        type: BonusEntryType.REVERSAL,
+        direction: LedgerDirection.DEBIT,
+        amount,
+        delta: wasPending ? { pending: amount.negated() } : { available: amount.negated() },
+        relatedLotId: lot.id,
+        sourceTransactionId: lot.sourceTransactionId,
+        metadata: {
+          reason,
+          reversedFrom: 'accrual',
+          clawedBack: amount.toString(),
+          accrued: lot.originalAmount.toString(),
+        },
+      });
 
-        return amount;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+      return amount;
+    };
+
+    return tx
+      ? run(tx)
+      : this.prisma.$transaction(run, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   // ── Scheduled maintenance ─────────────────────────────────────────────

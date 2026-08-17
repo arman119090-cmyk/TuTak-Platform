@@ -601,6 +601,12 @@ model PurchaseIntent {
   /// = grossAmount - bonusAmountRequested, stored rather than derived so the
   /// figure the customer saw at scan time is exactly what is on record.
   ordinaryPaymentRemainder Decimal @db.Decimal(18, 4)
+  /// Running total of every TuTak-side refund against this purchase's
+  /// merchandise value. The guard that stops a purchase being refunded past
+  /// its own grossAmount is a conditional UPDATE on this column, exactly the
+  /// way `Payment.refundedAmount` guards captured payments — see
+  /// `PurchaseIntentRefundService`.
+  refundedAmount           Decimal @default(0) @db.Decimal(18, 4)
 
   negotiatedRateBps      Int
   maxBonusPaymentPercent Int
@@ -625,11 +631,48 @@ model PurchaseIntent {
   partner     Partner        @relation(fields: [partnerId], references: [id])
   branch      PartnerBranch? @relation(fields: [partnerBranchId], references: [id])
   confirmedBy User?          @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  refunds     PurchaseIntentRefund[]
 
   @@index([partnerId, status])
   @@index([status, expiresAt])
   @@index([customerId, status])
   @@map("purchase_intents")
+}
+
+/// A TuTak-side refund against a confirmed/completed PurchaseIntent —
+/// merchandise-value only. Deliberately not `Refund`/`Payment`: this never
+/// touches real money (the partner repays the customer outside TuTak) and
+/// never routes through `RefundEngineService`. What it reverses is every
+/// loyalty effect the original purchase created, proportional to how much of
+/// the merchandise the partner is taking back, tracked immutably against the
+/// intent it refunds — see `PurchaseIntentRefundService`.
+model PurchaseIntentRefund {
+  id               String  @id @default(uuid())
+  purchaseIntentId String
+  /// The merchandise refund amount the partner entered — always ≤ what
+  /// remains of `PurchaseIntent.grossAmount`, enforced by a conditional
+  /// UPDATE on `refundedAmount`, the same guard `Payment.refundedAmount` uses.
+  amount           Decimal @db.Decimal(18, 4)
+  /// This refund's own proportional slice of the bonus the customer spent on
+  /// the original purchase, restored to their wallet.
+  bonusRestored    Decimal @default(0) @db.Decimal(18, 4)
+  reason           String
+  /// The reversing ledger transaction for the pool-contribution leg.
+  /// Postings are immutable, so a refund is a new transaction pointing back
+  /// at the original, never an edit.
+  ledgerTransactionId String? @unique
+  actorId          String
+  /// Scoped to the actor, matching `IdempotencyService`'s
+  /// `purchase-intent-refund:<actorId>` scope.
+  idempotencyKey   String?
+  createdAt        DateTime @default(now())
+
+  purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@unique([actorId, idempotencyKey])
+  @@index([purchaseIntentId])
+  @@map("purchase_intent_refunds")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -863,12 +906,21 @@ model DeferredBonusLot {
   id                  String                 @id @default(uuid())
   userId              String
   sourceTransactionId String
+  /// The original, immutable grant — `amounts_sane` requires this stay
+  /// strictly positive for as long as the row exists, so a
+  /// `PurchaseIntentRefundService` refund reduces `refundedAmount` instead
+  /// of this column, the same way `PurchaseIntent` tracks its own refunds
+  /// separately from `grossAmount`.
   amount              Decimal                @db.Decimal(18, 4)
   status              DeferredBonusLotStatus @default(DEFERRED)
   requiredTurnover    Decimal                @db.Decimal(18, 4)
   /// Cumulative eligible gross purchases applied to this lot so far. Spec
   /// §14: no monthly minimum, purely cumulative within the window.
   progressTurnover    Decimal                @default(0) @db.Decimal(18, 4)
+  /// Running total reversed by TuTak refunds against the purchase that
+  /// created this lot — never more than `amount`. What actually unlocks or
+  /// releases to revenue is always `amount - refundedAmount`.
+  refundedAmount      Decimal                @default(0) @db.Decimal(18, 4)
   createdAt           DateTime               @default(now())
   deadline            DateTime
   unlockedAt          DateTime?
@@ -1183,12 +1235,13 @@ model LedgerTransaction {
   reversesId String?  @unique
   postedAt   DateTime @default(now())
 
-  postings           LedgerPosting[]
-  payment            Payment?
-  refund             Refund?
-  payoutRequested    Payout?             @relation("PayoutRequested")
-  payoutSettled      Payout?             @relation("PayoutSettled")
-  acquirerSettlement AcquirerSettlement?
+  postings             LedgerPosting[]
+  payment              Payment?
+  refund               Refund?
+  purchaseIntentRefund PurchaseIntentRefund?
+  payoutRequested      Payout?             @relation("PayoutRequested")
+  payoutSettled        Payout?             @relation("PayoutSettled")
+  acquirerSettlement   AcquirerSettlement?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -1581,6 +1634,9 @@ enum AuditAction {
   PURCHASE_INTENT_CONFIRMED
   PURCHASE_INTENT_REJECTED
   PURCHASE_INTENT_EXPIRED
+  /// A partner refunded merchandise value against a confirmed purchase —
+  /// see `PurchaseIntentRefundService`.
+  PURCHASE_INTENT_REFUNDED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

@@ -48,9 +48,18 @@ export class DeferredBonusLotService {
    */
   async advanceExistingLots(userId: string, grossAmount: Decimal, tx: Tx): Promise<void> {
     const now = new Date();
-    const lots = await tx.deferredBonusLot.findMany({
+    const allLots = await tx.deferredBonusLot.findMany({
       where: { userId, status: DeferredBonusLotStatus.DEFERRED, deadline: { gte: now } },
     });
+    // `refundedAmount` can only grow, and a fully-refunded lot has nothing
+    // left to ever grant — filtered here in application code because
+    // Prisma's `where` cannot compare one column against another
+    // (`amount` vs `refundedAmount`). Without this, a later purchase
+    // crossing such a lot's threshold hits `bonusEngine.accrue()` with a
+    // zero amount, which `parsePositiveMoney` refuses — failing every
+    // subsequent purchase this customer makes for as long as the lot stays
+    // DEFERRED.
+    const lots = allLots.filter((lot) => lot.refundedAmount.lessThan(lot.amount));
 
     for (const lot of lots) {
       // Atomic DB-side increment, not a read-modify-write of a JS-computed
@@ -89,12 +98,15 @@ export class DeferredBonusLotService {
       });
       if (claimed.count === 0) continue;
 
+      // The refunded slice was never actually earned by this purchase in
+      // the end — only what remains grants.
+      const grantable = lot.amount.minus(lot.refundedAmount);
       const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId } });
       const granted = await this.bonusEngine.accrue(
         {
           walletId: wallet.id,
           type: BonusEntryType.ACCRUAL_DEFERRED,
-          amount: lot.amount,
+          amount: grantable,
           sourceTransactionId: lot.sourceTransactionId,
           pendingHours: 0,
           metadata: { deferredBonusLotId: lot.id },
@@ -105,7 +117,7 @@ export class DeferredBonusLotService {
         where: { id: lot.id },
         data: { grantedBonusLotId: granted.id },
       });
-      this.logger.log(`Deferred bonus lot ${lot.id} unlocked for user ${userId}: ${lot.amount} AMD`);
+      this.logger.log(`Deferred bonus lot ${lot.id} unlocked for user ${userId}: ${grantable} AMD`);
     }
   }
 
@@ -134,6 +146,55 @@ export class DeferredBonusLotService {
         deadline,
       },
     });
+  }
+
+  /**
+   * The deferred-lot half of a `PurchaseIntentRefundService` refund: reduces
+   * the lot *this purchase itself created* (found by `sourceTransactionId`,
+   * the same way its green accrual and referral accrual are found) by the
+   * refund's proportional share, and claws back the wallet-side value too if
+   * the lot had already unlocked.
+   *
+   * Deliberately does not touch *other* deferred lots this purchase's
+   * `advanceExistingLots` may have progressed — nothing records which lot
+   * received how much turnover from which purchase, so there is no
+   * traceable amount to reverse there without inventing new bookkeeping this
+   * refund is not the place to add.
+   *
+   * Returns whether the confirmation-time `BONUS_LIABILITY` credit for this
+   * share is still outstanding. It is not once the lot has `EXPIRED` —
+   * `expireOne` already released that liability to `PLATFORM_REVENUE` — and
+   * the caller must exclude the share from its own ledger reversal in that
+   * case, or `BONUS_LIABILITY` would be debited twice for the same amount.
+   */
+  async reverseForRefund(
+    sourceTransactionId: string,
+    share: Decimal,
+    reason: string,
+    tx: Tx,
+  ): Promise<{ liabilityStillOutstanding: boolean }> {
+    const lot = await tx.deferredBonusLot.findFirst({ where: { sourceTransactionId } });
+    if (!lot) return { liabilityStillOutstanding: true };
+    if (lot.status === DeferredBonusLotStatus.EXPIRED) {
+      return { liabilityStillOutstanding: false };
+    }
+
+    // `amounts_sane` requires `amount` to stay strictly positive for as
+    // long as the row exists, so what's left to reverse is tracked in
+    // `refundedAmount` rather than by decrementing `amount` itself.
+    const reduceBy = Decimal.min(share, lot.amount.minus(lot.refundedAmount));
+    if (reduceBy.greaterThan(0)) {
+      await tx.deferredBonusLot.update({
+        where: { id: lot.id },
+        data: { refundedAmount: { increment: reduceBy } },
+      });
+
+      if (lot.status === DeferredBonusLotStatus.AVAILABLE && lot.grantedBonusLotId) {
+        await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, reduceBy, tx);
+      }
+    }
+
+    return { liabilityStillOutstanding: true };
   }
 
   /**
@@ -171,8 +232,13 @@ export class DeferredBonusLotService {
    * CREDIT `PLATFORM_REVENUE` — in one transaction with the `EXPIRED`
    * claim, so a lot can never end up expired without the matching revenue
    * recognized, or vice versa.
+   *
+   * Only `amount - refundedAmount` is released: a `PurchaseIntentRefundService`
+   * refund already debited `BONUS_LIABILITY` for whatever share it reversed
+   * (see `reverseForRefund`'s `liabilityStillOutstanding`), so releasing the
+   * original, un-reduced `amount` here would debit that same slice twice.
    */
-  private async expireOne(lot: { id: string; amount: Decimal }): Promise<boolean> {
+  private async expireOne(lot: { id: string; amount: Decimal; refundedAmount: Decimal }): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.deferredBonusLot.updateMany({
         where: { id: lot.id, status: DeferredBonusLotStatus.DEFERRED },
@@ -180,7 +246,8 @@ export class DeferredBonusLotService {
       });
       if (claimed.count === 0) return false;
 
-      if (lot.amount.greaterThan(0)) {
+      const releasable = lot.amount.minus(lot.refundedAmount);
+      if (releasable.greaterThan(0)) {
         const [bonusLiabilityAccount, revenueAccount] = await Promise.all([
           this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
           this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
@@ -191,8 +258,8 @@ export class DeferredBonusLotService {
             sourceType: 'DeferredBonusLot',
             sourceId: lot.id,
             postings: [
-              { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: lot.amount },
-              { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: lot.amount },
+              { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: releasable },
+              { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: releasable },
             ],
           },
           tx,

@@ -7,6 +7,7 @@ import {
   RoleName,
   TransactionStatus,
 } from '@prisma/client';
+import { QrPaymentsController } from '../src/modules/qr-payments/qr-payments.controller';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
@@ -27,12 +28,14 @@ describe('QR payments (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
   let qrPayments: QrPaymentsService;
+  let controller: QrPaymentsController;
   let engine: BonusEngineService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     qrPayments = harness.app.get(QrPaymentsService);
+    controller = harness.app.get(QrPaymentsController);
     engine = harness.app.get(BonusEngineService);
   });
 
@@ -277,6 +280,92 @@ describe('QR payments (integration)', () => {
           asRequestUser(outsider.id),
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ── The /qr/redeem HTTP surface no longer settles money (GitHub #28) ────
+  //
+  // QrPaymentsService.redeem() above is the older, independent engine —
+  // paid portion × the partner's flat accrual rate, one immediate
+  // ACCRUAL_PURCHASE, no pool split, no partner confirmation — and it is
+  // exercised directly, as a unit, by every test above this point and by
+  // several other suites (self-dealing, concurrency, crash-recovery,
+  // money-rounding among them) that predate PurchaseIntent and use it as
+  // their money-moving fixture. That is unchanged and still correct for
+  // what it is: a lower-level test of a service method.
+  //
+  // What is no longer true is that anything outside this process can reach
+  // it. `QrPaymentsController.redeem()` — the only way an HTTP caller could
+  // ever invoke `QrPaymentsService.redeem()` — now refuses unconditionally.
+  // Ordinary customer purchases settle exclusively through PurchaseIntent's
+  // 20/30/20/30 pool split with partner/cashier confirmation; nothing a
+  // customer, a script, or an attacker can do over the API reaches the old
+  // formula any more.
+  describe('the /qr/redeem HTTP surface no longer settles money (GitHub issue #28)', () => {
+    it('refuses a well-formed, authenticated request instead of settling it', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const qr = await createDynamicInvoiceQr(prisma, { partnerId: partner.id, amount: '10000' });
+
+      expect(() =>
+        controller.redeem(asRequestUser(user.id), {
+          token: qr.token,
+          idempotencyKey: 'http-bypass-1',
+        }),
+      ).toThrow(/no longer settle a purchase directly/);
+
+      // Not a partial or silent settlement — nothing moved at all, which is
+      // what proves PurchaseIntent's confirmation step and pool-split
+      // economics were never in a position to be bypassed: there was
+      // nothing left to bypass them with.
+      expect(await prisma.transaction.count({ where: { userId: user.id } })).toBe(0);
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.pendingBonus.toFixed(4)).toBe('0.0000');
+      expect(after.availableBonus.toFixed(4)).toBe('0.0000');
+      expect(
+        (await prisma.qrCode.findUniqueOrThrow({ where: { id: qr.id } })).status,
+      ).toBe(QrCodeStatus.ACTIVE);
+    });
+
+    it('refuses a partner insider redeeming their own invoice, the same as any other request', async () => {
+      // The self-dealing check inside QrPaymentsService.redeem() (isAffiliated,
+      // fixed 2026-08-16) never even runs here — the HTTP boundary refuses
+      // first. Asserted anyway, because "the self-dealing control was
+      // bypassed" and "nothing ran at all" are different failure modes and
+      // this proves the second, not just the absence of the first.
+      const { user: staff, wallet } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      await prisma.partnerMembership.create({ data: { partnerId: partner.id, userId: staff.id } });
+      const qr = await createDynamicInvoiceQr(prisma, {
+        partnerId: partner.id,
+        amount: '1000000',
+      });
+
+      expect(() =>
+        controller.redeem(asRequestUser(staff.id, [RoleName.PARTNER_OWNER]), {
+          token: qr.token,
+          idempotencyKey: 'http-bypass-self-dealing-1',
+        }),
+      ).toThrow(/no longer settle a purchase directly/);
+
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(after.pendingBonus.toFixed(4)).toBe('0.0000');
+      expect(
+        (await prisma.qrCode.findUniqueOrThrow({ where: { id: qr.id } })).status,
+      ).toBe(QrCodeStatus.ACTIVE);
+    });
+
+    it('refuses regardless of QR type, token validity, or idempotency key reuse', async () => {
+      const { user } = await createCustomer(prisma);
+
+      // Even a token that does not exist — the refusal happens before the
+      // controller ever asks the service to look anything up.
+      expect(() =>
+        controller.redeem(asRequestUser(user.id), {
+          token: 'does-not-exist-at-all',
+          idempotencyKey: 'http-bypass-unknown-1',
+        }),
+      ).toThrow(/no longer settle a purchase directly/);
     });
   });
 

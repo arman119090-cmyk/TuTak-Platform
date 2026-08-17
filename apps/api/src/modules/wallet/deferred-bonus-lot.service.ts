@@ -202,6 +202,29 @@ export class DeferredBonusLotService {
    *    amount, so `liabilityToReverse` is zero and the *entire* requested
    *    `share` is `shortfall`, not zero: it must still land somewhere in
    *    the caller's balanced posting, just not on `BONUS_LIABILITY`.
+   *
+   * Shares `refundedAmount` as its running total with `reverseUnlock` below
+   * rather than tracking each mechanism's own history separately — and that
+   * sharing is required, not incidental. `poolΔ`/`share` here is always the
+   * *full* theoretical deferred slice of this purchase's own pool, credited
+   * to `PARTNER_PAYABLE` unconditionally by the caller's own balanced
+   * posting; this method's return values are the *only* place that credit
+   * gets an offsetting debit, so `reduceBy` (and therefore `shortfall`) must
+   * still reflect the *entire* remaining slice even when `reverseUnlock` got
+   * to this same lot first — otherwise the caller's transaction would come
+   * up short by whatever `reverseUnlock` already handled and
+   * `LedgerService.post` would reject it as unbalanced (confirmed by an
+   * earlier, reverted attempt at splitting the two into separate fields —
+   * independent audit, GitHub issue #28). What looks like the same AMD
+   * "double-crediting" `PLATFORM_REVENUE` across `reverseUnlock`'s posting
+   * and this one is not a double count: `reverseUnlock` only ever credits
+   * revenue for what it *actually* reclaimed from the wallet, and this
+   * method's own reclaim attempt on an already-drained lot always comes back
+   * empty (`reverseAccrualLot` returns `null` once a lot's remainder hits
+   * zero) — so the two together can never recognize more revenue than the
+   * lot's own `amount` ever supported, and a lot's *unspent* portion nets
+   * cleanly back to zero across the two transactions when both purchases
+   * are refunded, whichever order they land in.
    */
   async reverseForRefund(
     sourceTransactionId: string,
@@ -245,15 +268,24 @@ export class DeferredBonusLotService {
    * out of scope for itself, closed by `DeferredBonusLotContribution`
    * (independent audit, GitHub issue #28).
    *
-   * Only ever reduces `progressTurnover` on a lot still `DEFERRED`. A lot
-   * that already unlocked used this turnover to mint a real, spendable
-   * accrual through a *different* purchase's own settlement; clawing that
-   * back reaches into a different lot's already-posted liability history
-   * this refund has no record of, which is a materially bigger change than
-   * this fix — left as a reported residual rather than an unsafe clawback,
-   * logged here so it stays visible instead of silently doing nothing.
+   * `EXPIRED` lots are left alone: `expireOne` already released that lot's
+   * full liability to `PLATFORM_REVENUE`, so there is nothing left to claw
+   * and no further posting to make — logged so the gap stays visible.
+   *
+   * A `DEFERRED` lot only has its `progressTurnover` reduced — nothing has
+   * been granted yet, so there is no wallet-side value to claw back.
+   *
+   * An `AVAILABLE` lot also has its `progressTurnover` reduced, and if that
+   * drop takes it back *below* `requiredTurnover`, the qualifying event that
+   * unlocked it never actually happened — see `reverseUnlock` for how that
+   * grant is undone.
    */
-  async reverseExternalContributions(sourceTransactionId: string, amount: Decimal, tx: Tx): Promise<void> {
+  async reverseExternalContributions(
+    sourceTransactionId: string,
+    amount: Decimal,
+    reason: string,
+    tx: Tx,
+  ): Promise<void> {
     if (amount.lessThanOrEqualTo(0)) return;
 
     const contributions = await tx.deferredBonusLotContribution.findMany({
@@ -267,11 +299,11 @@ export class DeferredBonusLotService {
       const reduceBy = Decimal.min(amount, reversible);
       if (reduceBy.lessThanOrEqualTo(0)) continue;
 
-      if (contribution.lot.status !== DeferredBonusLotStatus.DEFERRED) {
+      if (contribution.lot.status === DeferredBonusLotStatus.EXPIRED) {
         this.logger.warn(
           `Purchase ${sourceTransactionId} refund: ${reduceBy.toString()} of turnover previously ` +
             `contributed to deferred bonus lot ${contribution.lotId} could not be reversed because the ` +
-            `lot is already ${contribution.lot.status}.`,
+            `lot is already EXPIRED.`,
         );
         continue;
       }
@@ -280,11 +312,110 @@ export class DeferredBonusLotService {
         where: { id: contribution.id },
         data: { reversedAmount: { increment: reduceBy } },
       });
-      await tx.deferredBonusLot.update({
+      const updatedLot = await tx.deferredBonusLot.update({
         where: { id: contribution.lotId },
         data: { progressTurnover: { decrement: reduceBy } },
       });
+
+      if (
+        updatedLot.status === DeferredBonusLotStatus.AVAILABLE &&
+        updatedLot.progressTurnover.lessThan(updatedLot.requiredTurnover)
+      ) {
+        await this.reverseUnlock(updatedLot, reason, tx);
+      }
     }
+  }
+
+  /**
+   * Undoes a lot's unlock after a refund drops its `progressTurnover` back
+   * below `requiredTurnover` — the qualifying turnover that crossed the
+   * threshold has turned out not to be real, so the grant it produced must
+   * not survive it (independent audit, GitHub issue #28).
+   *
+   * Idempotent by construction: `remaining = amount - refundedAmount` is
+   * zero once a prior call (from an earlier refund, or a retried
+   * transaction) has already fully clawed this lot, so a repeat is a
+   * no-op — the same "running total, never re-derived" pattern
+   * `reverseForRefund` and `expireOne` already use for exactly this reason.
+   * `refundedAmount` is shared with `reverseForRefund` (the lot's *own*
+   * originating purchase's refund path) rather than tracked separately —
+   * see that method's docblock for why the sharing is required, not
+   * incidental.
+   *
+   * `reverseAccrualLot` claws back only the *unspent* remainder of the
+   * granted `BonusLot` and returns exactly that amount — never more than is
+   * really sitting in the wallet, so this can never drive a balance
+   * negative. Whatever was already spent (or independently expired) is
+   * `shortfall`: its `BONUS_LIABILITY` was already released at the moment
+   * it left the wallet (a redemption's own compensation posting, or that
+   * `BonusLot`'s own expiry sweep) — crediting it again here would double
+   * count, so `shortfall` gets no posting at all, only a log line, mirroring
+   * `PurchaseIntentRefundService.reverseLoyaltyEffects`'s identical
+   * reasoning for a purchase's own accrual.
+   *
+   * The recovered portion is posted independently of whatever refund
+   * triggered this — DEBIT `BONUS_LIABILITY` / CREDIT `PLATFORM_REVENUE`,
+   * the same two-leg shape `expireOne` already uses for "a liability that
+   * will never be paid out" — because this lot's magnitude has no relation
+   * to the *triggering* refund's own `poolΔ`; folding it into that refund's
+   * own balanced posting would as often as not leave it unbalanced.
+   *
+   * Left `AVAILABLE` rather than reverted to `DEFERRED`: turning it back
+   * into something `advanceExistingLots` could unlock a second time, or
+   * `expireOverdueLots` could sweep, is a materially bigger behavior change
+   * than "undo the grant" — `refundedAmount` reaching `amount` already
+   * records, the same way a fully-refunded purchase's own lot does, that
+   * nothing here is outstanding any more.
+   */
+  private async reverseUnlock(
+    lot: { id: string; userId: string; amount: Decimal; refundedAmount: Decimal; grantedBonusLotId: string | null },
+    reason: string,
+    tx: Tx,
+  ): Promise<void> {
+    const remaining = lot.amount.minus(lot.refundedAmount);
+    if (remaining.lessThanOrEqualTo(0)) return;
+
+    const clawed = lot.grantedBonusLotId
+      ? await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, remaining, tx)
+      : null;
+    const actual = clawed ?? new Decimal(0);
+    const shortfall = remaining.minus(actual);
+
+    await tx.deferredBonusLot.update({
+      where: { id: lot.id },
+      data: { refundedAmount: { increment: remaining } },
+    });
+
+    if (shortfall.greaterThan(0)) {
+      this.logger.warn(
+        `Deferred bonus lot ${lot.id} unlock reversed: ${shortfall.toString()} of the ${remaining.toString()} ` +
+          'granted could not be reclaimed from the wallet (already spent or expired) and was written off.',
+      );
+    }
+
+    if (actual.greaterThan(0)) {
+      const [bonusLiabilityAccount, revenueAccount] = await Promise.all([
+        this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+        this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+      ]);
+      await this.ledger.post(
+        {
+          kind: 'deferred_bonus.unlock_reversed',
+          sourceType: 'DeferredBonusLot',
+          sourceId: lot.id,
+          postings: [
+            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: actual },
+            { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: actual },
+          ],
+        },
+        tx,
+      );
+    }
+
+    this.logger.log(
+      `Deferred bonus lot ${lot.id} unlock reversed for user ${lot.userId}: qualifying turnover dropped ` +
+        `below threshold after a refund; ${actual.toString()} reclaimed from the wallet.`,
+    );
   }
 
   /**

@@ -1000,6 +1000,14 @@ model ReferralChallengeParticipant {
   progressAmount Decimal                            @default(0) @db.Decimal(18, 4)
   qualifiedAt    DateTime?
   rewardedAt     DateTime?
+  /// The two `BonusLot`s `tryRewardChallengeSlot` granted on REWARDED — one
+  /// per side — so a later refund that drops `progressAmount` back below
+  /// `requiredAmount` can find and claw them back precisely, the same
+  /// traceability `DeferredBonusLot.grantedBonusLotId` already gives the
+  /// deferred-lot unlock (independent audit, GitHub issue #28). Null until
+  /// (and unless) REWARDED.
+  referrerBonusLotId String?
+  refereeBonusLotId  String?
   createdAt      DateTime                           @default(now())
 
   referrer User @relation("ChallengeReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)

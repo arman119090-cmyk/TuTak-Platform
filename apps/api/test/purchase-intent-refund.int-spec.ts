@@ -635,7 +635,7 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(contribution.reversedAmount.toFixed(4)).toBe('6000.0000');
   });
 
-  it('does not reverse turnover on a deferred lot that has already unlocked using it', async () => {
+  it('claws back an unlocked deferred lot when a refund drops its turnover back below threshold', async () => {
     const { user, wallet } = await createCustomer(prisma);
     const seedLot = await prisma.deferredBonusLot.create({
       data: {
@@ -657,7 +657,7 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(unlockedLot.progressTurnover.toFixed(4)).toBe('5100.0000');
     // The 500 AMD this lot granted, as its own distinct wallet-side lot —
     // tracked separately from the refunded purchase's own (unrelated) 2 AMD
-    // green accrual, which the refund correctly does reverse.
+    // green accrual, which the refund also correctly reverses.
     const grantedLot = await prisma.bonusLot.findUniqueOrThrow({
       where: { id: unlockedLot.grantedBonusLotId! },
     });
@@ -668,19 +668,73 @@ describe('PurchaseIntentRefundService (integration)', () => {
       purchaseIntentId: intent.id,
       reason: 'full return',
       actorId: staff.id,
-      idempotencyKey: 'external-lot-no-reversal-1',
+      idempotencyKey: 'external-lot-reversal-unlock-1',
     });
 
-    // Deliberately untouched: this lot already unlocked and granted a real,
-    // spendable accrual funded by a *different* purchase's own settlement —
-    // see `reverseExternalContributions`'s docblock for why safely clawing
-    // that back is out of scope for this fix and reported as a residual.
+    // 5100 - 200 = 4900 < 5000: the qualifying turnover that unlocked this
+    // lot no longer exists, so the grant it produced is undone with it
+    // (independent audit, GitHub issue #28).
     const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
     expect(afterRefund.status).toBe(DeferredBonusLotStatus.AVAILABLE);
-    expect(afterRefund.progressTurnover.toFixed(4)).toBe('5100.0000');
+    expect(afterRefund.progressTurnover.toFixed(4)).toBe('4900.0000');
+    expect(afterRefund.refundedAmount.toFixed(4)).toBe('500.0000');
 
     const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLot.id } });
+    expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+    expect(grantedLotAfter.status).toBe(BonusLotStatus.CONSUMED);
+
+    const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'deferred_bonus.unlock_reversed', sourceType: 'DeferredBonusLot', sourceId: seedLot.id },
+      include: { postings: true },
+    });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+    expect(liabilityLeg?.direction).toBe('DEBIT');
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('500.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  it('leaves an unlocked deferred lot alone when a partial refund still leaves its turnover above threshold', async () => {
+    const { user, wallet } = await createCustomer(prisma);
+    const seedLot = await prisma.deferredBonusLot.create({
+      data: {
+        userId: user.id,
+        sourceTransactionId: 'seed-lot-source-still-qualified',
+        amount: '500',
+        requiredTurnover: '5000',
+        progressTurnover: '4900',
+        deadline: new Date(Date.now() + 90 * 24 * 3600 * 1000),
+      },
+    });
+
+    // 4900 + 1000 = 5900 >= 5000: unlocks with 900 AMD of turnover to spare.
+    const { intent } = await confirmedPurchaseFor(user.id, '1000');
+    const grantedLotId = (
+      await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } })
+    ).grantedBonusLotId!;
+
+    const staff = await staffMember(intent.partnerId);
+    // Refund only 500 of the 1000: 5900 - 500 = 5400, still >= 5000.
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      amount: '500',
+      reason: 'partial return',
+      actorId: staff.id,
+      idempotencyKey: 'external-lot-still-qualified-1',
+    });
+
+    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    expect(afterRefund.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+    expect(afterRefund.progressTurnover.toFixed(4)).toBe('5400.0000');
+    // Nothing clawed: the unlock is still fully backed by real turnover.
+    expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
+
+    const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
     expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('500.0000');
+    expect(
+      await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed' } }),
+    ).toBe(0);
 
     await assertWalletIntegrity(prisma, wallet.id);
   });
@@ -792,8 +846,8 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(reverted.qualifiedAt).toBeNull();
   });
 
-  it('does not attempt to reclaim an already-paid referral challenge reward', async () => {
-    const { refereeUser, participant } = await invitedChallenge('10000');
+  it('claws back a paid referral challenge reward when a full refund drops progress back below threshold', async () => {
+    const { referrerUser, refereeUser, participant } = await invitedChallenge('10000');
 
     const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
     await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
@@ -802,31 +856,128 @@ describe('PurchaseIntentRefundService (integration)', () => {
       where: { id: participant.id },
     });
     expect(rewarded.status).toBe(ReferralChallengeParticipantStatus.REWARDED);
+    expect(rewarded.referrerBonusLotId).not.toBeNull();
+    expect(rewarded.refereeBonusLotId).not.toBeNull();
 
+    const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
     const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
-    const rewardLot = await prisma.bonusLot.findFirstOrThrow({
-      where: { walletId: refereeWallet.id, type: BonusEntryType.ACCRUAL_PROMOTION },
+    const referrerRewardLot = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: rewarded.referrerBonusLotId! },
     });
-    expect(rewardLot.remainingAmount.toFixed(4)).toBe('1000.0000');
+    const refereeRewardLot = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: rewarded.refereeBonusLotId! },
+    });
+    expect(referrerRewardLot.remainingAmount.toFixed(4)).toBe('1000.0000');
+    expect(refereeRewardLot.remainingAmount.toFixed(4)).toBe('1000.0000');
 
     const staff = await staffMember(intent.partnerId);
     await refunds.refund({
       purchaseIntentId: intent.id,
       reason: 'full return',
       actorId: staff.id,
-      idempotencyKey: 'challenge-rewarded-untouched-1',
+      idempotencyKey: 'challenge-rewarded-clawback-1',
     });
 
-    // A REWARDED participant is a real, already-spendable wallet credit
-    // funded from TuTak's own funds — this fix does not attempt to claw it
-    // back (see `reverseChallengeContribution`'s docblock).
+    // The qualifying purchase never really happened, so neither does the
+    // reward it paid out — closes the farm loop: qualify, get rewarded,
+    // refund, keep the money (independent audit, GitHub issue #28).
+    const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(after.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+    expect(after.progressAmount.toFixed(4)).toBe('0.0000');
+    expect(after.qualifiedAt).toBeNull();
+    expect(after.rewardedAt).toBeNull();
+
+    const referrerRewardLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: referrerRewardLot.id },
+    });
+    const refereeRewardLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: refereeRewardLot.id },
+    });
+    expect(referrerRewardLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+    expect(refereeRewardLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+
+    const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'referral.challenge_reward_reversed' },
+      include: { postings: true },
+    });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+    expect(liabilityLeg?.direction).toBe('DEBIT');
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('2000.0000');
+
+    await assertWalletIntegrity(prisma, referrerWallet.id);
+    await assertWalletIntegrity(prisma, refereeWallet.id);
+  });
+
+  it('leaves a paid referral challenge reward alone when a partial refund still leaves progress above threshold', async () => {
+    const { refereeUser, participant } = await invitedChallenge('10000');
+
+    const { intent } = await confirmedPurchaseFor(refereeUser.id, '15000');
+    await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+    const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(rewarded.status).toBe(ReferralChallengeParticipantStatus.REWARDED);
+
+    const staff = await staffMember(intent.partnerId);
+    // 15000 - 4000 = 11000, still >= 10000.
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      amount: '4000',
+      reason: 'partial return',
+      actorId: staff.id,
+      idempotencyKey: 'challenge-rewarded-still-qualified-1',
+    });
+
     const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
       where: { id: participant.id },
     });
     expect(after.status).toBe(ReferralChallengeParticipantStatus.REWARDED);
-    expect(after.progressAmount.toFixed(4)).toBe('10000.0000');
+    expect(after.progressAmount.toFixed(4)).toBe('11000.0000');
 
-    const rewardLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: rewardLot.id } });
-    expect(rewardLotAfter.remainingAmount.toFixed(4)).toBe('1000.0000');
+    const refereeRewardLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: rewarded.refereeBonusLotId! },
+    });
+    expect(refereeRewardLotAfter.remainingAmount.toFixed(4)).toBe('1000.0000');
+    expect(
+      await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
+    ).toBe(0);
+  });
+
+  // ── Migration safety: pre-snapshot purchases fail closed ────────────────
+
+  it('refuses to refund a confirmed purchase whose pool-split snapshot is missing, instead of silently reversing zero', async () => {
+    // Migration `20260817010000_purchase_intent_pool_snapshot` added
+    // poolAmount/greenAmount/deferredAmount/referrerAmount as nullable,
+    // unbackfilled columns — every `settlePurchase` confirmation since has
+    // written all four unconditionally, so `null` here can only mean this
+    // row predates that migration. Simulated directly (no such purchase can
+    // exist in this codebase going forward) to prove the refund path fails
+    // closed rather than defaulting the missing snapshot to zero and
+    // silently reversing none of what may have been a real bonus grant.
+    const { intent } = await confirmedPurchaseFor((await createCustomer(prisma)).user.id, '1000');
+    await prisma.purchaseIntent.update({
+      where: { id: intent.id },
+      data: { poolAmount: null, greenAmount: null, deferredAmount: null, referrerAmount: null },
+    });
+
+    const staff = await staffMember(intent.partnerId);
+    await expect(
+      refunds.refund({
+        purchaseIntentId: intent.id,
+        reason: 'full return',
+        actorId: staff.id,
+        idempotencyKey: 'pre-snapshot-purchase-1',
+      }),
+    ).rejects.toThrow('cannot be refunded automatically');
+
+    // Nothing was touched: no refund row, no reversing ledger transaction,
+    // the purchase's own refundedAmount untouched.
+    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(0);
+    const untouched = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    expect(untouched.refundedAmount.toFixed(4)).toBe('0.0000');
   });
 });

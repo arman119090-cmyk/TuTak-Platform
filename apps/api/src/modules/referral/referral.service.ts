@@ -293,13 +293,20 @@ export class ReferralService {
    * leaves IN_PROGRESS), so a transaction with no row is proof it never
    * contributed and this is a safe no-op for it.
    *
-   * Only reverses while the participant has not yet been REWARDED — the
-   * reward is a real, already-spendable wallet credit funded from TuTak's
-   * own funds (see `tryRewardChallengeSlot`'s docblock); clawing that back
-   * after the fact is a materially bigger change than this fix and is
-   * reported as a residual rather than attempted here.
+   * If the drop takes `progressAmount` back below `requiredAmount`, the
+   * qualification itself is undone regardless of how far it had
+   * progressed — QUALIFIED reverts with nothing further to do (nothing was
+   * ever paid), and REWARDED reverts *and* claws the reward back via
+   * `reverseReward` (independent audit, GitHub issue #28: a REWARDED
+   * participant used to be left untouched, letting a refund-after-reward
+   * farming loop keep the 1,000+1,000 AMD indefinitely).
    */
-  async reverseChallengeContribution(transactionId: string, amount: Decimal, tx: Tx): Promise<void> {
+  async reverseChallengeContribution(
+    transactionId: string,
+    amount: Decimal,
+    reason: string,
+    tx: Tx,
+  ): Promise<void> {
     if (amount.lessThanOrEqualTo(0)) return;
 
     const contribution = await tx.referralChallengeContribution.findUnique({
@@ -313,34 +320,123 @@ export class ReferralService {
     const reduceBy = Decimal.min(amount, reversible);
     if (reduceBy.lessThanOrEqualTo(0)) return;
 
-    if (contribution.participant.status === ReferralChallengeParticipantStatus.REWARDED) {
-      this.logger.warn(
-        `Refund of transaction ${transactionId} reduced referral challenge progress for referee ` +
-          `${contribution.participant.refereeUserId}, but the reward was already paid out and cannot be ` +
-          'reclaimed automatically.',
-      );
-      return;
-    }
-
     await tx.referralChallengeContribution.update({
       where: { id: contribution.id },
       data: { reversedAmount: { increment: reduceBy } },
     });
 
     const newProgress = contribution.participant.progressAmount.minus(reduceBy);
+    const droppedBelowThreshold = newProgress.lessThan(contribution.participant.requiredAmount);
+    const wasQualified = contribution.participant.status === ReferralChallengeParticipantStatus.QUALIFIED;
+    const wasRewarded = contribution.participant.status === ReferralChallengeParticipantStatus.REWARDED;
+
     const data: Prisma.ReferralChallengeParticipantUpdateInput = { progressAmount: newProgress };
-    // A QUALIFIED-but-not-yet-REWARDED participant (all of a referrer's
-    // slots were taken) is still fully reversible — nothing has been paid
-    // out yet, so dropping back below the threshold un-qualifies it exactly
-    // as if the refunded purchase had never happened.
-    if (
-      contribution.participant.status === ReferralChallengeParticipantStatus.QUALIFIED &&
-      newProgress.lessThan(contribution.participant.requiredAmount)
-    ) {
+    // A slot a REWARDED participant held is freed the instant its status
+    // stops being REWARDED — `tryRewardChallengeSlot`'s slot check is a
+    // live `count()` against that status, not a separately tracked
+    // allocation, so reverting it here is the whole of "handle the slot
+    // deterministically": the very next qualifying referee for this
+    // referrer sees one fewer taken.
+    if (droppedBelowThreshold && (wasQualified || wasRewarded)) {
       data.status = ReferralChallengeParticipantStatus.IN_PROGRESS;
       data.qualifiedAt = null;
+      data.rewardedAt = null;
     }
     await tx.referralChallengeParticipant.update({ where: { id: contribution.participantId }, data });
+
+    if (droppedBelowThreshold && wasRewarded) {
+      await this.reverseReward(contribution.participant, reason, tx);
+    }
+  }
+
+  /**
+   * Claws back a Referral Challenge reward after a refund has dropped its
+   * participant's `progressAmount` back below `requiredAmount` — the
+   * qualifying event the reward was paid on turned out not to be real
+   * (independent audit, GitHub issue #28).
+   *
+   * Each side's `BonusLot` (recorded on the participant at grant time —
+   * see `tryRewardChallengeSlot`) is clawed back independently: one side
+   * may have already spent theirs while the other has not, and
+   * `reverseAccrualLot` only ever reclaims what is genuinely still unspent
+   * in that specific wallet, so this can never drive either balance
+   * negative.
+   *
+   * Whatever cannot be reclaimed (already spent, or independently expired)
+   * is a shortfall with nothing further to post: the original reward's own
+   * `BONUS_LIABILITY` credit was already released at the moment it left
+   * that wallet (an ordinary redemption's own compensation leg, or that
+   * `BonusLot`'s own expiry sweep) — crediting it again here would double
+   * count, the same reasoning `reverseUnlock` and
+   * `PurchaseIntentRefundService.reverseLoyaltyEffects` already apply to
+   * their own shortfalls.
+   *
+   * The recovered portion is posted independently of whatever refund
+   * triggered this, mirroring the original grant's own posting in
+   * `tryRewardChallengeSlot` but reversed: DEBIT `BONUS_LIABILITY` / CREDIT
+   * `PLATFORM_REVENUE` — TuTak funded the reward from its own funds, so
+   * reclaiming it is TuTak's own recovered revenue, not this refund's
+   * partner's concern.
+   */
+  private async reverseReward(
+    participant: {
+      referrerUserId: string;
+      refereeUserId: string;
+      referrerBonusLotId: string | null;
+      refereeBonusLotId: string | null;
+    },
+    reason: string,
+    tx: Tx,
+  ): Promise<void> {
+    const rewardAmount = new Decimal(
+      this.config.get('purchasePolicy.challengeRewardAmount', { infer: true }),
+    );
+    const zero = new Decimal(0);
+
+    const [referrerClawed, refereeClawed] = await Promise.all([
+      participant.referrerBonusLotId
+        ? this.bonusEngine.reverseAccrualLot(participant.referrerBonusLotId, reason, rewardAmount, tx)
+        : null,
+      participant.refereeBonusLotId
+        ? this.bonusEngine.reverseAccrualLot(participant.refereeBonusLotId, reason, rewardAmount, tx)
+        : null,
+    ]);
+    const referrerActual = referrerClawed ?? zero;
+    const refereeActual = refereeClawed ?? zero;
+    const shortfall = rewardAmount.minus(referrerActual).plus(rewardAmount.minus(refereeActual));
+
+    if (shortfall.greaterThan(0)) {
+      this.logger.warn(
+        `Referral challenge reward reversed for referrer ${participant.referrerUserId} / referee ` +
+          `${participant.refereeUserId}: ${shortfall.toString()} of the ${rewardAmount.times(2).toString()} ` +
+          'paid could not be reclaimed (already spent or expired) and was written off.',
+      );
+    }
+
+    const recovered = referrerActual.plus(refereeActual);
+    if (recovered.greaterThan(0)) {
+      const [bonusLiabilityAccount, revenueAccount] = await Promise.all([
+        this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+        this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+      ]);
+      await this.ledger.post(
+        {
+          kind: 'referral.challenge_reward_reversed',
+          sourceType: 'ReferralChallengeParticipant',
+          sourceId: `${participant.referrerUserId}:${participant.refereeUserId}`,
+          postings: [
+            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: recovered },
+            { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: recovered },
+          ],
+        },
+        tx,
+      );
+    }
+
+    this.logger.log(
+      `Referral challenge reward reversed: referrer ${participant.referrerUserId} + referee ` +
+        `${participant.refereeUserId}, ${recovered.toString()} of ${rewardAmount.times(2).toString()} reclaimed.`,
+    );
   }
 
   /**
@@ -432,7 +528,7 @@ export class ReferralService {
     // BONUS_LIABILITY by the same 2000 AMD the two `accrue` calls mint into
     // the two wallets, so the liability this reward creates is backed by a
     // real ledger entry rather than existing only at the wallet level.
-    await Promise.all([
+    const [referrerLot, refereeLot] = await Promise.all([
       this.bonusEngine.accrue(
         {
           walletId: referrerWallet.id,
@@ -456,6 +552,14 @@ export class ReferralService {
         tx,
       ),
     ]);
+
+    // Recorded so a later refund that un-qualifies this participant can
+    // find and claw back exactly these two lots — see `reverseReward`
+    // (independent audit, GitHub issue #28).
+    await tx.referralChallengeParticipant.update({
+      where: { refereeUserId },
+      data: { referrerBonusLotId: referrerLot.id, refereeBonusLotId: refereeLot.id },
+    });
 
     // `tx` here is Serializable (`runSerializable`, the caller several
     // frames up) — `accountFor` must be given it explicitly, or the

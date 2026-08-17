@@ -90,6 +90,20 @@ container must not need the network to start.
 **Before a migration that rewrites data**, take a backup (§7). Prisma will
 not roll one back for you.
 
+**First production launch must start from a clean database.** Two
+migrations added nullable, unbackfilled columns/tables for refund
+attribution (`20260817010000_purchase_intent_pool_snapshot`,
+`20260817070000_refund_attribution_tracking`) — independent audit, GitHub
+issue #28. This repository has never carried real customer financial data
+(no production launch has happened yet, per
+`docs/LAUNCH_READINESS_2026-08-16.md`), so no backfill was built: it would
+be speculative and unprovable rather than a real reconstruction. If any
+`PurchaseIntent` row is ever confirmed before running these migrations,
+`PurchaseIntentRefundService` now fails closed (an explicit 500, not a
+silent zero-effect refund) rather than guessing at its pool split — the
+fix is to launch, and take every subsequent backup, only from a database
+whose migration history includes both of the above from the start.
+
 ---
 
 ## 4. Environment

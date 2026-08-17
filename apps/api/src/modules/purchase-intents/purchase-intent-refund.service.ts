@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AuditAction,
   BonusEntryType,
@@ -146,6 +152,32 @@ export class PurchaseIntentRefundService {
     const intent = await tx.purchaseIntent.findUniqueOrThrow({ where: { id: purchaseIntentId } });
     if (intent.status !== PurchaseIntentStatus.CONFIRMED) {
       throw new BadRequestException('Only a confirmed purchase can be refunded');
+    }
+    // `poolAmount`/`greenAmount`/`deferredAmount`/`referrerAmount` are
+    // nullable columns added by migration `20260817010000` with no backfill
+    // — every `settlePurchase` confirmation since has written all four
+    // unconditionally (even when the pool is genuinely zero), so `null` here
+    // can only mean this purchase was confirmed *before* that migration
+    // existed, when nothing captured its pool split at all. `?? 0` further
+    // down would silently reverse zero loyalty effects for a purchase that
+    // may really have granted real bonus — this repository has not yet
+    // reached a production launch with real customer data (see
+    // `docs/LAUNCH_READINESS_2026-08-16.md`), so no safe reconstruction is
+    // possible or necessary: launch requires a clean database with no
+    // pre-migration `PurchaseIntent` rows, and this fails closed instead of
+    // ever silently under-reversing one (independent audit, GitHub issue
+    // #28).
+    if (
+      intent.poolAmount === null ||
+      intent.greenAmount === null ||
+      intent.deferredAmount === null ||
+      intent.referrerAmount === null
+    ) {
+      throw new InternalServerErrorException(
+        `Purchase intent ${intent.id} was confirmed before pool-split snapshots existed (poolAmount/greenAmount/` +
+          'deferredAmount/referrerAmount are null) and cannot be refunded automatically — its original loyalty ' +
+          'effects were never recorded, so a refund cannot be proven correct. Requires manual reconciliation.',
+      );
     }
 
     const cumulativeBefore = intent.refundedAmount;
@@ -335,8 +367,8 @@ export class PurchaseIntentRefundService {
     // relationship, unlike the legs above. Independent audit, GitHub issue
     // #28: neither used to be reversed at all.
     const rawRefundΔ = cumulativeAfter.minus(cumulativeBefore);
-    await this.deferredBonusLots.reverseExternalContributions(sourceTransactionId, rawRefundΔ, tx);
-    await this.referralService.reverseChallengeContribution(sourceTransactionId, rawRefundΔ, tx);
+    await this.deferredBonusLots.reverseExternalContributions(sourceTransactionId, rawRefundΔ, reason, tx);
+    await this.referralService.reverseChallengeContribution(sourceTransactionId, rawRefundΔ, reason, tx);
 
     // Unrecoverable: value the customer already spent elsewhere (whose own
     // transaction already released this liability) or that expired

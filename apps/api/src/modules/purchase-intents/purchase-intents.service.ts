@@ -325,6 +325,16 @@ export class PurchaseIntentsService {
             status: PurchaseIntentStatus.CONFIRMED,
             confirmedByUserId: staffUserId,
             confirmedAt: new Date(),
+            // Spec §12's pool split, snapshotted at the moment it is
+            // actually posted — a later refund reverses these exact
+            // amounts, never today's `purchasePolicy` (independent audit,
+            // GitHub issue #28, HEAD 0a9c7d5). `negotiatedRateBps` was
+            // already snapshotted at creation; this is the other half of
+            // "never recompute from live config" for the pool itself.
+            poolAmount: pool,
+            greenAmount: green,
+            deferredAmount: deferred,
+            referrerAmount: referrerShare,
           },
         });
         if (claimed.count === 0) return 'already-resolved' as const;
@@ -511,6 +521,27 @@ export class PurchaseIntentsService {
    * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
    * confirmed by independent audit — GitHub issue #28).
    */
+  /**
+   * Spec §26. The status claim, the reservation release, the source
+   * transaction's failure, and the audit record are one atomic unit — a
+   * crash or thrown error between them used to be reachable: the status
+   * claim was its own statement, committed before the reservation release
+   * and transaction-failure calls ran as separate, later statements. A
+   * failure in either of those left the intent permanently `REJECTED` with
+   * the customer's bonus still `ACTIVE`ly reserved, or the source
+   * transaction never marked `FAILED` — and a retry found the intent
+   * already terminal and did nothing to repair it (independent audit,
+   * GitHub issue #28, HEAD `0a9c7d5`). Mirrors `settlePurchase`'s own
+   * atomic-transaction shape for exactly the reason its docblock gives.
+   *
+   * The 3-minute window is enforced here exactly as `confirm()` enforces
+   * it — expire first, then refuse the action — because without this check
+   * a cashier could still reject an intent whose deadline had already
+   * passed but that the expiry sweep hadn't reached yet: the row would end
+   * up `REJECTED` by a decision made outside the window it was valid for,
+   * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
+   * confirmed by independent audit — GitHub issue #28).
+   */
   async reject(intentId: string, staffUserId: string, dto: RejectPurchaseIntentDto) {
     const intent = await this.findByIdOrThrow(intentId);
     if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
@@ -521,29 +552,34 @@ export class PurchaseIntentsService {
       throw new BadRequestException('This purchase intent has expired');
     }
 
-    const claimed = await this.prisma.purchaseIntent.updateMany({
-      where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
-      data: {
-        status: PurchaseIntentStatus.REJECTED,
-        rejectionReason: dto.comment ? `${dto.reasonCode}: ${dto.comment}` : dto.reasonCode,
-        rejectedAt: new Date(),
-      },
-    });
-    if (claimed.count === 0) return this.findByIdOrThrow(intentId);
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.purchaseIntent.updateMany({
+        where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
+        data: {
+          status: PurchaseIntentStatus.REJECTED,
+          rejectionReason: dto.comment ? `${dto.reasonCode}: ${dto.comment}` : dto.reasonCode,
+          rejectedAt: new Date(),
+        },
+      });
+      if (claimed.count === 0) return;
 
-    if (intent.bonusReservationId) {
-      await this.bonusEngine.releaseReservation(intent.bonusReservationId, 'partner_rejected');
-    }
-    if (intent.sourceTransactionId) {
-      await this.transactionsService.markFailed(intent.sourceTransactionId, 'partner_rejected');
-    }
+      if (intent.bonusReservationId) {
+        await this.bonusEngine.releaseReservation(intent.bonusReservationId, 'partner_rejected', tx);
+      }
+      if (intent.sourceTransactionId) {
+        await this.transactionsService.markFailed(intent.sourceTransactionId, 'partner_rejected', tx);
+      }
 
-    await this.auditService.record({
-      actorUserId: staffUserId,
-      action: AuditAction.PURCHASE_INTENT_REJECTED,
-      entityType: 'PurchaseIntent',
-      entityId: intentId,
-      metadata: { reason: dto.reasonCode },
+      await this.auditService.record(
+        {
+          actorUserId: staffUserId,
+          action: AuditAction.PURCHASE_INTENT_REJECTED,
+          entityType: 'PurchaseIntent',
+          entityId: intentId,
+          metadata: { reason: dto.reasonCode },
+        },
+        tx,
+      );
     });
 
     return this.findByIdOrThrow(intentId);
@@ -561,25 +597,34 @@ export class PurchaseIntentsService {
     return count;
   }
 
+  /**
+   * Same atomicity fix as `reject()`, for the sweep-driven expiry path —
+   * see that method's docblock for the failure mode this closes.
+   */
   private async expireOne(intent: { id: string; bonusReservationId: string | null; sourceTransactionId: string | null }): Promise<boolean> {
-    const claimed = await this.prisma.purchaseIntent.updateMany({
-      where: { id: intent.id, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
-      data: { status: PurchaseIntentStatus.EXPIRED },
-    });
-    if (claimed.count === 0) return false;
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.purchaseIntent.updateMany({
+        where: { id: intent.id, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
+        data: { status: PurchaseIntentStatus.EXPIRED },
+      });
+      if (claimed.count === 0) return false;
 
-    if (intent.bonusReservationId) {
-      await this.bonusEngine.releaseReservation(intent.bonusReservationId, 'purchase_intent_expired');
-    }
-    if (intent.sourceTransactionId) {
-      await this.transactionsService.markFailed(intent.sourceTransactionId, 'purchase_intent_expired');
-    }
-    await this.auditService.record({
-      action: AuditAction.PURCHASE_INTENT_EXPIRED,
-      entityType: 'PurchaseIntent',
-      entityId: intent.id,
-      metadata: {},
+      if (intent.bonusReservationId) {
+        await this.bonusEngine.releaseReservation(intent.bonusReservationId, 'purchase_intent_expired', tx);
+      }
+      if (intent.sourceTransactionId) {
+        await this.transactionsService.markFailed(intent.sourceTransactionId, 'purchase_intent_expired', tx);
+      }
+      await this.auditService.record(
+        {
+          action: AuditAction.PURCHASE_INTENT_EXPIRED,
+          entityType: 'PurchaseIntent',
+          entityId: intent.id,
+          metadata: {},
+        },
+        tx,
+      );
+      return true;
     });
-    return true;
   }
 }

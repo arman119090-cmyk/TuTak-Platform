@@ -161,40 +161,64 @@ export class DeferredBonusLotService {
    * traceable amount to reverse there without inventing new bookkeeping this
    * refund is not the place to add.
    *
-   * Returns whether the confirmation-time `BONUS_LIABILITY` credit for this
-   * share is still outstanding. It is not once the lot has `EXPIRED` —
-   * `expireOne` already released that liability to `PLATFORM_REVENUE` — and
-   * the caller must exclude the share from its own ledger reversal in that
-   * case, or `BONUS_LIABILITY` would be debited twice for the same amount.
+   * Returns `liabilityToReverse` — what the caller should actually debit
+   * from `BONUS_LIABILITY` — and `shortfall`, the portion of `share` this
+   * could not (or must not) reduce the liability for. The caller folds
+   * `shortfall` into its own reversal's `PLATFORM_REVENUE` leg instead —
+   * every posting must still balance to the same `poolΔ` regardless of
+   * which account absorbs which piece — rather than silently dropping it,
+   * which would leave the reversing entry unbalanced (independent audit,
+   * GitHub issue #28, HEAD `0a9c7d5`):
+   *
+   *  - **Still `DEFERRED`** (never unlocked): nothing has touched this
+   *    liability slice since confirmation, so the full reduction *is* what
+   *    must come off `BONUS_LIABILITY` — `liabilityToReverse = reduceBy`,
+   *    no shortfall.
+   *  - **`AVAILABLE`** (unlocked, granted to the wallet): only the unspent
+   *    remainder of the granted lot is real to claw back —
+   *    `reverseAccrualLot`'s own return value, not the theoretical share.
+   *    Whatever was already spent elsewhere is `shortfall`.
+   *  - **`EXPIRED`** (or no lot found at all): `expireOne` already released
+   *    this lot's full liability to `PLATFORM_REVENUE` — reversing
+   *    `BONUS_LIABILITY` again here would debit it twice for the same
+   *    amount, so `liabilityToReverse` is zero and the *entire* requested
+   *    `share` is `shortfall`, not zero: it must still land somewhere in
+   *    the caller's balanced posting, just not on `BONUS_LIABILITY`.
    */
   async reverseForRefund(
     sourceTransactionId: string,
     share: Decimal,
     reason: string,
     tx: Tx,
-  ): Promise<{ liabilityStillOutstanding: boolean }> {
+  ): Promise<{ liabilityToReverse: Decimal; shortfall: Decimal }> {
+    const zero = new Decimal(0);
     const lot = await tx.deferredBonusLot.findFirst({ where: { sourceTransactionId } });
-    if (!lot) return { liabilityStillOutstanding: true };
-    if (lot.status === DeferredBonusLotStatus.EXPIRED) {
-      return { liabilityStillOutstanding: false };
+    if (!lot || lot.status === DeferredBonusLotStatus.EXPIRED) {
+      return { liabilityToReverse: zero, shortfall: share };
     }
 
     // `amounts_sane` requires `amount` to stay strictly positive for as
     // long as the row exists, so what's left to reverse is tracked in
     // `refundedAmount` rather than by decrementing `amount` itself.
     const reduceBy = Decimal.min(share, lot.amount.minus(lot.refundedAmount));
-    if (reduceBy.greaterThan(0)) {
-      await tx.deferredBonusLot.update({
-        where: { id: lot.id },
-        data: { refundedAmount: { increment: reduceBy } },
-      });
-
-      if (lot.status === DeferredBonusLotStatus.AVAILABLE && lot.grantedBonusLotId) {
-        await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, reduceBy, tx);
-      }
+    if (reduceBy.lessThanOrEqualTo(0)) {
+      return { liabilityToReverse: zero, shortfall: share };
     }
 
-    return { liabilityStillOutstanding: true };
+    await tx.deferredBonusLot.update({
+      where: { id: lot.id },
+      data: { refundedAmount: { increment: reduceBy } },
+    });
+
+    if (lot.status === DeferredBonusLotStatus.DEFERRED) {
+      return { liabilityToReverse: reduceBy, shortfall: zero };
+    }
+
+    const clawed = lot.grantedBonusLotId
+      ? await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, reduceBy, tx)
+      : null;
+    const actual = clawed ?? zero;
+    return { liabilityToReverse: actual, shortfall: reduceBy.minus(actual) };
   }
 
   /**

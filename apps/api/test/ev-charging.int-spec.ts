@@ -8,6 +8,8 @@ import {
 } from '@prisma/client';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
+import { LedgerService } from '../src/modules/ledger/ledger.service';
+import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { createCustomer, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
@@ -22,12 +24,16 @@ describe('EV charging (integration)', () => {
   let prisma: PrismaClient;
   let sessions: EvSessionsService;
   let engine: BonusEngineService;
+  let ledger: LedgerService;
+  let outbox: OutboxService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     sessions = harness.app.get(EvSessionsService);
     engine = harness.app.get(BonusEngineService);
+    ledger = harness.app.get(LedgerService);
+    outbox = harness.app.get(OutboxService);
   });
 
   afterAll(async () => {
@@ -129,6 +135,90 @@ describe('EV charging (integration)', () => {
       where: { id: partnerAccount.id },
     });
     expect(partnerAfter.balance.toFixed(4)).toBe('125.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  it('never permanently loses the ledger posting when the fast-path post fails, and the outbox recovers it', async () => {
+    // GitHub issue #28 (HEAD 0a9c7d5): the wallet accrual and its ledger
+    // posting used to be two independent best-effort steps. If the second
+    // one failed, the customer kept a real, spendable bonus with nothing at
+    // all recording who funded it — a wallet→ledger gap with no recovery
+    // path. The fix commits the accrual and a durable outbox promise to post
+    // it atomically, then attempts the post immediately as a non-fatal fast
+    // path. This proves the fast path failing does not lose the posting: it
+    // only delays it until the outbox's guaranteed retry (`drain`) runs.
+    const { user, wallet, connector, partner } = await scenario({ rateBps: 500 });
+
+    const session = await sessions.start({ connectorId: connector.id }, user.id);
+    await backdate(session.id);
+    await sessions.reportMeterValue(session.id, '25', user.id);
+
+    const postSpy = jest
+      .spyOn(ledger, 'post')
+      .mockImplementationOnce(() => Promise.reject(new Error('ledger post transiently unavailable')));
+
+    // The session must still complete and credit the wallet even though the
+    // fast-path ledger post is about to fail — the accrual is real money the
+    // customer already earned, not something a bookkeeping hiccup may undo.
+    const result = await sessions.stop(session.id, user.id, {});
+    expect(result.bonusEarned).toBe('125');
+    postSpy.mockRestore();
+
+    const afterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(afterFailure.pendingBonus.toFixed(4)).toBe('125.0000');
+
+    // Nothing has posted yet: the fast path's one attempt failed and was not
+    // retried inline.
+    expect(
+      await prisma.ledgerTransaction.count({
+        where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+      }),
+    ).toBe(0);
+
+    // The durable promise survived the failed attempt: a pending outbox
+    // event is exactly what turns "logged and forgotten" into "guaranteed,
+    // just not yet".
+    const pending = await prisma.outboxEvent.findFirstOrThrow({
+      where: { eventType: 'ev.accrual.ledger_post', processedAt: null },
+    });
+    expect(pending.attempts).toBe(0);
+
+    // The guaranteed-retry backstop now runs, exactly as the sweep would.
+    // (`stopOnce` also publishes an unrelated `transaction.completed` event
+    // via TransactionsService, so more than one event may be drained here —
+    // what matters is that *our* event was among them.)
+    await outbox.drain();
+    expect(
+      (await prisma.outboxEvent.findUniqueOrThrow({ where: { id: pending.id } })).processedAt,
+    ).not.toBeNull();
+
+    const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+      include: { postings: true },
+    });
+    const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+    });
+    const liabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
+    const partnerLeg = ledgerTx.postings.find((p) => p.accountId === partnerAccount.id);
+    const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === liabilityAccount.id);
+    expect(partnerLeg?.direction).toBe('DEBIT');
+    expect(partnerLeg?.amount.toFixed(4)).toBe('125.0000');
+    expect(liabilityLeg?.direction).toBe('CREDIT');
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('125.0000');
+
+    // Re-draining must not double-post: the event is now processed, and even
+    // if it were reclaimed, postAccrualLedgerIdempotent's existing-row check
+    // would refuse a second insert.
+    expect(await outbox.drain()).toBe(0);
+    expect(
+      await prisma.ledgerTransaction.count({
+        where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+      }),
+    ).toBe(1);
 
     await assertWalletIntegrity(prisma, wallet.id);
   });

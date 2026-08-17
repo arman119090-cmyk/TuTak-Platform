@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
   BonusEntryType,
@@ -9,7 +8,6 @@ import {
   PurchaseIntentStatus,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -79,7 +77,6 @@ export class PurchaseIntentRefundService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly auditService: AuditService,
-    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   async refund(params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
@@ -170,7 +167,7 @@ export class PurchaseIntentRefundService {
       data: { refundedAmount: cumulativeAfter },
     });
 
-    const { bonusRestored, ledgerTransactionId } = await this.reverseLoyaltyEffects(
+    const { bonusRestored, ledgerTransactionId, shortfall } = await this.reverseLoyaltyEffects(
       tx,
       intent,
       cumulativeBefore,
@@ -201,6 +198,9 @@ export class PurchaseIntentRefundService {
           amount: amount.toString(),
           totalRefunded: cumulativeAfter.toString(),
           bonusRestored: bonusRestored.toString(),
+          // Earned-bonus liability that could not be reclaimed from wallets
+          // (already spent elsewhere or expired) — see `reverseLoyaltyEffects`.
+          unrecoverableShortfall: shortfall.toString(),
           reason,
         },
       },
@@ -227,6 +227,14 @@ export class PurchaseIntentRefundService {
    * watermark at `grossAmount` equals the total by construction) and
    * cumulative partial refunds can never over-reverse, independent of
    * rounding on any individual step.
+   *
+   * The pool/green/deferred/referrer totals below are read from the
+   * `PurchaseIntent`'s own confirmation-time snapshot — never recomputed
+   * from `purchasePolicy`. A refund must reverse exactly what
+   * `settlePurchase` actually posted; if the platform's pool-split
+   * percentages change between confirmation and refund, recomputing from
+   * today's configuration would reverse different amounts than the ones on
+   * the books (independent audit, GitHub issue #28, HEAD `0a9c7d5`).
    */
   private async reverseLoyaltyEffects(
     tx: Tx,
@@ -236,14 +244,16 @@ export class PurchaseIntentRefundService {
       partnerId: string;
       grossAmount: Decimal;
       bonusAmountRequested: Decimal;
-      negotiatedRateBps: number;
+      poolAmount: Decimal | null;
+      greenAmount: Decimal | null;
+      deferredAmount: Decimal | null;
+      referrerAmount: Decimal | null;
       sourceTransactionId: string | null;
     },
     cumulativeBefore: Decimal,
     cumulativeAfter: Decimal,
     reason: string,
-  ): Promise<{ bonusRestored: Decimal; ledgerTransactionId: string | null }> {
-    const policy = this.config.get('purchasePolicy', { infer: true });
+  ): Promise<{ bonusRestored: Decimal; ledgerTransactionId: string | null; shortfall: Decimal }> {
     const grossAmount = intent.grossAmount;
     const sourceTransactionId = intent.sourceTransactionId!;
 
@@ -251,10 +261,12 @@ export class PurchaseIntentRefundService {
       total.lessThanOrEqualTo(0) ? new Decimal(0) : roundIssued(total.times(cumulative).dividedBy(grossAmount));
     const delta = (total: Decimal): Decimal => shareAt(total, cumulativeAfter).minus(shareAt(total, cumulativeBefore));
 
-    const pool = roundIssued(grossAmount.times(intent.negotiatedRateBps).dividedBy(10_000));
-    const green = roundIssued(pool.times(policy.poolGreenBps).dividedBy(10_000));
-    const deferred = roundIssued(pool.times(policy.poolDeferredBps).dividedBy(10_000));
-    const referrerShare = roundIssued(pool.times(policy.poolReferrerBps).dividedBy(10_000));
+    // Only ever null for an intent that was never confirmed, which can't
+    // reach a refund — `refund()`/`postRefund` both require CONFIRMED.
+    const pool = intent.poolAmount ?? new Decimal(0);
+    const green = intent.greenAmount ?? new Decimal(0);
+    const deferred = intent.deferredAmount ?? new Decimal(0);
+    const referrerShare = intent.referrerAmount ?? new Decimal(0);
 
     const poolΔ = delta(pool);
     const greenΔ = delta(green);
@@ -267,13 +279,29 @@ export class PurchaseIntentRefundService {
 
     const referrer = await this.referralService.resolveReferrer(intent.customerId);
 
+    // `reverseAccrualLot` claws back only a lot's *unspent* remainder and
+    // returns exactly that amount — `null` if the lot was already fully
+    // spent or had expired. The ledger reversal must debit `BONUS_LIABILITY`
+    // for what actually came back from the wallet, not the theoretical
+    // share: debiting the full share regardless would double-reverse value
+    // whose liability was already released elsewhere (independent audit,
+    // GitHub issue #28, HEAD `0a9c7d5`). Whatever the theoretical share
+    // could not reclaim is `shortfall`, tracked explicitly below rather
+    // than silently assumed either way.
+    const zero = new Decimal(0);
+    let greenClawed = zero;
     if (greenΔ.greaterThan(0)) {
       const greenLot = await tx.bonusLot.findFirst({
         where: { sourceTransactionId, type: BonusEntryType.ACCRUAL_PURCHASE },
       });
-      if (greenLot) await this.bonusEngine.reverseAccrualLot(greenLot.id, reason, greenΔ, tx);
+      if (greenLot) {
+        const clawed = await this.bonusEngine.reverseAccrualLot(greenLot.id, reason, greenΔ, tx);
+        greenClawed = clawed ?? zero;
+      }
     }
+    const greenShortfall = greenΔ.minus(greenClawed);
 
+    let referrerClawed = zero;
     if (referrer?.type === 'USER' && referrerΔ.greaterThan(0)) {
       const referrerWallet = await tx.wallet.findUnique({ where: { userId: referrer.userId } });
       const referralLot = referrerWallet
@@ -285,13 +313,35 @@ export class PurchaseIntentRefundService {
             },
           })
         : null;
-      if (referralLot) await this.bonusEngine.reverseAccrualLot(referralLot.id, reason, referrerΔ, tx);
+      if (referralLot) {
+        const clawed = await this.bonusEngine.reverseAccrualLot(referralLot.id, reason, referrerΔ, tx);
+        referrerClawed = clawed ?? zero;
+      }
     }
+    const referrerShortfall = referrer?.type === 'USER' ? referrerΔ.minus(referrerClawed) : zero;
 
-    let deferredLiabilityStillOutstanding = true;
+    let deferredLiabilityToReverse = zero;
+    let deferredShortfall = zero;
     if (deferredΔ.greaterThan(0)) {
       const result = await this.deferredBonusLots.reverseForRefund(sourceTransactionId, deferredΔ, reason, tx);
-      deferredLiabilityStillOutstanding = result.liabilityStillOutstanding;
+      deferredLiabilityToReverse = result.liabilityToReverse;
+      deferredShortfall = result.shortfall;
+    }
+
+    // Unrecoverable: value the customer already spent elsewhere (whose own
+    // transaction already released this liability) or that expired
+    // unclaimed. Neither case leaves anything real to take back from the
+    // customer, so it cannot reduce `BONUS_LIABILITY` a second time —
+    // routed to `PLATFORM_REVENUE` instead, the same treatment
+    // `DeferredBonusLotService.expireOne` already gives value that will
+    // never be paid out. Logged so it stays visible rather than a silent
+    // rounding-shaped adjustment in the postings.
+    const shortfall = greenShortfall.plus(referrerShortfall).plus(deferredShortfall);
+    if (shortfall.greaterThan(0)) {
+      this.logger.warn(
+        `Purchase intent ${intent.id} refund: ${shortfall.toString()} of the earned bonus liability ` +
+          'could not be reclaimed from wallets (already spent or expired) and was released to platform revenue.',
+      );
     }
 
     if (bonusRestoreΔ.greaterThan(0)) {
@@ -301,16 +351,17 @@ export class PurchaseIntentRefundService {
 
     const ledgerTransactionId = await this.postReversalLedger(tx, intent, {
       poolΔ,
-      greenΔ,
-      deferredΔ,
+      greenClawed,
+      deferredLiabilityToReverse,
+      referrerClawed,
       referrerΔ,
       tutakBaseΔ,
       referrer,
       bonusRestoreΔ,
-      deferredLiabilityStillOutstanding,
+      shortfall,
     });
 
-    return { bonusRestored: bonusRestoreΔ, ledgerTransactionId };
+    return { bonusRestored: bonusRestoreΔ, ledgerTransactionId, shortfall };
   }
 
   /**
@@ -318,19 +369,31 @@ export class PurchaseIntentRefundService {
    * `postRedemptionCompensation`, scaled to this refund's proportional
    * share — never `LedgerService.reverse()`, which flips a transaction's
    * postings verbatim and has no notion of a partial amount.
+   *
+   * `poolΔ` (what the partner is credited back) always stays the full
+   * theoretical merchandise-refund share — the partner's contribution
+   * obligation shrinks by exactly the fraction of the sale reversed,
+   * regardless of what later happened to the bonus it funded. `greenClawed`
+   * / `deferredLiabilityToReverse` / `referrerClawed` are what actually came
+   * back from wallets (see `reverseLoyaltyEffects`), so `customerLiabilityΔ`
+   * can be smaller than the theoretical share; `shortfall` — the difference
+   * — is folded into `tutakRevenueΔ` so the posting still balances to
+   * `poolΔ` by construction, the same remainder technique `tutakBaseΔ`
+   * itself already uses.
    */
   private async postReversalLedger(
     tx: Tx,
     intent: { id: string; partnerId: string },
     amounts: {
       poolΔ: Decimal;
-      greenΔ: Decimal;
-      deferredΔ: Decimal;
+      greenClawed: Decimal;
+      deferredLiabilityToReverse: Decimal;
+      referrerClawed: Decimal;
       referrerΔ: Decimal;
       tutakBaseΔ: Decimal;
       referrer: ResolvedReferrer | null;
       bonusRestoreΔ: Decimal;
-      deferredLiabilityStillOutstanding: boolean;
+      shortfall: Decimal;
     },
   ): Promise<string | null> {
     if (amounts.poolΔ.lessThanOrEqualTo(0) && amounts.bonusRestoreΔ.lessThanOrEqualTo(0)) {
@@ -346,17 +409,12 @@ export class PurchaseIntentRefundService {
     let primaryTransactionId: string | null = null;
 
     if (amounts.poolΔ.greaterThan(0)) {
-      // The deferred share moves to whichever account still actually holds
-      // it: the confirmation-time BONUS_LIABILITY credit if the lot never
-      // resolved, or PLATFORM_REVENUE if `expireOne` already released it
-      // there — see `DeferredBonusLotService.reverseForRefund`.
-      let customerLiabilityΔ = amounts.greenΔ.plus(amounts.referrer?.type === 'USER' ? amounts.referrerΔ : 0);
-      let tutakRevenueΔ = amounts.tutakBaseΔ.plus(amounts.referrer ? 0 : amounts.referrerΔ);
-      if (amounts.deferredLiabilityStillOutstanding) {
-        customerLiabilityΔ = customerLiabilityΔ.plus(amounts.deferredΔ);
-      } else {
-        tutakRevenueΔ = tutakRevenueΔ.plus(amounts.deferredΔ);
-      }
+      const customerLiabilityΔ = amounts.greenClawed
+        .plus(amounts.deferredLiabilityToReverse)
+        .plus(amounts.referrer?.type === 'USER' ? amounts.referrerClawed : 0);
+      const tutakRevenueΔ = amounts.tutakBaseΔ
+        .plus(amounts.referrer ? 0 : amounts.referrerΔ)
+        .plus(amounts.shortfall);
 
       const postings = [
         { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: amounts.poolΔ },

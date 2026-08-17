@@ -611,6 +611,19 @@ model PurchaseIntent {
   negotiatedRateBps      Int
   maxBonusPaymentPercent Int
 
+  /// The pool split's actual confirmed amounts — spec §12's `pool` and the
+  /// green/deferred/referrer legs `settlePurchase` posted, snapshotted at
+  /// confirmation so a later refund reverses the *historical* allocation
+  /// rather than recomputing green/deferred/referrer bps from whatever
+  /// `purchasePolicy` says today. Null until confirmed (mirrors
+  /// `confirmedAt`); a purchase that never confirms has nothing to refund.
+  /// `tutakBase` is not stored — it was, and remains, `pool` minus the
+  /// other three, by construction.
+  poolAmount     Decimal? @db.Decimal(18, 4)
+  greenAmount    Decimal? @db.Decimal(18, 4)
+  deferredAmount Decimal? @db.Decimal(18, 4)
+  referrerAmount Decimal? @db.Decimal(18, 4)
+
   bonusReservationId  String?
   sourceTransactionId String?
   /// Individual staff identity of whoever confirmed or rejected — spec §25/§33.

@@ -14,6 +14,7 @@ import {
   EvSessionStatus,
   LedgerAccountType,
   PostingDirection,
+  Prisma,
   TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -27,9 +28,12 @@ import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { OutboxService } from '../ledger/outbox.service';
 import { PartnersService } from '../partners/partners.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
+
+type Tx = Prisma.TransactionClient;
 
 /**
  * How far above the connector's nameplate rating a reading may sit before it
@@ -108,7 +112,22 @@ export class EvSessionsService {
     private readonly idempotency: IdempotencyService,
     private readonly partners: PartnersService,
     private readonly ledger: LedgerService,
-  ) {}
+    private readonly outbox: OutboxService,
+  ) {
+    // Guaranteed-retry backstop for `postAccrualLedgerIdempotent`'s fast
+    // path below: `outbox.drain()` (the `outbox.drain` sweep) replays this
+    // until the entry exists, so a transient failure on the fast path is a
+    // delay, never a permanently missing posting. See the accrual block in
+    // `stopOnce` for why the event is published atomically with the accrual
+    // it accounts for.
+    this.outbox.register('ev.accrual.ledger_post', async (payload) => {
+      await this.postAccrualLedgerIdempotent(
+        payload.partnerId as string,
+        new Decimal(payload.bonusEarned as string),
+        payload.transactionId as string,
+      );
+    });
+  }
 
   async start(dto: StartSessionDto, userId: string) {
     const connector = await this.prisma.evConnector.findUnique({
@@ -462,30 +481,46 @@ export class EvSessionsService {
         bonusEarned = roundIssued(paidPortion.times(rateBps).dividedBy(10_000));
         if (bonusEarned.greaterThan(0)) {
           const walletId = await this.walletService.getWalletIdForUser(userId);
-          const lot = await this.bonusEngine.accrue({
-            walletId,
-            type: BonusEntryType.ACCRUAL_PURCHASE,
-            amount: bonusEarned,
-            sourceTransactionId: transaction.id,
+          const partnerId = session.connector.station.partnerId;
+
+          // The accrual and the durable promise to post its accounting
+          // entry commit atomically: a wallet credit must never exist with
+          // nothing at all recording that the ledger still owes it (GitHub
+          // issue #28, HEAD 0a9c7d5). The posting itself is attempted right
+          // after, outside this transaction — `LedgerService.post` opens
+          // its own transaction and composing two independent ones inside
+          // one another buys nothing — with `outbox.drain` guaranteeing it
+          // eventually happens even if that immediate attempt fails.
+          const lot = await this.prisma.$transaction(async (tx) => {
+            const created = await this.bonusEngine.accrue(
+              {
+                walletId,
+                type: BonusEntryType.ACCRUAL_PURCHASE,
+                amount: bonusEarned,
+                sourceTransactionId: transaction.id,
+              },
+              tx,
+            );
+            await this.outbox.publish(tx, {
+              aggregateType: 'Transaction',
+              aggregateId: transaction.id,
+              eventType: 'ev.accrual.ledger_post',
+              payload: { partnerId, bonusEarned: bonusEarned.toString(), transactionId: transaction.id },
+            });
+            return created;
           });
           accruedLotId = lot.id;
 
-          // This bonus used to reach the customer's wallet with no matching
-          // double-entry posting at all — the only accrual path in the
-          // codebase with that gap; PurchaseIntentsService.postContributionLedger
-          // and the QR mirror both post theirs. Same shape as
-          // postContributionLedger's own "green" leg: the partner's payable
-          // grows by what the platform now owes the customer.
-          //
-          // Never fatal, the same reasoning as QrLedgerMirrorService: the
-          // customer has already paid for and been credited on this charge,
-          // and a bookkeeping failure must not unwind that.
-          await this.postAccrualLedger(
-            session.connector.station.partnerId,
-            bonusEarned,
-            transaction.id,
-          ).catch((e) =>
-            this.logger.error(`Failed to post EV accrual ledger entry for session ${session.id}`, e),
+          // Fast path. Never fatal, the same reasoning as
+          // QrLedgerMirrorService: the customer has already paid for and
+          // been credited on this charge, and a bookkeeping failure must
+          // not unwind that — the outbox event published above is what
+          // turns "logged and forgotten" into "guaranteed, just not yet".
+          await this.postAccrualLedgerIdempotent(partnerId, bonusEarned, transaction.id).catch((e) =>
+            this.logger.error(
+              `Failed to post EV accrual ledger entry for session ${session.id} (outbox will retry)`,
+              e,
+            ),
           );
         }
       }
@@ -540,22 +575,73 @@ export class EvSessionsService {
    * `PurchaseIntentsService.postContributionLedger`'s green leg — same two
    * account types, same direction — because this is the same kind of event
    * (a partner-funded bonus accrual), not a new one.
+   *
+   * Idempotent: both the fast-path attempt in `stopOnce` and the outbox's
+   * guaranteed retry call this for the same `transactionId`, and — in a
+   * slow-fast-path pile-up — could run concurrently. The check-then-post
+   * below is only race-free under Serializable isolation: at READ COMMITTED
+   * two overlapping calls could each see "no existing posting" and both
+   * insert one. Serializable's write-skew detection is what turns that into
+   * a retried loser instead of a duplicate accounting entry — the same
+   * reason `ReferralService.runSerializable` and
+   * `PurchaseIntentRefundService.runSerializable` exist.
    */
-  private async postAccrualLedger(partnerId: string, bonusEarned: Decimal, transactionId: string) {
-    const [partnerAccount, bonusLiabilityAccount] = await Promise.all([
-      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }),
-      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
-    ]);
+  private async postAccrualLedgerIdempotent(partnerId: string, bonusEarned: Decimal, transactionId: string) {
+    const run = async (tx: Tx) => {
+      const existing = await tx.ledgerTransaction.findFirst({
+        where: { kind: 'ev.charging.accrual', sourceType: 'Transaction', sourceId: transactionId },
+        select: { id: true },
+      });
+      if (existing) return;
 
-    await this.ledger.post({
-      kind: 'ev.charging.accrual',
-      sourceType: 'Transaction',
-      sourceId: transactionId,
-      postings: [
-        { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: bonusEarned },
-        { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: bonusEarned },
-      ],
-    });
+      const [partnerAccount, bonusLiabilityAccount] = await Promise.all([
+        this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, tx),
+        this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      ]);
+
+      await this.ledger.post(
+        {
+          kind: 'ev.charging.accrual',
+          sourceType: 'Transaction',
+          sourceId: transactionId,
+          postings: [
+            { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: bonusEarned },
+            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: bonusEarned },
+          ],
+        },
+        tx,
+      );
+    };
+
+    return this.runSerializable(run);
+  }
+
+  /**
+   * Serializable `$transaction`, retried on a serialization failure or
+   * deadlock — same idiom as `ReferralService.runSerializable` and
+   * `PurchaseIntentRefundService.runSerializable`.
+   */
+  private async runSerializable<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(fn, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        const message = err instanceof Error ? err.message : '';
+        const retryable =
+          code === '40001' ||
+          code === '40P01' ||
+          /write conflict|deadlock|could not serialize/i.test(message);
+        if (!retryable || attempt === maxAttempts) throw err;
+        const delay = Math.floor(2 ** attempt * 5 * (0.5 + Math.random()));
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    // Unreachable — the loop above always returns or throws.
+    throw new Error('runSerializable exhausted retries without a result');
   }
 
   /**

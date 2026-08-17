@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BonusEntryType, BonusLotStatus, DeferredBonusLotStatus, PrismaClient, RoleName } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
@@ -450,5 +451,118 @@ describe('PurchaseIntentRefundService (integration)', () => {
     });
     expect(allForIntent).toBe(4); // 2 original + 2 reversal
     expect(partner.id).toBeTruthy();
+  });
+
+  // ── Liability reversal must match what wallets actually gave back ──────
+
+  it('debits BONUS_LIABILITY only for what was actually reclaimed from wallets, not the theoretical share', async () => {
+    const { wallet, partner, staff, intent } = await confirmedPurchase();
+
+    // Spend all 100 of the green share elsewhere before the purchase that
+    // earned it is refunded — nothing is left in the lot to claw back.
+    const reservation = await engine.reserve(wallet.id, '100', 'spend-before-refund');
+    await engine.settleReservation(reservation.reservationId);
+
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'return after full spend',
+      actorId: staff.id,
+      idempotencyKey: 'liability-actual-full-spend-1',
+    });
+
+    // Confirmation credited BONUS_LIABILITY 250 (green 100 + deferred 150;
+    // no referrer here). Nothing was reclaimable from the green lot, so the
+    // refund's own debit must be only the deferred share (150) — leaving
+    // -100 outstanding, not 0. Pre-fix, the refund debited the full
+    // theoretical 250 regardless of what wallets actually gave back, which
+    // brings the balance to a deceptively "clean" 0 even though the green
+    // 100 was never actually reclaimed — the bug this test catches.
+    const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntent', sourceId: intent.id },
+      include: { postings: true },
+    });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const liabilityLeg = contributionRefund.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('150.0000');
+    expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('-100.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
+    expect(partner.id).toBeTruthy();
+  });
+
+  it('debits BONUS_LIABILITY only for the unspent remainder when the green share was partly spent', async () => {
+    const { wallet, intent, staff } = await confirmedPurchase();
+
+    // Spend 40 of the 100 green share elsewhere; 60 remains reclaimable.
+    const reservation = await engine.reserve(wallet.id, '40', 'partial-spend-before-refund');
+    await engine.settleReservation(reservation.reservationId);
+
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'return after partial spend',
+      actorId: staff.id,
+      idempotencyKey: 'liability-actual-partial-spend-1',
+    });
+
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntent', sourceId: intent.id },
+      include: { postings: true },
+    });
+    const liabilityLeg = contributionRefund.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+    // Confirmation credited BONUS_LIABILITY 250 (green 100 + deferred 150).
+    // Only 60 of the green 100 was reclaimable (40 already spent) plus the
+    // full untouched deferred 150 — 210, not the full theoretical 250 — so
+    // the refund's own debit is 210 and the balance ends at -40, not 0.
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('210.0000');
+    expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('-40.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  // ── Historical allocation, not live configuration ───────────────────────
+
+  it('reverses the exact confirmed pool split even after the platform pool-split configuration changes', async () => {
+    const { wallet, partner, staff, intent } = await confirmedPurchase();
+
+    // Confirmed at 20/30/20/30 on a 500 pool: green 100, deferred 150.
+    const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(before.availableBonus.toFixed(4)).toBe('100.0000');
+
+    // The platform changes its pool-split policy after this purchase
+    // already confirmed — green now 90% instead of 20%.
+    const config = harness.app.get(ConfigService);
+    config.set('purchasePolicy.poolGreenBps', 9000);
+
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return after policy change',
+      actorId: staff.id,
+      idempotencyKey: 'historical-split-1',
+    });
+
+    // If the refund had recomputed from the *new* 90% green split, it would
+    // try to claw back 450 (90% of the 500 pool) — far more than the 100
+    // actually ever accrued, which `reverseAccrualLot` would silently cap
+    // at the lot's own remainder anyway, masking the bug. The unambiguous
+    // proof is the ledger: it must net back to exactly zero, which only
+    // happens if the reversal used the original 20/30/20/30 amounts.
+    const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(after.availableBonus.toFixed(4)).toBe('0.0000');
+
+    const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+    });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+    expect(partnerAccount.balance.toFixed(4)).toBe('0.0000');
+    expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('0.0000');
+    expect(revenueAccount.balance.toFixed(4)).toBe('0.0000');
+
+    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    // The stored snapshot itself is untouched by the later config change.
+    expect(refreshedIntent.greenAmount?.toFixed(4)).toBe('100.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
   });
 });

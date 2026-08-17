@@ -261,6 +261,59 @@ describe('PurchaseIntents (integration)', () => {
       expect(transaction.status).toBe(TransactionStatus.FAILED);
     });
 
+    /**
+     * Independent audit, GitHub issue #28, HEAD `0a9c7d5`: the status claim
+     * used to be its own statement, committed before the reservation
+     * release and transaction-failure calls ran as later, separate
+     * statements. A failure in either of those left the intent permanently
+     * `REJECTED` with the customer's bonus still `ACTIVE`ly reserved — and
+     * a retry found the intent already terminal and did nothing to repair
+     * it. `reject()` now wraps all of it in one transaction.
+     */
+    it('rolls back the status claim if the reservation release fails mid-transaction', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+
+      const spy = jest
+        .spyOn(engine, 'releaseReservation')
+        .mockImplementationOnce(() => Promise.reject(new Error('injected failure')));
+
+      await expect(
+        purchaseIntents.reject(intent.id, staff.id, { reasonCode: 'CUSTOMER_CANCELLED' }),
+      ).rejects.toThrow('injected failure');
+      spy.mockRestore();
+
+      // The status claim rolled back together with the failed reservation
+      // release — an intent left REJECTED here with its reservation still
+      // ACTIVE is exactly the inconsistency this atomicity fix closes.
+      const afterFailure = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(afterFailure.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.reservedBonus.toFixed(4)).toBe('500.0000'); // still held, not silently dropped
+
+      // A retry, now that the injected failure is gone, must still succeed
+      // cleanly — proving the intent was left genuinely retryable, not
+      // merely rolled back into a stuck state.
+      const retried = await purchaseIntents.reject(intent.id, staff.id, {
+        reasonCode: 'CUSTOMER_CANCELLED',
+      });
+      expect(retried.status).toBe(PurchaseIntentStatus.REJECTED);
+      const walletAfterRetry = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterRetry.availableBonus.toFixed(4)).toBe('1000.0000');
+    });
+
     it('reject() is idempotent, same as confirm()', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
@@ -332,6 +385,51 @@ describe('PurchaseIntents (integration)', () => {
       expect(count).toBe(1);
       const expired = await purchaseIntents.findByIdOrThrow(intent.id);
       expect(expired.status).toBe(PurchaseIntentStatus.EXPIRED);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+    });
+
+    /** Same atomicity fix as reject()'s — see that test's docblock. */
+    it('rolls back the expiry status claim if the reservation release fails mid-transaction', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      await prisma.purchaseIntent.update({
+        where: { id: intent.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      const spy = jest
+        .spyOn(engine, 'releaseReservation')
+        .mockImplementationOnce(() => Promise.reject(new Error('injected failure')));
+
+      // expireStale's loop does not catch — a thrown error from expireOne
+      // propagates straight out, which is itself part of what this test
+      // proves: nothing here silently swallows the failure and reports a
+      // false success.
+      await expect(purchaseIntents.expireStale()).rejects.toThrow('injected failure');
+      spy.mockRestore();
+
+      const afterFailure = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(afterFailure.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
+
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterFailure.reservedBonus.toFixed(4)).toBe('500.0000');
+
+      // A retry, with the injected failure gone, sweeps it cleanly.
+      const count = await purchaseIntents.expireStale();
+      expect(count).toBe(1);
+      const retried = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(retried.status).toBe(PurchaseIntentStatus.EXPIRED);
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
     });

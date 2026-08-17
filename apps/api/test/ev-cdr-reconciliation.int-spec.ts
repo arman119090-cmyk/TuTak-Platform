@@ -3,6 +3,7 @@ import { EvCdrReconciliation, PrismaClient } from '@prisma/client';
 import { EvCdrReconciliationService } from '../src/modules/ev-charging/ev-cdr-reconciliation.service';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { OCPI_ADAPTER, OcpiAdapter } from '../src/modules/ev-charging/ocpi/ocpi-adapter.interface';
+import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { createCustomer, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
@@ -28,6 +29,7 @@ describe('Roaming CDR reconciliation (integration)', () => {
   let sessions: EvSessionsService;
   let reconciler: EvCdrReconciliationService;
   let adapter: OcpiAdapter;
+  let engine: BonusEngineService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -35,6 +37,7 @@ describe('Roaming CDR reconciliation (integration)', () => {
     sessions = harness.app.get(EvSessionsService);
     reconciler = harness.app.get(EvCdrReconciliationService);
     adapter = harness.app.get<OcpiAdapter>(OCPI_ADAPTER);
+    engine = harness.app.get(BonusEngineService);
   });
 
   afterAll(async () => {
@@ -364,6 +367,78 @@ describe('Roaming CDR reconciliation (integration)', () => {
       // ledger reconstruction does not apply to it — orthogonal to the race
       // this test exists to catch.)
       expect(after.availableBonus.minus(before.availableBonus).toString()).toBe('400');
+    });
+
+    it('rolls back the whole correction atomically when a wallet step fails, leaving the CDR safely retryable rather than half-applied or permanently skipped', async () => {
+      // Independent audit, GitHub issue #28 — a second-pass finding against
+      // this file's own `reconcilingAt` fix: `correctOvercharge` used to be
+      // four separate commits (claw back over-accrued points, return
+      // over-applied points, correct the transaction, mark the CDR
+      // CORRECTED), with the two wallet-moving steps caught-and-logged
+      // instead of thrown. A crash or a genuine failure between a wallet
+      // mutation and the final `settle()` either left a correction half
+      // applied (and a later stale-claim reclaim could apply it *again*), or
+      // — worse — got swallowed while the CDR was still marked CORRECTED
+      // right after, permanently skipping a correction that never happened.
+      // Now the whole thing is one transaction: a failure must roll back
+      // everything, including the CDR's own status, and a retry must be
+      // able to apply the correction cleanly exactly once.
+      const { wallet, session } = await roamingSession('20', { bonus: '500' });
+      cpoReports(1, 100); // 500 held vs 100 owed: 400 excess to return
+      const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      const transactionBefore = await prisma.transaction.findFirstOrThrow({
+        where: { type: 'EV_CHARGING' },
+      });
+
+      jest
+        .spyOn(engine, 'accrue')
+        .mockImplementationOnce(() => Promise.reject(new Error('simulated failure mid-correction')));
+
+      // The failing pass: reconcilePending's own try/catch logs the error
+      // and moves on, matching how it already treats any other reconcileOne
+      // failure — nothing here should have left a trace.
+      expect(await reconciler.reconcilePending()).toBe(0);
+
+      const afterFailure = await cdrFor(session.id);
+      expect(afterFailure.reconciliation).toBe(EvCdrReconciliation.PENDING);
+      const transactionAfterFailure = await prisma.transaction.findUniqueOrThrow({
+        where: { id: transactionBefore.id },
+      });
+      // Not corrected: the whole transaction rolled back, including this
+      // write, not just the wallet steps.
+      expect(transactionAfterFailure.amount.toString()).toBe(transactionBefore.amount.toString());
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterFailure.availableBonus.toString()).toBe(before.availableBonus.toString());
+      const refundsAfterFailure = await prisma.bonusLot.findMany({
+        where: { type: 'ACCRUAL_MANUAL_ADJUSTMENT', sourceTransactionId: transactionBefore.id },
+      });
+      expect(refundsAfterFailure).toHaveLength(0);
+
+      // The failed attempt's claim is left in place (same as a genuine
+      // crash would leave it) — reclaimable once stale. Force that here
+      // instead of waiting 5 real minutes.
+      await prisma.evCdr.update({
+        where: { sessionId: session.id },
+        data: { reconcilingAt: new Date(Date.now() - 6 * 60_000) },
+      });
+
+      // The retry: `accrue` behaves normally this time (no more mocked
+      // rejection), so the correction should apply cleanly, exactly once.
+      expect(await reconciler.reconcilePending()).toBe(1);
+
+      const afterRetry = await cdrFor(session.id);
+      expect(afterRetry.reconciliation).toBe(EvCdrReconciliation.CORRECTED);
+      const transactionAfterRetry = await prisma.transaction.findUniqueOrThrow({
+        where: { id: transactionBefore.id },
+      });
+      expect(transactionAfterRetry.amount.toString()).toBe('100');
+      const refundsAfterRetry = await prisma.bonusLot.findMany({
+        where: { type: 'ACCRUAL_MANUAL_ADJUSTMENT', sourceTransactionId: transactionBefore.id },
+      });
+      expect(refundsAfterRetry).toHaveLength(1);
+      expect(refundsAfterRetry[0]!.originalAmount.toString()).toBe('400');
+      const walletAfterRetry = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfterRetry.availableBonus.minus(before.availableBonus).toString()).toBe('400');
     });
   });
 });

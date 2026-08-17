@@ -1,11 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { EvCdrReconciliation, TransactionStatus } from '@prisma/client';
+import { EvCdrReconciliation, Prisma, TransactionStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { roundCharge, roundIssued } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
+
+type Tx = Prisma.TransactionClient;
 
 /**
  * How far our figure and the CPO's may differ before it counts as a
@@ -192,6 +194,21 @@ export class EvCdrReconciliationService {
    *     proportion — the customer earned them on money they did not spend;
    *  3. if they paid with points and the corrected cost is now lower than
    *     what they applied, the excess points go back.
+   *
+   * All of it — including the CDR's own terminal-state write via `settle` —
+   * runs inside one transaction. It used to be four separate commits, with
+   * the two wallet-moving steps caught-and-logged rather than thrown, so a
+   * crash between a wallet mutation and the final `settle()` left the CDR
+   * `PENDING` with the correction already (partly) applied — a later,
+   * legitimate reclaim of the stale `reconcilingAt` claim would then apply
+   * it again — and a thrown error from either wallet step was silently
+   * swallowed while the CDR was *still* marked `CORRECTED` right after,
+   * permanently skipping a correction that never actually happened
+   * (independent audit, GitHub issue #28: a second-pass finding against
+   * this file's own concurrency fix). One transaction makes both
+   * impossible: either every step commits together, including the CDR
+   * leaving `PENDING`, or none of them do and the CDR stays `PENDING` for a
+   * genuine retry — nothing is ever half-applied or silently dropped.
    */
   private async correctOvercharge(
     cdrId: string,
@@ -201,71 +218,70 @@ export class EvCdrReconciliationService {
     cpoCost: Decimal,
     remote: { ocpiCdrId: string; totalTimeSec: number; raw: unknown },
   ): Promise<void> {
-    const session = await this.prisma.evSession.findUniqueOrThrow({
-      where: { id: sessionId },
-      include: { transaction: true, connector: { include: { station: true } } },
-    });
-    const transaction = session.transaction;
+    await this.prisma.$transaction(async (tx) => {
+      const session = await tx.evSession.findUniqueOrThrow({
+        where: { id: sessionId },
+        include: { transaction: true, connector: { include: { station: true } } },
+      });
+      const transaction = session.transaction;
 
-    if (transaction && transaction.status === TransactionStatus.COMPLETED) {
-      const originalCost = transaction.amount;
-      const applied = transaction.bonusAppliedAmount;
+      if (transaction && transaction.status === TransactionStatus.COMPLETED) {
+        const originalCost = transaction.amount;
+        const applied = transaction.bonusAppliedAmount;
 
-      // Points earned on money that was never spent.
-      if (transaction.bonusEarnedAmount.greaterThan(0)) {
-        const lot = await this.prisma.bonusLot.findFirst({
-          where: { sourceTransactionId: transaction.id },
-        });
-        if (lot) {
-          const keep = roundIssued(
-            lot.originalAmount.times(cpoCost.minus(Decimal.min(applied, cpoCost))).dividedBy(
-              Decimal.max(originalCost.minus(applied), new Decimal(1)),
-            ),
-          );
-          const clawback = Decimal.max(lot.originalAmount.minus(keep), new Decimal(0));
-          if (clawback.greaterThan(0)) {
-            await this.bonusEngine
-              .reverseAccrualLot(lot.id, 'ev_cdr_overbilled', clawback)
-              .catch((e) =>
-                this.logger.error(`Could not claw back over-accrued points on ${lot.id}`, e),
-              );
+        // Points earned on money that was never spent.
+        if (transaction.bonusEarnedAmount.greaterThan(0)) {
+          const lot = await tx.bonusLot.findFirst({
+            where: { sourceTransactionId: transaction.id },
+          });
+          if (lot) {
+            const keep = roundIssued(
+              lot.originalAmount.times(cpoCost.minus(Decimal.min(applied, cpoCost))).dividedBy(
+                Decimal.max(originalCost.minus(applied), new Decimal(1)),
+              ),
+            );
+            const clawback = Decimal.max(lot.originalAmount.minus(keep), new Decimal(0));
+            if (clawback.greaterThan(0)) {
+              await this.bonusEngine.reverseAccrualLot(lot.id, 'ev_cdr_overbilled', clawback, tx);
+            }
           }
         }
-      }
 
-      // Points spent on a bill that turned out to be smaller than the hold.
-      if (applied.greaterThan(cpoCost)) {
-        const excess = applied.minus(cpoCost);
-        const wallet = await this.prisma.wallet.findUnique({ where: { userId: session.userId } });
-        if (wallet) {
-          await this.bonusEngine
-            .accrue({
-              walletId: wallet.id,
-              type: 'ACCRUAL_MANUAL_ADJUSTMENT',
-              amount: excess,
-              pendingHours: 0,
-              sourceTransactionId: transaction.id,
-              metadata: { reason: 'ev_cdr_overbilled', sessionId },
-            })
-            .catch((e) => this.logger.error('Could not return over-applied points', e));
+        // Points spent on a bill that turned out to be smaller than the hold.
+        if (applied.greaterThan(cpoCost)) {
+          const excess = applied.minus(cpoCost);
+          const wallet = await tx.wallet.findUnique({ where: { userId: session.userId } });
+          if (wallet) {
+            await this.bonusEngine.accrue(
+              {
+                walletId: wallet.id,
+                type: 'ACCRUAL_MANUAL_ADJUSTMENT',
+                amount: excess,
+                pendingHours: 0,
+                sourceTransactionId: transaction.id,
+                metadata: { reason: 'ev_cdr_overbilled', sessionId },
+              },
+              tx,
+            );
+          }
         }
+
+        await tx.transaction.update({
+          where: { id: transaction.id },
+          data: {
+            amount: cpoCost,
+            metadata: {
+              ...((transaction.metadata as Record<string, unknown> | null) ?? {}),
+              correctedFrom: originalCost.toString(),
+              correctedBy: 'roaming_cdr',
+              operatorEnergyKwh: cpoEnergy.toString(),
+            },
+          },
+        });
       }
 
-      await this.prisma.transaction.update({
-        where: { id: transaction.id },
-        data: {
-          amount: cpoCost,
-          metadata: {
-            ...((transaction.metadata as Record<string, unknown> | null) ?? {}),
-            correctedFrom: originalCost.toString(),
-            correctedBy: 'roaming_cdr',
-            operatorEnergyKwh: cpoEnergy.toString(),
-          },
-        },
-      });
-    }
-
-    await this.settle(cdrId, EvCdrReconciliation.CORRECTED, cpoEnergy, cpoCost, remote);
+      await this.settle(cdrId, EvCdrReconciliation.CORRECTED, cpoEnergy, cpoCost, remote, tx);
+    });
 
     this.logger.warn(
       `Session ${sessionId} over-billed by ${difference.toString()}; corrected to ${cpoCost.toString()}`,
@@ -293,8 +309,10 @@ export class EvCdrReconciliationService {
     cpoEnergyKwh: Decimal,
     cpoCost: Decimal,
     remote: { ocpiCdrId: string; totalTimeSec: number; raw: unknown },
+    tx?: Tx,
   ): Promise<void> {
-    await this.prisma.evCdr.update({
+    const client = tx ?? this.prisma;
+    await client.evCdr.update({
       where: { id: cdrId },
       data: {
         reconciliation,

@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "TuTak Demo Next",
+    "slug": "tutak-demo-next",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "tutakdemonext",
+    "android": {
+      "package": "am.tutak.demo.next"
+    }
+  }
+}

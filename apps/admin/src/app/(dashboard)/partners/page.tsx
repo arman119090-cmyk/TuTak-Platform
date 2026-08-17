@@ -32,6 +32,9 @@ export default function PartnersPage() {
   const [form, setForm] = useState(EMPTY);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Which partner's Activate/Deactivate request is in flight, so a second
+  // click can't fire a second toggle racing to invert the same field twice.
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,12 +160,24 @@ export default function PartnersPage() {
                   <Button
                     size="sm"
                     variant={p.isActive ? 'destructive' : 'secondary'}
+                    disabled={togglingId === p.id}
                     onClick={async () => {
-                      await partnersApi.setActive(p.id, !p.isActive);
-                      queryClient.invalidateQueries({ queryKey: ['partners'] });
+                      setTogglingId(p.id);
+                      try {
+                        await partnersApi.setActive(p.id, !p.isActive);
+                        queryClient.invalidateQueries({ queryKey: ['partners'] });
+                      } finally {
+                        setTogglingId(null);
+                      }
                     }}
                   >
-                    {p.isActive ? 'Deactivate' : 'Activate'}
+                    {togglingId === p.id
+                      ? p.isActive
+                        ? 'Deactivating…'
+                        : 'Activating…'
+                      : p.isActive
+                        ? 'Deactivate'
+                        : 'Activate'}
                   </Button>
                 </Td>
               </Tr>

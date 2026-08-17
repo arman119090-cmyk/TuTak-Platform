@@ -277,19 +277,31 @@ export class DeferredBonusLotService {
     const actual = clawed ?? zero;
 
     // If that fully drained the currently-live grant, clear the pointer to
-    // it: a *later* external-contributor refund dropping this same lot
-    // below threshold must find nothing left to claw (`reverseUnlock`'s own
+    // it (and this grant episode's reclaim counter, now moot): a *later*
+    // external-contributor refund dropping this same lot below threshold
+    // must find nothing left to claw (`reverseUnlock`'s own
     // `!grantedBonusLotId` guard) rather than mistake this already-handled
     // value for newly-discovered spend and forfeit it a second time
     // (independent audit, GitHub issue #28 — caught by this fix's own
     // concurrent/mixed-refund regression test).
+    //
+    // If it did *not* fully drain the grant, record what was reclaimed here
+    // in `liveGrantReclaimedAmount`: a *later* `reverseUnlock` on this same
+    // still-live grant needs to subtract it out, or it will mistake this
+    // already-accounted-for reclaim for newly-discovered customer spend and
+    // forfeit it a second time (independent audit, GitHub issue #28 — a
+    // second audit pass against this very fix, before this field existed).
     const grantedLotAfter = await tx.bonusLot.findUnique({
       where: { id: lot.grantedBonusLotId },
       select: { remainingAmount: true },
     });
-    if (!grantedLotAfter || grantedLotAfter.remainingAmount.isZero()) {
-      await tx.deferredBonusLot.update({ where: { id: lot.id }, data: { grantedBonusLotId: null } });
-    }
+    await tx.deferredBonusLot.update({
+      where: { id: lot.id },
+      data:
+        !grantedLotAfter || grantedLotAfter.remainingAmount.isZero()
+          ? { grantedBonusLotId: null, liveGrantReclaimedAmount: 0 }
+          : { liveGrantReclaimedAmount: { increment: actual } },
+    });
 
     return { liabilityToReverse: actual, shortfall: reduceBy.minus(actual).plus(ceilingGap) };
   }
@@ -381,11 +393,21 @@ export class DeferredBonusLotService {
    * `reverseAccrualLot` claws back the granted `BonusLot`'s entire *unspent*
    * remainder — the whole current grant is invalid, not some fraction of
    * it — and returns exactly that amount, never more than is really sitting
-   * in the wallet, so this can never drive a balance negative. Comparing
-   * that against the granted lot's own `originalAmount` (what this specific
-   * unlock actually granted — its *first* unlock or a later
-   * re-qualification's, whichever most recently happened) splits the grant
-   * into two economically different pieces:
+   * in the wallet, so this can never drive a balance negative. Subtracting
+   * that, *and* whatever `reverseForRefund` already reclaimed from this same
+   * live grant earlier (`liveGrantReclaimedAmount` — this lot's own purchase
+   * being partially refunded while the grant was still live, already
+   * accounted for at the time it happened), from the granted lot's own
+   * `originalAmount` (what this specific unlock actually granted — its
+   * *first* unlock or a later re-qualification's, whichever most recently
+   * happened) splits the grant into two economically different pieces
+   * (independent audit, GitHub issue #28: without subtracting
+   * `liveGrantReclaimedAmount`, a grant partly reclaimed by
+   * `reverseForRefund` and *then* invalidated here got that same slice
+   * double-counted as newly-discovered "spent" value — forfeited a second
+   * time, a phantom ledger posting made for money never actually lost, and
+   * an amount of this lot's still-valid entitlement that was *never*
+   * refunded destroyed right alongside it):
    *
    *  - **Reclaimed (unspent):** genuinely taken back — the customer never
    *    keeps it. This does *not* become `forfeitedAmount`, and gets no
@@ -418,7 +440,12 @@ export class DeferredBonusLotService {
    * remains once `refundedAmount` and `forfeitedAmount` are accounted for.
    */
   private async reverseUnlock(
-    lot: { id: string; userId: string; grantedBonusLotId: string | null },
+    lot: {
+      id: string;
+      userId: string;
+      grantedBonusLotId: string | null;
+      liveGrantReclaimedAmount: Decimal;
+    },
     reason: string,
     tx: Tx,
   ): Promise<void> {
@@ -432,7 +459,10 @@ export class DeferredBonusLotService {
 
     const clawed = await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, undefined, tx);
     const actual = clawed ?? new Decimal(0);
-    const spent = grantedLot.originalAmount.minus(actual);
+    const spent = Decimal.max(
+      grantedLot.originalAmount.minus(actual).minus(lot.liveGrantReclaimedAmount),
+      new Decimal(0),
+    );
 
     await tx.deferredBonusLot.update({
       where: { id: lot.id },
@@ -440,6 +470,7 @@ export class DeferredBonusLotService {
         status: DeferredBonusLotStatus.DEFERRED,
         grantedBonusLotId: null,
         unlockedAt: null,
+        liveGrantReclaimedAmount: 0,
         ...(spent.greaterThan(0) ? { forfeitedAmount: { increment: spent } } : {}),
       },
     });

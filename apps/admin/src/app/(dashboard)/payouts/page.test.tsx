@@ -163,6 +163,38 @@ describe('PayoutsPage', () => {
     );
   });
 
+  it('does not fire a second confirm request while the first is still in flight', async () => {
+    // Independent audit, GitHub issue #28: unlike every other money-moving
+    // control on this screen, Confirm/Mark-failed had no `isPending` guard —
+    // a double-click (or an impatient retry before the first request even
+    // returned) could fire a second POST to `/payouts/:id/confirm`. The
+    // dialog itself is a one-time synchronous gate; it does nothing to stop
+    // a second click once the request it started is merely slow.
+    jest.spyOn(window, 'prompt').mockReturnValue('SWIFT-1');
+    let resolveConfirm: (() => void) | undefined;
+    mockedFinance.confirmPayout.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConfirm = () => resolve();
+        }),
+    );
+
+    renderPage();
+    await selectPartner();
+    fireEvent.click(screen.getByText('Confirm'));
+    await settle();
+    expect(mockedFinance.confirmPayout).toHaveBeenCalledTimes(1);
+
+    // The button must now be disabled while the request is still in flight.
+    const button = await screen.findByText('Confirming…');
+    fireEvent.click(button);
+    await settle();
+    expect(mockedFinance.confirmPayout).toHaveBeenCalledTimes(1);
+
+    resolveConfirm?.();
+    await settle();
+  });
+
   it('retries a timed-out payout request with the key the first attempt used', async () => {
     mockedFinance.requestPayout
       .mockRejectedValueOnce(new Error('timeout of 15000ms exceeded'))

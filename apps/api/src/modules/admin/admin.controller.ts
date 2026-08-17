@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Patch, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Patch, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -34,6 +34,30 @@ export class AdminController {
       entityType: 'User',
       entityId: dto.userId,
       metadata: { role: dto.role, partnerId: dto.partnerId, op: 'grant' },
+    });
+    return result;
+  }
+
+  /**
+   * `AdminService.revokeRole` has always existed — self-revocation blocked,
+   * rank-checked, last-`SUPER_ADMIN` protected — but nothing ever called it
+   * through the API. A partner-scoped role, once granted, could never be
+   * removed through the product: offboarding a terminated or compromised
+   * partner employee (who keeps whatever that role grants — QR issuance,
+   * purchase confirmation, possibly EV station management — indefinitely)
+   * required a direct database edit. `PATCH users/:id/active` only disables
+   * the whole account globally, which is not the same control (independent
+   * audit, GitHub issue #28).
+   */
+  @Delete('users/roles')
+  async revokeRole(@CurrentUser() admin: RequestUser, @Body() dto: AssignRoleDto) {
+    const result = await this.adminService.revokeRole(dto.userId, dto.role, dto.partnerId, admin);
+    await this.auditService.record({
+      actorUserId: admin.id,
+      action: AuditAction.ADMIN_ROLE_CHANGED,
+      entityType: 'User',
+      entityId: dto.userId,
+      metadata: { role: dto.role, partnerId: dto.partnerId, op: 'revoke' },
     });
     return result;
   }

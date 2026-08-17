@@ -253,18 +253,27 @@ export default function PayoutsPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={p.requestedByUserId === user?.id}
+                          disabled={p.requestedByUserId === user?.id || resolve.isPending}
                           aria-label={`Confirm the ${Number(p.amount).toLocaleString('en-US')} payout requested by ${p.requestedByName ?? 'an unknown admin'}`}
                           onClick={() => askThenResolve(p.id, 'paid')}
                         >
-                          Confirm
+                          {resolve.isPending &&
+                          resolve.variables?.id === p.id &&
+                          resolve.variables.outcome === 'paid'
+                            ? 'Confirming…'
+                            : 'Confirm'}
                         </Button>
                         <Button
                           size="sm"
                           variant="secondary"
+                          disabled={resolve.isPending}
                           onClick={() => askThenResolve(p.id, 'failed')}
                         >
-                          Mark failed
+                          {resolve.isPending &&
+                          resolve.variables?.id === p.id &&
+                          resolve.variables.outcome === 'failed'
+                            ? 'Marking failed…'
+                            : 'Mark failed'}
                         </Button>
                       </div>
                     )}

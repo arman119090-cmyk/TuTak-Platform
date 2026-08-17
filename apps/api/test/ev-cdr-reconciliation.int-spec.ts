@@ -326,5 +326,44 @@ describe('Roaming CDR reconciliation (integration)', () => {
       expect((await cdrFor(session.id)).reconciliation).toBe(EvCdrReconciliation.CORRECTED);
       await assertWalletIntegrity(prisma, wallet.id);
     });
+
+    it('does not double-credit an overcharge refund when two sweeps race on the same still-PENDING CDR', async () => {
+      // Independent audit, GitHub issue #28: the sweep's advisory Redis lock
+      // is not authoritative — a run stalled past its TTL by a
+      // slow/unreachable CPO can overlap with the next scheduled run, and
+      // `correctOvercharge`'s "excess points returned" step
+      // (`ACCRUAL_MANUAL_ADJUSTMENT`) has no dedupe against
+      // `sourceTransactionId` of its own. Two overlapping runs reconciling
+      // the same still-PENDING CDR must never both pay that refund out.
+      const { wallet, session } = await roamingSession('20', { bonus: '500' });
+      // Held 500 points against a 2000 bill; the operator says the real cost
+      // was only 100 — the whole 500 hold now exceeds it, so 400 is owed
+      // back to the wallet, exactly once.
+      cpoReports(1, 100);
+
+      const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+
+      // Two concurrent sweeps, racing on the exact same CDR row.
+      await Promise.all([reconciler.reconcilePending(), reconciler.reconcilePending()]);
+
+      const cdr = await cdrFor(session.id);
+      expect(cdr.reconciliation).toBe(EvCdrReconciliation.CORRECTED);
+
+      const transaction = await prisma.transaction.findFirstOrThrow({ where: { type: 'EV_CHARGING' } });
+      const overchargeRefunds = await prisma.bonusLot.findMany({
+        where: { type: 'ACCRUAL_MANUAL_ADJUSTMENT', sourceTransactionId: transaction.id },
+      });
+      expect(overchargeRefunds).toHaveLength(1);
+      expect(overchargeRefunds[0]!.originalAmount.toString()).toBe('400');
+
+      const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      // 500 held minus the 100 actually owed, credited back exactly once.
+      // (Not checked against `assertWalletIntegrity` here: this test's
+      // `roamingSession(..., { bonus })` fixture seeds the held balance by
+      // writing the wallet/lot directly rather than through the ledger, so
+      // ledger reconstruction does not apply to it — orthogonal to the race
+      // this test exists to catch.)
+      expect(after.availableBonus.minus(before.availableBonus).toString()).toBe('400');
+    });
   });
 });

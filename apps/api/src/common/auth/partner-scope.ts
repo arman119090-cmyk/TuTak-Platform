@@ -60,15 +60,39 @@ export function assertPlatformAdmin(user: RequestUser, action: string): void {
 }
 
 /**
+ * Roles that grant `EV_STATION_MANAGE` — kept in sync with
+ * `scripts/role-permissions.ts` (ADMIN/SUPER_ADMIN also grant it, but both
+ * are platform-admin roles already handled by the `isPlatformAdmin` check
+ * below, not partner-scoped roles this function needs to consider).
+ */
+const EV_OPERATOR_ROLES: RoleName[] = [RoleName.PARTNER_MANAGER, RoleName.PARTNER_OWNER];
+
+/**
  * The partner a station operator is reporting for, or null when the caller is
  * acting as an ordinary customer.
  *
  * A platform admin deliberately returns null: admins hold EV_STATION_MANAGE
  * but are not a charge point, and should not be able to write meter values
  * against arbitrary customers' sessions.
+ *
+ * Deliberately does *not* use `partnerIdsFor(user)`: that flattens every
+ * partner the caller holds *any* scoped role at, regardless of whether that
+ * role is one of the ones that actually grants `EV_STATION_MANAGE`. A user
+ * who is legitimately `PARTNER_STAFF` at one partner (no EV permission) and
+ * self-applies as `PARTNER_OWNER` of an unrelated, freshly self-created
+ * partner (`POST /partners/apply` needs no admin approval to grant that
+ * role) would otherwise get attributed to the *first* partner id, which can
+ * be the STAFF one — letting them report fabricated meter values against a
+ * real partner's live sessions despite holding no EV-managing role there
+ * (independent audit, GitHub issue #28). Only partners scoped via a role in
+ * `EV_OPERATOR_ROLES` are ever considered.
  */
 export function resolveOperatorPartner(user: RequestUser): string | null {
   if (isPlatformAdmin(user)) return null;
   if (!user.permissions.includes(PermissionName.EV_STATION_MANAGE)) return null;
-  return partnerIdsFor(user)[0] ?? null;
+  const scopes = user.partnerScopes ?? {};
+  const operatorPartnerIds = Array.from(
+    new Set(EV_OPERATOR_ROLES.flatMap((role) => scopes[role] ?? [])),
+  );
+  return operatorPartnerIds[0] ?? null;
 }

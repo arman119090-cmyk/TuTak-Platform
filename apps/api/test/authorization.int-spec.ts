@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
-import { PermissionName, PrismaClient, RoleName } from '@prisma/client';
+import { AuditAction, PermissionName, PrismaClient, RoleName } from '@prisma/client';
+import { AdminController } from '../src/modules/admin/admin.controller';
 import { AdminService } from '../src/modules/admin/admin.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import {
@@ -20,11 +21,13 @@ describe('Authorization (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
   let admin: AdminService;
+  let adminController: AdminController;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     admin = harness.app.get(AdminService);
+    adminController = harness.app.get(AdminController);
   });
 
   afterAll(async () => {
@@ -152,6 +155,43 @@ describe('Authorization (integration)', () => {
         admin.revokeRole(root.id, RoleName.SUPER_ADMIN, undefined, granter),
       ).rejects.toThrow(/last SUPER_ADMIN/);
     });
+
+    it('exposes role revocation through the controller, not just the service, and audits it', async () => {
+      // Independent audit, GitHub issue #28: `AdminService.revokeRole` has
+      // always been fully guarded, but no controller route ever called it —
+      // a partner-scoped role, once granted, could never be removed through
+      // the product. This proves the HTTP-facing method exists, actually
+      // delegates to the guarded service (self-revocation still refused),
+      // and writes the same audit trail `assignRole` does.
+      const { user: adminUser } = await createCustomer(prisma);
+      const { user: target } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const granter = actor(adminUser.id, [RoleName.SUPER_ADMIN]);
+
+      await admin.assignRole(
+        { userId: target.id, role: RoleName.PARTNER_STAFF, partnerId: partner.id },
+        granter,
+      );
+      expect(await prisma.userRole.count({ where: { userId: target.id } })).toBe(1);
+
+      await expect(
+        adminController.revokeRole(granter, { userId: granter.id, role: RoleName.PARTNER_STAFF }),
+      ).rejects.toThrow(/cannot change your own roles/);
+
+      const dto = { userId: target.id, role: RoleName.PARTNER_STAFF, partnerId: partner.id };
+      await adminController.revokeRole(granter, dto);
+
+      expect(await prisma.userRole.count({ where: { userId: target.id } })).toBe(0);
+      const audited = await prisma.auditLog.findFirst({
+        where: { action: AuditAction.ADMIN_ROLE_CHANGED, entityId: target.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(audited?.metadata).toMatchObject({
+        role: RoleName.PARTNER_STAFF,
+        partnerId: partner.id,
+        op: 'revoke',
+      });
+    });
   });
 
   // ── §H5 partner scope ──────────────────────────────────────────────────
@@ -196,6 +236,37 @@ describe('Authorization (integration)', () => {
 
     it('resolves the operator partner for a scoped station manager', () => {
       expect(resolveOperatorPartner(owner)).toBe('partner-a');
+    });
+
+    it('never attributes an operator to a partner scoped only via a role that does not grant EV_STATION_MANAGE', () => {
+      // Independent audit, GitHub issue #28: a real cashier (PARTNER_STAFF,
+      // no EV permission) at partner-b who self-applies as PARTNER_OWNER of
+      // an unrelated, freshly self-created partner-a (`POST /partners/apply`
+      // needs no admin approval) ends up with EV_STATION_MANAGE in their
+      // aggregated `permissions` and *both* partners in their scopes.
+      // `partnerIdsFor(user)[0]` — the flattened union across every role —
+      // would return partner-b here (inserted first), wrongly letting them
+      // report meter values against partner-b's real sessions despite
+      // holding no EV-managing role there. Only partner-a, the one actually
+      // scoped via a role that grants the permission, may ever be returned.
+      const mixedRoleUser = actor(
+        'u5',
+        [RoleName.PARTNER_STAFF, RoleName.PARTNER_OWNER],
+        { PARTNER_STAFF: ['partner-b'], PARTNER_OWNER: ['partner-a'] },
+      );
+      expect(resolveOperatorPartner(mixedRoleUser)).toBe('partner-a');
+      expect(resolveOperatorPartner(mixedRoleUser)).not.toBe('partner-b');
+    });
+
+    it('never attributes an operator to a partner when scoped only via a role with no EV permission at all', () => {
+      // Even without the `permissions` aggregation quirk above: a user whose
+      // *only* scoped role anywhere is PARTNER_STAFF must never resolve to
+      // that partner, regardless of what `permissions` says (which in
+      // practice would not include EV_STATION_MANAGE for a real
+      // PARTNER_STAFF-only account — this isolates the scope-selection logic
+      // itself from that aggregation).
+      const staffOnly = actor('u6', [RoleName.PARTNER_STAFF], { PARTNER_STAFF: ['partner-b'] });
+      expect(resolveOperatorPartner(staffOnly)).toBeNull();
     });
   });
 });

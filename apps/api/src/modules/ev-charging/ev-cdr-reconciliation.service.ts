@@ -23,6 +23,16 @@ const TOLERANCE = new Decimal('1');
 const MAX_FETCH_ATTEMPTS = 12;
 
 /**
+ * How long a `reconcilingAt` claim is honored before a later pass may
+ * reclaim it. Comfortably above one CDR's worst-case processing time (a
+ * single `fetchCdr` call times out at 15s; everything else is a handful of
+ * DB writes) so a genuinely still-running claim is never stolen, while a
+ * claim left behind by a process that died mid-reconcile does not block that
+ * CDR forever.
+ */
+const RECONCILE_CLAIM_STALE_AFTER_MS = 5 * 60 * 1000;
+
+/**
  * Settling a roaming session against the operator who actually delivered it.
  *
  * On TuTak's own stations there is one meter and it is ours. On a roaming
@@ -90,6 +100,26 @@ export class EvCdrReconciliationService {
 
   /** Returns true when the CDR reached a terminal state on this pass. */
   private async reconcileOne(cdrId: string): Promise<boolean> {
+    // Claim the row before doing anything that costs money — same idiom as
+    // `EvSessionsService.stopOnce`'s `stoppedAt` claim. The sweep's advisory
+    // Redis lock is not authoritative (a run stalled past its TTL by a
+    // slow/unreachable CPO can overlap with the next scheduled run), and
+    // `correctOvercharge`'s wallet-crediting step has no dedupe of its own —
+    // without this, two overlapping runs reconciling the same still-PENDING
+    // CDR could double-credit a customer's overcharge refund (independent
+    // audit, GitHub issue #28). A stale claim (a process that died
+    // mid-reconcile) is reclaimable after `RECONCILE_CLAIM_STALE_AFTER_MS`.
+    const staleBefore = new Date(Date.now() - RECONCILE_CLAIM_STALE_AFTER_MS);
+    const claimed = await this.prisma.evCdr.updateMany({
+      where: {
+        id: cdrId,
+        reconciliation: EvCdrReconciliation.PENDING,
+        OR: [{ reconcilingAt: null }, { reconcilingAt: { lt: staleBefore } }],
+      },
+      data: { reconcilingAt: new Date() },
+    });
+    if (claimed.count === 0) return false;
+
     const cdr = await this.prisma.evCdr.findUniqueOrThrow({
       where: { id: cdrId },
       include: { session: true },
@@ -100,9 +130,11 @@ export class EvCdrReconciliationService {
 
     if (!remote) {
       const attempts = cdr.fetchAttempts + 1;
+      // Release the claim: the CDR stays PENDING for a later pass, and that
+      // later pass must be able to claim it again.
       await this.prisma.evCdr.update({
         where: { id: cdr.id },
-        data: { fetchAttempts: attempts },
+        data: { fetchAttempts: attempts, reconcilingAt: null },
       });
       if (attempts >= MAX_FETCH_ATTEMPTS) {
         await this.giveUp(cdr.id, cdr.sessionId, attempts);

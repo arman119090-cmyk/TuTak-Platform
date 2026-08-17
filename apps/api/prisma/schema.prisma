@@ -306,7 +306,13 @@ model Wallet {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: a hard `user.delete()` must never be able to
+  // silently wipe the append-only ledger of record underneath it. Account
+  // deletion in this codebase is anonymization (`AccountDeletionService`),
+  // which never issues a hard delete — no code path relies on this cascade
+  // today, so this only closes a landmine for whatever deletes a user next
+  // (independent audit, GitHub issue #28).
+  user          User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   lots          BonusLot[]
   reservations  BonusReservation[]
   ledgerEntries BonusLedgerEntry[]
@@ -374,6 +380,7 @@ model BonusLot {
 
   @@index([walletId, status])
   @@index([expiresAt])
+  @@index([sourceTransactionId])
   @@map("bonus_lots")
 }
 
@@ -467,6 +474,7 @@ model BonusLedgerEntry {
 
   @@index([walletId, createdAt])
   @@index([sourceTransactionId])
+  @@index([relatedReservationId])
   @@map("bonus_ledger_entries")
 }
 
@@ -957,12 +965,29 @@ model DeferredBonusLot {
   /// traceability — null while `DEFERRED` (never unlocked, or reverted to
   /// re-accumulate after `reverseUnlock` clawed an invalid grant back).
   grantedBonusLotId   String?
+  /// How much of the *currently live* grant (`grantedBonusLotId`) has
+  /// already been clawed back and accounted for by `reverseForRefund` (this
+  /// lot's own originating purchase being partially refunded while the lot
+  /// is `AVAILABLE`), since that grant was created. Scoped to one grant
+  /// episode: reset to 0 every time a new grant is issued or the live grant
+  /// is cleared. `reverseUnlock` subtracts this from what it claws back to
+  /// find how much of the grant was actually spent by the customer — without
+  /// it, a grant partly reclaimed by `reverseForRefund` and *then*
+  /// invalidated by an external contributor's refund gets that same slice
+  /// double-counted as newly-discovered "spent" value: forfeited a second
+  /// time and a phantom `BONUS_LIABILITY`/`PLATFORM_REVENUE` posting made for
+  /// money that was never actually lost, while permanently destroying an
+  /// amount of this lot's still-valid entitlement that was never refunded
+  /// (independent audit, GitHub issue #28 — found by a second audit pass
+  /// against the `forfeitedAmount` fix itself, before this field existed).
+  liveGrantReclaimedAmount Decimal @default(0) @db.Decimal(18, 4)
 
   user          User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   contributions DeferredBonusLotContribution[]
 
   @@index([userId, status])
   @@index([status, deadline])
+  @@index([sourceTransactionId])
   @@map("deferred_bonus_lots")
 }
 
@@ -1237,6 +1262,19 @@ model EvCdr {
   /// How many times we have asked. A CDR that never arrives must stop being
   /// polled and start being somebody's problem.
   fetchAttempts  Int                 @default(0)
+  /// The claim before doing anything that costs money — same idiom as
+  /// `EvSession.stoppedAt`. `EvCdrReconciliationService`'s only concurrency
+  /// guard is the sweep's advisory Redis lock, which is explicitly *not*
+  /// authoritative: a run stalled past the lock's TTL by a slow/unreachable
+  /// CPO can overlap with the next scheduled run, and `correctOvercharge`'s
+  /// wallet-crediting step has no dedupe of its own — without a per-row
+  /// claim, two overlapping runs reconciling the same still-PENDING CDR can
+  /// double-credit a customer's overcharge refund. Cleared back to null
+  /// whenever the CDR is left PENDING for a later pass (still awaiting the
+  /// CPO); stale claims (a process that died mid-reconcile) are reclaimable
+  /// after `RECONCILE_CLAIM_STALE_AFTER_MS` (independent audit, GitHub issue
+  /// #28).
+  reconcilingAt  DateTime?
 
   session EvSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 

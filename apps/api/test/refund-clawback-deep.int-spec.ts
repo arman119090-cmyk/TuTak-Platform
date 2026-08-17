@@ -1020,5 +1020,86 @@ describe('Refund clawback — deep matrix (integration)', () => {
       }
       await assertWalletIntegrity(prisma, wallet.id);
     });
+
+    it('does not double-count a partial own-purchase reclaim as newly-forfeited spend when an external refund later invalidates the same still-live grant', async () => {
+      // Second-pass independent audit against this file's own fix (GitHub
+      // issue #28): A's partial refund reclaims part of the live grant via
+      // `reverseForRefund`'s AVAILABLE branch *without* fully draining it
+      // (unlike the sibling test above, where B is refunded first and A's
+      // later partial refund goes through the DEFERRED branch instead,
+      // never touching the wallet). Only *then* is B refunded, invalidating
+      // the same still-partly-live grant via `reverseUnlock`. Nothing was
+      // ever spent by the customer here — every AMD removed from the grant
+      // was already accounted for by A's own refund — so `forfeitedAmount`
+      // must stay zero and the still-valid remainder must survive.
+      const { user, wallet, lot, intentA, intentB } = await twoPurchaseLot();
+      const staffA = await staffMember(intentA.partnerId);
+      const staffB = await staffMember(intentB.partnerId);
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
+
+      // A refunded *partially* first, while the grant is still live: half
+      // its gross (10000 of 20000) reclaims half its deferred share (150 of
+      // 300) straight out of the wallet — the grant is left with 150
+      // remaining, not fully drained, so `grantedBonusLotId` stays set.
+      await refunds.refund({
+        purchaseIntentId: intentA.id,
+        amount: '10000',
+        reason: 'partial return A',
+        actorId: staffA.id,
+        idempotencyKey: 'no-double-count-a-partial',
+      });
+      const afterA = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(afterA.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      expect(afterA.refundedAmount.toFixed(4)).toBe('150.0000');
+      expect(afterA.forfeitedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterA.grantedBonusLotId).toBe(grantedLotId);
+      const grantedAfterA = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
+      expect(grantedAfterA.remainingAmount.toFixed(4)).toBe('150.0000');
+
+      // Then B: the external contributor is refunded, dropping turnover
+      // below threshold and invalidating the same still-live grant via
+      // `reverseUnlock`. The 150 it claws back was *already* reclaimed and
+      // accounted for by A's refund above — none of it is newly-discovered
+      // customer spend, so nothing new should ever be forfeited.
+      await refunds.refund({
+        purchaseIntentId: intentB.id,
+        reason: 'return B',
+        actorId: staffB.id,
+        idempotencyKey: 'no-double-count-b',
+      });
+
+      const afterB = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(afterB.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterB.refundedAmount.toFixed(4)).toBe('150.0000');
+      // The bug: `spent` was computed as `originalAmount - actual`
+      // (300 - 150 = 150) with no way to know 150 of that gap was already
+      // A's own refund, not new spend — forfeiting it a second time and
+      // permanently destroying the 150 that was never refunded at all.
+      expect(afterB.forfeitedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterB.grantedBonusLotId).toBeNull();
+
+      const grantedAfterB = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
+      expect(grantedAfterB.remainingAmount.toFixed(4)).toBe('0.0000');
+
+      // No phantom revenue recognition: nothing was actually spent, so no
+      // ledger posting should exist for this reversal at all.
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed', sourceId: lot.id } }),
+      ).toBe(0);
+
+      // The still-valid 150 (300 - 150 refunded, 0 forfeited) must survive
+      // and be grantable again exactly once, for exactly that amount, once
+      // genuine turnover restores the threshold.
+      await confirmedPurchaseFor(user.id, '54000');
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
+      expect(newGrant.originalAmount.toFixed(4)).toBe('150.0000');
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.isNegative()).toBe(false);
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
   });
 });

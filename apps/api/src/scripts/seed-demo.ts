@@ -21,6 +21,11 @@
  * a throwaway local stack and the wrong one everywhere else.
  *
  * Safe to run twice: it detects its own marker partner and stops.
+ *
+ * Also needs CARD_PAYMENTS_ENABLED=true, since it calls PaymentEngineService
+ * directly — docker-compose.yml already sets this by default so the demo
+ * stack's own seeding is unaffected; see CARD_PAYMENTS_ENABLED in
+ * app.module.ts.
  */
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';

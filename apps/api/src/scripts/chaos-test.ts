@@ -7,8 +7,11 @@
  * where Postgres itself stops answering halfway through a commit. This
  * driver covers the second one.
  *
- *   node dist/scripts/chaos-test.js
- *   CHAOS_SECONDS=45 node dist/scripts/chaos-test.js
+ *   CARD_PAYMENTS_ENABLED=true node dist/scripts/chaos-test.js
+ *   CHAOS_SECONDS=45 CARD_PAYMENTS_ENABLED=true node dist/scripts/chaos-test.js
+ *
+ * Exercises PaymentEngineService, so it needs the legacy card-payment
+ * subsystem loaded — see CARD_PAYMENTS_ENABLED in app.module.ts.
  *
  * It drives the engines directly rather than over HTTP, for the same reason
  * `load-test.ts` does: `POST /payments` is rate limited to ten a minute per

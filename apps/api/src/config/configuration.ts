@@ -113,6 +113,31 @@ export interface AppConfig {
      * this flag is what makes that period possible.
      */
     qrLedgerMirror: boolean;
+    /**
+     * The legacy card-payment/PSP subsystem (`PaymentsModule`: `/payments`,
+     * `/refunds`, `PaymentEngineService`, `RefundEngineService`).
+     *
+     * The approved canonical model does not have TuTak charge the
+     * customer's card at all — the customer pays the partner directly
+     * outside TuTak, and the whole PurchaseIntent/refund path this platform
+     * actually ships on (`purchase-intents`) never touches a PSP. Yet
+     * `PaymentsModule` used to be imported unconditionally, and its own
+     * provider factory refuses to boot `NODE_ENV=production` without either
+     * a real acquirer or `DEMO_MODE=true` — meaning a canonical production
+     * deployment, which needs neither, could not start at all without lying
+     * about having an acquirer it does not have.
+     *
+     * Off by default: canonical production boots with no PSP configured and
+     * `/payments`/`/refunds` simply do not exist as routes (independent
+     * audit, GitHub issue #28). Set this explicitly to keep running the
+     * legacy card-payment surface — local dev, the demo stack, and this
+     * repo's own integration-test harness all set it explicitly rather than
+     * relying on the default, so nothing here silently changes what they
+     * already exercise. In production, turning this on still goes through
+     * `PaymentsModule`'s own guard: no real PSP configured (and no
+     * `DEMO_MODE`) still refuses to boot, exactly as before.
+     */
+    cardPaymentsEnabled: boolean;
   };
   /**
    * Every number the new core-business spec fixes, in one place, per its own
@@ -316,6 +341,11 @@ const buildConfig = (): AppConfig => ({
     // Opt-in, and it must stay that way until a full settlement cycle has
     // reconciled clean.
     qrLedgerMirror: process.env.FEATURE_QR_LEDGER_MIRROR === 'true',
+    // Off unless explicitly turned on — the reverse of `qrLedgerMirror`, and
+    // deliberately so: canonical production has no acquirer relationship to
+    // announce, so the safe default is "this subsystem does not exist,"
+    // not "on until proven otherwise."
+    cardPaymentsEnabled: process.env.CARD_PAYMENTS_ENABLED === 'true',
   },
   purchasePolicy: {
     // 3 minutes, per spec §7 — long enough for a cashier mid-queue to glance

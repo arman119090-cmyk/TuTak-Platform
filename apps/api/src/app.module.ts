@@ -44,6 +44,19 @@ import { HealthModule } from './modules/health/health.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { SweepsModule } from './modules/sweeps/sweeps.module';
 
+// Read directly from the environment rather than via `ConfigService`:
+// `@Module()` metadata is evaluated statically, at import time, before
+// Nest's DI container (and therefore `ConfigService`) exists.
+//
+// The canonical TuTak model never charges the customer's card — the
+// customer pays the partner directly, outside TuTak, and the
+// PurchaseIntent/refund path this platform actually ships on never touches
+// a PSP. `PaymentsModule` (the legacy card-payment/PSP subsystem:
+// `/payments`, `/refunds`) is therefore off unless explicitly enabled, so a
+// canonical production deployment can boot with no PSP configured at all.
+// See docs/FINANCIAL_CORE_DESIGN.md and GitHub issue #28.
+const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate }),
@@ -81,7 +94,7 @@ import { SweepsModule } from './modules/sweeps/sweeps.module';
     AnalyticsModule,
     SecurityModule,
     LedgerModule,
-    PaymentsModule,
+    ...(cardPaymentsEnabled ? [PaymentsModule] : []),
     SettlementModule,
     PayoutsModule,
     ReconciliationModule,

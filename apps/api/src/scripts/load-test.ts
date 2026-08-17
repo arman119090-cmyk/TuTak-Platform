@@ -10,8 +10,11 @@
  * the parts that can be correct at one request per second and wrong at two
  * hundred.
  *
- *   node dist/scripts/load-test.ts             # defaults below
+ *   CARD_PAYMENTS_ENABLED=true node dist/scripts/load-test.ts   # defaults below
  *   LOAD_CONCURRENCY=64 LOAD_SECONDS=20 node dist/scripts/load-test.js
+ *
+ * Exercises PaymentEngineService, so it needs the legacy card-payment
+ * subsystem loaded — see CARD_PAYMENTS_ENABLED in app.module.ts.
  *
  * Every run ends by asserting the same invariant the test suite does: all
  * accounts sum to zero, and each account's stored balance equals a replay of

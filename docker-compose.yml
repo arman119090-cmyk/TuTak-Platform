@@ -151,6 +151,11 @@ services:
       SMS_SENDER: ${SMS_SENDER:-TuTak}
       SMS_ENCODING: ${SMS_ENCODING:-form}
       FEATURE_QR_LEDGER_MIRROR: ${FEATURE_QR_LEDGER_MIRROR:-false}
+      # The legacy card-payment/PSP subsystem (`/payments`, `/refunds`) is off
+      # by default in canonical production — see app.module.ts — but this
+      # local/demo stack and its seeder still exercise it, so it defaults on
+      # here to keep `seed-demo.js` and existing local workflows unchanged.
+      CARD_PAYMENTS_ENABLED: ${CARD_PAYMENTS_ENABLED:-true}
       PUSH_ENABLED: ${PUSH_ENABLED:-false}
       PUSH_ENDPOINT: ${PUSH_ENDPOINT:-https://exp.host/--/api/v2/push/send}
       PUSH_ACCESS_TOKEN: ${PUSH_ACCESS_TOKEN:-}

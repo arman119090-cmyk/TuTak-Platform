@@ -85,71 +85,67 @@ export class PurchaseIntentRefundService {
     private readonly auditService: AuditService,
   ) {}
 
+  /**
+   * Deliberately does *no* state-dependent validation here — not existence,
+   * not status, not `remaining`/`amount`. Every one of those used to be
+   * checked before `idempotency.run()` was even called, using whatever
+   * `refundedAmount` happened to read *right now* — which a prior call with
+   * this exact key may itself have just changed. A full refund succeeding
+   * makes `remaining` 0; a partial refund succeeding can shrink `remaining`
+   * below a since-completed request's own `amount`. Either way, the *exact
+   * same request retried* then failed its own precheck (`"already refunded
+   * in full"` / `"exceeds the … still refundable"`) instead of ever
+   * reaching the idempotency store — defeating the entire point of the key
+   * (independent audit, GitHub issue #28). All of that validation now lives
+   * in `postRefund`, reached only when `idempotency.run()` decides this is
+   * genuinely new work, never on a replay of already-completed work.
+   *
+   * The hash `idempotency.run()` keys on is the caller's *raw* request
+   * (`params.amount` verbatim, `null` when omitted for "refund whatever
+   * remains") rather than a numeric value resolved from mutable state —
+   * otherwise an implicit full-refund replay would hash differently after
+   * `remaining` changed and be misread as a *conflicting* reuse of the key
+   * instead of the same request. Reusing the key with a genuinely different
+   * `amount`/`reason` still hashes differently and is still rejected by
+   * `IdempotencyService.claim()`'s own fingerprint check — untouched by this
+   * change.
+   */
   async refund(params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
-    const intent = await this.prisma.purchaseIntent.findUnique({
-      where: { id: params.purchaseIntentId },
-    });
-    if (!intent) throw new NotFoundException('Purchase intent not found');
-    if (intent.status !== PurchaseIntentStatus.CONFIRMED) {
-      throw new BadRequestException('Only a confirmed purchase can be refunded');
-    }
-
-    const remaining = intent.grossAmount.minus(intent.refundedAmount);
-    const amount = params.amount ? parsePositiveMoney(params.amount, 'refund amount') : remaining;
-
-    if (remaining.lessThanOrEqualTo(0)) {
-      throw new BadRequestException('This purchase has already been refunded in full');
-    }
-    if (amount.greaterThan(remaining)) {
-      throw new BadRequestException(
-        `Refund of ${amount.toString()} exceeds the ${remaining.toString()} still refundable on this purchase`,
-      );
-    }
-
     return this.idempotency.run<PurchaseIntentRefundResult>(
       {
         scope: `purchase-intent-refund:${params.actorId}`,
         key: params.idempotencyKey,
-        request: { purchaseIntentId: intent.id, amount: amount.toString(), reason: params.reason },
+        request: {
+          purchaseIntentId: params.purchaseIntentId,
+          amount: params.amount ?? null,
+          reason: params.reason,
+        },
       },
-      () => this.executeRefund(intent.id, amount, params.reason, params.actorId, params.idempotencyKey),
+      () => this.executeRefund(params),
     );
   }
 
-  private async executeRefund(
-    purchaseIntentId: string,
-    amount: Decimal,
-    reason: string,
-    actorId: string,
-    idempotencyKey: string,
-  ): Promise<PurchaseIntentRefundResult> {
+  private async executeRefund(params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
     // Crash-recovery: see RefundEngineService's identical check for why this
     // branch exists even though IdempotencyService normally answers first.
-    const already = await this.findByKey(actorId, idempotencyKey);
+    const already = await this.findByKey(params.actorId, params.idempotencyKey);
     if (already) return this.toResult(already);
 
     try {
-      return await this.runSerializable((tx) =>
-        this.postRefund(tx, purchaseIntentId, amount, reason, actorId, idempotencyKey),
-      );
+      return await this.runSerializable((tx) => this.postRefund(tx, params));
     } catch (err) {
       if (isKeyCollision(err)) {
-        const existing = await this.findByKey(actorId, idempotencyKey);
+        const existing = await this.findByKey(params.actorId, params.idempotencyKey);
         if (existing) return this.toResult(existing);
       }
       throw err;
     }
   }
 
-  private async postRefund(
-    tx: Tx,
-    purchaseIntentId: string,
-    amount: Decimal,
-    reason: string,
-    actorId: string,
-    idempotencyKey: string,
-  ): Promise<PurchaseIntentRefundResult> {
-    const intent = await tx.purchaseIntent.findUniqueOrThrow({ where: { id: purchaseIntentId } });
+  private async postRefund(tx: Tx, params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
+    const { purchaseIntentId, reason, actorId, idempotencyKey } = params;
+    const intent = await tx.purchaseIntent.findUnique({ where: { id: purchaseIntentId } });
+    if (!intent) throw new NotFoundException('Purchase intent not found');
     if (intent.status !== PurchaseIntentStatus.CONFIRMED) {
       throw new BadRequestException('Only a confirmed purchase can be refunded');
     }
@@ -180,19 +176,24 @@ export class PurchaseIntentRefundService {
       );
     }
 
-    const cumulativeBefore = intent.refundedAmount;
-    const cumulativeAfter = cumulativeBefore.plus(amount);
-    // Re-checked inside the transaction: the pre-check in `refund()` read a
-    // snapshot that a concurrent refund may have moved past by the time this
-    // transaction's serializable snapshot was taken. The CHECK constraint
-    // would refuse the write either way; this is what turns that into a
-    // clean 400 instead of a raw constraint-violation 500.
-    if (cumulativeAfter.greaterThan(intent.grossAmount)) {
+    // Read fresh inside this Serializable transaction, never outside it —
+    // this is the only place `remaining`/`amount` get resolved now, so a
+    // replay of an already-completed request never reaches here at all
+    // (see `refund()`'s docblock) and a genuinely new request always
+    // validates against the current, real `refundedAmount`.
+    const remaining = intent.grossAmount.minus(intent.refundedAmount);
+    const amount = params.amount ? parsePositiveMoney(params.amount, 'refund amount') : remaining;
+    if (remaining.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('This purchase has already been refunded in full');
+    }
+    if (amount.greaterThan(remaining)) {
       throw new BadRequestException(
-        `Refund of ${amount.toString()} exceeds the ` +
-          `${intent.grossAmount.minus(cumulativeBefore).toString()} still refundable on this purchase`,
+        `Refund of ${amount.toString()} exceeds the ${remaining.toString()} still refundable on this purchase`,
       );
     }
+
+    const cumulativeBefore = intent.refundedAmount;
+    const cumulativeAfter = cumulativeBefore.plus(amount);
 
     await tx.purchaseIntent.update({
       where: { id: intent.id },

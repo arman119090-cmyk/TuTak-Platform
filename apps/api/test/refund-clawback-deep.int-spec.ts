@@ -1,4 +1,5 @@
 import {
+  BonusEntryType,
   BonusLotStatus,
   DeferredBonusLotStatus,
   PrismaClient,
@@ -6,6 +7,7 @@ import {
   ReferrerType,
   RoleName,
 } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
@@ -125,10 +127,15 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.progressTurnover.toFixed(4)).toBe('4900.0000');
       // This clawback came via `reverseUnlock` (an *external* contributing
-      // purchase dropping turnover below threshold) — `refundedAmount` is
-      // the shared running total both that mechanism and this lot's own
-      // (never exercised here) purchase-refund path write to.
-      expect(afterRefund.refundedAmount.toFixed(4)).toBe('500.0000');
+      // purchase dropping turnover below threshold) — the lot's *own*
+      // purchase-refund path (`refundedAmount`) is untouched, and the lot
+      // reverts to DEFERRED so it can requalify: only the genuinely
+      // unrecoverable (already spent) 300 is permanently forfeited, never
+      // the 200 that was still sitting unspent and successfully reclaimed.
+      expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('300.0000');
+      expect(afterRefund.grantedBonusLotId).toBeNull();
 
       const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
@@ -143,10 +150,10 @@ describe('Refund clawback — deep matrix (integration)', () => {
       });
       const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
       const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
-      // Only the 200 actually reclaimed — never the full 500 theoretical
-      // grant, which would double-debit the 300 already released when it
-      // was spent.
-      expect(liabilityLeg?.amount.toFixed(4)).toBe('200.0000');
+      // Only the 300 actually forfeited (spent, unrecoverable) is released
+      // to revenue — never the 200 that was reclaimed and returned to
+      // ordinary outstanding liability, available to grant again.
+      expect(liabilityLeg?.amount.toFixed(4)).toBe('300.0000');
 
       await assertWalletIntegrity(prisma, wallet.id);
     });
@@ -169,18 +176,24 @@ describe('Refund clawback — deep matrix (integration)', () => {
       });
 
       const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
-      expect(afterRefund.refundedAmount.toFixed(4)).toBe('500.0000');
+      expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
+      // Every AMD of this grant was already spent — the entire 500 is
+      // permanently forfeited (never re-grantable) and released to revenue.
+      expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('500.0000');
+      expect(afterRefund.grantedBonusLotId).toBeNull();
 
       const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
 
-      // Nothing to reclaim for the target grant itself — no posting for it.
-      // The wallet still lands at exactly zero: this same purchase's own
-      // (contaminating) green accrual is a *separate* full refund of *its
-      // own* originating purchase, reclaimed by the ordinary refund path.
-      expect(
-        await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed' } }),
-      ).toBe(0);
+      const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+        where: { kind: 'deferred_bonus.unlock_reversed', sourceId: lot.id },
+        include: { postings: true },
+      });
+      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+      const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+      expect(liabilityLeg?.amount.toFixed(4)).toBe('500.0000');
+
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.availableBonus.isNegative()).toBe(false);
       expect(walletAfter.availableBonus.toFixed(4)).toBe('0.0000');
@@ -210,7 +223,12 @@ describe('Refund clawback — deep matrix (integration)', () => {
 
       const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.progressTurnover.toFixed(4)).toBe('4999.0000'); // 5900 - 901
-      expect(afterRefund.refundedAmount.toFixed(4)).toBe('500.0000'); // fully clawed via reverseUnlock
+      // Fully reclaimed (nothing spent), reverted to DEFERRED, own-purchase
+      // and forfeiture tracking both untouched — ready to requalify.
+      expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterRefund.grantedBonusLotId).toBeNull();
 
       const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
@@ -221,14 +239,11 @@ describe('Refund clawback — deep matrix (integration)', () => {
     it('is idempotent — replaying the same refund key does not claw the unlocked grant twice', async () => {
       const { user, wallet } = await createCustomer(prisma);
       const lot = await seedLot(user.id, '4900');
-      // 198 AMD purchase (unlocks: 4900+198=5098). A refund of 99 (exactly
-      // half) both drops turnover under threshold (5098-99=4999 < 5000) *and*
-      // stays within what a same-amount replay can still request — the
-      // service's own "amount exceeds what's still refundable" precheck runs
-      // before idempotency is even consulted (an existing, unrelated
-      // behavior this fix does not change), so a genuine replay needs the
-      // post-first-refund `remaining` (198-99=99) to still cover a second
-      // request for 99.
+      // 198 AMD purchase (unlocks: 4900+198=5098), refunded 99 at a time —
+      // any amount works now that idempotent replays are resolved before
+      // any state-dependent validation (see `purchase-intent-refund.int-
+      // spec.ts`'s own idempotency-precheck-ordering tests); kept partial
+      // here simply to also exercise the below-threshold drop.
       const { intent } = await confirmedPurchaseFor(user.id, '198');
       const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
         .grantedBonusLotId!;
@@ -245,9 +260,12 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const second = await refunds.refund(params); // replay, same key
 
       expect(second).toEqual(first);
+      // Nothing spent, so nothing forfeited, so no posting at all — but the
+      // point of this test is that it happens exactly *once* either way,
+      // never twice.
       expect(
         await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed' } }),
-      ).toBe(1);
+      ).toBe(0);
       const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
 
@@ -288,18 +306,240 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.progressTurnover.toFixed(4)).toBe('4800.0000');
       // The 500 grant is clawed back exactly once, regardless of which
-      // refund's transaction actually performed the claw.
-      expect(afterRefund.refundedAmount.toFixed(4)).toBe('500.0000');
+      // refund's transaction actually performed the claw — reverted to
+      // DEFERRED, nothing spent so nothing forfeited, own-purchase tracking
+      // untouched (neither A nor B is this lot's own originating purchase).
+      expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterRefund.grantedBonusLotId).toBeNull();
 
       const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.availableBonus.isNegative()).toBe(false);
 
+      // Nothing spent, nothing forfeited, no posting at all.
       expect(
         await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed' } }),
-      ).toBe(1);
+      ).toBe(0);
 
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
+    it('requalifies and unlocks exactly once more after later genuine turnover restores the threshold', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const lot = await seedLot(user.id, '4900');
+      // B unlocks it (4900+200=5100); B is refunded, dropping it back to
+      // 4900 and reverting the lot to DEFERRED.
+      const { intent: intentB } = await confirmedPurchaseFor(user.id, '200');
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
+      const staffB = await staffMember(intentB.partnerId);
+      await refunds.refund({
+        purchaseIntentId: intentB.id,
+        reason: 'return B',
+        actorId: staffB.id,
+        idempotencyKey: 'requalify-refund-b',
+      });
+      const reverted = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(reverted.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(reverted.progressTurnover.toFixed(4)).toBe('4900.0000');
+
+      // C brings genuine new turnover back over the threshold (4900+150=5050).
+      await confirmedPurchaseFor(user.id, '150');
+
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      expect(requalified.progressTurnover.toFixed(4)).toBe('5050.0000');
+      expect(requalified.grantedBonusLotId).toBeTruthy();
+      expect(requalified.grantedBonusLotId).not.toBe(grantedLotId); // a fresh grant, not the clawed-back one
+
+      // Nothing was ever spent from the first (invalidated) grant, so the
+      // full original 500 — not a penny less — is granted again exactly
+      // once: no double credit, no double liability.
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
+      expect(newGrant.remainingAmount.toFixed(4)).toBe('500.0000');
+      expect(newGrant.originalAmount.toFixed(4)).toBe('500.0000');
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.isNegative()).toBe(false);
+
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
+    it('requalifies for only the still-valid remainder when the first grant was partially spent', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const lot = await seedLot(user.id, '4900');
+      const { intent: intentB } = await confirmedPurchaseFor(user.id, '200');
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
+      await isolateForSpend(wallet.id, grantedLotId);
+      await spend(wallet.id, '300', 'requalify-partial-spend'); // 300 of 500 spent, 200 left
+
+      const staffB = await staffMember(intentB.partnerId);
+      await refunds.refund({
+        purchaseIntentId: intentB.id,
+        reason: 'return B',
+        actorId: staffB.id,
+        idempotencyKey: 'requalify-partial-refund-b',
+      });
+      const reverted = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(reverted.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(reverted.forfeitedAmount.toFixed(4)).toBe('300.0000'); // permanently gone
+
+      await confirmedPurchaseFor(user.id, '150'); // 4900+150=5050, requalifies
+
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      // Only the still-valid 200 (500 - 300 already spent) grants again —
+      // never the full 500, which would double-credit the 300 the customer
+      // already irrevocably received.
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
+      expect(newGrant.originalAmount.toFixed(4)).toBe('200.0000');
+
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
+    it('never requalifies once the entire lot has been forfeited or refunded away', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const lot = await seedLot(user.id, '4900');
+      const { intent: intentB } = await confirmedPurchaseFor(user.id, '200');
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
+      await isolateForSpend(wallet.id, grantedLotId);
+      await spend(wallet.id, '500', 'requalify-full-spend'); // the entire grant, nothing left to reclaim
+
+      const staffB = await staffMember(intentB.partnerId);
+      await refunds.refund({
+        purchaseIntentId: intentB.id,
+        reason: 'return B',
+        actorId: staffB.id,
+        idempotencyKey: 'requalify-none-refund-b',
+      });
+      const reverted = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(reverted.forfeitedAmount.toFixed(4)).toBe('500.0000'); // the entire lot, gone
+      expect(reverted.progressTurnover.toFixed(4)).toBe('4900.0000'); // reverted by B's own refund
+
+      await confirmedPurchaseFor(user.id, '150'); // would otherwise requalify: 4900+150=5050
+
+      // Filtered out of `advanceExistingLots` entirely — nothing left to
+      // ever grant, so it never unlocks again, and this purchase's turnover
+      // isn't even applied to it (no more `DeferredBonusLotContribution`
+      // rows are created for an already fully closed-out lot).
+      const stillDeferred = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(stillDeferred.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(stillDeferred.grantedBonusLotId).toBeNull();
+      expect(stillDeferred.progressTurnover.toFixed(4)).toBe('4900.0000');
+    });
+
+    it('combines correctly when the lot\'s own purchase is partially refunded on top of a full external-contributor clawback', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      // A creates the lot for real (so it can be partially refunded itself,
+      // unlike a `seedLot` row with no backing PurchaseIntent): 20000 gross
+      // @ 500bps -> pool 1000 -> deferred (30%) 300.
+      const { intent: intentA } = await confirmedPurchaseFor(user.id, '20000');
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({
+        where: { sourceTransactionId: intentA.sourceTransactionId! },
+      });
+      expect(lot.amount.toFixed(4)).toBe('300.0000');
+
+      // B supplies the full 54000 AMD required turnover, unlocking it.
+      const { intent: intentB } = await confirmedPurchaseFor(user.id, '54000');
+      const unlocked = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(unlocked.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+
+      const staffA = await staffMember(intentA.partnerId);
+      const staffB = await staffMember(intentB.partnerId);
+
+      // B fully refunded first: claws the unlock back (nothing spent),
+      // reverts the lot to DEFERRED, forfeits nothing.
+      await refunds.refund({
+        purchaseIntentId: intentB.id,
+        reason: 'return B',
+        actorId: staffB.id,
+        idempotencyKey: 'mixed-refund-b',
+      });
+      const afterB = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(afterB.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterB.forfeitedAmount.toFixed(4)).toBe('0.0000');
+
+      // Then A is refunded *partially* — half its gross (10000 of 20000),
+      // so half its deferred share (150 of 300) is permanently undone.
+      await refunds.refund({
+        purchaseIntentId: intentA.id,
+        amount: '10000',
+        reason: 'partial return A',
+        actorId: staffA.id,
+        idempotencyKey: 'mixed-refund-a-partial',
+      });
+      const afterA = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(afterA.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterA.refundedAmount.toFixed(4)).toBe('150.0000');
+      expect(afterA.forfeitedAmount.toFixed(4)).toBe('0.0000');
+
+      // C brings genuine new turnover to cross 54000 again — only the
+      // still-valid 150 (300 - 150 already refunded away from A) is ever
+      // grantable, never the original 300.
+      await confirmedPurchaseFor(user.id, '54000');
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
+      expect(newGrant.originalAmount.toFixed(4)).toBe('150.0000');
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.isNegative()).toBe(false);
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
+
+    it('requalifies exactly once when two contributing purchases race to cross the threshold again concurrently', async () => {
+      const { user, wallet } = await createCustomer(prisma);
+      const lot = await seedLot(user.id, '4900');
+      const { intent: intentB } = await confirmedPurchaseFor(user.id, '200'); // unlocks: 4900+200=5100
+      const staffB = await staffMember(intentB.partnerId);
+      await refunds.refund({
+        purchaseIntentId: intentB.id,
+        reason: 'return B',
+        actorId: staffB.id,
+        idempotencyKey: 'race-requalify-refund-b',
+      });
+      const reverted = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(reverted.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(reverted.progressTurnover.toFixed(4)).toBe('4900.0000');
+
+      // Two purchases, each alone insufficient, together cross 5000 again —
+      // confirmed concurrently, racing on the same lot row. The atomic
+      // `{ increment }` this codebase's original concurrency fix (GitHub
+      // issue #28, `advanceExistingLots`) already uses protects this
+      // *second* life of the lot exactly the same way it protects the
+      // first — this test proves that still holds post-clawback.
+      await Promise.all([
+        confirmedPurchaseFor(user.id, '60'),
+        confirmedPurchaseFor(user.id, '60'),
+      ]);
+
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
+      expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+      expect(requalified.progressTurnover.toFixed(4)).toBe('5020.0000'); // 4900 + 60 + 60, neither contribution lost
+      expect(requalified.grantedBonusLotId).toBeTruthy();
+
+      // Granted exactly once, for the full still-valid 500 — not double.
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
+      expect(newGrant.originalAmount.toFixed(4)).toBe('500.0000');
+      // Only one *live* deferred grant exists — the first (B's, since
+      // clawed back and fully reclaimed) is a separate, already-CONSUMED
+      // historical row with nothing left in it, not a second concurrent
+      // grant of the same 500 sitting in the wallet at once.
+      const deferredLots = await prisma.bonusLot.findMany({
+        where: { walletId: wallet.id, type: BonusEntryType.ACCRUAL_DEFERRED },
+      });
+      const live = deferredLots.filter((l) => l.status === BonusLotStatus.AVAILABLE);
+      expect(live).toHaveLength(1);
+      const totalCurrentlyOutstanding = deferredLots.reduce((sum, l) => sum.plus(l.remainingAmount), new Decimal(0));
+      expect(totalCurrentlyOutstanding.toFixed(4)).toBe('500.0000');
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.isNegative()).toBe(false);
       await assertWalletIntegrity(prisma, wallet.id);
     });
   });
@@ -658,26 +898,18 @@ describe('Refund clawback — deep matrix (integration)', () => {
     /**
      * `reverseForRefund` (the lot's *own* originating purchase refunded) and
      * `reverseUnlock` (a *different*, external contributing purchase's
-     * refund dropping the lot's turnover back below threshold) share the
-     * same `refundedAmount` running total on purpose — independent audit,
-     * GitHub issue #28. An earlier attempt at this audit tried splitting the
-     * two into separate fields, reasoning that `reverseUnlock`'s own
-     * `PLATFORM_REVENUE` credit (for whatever it actually reclaimed) plus
-     * `reverseForRefund`'s later `shortfall` looked like crediting revenue
-     * twice for one lot. That reasoning doesn't hold: `reverseForRefund`'s
-     * `share`/`poolΔ` is unconditionally credited to `PARTNER_PAYABLE` by the
-     * caller's own balanced posting, so this method's return values are the
-     * *only* place that credit gets an offsetting debit — shrinking
-     * `shortfall` because `reverseUnlock` got here first leaves that
-     * transaction short by exactly what `reverseUnlock` already handled, and
-     * `LedgerService.post` correctly rejects it as unbalanced (confirmed by
-     * reverting that split after this exact test failed with "Ledger
-     * transaction does not balance: debits - credits = -300"). With the
-     * shared field, `reverseAccrualLot` on an already-fully-clawed granted
-     * lot simply returns `null` (nothing left to reclaim), so the two
-     * mechanisms can never recognize more revenue than the lot's own
-     * `amount` ever supported — the whole round trip nets every account back
-     * to exactly zero below, in either order.
+     * refund dropping the lot's turnover back below threshold) must never
+     * double-process the same AMD, in either order — independent audit,
+     * GitHub issue #28. `refundedAmount` (own-purchase history) and
+     * `forfeitedAmount` (permanently written off by a past `reverseUnlock`
+     * clawback that could not fully reclaim an invalidated grant) together
+     * form the lot's ceiling for both mechanisms; `reverseForRefund` also
+     * clears `grantedBonusLotId` whenever *it* fully drains the live grant,
+     * so a `reverseUnlock` that runs afterward finds nothing left and no-ops
+     * immediately rather than misreading already-reclaimed value as newly
+     * discovered spend. Nothing here is ever spent by the customer, so the
+     * whole round trip below always nets every account back to exactly
+     * zero, in either order.
      *
      * Both purchases here are real (not seeded directly via Prisma), so the
      * whole ledger is self-consistent from the start and this "nets to
@@ -714,8 +946,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const staffB = await staffMember(intentB.partnerId);
 
       // B first: an external contributor's refund drops turnover back below
-      // 54000, clawing the unlock back via `reverseUnlock` — fully, since
-      // nothing was ever spent.
+      // 54000, clawing the unlock back via `reverseUnlock` — fully reclaimed
+      // (nothing was ever spent), reverted to DEFERRED, nothing forfeited.
       await refunds.refund({
         purchaseIntentId: intentB.id,
         reason: 'return B',
@@ -723,13 +955,16 @@ describe('Refund clawback — deep matrix (integration)', () => {
         idempotencyKey: 'order-b-first-b',
       });
       const afterB = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
-      expect(afterB.refundedAmount.toFixed(4)).toBe('300.0000');
+      expect(afterB.status).toBe(DeferredBonusLotStatus.DEFERRED);
+      expect(afterB.refundedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterB.forfeitedAmount.toFixed(4)).toBe('0.0000');
+      expect(afterB.grantedBonusLotId).toBeNull();
 
-      // Then A: the lot's own originating purchase is refunded too —
-      // `reverseAccrualLot` finds the granted lot already fully drained
-      // (`remainingAmount` 0) and returns `null`, so nothing is reclaimed a
-      // second time, but the posting still balances by routing A's own
-      // deferred share to `PLATFORM_REVENUE` via `shortfall`.
+      // Then A: the lot's own originating purchase is refunded too. The
+      // 300 reclaimed by B's refund reverted to ordinary outstanding
+      // `BONUS_LIABILITY` — A's own refund is what finally, genuinely
+      // releases it now that A itself is undone (the `DEFERRED` branch of
+      // `reverseForRefund`).
       await refunds.refund({
         purchaseIntentId: intentA.id,
         reason: 'return A',
@@ -750,7 +985,12 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const staffB = await staffMember(intentB.partnerId);
 
       // A first: the lot's own originating purchase is refunded — claws
-      // back via `reverseForRefund`'s own AVAILABLE-lot branch, fully.
+      // back via `reverseForRefund`'s own AVAILABLE-lot branch, fully, and
+      // — since that fully drains the live grant — clears
+      // `grantedBonusLotId` too. `status` itself stays `AVAILABLE`:
+      // `reverseForRefund` never reverts it (only `reverseUnlock` does,
+      // deliberately, to let the lot requalify — a fully-refunded own
+      // purchase should *not* requalify).
       await refunds.refund({
         purchaseIntentId: intentA.id,
         reason: 'return A',
@@ -759,11 +999,14 @@ describe('Refund clawback — deep matrix (integration)', () => {
       });
       const afterA = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterA.refundedAmount.toFixed(4)).toBe('300.0000');
+      expect(afterA.grantedBonusLotId).toBeNull();
+      expect(afterA.status).toBe(DeferredBonusLotStatus.AVAILABLE);
 
       // Then B: the external contributor is refunded too, dropping turnover
-      // below threshold — `reverseUnlock` finds `remaining` already zero
-      // (`amount - refundedAmount`) and no-ops, correctly, since A's own
-      // refund already fully accounted for this lot.
+      // below threshold — `reverseUnlock` finds `grantedBonusLotId` already
+      // null (cleared by A's own reclaim above) and no-ops immediately,
+      // correctly, since A's own refund already fully accounted for this
+      // lot's entire value.
       await refunds.refund({
         purchaseIntentId: intentB.id,
         reason: 'return B',

@@ -930,16 +930,32 @@ model DeferredBonusLot {
   /// Cumulative eligible gross purchases applied to this lot so far. Spec
   /// §14: no monthly minimum, purely cumulative within the window.
   progressTurnover    Decimal                @default(0) @db.Decimal(18, 4)
-  /// Running total reversed by TuTak refunds against the purchase that
-  /// created this lot — never more than `amount`. What actually unlocks or
-  /// releases to revenue is always `amount - refundedAmount`.
+  /// Running total reversed by TuTak refunds against *this lot's own*
+  /// originating purchase (`sourceTransactionId`) — never more than
+  /// `amount`, and untouched by an *external* contributing purchase's
+  /// refund (see `forfeitedAmount` and `reverseUnlock`).
   refundedAmount      Decimal                @default(0) @db.Decimal(18, 4)
+  /// Running total permanently forfeited because a *previous* unlock's
+  /// grant was already partly spent by the time an external contributing
+  /// purchase's refund invalidated it — that spent slice can never be
+  /// re-granted (independent audit, GitHub issue #28: `reverseUnlock` must
+  /// not conflate an external-contribution clawback with this lot's own
+  /// purchase being refunded, or a still-valid entitlement is destroyed
+  /// forever instead of remaining re-qualifiable). The *un*spent, actually
+  /// reclaimed portion of an invalidated grant is deliberately not tracked
+  /// here or anywhere else — it simply returns to being ordinary
+  /// outstanding `BONUS_LIABILITY`, exactly as if it had never vested,
+  /// available to grant again in full if this lot re-qualifies. Together
+  /// with `refundedAmount`, what remains ever-grantable is always
+  /// `amount - refundedAmount - forfeitedAmount`.
+  forfeitedAmount     Decimal                @default(0) @db.Decimal(18, 4)
   createdAt           DateTime               @default(now())
   deadline            DateTime
   unlockedAt          DateTime?
   expiredAt           DateTime?
-  /// The BonusLot created when this unlocked, for traceability. Null until
-  /// (and unless) that happens.
+  /// The BonusLot backing this lot's *currently live* grant, for
+  /// traceability — null while `DEFERRED` (never unlocked, or reverted to
+  /// re-accumulate after `reverseUnlock` clawed an invalid grant back).
   grantedBonusLotId   String?
 
   user          User                           @relation(fields: [userId], references: [id], onDelete: Cascade)

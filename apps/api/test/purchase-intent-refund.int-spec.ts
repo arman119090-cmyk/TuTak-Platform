@@ -672,25 +672,33 @@ describe('PurchaseIntentRefundService (integration)', () => {
     });
 
     // 5100 - 200 = 4900 < 5000: the qualifying turnover that unlocked this
-    // lot no longer exists, so the grant it produced is undone with it
-    // (independent audit, GitHub issue #28).
+    // lot no longer exists, so the grant it produced is undone with it —
+    // but the lot's *own* originating purchase (a separate, untouched seed
+    // transaction) was never refunded, so its entitlement survives:
+    // reverted to DEFERRED, `refundedAmount` untouched, `forfeitedAmount`
+    // zero (nothing was spent, all 500 reclaimed), ready to accumulate
+    // genuine turnover and unlock again (independent audit, GitHub issue
+    // #28).
     const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
-    expect(afterRefund.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+    expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
     expect(afterRefund.progressTurnover.toFixed(4)).toBe('4900.0000');
-    expect(afterRefund.refundedAmount.toFixed(4)).toBe('500.0000');
+    expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
+    expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('0.0000');
+    expect(afterRefund.grantedBonusLotId).toBeNull();
 
     const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLot.id } });
     expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
     expect(grantedLotAfter.status).toBe(BonusLotStatus.CONSUMED);
 
-    const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
-      where: { kind: 'deferred_bonus.unlock_reversed', sourceType: 'DeferredBonusLot', sourceId: seedLot.id },
-      include: { postings: true },
-    });
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
-    const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
-    expect(liabilityLeg?.direction).toBe('DEBIT');
-    expect(liabilityLeg?.amount.toFixed(4)).toBe('500.0000');
+    // Nothing was spent, so nothing was forfeited — the reclaimed 500
+    // returns to ordinary outstanding BONUS_LIABILITY with no posting at
+    // all (it was never extinguished by vesting it into the wallet in the
+    // first place; see the class docblock), not written off to revenue.
+    expect(
+      await prisma.ledgerTransaction.count({
+        where: { kind: 'deferred_bonus.unlock_reversed', sourceType: 'DeferredBonusLot', sourceId: seedLot.id },
+      }),
+    ).toBe(0);
 
     await assertWalletIntegrity(prisma, wallet.id);
   });
@@ -945,6 +953,133 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(
       await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
     ).toBe(0);
+  });
+
+  // ── Refund idempotency: replays resolved before state validation ────────
+  //
+  // `refund()` used to validate `remaining`/`amount` — both derived from
+  // the purchase's *current*, mutable `refundedAmount` — before ever
+  // consulting the idempotency store. A retry of an already-succeeded
+  // request then failed its own precheck instead of returning the stored
+  // result, defeating the entire point of the idempotency key (independent
+  // audit, GitHub issue #28).
+
+  it('replays a full refund after remaining has dropped to zero, returning the original result', async () => {
+    const { staff, intent } = await confirmedPurchase(); // grossAmount 10000
+    const params = {
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'idem-full-replay-1',
+    };
+
+    const first = await refunds.refund(params); // no `amount` -> refunds the full 10000
+    // Naive re-validation would see `remaining = 0` here and throw "already
+    // been refunded in full" instead of ever reaching the idempotency store.
+    const second = await refunds.refund(params);
+
+    expect(second).toEqual(first);
+    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    expect(refreshed.refundedAmount.toFixed(4)).toBe('10000.0000'); // not 20000
+  });
+
+  it('replays a partial refund whose own amount now exceeds what remains, returning the original result', async () => {
+    const { staff, intent } = await confirmedPurchase(); // grossAmount 10000
+    const params = {
+      purchaseIntentId: intent.id,
+      amount: '6000', // remaining after this succeeds once: 10000 - 6000 = 4000 < 6000
+      reason: 'partial return',
+      actorId: staff.id,
+      idempotencyKey: 'idem-partial-replay-1',
+    };
+
+    const first = await refunds.refund(params);
+    // Naive re-validation would see `amount` (6000) exceed the now-current
+    // `remaining` (4000) and throw "exceeds the … still refundable" instead
+    // of ever reaching the idempotency store.
+    const second = await refunds.refund(params);
+
+    expect(second).toEqual(first);
+    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    expect(refreshed.refundedAmount.toFixed(4)).toBe('6000.0000'); // not 12000
+  });
+
+  it('rejects reusing the same idempotency key with a different amount or reason as a conflict, not a silent replay', async () => {
+    const { staff, intent } = await confirmedPurchase();
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      amount: '3000',
+      reason: 'return',
+      actorId: staff.id,
+      idempotencyKey: 'idem-conflict-amount-1',
+    });
+    await expect(
+      refunds.refund({
+        purchaseIntentId: intent.id,
+        amount: '4000', // different amount, same key
+        reason: 'return',
+        actorId: staff.id,
+        idempotencyKey: 'idem-conflict-amount-1',
+      }),
+    ).rejects.toThrow(/already used with a different request/);
+
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      amount: '1000',
+      reason: 'return A',
+      actorId: staff.id,
+      idempotencyKey: 'idem-conflict-reason-1',
+    });
+    await expect(
+      refunds.refund({
+        purchaseIntentId: intent.id,
+        amount: '1000', // same amount, different reason, same key
+        reason: 'return B',
+        actorId: staff.id,
+        idempotencyKey: 'idem-conflict-reason-1',
+      }),
+    ).rejects.toThrow(/already used with a different request/);
+
+    // Neither conflicting attempt created a second refund.
+    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(2);
+  });
+
+  it('creates exactly one financial refund when concurrent identical retries race on the same key', async () => {
+    const { wallet, staff, intent } = await confirmedPurchase();
+    const params = {
+      purchaseIntentId: intent.id,
+      amount: '5000',
+      reason: 'concurrent return',
+      actorId: staff.id,
+      idempotencyKey: 'idem-concurrent-1',
+    };
+
+    // `IdempotencyService.claim()`'s own, pre-existing design: the loser of
+    // a genuine concurrent race against a *fresh* IN_FLIGHT row gets a
+    // transient 409 (retryable), rather than blocking to await the
+    // winner — unrelated to this fix. What this fix guarantees is the
+    // financial invariant: whichever of the two actually executes, it
+    // executes exactly once, never twice, regardless of how the race
+    // resolves.
+    const settled = await Promise.allSettled([refunds.refund(params), refunds.refund(params)]);
+    const fulfilled = settled.filter(
+      (r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof refunds.refund>>> => r.status === 'fulfilled',
+    );
+    const rejected = settled.filter((r) => r.status === 'rejected');
+    // At least one side always succeeds; if both do, they agree on the
+    // exact same result (the second found the first's completed record).
+    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+    expect(fulfilled.length + rejected.length).toBe(2);
+    if (fulfilled.length === 2) {
+      expect(fulfilled[1]!.value).toEqual(fulfilled[0]!.value);
+    }
+
+    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    expect(refreshed.refundedAmount.toFixed(4)).toBe('5000.0000'); // not 10000
+    await assertWalletIntegrity(prisma, wallet.id);
   });
 
   // ── Migration safety: pre-snapshot purchases fail closed ────────────────

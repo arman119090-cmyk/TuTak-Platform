@@ -8,6 +8,8 @@ import {
   RoleName,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '../src/config/configuration';
 import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
@@ -889,6 +891,246 @@ describe('Refund clawback — deep matrix (integration)', () => {
 
       await assertWalletIntegrity(prisma, referrerWallet.id);
       await assertWalletIntegrity(prisma, refereeWallet.id);
+    });
+
+    // ── Item 4: reversal uses the originally-granted amount, not live
+    // config (GitHub issue #28) ───────────────────────────────────────────
+    //
+    // `reverseReward` used to read `purchasePolicy.challengeRewardAmount`
+    // fresh, at reversal time, rather than the amount actually granted
+    // months earlier. Every test above this point runs with that config
+    // value held constant for the whole file, so none of them could catch
+    // a bug that only shows up when the *live* value has moved between
+    // grant and reversal. These three mirror the partial/full/unspent
+    // matrix above, but change the live policy after granting and before
+    // refunding — proving the reversal is computed from each BonusLot's own
+    // immutable `originalAmount`, never from whatever the policy says now.
+    describe('reversal amount survives a live challengeRewardAmount change between grant and refund', () => {
+      let config: ConfigService<AppConfig, true>;
+      let originalRewardAmount: string;
+      // `ConfigService.set`'s declared type only accepts a top-level key,
+      // unlike `.get`'s dotted-path overload — a library typing gap, not a
+      // runtime one: it forwards to lodash's `set`, which resolves dotted
+      // paths at runtime same as `.get` does.
+      const setChallengeRewardAmount = (value: string) =>
+        (config as unknown as { set: (path: string, value: string) => void }).set(
+          'purchasePolicy.challengeRewardAmount',
+          value,
+        );
+
+      beforeAll(() => {
+        config = harness.app.get(ConfigService);
+        originalRewardAmount = config.get('purchasePolicy.challengeRewardAmount', { infer: true });
+      });
+
+      afterEach(() => {
+        setChallengeRewardAmount(originalRewardAmount);
+      });
+
+      it('reclaims the exact original 1000 + 1000 unspent grant even after live config rises to 1500', async () => {
+        const { referrerUser, refereeUser, participant } = await invitedChallenge('10000');
+        expect(originalRewardAmount).toBe('1000');
+        const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
+        await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+        const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+          where: { id: participant.id },
+        });
+        const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+        const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
+
+        // Proven directly against the DB, not inferred: both lots really
+        // were granted exactly 1000 each.
+        const referrerLot = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.referrerBonusLotId! },
+        });
+        const refereeLot = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.refereeBonusLotId! },
+        });
+        expect(referrerLot.originalAmount.toFixed(4)).toBe('1000.0000');
+        expect(refereeLot.originalAmount.toFixed(4)).toBe('1000.0000');
+
+        // A later admin decision (or just time passing) moves the live
+        // policy after this reward was already granted.
+        setChallengeRewardAmount('1500');
+
+        const staff = await staffMember(intent.partnerId);
+        await refunds.refund({
+          purchaseIntentId: intent.id,
+          reason: 'full return',
+          actorId: staff.id,
+          idempotencyKey: 'challenge-config-drift-unspent-1',
+        });
+
+        const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+          where: { id: participant.id },
+        });
+        expect(after.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+
+        // Fully reclaimed at the original 1000 each — not the now-live
+        // 1500, which a lot that only ever held 1000 could never actually
+        // pay out regardless of what `Decimal.min` capped it at.
+        const referrerLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.referrerBonusLotId! },
+        });
+        const refereeLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.refereeBonusLotId! },
+        });
+        expect(referrerLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+        expect(refereeLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+
+        const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+          where: { kind: 'referral.challenge_reward_reversed' },
+          include: { postings: true },
+        });
+        const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+          where: { type: 'BONUS_LIABILITY' },
+        });
+        const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+        // 1000 + 1000 = 2000, the true original grant — never 1500 + 1500 =
+        // 3000, which would manufacture 1000 AMD of recovered "revenue"
+        // TuTak never actually paid out.
+        expect(liabilityLeg?.amount.toFixed(4)).toBe('2000.0000');
+
+        await assertWalletIntegrity(prisma, referrerWallet.id);
+        await assertWalletIntegrity(prisma, refereeWallet.id);
+      });
+
+      it('reclaims the true unspent remainder of the original 1000 grant even after live config drops to 500', async () => {
+        const { referrerUser, refereeUser, participant } = await invitedChallenge('10000');
+        const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
+        await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+        const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+          where: { id: participant.id },
+        });
+        const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+        const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
+        await isolateForSpend(referrerWallet.id, rewarded.referrerBonusLotId!);
+        await isolateForSpend(refereeWallet.id, rewarded.refereeBonusLotId!);
+
+        // The referee spends 400 of their original 1000; the referrer
+        // spends nothing.
+        await spend(refereeWallet.id, '400', 'spend-config-drift-partial');
+
+        // Live policy drops to 500 — below both what was actually granted
+        // (1000) and what is still genuinely unspent in the referee's lot
+        // (600).
+        setChallengeRewardAmount('500');
+
+        const staff = await staffMember(intent.partnerId);
+        await refunds.refund({
+          purchaseIntentId: intent.id,
+          reason: 'full return',
+          actorId: staff.id,
+          idempotencyKey: 'challenge-config-drift-partial-1',
+        });
+
+        const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+          where: { id: participant.id },
+        });
+        expect(after.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+
+        // Capping the reclaim at the live 500 would have left 500 of the
+        // referrer's untouched grant, and 100 of the referee's genuinely
+        // unspent remainder, stranded in their wallets.
+        const referrerLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.referrerBonusLotId! },
+        });
+        const refereeLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.refereeBonusLotId! },
+        });
+        expect(referrerLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+        expect(refereeLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+
+        const walletsAfter = await Promise.all([
+          prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } }),
+          prisma.wallet.findUniqueOrThrow({ where: { id: refereeWallet.id } }),
+        ]);
+        expect(walletsAfter.every((w) => !w.availableBonus.isNegative())).toBe(true);
+
+        // 1000 (referrer, untouched) + 600 (referee's true unspent
+        // remainder) = 1600 — not 500 + 100 = 600, which is what capping
+        // each side's reclaim at the live config value would have
+        // produced.
+        const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+          where: { kind: 'referral.challenge_reward_reversed' },
+          include: { postings: true },
+        });
+        const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+          where: { type: 'BONUS_LIABILITY' },
+        });
+        const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+        expect(liabilityLeg?.amount.toFixed(4)).toBe('1600.0000');
+
+        await assertWalletIntegrity(prisma, referrerWallet.id);
+        await assertWalletIntegrity(prisma, refereeWallet.id);
+      });
+
+      it('writes off the full original 1000 + 1000 with no wallet clawback when both sides fully spent it before config changed to 2000', async () => {
+        const { referrerUser, refereeUser, participant } = await invitedChallenge('10000');
+        const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
+        await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+        const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+          where: { id: participant.id },
+        });
+        const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+        const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
+        await isolateForSpend(referrerWallet.id, rewarded.referrerBonusLotId!);
+        await isolateForSpend(refereeWallet.id, rewarded.refereeBonusLotId!);
+        await spend(referrerWallet.id, '1000', 'spend-config-drift-referrer-full');
+        await spend(refereeWallet.id, '1000', 'spend-config-drift-referee-full');
+
+        // Live policy rises to 2000 only after both sides already fully
+        // spent their original 1000 grant.
+        setChallengeRewardAmount('2000');
+
+        const staff = await staffMember(intent.partnerId);
+        await refunds.refund({
+          purchaseIntentId: intent.id,
+          reason: 'full return',
+          actorId: staff.id,
+          idempotencyKey: 'challenge-config-drift-full-spend-1',
+        });
+
+        const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+          where: { id: participant.id },
+        });
+        expect(after.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+
+        const referrerLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.referrerBonusLotId! },
+        });
+        const refereeLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+          where: { id: rewarded.refereeBonusLotId! },
+        });
+        expect(referrerLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+        expect(refereeLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
+
+        // Nothing left to reclaim — no reversal posting at all, exactly as
+        // the static-config "fully spent" case proves above. The bug this
+        // guards against was never in whether money moved (it correctly
+        // never does once a lot is drained) but in what the write-off log
+        // would have blamed: the true 1000 + 1000 already spent, not a
+        // phantom 2000 + 2000 implied by reading live config for the
+        // reference point.
+        expect(
+          await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
+        ).toBe(0);
+
+        const walletsAfter = await Promise.all([
+          prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } }),
+          prisma.wallet.findUniqueOrThrow({ where: { id: refereeWallet.id } }),
+        ]);
+        for (const w of walletsAfter) {
+          expect(w.availableBonus.isNegative()).toBe(false);
+          expect(w.availableBonus.toFixed(4)).toBe('0.0000');
+        }
+
+        await assertWalletIntegrity(prisma, referrerWallet.id);
+        await assertWalletIntegrity(prisma, refereeWallet.id);
+      });
     });
   });
 

@@ -388,28 +388,54 @@ export class ReferralService {
     reason: string,
     tx: Tx,
   ): Promise<void> {
-    const rewardAmount = new Decimal(
-      this.config.get('purchasePolicy.challengeRewardAmount', { infer: true }),
-    );
     const zero = new Decimal(0);
 
-    const [referrerClawed, refereeClawed] = await Promise.all([
+    // The historical source of truth is each side's own `BonusLot.originalAmount`
+    // — set once, at grant time, and never mutated afterward — not today's
+    // `purchasePolicy.challengeRewardAmount` (independent audit, GitHub issue
+    // #28: a reward issued at 1000+1000 AMD must reverse as 1000+1000 no
+    // matter what the live config says by the time a refund drops this
+    // participant back below `requiredAmount`, possibly months later). Same
+    // pattern `DeferredBonusLotService.reverseUnlock` already uses for the
+    // same reason.
+    const [referrerLot, refereeLot] = await Promise.all([
       participant.referrerBonusLotId
-        ? this.bonusEngine.reverseAccrualLot(participant.referrerBonusLotId, reason, rewardAmount, tx)
+        ? tx.bonusLot.findUnique({
+            where: { id: participant.referrerBonusLotId },
+            select: { originalAmount: true },
+          })
         : null,
       participant.refereeBonusLotId
-        ? this.bonusEngine.reverseAccrualLot(participant.refereeBonusLotId, reason, rewardAmount, tx)
+        ? tx.bonusLot.findUnique({
+            where: { id: participant.refereeBonusLotId },
+            select: { originalAmount: true },
+          })
+        : null,
+    ]);
+    const referrerGranted = referrerLot?.originalAmount ?? zero;
+    const refereeGranted = refereeLot?.originalAmount ?? zero;
+    const totalGranted = referrerGranted.plus(refereeGranted);
+
+    // No cap passed: the whole grant is invalid, so whatever is still
+    // unspent in the lot — never more than `originalAmount`, by
+    // construction — is reclaimed in full, exactly as `reverseUnlock` does.
+    const [referrerClawed, refereeClawed] = await Promise.all([
+      participant.referrerBonusLotId
+        ? this.bonusEngine.reverseAccrualLot(participant.referrerBonusLotId, reason, undefined, tx)
+        : null,
+      participant.refereeBonusLotId
+        ? this.bonusEngine.reverseAccrualLot(participant.refereeBonusLotId, reason, undefined, tx)
         : null,
     ]);
     const referrerActual = referrerClawed ?? zero;
     const refereeActual = refereeClawed ?? zero;
-    const shortfall = rewardAmount.minus(referrerActual).plus(rewardAmount.minus(refereeActual));
+    const shortfall = referrerGranted.minus(referrerActual).plus(refereeGranted.minus(refereeActual));
 
     if (shortfall.greaterThan(0)) {
       this.logger.warn(
         `Referral challenge reward reversed for referrer ${participant.referrerUserId} / referee ` +
-          `${participant.refereeUserId}: ${shortfall.toString()} of the ${rewardAmount.times(2).toString()} ` +
-          'paid could not be reclaimed (already spent or expired) and was written off.',
+          `${participant.refereeUserId}: ${shortfall.toString()} of the ${totalGranted.toString()} ` +
+          'originally granted could not be reclaimed (already spent or expired) and was written off.',
       );
     }
 
@@ -435,7 +461,7 @@ export class ReferralService {
 
     this.logger.log(
       `Referral challenge reward reversed: referrer ${participant.referrerUserId} + referee ` +
-        `${participant.refereeUserId}, ${recovered.toString()} of ${rewardAmount.times(2).toString()} reclaimed.`,
+        `${participant.refereeUserId}, ${recovered.toString()} of ${totalGranted.toString()} reclaimed.`,
     );
   }
 

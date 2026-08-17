@@ -84,6 +84,55 @@ describe('EV charging (integration)', () => {
     await assertWalletIntegrity(prisma, wallet.id);
   });
 
+  it('posts the accrual to the double-entry ledger, not just the wallet subledger', async () => {
+    // The wallet-side BonusLedgerEntry subledger (asserted above) is not the
+    // accounting source of truth — LedgerTransaction/LedgerPosting is. A
+    // bonus that reaches the wallet with no matching posting here is real,
+    // spendable money with no accounting record of who funded it: the
+    // partner's payable never grows to cover it, so reconciliation can never
+    // catch the shortfall.
+    const { user, wallet, partner, connector } = await scenario({ rateBps: 500 });
+
+    const session = await sessions.start({ connectorId: connector.id }, user.id);
+    await backdate(session.id);
+    await sessions.reportMeterValue(session.id, '25', user.id);
+    const result = await sessions.stop(session.id, user.id, {});
+    expect(result.bonusEarned).toBe('125');
+
+    const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+      include: { postings: true },
+    });
+    const postings = ledgerTx.postings;
+    expect(postings).toHaveLength(2);
+
+    const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+    });
+    const liabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
+
+    const partnerLeg = postings.find((p) => p.accountId === partnerAccount.id);
+    const liabilityLeg = postings.find((p) => p.accountId === liabilityAccount.id);
+    expect(partnerLeg?.direction).toBe('DEBIT');
+    expect(partnerLeg?.amount.toFixed(4)).toBe('125.0000');
+    expect(liabilityLeg?.direction).toBe('CREDIT');
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('125.0000');
+
+    // Same sign convention as PurchaseIntentsService.postContributionLedger's
+    // own primary-partner leg (purchase-intents.int-spec.ts: "the contribution
+    // reduces what is owed"): PARTNER_PAYABLE is credit-normal, so a DEBIT
+    // funding a customer's bonus moves the raw (debit-positive) balance up
+    // and the negated "owed to partner" reading down by the same amount.
+    const partnerAfter = await prisma.ledgerAccount.findUniqueOrThrow({
+      where: { id: partnerAccount.id },
+    });
+    expect(partnerAfter.balance.toFixed(4)).toBe('125.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
+  });
+
   it('frees the connector and writes a CDR when the session completes', async () => {
     const { user, connector } = await scenario();
 

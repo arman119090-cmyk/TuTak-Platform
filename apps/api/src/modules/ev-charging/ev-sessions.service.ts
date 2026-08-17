@@ -12,6 +12,8 @@ import {
   EvConnectorStatus,
   EvReservationStatus,
   EvSessionStatus,
+  LedgerAccountType,
+  PostingDirection,
   TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -24,6 +26,7 @@ import { FraudDetectionService } from '../security/fraud-detection.service';
 import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
+import { LedgerService } from '../ledger/ledger.service';
 import { PartnersService } from '../partners/partners.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
@@ -104,6 +107,7 @@ export class EvSessionsService {
     private readonly alerts: AlertsService,
     private readonly idempotency: IdempotencyService,
     private readonly partners: PartnersService,
+    private readonly ledger: LedgerService,
   ) {}
 
   async start(dto: StartSessionDto, userId: string) {
@@ -465,6 +469,24 @@ export class EvSessionsService {
             sourceTransactionId: transaction.id,
           });
           accruedLotId = lot.id;
+
+          // This bonus used to reach the customer's wallet with no matching
+          // double-entry posting at all — the only accrual path in the
+          // codebase with that gap; PurchaseIntentsService.postContributionLedger
+          // and the QR mirror both post theirs. Same shape as
+          // postContributionLedger's own "green" leg: the partner's payable
+          // grows by what the platform now owes the customer.
+          //
+          // Never fatal, the same reasoning as QrLedgerMirrorService: the
+          // customer has already paid for and been credited on this charge,
+          // and a bookkeeping failure must not unwind that.
+          await this.postAccrualLedger(
+            session.connector.station.partnerId,
+            bonusEarned,
+            transaction.id,
+          ).catch((e) =>
+            this.logger.error(`Failed to post EV accrual ledger entry for session ${session.id}`, e),
+          );
         }
       }
 
@@ -510,6 +532,30 @@ export class EvSessionsService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Posts the accounting side of an EV bonus accrual: the partner now owes
+   * the platform what the customer was just credited. Mirrors
+   * `PurchaseIntentsService.postContributionLedger`'s green leg — same two
+   * account types, same direction — because this is the same kind of event
+   * (a partner-funded bonus accrual), not a new one.
+   */
+  private async postAccrualLedger(partnerId: string, bonusEarned: Decimal, transactionId: string) {
+    const [partnerAccount, bonusLiabilityAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
+    ]);
+
+    await this.ledger.post({
+      kind: 'ev.charging.accrual',
+      sourceType: 'Transaction',
+      sourceId: transactionId,
+      postings: [
+        { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: bonusEarned },
+        { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: bonusEarned },
+      ],
+    });
   }
 
   /**

@@ -8,7 +8,6 @@ import {
   api,
   apiLogin,
   expectLedgerBalanced,
-  unique,
 } from './helpers';
 
 /**
@@ -89,10 +88,16 @@ test.describe('QR payment loop', () => {
     await expectLedgerBalanced(adminToken);
   });
 
-  test('the same invoice cannot be redeemed twice', async () => {
+  // These two used to drive the legacy /qr/issue + /qr/redeem endpoints
+  // directly — the same "invoice token" mechanism the top comment describes
+  // moving away from. `QrPaymentsController.redeem()` now unconditionally
+  // refuses to settle a purchase (see GitHub issue #28); the guarantees
+  // these tests exist to prove — no double payout, a retry replays rather
+  // than re-settles — now live entirely in `PurchaseIntentsService.confirm`,
+  // so both are rewritten against that endpoint instead.
+  test('confirming the same purchase intent twice does not double-credit the customer', async () => {
     const ownerToken = await apiLogin(PHONES.partnerOwner, 'owner');
     const customerToken = await apiLogin(PHONES.scannerA, 'scanner-a');
-    const customer2Token = await apiLogin(PHONES.scannerB, 'scanner-b');
     const adminToken = await apiLogin(PHONES.admin, 'admin');
 
     const partners = await api<Array<{ id: string; displayName: string }>>(
@@ -101,29 +106,28 @@ test.describe('QR payment loop', () => {
     );
     const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
 
-    const qr = await api<{ token: string }>(ownerToken, '/qr/issue', {
+    const before = await api<{ lifetimeEarned: string }>(customerToken, '/wallet/me');
+
+    const intent = await api<{ id: string }>(customerToken, '/purchase-intents', {
       method: 'POST',
-      body: { type: 'DYNAMIC_INVOICE', partnerId: cafe.id, amount: '1500', expiresInSeconds: 900 },
+      body: { partnerId: cafe.id, grossAmount: '1500' },
     });
 
-    await api(customerToken, '/qr/redeem', {
-      method: 'POST',
-      body: { token: qr.token, idempotencyKey: unique('e2e-first') },
-    });
+    await api(ownerToken, `/purchase-intents/${intent.id}/confirm`, { method: 'POST' });
 
-    // A second customer scanning a photograph of the same code must be
-    // refused — the invoice was for one payment.
-    await expect(
-      api(customer2Token, '/qr/redeem', {
-        method: 'POST',
-        body: { token: qr.token, idempotencyKey: unique('e2e-second') },
-      }),
-    ).rejects.toThrow(/already redeemed|not active/i);
+    // A second confirmation of the same intent — a double-tap on the
+    // dashboard, or a network retry — must not pay the customer again.
+    await api(ownerToken, `/purchase-intents/${intent.id}/confirm`, { method: 'POST' });
+
+    const after = await api<{ lifetimeEarned: string }>(customerToken, '/wallet/me');
+    // Cafe Yerevan accrues at 5%, so the pool is 75 — but the customer's
+    // immediate GREEN share is only 20% of that pool (spec §12-14), once.
+    expect(Number(after.lifetimeEarned) - Number(before.lifetimeEarned)).toBeCloseTo(15, 4);
 
     await expectLedgerBalanced(adminToken);
   });
 
-  test('a retried redemption replays the first result instead of charging again', async () => {
+  test('a retried confirmation replays the first result instead of re-settling', async () => {
     const ownerToken = await apiLogin(PHONES.partnerOwner, 'owner');
     const customerToken = await apiLogin(PHONES.replayCustomer, 'replay');
     const adminToken = await apiLogin(PHONES.admin, 'admin');
@@ -131,23 +135,26 @@ test.describe('QR payment loop', () => {
     const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
     const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
 
-    const qr = await api<{ token: string }>(ownerToken, '/qr/issue', {
+    const intent = await api<{ id: string }>(customerToken, '/purchase-intents', {
       method: 'POST',
-      body: { type: 'DYNAMIC_INVOICE', partnerId: cafe.id, amount: '2200', expiresInSeconds: 900 },
+      body: { partnerId: cafe.id, grossAmount: '2200' },
     });
 
-    const key = unique('e2e-replay');
-    const first = await api<{ transactionId: string }>(customerToken, '/qr/redeem', {
-      method: 'POST',
-      body: { token: qr.token, idempotencyKey: key },
-    });
-    // The dropped-response case: the phone lost the reply and sent it again.
-    const replay = await api<{ transactionId: string }>(customerToken, '/qr/redeem', {
-      method: 'POST',
-      body: { token: qr.token, idempotencyKey: key },
-    });
+    const first = await api<{ status: string; confirmedAt: string }>(
+      ownerToken,
+      `/purchase-intents/${intent.id}/confirm`,
+      { method: 'POST' },
+    );
+    // The dropped-response case: the dashboard lost the reply and the
+    // browser sent the same confirmation again.
+    const replay = await api<{ status: string; confirmedAt: string }>(
+      ownerToken,
+      `/purchase-intents/${intent.id}/confirm`,
+      { method: 'POST' },
+    );
 
-    expect(replay.transactionId).toBe(first.transactionId);
+    expect(replay.status).toBe('CONFIRMED');
+    expect(replay.confirmedAt).toBe(first.confirmedAt);
     await expectLedgerBalanced(adminToken);
   });
 });

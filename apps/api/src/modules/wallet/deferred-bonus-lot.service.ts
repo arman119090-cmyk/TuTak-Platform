@@ -45,8 +45,18 @@ export class DeferredBonusLotService {
    * `PurchaseIntentService` inside its own transaction, in that order; this
    * method does not create the new lot itself, by design, so a purchase can
    * never progress its own newly-created lot.
+   *
+   * Records each lot's contribution in `DeferredBonusLotContribution` so a
+   * later refund of this same `sourceTransactionId` can reverse precisely
+   * what it added here — see `reverseExternalContributions` (independent
+   * audit, GitHub issue #28).
    */
-  async advanceExistingLots(userId: string, grossAmount: Decimal, tx: Tx): Promise<void> {
+  async advanceExistingLots(
+    userId: string,
+    grossAmount: Decimal,
+    sourceTransactionId: string,
+    tx: Tx,
+  ): Promise<void> {
     const now = new Date();
     const allLots = await tx.deferredBonusLot.findMany({
       where: { userId, status: DeferredBonusLotStatus.DEFERRED, deadline: { gte: now } },
@@ -79,6 +89,14 @@ export class DeferredBonusLotService {
         where: { id: lot.id },
         data: { progressTurnover: { increment: grossAmount } },
       });
+
+      // Traceability for `reverseExternalContributions`: without this, a
+      // refund of this purchase has no way to know it was this lot (among
+      // possibly several) that received this turnover, or how much.
+      await tx.deferredBonusLotContribution.create({
+        data: { lotId: lot.id, sourceTransactionId, amount: grossAmount },
+      });
+
       if (updated.progressTurnover.lessThan(updated.requiredTurnover)) {
         continue;
       }
@@ -219,6 +237,54 @@ export class DeferredBonusLotService {
       : null;
     const actual = clawed ?? zero;
     return { liabilityToReverse: actual, shortfall: reduceBy.minus(actual) };
+  }
+
+  /**
+   * Reverses the turnover *this* purchase contributed to *other* lots via
+   * `advanceExistingLots` — the gap `reverseForRefund` above documents as
+   * out of scope for itself, closed by `DeferredBonusLotContribution`
+   * (independent audit, GitHub issue #28).
+   *
+   * Only ever reduces `progressTurnover` on a lot still `DEFERRED`. A lot
+   * that already unlocked used this turnover to mint a real, spendable
+   * accrual through a *different* purchase's own settlement; clawing that
+   * back reaches into a different lot's already-posted liability history
+   * this refund has no record of, which is a materially bigger change than
+   * this fix — left as a reported residual rather than an unsafe clawback,
+   * logged here so it stays visible instead of silently doing nothing.
+   */
+  async reverseExternalContributions(sourceTransactionId: string, amount: Decimal, tx: Tx): Promise<void> {
+    if (amount.lessThanOrEqualTo(0)) return;
+
+    const contributions = await tx.deferredBonusLotContribution.findMany({
+      where: { sourceTransactionId },
+      include: { lot: true },
+    });
+
+    for (const contribution of contributions) {
+      const reversible = contribution.amount.minus(contribution.reversedAmount);
+      if (reversible.lessThanOrEqualTo(0)) continue;
+      const reduceBy = Decimal.min(amount, reversible);
+      if (reduceBy.lessThanOrEqualTo(0)) continue;
+
+      if (contribution.lot.status !== DeferredBonusLotStatus.DEFERRED) {
+        this.logger.warn(
+          `Purchase ${sourceTransactionId} refund: ${reduceBy.toString()} of turnover previously ` +
+            `contributed to deferred bonus lot ${contribution.lotId} could not be reversed because the ` +
+            `lot is already ${contribution.lot.status}.`,
+        );
+        continue;
+      }
+
+      await tx.deferredBonusLotContribution.update({
+        where: { id: contribution.id },
+        data: { reversedAmount: { increment: reduceBy } },
+      });
+      await tx.deferredBonusLot.update({
+        where: { id: contribution.lotId },
+        data: { progressTurnover: { decrement: reduceBy } },
+      });
+    }
   }
 
   /**

@@ -163,6 +163,17 @@ export class PurchaseIntentsService {
       description: `Purchase at ${partner.displayName}`,
     });
 
+    // One canonical timestamp for both records — computed once, before any
+    // async work, and passed to both `reserve()` and `PurchaseIntent.create`
+    // below. Computing it twice (once inside `reserve()`, once here) used to
+    // stamp the reservation strictly *earlier* than the intent by however
+    // long the reservation's own DB writes took, leaving a real window where
+    // `releaseExpiredReservations` could sweep the reservation while the
+    // intent still looked unexpired to the customer/partner — a confirm
+    // attempt in that window failed with no reservation left to settle
+    // (independent audit, GitHub issue #28).
+    const expiresAt = new Date(Date.now() + intentTimeoutSeconds * 1000);
+
     let bonusReservationId: string | null = null;
     try {
       if (bonusAmountRequested.greaterThan(0)) {
@@ -172,11 +183,11 @@ export class PurchaseIntentsService {
           bonusAmountRequested,
           transaction.id,
           intentTimeoutSeconds,
+          expiresAt,
         );
         bonusReservationId = reservation.reservationId;
       }
 
-      const expiresAt = new Date(Date.now() + intentTimeoutSeconds * 1000);
       const intent = await this.prisma.purchaseIntent.create({
         data: {
           customerId,
@@ -360,7 +371,12 @@ export class PurchaseIntentsService {
 
         // Spec §15: existing lots first, then this purchase's own new lot —
         // never the other order.
-        await this.deferredBonusLots.advanceExistingLots(intent.customerId, intent.grossAmount, tx);
+        await this.deferredBonusLots.advanceExistingLots(
+          intent.customerId,
+          intent.grossAmount,
+          intent.sourceTransactionId!,
+          tx,
+        );
         if (deferred.greaterThan(0)) {
           await this.deferredBonusLots.createLot(
             intent.customerId,

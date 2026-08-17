@@ -141,6 +141,29 @@ describe('PurchaseIntents (integration)', () => {
       ).toBe('1000.0000'); // 2000 - 1000 held
     });
 
+    it('stamps the reservation and the intent with the exact same expiry timestamp — no independent clocks', async () => {
+      // Independent audit, GitHub issue #28: `create()` used to compute the
+      // reservation's `expiresAt` (inside `bonusEngine.reserve`) and the
+      // intent's own `expiresAt` from two separate `Date.now()` reads,
+      // straddling the reservation's own DB writes. The reservation was
+      // always stamped strictly earlier, leaving a real window where
+      // `releaseExpiredReservations` could sweep the reservation while the
+      // intent still looked unexpired — a confirm in that window failed with
+      // no reservation left to settle. One canonical timestamp closes it.
+      const { user } = await fundedCustomer('2000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '1000' },
+        user.id,
+      );
+
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.expiresAt.getTime()).toBe(intent.expiresAt.getTime());
+    });
+
     it('refuses to create a purchase intent for a partner the customer belongs to', async () => {
       const partner = await createPartner(prisma);
       const owner = await staffMember(partner.id, [RoleName.PARTNER_OWNER]);
@@ -866,7 +889,7 @@ describe('PurchaseIntents (integration)', () => {
       // T1: advances the lot by 10000, then stays open — holding its row
       // lock on the lot — until explicitly released below.
       const first = prisma.$transaction(async (tx) => {
-        await deferredLots.advanceExistingLots(user.id, new Decimal('10000'), tx);
+        await deferredLots.advanceExistingLots(user.id, new Decimal('10000'), 'concurrent-tx-1', tx);
         await heldOpen;
       });
 
@@ -876,7 +899,7 @@ describe('PurchaseIntents (integration)', () => {
       // read the bug depends on.
       await new Promise((resolve) => setTimeout(resolve, 100));
       const second = prisma.$transaction(async (tx) => {
-        await deferredLots.advanceExistingLots(user.id, new Decimal('15000'), tx);
+        await deferredLots.advanceExistingLots(user.id, new Decimal('15000'), 'concurrent-tx-2', tx);
       });
 
       // T2's own write now blocks on T1's row lock. Give it time to reach

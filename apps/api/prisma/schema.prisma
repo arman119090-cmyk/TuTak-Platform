@@ -942,11 +942,39 @@ model DeferredBonusLot {
   /// (and unless) that happens.
   grantedBonusLotId   String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions DeferredBonusLotContribution[]
 
   @@index([userId, status])
   @@index([status, deadline])
   @@map("deferred_bonus_lots")
+}
+
+/// Records exactly how much turnover one purchase (`sourceTransactionId`)
+/// contributed to an *existing* lot via `advanceExistingLots` — the
+/// traceability `DeferredBonusLotService.reverseForRefund` used to lack for
+/// any lot other than the one the refunded purchase itself created (that
+/// method's own docblock called this out: "nothing records which lot
+/// received how much turnover from which purchase"). A refund reverses
+/// exactly this recorded amount, never more, and only ever from a lot that
+/// has not yet unlocked (independent audit, GitHub issue #28).
+model DeferredBonusLotContribution {
+  id                  String   @id @default(uuid())
+  lotId               String
+  sourceTransactionId String
+  /// This purchase's turnover contribution, as originally applied.
+  amount              Decimal  @db.Decimal(18, 4)
+  /// Running total already reversed by refunds of this same purchase —
+  /// mirrors `DeferredBonusLot.refundedAmount`'s own separate-running-total
+  /// pattern rather than decrementing `amount` itself.
+  reversedAmount      Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt           DateTime @default(now())
+
+  lot DeferredBonusLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  @@unique([lotId, sourceTransactionId])
+  @@index([sourceTransactionId])
+  @@map("deferred_bonus_lot_contributions")
 }
 
 enum ReferralChallengeParticipantStatus {
@@ -976,9 +1004,33 @@ model ReferralChallengeParticipant {
 
   referrer User @relation("ChallengeReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
   referee  User @relation("ChallengeReferee", fields: [refereeUserId], references: [id], onDelete: Cascade)
+  contributions ReferralChallengeContribution[]
 
   @@index([referrerUserId, status])
   @@map("referral_challenge_participants")
+}
+
+/// Records exactly how much one transaction contributed to a participant's
+/// `progressAmount` in `ReferralService.advanceChallengeProgress` — a
+/// transaction only ever contributes while the participant is still
+/// IN_PROGRESS (the method early-exits otherwise), so this is the only
+/// reliable way to know, at refund time, whether a given purchase's amount
+/// is actually part of the current tally. A refund reverses exactly this
+/// recorded amount, and only while the participant has not yet been
+/// REWARDED — a paid-out reward is a real, already-spendable wallet credit
+/// this refund does not attempt to claw back (independent audit, GitHub
+/// issue #28).
+model ReferralChallengeContribution {
+  id            String   @id @default(uuid())
+  participantId String
+  transactionId String   @unique
+  amount        Decimal  @db.Decimal(18, 4)
+  reversedAmount Decimal @default(0) @db.Decimal(18, 4)
+  createdAt     DateTime @default(now())
+
+  participant ReferralChallengeParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@map("referral_challenge_contributions")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

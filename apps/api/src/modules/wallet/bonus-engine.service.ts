@@ -256,6 +256,15 @@ export class BonusEngineService {
     amount: Decimal | number | string,
     reasonTransactionId: string,
     holdSeconds?: number,
+    /**
+     * Overrides the computed `expiresAt` outright — for a caller that must
+     * stamp this reservation with the *exact same* timestamp as some other
+     * record it is creating alongside it (e.g. `PurchaseIntent.expiresAt`),
+     * rather than two independent `Date.now()` reads racing the wall clock
+     * against each other across the async work in between (independent
+     * audit, GitHub issue #28).
+     */
+    expiresAtOverride?: Date,
   ): Promise<ReserveResult> {
     const target = parsePositiveMoney(amount, 'reservation amount');
 
@@ -272,7 +281,7 @@ export class BonusEngineService {
         }
 
         const hold = holdSeconds ?? this.config.get('bonus', { infer: true }).reservationHoldSeconds;
-        const expiresAt = new Date(Date.now() + hold * 1000);
+        const expiresAt = expiresAtOverride ?? new Date(Date.now() + hold * 1000);
 
         const reservation = await tx.bonusReservation.create({
           data: { walletId, amount: target, reasonTransactionId, expiresAt },

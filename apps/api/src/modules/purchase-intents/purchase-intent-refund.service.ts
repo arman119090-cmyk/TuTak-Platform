@@ -328,6 +328,16 @@ export class PurchaseIntentRefundService {
       deferredShortfall = result.shortfall;
     }
 
+    // This purchase's own turnover contribution to *other* deferred lots
+    // (via `advanceExistingLots`) and to the customer's Referral Challenge
+    // progress (via `advanceChallengeProgress`) are both proportional to the
+    // raw refunded amount, not the pool split — a straight dollar-for-dollar
+    // relationship, unlike the legs above. Independent audit, GitHub issue
+    // #28: neither used to be reversed at all.
+    const rawRefundΔ = cumulativeAfter.minus(cumulativeBefore);
+    await this.deferredBonusLots.reverseExternalContributions(sourceTransactionId, rawRefundΔ, tx);
+    await this.referralService.reverseChallengeContribution(sourceTransactionId, rawRefundΔ, tx);
+
     // Unrecoverable: value the customer already spent elsewhere (whose own
     // transaction already released this liability) or that expired
     // unclaimed. Neither case leaves anything real to take back from the

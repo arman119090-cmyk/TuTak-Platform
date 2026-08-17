@@ -233,6 +233,15 @@ export class ReferralService {
           data: { progressAmount: { increment: transaction.amount } },
         });
 
+        // Traceability for `reverseChallengeContribution`: this transaction
+        // only ever reaches here while the participant is IN_PROGRESS (the
+        // guard at the top of this method), so recording it now is the only
+        // reliable way a later refund can know this specific amount is part
+        // of the current tally (independent audit, GitHub issue #28).
+        await tx.referralChallengeContribution.create({
+          data: { participantId: participant.id, transactionId, amount: transaction.amount },
+        });
+
         if (updated.progressAmount.lessThan(updated.requiredAmount)) return;
 
         // Both sides verified, same as the flat one-time reward this evolved
@@ -268,6 +277,70 @@ export class ReferralService {
           tx,
         );
       });
+  }
+
+  /**
+   * Reverses the progress a refunded purchase contributed to the referee's
+   * Referral Challenge, closing the gap that let a refunded purchase
+   * permanently qualify (or help qualify) a reward (independent audit,
+   * GitHub issue #28): without this, `progressAmount` only ever grew, so a
+   * customer could buy enough to qualify a referrer's Challenge slot, then
+   * refund the purchase and keep the qualification.
+   *
+   * Looks up by `transactionId` rather than by referee: `advanceChallengeProgress`
+   * only ever creates a `ReferralChallengeContribution` row for a
+   * transaction that actually counted (it early-exits once the participant
+   * leaves IN_PROGRESS), so a transaction with no row is proof it never
+   * contributed and this is a safe no-op for it.
+   *
+   * Only reverses while the participant has not yet been REWARDED — the
+   * reward is a real, already-spendable wallet credit funded from TuTak's
+   * own funds (see `tryRewardChallengeSlot`'s docblock); clawing that back
+   * after the fact is a materially bigger change than this fix and is
+   * reported as a residual rather than attempted here.
+   */
+  async reverseChallengeContribution(transactionId: string, amount: Decimal, tx: Tx): Promise<void> {
+    if (amount.lessThanOrEqualTo(0)) return;
+
+    const contribution = await tx.referralChallengeContribution.findUnique({
+      where: { transactionId },
+      include: { participant: true },
+    });
+    if (!contribution) return;
+
+    const reversible = contribution.amount.minus(contribution.reversedAmount);
+    if (reversible.lessThanOrEqualTo(0)) return;
+    const reduceBy = Decimal.min(amount, reversible);
+    if (reduceBy.lessThanOrEqualTo(0)) return;
+
+    if (contribution.participant.status === ReferralChallengeParticipantStatus.REWARDED) {
+      this.logger.warn(
+        `Refund of transaction ${transactionId} reduced referral challenge progress for referee ` +
+          `${contribution.participant.refereeUserId}, but the reward was already paid out and cannot be ` +
+          'reclaimed automatically.',
+      );
+      return;
+    }
+
+    await tx.referralChallengeContribution.update({
+      where: { id: contribution.id },
+      data: { reversedAmount: { increment: reduceBy } },
+    });
+
+    const newProgress = contribution.participant.progressAmount.minus(reduceBy);
+    const data: Prisma.ReferralChallengeParticipantUpdateInput = { progressAmount: newProgress };
+    // A QUALIFIED-but-not-yet-REWARDED participant (all of a referrer's
+    // slots were taken) is still fully reversible — nothing has been paid
+    // out yet, so dropping back below the threshold un-qualifies it exactly
+    // as if the refunded purchase had never happened.
+    if (
+      contribution.participant.status === ReferralChallengeParticipantStatus.QUALIFIED &&
+      newProgress.lessThan(contribution.participant.requiredAmount)
+    ) {
+      data.status = ReferralChallengeParticipantStatus.IN_PROGRESS;
+      data.qualifiedAt = null;
+    }
+    await tx.referralChallengeParticipant.update({ where: { id: contribution.participantId }, data });
   }
 
   /**

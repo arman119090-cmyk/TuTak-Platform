@@ -1,11 +1,20 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BonusEntryType, BonusLotStatus, DeferredBonusLotStatus, PrismaClient, RoleName } from '@prisma/client';
+import {
+  BonusEntryType,
+  BonusLotStatus,
+  DeferredBonusLotStatus,
+  PrismaClient,
+  ReferralChallengeParticipantStatus,
+  ReferrerType,
+  RoleName,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../src/modules/wallet/deferred-bonus-lot.service';
+import { ReferralService } from '../src/modules/referral/referral.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
@@ -24,6 +33,7 @@ describe('PurchaseIntentRefundService (integration)', () => {
   let refunds: PurchaseIntentRefundService;
   let engine: BonusEngineService;
   let deferredLots: DeferredBonusLotService;
+  let referral: ReferralService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -32,6 +42,7 @@ describe('PurchaseIntentRefundService (integration)', () => {
     refunds = harness.app.get(PurchaseIntentRefundService);
     engine = harness.app.get(BonusEngineService);
     deferredLots = harness.app.get(DeferredBonusLotService);
+    referral = harness.app.get(ReferralService);
   });
 
   afterAll(async () => {
@@ -74,6 +85,15 @@ describe('PurchaseIntentRefundService (integration)', () => {
     );
     const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
     return { user, wallet, partner, staff, intent: confirmed };
+  };
+
+  /** Same shape as `confirmedPurchase`, but for a caller-supplied customer and gross amount. */
+  const confirmedPurchaseFor = async (userId: string, grossAmount: string) => {
+    const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+    const staff = await staffMember(partner.id);
+    const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount }, userId);
+    const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+    return { partner, staff, intent: confirmed };
   };
 
   // ── Full and partial refunds ────────────────────────────────────────────
@@ -530,8 +550,12 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(before.availableBonus.toFixed(4)).toBe('100.0000');
 
     // The platform changes its pool-split policy after this purchase
-    // already confirmed — green now 90% instead of 20%.
+    // already confirmed — green now 90% instead of 20%. Restored at the end
+    // of the test: `config` is the single shared ConfigService instance for
+    // this whole file's harness, so a mutation left in place here would leak
+    // into every test that runs afterward for the rest of the file.
     const config = harness.app.get(ConfigService);
+    const originalPoolGreenBps = config.get('purchasePolicy.poolGreenBps', { infer: true });
     config.set('purchasePolicy.poolGreenBps', 9000);
 
     await refunds.refund({
@@ -564,5 +588,245 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(refreshedIntent.greenAmount?.toFixed(4)).toBe('100.0000');
 
     await assertWalletIntegrity(prisma, wallet.id);
+    config.set('purchasePolicy.poolGreenBps', originalPoolGreenBps);
+  });
+
+  // ── Refund attribution: deferred bonus lots (GitHub issue #28) ─────────
+
+  it('reverses turnover contributed to another still-open deferred lot when the contributing purchase is refunded', async () => {
+    const { user } = await createCustomer(prisma);
+    const seedLot = await prisma.deferredBonusLot.create({
+      data: {
+        userId: user.id,
+        sourceTransactionId: 'seed-lot-source-open',
+        amount: '500',
+        requiredTurnover: '20000',
+        progressTurnover: '4000',
+        deadline: new Date(Date.now() + 90 * 24 * 3600 * 1000),
+      },
+    });
+
+    const { intent } = await confirmedPurchaseFor(user.id, '6000');
+
+    const afterPurchase = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    expect(afterPurchase.progressTurnover.toFixed(4)).toBe('10000.0000'); // 4000 + 6000
+    expect(afterPurchase.status).toBe(DeferredBonusLotStatus.DEFERRED);
+
+    const staff = await staffMember(intent.partnerId);
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'external-lot-reversal-1',
+    });
+
+    // The turnover this purchase lent to the *other* lot comes back out —
+    // without this, buying just enough to push a stuck lot over its
+    // threshold and then refunding kept the inflated progress forever
+    // (independent audit, GitHub issue #28).
+    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    expect(afterRefund.progressTurnover.toFixed(4)).toBe('4000.0000');
+    expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
+
+    const contribution = await prisma.deferredBonusLotContribution.findFirstOrThrow({
+      where: { lotId: seedLot.id, sourceTransactionId: intent.sourceTransactionId! },
+    });
+    expect(contribution.amount.toFixed(4)).toBe('6000.0000');
+    expect(contribution.reversedAmount.toFixed(4)).toBe('6000.0000');
+  });
+
+  it('does not reverse turnover on a deferred lot that has already unlocked using it', async () => {
+    const { user, wallet } = await createCustomer(prisma);
+    const seedLot = await prisma.deferredBonusLot.create({
+      data: {
+        userId: user.id,
+        sourceTransactionId: 'seed-lot-source-unlocked',
+        amount: '500',
+        requiredTurnover: '5000',
+        progressTurnover: '4900',
+        deadline: new Date(Date.now() + 90 * 24 * 3600 * 1000),
+      },
+    });
+
+    // 4900 + 200 = 5100 >= 5000: this purchase's own turnover contribution
+    // is what pushes the *other* lot over its threshold and unlocks it.
+    const { intent } = await confirmedPurchaseFor(user.id, '200');
+
+    const unlockedLot = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    expect(unlockedLot.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+    expect(unlockedLot.progressTurnover.toFixed(4)).toBe('5100.0000');
+    // The 500 AMD this lot granted, as its own distinct wallet-side lot —
+    // tracked separately from the refunded purchase's own (unrelated) 2 AMD
+    // green accrual, which the refund correctly does reverse.
+    const grantedLot = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: unlockedLot.grantedBonusLotId! },
+    });
+    expect(grantedLot.remainingAmount.toFixed(4)).toBe('500.0000');
+
+    const staff = await staffMember(intent.partnerId);
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'external-lot-no-reversal-1',
+    });
+
+    // Deliberately untouched: this lot already unlocked and granted a real,
+    // spendable accrual funded by a *different* purchase's own settlement —
+    // see `reverseExternalContributions`'s docblock for why safely clawing
+    // that back is out of scope for this fix and reported as a residual.
+    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    expect(afterRefund.status).toBe(DeferredBonusLotStatus.AVAILABLE);
+    expect(afterRefund.progressTurnover.toFixed(4)).toBe('5100.0000');
+
+    const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLot.id } });
+    expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('500.0000');
+
+    await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  // ── Refund attribution: Referral Challenge (GitHub issue #28) ──────────
+
+  const invitedChallenge = async (requiredAmount = '10000') => {
+    const { user: referrerUser } = await createCustomer(prisma);
+    const { user: refereeUser } = await createCustomer(prisma);
+    await prisma.referralInvite.create({
+      data: {
+        referrerType: ReferrerType.USER,
+        referrerUserId: referrerUser.id,
+        refereeUserId: refereeUser.id,
+      },
+    });
+    const participant = await prisma.referralChallengeParticipant.create({
+      data: { referrerUserId: referrerUser.id, refereeUserId: refereeUser.id, requiredAmount },
+    });
+    return { referrerUser, refereeUser, participant };
+  };
+
+  it('reverses referral challenge progress when the contributing purchase is refunded, so it cannot count toward qualification', async () => {
+    const { refereeUser, participant } = await invitedChallenge('10000');
+
+    const { intent } = await confirmedPurchaseFor(refereeUser.id, '6000');
+    await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+    const afterPurchase = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(afterPurchase.progressAmount.toFixed(4)).toBe('6000.0000');
+    expect(afterPurchase.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+
+    const staff = await staffMember(intent.partnerId);
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'challenge-reversal-1',
+    });
+
+    const afterRefund = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(afterRefund.progressAmount.toFixed(4)).toBe('0.0000');
+    expect(afterRefund.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+
+    // The refunded purchase is truly gone from the tally, not just
+    // temporarily offset: a second, smaller purchase alone must not
+    // combine with the refunded 6000 to reach the 10000 threshold.
+    const { intent: secondIntent } = await confirmedPurchaseFor(refereeUser.id, '4000');
+    await referral.advanceChallengeProgress(refereeUser.id, secondIntent.sourceTransactionId!);
+    const finalState = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(finalState.progressAmount.toFixed(4)).toBe('4000.0000');
+    expect(finalState.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+  });
+
+  it('reverses a QUALIFIED participant back to IN_PROGRESS when its qualifying purchase is refunded, closing the permanent-qualification gap', async () => {
+    const { referrerUser, refereeUser, participant } = await invitedChallenge('10000');
+
+    // Fill this referrer's 3 reward slots with other, already-REWARDED
+    // participants, so this referee's own qualification cannot also
+    // reward — deterministically reaching QUALIFIED-without-REWARDED
+    // without needing three real purchases.
+    for (let i = 0; i < 3; i += 1) {
+      const { user: otherReferee } = await createCustomer(prisma);
+      await prisma.referralChallengeParticipant.create({
+        data: {
+          referrerUserId: referrerUser.id,
+          refereeUserId: otherReferee.id,
+          requiredAmount: '10000',
+          progressAmount: '10000',
+          status: ReferralChallengeParticipantStatus.REWARDED,
+          qualifiedAt: new Date(),
+          rewardedAt: new Date(),
+        },
+      });
+    }
+
+    const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
+    await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+    const qualified = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(qualified.status).toBe(ReferralChallengeParticipantStatus.QUALIFIED);
+    expect(qualified.qualifiedAt).not.toBeNull();
+
+    const staff = await staffMember(intent.partnerId);
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'challenge-unqualify-1',
+    });
+
+    // Nothing was ever paid out for this participant (all 3 slots were
+    // already taken), so un-qualifying it is fully safe — exactly what
+    // "prevent a refunded purchase from permanently qualifying a referral
+    // reward" requires.
+    const reverted = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(reverted.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
+    expect(reverted.progressAmount.toFixed(4)).toBe('0.0000');
+    expect(reverted.qualifiedAt).toBeNull();
+  });
+
+  it('does not attempt to reclaim an already-paid referral challenge reward', async () => {
+    const { refereeUser, participant } = await invitedChallenge('10000');
+
+    const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
+    await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
+
+    const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(rewarded.status).toBe(ReferralChallengeParticipantStatus.REWARDED);
+
+    const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
+    const rewardLot = await prisma.bonusLot.findFirstOrThrow({
+      where: { walletId: refereeWallet.id, type: BonusEntryType.ACCRUAL_PROMOTION },
+    });
+    expect(rewardLot.remainingAmount.toFixed(4)).toBe('1000.0000');
+
+    const staff = await staffMember(intent.partnerId);
+    await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'challenge-rewarded-untouched-1',
+    });
+
+    // A REWARDED participant is a real, already-spendable wallet credit
+    // funded from TuTak's own funds — this fix does not attempt to claw it
+    // back (see `reverseChallengeContribution`'s docblock).
+    const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    expect(after.status).toBe(ReferralChallengeParticipantStatus.REWARDED);
+    expect(after.progressAmount.toFixed(4)).toBe('10000.0000');
+
+    const rewardLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: rewardLot.id } });
+    expect(rewardLotAfter.remainingAmount.toFixed(4)).toBe('1000.0000');
   });
 });

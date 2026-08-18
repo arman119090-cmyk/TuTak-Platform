@@ -19,26 +19,48 @@ const apiRoot = path.resolve(__dirname, '../..');
  * path ever writes an entry whose deltas contradict its direction, this fails
  * before a single test runs.
  */
+/**
+ * Diagnostic-only: this function runs in its own Jest worker process,
+ * entirely outside `jest.setTimeout` — a hang anywhere in here (a stuck DB
+ * connection, `migrate deploy` blocked on an advisory lock, a stalled
+ * `VALIDATE CONSTRAINT` scan) is otherwise invisible until CI's own
+ * multi-hour job timeout finally kills it, with nothing in the log to say
+ * which step never returned. Timestamped so a hang shows up as "step N
+ * started, step N+1 never logged" instead of silence.
+ */
+function logStep(step: string): void {
+  console.error(`[global-setup] ${new Date().toISOString()} ${step}`);
+}
+
 export default async function globalSetup() {
   process.env.DATABASE_URL = TEST_DATABASE_URL;
 
+  logStep('ensureDatabaseExists: start');
   await ensureDatabaseExists();
+  logStep('ensureDatabaseExists: done');
 
+  logStep('migrate deploy: start');
   execFileSync('node', [require.resolve('prisma/build/index.js'), 'migrate', 'deploy'], {
     cwd: apiRoot,
     stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
   });
+  logStep('migrate deploy: done');
 
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
   try {
+    logStep('VALIDATE CONSTRAINT bonus_ledger_delta_matches_direction: start');
     await prisma.$executeRawUnsafe(
       'ALTER TABLE "bonus_ledger_entries" VALIDATE CONSTRAINT "bonus_ledger_delta_matches_direction"',
     );
+    logStep('VALIDATE CONSTRAINT bonus_ledger_delta_matches_direction: done');
+    logStep('seedRolesAndPermissions: start');
     await seedRolesAndPermissions(prisma);
+    logStep('seedRolesAndPermissions: done');
   } finally {
     await prisma.$disconnect();
   }
+  logStep('globalSetup: complete');
 }
 
 async function ensureDatabaseExists() {

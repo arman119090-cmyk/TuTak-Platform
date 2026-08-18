@@ -18,7 +18,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
     "test:unit": "jest --selectProjects unit",
-    "test:int": "jest --selectProjects integration"
+    "test:int": "jest --selectProjects integration",
+    "test:int:verbose": "jest --selectProjects integration --verbose"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

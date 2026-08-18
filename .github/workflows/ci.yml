@@ -98,8 +98,17 @@ jobs:
       # long-lived databases; on a database built from scratch it must hold
       # universally, so this step proves no code path can write a ledger entry
       # whose deltas contradict its direction.
+      # timeout-minutes is a deliberate diagnostic addition (2026-08-18): this
+      # step hung twice in a row for the full default 6-hour job timeout with
+      # no logs available until it was killed. --verbose makes Jest print each
+      # test as it finishes, so a future hang's log shows the last test that
+      # completed rather than silence; the timeout turns "wait 6 hours for
+      # nothing" into "fail in ~15 minutes with something to read" — baseline
+      # for this step is ~4 minutes, so 15 leaves real headroom for CI
+      # slowness without re-creating the multi-hour bleed.
       - name: Integration tests
-        run: pnpm --filter @tutak/api test:int
+        timeout-minutes: 15
+        run: pnpm --filter @tutak/api test:int:verbose
 
       # Applying every migration in order (just above) only proves the
       # migration history is internally consistent — it says nothing about

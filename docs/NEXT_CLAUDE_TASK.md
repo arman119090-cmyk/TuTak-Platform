@@ -1,38 +1,55 @@
 # TuTak — Current Claude Task
 
-This file is the canonical current task for Claude. Before starting or continuing implementation, read this file together with `docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md`, `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` (when present), and GitHub Issue #28 `TuTak — Independent Audit Findings`.
+This file is the canonical current task for Claude. Before starting or continuing implementation, read this file together with `docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md`, `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` (when present), `docs/HARDENING_AUDIT_2026-08-16.md`, `docs/LAUNCH_READINESS_2026-08-16.md`, and GitHub Issue #28 `TuTak — Independent Audit Findings`.
 
-## NEXT TASK — MIGRATE CUSTOMER QR PURCHASE FLOW TO PURCHASEINTENT
+## STATUS AS OF 2026-08-18
 
-Continue from the current HEAD. Do not redesign the architecture and do not change unrelated functionality.
+**No outstanding engineering task is queued.** The prior task on this file
+(migrate the customer QR purchase flow to `PurchaseIntent`) is done — see
+`docs/HARDENING_AUDIT_2026-08-16.md`'s 2026-08-18 update note and commits
+`c3156a8`/`db4d51d`. Every technical finding raised across every audit pass
+in this repository's history (`docs/AUDIT_*.md`, `docs/WEAK_SPOTS_RU.md`,
+`docs/HARDENING_AUDIT_2026-08-16.md`, `docs/LAUNCH_READINESS_2026-08-16.md`)
+has been fixed and verified, most recently the FastCharge/EV settlement
+economics unification (commit `164ff60`).
 
-### Goal
-Make the normal customer QR purchase flow use the canonical PurchaseIntent flow instead of the legacy `qrApi.redeem()` financial path.
+What remains before a real launch is **not code**:
 
-### Requirements
-1. When a customer scans a partner purchase QR, route the purchase through `PurchaseIntent`.
-2. Customer enters the full purchase amount and, where applicable, the amount of previously earned bonus/discount they want to spend.
-3. For ordinary non-integrated partners, the customer-created PurchaseIntent waits for partner/cashier confirmation.
-4. Cashier/partner cannot modify the customer's amount. They may only Confirm or Reject.
-5. Keep the strict 3-minute expiry. After expiry neither Confirm nor Reject may change the transaction; it must resolve as `EXPIRED`.
-6. Do not allow self-dealing. Use the canonical affiliation check (`isAffiliated`) consistently.
-7. Settlement must use the canonical PurchaseIntent financial logic. Do not duplicate the old QR bonus formula.
-8. Preserve spending of previously earned bonus according to approved rules.
-9. Do not break EV/FastCharge/OCPI. Trusted integrated systems may continue automatic finalization through their integration-specific flow.
-10. Legacy QR code may remain only where technically required for backwards compatibility, but it must not remain an alternative financial settlement path for the normal customer purchase flow.
-11. Fix the identified expiry inconsistency in `reject()`: an expired PurchaseIntent must become/remain `EXPIRED`, not `REJECTED`.
-12. Fix demo/mock PurchaseIntent calculation so UI does not show the entire contribution percentage as immediately available customer GREEN bonus. It must reflect canonical 20/30/20/30 distribution.
-
-### Verification required
-- Add regression/integration tests for QR → PurchaseIntent → partner confirmation → settlement.
-- Test Confirm, Reject, Expired, duplicate confirmation/idempotency, self-dealing, bonus spending and concurrent requests.
-- Prove with regression tests that the old QR financial path is no longer reached by the normal customer purchase flow.
-- Run the full test suite.
-- Update `docs/HARDENING_AUDIT_2026-08-16.md`.
-- Commit and push all changes to `claude/tutak-loyalty-mvp-e485jm`.
-- Report exact files changed, tests added, full-suite result and commit SHA.
-
-Do not start M4/M5/M6 or unrelated features in this task.
+1. **External credentials/infrastructure** the repository cannot supply
+   itself — see `docs/LAUNCH_READINESS_2026-08-16.md` §I.5 and
+   `docs/DEPLOYMENT.md`: a real PSP/acquirer contract, an SMS carrier
+   account, Expo push credentials, a real `CORS_ORIGINS`/`REDIS_URL`/
+   TLS-terminated hostname, an actual deploy target + container registry
+   subscription, and a monitoring/alerting recipient. `PaymentsModule`/
+   `SmsModule`/`RedisModule` already refuse to boot in production without
+   these — nothing here is a code gap, only an operational one.
+2. **Legal decisions**: exact data-retention periods (`docs/WEAK_SPOTS_RU.md`
+   item 11 — the sweep mechanism is built, the numbers must come from a
+   lawyer), who custodies the backup encryption private key (item 5).
+3. **Open product/business decisions requiring Arman's explicit call**
+   (`docs/LAUNCH_READINESS_2026-08-16.md` §E/§F — do not implement any of
+   these without asking first, per the project's standing instruction):
+   - Whether `PartnerIntegrationsController.create`/`.list` should be
+     OWNER-only, like `updateCommercialSettings` was narrowed to be (§E).
+   - Whether staff should be able to edit a customer's amount on
+     `PurchaseIntent` confirm (currently: cashier can only Confirm/Reject,
+     matching the old QR flow's behavior).
+   - What happens to a partner's positive settlement balance on
+     offboarding.
+   - Whether integrated-partner auto-finalization (EV/OCPI's existing
+     shape) should become a generic endpoint for other API/POS partners —
+     policy is recorded, not built, pending a real partner to specify
+     against.
+4. **Store submission logistics** (`docs/STORE_SUBMISSION.md`): actual Apple
+   Developer / Google Play accounts, listing content, and screenshots —
+   this is account/asset work, not engineering.
 
 ## Persistent instruction
-At the start of every new TuTak task/session, re-read this file and the master project context before changing code. If this file conflicts with a later explicit decision from Arman, stop the conflicting item and ask Arman; do not silently invent a new business rule.
+
+At the start of every new TuTak task/session, re-read this file and the
+master project context before changing code. If a business decision above
+is answered by Arman, implement it exactly as decided, update this file to
+remove the resolved item, and record it in
+`docs/HARDENING_AUDIT_2026-08-16.md` or `docs/LAUNCH_READINESS_2026-08-16.md`
+the way every prior decision in this repository's history has been recorded.
+Do not invent a new business rule to fill a gap in this list — ask Arman.

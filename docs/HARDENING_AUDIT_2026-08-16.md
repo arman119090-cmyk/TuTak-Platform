@@ -5,6 +5,22 @@
 > auth, the PurchaseIntent UI, the QR→PurchaseIntent migration, the Partner
 > Integrations dashboard) — that document re-verifies all of it and records
 > what changed since.
+>
+> **Update 2026-08-18: two of the three "coexisting bonus-accrual formulas"
+> named in §M item 5 / §H are now resolved, not just tracked.** The legacy
+> QR net×flat-rate path was closed by removing it as a reachable financial
+> settlement path for ordinary customer purchases (commit `c3156a8`,
+> `db4d51d` — everything now routes through `PurchaseIntent`). FastCharge/EV
+> stopped being its own flat-rate special case per an explicit business
+> decision from Arman (2026-08-18): it now settles through the same
+> gross×pool-split shape as every other purchase, just with an added
+> `evTutakUpfrontBps` (40%) taken off the top before the standard 20/30/20/30
+> split applies to the remainder (commit `164ff60`,
+> `EvSessionsService.stopOnce`). What's left of item 5 is only
+> Payments/Settlement's net-of-refund×flat-rate formula for card/PSP
+> transactions, which is a distinct product (acquirer settlement, not the
+> loyalty pool) and was never in question. See `docs/NEXT_CLAUDE_TASK.md`
+> for the current, non-stale backlog.
 
 Companion to `docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md` (legacy-conflict
 classification, architectural decisions) and

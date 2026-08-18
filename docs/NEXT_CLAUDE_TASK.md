@@ -13,6 +13,33 @@ in this repository's history (`docs/AUDIT_*.md`, `docs/WEAK_SPOTS_RU.md`,
 has been fixed and verified, most recently the FastCharge/EV settlement
 economics unification (commit `164ff60`).
 
+**All four §E/§F business decisions have since been resolved by Arman
+(2026-08-18)** and are recorded here so this file stays the single source of
+truth — do not re-ask about any of these:
+
+- **Partner Integrations OWNER-only: yes, implemented.**
+  `PartnerIntegrationsController.create`/`.list` now call
+  `assertPartnerOwner` (new helper, `common/auth/partner-scope.ts`, also
+  used to de-duplicate `updateCommercialSettings`'s identical check) — a
+  scoped MANAGER/STAFF is refused with `ForbiddenException`. Partner
+  dashboard's `/integrations` page gates on `isPartnerOwner` (new helper,
+  `authStore.ts`) and shows an explanatory message instead of a broken form
+  for non-owners. Regression tests in `partner-integrations.int-spec.ts`.
+- **Staff amount-editing on `PurchaseIntent` confirm: no, stays
+  Confirm/Reject only.** No code change — this is already the existing
+  behavior, now confirmed as the deliberate final answer, not a gap.
+- **Partner offboarding balance: handled outside the platform, by
+  contract.** Deliberately **not** automated in code — no payout is
+  triggered by deactivation, and no new endpoint was built. Settlement of
+  a deactivated partner's balance is a matter for that partner's individual
+  contract, resolved manually. Do not build a generic
+  "auto-payout-on-deactivation" feature for this — it was explicitly
+  rejected in favor of the contractual path.
+- **Generic integrated-partner auto-finalization endpoint: no, still
+  deferred.** Confirmed: keep building it against a real API/POS partner
+  when one exists, not speculatively now. Matches the policy already
+  recorded pre-2026-08-18.
+
 What remains before a real launch is **not code**:
 
 1. **External credentials/infrastructure** the repository cannot supply
@@ -26,23 +53,12 @@ What remains before a real launch is **not code**:
 2. **Legal decisions**: exact data-retention periods (`docs/WEAK_SPOTS_RU.md`
    item 11 — the sweep mechanism is built, the numbers must come from a
    lawyer), who custodies the backup encryption private key (item 5).
-3. **Open product/business decisions requiring Arman's explicit call**
-   (`docs/LAUNCH_READINESS_2026-08-16.md` §E/§F — do not implement any of
-   these without asking first, per the project's standing instruction):
-   - Whether `PartnerIntegrationsController.create`/`.list` should be
-     OWNER-only, like `updateCommercialSettings` was narrowed to be (§E).
-   - Whether staff should be able to edit a customer's amount on
-     `PurchaseIntent` confirm (currently: cashier can only Confirm/Reject,
-     matching the old QR flow's behavior).
-   - What happens to a partner's positive settlement balance on
-     offboarding.
-   - Whether integrated-partner auto-finalization (EV/OCPI's existing
-     shape) should become a generic endpoint for other API/POS partners —
-     policy is recorded, not built, pending a real partner to specify
-     against.
-4. **Store submission logistics** (`docs/STORE_SUBMISSION.md`): actual Apple
+3. **Store submission logistics** (`docs/STORE_SUBMISSION.md`): actual Apple
    Developer / Google Play accounts, listing content, and screenshots —
    this is account/asset work, not engineering.
+
+No open product/business decisions remain on this list — §E/§F of
+`docs/LAUNCH_READINESS_2026-08-16.md` is fully resolved as of 2026-08-18.
 
 ## Persistent instruction
 

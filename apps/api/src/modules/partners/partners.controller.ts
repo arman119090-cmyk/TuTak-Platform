@@ -1,10 +1,11 @@
 import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AuditAction, PermissionName, RoleName } from '@prisma/client';
+import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import {
+  assertPartnerOwner,
   assertPartnerScope,
   assertPlatformAdmin,
   hasPartnerScope,
@@ -183,24 +184,9 @@ export class PartnersController {
   }
 
   /**
-   * Spec §11: the partner's own bonus-payment cap. Scoped to the partner
-   * (any admin, or that partner's own people, may reach this route) but
-   * additionally restricted to the OWNER tier specifically — MANAGER and
-   * STAFF hold no permission that reaches here at all, and an OWNER who is
-   * not scoped to *this* partner is refused before the role check runs.
-   *
-   * The role check itself must be scoped to `id`, not just "holds
-   * PARTNER_OWNER somewhere" — `user.roles` is a flat set collapsed across
-   * every `UserRole` row the caller has, any partner. A user who is genuine
-   * STAFF at partner B and *also* OWNER of an unrelated partner A (e.g. via
-   * self-service `POST /partners/apply`, which grants OWNER immediately,
-   * before approval) would pass `user.roles.includes(PARTNER_OWNER)` and
-   * change partner B's commercial terms despite holding no ownership of B
-   * at all. `partnerScopes[PARTNER_OWNER]` is the same map
-   * `assertPartnerScope` itself reads from, so this checks OWNER *of this
-   * partner specifically* — the same "a permission/role name carries no
-   * scope" class of bug `partner-scope.ts`'s own docblock describes having
-   * been fixed once already, recurring here one level down.
+   * Spec §11: the partner's own bonus-payment cap. Scoped to the partner and
+   * additionally restricted to the OWNER tier — see `assertPartnerOwner`'s
+   * own docblock for why the check is scoped per-partner, not per-role-name.
    */
   @Patch(':id/commercial-settings')
   async updateCommercialSettings(
@@ -208,12 +194,8 @@ export class PartnersController {
     @Param('id') id: string,
     @Body() dto: UpdateCommercialSettingsDto,
   ) {
-    if (!isPlatformAdmin(user)) {
-      assertPartnerScope(user, id);
-      if (!user.partnerScopes[RoleName.PARTNER_OWNER]?.includes(id)) {
-        throw new ForbiddenException('Only the partner owner may change commercial settings');
-      }
-    }
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, 'change commercial settings');
     const partner = await this.partnersService.updateCommercialSettings(id, {
       maxBonusPaymentPercent: dto.maxBonusPaymentPercent,
     });

@@ -1,6 +1,6 @@
 import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 import { Role } from '@tutak/shared-types';
-import { PARTNER_ROLES, getPrimaryPartnerId, useAuthStore } from './authStore';
+import { PARTNER_ROLES, getPrimaryPartnerId, isPartnerOwner, useAuthStore } from './authStore';
 
 const tokens: AuthTokensDto = {
   accessToken: 'access-1',
@@ -97,5 +97,34 @@ describe('getPrimaryPartnerId', () => {
       partnerScopes: { PARTNER_OWNER: ['partner-owner'], PARTNER_STAFF: ['partner-staff'] },
     });
     expect(getPrimaryPartnerId(user)).toBe('partner-owner');
+  });
+});
+
+describe('isPartnerOwner', () => {
+  it('returns false when there is no user', () => {
+    expect(isPartnerOwner(null, 'partner-1')).toBe(false);
+  });
+
+  it('returns false when there is no partner id', () => {
+    const user = buildUser({ partnerScopes: { PARTNER_OWNER: ['partner-1'] } });
+    expect(isPartnerOwner(user, null)).toBe(false);
+  });
+
+  it('returns true when the user owns this specific partner', () => {
+    const user = buildUser({ partnerScopes: { PARTNER_OWNER: ['partner-1'] } });
+    expect(isPartnerOwner(user, 'partner-1')).toBe(true);
+  });
+
+  it('returns false for a staff member scoped to the same partner', () => {
+    const user = buildUser({
+      roles: [Role.PARTNER_STAFF],
+      partnerScopes: { PARTNER_STAFF: ['partner-1'] },
+    });
+    expect(isPartnerOwner(user, 'partner-1')).toBe(false);
+  });
+
+  it('returns false when the user owns a different partner', () => {
+    const user = buildUser({ partnerScopes: { PARTNER_OWNER: ['partner-other'] } });
+    expect(isPartnerOwner(user, 'partner-1')).toBe(false);
   });
 });

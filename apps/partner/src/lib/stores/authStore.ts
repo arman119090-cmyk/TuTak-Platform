@@ -71,3 +71,15 @@ export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string |
   }
   return null;
 }
+
+/**
+ * True when `user` holds `PARTNER_OWNER` scoped to `partnerId` specifically.
+ * Mirrors `assertPartnerOwner` on the API (`common/auth/partner-scope.ts`) —
+ * used to gate UI for the OWNER-only actions that helper now protects
+ * server-side (commercial settings, partner integrations), so a MANAGER/
+ * STAFF operator sees why an action is unavailable instead of a raw 403.
+ */
+export function isPartnerOwner(user: AuthenticatedUserDto | null, partnerId: string | null): boolean {
+  if (!user || !partnerId) return false;
+  return (user.partnerScopes['PARTNER_OWNER'] ?? []).includes(partnerId);
+}

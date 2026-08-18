@@ -76,6 +76,21 @@ describe('Partner integrations (integration)', () => {
     });
   };
 
+  /**
+   * A manager genuinely scoped to `partnerId` — has the permission that
+   * reaches this route (no `@RequirePermissions` gate exists here, scope
+   * alone is the guard) but is not OWNER.
+   */
+  const managerOf = async (partnerId: string): Promise<RequestUser> => {
+    const manager = await createCustomer(prisma, { phone: `+3740003${counter++}` });
+    return user({
+      id: manager.user.id,
+      roles: [RoleName.PARTNER_MANAGER],
+      permissions: ROLE_PERMISSIONS[RoleName.PARTNER_MANAGER],
+      partnerScopes: { PARTNER_MANAGER: [partnerId] },
+    });
+  };
+
   describe('tenant isolation', () => {
     it('refuses to list another partner’s integrations', async () => {
       const partnerA = await createPartner(prisma);
@@ -107,6 +122,32 @@ describe('Partner integrations (integration)', () => {
       await expect(
         controller.create(owner, partner.id, { type: PartnerIntegrationType.API }),
       ).resolves.toMatchObject({ type: PartnerIntegrationType.API });
+    });
+
+    /**
+     * Business decision (2026-08-18, Arman): integration requests are
+     * financially significant enough (auto-finalization once verified) to
+     * restrict to the OWNER tier, the same call already made for
+     * `updateCommercialSettings`.
+     */
+    it('refuses a scoped-but-non-owner manager from creating an integration', async () => {
+      const partner = await createPartner(prisma);
+      const manager = await managerOf(partner.id);
+
+      expect(() =>
+        controller.create(manager, partner.id, { type: PartnerIntegrationType.API }),
+      ).toThrow(ForbiddenException);
+
+      expect(await prisma.partnerIntegration.count({ where: { partnerId: partner.id } })).toBe(0);
+    });
+
+    it('refuses a scoped-but-non-owner manager from listing integrations', async () => {
+      const partner = await createPartner(prisma);
+      const owner = await ownerOf(partner.id);
+      await controller.create(owner, partner.id, { type: PartnerIntegrationType.API });
+      const manager = await managerOf(partner.id);
+
+      expect(() => controller.list(manager, partner.id)).toThrow(ForbiddenException);
     });
 
     it('restricts website verification to platform admins, even for the owning partner', async () => {

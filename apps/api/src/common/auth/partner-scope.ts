@@ -60,6 +60,26 @@ export function assertPlatformAdmin(user: RequestUser, action: string): void {
 }
 
 /**
+ * Throws unless the user is a platform admin, or holds `PARTNER_OWNER`
+ * scoped to this specific partner.
+ *
+ * Deliberately checks `partnerScopes[PARTNER_OWNER]`, not `user.roles` — the
+ * latter is a flat set collapsed across every `UserRole` row the caller has,
+ * any partner, so a genuine STAFF member at partner B who also happens to be
+ * OWNER of an unrelated partner A would pass a `user.roles.includes(OWNER)`
+ * check despite holding no ownership of B at all. Callers must run
+ * `assertPartnerScope` first (or an equivalent platform-admin short-circuit)
+ * so a caller with no scope at all gets "not authorized for this partner"
+ * rather than the more specific, and less accurate, "not the owner".
+ */
+export function assertPartnerOwner(user: RequestUser, partnerId: string, action: string): void {
+  if (isPlatformAdmin(user)) return;
+  if (!user.partnerScopes?.[RoleName.PARTNER_OWNER]?.includes(partnerId)) {
+    throw new ForbiddenException(`Only the partner owner may ${action}`);
+  }
+}
+
+/**
  * Roles that grant `EV_STATION_MANAGE` — kept in sync with
  * `scripts/role-permissions.ts` (ADMIN/SUPER_ADMIN also grant it, but both
  * are platform-admin roles already handled by the `isPlatformAdmin` check

@@ -175,6 +175,14 @@ Recorded here rather than changed, per the project's standing instruction:
 "If a finding requires a business decision, ask Arman before changing
 behavior."
 
+**✅ Resolved 2026-08-18.** Arman's call: OWNER-only, matching
+`updateCommercialSettings`. Implemented via a shared `assertPartnerOwner`
+helper (`common/auth/partner-scope.ts`) used by both
+`PartnerIntegrationsController` and `PartnersController`; the partner
+dashboard's Integrations page gates on the equivalent `isPartnerOwner`
+frontend check. See `docs/NEXT_CLAUDE_TASK.md` for the full record of this
+and the other three decisions resolved the same day.
+
 ## F. Unresolved business decisions
 
 Unchanged from `docs/HARDENING_AUDIT_2026-08-16.md` §M/§N — nothing in this

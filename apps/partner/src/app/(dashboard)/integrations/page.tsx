@@ -9,7 +9,7 @@ import {
 } from '@tutak/shared-types';
 import type { BadgeTone } from '@tutak/design/web';
 import { Badge, Button, Field, Input, PageHeader, Surface, Textarea } from '@tutak/design/web';
-import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
+import { getPrimaryPartnerId, isPartnerOwner, useAuthStore } from '@/lib/stores/authStore';
 import { integrationsApi } from '@/lib/api/integrationsApi';
 
 function statusTone(status: PartnerIntegrationStatus): BadgeTone {
@@ -202,12 +202,30 @@ function IntegrationCard({
 export default function IntegrationsPage() {
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
+  const isOwner = isPartnerOwner(user, partnerId);
 
   const { data } = useQuery({
     queryKey: ['partner-integrations', partnerId],
     queryFn: () => integrationsApi.list(partnerId!),
-    enabled: !!partnerId,
+    enabled: !!partnerId && isOwner,
   });
+
+  if (!isOwner) {
+    return (
+      <>
+        <PageHeader
+          title="Integrations"
+          description="How your business connects to TuTak — from the built-in QR flow to a direct API or POS integration."
+        />
+        <Surface>
+          <p className="text-[13px] text-muted">
+            Only the partner owner can request or view integrations. Ask your business's owner
+            account to manage this.
+          </p>
+        </Surface>
+      </>
+    );
+  }
 
   const byType = new Map<PartnerIntegrationType, PartnerIntegrationDto>();
   for (const row of data ?? []) {

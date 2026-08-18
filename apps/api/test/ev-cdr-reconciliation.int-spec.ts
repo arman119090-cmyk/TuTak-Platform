@@ -221,6 +221,66 @@ describe('Roaming CDR reconciliation (integration)', () => {
       expect((await cdrFor(session.id)).reconciliation).toBe(EvCdrReconciliation.CORRECTED);
     });
 
+    it('claws back the double-entry ledger too — partner payable, bonus liability, and platform revenue, not just the wallet', async () => {
+      // GitHub issue #28 (final financial blocker, 2026-08-18): correcting
+      // the Transaction row and the customer's wallet was never enough —
+      // the original `ev.charging.contribution` posting (partner debited
+      // the full pool, bonus liability/revenue credited their shares) was
+      // computed against the original, now-superseded cost. Left alone,
+      // the partner would still owe the inflated pool and platform revenue
+      // would stay overstated by exactly the clawed-back amount — the
+      // ledger would stop reconstructing partner balances from immutable
+      // postings.
+      const { partner } = await roamingSession('20');
+
+      const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+      });
+      const liabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'BONUS_LIABILITY' },
+      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PLATFORM_REVENUE' },
+      });
+      // Pool 100 (5% of 2000) → remainder 60 → tutakUpfront 40, green 12,
+      // deferred 18, referrer 12 (absent referrer, folds into revenue),
+      // tutakBase 18. Partner DEBIT 100, liability CREDIT 30, revenue
+      // CREDIT 70.
+      const partnerBefore = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
+      expect(partnerBefore.balance.toFixed(4)).toBe('100.0000');
+
+      cpoReports(15, 1500);
+      await reconciler.reconcilePending();
+
+      // Corrected to 75% of the bill: every leg the pool split granted is
+      // clawed back by that same fraction, including the ones that never
+      // touch the wallet — tutakUpfront 40→30 (clawback 10) and the
+      // remainder's own tutak share 18→13.5 (clawback 4.5), on top of the
+      // wallet-side green 12→9 (3) and deferred 18→13.5 (4.5) and the
+      // absent referrer's 12→9 (3). Total clawback: 10+4.5+3+4.5+3 = 25,
+      // which is exactly 25% of the original pool of 100 — the same
+      // fraction the transaction amount itself was corrected by.
+      const correction = await prisma.ledgerTransaction.findFirstOrThrow({
+        where: { kind: 'ev.charging.contribution.correction', sourceType: 'Transaction' },
+        include: { postings: true },
+      });
+      expect(correction.postings).toHaveLength(3);
+      const partnerLeg = correction.postings.find((p) => p.accountId === partnerAccount.id);
+      const liabilityLeg = correction.postings.find((p) => p.accountId === liabilityAccount.id);
+      const revenueLeg = correction.postings.find((p) => p.accountId === revenueAccount.id);
+      // Reverses the original signs: the partner is credited back (owes
+      // less), liability and revenue are debited down (both shrink).
+      expect(partnerLeg?.direction).toBe('CREDIT');
+      expect(partnerLeg?.amount.toFixed(4)).toBe('25.0000');
+      expect(liabilityLeg?.direction).toBe('DEBIT');
+      expect(liabilityLeg?.amount.toFixed(4)).toBe('7.5000');
+      expect(revenueLeg?.direction).toBe('DEBIT');
+      expect(revenueLeg?.amount.toFixed(4)).toBe('17.5000');
+
+      const partnerAfter = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
+      expect(partnerAfter.balance.toFixed(4)).toBe('75.0000');
+    });
+
     it('claws back the deferred and referrer legs proportionally too, not just green', async () => {
       const { user: referrer, wallet: referrerWallet } = await createCustomer(prisma);
       await prisma.referralCode.create({ data: { userId: referrer.id, code: 'TT-CDRREFER' } });
@@ -376,6 +436,14 @@ describe('Roaming CDR reconciliation (integration)', () => {
       expect(afterSecond.availableBonus.toString()).toBe(afterFirst.availableBonus.toString());
       expect((await cdrFor(session.id)).reconciliation).toBe(EvCdrReconciliation.CORRECTED);
       await assertWalletIntegrity(prisma, wallet.id);
+
+      // Same idempotency for the ledger side: exactly one correction
+      // posting, never a second one clawing the same amount back again.
+      expect(
+        await prisma.ledgerTransaction.count({
+          where: { kind: 'ev.charging.contribution.correction', sourceType: 'Transaction' },
+        }),
+      ).toBe(1);
     });
 
     it('does not double-credit an overcharge refund when two sweeps race on the same still-PENDING CDR', async () => {

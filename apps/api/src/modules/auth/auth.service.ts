@@ -58,7 +58,32 @@ export class AuthService {
     private readonly authOtpService: AuthOtpService,
   ) {}
 
+  /**
+   * The legacy password-only signup: a fully normal, spend-capable
+   * CUSTOMER account with zero proof of phone ownership at any point (see
+   * `register/request-otp` below for the canonical path, which requires a
+   * verified code before the account exists at all). The mobile app
+   * stopped linking to this screen (commit c3156a8), but that only closed
+   * the UI path — the HTTP route stayed open to any client that called it
+   * directly, still standing up a normal production financial account
+   * with nothing to show it was ever a real, reachable phone number.
+   *
+   * Same guard idiom as `PaymentsModule`'s PSP requirement: refuse in
+   * production unless `demoMode` explicitly allows it (a public demo
+   * deployment moves no real money and needs a signup path with no SMS
+   * carrier configured). Nothing internal calls `register()` — grepped;
+   * the only caller is `AuthController`'s `/auth/register` route — so
+   * gating here closes the gap for every client, not just the app's own
+   * screen.
+   */
   async register(dto: RegisterDto, meta: RequestMeta) {
+    const isProduction = this.config.get('nodeEnv', { infer: true }) === 'production';
+    if (isProduction && !this.config.get('demoMode', { infer: true })) {
+      throw new ForbiddenException(
+        'Password registration is not available. Verify your phone number to create an account.',
+      );
+    }
+
     const existing = await this.usersService.findByPhone(dto.phone);
     if (existing) {
       throw new ForbiddenException('An account with this phone number already exists');

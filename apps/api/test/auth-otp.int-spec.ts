@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { AuthService } from '../src/modules/auth/auth.service';
@@ -21,13 +22,28 @@ describe('OTP-first auth (integration)', () => {
   let prisma: PrismaClient;
   let authService: AuthService;
   let sms: SmsProvider;
+  let config: ConfigService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     authService = harness.app.get(AuthService);
     sms = harness.app.get<SmsProvider>(SMS_PROVIDER);
+    config = harness.app.get(ConfigService);
   });
+
+  /**
+   * Turns production mode on for one test, the way a real deployment's env
+   * would — same idiom as `demo-session.int-spec.ts`'s `withDemoMode`.
+   * `demoMode` defaults to off, matching a real production deployment;
+   * pass `true` to prove the explicit demo-mode escape hatch still works.
+   */
+  const withProductionMode = (demoMode = false) =>
+    jest.spyOn(config, 'get').mockImplementation(((key: string, ...rest: unknown[]) => {
+      if (key === 'nodeEnv') return 'production';
+      if (key === 'demoMode') return demoMode;
+      return (ConfigService.prototype.get as any).call(config, key, ...rest);
+    }) as never);
 
   afterAll(async () => {
     await harness.close();
@@ -275,7 +291,7 @@ describe('OTP-first auth (integration)', () => {
   // ── Backward compatibility ───────────────────────────────────────────────
 
   describe('backward compatibility', () => {
-    it('leaves password registration and login untouched', async () => {
+    it('leaves password registration and login untouched outside production', async () => {
       const phone = randomPhone();
       const registered = await authService.register(
         {
@@ -294,6 +310,63 @@ describe('OTP-first auth (integration)', () => {
         {},
       );
       expect(loggedIn.user.id).toBe(registered.user.id);
+    });
+
+    /**
+     * Final financial blocker (2026-08-18): OTP registration
+     * (`requestRegistrationOtp`/`verifyRegistrationOtp` above) is the only
+     * normal public customer signup path — it requires a verified code
+     * before the account exists at all. This password-only route stood up
+     * a fully functional, spend-capable account with zero proof of phone
+     * ownership at any point. The mobile app stopped linking to it
+     * (commit c3156a8), but that only closed the UI path — the HTTP route
+     * itself stayed reachable by any client that called it directly. Same
+     * guard idiom as `PaymentsModule`'s PSP requirement
+     * (`production-boot.int-spec.ts`): refuse in production unless
+     * `demoMode` explicitly allows it.
+     */
+    it('refuses password registration in production', async () => {
+      withProductionMode();
+      await expect(
+        authService.register(
+          {
+            phone: randomPhone(),
+            password: 'a-real-password-123',
+            firstName: 'Test',
+            lastName: 'User',
+            deviceId: 'device-1',
+          },
+          {},
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('still allows password registration in production when demo mode explicitly permits it', async () => {
+      withProductionMode(true);
+      const phone = randomPhone();
+      const registered = await authService.register(
+        {
+          phone,
+          password: 'a-real-password-123',
+          firstName: 'Test',
+          lastName: 'User',
+          deviceId: 'device-1',
+        },
+        {},
+      );
+      expect(registered.user.phone).toBe(phone);
+    });
+
+    it('leaves OTP registration itself untouched in production — the canonical path never needed the guard', async () => {
+      withProductionMode();
+      const phone = randomPhone();
+      const lastCode = captureCode();
+      await authService.requestRegistrationOtp({ phone });
+      const registered = await authService.verifyRegistrationOtp(
+        { phone, code: lastCode(), deviceId: 'device-otp-prod' },
+        {},
+      );
+      expect(registered.user.phone).toBe(phone);
     });
 
     it('the OTP-account passwordHash is a real argon2 hash, not the raw account-deletion sentinel', async () => {

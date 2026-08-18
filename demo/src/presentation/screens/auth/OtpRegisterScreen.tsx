@@ -17,7 +17,13 @@ import type { AuthStackParamList } from '../../../app/navigation/types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
 /**
- * Item 3: phone -> SMS code -> account, no password.
+ * Item 3 (GitHub issue #28): phone -> SMS code -> account, no password.
+ *
+ * This is the only normal public customer registration path — LoginScreen's
+ * "create account" link comes straight here. A new customer never gets a
+ * usable session before verifying the code; `RegisterScreen` (password
+ * first) still exists but is not mounted in `AuthNavigator` and nothing
+ * links to it any more.
  *
  * Name/email are intentionally not collected here — they're optional and
  * completable later via the profile-update screen — so this stays a
@@ -165,15 +171,6 @@ export function OtpRegisterScreen({ navigation }: Props) {
             <Text style={[text.label, { color: color.primary }]}>{t('auth.login')}</Text>
           </Pressable>
         </View>
-        <Pressable
-          onPress={() => navigation.replace('Register')}
-          hitSlop={8}
-          style={{ alignSelf: 'center', marginTop: space[3] }}
-        >
-          <Text style={[text.label, { color: color.textTertiary }]}>
-            {t('auth.useEmailPasswordInstead')}
-          </Text>
-        </Pressable>
       </KeyboardAwareScroll>
     </SafeAreaView>
   );

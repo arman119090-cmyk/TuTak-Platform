@@ -158,7 +158,12 @@ export function LoginScreen({ navigation }: Props) {
             <Text style={[text.bodySm, { color: color.textSecondary }]}>
               {t('auth.noAccountYet')}
             </Text>
-            <Pressable onPress={() => navigation.navigate('Register')} hitSlop={8}>
+            {/* OTP-first (item 3, GitHub issue #28): a normal new customer
+                verifies their phone before ever getting a session — see
+                OtpRegisterScreen. Password-first registration
+                (RegisterScreen) still exists but is no longer linked from
+                the normal flow. */}
+            <Pressable onPress={() => navigation.navigate('OtpRegister')} hitSlop={8}>
               <Text style={[text.label, { color: color.primary }]}>{t('auth.register')}</Text>
             </Pressable>
           </View>

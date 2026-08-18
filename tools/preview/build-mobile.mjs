@@ -21,6 +21,17 @@ await esbuild.build({
   loader: { '.js': 'jsx', '.png': 'dataurl', '.ttf': 'dataurl' },
   resolveExtensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
   alias: {
+    // `apps/mobile` pins its own React (matching the Expo SDK) separately
+    // from this tool's own devDependency on React for react-dom/
+    // react-native-web. Left unaliased, esbuild bundles both copies, and any
+    // component that calls a hook — starting with
+    // `react-native-safe-area-context`'s own provider — throws
+    // "Cannot read properties of null (reading 'useContext')" against
+    // whichever copy it did not get its context from. Forcing every import
+    // of `react`/`react-dom` in the whole graph to this one copy is what
+    // keeps it to a single React tree.
+    react: join(root, 'node_modules', 'react'),
+    'react-dom': join(root, 'node_modules', 'react-dom'),
     'react-native': 'react-native-web',
     'expo-secure-store': join(stubs, 'expo-secure-store.js'),
     'expo-localization': join(stubs, 'expo-localization.js'),

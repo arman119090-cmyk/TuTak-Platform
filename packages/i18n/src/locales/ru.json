@@ -205,6 +205,9 @@
   "settings": {
     "title": "Настройки",
     "language": "Язык",
+    "appearance": "Оформление",
+    "appearanceDark": "Тёмное",
+    "appearanceLight": "Светлое",
     "notifications": "Уведомления",
     "security": "Безопасность",
     "logout": "Выйти",

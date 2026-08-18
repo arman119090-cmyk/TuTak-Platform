@@ -59,7 +59,7 @@ function GlassFill({ children, intensity }: { children: React.ReactNode; intensi
 
   if (Platform.OS === 'ios') {
     return (
-      <BlurView intensity={intensity} tint="dark" style={styles.fill}>
+      <BlurView intensity={intensity} tint={premium.blurTint} style={styles.fill}>
         <View style={{ backgroundColor: glass.background }}>{children}</View>
       </BlurView>
     );

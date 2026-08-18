@@ -108,7 +108,7 @@ function GlassBar({ children }: { children: React.ReactNode }) {
 
   if (Platform.OS === 'ios') {
     return (
-      <BlurView intensity={65} tint="dark" style={styles.bar}>
+      <BlurView intensity={65} tint={premium.blurTint} style={styles.bar}>
         {children}
       </BlurView>
     );

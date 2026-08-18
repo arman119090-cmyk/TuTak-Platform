@@ -13,6 +13,7 @@ import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Button } from '../../components/Button';
 import { useAuthStore } from '../../../data/stores/authStore';
+import { useThemeStore, type ThemeMode } from '../../../data/stores/themeStore';
 import { authApi } from '../../../data/api/authApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
 
@@ -22,10 +23,13 @@ const LOCALE_LABELS: Record<string, string> = {
   en: 'English',
 };
 
+const APPEARANCE_MODES: ThemeMode[] = ['dark', 'light'];
+
 export function SettingsScreen() {
   const { t, i18n } = useTranslation();
   const { color, space, text, radius, gradients } = useTheme();
   const { user, deviceId, clear } = useAuthStore();
+  const { mode, setMode } = useThemeStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
@@ -90,6 +94,30 @@ export function SettingsScreen() {
                   ) : undefined
                 }
                 last={i === SUPPORTED_LOCALES.length - 1}
+              />
+            );
+          })}
+        </View>
+      </Surface>
+
+      <SectionHeader title={t('settings.appearance')} />
+      <Surface padded={false}>
+        <View style={{ paddingHorizontal: space[5] }}>
+          {APPEARANCE_MODES.map((appearanceMode, i) => {
+            const active = mode === appearanceMode;
+            return (
+              <ListRow
+                key={appearanceMode}
+                title={t(
+                  appearanceMode === 'dark' ? 'settings.appearanceDark' : 'settings.appearanceLight',
+                )}
+                onPress={() => setMode(appearanceMode)}
+                trailing={
+                  active ? (
+                    <Ionicons name="checkmark" size={20} color={color.primary} />
+                  ) : undefined
+                }
+                last={i === APPEARANCE_MODES.length - 1}
               />
             );
           })}

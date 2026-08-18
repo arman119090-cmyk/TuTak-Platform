@@ -1,15 +1,14 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider } from 'react-i18next';
-import { tutakTheme } from '@tutak/design';
 
 import { ErrorBoundary } from './src/app/ErrorBoundary';
 import i18n from './src/app/i18n/i18n';
-import { ThemeProvider } from './src/app/theme/ThemeProvider';
+import { ThemeProvider, useTheme } from './src/app/theme/ThemeProvider';
 import { AuthNavigator } from './src/app/navigation/AuthNavigator';
 import { RootNavigator } from './src/app/navigation/RootNavigator';
 import { SplashScreen } from './src/presentation/screens/SplashScreen';
@@ -21,29 +20,34 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-/**
- * Navigation's own chrome recoloured to the TuTak palette.
- *
- * Built on `DarkTheme` rather than `DefaultTheme` because the base theme is
- * what shows through in the places this object does not reach — the push and
- * pop transition underlay between two screens, most visibly. On the light
- * base that gap flashed white on every navigation.
- */
-const navigationTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: tutakTheme.color.primary,
-    background: tutakTheme.color.background,
-    card: tutakTheme.color.background,
-    text: tutakTheme.color.textPrimary,
-    border: tutakTheme.color.border,
-  },
-};
-
 function Root() {
+  const theme = useTheme();
   const { user, hydrate } = useAuthStore();
   const [ready, setReady] = useState(false);
+
+  /**
+   * Navigation's own chrome recoloured to the active TuTak palette.
+   *
+   * Built on `DarkTheme`/`DefaultTheme` matching `theme.mode` rather than
+   * always `DarkTheme`, because the base theme is what shows through in the
+   * places this object does not reach — the push and pop transition underlay
+   * between two screens, most visibly. Picking the wrong base flashes the
+   * *other* theme's ground colour on every navigation.
+   */
+  const navigationTheme = useMemo(() => {
+    const base = theme.mode === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: theme.color.primary,
+        background: theme.color.background,
+        card: theme.color.background,
+        text: theme.color.textPrimary,
+        border: theme.color.border,
+      },
+    };
+  }, [theme]);
 
   useEffect(() => {
     // This is the only gate between the splash screen and the app, so it has
@@ -77,7 +81,11 @@ function Root() {
 
   return (
     <NavigationContainer theme={navigationTheme}>
-      <StatusBar style="light" />
+      {/* Light content (white icons/clock) reads on the dark ground; dark
+          content is what the light theme's white ground needs instead — a
+          fixed "light" style here left the status bar unreadable against a
+          white screen. */}
+      <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
       {user ? <RootNavigator /> : <AuthNavigator />}
       {/*
         Inside the navigator so it sits over whatever screen is showing, and

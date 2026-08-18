@@ -27,6 +27,12 @@ const navigation = {
   dispatch: () => {},
   reset: () => {},
   setParams: () => {},
+  // `Screen` reads `getState()?.type` to tell a pushed screen from a tab
+  // root so it knows whether to draw a back arrow. The harness renders one
+  // screen with no navigator above it, so "not a tab root" (undefined type)
+  // is the closest honest answer — a screen previewed alone still gets its
+  // back arrow, which is more informative in a screenshot than none at all.
+  getState: () => ({ type: 'stack' }),
 };
 
 export function useNavigation() {

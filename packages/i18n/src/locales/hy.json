@@ -205,6 +205,9 @@
   "settings": {
     "title": "Կարգավորումներ",
     "language": "Լեզու",
+    "appearance": "Տեսք",
+    "appearanceDark": "Մուգ",
+    "appearanceLight": "Բաց",
     "notifications": "Ծանուցումներ",
     "security": "Անվտանգություն",
     "logout": "Դուրս գալ",

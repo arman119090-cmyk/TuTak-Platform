@@ -2,12 +2,14 @@ import React from 'react';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import {
   JAKO_VIEWBOX,
+  jakoDefaultColors,
   jakoEye,
   jakoPaths,
   jakoPremiumColors,
   jakoSilhouette,
   type JakoColors,
 } from '@tutak/design';
+import { useTheme } from '../../app/theme/ThemeProvider';
 
 interface JakoProps {
   size?: number;
@@ -19,12 +21,18 @@ interface JakoProps {
  * the auth header, and empty states. Never as page decoration — if Jako is
  * on screen more than once, something has gone wrong.
  *
- * Defaults to the dark-scheme palette, not the light one. The white-surface
- * defaults put a green wing on a bird sitting in a blue-and-violet app, and
- * drew the plumage in greys that all but vanish against #0A0A0F.
+ * Defaults to whichever palette matches the active theme — `jakoPremiumColors`
+ * on dark, where the white-surface defaults would put a green wing on a bird
+ * sitting in a blue app and draw the plumage in greys that vanish against
+ * #0A0A0F; `jakoDefaultColors` on light, tuned the other way for the same
+ * reason. A caller that passes its own `colors` (an empty state dimming the
+ * mark, a watermark recolouring it) still wins outright — this default only
+ * fills in what nobody overrode.
  */
 export function Jako({ size = 48, colors }: JakoProps) {
-  const c = { ...jakoPremiumColors, ...colors };
+  const { mode } = useTheme();
+  const base = mode === 'light' ? jakoDefaultColors : jakoPremiumColors;
+  const c = { ...base, ...colors };
   const fillFor: Record<string, string> = {
     brand: c.brand,
     body: c.body,

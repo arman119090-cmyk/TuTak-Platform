@@ -28,16 +28,27 @@ import { HomeScreen } from '../../../apps/mobile/src/presentation/screens/home/H
 import { WalletScreen } from '../../../apps/mobile/src/presentation/screens/wallet/WalletScreen';
 import { MyQrScreen } from '../../../apps/mobile/src/presentation/screens/qr/MyQrScreen';
 import { ScanQrScreen } from '../../../apps/mobile/src/presentation/screens/qr/ScanQrScreen';
-import { EvStationsScreen } from '../../../apps/mobile/src/presentation/screens/ev/EvStationsScreen';
 import { EvHistoryScreen } from '../../../apps/mobile/src/presentation/screens/ev/EvHistoryScreen';
 import { ReferralScreen } from '../../../apps/mobile/src/presentation/screens/referral/ReferralScreen';
 import { TransactionHistoryScreen } from '../../../apps/mobile/src/presentation/screens/transactions/TransactionHistoryScreen';
 import { NotificationsScreen } from '../../../apps/mobile/src/presentation/screens/notifications/NotificationsScreen';
 import { SettingsScreen } from '../../../apps/mobile/src/presentation/screens/settings/SettingsScreen';
+import { PartnersScreen } from '../../../apps/mobile/src/presentation/screens/partners/PartnersScreen';
 
 const params = new URLSearchParams(location.search);
 const screen = params.get('screen') ?? 'home';
 const session = JSON.parse(decodeURIComponent(params.get('session') ?? '{}'));
+// Lets the screenshot script capture both themes without a second harness —
+// the toggle this task added is a persisted store, so seeding *storage*
+// (rather than the store's in-memory state) here is the same thing a real
+// device does after someone flips the Appearance setting once. Storage,
+// specifically: `ThemeProvider` calls the store's own `hydrate()` on every
+// mount, same as a real launch, and hydrate reads from storage — so a
+// pre-set store value would just get overwritten the instant the provider
+// mounts, the way it does not with `authStore` because nothing else in this
+// harness re-hydrates that store after this seed.
+const themeMode = params.get('theme') === 'light' ? 'light' : 'dark';
+window.localStorage.setItem('tutak.themeMode', themeMode);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 0, staleTime: Infinity, refetchOnWindowFocus: false } },
@@ -62,12 +73,12 @@ const SCREENS: Record<string, React.ReactNode> = {
   wallet: <WalletScreen />,
   'my-qr': <MyQrScreen />,
   'scan-qr': <ScanQrScreen />,
-  'ev-stations': <EvStationsScreen />,
   'ev-history': <EvHistoryScreen />,
   referral: <ReferralScreen />,
   transactions: <TransactionHistoryScreen />,
   notifications: <NotificationsScreen />,
   settings: <SettingsScreen />,
+  partners: <PartnersScreen />,
 };
 
 function Harness() {

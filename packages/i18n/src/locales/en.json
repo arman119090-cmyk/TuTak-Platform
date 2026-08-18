@@ -205,6 +205,9 @@
   "settings": {
     "title": "Settings",
     "language": "Language",
+    "appearance": "Appearance",
+    "appearanceDark": "Dark",
+    "appearanceLight": "Light",
     "notifications": "Notifications",
     "security": "Security",
     "logout": "Log out",

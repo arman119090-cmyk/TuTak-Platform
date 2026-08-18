@@ -17,4 +17,6 @@ export interface ReferralInviteDto {
   rewardAmount: string | null;
   createdAt: string;
   qualifiedAt: string | null;
+  /** Who was invited — the whole point of this screen is showing that. */
+  referee: { id: string; firstName: string; lastName: string } | null;
 }

@@ -175,7 +175,8 @@
     "yourInvites": "Your invites",
     "shareMessage": "Join me on TuTak and get bonus points. Use my code: {{code}}",
     "noInvitesTitle": "No invites yet",
-    "noInvitesMessage": "Share your code with a friend to start earning referral bonuses."
+    "noInvitesMessage": "Share your code with a friend to start earning referral bonuses.",
+    "unknownReferee": "Invited friend"
   },
   "partner": {
     "dashboard": "Dashboard",

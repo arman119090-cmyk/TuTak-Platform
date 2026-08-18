@@ -106,8 +106,12 @@ export function ReferralScreen() {
             list.map((invite, i) => (
               <ListRow
                 key={invite.id}
-                title={t(`referralStatus.${invite.status}`, { defaultValue: invite.status })}
-                subtitle={formatDate(invite.createdAt)}
+                title={
+                  invite.referee
+                    ? `${invite.referee.firstName} ${invite.referee.lastName.slice(0, 1)}.`
+                    : t('referral.unknownReferee')
+                }
+                subtitle={`${t(`referralStatus.${invite.status}`, { defaultValue: invite.status })} · ${formatDate(invite.createdAt)}`}
                 value={invite.rewardAmount ? `+${formatPoints(invite.rewardAmount)}` : undefined}
                 valueTone="positive"
                 trailing={

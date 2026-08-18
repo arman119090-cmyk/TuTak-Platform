@@ -371,9 +371,22 @@ Unchanged from `docs/DEPLOYMENT.md` §1's own account — this pass did not
 remove any of these requirements, and none of them are engineering work
 left undone:
 
-- **A real payment acquirer/PSP contract** — `PaymentsModule` refuses to
-  boot in `production` without one; the sandbox adapter is intentionally
-  unsafe outside demo/staging use.
+- ~~A real payment acquirer/PSP contract~~ — **resolved, not required for
+  launch.** Business decision (2026-08-18, Arman): TuTak does not take
+  customer money at all — the customer pays the partner directly, outside
+  the platform, and every purchase path this platform actually ships on
+  (`PurchaseIntent`, the legacy QR path) never touches a PSP; only the
+  loyalty/bonus economics are tracked. `PaymentsModule` is therefore off
+  by default (`CARD_PAYMENTS_ENABLED` unset) and the app boots cleanly in
+  production without any PSP configured (`app.module.ts`, GitHub issue
+  #28) — confirmed by `production-boot.int-spec.ts`. What TuTak owes a
+  partner is settled by a human doing a real bank transfer and recording
+  the reference in the admin dashboard's Payouts page
+  (`PayoutEngineService.confirmPaid`) — already the only payout path that
+  exists, already two-person-controlled and audited, nothing further to
+  build. Room is deliberately left to plug in a real PSP/acquirer later
+  (flip `CARD_PAYMENTS_ENABLED`, configure the adapter) if TuTak ever
+  needs to move money itself — not needed for launch.
 - **An SMS carrier account** (`SMS_ENDPOINT`/`SMS_USERNAME`/`SMS_TOKEN`) —
   `SmsModule` likewise refuses to boot in `production` without one.
 - **Push delivery credentials** — an Expo project with `PUSH_ACCESS_TOKEN`

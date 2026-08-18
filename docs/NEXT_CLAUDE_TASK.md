@@ -44,12 +44,19 @@ What remains before a real launch is **not code**:
 
 1. **External credentials/infrastructure** the repository cannot supply
    itself — see `docs/LAUNCH_READINESS_2026-08-16.md` §I.5 and
-   `docs/DEPLOYMENT.md`: a real PSP/acquirer contract, an SMS carrier
-   account, Expo push credentials, a real `CORS_ORIGINS`/`REDIS_URL`/
-   TLS-terminated hostname, an actual deploy target + container registry
-   subscription, and a monitoring/alerting recipient. `PaymentsModule`/
-   `SmsModule`/`RedisModule` already refuse to boot in production without
-   these — nothing here is a code gap, only an operational one.
+   `docs/DEPLOYMENT.md`: an SMS carrier account, Expo push credentials, a
+   real `CORS_ORIGINS`/`REDIS_URL`/TLS-terminated hostname, an actual
+   deploy target + container registry subscription, and a
+   monitoring/alerting recipient. `SmsModule`/`RedisModule` already
+   refuse to boot in production without these — nothing here is a code
+   gap, only an operational one. **A PSP/acquirer contract is explicitly
+   NOT on this list** (business decision, 2026-08-18): TuTak never takes
+   customer money — the customer pays the partner directly — so
+   `PaymentsModule` stays off by default (`CARD_PAYMENTS_ENABLED` unset)
+   and partner payouts are settled by manual bank transfer, confirmed in
+   the admin dashboard. See `docs/LAUNCH_READINESS_2026-08-16.md` §I.5
+   for the full record. Room is left to enable a real PSP later if TuTak
+   ever needs to move customer money itself — not needed now.
 2. **Legal decisions**: exact data-retention periods (`docs/WEAK_SPOTS_RU.md`
    item 11 — the sweep mechanism is built, the numbers must come from a
    lawyer), who custodies the backup encryption private key (item 5).

@@ -98,14 +98,22 @@ jobs:
       # long-lived databases; on a database built from scratch it must hold
       # universally, so this step proves no code path can write a ledger entry
       # whose deltas contradict its direction.
-      # timeout-minutes is a deliberate diagnostic addition (2026-08-18): this
-      # step hung twice in a row for the full default 6-hour job timeout with
-      # no logs available until it was killed. --verbose makes Jest print each
-      # test as it finishes, so a future hang's log shows the last test that
-      # completed rather than silence; the timeout turns "wait 6 hours for
-      # nothing" into "fail in ~15 minutes with something to read" — baseline
-      # for this step is ~4 minutes, so 15 leaves real headroom for CI
-      # slowness without re-creating the multi-hour bleed.
+      # Root cause found 2026-08-18 after this step hung for the full default
+      # 6-hour job timeout, twice in a row, on an unrelated commit: every one
+      # of the 772 integration tests passed ("Test Suites: 58 passed, 58
+      # total ... Ran all test suites") and Jest then simply never exited —
+      # "Jest did not exit one second after the test run has completed",
+      # something this repo's own local sessions had been silently masking
+      # for a long time by manually `kill -9`ing the leftover process after
+      # every run. CI has nobody to do that, so it sat until the job timeout
+      # killed it. `--forceExit` (test:int/:verbose, apps/api/package.json)
+      # is the fix — every assertion has already run and passed by the time
+      # it fires, it only stops Jest idling on whatever handle (a Redis/DB
+      # connection, a timer) never closed. `--verbose` and `timeout-minutes`
+      # are kept as permanent CI hygiene: verbose output pinpoints a future
+      # hang's location instead of silence, and the 15-minute cap (baseline
+      # ~4min) turns any future stall into a fast, readable failure instead
+      # of a multi-hour bleed.
       - name: Integration tests
         timeout-minutes: 15
         run: pnpm --filter @tutak/api test:int:verbose

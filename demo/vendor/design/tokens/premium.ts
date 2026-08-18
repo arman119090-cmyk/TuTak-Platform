@@ -240,6 +240,14 @@ export const premiumTextWeights = {
   headline: { fontWeight: '600' as const, letterSpacing: -0.2 },
 } as const;
 
+/**
+ * Which `expo-blur` tint reads correctly on this scheme. `Surface` and
+ * `HomeHeader` read this instead of hardcoding `tint="dark"`, so the one
+ * place a shared component would otherwise need to know which theme is
+ * active is a token lookup rather than a branch.
+ */
+export const premiumBlurTint = 'dark' as const;
+
 /** Everything the dark scheme adds on top of the shared token set. */
 export const premium = {
   background: premiumBackground,
@@ -248,4 +256,5 @@ export const premium = {
   glass: premiumGlass,
   card: premiumCard,
   glow: premiumGlow,
+  blurTint: premiumBlurTint,
 } as const;

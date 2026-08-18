@@ -117,9 +117,10 @@ describe('Concurrency probe (integration)', () => {
         sessions.stop(session.id, user.id, {}),
       ]);
 
-      // 25 kWh × 100 AMD × 5% = 125 points, once.
+      // 25 kWh × 100 AMD × 5% = 125 pool → 15 green (20% of the 75
+      // remainder after TuTak's 40% upfront cut), once.
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('125');
+      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('15');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 

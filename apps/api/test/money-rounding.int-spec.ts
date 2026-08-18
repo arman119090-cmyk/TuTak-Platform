@@ -129,13 +129,17 @@ describe('Money rounding (integration)', () => {
       await sessions.reportMeterValue(session.id, '25.123', user.id);
       const result = await sessions.stop(session.id, user.id, {});
 
-      // 2518.5808 × 350 ÷ 10000 = 88.150328 — six decimals before rounding.
+      // 2518.5808 × 350 ÷ 10000 = 88.150328 — six decimals before rounding
+      // to a pool of 88.1503. FastCharge settles like every other purchase
+      // (business decision, 2026-08-18): TuTak takes 40% off the top
+      // (35.2601), leaving 52.8902 to split 20/30/20/30 — the customer's
+      // immediate green share is 20% of that = 10.578.
       const earned = new Decimal(result.bonusEarned);
       assertStorable(earned, 'bonus earned');
-      expect(earned.toString()).toBe('88.1503');
+      expect(earned.toString()).toBe('10.578');
 
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('88.1503');
+      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('10.578');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
@@ -155,7 +159,9 @@ describe('Money rounding (integration)', () => {
       const result = await sessions.stop(session.id, user.id, {});
 
       expect(result.cost).toBe('2500');
-      expect(result.bonusEarned).toBe('125');
+      // 5% of 2500 = 125 pool → 75 remainder after TuTak's 40% upfront cut
+      // → 15 green (20% of 75).
+      expect(result.bonusEarned).toBe('15');
     });
   });
 

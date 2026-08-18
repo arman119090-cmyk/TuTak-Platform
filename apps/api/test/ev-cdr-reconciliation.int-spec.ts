@@ -204,17 +204,65 @@ describe('Roaming CDR reconciliation (integration)', () => {
     it('claws back the points earned on money that was never spent', async () => {
       const { wallet, session } = await roamingSession('20');
       const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      // 5% of 2000 = 100 points issued on the inflated bill.
-      expect(before.pendingBonus.plus(before.availableBonus).toString()).toBe('100');
+      // 5% of 2000 = 100 pool. FastCharge settles like every other purchase
+      // (business decision, 2026-08-18): TuTak takes 40% off the top,
+      // leaving 60 to split 20/30/20/30 — the customer's immediate green
+      // share, the only leg that reaches the wallet, is 20% of 60 = 12.
+      expect(before.pendingBonus.plus(before.availableBonus).toString()).toBe('12');
 
       cpoReports(15, 1500);
       await reconciler.reconcilePending();
 
-      // 5% of 1500 = 75 is what was actually earned.
+      // 5% of 1500 = 75 pool → 45 remainder → 9 green, the same fraction
+      // (75%) of the original green the correction reduced the bill by.
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('75');
+      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('9');
       await assertWalletIntegrity(prisma, wallet.id);
       expect((await cdrFor(session.id)).reconciliation).toBe(EvCdrReconciliation.CORRECTED);
+    });
+
+    it('claws back the deferred and referrer legs proportionally too, not just green', async () => {
+      const { user: referrer, wallet: referrerWallet } = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: referrer.id, code: 'TT-CDRREFER' } });
+      const { user: referee, wallet } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: referrer.id, refereeUserId: referee.id },
+      });
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
+      await prisma.evConnector.update({
+        where: { id: connector.id },
+        data: { ocpiEvseUid: `EVSE-REMOTE-${randomUUID()}` },
+      });
+
+      const session = await sessions.start({ connectorId: connector.id }, referee.id);
+      await prisma.evSession.update({
+        where: { id: session.id },
+        data: { startedAt: new Date(Date.now() - 3 * 3_600_000) },
+      });
+      await sessions.reportMeterValue(session.id, '20', referee.id);
+      const result = await sessions.stop(session.id, referee.id, {});
+
+      // Pool 100 → remainder 60 → deferred 18, referrer 12.
+      const lotBefore = await prisma.deferredBonusLot.findFirstOrThrow({
+        where: { sourceTransactionId: result.transactionId },
+      });
+      expect(lotBefore.amount.toFixed(4)).toBe('18.0000');
+      const referrerBefore = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
+      expect(referrerBefore.availableBonus.toFixed(4)).toBe('12.0000');
+
+      cpoReports(15, 1500);
+      await reconciler.reconcilePending();
+
+      // Corrected to 75% of the original bill — every leg the pool split
+      // granted is clawed back by that same fraction, not just green.
+      const lotAfter = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lotBefore.id } });
+      expect(lotAfter.refundedAmount.toFixed(4)).toBe('4.5000');
+      const referrerAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
+      expect(referrerAfter.availableBonus.toFixed(4)).toBe('9.0000');
+
+      await assertWalletIntegrity(prisma, wallet.id);
+      await assertWalletIntegrity(prisma, referrerWallet.id);
     });
 
     it('tells a human, because a station that keeps disagreeing is a bad integration', async () => {

@@ -1167,6 +1167,23 @@ model EvSession {
   bonusEarnedAmount Decimal?        @db.Decimal(18, 4)
   transactionId     String?         @unique
   ocpiCdrId         String?         @unique
+  /// The pool split's actual settled amounts — the 2026-08-18 business
+  /// decision's `evTutakUpfrontBps` cut plus the green/deferred/referrer
+  /// legs `EvSessionsService.stopOnce` posted, snapshotted at settlement so
+  /// a later CDR correction (`EvCdrReconciliationService.correctOvercharge`)
+  /// reverses the *historical* allocation rather than recomputing bps from
+  /// whatever `purchasePolicy` says today — same reasoning as
+  /// `PurchaseIntent`'s own snapshot columns. Null for a session that never
+  /// reached the earning-eligible branch (no partner rate, unverified
+  /// phone, or self-dealing) — nothing was ever split, so there is nothing
+  /// to snapshot. `tutakBaseOfRemainder` is not stored — it is, and
+  /// remains, `poolAmount - tutakUpfrontAmount - greenAmount -
+  /// deferredAmount - referrerAmount`, by construction.
+  poolAmount         Decimal?        @db.Decimal(18, 4)
+  tutakUpfrontAmount Decimal?        @db.Decimal(18, 4)
+  greenAmount        Decimal?        @db.Decimal(18, 4)
+  deferredAmount     Decimal?        @db.Decimal(18, 4)
+  referrerAmount     Decimal?        @db.Decimal(18, 4)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 

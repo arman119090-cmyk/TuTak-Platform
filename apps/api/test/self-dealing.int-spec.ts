@@ -237,11 +237,15 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
-      const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% = 5
+      const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% = 5 pool
 
-      expect(result.bonusEarned).toBe('5');
+      // FastCharge settles like every other purchase (business decision,
+      // 2026-08-18): TuTak takes 40% of the pool off the top (2), leaving
+      // 3 to split 20/30/20/30 — the customer's immediate green share is
+      // 20% of that = 0.6.
+      expect(result.bonusEarned).toBe('0.6');
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.lifetimeEarned.toFixed(4)).toBe('5.0000');
+      expect(after.lifetimeEarned.toFixed(4)).toBe('0.6000');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
@@ -306,8 +310,9 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       await sessions.reportMeterValue(session.id, '1200', user.id);
       const result = await sessions.stop(session.id, user.id, {});
 
-      // 1200 kWh x 100 AMD x 5% = 6000, whatever the session's age.
-      expect(result.bonusEarned).toBe('6000');
+      // 1200 kWh x 100 AMD x 5% = 6000 pool, whatever the session's age.
+      // Green is 20% of the 60% remainder after TuTak's 40% cut = 720.
+      expect(result.bonusEarned).toBe('720');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 

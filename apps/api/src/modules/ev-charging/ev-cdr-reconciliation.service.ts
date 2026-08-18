@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { EvCdrReconciliation, Prisma, TransactionStatus } from '@prisma/client';
+import { BonusEntryType, EvCdrReconciliation, Prisma, TransactionStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { roundCharge, roundIssued } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
+import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
+import { ReferralService } from '../referral/referral.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
@@ -70,6 +72,8 @@ export class EvCdrReconciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bonusEngine: BonusEngineService,
+    private readonly deferredBonusLots: DeferredBonusLotService,
+    private readonly referralService: ReferralService,
     private readonly alerts: AlertsService,
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
   ) {}
@@ -229,20 +233,67 @@ export class EvCdrReconciliationService {
         const originalCost = transaction.amount;
         const applied = transaction.bonusAppliedAmount;
 
-        // Points earned on money that was never spent.
-        if (transaction.bonusEarnedAmount.greaterThan(0)) {
-          const lot = await tx.bonusLot.findFirst({
-            where: { sourceTransactionId: transaction.id },
-          });
-          if (lot) {
-            const keep = roundIssued(
-              lot.originalAmount.times(cpoCost.minus(Decimal.min(applied, cpoCost))).dividedBy(
-                Decimal.max(originalCost.minus(applied), new Decimal(1)),
-              ),
+        // Points earned — across every leg the 2026-08-18 pool split grants,
+        // not just the customer's own green share — on money that was never
+        // spent.
+        //
+        // `session.greenAmount`/`deferredAmount`/`referrerAmount` are the
+        // *historical* snapshot `EvSessionsService.stopOnce` actually
+        // posted (independent audit, GitHub issue #28: recomputing from
+        // today's `purchasePolicy` would claw back different amounts than
+        // the ones on the books). `poolAmount` null means this session
+        // never reached the earning-eligible branch at all — nothing was
+        // split, so there is nothing here to claw back.
+        if (session.poolAmount && session.poolAmount.greaterThan(0)) {
+          const paidPortionBefore = Decimal.max(originalCost.minus(applied), new Decimal(1));
+          const paidPortionAfter = cpoCost.minus(Decimal.min(applied, cpoCost));
+          const clawbackShare = (granted: Decimal): Decimal => {
+            const keep = roundIssued(granted.times(paidPortionAfter).dividedBy(paidPortionBefore));
+            return Decimal.max(granted.minus(keep), new Decimal(0));
+          };
+
+          const greenClawback = clawbackShare(session.greenAmount ?? new Decimal(0));
+          if (greenClawback.greaterThan(0)) {
+            const greenLot = await tx.bonusLot.findFirst({
+              where: { sourceTransactionId: transaction.id, type: BonusEntryType.ACCRUAL_PURCHASE },
+            });
+            if (greenLot) {
+              await this.bonusEngine.reverseAccrualLot(greenLot.id, 'ev_cdr_overbilled', greenClawback, tx);
+            }
+          }
+
+          const deferredClawback = clawbackShare(session.deferredAmount ?? new Decimal(0));
+          if (deferredClawback.greaterThan(0)) {
+            await this.deferredBonusLots.reverseForRefund(
+              transaction.id,
+              deferredClawback,
+              'ev_cdr_overbilled',
+              tx,
             );
-            const clawback = Decimal.max(lot.originalAmount.minus(keep), new Decimal(0));
-            if (clawback.greaterThan(0)) {
-              await this.bonusEngine.reverseAccrualLot(lot.id, 'ev_cdr_overbilled', clawback, tx);
+          }
+
+          const referrerClawback = clawbackShare(session.referrerAmount ?? new Decimal(0));
+          if (referrerClawback.greaterThan(0)) {
+            const referrer = await this.referralService.resolveReferrer(session.userId);
+            if (referrer?.type === 'USER') {
+              const referrerWallet = await tx.wallet.findUnique({ where: { userId: referrer.userId } });
+              const referralLot = referrerWallet
+                ? await tx.bonusLot.findFirst({
+                    where: {
+                      sourceTransactionId: transaction.id,
+                      type: BonusEntryType.ACCRUAL_REFERRAL,
+                      walletId: referrerWallet.id,
+                    },
+                  })
+                : null;
+              if (referralLot) {
+                await this.bonusEngine.reverseAccrualLot(
+                  referralLot.id,
+                  'ev_cdr_overbilled',
+                  referrerClawback,
+                  tx,
+                );
+              }
             }
           }
         }

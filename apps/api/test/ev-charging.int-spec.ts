@@ -73,7 +73,7 @@ describe('EV charging (integration)', () => {
 
   // ── Happy path ──────────────────────────────────────────────────────────
 
-  it('bills energy at the connector price and accrues on it', async () => {
+  it('bills energy at the connector price and accrues the green share of the pool', async () => {
     const { user, wallet, connector } = await scenario({ rateBps: 500 });
 
     const session = await sessions.start({ connectorId: connector.id }, user.id);
@@ -81,36 +81,47 @@ describe('EV charging (integration)', () => {
     await sessions.reportMeterValue(session.id, '25', user.id);
     const result = await sessions.stop(session.id, user.id, {});
 
-    // 25 kWh × 100 AMD = 2500; 5% of 2500 = 125.
+    // 25 kWh × 100 AMD = 2500; 5% of 2500 = 125 pool. FastCharge settles
+    // like every other purchase now (business decision, 2026-08-18):
+    // TuTak takes 40% off the top (50), leaving 75 to split 20/30/20/30 —
+    // the customer's immediate green share is 20% of that 75 = 15.
     expect(result.cost).toBe('2500');
-    expect(result.bonusEarned).toBe('125');
+    expect(result.bonusEarned).toBe('15');
 
     const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-    expect(after.pendingBonus.toFixed(4)).toBe('125.0000');
+    expect(after.pendingBonus.toFixed(4)).toBe('15.0000');
     await assertWalletIntegrity(prisma, wallet.id);
   });
 
-  it('posts the accrual to the double-entry ledger, not just the wallet subledger', async () => {
+  it('posts the full contribution pool to the double-entry ledger, not just the wallet subledger', async () => {
     // The wallet-side BonusLedgerEntry subledger (asserted above) is not the
     // accounting source of truth — LedgerTransaction/LedgerPosting is. A
     // bonus that reaches the wallet with no matching posting here is real,
     // spendable money with no accounting record of who funded it: the
     // partner's payable never grows to cover it, so reconciliation can never
     // catch the shortfall.
+    //
+    // No referrer in this scenario, so the referrer's theoretical 15 (see
+    // the split below) falls to TuTak's own revenue leg instead — the same
+    // "TuTak stands in for an absent referrer" rule
+    // PurchaseIntentsService.postContributionLedger already uses.
     const { user, wallet, partner, connector } = await scenario({ rateBps: 500 });
 
     const session = await sessions.start({ connectorId: connector.id }, user.id);
     await backdate(session.id);
     await sessions.reportMeterValue(session.id, '25', user.id);
     const result = await sessions.stop(session.id, user.id, {});
-    expect(result.bonusEarned).toBe('125');
+    expect(result.bonusEarned).toBe('15');
 
     const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
-      where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+      where: { kind: 'ev.charging.contribution', sourceType: 'Transaction' },
       include: { postings: true },
     });
     const postings = ledgerTx.postings;
-    expect(postings).toHaveLength(2);
+    // Partner debit, bonus-liability credit (green + deferred), TuTak
+    // revenue credit (upfront + remainder's own tutak share + the
+    // referrer's share, absent a referrer) — three legs, not two.
+    expect(postings).toHaveLength(3);
 
     const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
       where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
@@ -118,25 +129,79 @@ describe('EV charging (integration)', () => {
     const liabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
       where: { type: 'BONUS_LIABILITY' },
     });
+    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PLATFORM_REVENUE' },
+    });
 
     const partnerLeg = postings.find((p) => p.accountId === partnerAccount.id);
     const liabilityLeg = postings.find((p) => p.accountId === liabilityAccount.id);
+    const revenueLeg = postings.find((p) => p.accountId === revenueAccount.id);
+    // Pool = 125 (5% of 2500). Green = 15, deferred = 22.5 → liability 37.5.
+    // Upfront 50 + remainder's own tutak share 22.5 + the absent referrer's
+    // 15 → revenue 87.5. 37.5 + 87.5 = 125 = pool, by construction.
     expect(partnerLeg?.direction).toBe('DEBIT');
     expect(partnerLeg?.amount.toFixed(4)).toBe('125.0000');
     expect(liabilityLeg?.direction).toBe('CREDIT');
-    expect(liabilityLeg?.amount.toFixed(4)).toBe('125.0000');
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('37.5000');
+    expect(revenueLeg?.direction).toBe('CREDIT');
+    expect(revenueLeg?.amount.toFixed(4)).toBe('87.5000');
 
     // Same sign convention as PurchaseIntentsService.postContributionLedger's
     // own primary-partner leg (purchase-intents.int-spec.ts: "the contribution
     // reduces what is owed"): PARTNER_PAYABLE is credit-normal, so a DEBIT
-    // funding a customer's bonus moves the raw (debit-positive) balance up
-    // and the negated "owed to partner" reading down by the same amount.
+    // funding the pool moves the raw (debit-positive) balance up and the
+    // negated "owed to partner" reading down by the same amount.
     const partnerAfter = await prisma.ledgerAccount.findUniqueOrThrow({
       where: { id: partnerAccount.id },
     });
     expect(partnerAfter.balance.toFixed(4)).toBe('125.0000');
 
     await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  it('creates a deferred lot for its own share and advances any existing ones', async () => {
+    const { user, connector } = await scenario({ rateBps: 500 });
+
+    const session = await sessions.start({ connectorId: connector.id }, user.id);
+    await backdate(session.id);
+    await sessions.reportMeterValue(session.id, '25', user.id);
+    const result = await sessions.stop(session.id, user.id, {});
+
+    const lot = await prisma.deferredBonusLot.findFirstOrThrow({
+      where: { userId: user.id, sourceTransactionId: result.transactionId },
+    });
+    // Pool 125 → remainder 75 → deferred is 30% of that = 22.5, same
+    // split PurchaseIntentsService.settlePurchase uses.
+    expect(lot.amount.toFixed(4)).toBe('22.5000');
+    expect(lot.progressTurnover.toFixed(4)).toBe('0.0000');
+  });
+
+  it("credits the customer's own USER referrer, straight into green, on an EV session", async () => {
+    const { user: referrer, wallet: referrerWallet } = await createCustomer(prisma);
+    await prisma.referralCode.create({ data: { userId: referrer.id, code: 'TT-EVREFER' } });
+    const { user: referee } = await createCustomer(prisma);
+    await prisma.referralInvite.create({
+      data: { referrerType: 'USER', referrerUserId: referrer.id, refereeUserId: referee.id },
+    });
+    const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+    const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
+
+    const session = await sessions.start({ connectorId: connector.id }, referee.id);
+    await backdate(session.id);
+    await sessions.reportMeterValue(session.id, '25', referee.id);
+    const result = await sessions.stop(session.id, referee.id, {});
+
+    // Pool 125 → remainder 75 → referrer share is 20% of that = 15,
+    // exactly like ReferralService.creditUserReferrerShare's recurring
+    // share on a confirmed PurchaseIntent — straight into GREEN, no
+    // cooling-off.
+    const referrerAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
+    expect(referrerAfter.availableBonus.toFixed(4)).toBe('15.0000');
+
+    const referralLot = await prisma.bonusLot.findFirstOrThrow({
+      where: { walletId: referrerWallet.id, type: 'ACCRUAL_REFERRAL', sourceTransactionId: result.transactionId },
+    });
+    expect(referralLot.originalAmount.toFixed(4)).toBe('15.0000');
   });
 
   it('never permanently loses the ledger posting when the fast-path post fails, and the outbox recovers it', async () => {
@@ -162,17 +227,17 @@ describe('EV charging (integration)', () => {
     // fast-path ledger post is about to fail — the accrual is real money the
     // customer already earned, not something a bookkeeping hiccup may undo.
     const result = await sessions.stop(session.id, user.id, {});
-    expect(result.bonusEarned).toBe('125');
+    expect(result.bonusEarned).toBe('15');
     postSpy.mockRestore();
 
     const afterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-    expect(afterFailure.pendingBonus.toFixed(4)).toBe('125.0000');
+    expect(afterFailure.pendingBonus.toFixed(4)).toBe('15.0000');
 
     // Nothing has posted yet: the fast path's one attempt failed and was not
     // retried inline.
     expect(
       await prisma.ledgerTransaction.count({
-        where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+        where: { kind: 'ev.charging.contribution', sourceType: 'Transaction' },
       }),
     ).toBe(0);
 
@@ -180,7 +245,7 @@ describe('EV charging (integration)', () => {
     // event is exactly what turns "logged and forgotten" into "guaranteed,
     // just not yet".
     const pending = await prisma.outboxEvent.findFirstOrThrow({
-      where: { eventType: 'ev.accrual.ledger_post', processedAt: null },
+      where: { eventType: 'ev.contribution.ledger_post', processedAt: null },
     });
     expect(pending.attempts).toBe(0);
 
@@ -194,7 +259,7 @@ describe('EV charging (integration)', () => {
     ).not.toBeNull();
 
     const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
-      where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+      where: { kind: 'ev.charging.contribution', sourceType: 'Transaction' },
       include: { postings: true },
     });
     const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
@@ -208,15 +273,15 @@ describe('EV charging (integration)', () => {
     expect(partnerLeg?.direction).toBe('DEBIT');
     expect(partnerLeg?.amount.toFixed(4)).toBe('125.0000');
     expect(liabilityLeg?.direction).toBe('CREDIT');
-    expect(liabilityLeg?.amount.toFixed(4)).toBe('125.0000');
+    expect(liabilityLeg?.amount.toFixed(4)).toBe('37.5000');
 
     // Re-draining must not double-post: the event is now processed, and even
-    // if it were reclaimed, postAccrualLedgerIdempotent's existing-row check
-    // would refuse a second insert.
+    // if it were reclaimed, postEvContributionLedgerIdempotent's
+    // existing-row check would refuse a second insert.
     expect(await outbox.drain()).toBe(0);
     expect(
       await prisma.ledgerTransaction.count({
-        where: { kind: 'ev.charging.accrual', sourceType: 'Transaction' },
+        where: { kind: 'ev.charging.contribution', sourceType: 'Transaction' },
       }),
     ).toBe(1);
 
@@ -257,9 +322,10 @@ describe('EV charging (integration)', () => {
     await sessions.reportMeterValue(session.id, '25', user.id);
     const result = await sessions.stop(session.id, user.id, { bonusAmountToApply: '1000' });
 
-    // 2500 cost − 1000 in points = 1500 cash → 10% = 150.
+    // 2500 cost − 1000 in points = 1500 cash → 10% = 150 pool. TuTak takes
+    // 40% (60) off the top, leaving 90 → green is 20% of that = 18.
     expect(result.bonusApplied).toBe('1000');
-    expect(result.bonusEarned).toBe('150');
+    expect(result.bonusEarned).toBe('18');
 
     const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(after.availableBonus.toFixed(4)).toBe('0.0000');

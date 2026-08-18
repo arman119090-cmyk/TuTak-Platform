@@ -124,7 +124,7 @@ detail preserved in the agent's report; summarized here:
 |---|------|------|---------|--------|---------------------|-----------------|
 | 1 | `POST /purchase-intents/:id/confirm` | gross | 20/30/20/30 pool | Full, atomic (fixed this pass) | `isAffiliated` | **CURRENT CANONICAL** |
 | 2 | `POST /qr/redeem` | net/paid | flat accrual rate | Only if `FEATURE_QR_LEDGER_MIRROR=true` (off by default) | `isAffiliated` (was `isMember` — **fixed 2026-08-16**, same gap class) | **NO LONGER SETTLES MONEY AT ALL, at either layer (fixed 2026-08-17, GitHub issue #28).** `ScanQrScreen.tsx` used to call `qrApi.redeem()` directly; it now parses the scanned code as a static, amount-free partner identifier (`TUTAK-PAY:<partnerId>`) and opens a `PurchaseIntent` instead — the customer enters the amount themselves, a cashier can only confirm/reject it, and settlement runs the same canonical §12-16 pool split as every other PurchaseIntent. The partner dashboard's "Payment QR" page was changed the same way. That closed the UI side, but `POST /qr/redeem` itself still ran the old formula for any authenticated caller who hit it directly — no UI reachability is not the same as no HTTP reachability. `QrPaymentsController.redeem()` now refuses unconditionally; `QrPaymentsService.redeem()` (the engine itself, DTOs, and mock handler) is untouched and still exercised directly by the integration suite (self-dealing, concurrency, crash-recovery, money-rounding and others use it as their money-moving fixture) — it is simply no longer reachable from outside the process. |
-| 3 | `POST /ev/sessions/:id/stop` | net/paid | flat accrual rate | Never | Session unblocked, bonus **earning** denied via `isAffiliated` — **fixed 2026-08-16**, revised same day by explicit business decision not to block the session itself | **FASTCHARGE-OCPI SPECIAL CASE** for the metering mechanics; also the first working example of the integrated-partner auto-finalization rule — see §M item 8 |
+| 3 | `POST /ev/sessions/:id/stop` | net/paid | ~~flat accrual rate~~ **20/30/20/30 pool split, behind a `evTutakUpfrontBps` (40%) upfront TuTak cut — RESOLVED 2026-08-18, Arman's explicit business decision ("FastCharge как и все")** | Never for the metering mechanics (still §H); the pool split itself now snapshots and reverses exactly like PurchaseIntent's — see `EvSessionsService.stopOnce`/`EvCdrReconciliationService.correctOvercharge` | Session unblocked, bonus **earning** denied via `isAffiliated` — **fixed 2026-08-16**, revised same day by explicit business decision not to block the session itself | **NO LONGER a special case for the money formula** (§H's metering/OCPI mechanics are unchanged); also the first working example of the integrated-partner auto-finalization rule — see §M item 8 |
 | 4 | `POST /payments` → settlement job | net-of-refund | flat accrual rate | Yes | **Was none — fixed this pass** | Pre-existing, unrelated "Financial Core" subsystem (predates tonight's spec); **fixed** as the same vulnerability class already closed twice elsewhere |
 | 5 | `POST /refunds` | reversal of #4 | reversal | Yes | N/A, admin-only | CURRENT CANONICAL for its own pipeline |
 | 6 | `POST /wallet/admin/adjust` | caller-set, capped | flat | No | N/A, admin-only | LEGACY BUT STILL REQUIRED; no ledger posting is a minor **BUSINESS DECISION REQUIRED** item |
@@ -590,7 +590,7 @@ surfaced by this pass's broader entry-point/registration audits:
    built, consistent with the old QR flow having none either.
 4. What happens to a partner's positive settlement balance on offboarding
    — pre-existing open item, unchanged.
-5. **New: three coexisting bonus-accrual formulas** (§D) — gross×pool-split
+5. **Three coexisting bonus-accrual formulas** (§D) — gross×pool-split
    (PurchaseIntent) vs. net×flat-rate (QR, EV) vs. net-of-refund×flat-rate
    (Payments/Settlement) for what a customer experiences as the same kind
    of purchase. Migrating QR/EV/Payments onto the new pool-split economics
@@ -598,7 +598,12 @@ surfaced by this pass's broader entry-point/registration audits:
    coexistence is explicit in the migration doc; EV is explicitly
    protected by the "do not redesign FastCharge" instruction; Payments/
    Settlement was never in scope for either the original spec or this
-   hardening pass).
+   hardening pass). **EV's leg RESOLVED 2026-08-18** (Arman's explicit
+   business decision): `EvSessionsService.stopOnce` now splits its
+   commission pool 20/30/20/30 exactly like `PurchaseIntentsService
+   .settlePurchase`, behind a 40% (`evTutakUpfrontBps`) TuTak cut taken off
+   the top first. QR and Payments/Settlement remain their own formulas,
+   still out of scope. See §H for the updated FastCharge/OCPI status.
 6. **New: registration's OTP-first order and password-optionality**
    (§I) — whether to reverse the documented "create-then-verify" tradeoff,
    and whether password should ever become optional (which requires

@@ -163,6 +163,16 @@ export interface AppConfig {
     poolDeferredBps: number;
     poolReferrerBps: number;
     poolTutakBps: number;
+    /**
+     * Business decision (2026-08-18, GitHub issue #28): FastCharge/EV
+     * settles like every other purchase now, not as its own flat-rate
+     * special case. TuTak takes this share of the EV commission pool
+     * immediately, off the top; what remains then splits by the *same*
+     * green/deferred/referrer/tutak ratios above as a confirmed
+     * PurchaseIntent — see `EvSessionsService.stopOnce`, which mirrors
+     * `PurchaseIntentsService.settlePurchase`.
+     */
+    evTutakUpfrontBps: number;
     /** Spec §13. Deferred lot unlock window, in months. */
     deferredWindowMonths: number;
     /** Spec §13. Cumulative gross turnover required to unlock a deferred lot. */
@@ -191,6 +201,11 @@ function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
       `purchasePolicy pool split must sum to 10000 basis points, got ${total} ` +
         `(green ${policy.poolGreenBps} + deferred ${policy.poolDeferredBps} + ` +
         `referrer ${policy.poolReferrerBps} + tutak ${policy.poolTutakBps})`,
+    );
+  }
+  if (policy.evTutakUpfrontBps < 0 || policy.evTutakUpfrontBps > 10_000) {
+    throw new Error(
+      `purchasePolicy.evTutakUpfrontBps must be between 0 and 10000, got ${policy.evTutakUpfrontBps}`,
     );
   }
 }
@@ -362,6 +377,9 @@ const buildConfig = (): AppConfig => ({
     poolDeferredBps: parseInt(process.env.PURCHASE_POOL_DEFERRED_BPS ?? '3000', 10),
     poolReferrerBps: parseInt(process.env.PURCHASE_POOL_REFERRER_BPS ?? '2000', 10),
     poolTutakBps: parseInt(process.env.PURCHASE_POOL_TUTAK_BPS ?? '3000', 10),
+    // 40%, per the 2026-08-18 business decision — TuTak's upfront cut of the
+    // EV commission pool, before the remainder splits the normal way.
+    evTutakUpfrontBps: parseInt(process.env.EV_TUTAK_UPFRONT_BPS ?? '4000', 10),
     // 3 months / 54 000 AMD cumulative, per spec §13.
     deferredWindowMonths: parseInt(
       process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3',

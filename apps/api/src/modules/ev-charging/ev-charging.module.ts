@@ -5,6 +5,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { SecurityModule } from '../security/security.module';
 import { AuthModule } from '../auth/auth.module';
 import { PartnersModule } from '../partners/partners.module';
+import { ReferralModule } from '../referral/referral.module';
 import { EvChargingController } from './ev-charging.controller';
 import { EvCdrReconciliationService } from './ev-cdr-reconciliation.service';
 import { EvReservationsService } from './ev-reservations.service';
@@ -25,6 +26,7 @@ import { AppConfig } from '../../config/configuration';
     LedgerModule,
     forwardRef(() => AuthModule),
     PartnersModule,
+    ReferralModule,
   ],
   controllers: [EvChargingController],
   providers: [

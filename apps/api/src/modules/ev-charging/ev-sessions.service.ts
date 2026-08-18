@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   BonusEntryType,
   EvCdrReconciliation,
@@ -18,9 +19,11 @@ import {
   TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { parseMoney, roundCharge, roundIssued } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
+import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { WalletService } from '../wallet/wallet.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
@@ -30,6 +33,7 @@ import { IdempotencyService } from '../ledger/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { OutboxService } from '../ledger/outbox.service';
 import { PartnersService } from '../partners/partners.service';
+import { ReferralService, ResolvedReferrer } from '../referral/referral.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -103,6 +107,7 @@ export class EvSessionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bonusEngine: BonusEngineService,
+    private readonly deferredBonusLots: DeferredBonusLotService,
     private readonly walletService: WalletService,
     private readonly transactionsService: TransactionsService,
     private readonly fraudDetection: FraudDetectionService,
@@ -111,19 +116,37 @@ export class EvSessionsService {
     private readonly alerts: AlertsService,
     private readonly idempotency: IdempotencyService,
     private readonly partners: PartnersService,
+    private readonly referralService: ReferralService,
     private readonly ledger: LedgerService,
     private readonly outbox: OutboxService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {
-    // Guaranteed-retry backstop for `postAccrualLedgerIdempotent`'s fast
-    // path below: `outbox.drain()` (the `outbox.drain` sweep) replays this
-    // until the entry exists, so a transient failure on the fast path is a
-    // delay, never a permanently missing posting. See the accrual block in
-    // `stopOnce` for why the event is published atomically with the accrual
-    // it accounts for.
-    this.outbox.register('ev.accrual.ledger_post', async (payload) => {
-      await this.postAccrualLedgerIdempotent(
+    // Guaranteed-retry backstop for `postEvContributionLedgerIdempotent`'s
+    // fast path below: `outbox.drain()` (the `outbox.drain` sweep) replays
+    // this until the entry exists, so a transient failure on the fast path
+    // is a delay, never a permanently missing posting. See the settlement
+    // block in `stopOnce` for why the event is published atomically with
+    // the wallet-side effects it accounts for.
+    this.outbox.register('ev.contribution.ledger_post', async (payload) => {
+      const referrerType = payload.referrerType as 'USER' | 'PARTNER' | null;
+      const referrerId = payload.referrerId as string | null;
+      const referrer: ResolvedReferrer | null =
+        referrerType === 'USER'
+          ? { type: 'USER', userId: referrerId! }
+          : referrerType === 'PARTNER'
+            ? { type: 'PARTNER', partnerId: referrerId! }
+            : null;
+
+      await this.postEvContributionLedgerIdempotent(
         payload.partnerId as string,
-        new Decimal(payload.bonusEarned as string),
+        {
+          pool: new Decimal(payload.pool as string),
+          tutakUpfront: new Decimal(payload.tutakUpfront as string),
+          green: new Decimal(payload.green as string),
+          deferred: new Decimal(payload.deferred as string),
+          referrerShare: new Decimal(payload.referrerShare as string),
+          referrer,
+        },
         payload.transactionId as string,
       );
     });
@@ -456,7 +479,8 @@ export class EvSessionsService {
         });
       });
 
-      let bonusEarned = new Decimal(0);
+      let green = new Decimal(0);
+      let completed: Awaited<ReturnType<TransactionsService['markCompleted']>> | undefined;
       const rateBps = session.connector.station.partnerId
         ? (await this.prisma.partner.findUnique({ where: { id: session.connector.station.partnerId } }))
             ?.bonusAccrualRateBps
@@ -478,63 +502,130 @@ export class EvSessionsService {
         : false;
       if (rateBps && canEarn && !affiliated) {
         const paidPortion = cost.minus(bonusToApply);
-        bonusEarned = roundIssued(paidPortion.times(rateBps).dividedBy(10_000));
-        if (bonusEarned.greaterThan(0)) {
-          const walletId = await this.walletService.getWalletIdForUser(userId);
-          const partnerId = session.connector.station.partnerId;
+        // Business decision (2026-08-18, GitHub issue #28): FastCharge
+        // settles like every other purchase now, not as its own flat-rate
+        // special case where the customer received the whole commission
+        // pool and TuTak received nothing. `pool` is unchanged from before
+        // — the paid-portion commission this connector's partner rate
+        // produces — but it is no longer handed to the customer whole:
+        // TuTak takes `evTutakUpfrontBps` off the top, and what remains
+        // splits by the *same* green/deferred/referrer/tutak ratios a
+        // confirmed PurchaseIntent uses — see
+        // `PurchaseIntentsService.settlePurchase`, which this mirrors leg
+        // for leg.
+        const pool = roundIssued(paidPortion.times(rateBps).dividedBy(10_000));
+        const policy = this.config.get('purchasePolicy', { infer: true });
+        const tutakUpfront = roundIssued(pool.times(policy.evTutakUpfrontBps).dividedBy(10_000));
+        const remainder = pool.minus(tutakUpfront);
+        green = roundIssued(remainder.times(policy.poolGreenBps).dividedBy(10_000));
+        const deferred = roundIssued(remainder.times(policy.poolDeferredBps).dividedBy(10_000));
+        const referrerShare = roundIssued(remainder.times(policy.poolReferrerBps).dividedBy(10_000));
+        // The remainder's own tutak share is never independently rounded —
+        // same reasoning as `PurchaseIntentsService.settlePurchase`'s
+        // `tutakBase`, so the three legs above always sum to `remainder`.
 
-          // The accrual and the durable promise to post its accounting
-          // entry commit atomically: a wallet credit must never exist with
-          // nothing at all recording that the ledger still owes it (GitHub
-          // issue #28, HEAD 0a9c7d5). The posting itself is attempted right
-          // after, outside this transaction — `LedgerService.post` opens
-          // its own transaction and composing two independent ones inside
-          // one another buys nothing — with `outbox.drain` guaranteeing it
-          // eventually happens even if that immediate attempt fails.
-          const lot = await this.prisma.$transaction(async (tx) => {
+        const walletId = await this.walletService.getWalletIdForUser(userId);
+        const partnerId = session.connector.station.partnerId;
+        const referrer = await this.referralService.resolveReferrer(userId);
+
+        // The wallet-side effects and the durable promise to post their
+        // accounting entry commit atomically: a wallet credit must never
+        // exist with nothing at all recording that the ledger still owes
+        // it (GitHub issue #28, HEAD 0a9c7d5). The posting itself is
+        // attempted right after, outside this transaction —
+        // `LedgerService.post` opens its own transaction and composing two
+        // independent ones inside one another buys nothing — with
+        // `outbox.drain` guaranteeing it eventually happens even if that
+        // immediate attempt fails.
+        const settled = await this.prisma.$transaction(async (tx) => {
+          await tx.evSession.update({
+            where: { id: session.id },
+            data: {
+              poolAmount: pool,
+              tutakUpfrontAmount: tutakUpfront,
+              greenAmount: green,
+              deferredAmount: deferred,
+              referrerAmount: referrerShare,
+            },
+          });
+
+          let greenLotId: string | null = null;
+          if (green.greaterThan(0)) {
             const created = await this.bonusEngine.accrue(
-              {
-                walletId,
-                type: BonusEntryType.ACCRUAL_PURCHASE,
-                amount: bonusEarned,
-                sourceTransactionId: transaction.id,
-              },
+              { walletId, type: BonusEntryType.ACCRUAL_PURCHASE, amount: green, sourceTransactionId: transaction.id },
               tx,
             );
-            await this.outbox.publish(tx, {
-              aggregateType: 'Transaction',
-              aggregateId: transaction.id,
-              eventType: 'ev.accrual.ledger_post',
-              payload: { partnerId, bonusEarned: bonusEarned.toString(), transactionId: transaction.id },
-            });
-            return created;
-          });
-          accruedLotId = lot.id;
+            greenLotId = created.id;
+          }
 
-          // Fast path. Never fatal, the same reasoning as
-          // QrLedgerMirrorService: the customer has already paid for and
-          // been credited on this charge, and a bookkeeping failure must
-          // not unwind that — the outbox event published above is what
-          // turns "logged and forgotten" into "guaranteed, just not yet".
-          await this.postAccrualLedgerIdempotent(partnerId, bonusEarned, transaction.id).catch((e) =>
-            this.logger.error(
-              `Failed to post EV accrual ledger entry for session ${session.id} (outbox will retry)`,
-              e,
-            ),
+          // Spec §15's own order, mirrored: existing lots first, then this
+          // session's own new one.
+          await this.deferredBonusLots.advanceExistingLots(userId, cost, transaction.id, tx);
+          if (deferred.greaterThan(0)) {
+            await this.deferredBonusLots.createLot(userId, deferred, transaction.id, tx);
+          }
+
+          if (referrer?.type === 'USER' && referrerShare.greaterThan(0)) {
+            await this.referralService.creditUserReferrerShare(referrer.userId, referrerShare, transaction.id, tx);
+          }
+
+          await this.outbox.publish(tx, {
+            aggregateType: 'Transaction',
+            aggregateId: transaction.id,
+            eventType: 'ev.contribution.ledger_post',
+            payload: {
+              partnerId,
+              pool: pool.toString(),
+              tutakUpfront: tutakUpfront.toString(),
+              green: green.toString(),
+              deferred: deferred.toString(),
+              referrerShare: referrerShare.toString(),
+              referrerType: referrer?.type ?? null,
+              referrerId: referrer ? (referrer.type === 'USER' ? referrer.userId : referrer.partnerId) : null,
+              transactionId: transaction.id,
+            },
+          });
+
+          const completedTx = await this.transactionsService.markCompleted(
+            transaction.id,
+            { bonusEarnedAmount: green },
+            tx,
           );
-        }
+
+          return { greenLotId, completedTx };
+        });
+        accruedLotId = settled.greenLotId;
+        completed = settled.completedTx;
+
+        // Fast path. Never fatal, the same reasoning as
+        // QrLedgerMirrorService: the customer has already paid for and
+        // been credited on this charge, and a bookkeeping failure must
+        // not unwind that — the outbox event published above is what
+        // turns "logged and forgotten" into "guaranteed, just not yet".
+        await this.postEvContributionLedgerIdempotent(
+          partnerId,
+          { pool, tutakUpfront, green, deferred, referrerShare, referrer },
+          transaction.id,
+        ).catch((e) =>
+          this.logger.error(
+            `Failed to post EV contribution ledger entry for session ${session.id} (outbox will retry)`,
+            e,
+          ),
+        );
       }
 
-      const completed = await this.transactionsService.markCompleted(transaction.id, {
-        bonusEarnedAmount: bonusEarned,
-      });
+      if (!completed) {
+        completed = await this.transactionsService.markCompleted(transaction.id, {
+          bonusEarnedAmount: green,
+        });
+      }
 
       return {
         transactionId: completed.id,
         energyKwh: energyKwh.toString(),
         cost: cost.toString(),
         bonusApplied: bonusToApply.toString(),
-        bonusEarned: bonusEarned.toString(),
+        bonusEarned: green.toString(),
       };
     } catch (err) {
       // A settled reservation is already spent and must be reversed rather
@@ -570,11 +661,14 @@ export class EvSessionsService {
   }
 
   /**
-   * Posts the accounting side of an EV bonus accrual: the partner now owes
-   * the platform what the customer was just credited. Mirrors
-   * `PurchaseIntentsService.postContributionLedger`'s green leg — same two
-   * account types, same direction — because this is the same kind of event
-   * (a partner-funded bonus accrual), not a new one.
+   * Posts the accounting side of an EV session's settled contribution pool:
+   * the partner now owes the platform the full pool, split across the
+   * customer's immediate green bonus, their deferred/locked bonus, the
+   * referrer's cut, and TuTak's own share (the upfront cut plus its share
+   * of what remained). Mirrors `PurchaseIntentsService.postContributionLedger`
+   * leg for leg — same account types, same directions — because this is
+   * the same kind of event (a partner-funded contribution pool), not a new
+   * one.
    *
    * Idempotent: both the fast-path attempt in `stopOnce` and the outbox's
    * guaranteed retry call this for the same `transactionId`, and — in a
@@ -586,28 +680,79 @@ export class EvSessionsService {
    * reason `ReferralService.runSerializable` and
    * `PurchaseIntentRefundService.runSerializable` exist.
    */
-  private async postAccrualLedgerIdempotent(partnerId: string, bonusEarned: Decimal, transactionId: string) {
+  private async postEvContributionLedgerIdempotent(
+    partnerId: string,
+    amounts: {
+      pool: Decimal;
+      tutakUpfront: Decimal;
+      green: Decimal;
+      deferred: Decimal;
+      referrerShare: Decimal;
+      referrer: ResolvedReferrer | null;
+    },
+    transactionId: string,
+  ) {
+    if (amounts.pool.lessThanOrEqualTo(0)) return;
+
     const run = async (tx: Tx) => {
       const existing = await tx.ledgerTransaction.findFirst({
-        where: { kind: 'ev.charging.accrual', sourceType: 'Transaction', sourceId: transactionId },
+        where: { kind: 'ev.charging.contribution', sourceType: 'Transaction', sourceId: transactionId },
         select: { id: true },
       });
       if (existing) return;
 
-      const [partnerAccount, bonusLiabilityAccount] = await Promise.all([
+      const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
         this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, tx),
         this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+        this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
       ]);
+
+      // tutakBaseOfRemainder — the remainder's own tutak share, never
+      // independently rounded, exactly like `postContributionLedger`'s own
+      // `tutakBase`.
+      const tutakBaseOfRemainder = amounts.pool
+        .minus(amounts.tutakUpfront)
+        .minus(amounts.green)
+        .minus(amounts.deferred)
+        .minus(amounts.referrerShare);
+
+      const customerLiability = amounts.green
+        .plus(amounts.deferred)
+        .plus(amounts.referrer?.type === 'USER' ? amounts.referrerShare : 0);
+      const tutakRevenue = amounts.tutakUpfront
+        .plus(tutakBaseOfRemainder)
+        .plus(amounts.referrer ? 0 : amounts.referrerShare);
+
+      const postings = [
+        { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.pool },
+        ...(customerLiability.greaterThan(0)
+          ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
+          : []),
+        ...(amounts.referrer?.type === 'PARTNER' && amounts.referrerShare.greaterThan(0)
+          ? [
+              {
+                accountId: (
+                  await this.ledger.accountFor(
+                    { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.referrer.partnerId },
+                    tx,
+                  )
+                ).id,
+                direction: PostingDirection.CREDIT,
+                amount: amounts.referrerShare,
+              },
+            ]
+          : []),
+        ...(tutakRevenue.greaterThan(0)
+          ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: tutakRevenue }]
+          : []),
+      ];
 
       await this.ledger.post(
         {
-          kind: 'ev.charging.accrual',
+          kind: 'ev.charging.contribution',
           sourceType: 'Transaction',
           sourceId: transactionId,
-          postings: [
-            { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: bonusEarned },
-            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: bonusEarned },
-          ],
+          postings,
         },
         tx,
       );

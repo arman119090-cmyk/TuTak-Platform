@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +27,12 @@ const ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap, key
 export function MainTabNavigator() {
   const { t } = useTranslation();
   const { color, text, layout, glass } = useTheme();
+  // Android's system nav bar (gesture pill or 3-button bar) sits in this
+  // inset, and its height varies by device — a fixed padding either wastes
+  // space or, worse, leaves the tab bar's own buttons underneath it, exactly
+  // where the system's own buttons are hardest to avoid mis-tapping.
+  const insets = useSafeAreaInsets();
+  const androidBottomPadding = Math.max(12, insets.bottom);
 
   return (
     <Tab.Navigator
@@ -40,9 +47,9 @@ export function MainTabNavigator() {
           backgroundColor: color.backgroundSubtle,
           borderTopColor: glass.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: layout.tabBarHeight,
+          height: Platform.OS === 'android' ? layout.tabBarHeight + insets.bottom : layout.tabBarHeight,
           paddingTop: 8,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          paddingBottom: Platform.OS === 'ios' ? 28 : androidBottomPadding,
         },
         tabBarLabelStyle: {
           fontSize: text.overline.fontSize,

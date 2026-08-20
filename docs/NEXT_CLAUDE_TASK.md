@@ -55,22 +55,29 @@ whatever green/deferred/L1/L2/L3 legs actually had a recipient), the same
 pattern the ledger posting code already uses elsewhere for exactly this
 kind of rounding/no-recipient safety.
 
-**Still explicitly NOT resolved — do not guess these, ask Arman before
-writing code:**
+**CONFIRMED FINAL (2026-08-19), verbatim from Arman: "Всё это новая модель
+и это окончательная модель"** — this is the whole model, and it is final.
+No further business decisions are open on the referral rework; the two
+items below are implementation choices, not business questions, and can be
+made unilaterally during implementation without asking Arman first:
 
-1. **Chain data model.** The current schema (`ReferralInvite`,
-   `resolveReferrer` in `referral.service.ts`) only resolves one level up.
-   Walking 3 levels needs either a recursive lookup (fine at this scale,
-   simplest) or a materialized chain — pick based on how `resolveReferrer`
-   is actually called on the hot path today.
-2. **Existing single-level referral data / in-flight invites.** Does this
-   apply going forward only, or does it need to backfill/reinterpret
-   existing `ReferralInvite` rows that only ever recorded one level?
-3. Everything else the single-level rewrite already had to answer once
-   (partner-as-referrer handling, immutability of attribution, Referral
-   Challenge interaction, refund clawback) needs re-checking against 3
-   levels instead of 1 — don't assume the old single-level logic
-   generalizes cleanly.
+- **Chain data model.** The current schema (`ReferralInvite`,
+  `resolveReferrer` in `referral.service.ts`) only resolves one level up.
+  Walking 3 levels needs either a recursive lookup (fine at this scale,
+  simplest) or a materialized chain — pick based on how `resolveReferrer`
+  is actually called on the hot path today.
+- **Existing single-level referral data / in-flight invites.** Since this
+  is confirmed as the new final model rather than a variant that has to
+  coexist with the old one, treat it as applying going forward: no need to
+  reinterpret or backfill old `ReferralInvite` rows into a 3-level shape
+  that never applied to them — a chain simply resolves however far up it
+  actually goes for rows created after the rework ships.
+- Everything else the single-level rewrite already had to answer once
+  (partner-as-referrer handling, immutability of attribution, Referral
+  Challenge interaction, refund clawback) still needs re-checking against
+  3 levels instead of 1 during implementation — don't assume the old
+  single-level logic generalizes cleanly, but this is verification work,
+  not a new business question.
 
 When implemented: update this file to remove this entry, and record the
 decision + implementation in `docs/HARDENING_AUDIT_2026-08-16.md` the way

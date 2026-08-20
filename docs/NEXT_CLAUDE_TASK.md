@@ -45,21 +45,28 @@ current four legs use in code (`ev-sessions.service.ts`'s
 the new leg set is these six, at these six fractions — do not reuse the
 old 20/30/20/30 constants, they're superseded.
 
+**RESOLVED (2026-08-19) — what happens below 3 levels of chain.** Any
+level's share that has no recipient (chain shorter than 3 — e.g. the
+Level-1 referrer was never themselves referred, so there's no Level 2 or
+3) goes to TuTak, not left unpaid and not redistributed to the levels that
+do exist. Simplest implementation: TuTak's leg is the residual (pool minus
+whatever green/deferred/L1/L2/L3 legs actually had a recipient), the same
+"derive the last leg as a residual rather than round it independently"
+pattern the ledger posting code already uses elsewhere for exactly this
+kind of rounding/no-recipient safety.
+
 **Still explicitly NOT resolved — do not guess these, ask Arman before
 writing code:**
 
-1. **What happens below 3 levels of chain.** If Level 2 or Level 3 doesn't
-   exist (the referrer was never themselves referred), does their share
-   go unpaid, roll up to TuTak, or roll down to the levels that do exist?
-2. **Chain data model.** The current schema (`ReferralInvite`,
+1. **Chain data model.** The current schema (`ReferralInvite`,
    `resolveReferrer` in `referral.service.ts`) only resolves one level up.
    Walking 3 levels needs either a recursive lookup (fine at this scale,
    simplest) or a materialized chain — pick based on how `resolveReferrer`
    is actually called on the hot path today.
-3. **Existing single-level referral data / in-flight invites.** Does this
+2. **Existing single-level referral data / in-flight invites.** Does this
    apply going forward only, or does it need to backfill/reinterpret
    existing `ReferralInvite` rows that only ever recorded one level?
-4. Everything else the single-level rewrite already had to answer once
+3. Everything else the single-level rewrite already had to answer once
    (partner-as-referrer handling, immutability of attribution, Referral
    Challenge interaction, refund clawback) needs re-checking against 3
    levels instead of 1 — don't assume the old single-level logic

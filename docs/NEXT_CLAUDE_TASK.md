@@ -26,27 +26,40 @@ picking up anything else on this file.
   CONTEXT_2026-08-16.md` §pool distribution), not gross transaction amount
   and not new money on top of that pool.
 
-**Explicitly NOT yet resolved — do not guess these, ask Arman before
+**RESOLVED (2026-08-19) — the new pool split, replacing 20/30/20/30
+outright.** Given verbatim by Arman as a worked example against a 10%
+commission pool (i.e. the partner's negotiated rate is 10% of gross): of
+that 10%, 2% → customer's green (available) account, 3% → customer's
+black (deferred) account, 1% → Level-1 referrer, 0.5% → Level-2 referrer,
+0.5% → Level-3 referrer, 3% stays with TuTak. That's 2+3+1+0.5+0.5+3 = 10,
+i.e. the whole pool, with nothing added on top — confirms the "base" line
+above.
+
+Expressed as **fractions of the pool** (so it scales to whatever
+`negotiatedRateBps` an individual partner actually has, not just the 10%
+example): **TuTak 30% · Green 20% · Deferred(black) 30% · Referral L1 10%
+· Referral L2 5% · Referral L3 5%** — six legs summing to 100% of the
+pool, replacing the old four-leg 20/30/20/30. Whatever order/naming the
+current four legs use in code (`ev-sessions.service.ts`'s
+`postEvContributionLedgerIdempotent` and the PurchaseIntent equivalent),
+the new leg set is these six, at these six fractions — do not reuse the
+old 20/30/20/30 constants, they're superseded.
+
+**Still explicitly NOT resolved — do not guess these, ask Arman before
 writing code:**
 
-1. **How the 2% total reconciles with the existing 20/30/20/30 legs.**
-   The current split already allocates one leg to "referrer" (single
-   level). Does the new 1%/0.5%/0.5% *replace* that leg's share of the
-   pool entirely (i.e. the referrer leg's percentage becomes 2%, split
-   3 ways up the chain), or is it a separate carve-out that changes the
-   other three legs' shares? The numbers as given don't say.
-2. **What happens below 3 levels of chain.** If Level 2 or Level 3 doesn't
+1. **What happens below 3 levels of chain.** If Level 2 or Level 3 doesn't
    exist (the referrer was never themselves referred), does their share
    go unpaid, roll up to TuTak, or roll down to the levels that do exist?
-3. **Chain data model.** The current schema (`ReferralInvite`,
+2. **Chain data model.** The current schema (`ReferralInvite`,
    `resolveReferrer` in `referral.service.ts`) only resolves one level up.
    Walking 3 levels needs either a recursive lookup (fine at this scale,
    simplest) or a materialized chain — pick based on how `resolveReferrer`
    is actually called on the hot path today.
-4. **Existing single-level referral data / in-flight invites.** Does this
+3. **Existing single-level referral data / in-flight invites.** Does this
    apply going forward only, or does it need to backfill/reinterpret
    existing `ReferralInvite` rows that only ever recorded one level?
-5. Everything else the single-level rewrite already had to answer once
+4. Everything else the single-level rewrite already had to answer once
    (partner-as-referrer handling, immutability of attribution, Referral
    Challenge interaction, refund clawback) needs re-checking against 3
    levels instead of 1 — don't assume the old single-level logic

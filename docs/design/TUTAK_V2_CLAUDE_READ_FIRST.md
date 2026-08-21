@@ -12,7 +12,8 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
    - `docs/design/TUTAK_V2_REFERRAL_PREVIEW.svg` — Referral Network;
    - `docs/design/TUTAK_V2_COMPONENT_SHEET.svg` — components, labels, states and navigation.
 5. Use the SVGs as the final visual source: they are vector-based and scale without quality loss. `TUTAK_V2_DESIGN_PREVIEW.png` is an additional rendered overview for quick review.
-6. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
+6. Read `docs/design/TUTAK_V2_UI_ASSET_MANIFEST.md` and open every file under `docs/design/assets/v2/`.
+7. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
 
 ## Exact deliverables to implement
 
@@ -20,6 +21,7 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
 - Home, Map/Explore, QR/PurchaseIntent, Wallet, Profile and **Referral Network**;
 - direct Home entry to `Моя сеть` / `Пригласить друзей` before long transaction history;
 - HD Home Jako hero at `docs/design/assets/tutak-home-hero-parrot-v2.jpg`, UI text rendered by the app;
+- individually exported vector button and bottom-navigation sources under `docs/design/assets/v2/`, with the exact values in `docs/design/TUTAK_V2_TOKENS.json`;
 - referral hierarchy: personally invited Level-1 list; aggregate count only for Levels 2 and 3;
 - loading, empty, error, long-text and narrow-screen states.
 

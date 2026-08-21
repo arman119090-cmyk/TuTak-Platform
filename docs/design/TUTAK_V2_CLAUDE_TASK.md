@@ -5,8 +5,8 @@ Read first, in this order:
 1. `docs/design/TUTAK_V2_CLAUDE_READ_FIRST.md`
 2. `docs/design/TUTAK_UI_UX_MASTER_SPEC_V2.md`
 3. `docs/design/TUTAK_V2_DESIGN_PREVIEW.png`
-4. `docs/design/TUTAK_V2_REFERRAL_PREVIEW.png`
-5. `docs/design/TUTAK_V2_COMPONENT_SHEET.png`
+4. `docs/design/TUTAK_V2_REFERRAL_PREVIEW.svg`
+5. `docs/design/TUTAK_V2_COMPONENT_SHEET.svg`
 6. `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`
 7. `docs/design/README_ASSETS_V2.md`
 8. `docs/NEXT_CLAUDE_TASK.md` — the approved 3-level referral economics and queued engine work
@@ -23,7 +23,7 @@ Implement the new **customer mobile-app** visual system shown in the preview. Th
 4. Update Map / partner discovery: search, categories, map/list sheet and accessible partner cards. Do not add fictional live availability or distance where API data does not exist.
 5. Update QR / PurchaseIntent screens without changing their financial behaviour: partner identity, total, requested discount, remainder, strict 3-minute countdown, confirmed/rejected/expired states.
 6. Update Wallet so `available`, `reserved` and `historical total` are visually and semantically distinct.
-7. Make referrals visibly available from Home. Build the `Моя сеть` screen from `TUTAK_V2_REFERRAL_PREVIEW`: share code/link; Level 1 personally invited list; Levels 2 and 3 aggregate counts only; and a separate Referral Challenge / referral-earnings block only when supported by the server.
+7. Make referrals visibly available from Home. Build the `Моя сеть` screen from `TUTAK_V2_REFERRAL_PREVIEW.svg`: share code/link; Level 1 personally invited list; Levels 2 and 3 aggregate counts only; and a separate Referral Challenge / referral-earnings block only when supported by the server.
 8. Update Profile and support empty/error/loading image states.
 
 ## Non-negotiable constraints

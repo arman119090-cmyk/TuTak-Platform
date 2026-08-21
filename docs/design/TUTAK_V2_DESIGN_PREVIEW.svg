@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1800" height="1520" viewBox="0 0 1800 1520">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F3FAF6"/><stop offset="1" stop-color="#F7F9F8"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00B676"/><stop offset="1" stop-color="#0B5D3B"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E9F4FF"/><stop offset="1" stop-color="#F3F9FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#172033" flood-opacity=".12"/></filter>
+    <filter id="smallShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#172033" flood-opacity=".10"/></filter>
+    <style>
+      .title{font-family:Inter,Arial,sans-serif;fill:#172033}.h1{font-size:42px;font-weight:800}.h2{font-size:24px;font-weight:800}.body{font-size:16px;font-weight:500}.tiny{font-size:12px;font-weight:600}.muted{fill:#667085}.white{fill:#fff}.green{fill:#00A86B}.ink{fill:#172033}.screenTitle{font-size:25px;font-weight:800}.money{font-size:33px;font-weight:800}.nav{font-size:11px;font-weight:700}.label{font-size:13px;font-weight:700}.line{stroke:#E5E7EB;stroke-width:1}.road{stroke:#DDECE4;stroke-width:11;stroke-linecap:round;fill:none}.road2{stroke:#FFFFFF;stroke-width:5;stroke-linecap:round;fill:none}.pinText{font-size:13px;font-weight:800;fill:#fff}.icon{stroke:#0B5D3B;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;fill:none}
+    </style>
+    <g id="bottomNav">
+      <rect x="0" y="628" width="380" height="92" fill="#fff"/>
+      <path d="M0 628H380" class="line"/>
+      <path d="M39 672l11-10 11 10v16H39z" class="icon"/><path d="M31 672l19-17 19 17" class="icon"/>
+      <circle cx="122" cy="669" r="10" fill="none" stroke="#98A2B3" stroke-width="2.5"/><path d="M122 660v9l6 5" fill="none" stroke="#98A2B3" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="190" cy="666" r="28" fill="url(#green)"/><rect x="180" y="656" width="20" height="20" rx="5" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="190" cy="666" r="4" fill="#fff"/>
+      <path d="M268 656h18l7 9-7 9h-18l-7-9z" fill="none" stroke="#98A2B3" stroke-width="2.5"/><circle cx="282" cy="665" r="2" fill="#98A2B3"/>
+      <circle cx="342" cy="661" r="8" fill="none" stroke="#98A2B3" stroke-width="2.5"/><path d="M329 678c2-8 7-12 13-12s11 4 13 12" fill="none" stroke="#98A2B3" stroke-width="2.5" stroke-linecap="round"/>
+      <text x="50" y="705" text-anchor="middle" class="title nav green">Главная</text><text x="122" y="705" text-anchor="middle" class="title nav muted">Карта</text><text x="190" y="705" text-anchor="middle" class="title nav green">QR</text><text x="278" y="705" text-anchor="middle" class="title nav muted">Кошелёк</text><text x="342" y="705" text-anchor="middle" class="title nav muted">Профиль</text>
+    </g>
+  </defs>
+
+  <rect width="1800" height="1520" fill="url(#bg)"/>
+  <text x="80" y="75" class="title h1">TuTak · mobile design v2</text>
+  <text x="80" y="110" class="title body muted">Статический обзор системы — данные демонстрационные; финансовые значения приходят только с сервера.</text>
+
+  <!-- HOME -->
+  <g transform="translate(85,170)" filter="url(#shadow)">
+    <rect width="380" height="720" rx="38" fill="#F7F9F8"/>
+    <text x="28" y="50" class="title screenTitle">TuTak</text><text x="28" y="72" class="title tiny muted">Жако всегда с тобой</text>
+    <circle cx="326" cy="43" r="17" fill="#fff" stroke="#E5E7EB"/><path d="M320 48h12M323 39a3 3 0 0 1 6 0c0 5 4 5 4 8h-14c0-3 4-3 4-8z" class="icon"/>
+    <rect x="20" y="92" width="340" height="154" rx="22" fill="#0B5D3B"/>
+    <image x="20" y="92" width="340" height="154" preserveAspectRatio="xMidYMid slice" xlink:href="assets/tutak-home-hero-parrot-v2.jpg"/>
+    <rect x="20" y="92" width="205" height="154" rx="22" fill="#0B5D3B" fill-opacity=".76"/>
+    <text x="42" y="122" class="title label white">Доступно для скидки · AMD</text><text x="42" y="160" class="title money white">24 800</text>
+    <rect x="41" y="176" width="135" height="24" rx="12" fill="#fff" fill-opacity=".18"/><text x="52" y="193" class="title tiny white">Как это работает?</text>
+    <text x="42" y="221" class="title tiny white" opacity=".88">Зарезервировано: 1 200</text>
+    <rect x="20" y="264" width="340" height="58" rx="18" fill="url(#green)"/><rect x="42" y="283" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="51" cy="292" r="3" fill="#fff"/><text x="74" y="301" class="title h2 white">Сканировать QR</text><text x="337" y="301" text-anchor="end" class="title h2 white">›</text>
+    <rect x="20" y="338" width="164" height="72" rx="18" fill="#fff" filter="url(#smallShadow)"/><path d="M43 370l8-15 7 11h-7l3 8" fill="none" stroke="#00A86B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><text x="72" y="368" class="title label ink">Начать зарядку</text><text x="72" y="388" class="title tiny muted">Станции рядом</text>
+    <rect x="196" y="338" width="164" height="72" rx="18" fill="url(#blue)"/><path d="M219 355c-6 0-10 4-10 10 0 8 10 16 10 16s10-8 10-16c0-6-4-10-10-10z" fill="none" stroke="#2F80ED" stroke-width="2.5"/><circle cx="219" cy="365" r="3" fill="#2F80ED"/><text x="244" y="368" class="title label ink">Найти партнёра</text><text x="244" y="388" class="title tiny muted">Карта и предложения</text>
+    <text x="20" y="447" class="title h2">Последние операции</text><text x="360" y="447" text-anchor="end" class="title label green">Все</text>
+    <rect x="20" y="462" width="340" height="122" rx="18" fill="#fff"/><circle cx="47" cy="494" r="16" fill="#DCFCE7"/><path d="M41 494h12M47 488v12" stroke="#00A86B" stroke-width="2.5" stroke-linecap="round"/><text x="75" y="488" class="title label ink">FastCharge</text><text x="75" y="508" class="title tiny muted">Зарядка · 45 кВт·ч</text><text x="337" y="492" text-anchor="end" class="title label ink">−3 300</text><text x="337" y="510" text-anchor="end" class="title tiny green">Скидка +215</text>
+    <path d="M35 531H345" class="line"/><circle cx="47" cy="554" r="16" fill="#E9F4FF"/><path d="M39 554h16M47 546v16" stroke="#2F80ED" stroke-width="2.5" stroke-linecap="round"/><text x="75" y="550" class="title label ink">SAS Supermarket</text><text x="75" y="570" class="title tiny muted">Покупка · Магазин</text><text x="337" y="554" text-anchor="end" class="title label ink">−12 000</text><text x="337" y="572" text-anchor="end" class="title tiny green">Скидка +360</text>
+    <use href="#bottomNav"/>
+  </g>
+  <text x="275" y="930" text-anchor="middle" class="title h2">1. Главная</text>
+
+  <!-- MAP -->
+  <g transform="translate(515,170)" filter="url(#shadow)">
+    <rect width="380" height="720" rx="38" fill="#F7F9F8"/>
+    <text x="24" y="47" class="title screenTitle">Карта</text><text x="24" y="68" class="title tiny muted">Станции и партнёры рядом</text>
+    <rect x="20" y="86" width="285" height="42" rx="14" fill="#fff"/><circle cx="42" cy="106" r="7" fill="none" stroke="#98A2B3" stroke-width="2"/><path d="M47 112l5 5" stroke="#98A2B3" stroke-width="2" stroke-linecap="round"/><text x="64" y="111" class="title tiny muted">Поиск адреса или партнёра</text><rect x="314" y="86" width="46" height="42" rx="14" fill="#fff"/><path d="M328 99h18M328 106h18M328 113h18" stroke="#0B5D3B" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="20" y="142" width="74" height="30" rx="15" fill="#00B676"/><text x="57" y="162" text-anchor="middle" class="title tiny white">⚡ Станции</text><rect x="102" y="142" width="75" height="30" rx="15" fill="#fff"/><text x="139" y="162" text-anchor="middle" class="title tiny muted">Магазины</text><rect x="185" y="142" width="62" height="30" rx="15" fill="#fff"/><text x="216" y="162" text-anchor="middle" class="title tiny muted">Кафе</text><rect x="255" y="142" width="55" height="30" rx="15" fill="#fff"/><text x="282" y="162" text-anchor="middle" class="title tiny muted">Ещё</text>
+    <rect x="0" y="187" width="380" height="345" fill="#EEF7F1"/>
+    <path d="M-5 270C70 220 87 365 173 304S279 235 392 285M20 403C82 334 163 385 202 439S320 475 390 396M170 188C135 265 240 329 181 531" class="road"/><path d="M-5 270C70 220 87 365 173 304S279 235 392 285M20 403C82 334 163 385 202 439S320 475 390 396M170 188C135 265 240 329 181 531" class="road2"/>
+    <text x="230" y="318" class="title h2" opacity=".55">Ереван</text><circle cx="204" cy="367" r="8" fill="#2F80ED" stroke="#fff" stroke-width="4"/>
+    <g transform="translate(78,284)"><path d="M0-18c-11 0-18 8-18 18 0 15 18 28 18 28S18 15 18 0C18-10 11-18 0-18z" fill="#00A86B"/><text y="6" text-anchor="middle" class="pinText">⚡</text><circle cx="13" cy="-14" r="9" fill="#fff"/><text x="13" y="-10" text-anchor="middle" class="title tiny green">2</text></g>
+    <g transform="translate(288,357)"><path d="M0-18c-11 0-18 8-18 18 0 15 18 28 18 28S18 15 18 0C18-10 11-18 0-18z" fill="#00A86B"/><text y="6" text-anchor="middle" class="pinText">⚡</text></g>
+    <g transform="translate(120,430)"><path d="M0-18c-11 0-18 8-18 18 0 15 18 28 18 28S18 15 18 0C18-10 11-18 0-18z" fill="#2F80ED"/><text y="6" text-anchor="middle" class="pinText">⌂</text></g>
+    <rect x="16" y="477" width="348" height="138" rx="24" fill="#fff" filter="url(#smallShadow)"/><rect x="169" y="486" width="42" height="4" rx="2" fill="#D0D5DD"/><text x="34" y="522" class="title h2">Рядом с вами</text><text x="340" y="522" text-anchor="end" class="title label green">Показать все ›</text>
+    <rect x="32" y="540" width="316" height="58" rx="16" fill="#F8FAF9"/><circle cx="59" cy="569" r="18" fill="#00A86B"/><text x="59" y="575" text-anchor="middle" class="title body white">⚡</text><text x="88" y="562" class="title label ink">FastCharge Ереван Центр</text><text x="88" y="581" class="title tiny muted">16 кВт · CCS2 · 0,2 км</text><text x="326" y="571" text-anchor="end" class="title label green">Открыть ›</text>
+    <use href="#bottomNav"/>
+  </g>
+  <text x="705" y="930" text-anchor="middle" class="title h2">2. Карта и поиск</text>
+
+  <!-- QR -->
+  <g transform="translate(945,170)" filter="url(#shadow)">
+    <rect width="380" height="720" rx="38" fill="#F7F9F8"/>
+    <text x="24" y="47" class="title screenTitle">Оплата QR</text><text x="24" y="68" class="title tiny muted">Безопасно подтвердите покупку</text>
+    <rect x="20" y="92" width="340" height="70" rx="18" fill="#fff"/><circle cx="54" cy="127" r="19" fill="#E9F4FF"/><path d="M46 127h16M54 119v16" stroke="#2F80ED" stroke-width="2.5" stroke-linecap="round"/><text x="84" y="121" class="title label ink">Партнёр будет определён</text><text x="84" y="142" class="title tiny muted">После сканирования QR-кода</text>
+    <rect x="20" y="182" width="340" height="250" rx="22" fill="#fff"/>
+    <text x="190" y="216" text-anchor="middle" class="title h2">Покажите QR партнёру</text><text x="190" y="239" text-anchor="middle" class="title tiny muted">Он подтвердит сумму покупки</text>
+    <g transform="translate(105,263)" fill="#172033"><rect width="26" height="26"/><rect x="6" y="6" width="14" height="14" fill="#fff"/><rect x="10" y="10" width="6" height="6"/><rect x="124" width="26" height="26"/><rect x="130" y="6" width="14" height="14" fill="#fff"/><rect x="134" y="10" width="6" height="6"/><rect y="124" width="26" height="26"/><rect x="6" y="130" width="14" height="14" fill="#fff"/><rect x="10" y="134" width="6" height="6"/><rect x="39" y="9" width="11" height="11"/><rect x="60" y="9" width="13" height="13"/><rect x="86" y="9" width="10" height="10"/><rect x="38" y="37" width="18" height="18"/><rect x="68" y="37" width="10" height="10"/><rect x="90" y="37" width="23" height="23"/><rect x="38" y="67" width="11" height="11"/><rect x="61" y="66" width="23" height="23"/><rect x="96" y="72" width="11" height="11"/><rect x="40" y="98" width="20" height="20"/><rect x="73" y="104" width="11" height="11"/><rect x="97" y="97" width="20" height="20"/><rect x="130" y="69" width="15" height="17"/><rect x="124" y="97" width="23" height="20"/><rect x="38" y="130" width="14" height="14"/><rect x="66" y="126" width="15" height="15"/><rect x="93" y="131" width="17" height="13"/></g>
+    <rect x="20" y="452" width="340" height="58" rx="18" fill="url(#green)"/><text x="190" y="488" text-anchor="middle" class="title h2 white">Сканировать QR партнёра</text>
+    <text x="20" y="547" class="title h2">Как это работает</text>
+    <circle cx="36" cy="578" r="12" fill="#DCFCE7"/><text x="36" y="583" text-anchor="middle" class="title tiny green">1</text><text x="60" y="583" class="title body ink">Сканируйте QR партнёра</text>
+    <circle cx="36" cy="614" r="12" fill="#DCFCE7"/><text x="36" y="619" text-anchor="middle" class="title tiny green">2</text><text x="60" y="619" class="title body ink">Укажите сумму и скидку</text>
+    <circle cx="36" cy="650" r="12" fill="#DCFCE7"/><text x="36" y="655" text-anchor="middle" class="title tiny green">3</text><text x="60" y="655" class="title body ink">Дождитесь подтверждения</text>
+    <use href="#bottomNav"/>
+  </g>
+  <text x="1135" y="930" text-anchor="middle" class="title h2">3. QR — центральное действие</text>
+
+  <!-- WALLET -->
+  <g transform="translate(1375,170)" filter="url(#shadow)">
+    <rect width="380" height="720" rx="38" fill="#F7F9F8"/>
+    <text x="24" y="47" class="title screenTitle">Кошелёк</text><text x="24" y="68" class="title tiny muted">Ваша скидка и операции</text>
+    <rect x="20" y="92" width="340" height="132" rx="22" fill="url(#green)"/><text x="43" y="122" class="title label white">Доступно для скидки · AMD</text><text x="43" y="161" class="title money white">24 800</text><text x="43" y="196" class="title tiny white" opacity=".88">Используйте у партнёров TuTak</text>
+    <rect x="20" y="242" width="164" height="78" rx="18" fill="#fff"/><text x="38" y="269" class="title tiny muted">Зарезервировано · AMD</text><text x="38" y="299" class="title h2 ink">1 200</text><circle cx="157" cy="280" r="14" fill="#FEF3C7"/><path d="M157 271v9l5 4" fill="none" stroke="#D97706" stroke-width="2.2" stroke-linecap="round"/>
+    <rect x="196" y="242" width="164" height="78" rx="18" fill="#fff"/><text x="214" y="269" class="title tiny muted">Получено всего · AMD</text><text x="214" y="299" class="title h2 ink">39 450</text><circle cx="333" cy="280" r="14" fill="#DCFCE7"/><path d="M326 281h14M333 274v14" stroke="#00A86B" stroke-width="2.2" stroke-linecap="round"/>
+    <text x="20" y="360" class="title h2">История</text><text x="360" y="360" text-anchor="end" class="title label green">Фильтр</text>
+    <rect x="20" y="376" width="340" height="64" rx="16" fill="#fff"/><circle cx="48" cy="408" r="17" fill="#DCFCE7"/><text x="48" y="414" text-anchor="middle" class="title body green">⚡</text><text x="76" y="402" class="title label ink">FastCharge</text><text x="76" y="422" class="title tiny muted">Сегодня · Подтверждено</text><text x="338" y="403" text-anchor="end" class="title label ink">−3 300</text><text x="338" y="422" text-anchor="end" class="title tiny green">Скидка +215</text>
+    <rect x="20" y="452" width="340" height="64" rx="16" fill="#fff"/><circle cx="48" cy="484" r="17" fill="#FEF3C7"/><text x="48" y="490" text-anchor="middle" class="title body" fill="#D97706">◷</text><text x="76" y="478" class="title label ink">Pandok Yerevan</text><text x="76" y="498" class="title tiny muted">Ожидает подтверждения</text><text x="338" y="487" text-anchor="end" class="title label" fill="#D97706">1 200</text>
+    <rect x="20" y="528" width="340" height="74" rx="16" fill="#FFF7ED"/><text x="40" y="555" class="title label ink">Почему часть суммы зарезервирована?</text><text x="40" y="578" class="title tiny muted">Она станет доступной после результата покупки.</text>
+    <use href="#bottomNav"/>
+  </g>
+  <text x="1565" y="930" text-anchor="middle" class="title h2">4. Кошелёк без путаницы</text>
+
+  <!-- Design system notes -->
+  <g transform="translate(85,1010)">
+    <text x="0" y="0" class="title h1" font-size="30">Система, которую должен реализовать Claude</text>
+    <rect x="0" y="35" width="1670" height="395" rx="28" fill="#fff" filter="url(#smallShadow)"/>
+    <text x="34" y="84" class="title h2">Новый фокус</text>
+    <text x="34" y="114" class="title body muted">Карта → QR → скидка. Каталог и предложения остаются внутри поиска, а не конкурируют с главным действием.</text>
+    <text x="34" y="171" class="title h2">Финансовая ясность</text>
+    <text x="34" y="201" class="title body muted">Доступно, зарезервировано и исторически получено всегда разделены. Статус покупки приходит от сервера.</text>
+    <text x="34" y="258" class="title h2">Фотографии партнёров</text>
+    <text x="34" y="288" class="title body muted">Только официальные материалы партнёра или лицензированные изображения. Не использовать случайные ИИ-фото как реальные предложения.</text>
+    <text x="34" y="345" class="title h2">Контроль качества</text>
+    <text x="34" y="375" class="title body muted">Проверить 360dp Android, iPhone 390pt, hy/ru/en, большие AMD-суммы, пустые/ошибочные состояния и работу клавиатуры.</text>
+    <rect x="1210" y="82" width="80" height="80" rx="20" fill="#0B5D3B"/><text x="1250" y="131" text-anchor="middle" class="title money white" font-size="28">1</text><text x="1312" y="119" class="title h2">Ясный баланс</text><text x="1312" y="145" class="title body muted">Не обещает деньги и не скрывает резерв.</text>
+    <rect x="1210" y="196" width="80" height="80" rx="20" fill="#00B676"/><text x="1250" y="245" text-anchor="middle" class="title money white" font-size="28">2</text><text x="1312" y="233" class="title h2">Одна главная кнопка</text><text x="1312" y="259" class="title body muted">QR — главный путь к покупке.</text>
+    <rect x="1210" y="310" width="80" height="80" rx="20" fill="#2F80ED"/><text x="1250" y="359" text-anchor="middle" class="title money white" font-size="28">3</text><text x="1312" y="347" class="title h2">Карта как преимущество</text><text x="1312" y="373" class="title body muted">Зарядки и партнёры рядом.</text>
+  </g>
+</svg>

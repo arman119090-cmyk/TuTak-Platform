@@ -2,7 +2,7 @@
 
 **Status:** design handoff for implementation.  
 **Scope:** customer mobile app first; the partner and admin web panels retain the same visual system but are not redesigned in this delivery.  
-**Supersedes:** `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` for visual direction where the documents differ. Business rules, API contracts and financial state machines are unchanged.
+**Supersedes:** `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` for visual direction where the documents differ. Business rules, API contracts and financial state machines are unchanged, except that the referral UI in this document must follow the already-approved 3-level model in `docs/NEXT_CLAUDE_TASK.md`; this specification does not itself redefine that model.
 
 ## What this design is
 
@@ -12,7 +12,7 @@ TuTak is not a generic cashback catalogue. It is a single everyday wallet for:
 - QR purchases with a partner confirmation step;
 - EV charging through trusted integrations;
 - nearby places and offers;
-- referrals and transaction history.
+- a privacy-safe three-level referral network and transaction history.
 
 The customer must understand the product in five seconds: **find a place, scan a QR, pay the remainder normally, and use an earned discount safely.**
 
@@ -24,6 +24,8 @@ The visual character is a clean Armenian mobility-and-loyalty product: bright, c
 2. The current approved business model is based on **discounts**, not a freely transferable “bonus currency”. In customer money UI, use `Скидка` / `Доступно для оплаты` / `Зарезервировано`; do not call the balance “деньги” and do not promise cash-out.
 3. Do not add an auction, selling bonuses, gift-card marketplace, fuel-card marketplace, or a feature that lacks a backend contract. That would make a beautiful but false product.
 4. Partner photos/logos in production must be supplied by the partner or properly licensed. AI images are acceptable only for TuTak-owned generic campaign art, never as a fake representation of a real partner, restaurant, charger or product.
+5. Referrals are a core growth loop, not a secondary Profile setting. The approved product model is a three-level upward chain: Level 1 earns 1% of the partner commission pool, Levels 2 and 3 earn 0.5% each. The backend task that delivers these values is already queued in `docs/NEXT_CLAUDE_TASK.md`; do not replace it with an invented client-side calculation.
+6. Referral privacy is deliberate: the user may see the personally invited Level-1 people, but may see **counts only** for Levels 2 and 3. The UI must never reveal who invited someone else, another user’s referral link/code, phone number, email, purchase, reward amount or relationship path.
 
 ## Navigation and information architecture
 
@@ -31,7 +33,7 @@ Use one fixed bottom navigation with a visually larger central QR action:
 
 | Position | Screen | Main job |
 | --- | --- | --- |
-| 1 | Home | show available discount, recent activity, one clear next action |
+| 1 | Home | show available discount, one clear next action and a prominent referral-growth entry |
 | 2 | Map | find charging stations and partner places nearby |
 | 3 | QR | scan/show QR and start a purchase flow |
 | 4 | Wallet | explain available, reserved, earned and transaction history |
@@ -93,6 +95,8 @@ The primary action is a full-width green `Сканировать QR`. Below it: 
 
 Then show (when data exists): recent operations and one campaign/offer card. Never show invented countdowns, “people are buying”, or balance growth claims.
 
+The referral entry sits immediately after the quick actions — before long transaction history — because it is a primary acquisition loop. It contains: `Пригласить друзей`, a short truthful benefit such as `Сеть до 3 уровней`, the number of personally invited friends when known, and a direct route to `Моя сеть`. Do not show a made-up earned amount or downline count.
+
 ### 2. Map / Explore
 
 The map is a functional search surface, not a decorative screenshot. Top area: title, search field, filter button and language selector. Filters: `Станции`, `Магазины`, `Кафе`, `Рестораны`, `Ещё`.
@@ -130,7 +134,22 @@ Transaction rows show partner/source, date/time, signed AMD amount, and clear st
 
 Use an official partner image at 3:2, with an accessibility-safe gradient overlay only when text is shown on it. A card includes: partner logo, name, location/distance, actual offer/discount wording from the backend and availability. Do not put unreadable white text directly over an unprocessed photo.
 
-### 6. Profile
+### 6. Referral network — `Моя сеть`
+
+This is a first-class screen, entered from Home and Wallet/Profile shortcuts, not a tab that competes with QR. The visual reference is `TUTAK_V2_REFERRAL_PREVIEW.svg` / `.png`.
+
+1. **Invitation card.** Show the user’s referral code/link, copy and native share actions. Explain simply that a friend joins with the code and the network can earn from confirmed qualifying purchases. Do not promise cash-out or use a vague “free money” claim.
+2. **Three-level summary.** Present three distinct level cards, in the customer’s own orientation:
+   - Level 1 — `Приглашены лично`: count and a route to the list. This is the only level with identities.
+   - Level 2 — `Друзья ваших друзей`: aggregate count only.
+   - Level 3 — `Следующий уровень`: aggregate count only.
+   Each card may show its approved rate (`1%`, `0,5%`, `0,5%`) with a label that the rate is a share of the partner commission pool; it must not imply a percentage of the customer’s whole purchase.
+3. **Level-1 list.** Use a first name plus last initial (and optional consented avatar), referral/qualification status and join date where supported. Never expose phone, email, full surname, spend, individual transaction history, individual reward or a person’s own invite tree. The list must have useful empty, pending, qualified, blocked/hidden and error states.
+4. **Levels 2 and 3.** Show a count and a short privacy explanation: `Мы показываем только количество — связи друзей остаются приватными.` There is no drill-down, no names and no indirect list hidden behind a paywall or filter.
+5. **Challenge and earnings.** If the server returns Referral Challenge progress, show the first-three-qualified-friends progress separately from the three-level network. If the server returns referral earnings, label the value by balance state (`Доступно`, `Ожидает открытия`, `Исторически получено`); do not combine it with the available discount balance or fabricate a payout date.
+6. **Data truth.** Until the 3-level engine/aggregate endpoint exists, render the L2/L3 blocks as a truthful unavailable/loading state, never as zero and never by calculating a private network from cached Level-1 data.
+
+### 7. Profile
 
 Language selection, notifications, help/support, legal documents and logout. Settings that have no server capability must not be presented as active controls.
 
@@ -157,11 +176,12 @@ Use the same token set, but do **not** copy the mobile navigation. These are ope
 
 1. Add only visual assets and presentation changes. Do not alter the financial domain, API contracts, state machine, database or business rules in this task.
 2. Reuse `packages/design` tokens and the canonical `Jako` component/SVG. Move repeated values into tokens; do not hard-code competing greens in individual screens.
-3. Build the new navigation shell first, then Home, Map, Wallet, QR flow, Partner detail, Profile. Keep existing routes and backend queries intact.
+3. Build the new navigation shell first, then Home, Map, Wallet, QR flow, Partner detail, Referral network and Profile. Keep existing routes and backend queries intact.
 4. Replace every customer-facing “bonus” label with approved discount wording **only where it represents the current discount model**. Do not rename raw internal fields/API enums merely for the UI.
 5. Add loading, empty, error, offline/retry, long-text and large-AMD states to each changed screen.
 6. Validate on narrow Android (360dp), common iPhone width (390pt), Armenian, Russian and English. The keyboard must not cover amount fields or primary CTAs.
-7. Run the existing mobile tests and add presentation tests for: available vs reserved balance visibility, PurchaseIntent pending countdown, partner amount immutability and inaccessible image fallback.
+7. Run the existing mobile tests and add presentation tests for: available vs reserved balance visibility, PurchaseIntent pending countdown, partner amount immutability, inaccessible image fallback, a Level-1 identity list and Levels-2/3 aggregate-only privacy. Test that no referral relation is rendered from an indirect identity response.
+8. Treat `docs/NEXT_CLAUDE_TASK.md` as the sole authority for referral economics and its pending 3-level engine work. This visual handoff defines placement, hierarchy and privacy only. Do not use it to change rates, accounting, eligibility, the reward challenge or server-side chain resolution.
 
 ## Definition of done
 
@@ -170,4 +190,5 @@ Use the same token set, but do **not** copy the mobile navigation. These are ope
 - No unsupported marketplace/auction feature appears.
 - No fictional partner photo is included as real production data.
 - Reserved funds cannot be mistaken for available discounts.
+- Referral acquisition is visible from Home, and the dedicated referral screen respects the Level-1 list / Levels-2-and-3 counts-only privacy boundary.
 - All existing business flows and API-backed state remain correct.

@@ -15,7 +15,8 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
 5. Use the SVGs as the final visual source: they are vector-based and scale without quality loss. `TUTAK_V2_DESIGN_PREVIEW.png` is an additional rendered overview for quick review.
 6. Read `docs/design/TUTAK_V2_UI_ASSET_MANIFEST.md` and open every file under `docs/design/assets/v2/`.
 7. Read `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md` — the authoritative media/upload/privacy scope added after the original visual handoff.
-8. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
+8. Read `docs/design/TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` — mandatory Samsung/Android system-bar, keyboard and light-theme acceptance requirements.
+9. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
 
 ## Exact deliverables to implement
 
@@ -28,6 +29,7 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
 - referral hierarchy: personally invited Level-1 list; aggregate count only for Levels 2 and 3;
 - official partner logos/covers, optional customer avatars, and the immutable partner-brand snapshot in customer operations;
 - loading, empty, error, long-text and narrow-screen states.
+- a light v2 default with readable Android status/navigation system bars and a bottom navigation that stays above both gesture and three-button system controls.
 
 ## Absolute constraints
 
@@ -36,9 +38,11 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
 - Do not expose indirect referral identities or their relationship graph. Levels 2 and 3 are counts only.
 - Do not use competitor screenshots, arbitrary web images or AI images as partner branding/media. Only TuTak-owned art and official/licensed partner assets belong in the product.
 - Never call a discount balance cash or promise withdrawal.
+- The legacy app defaults to dark today, while v2 is explicitly a light-only delivery. Migrate the default/persisted theme behaviour so neither a fresh nor an existing customer silently lands in the legacy dark shell; do not build an unapproved partial dark v2 variant.
+- Do not hide Android navigation controls to make the app bar fit. Follow `TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` for real insets, keyboard behaviour and physical-device evidence.
 
 ## Visual acceptance gate
 
-Before opening a merge-ready PR, capture and compare updated screenshots at 360dp Android and 390pt iPhone widths for Home, Map, QR/PurchaseIntent, Wallet and Referrals. Confirm Russian, Armenian and English copy; large AMD values; keyboard safety; and all empty/loading/error states. Dark mode is not part of this delivery unless separately requested.
+Before opening a merge-ready PR, capture and compare updated screenshots at 360dp Android and 390pt iPhone widths for Home, Map, QR/PurchaseIntent, Wallet and Referrals. Confirm Russian, Armenian and English copy; large AMD values; keyboard safety; and all empty/loading/error states. For Android, also complete the physical Samsung matrix in `TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` and include uncropped system bars in the evidence. Dark mode is not part of this delivery unless separately requested.
 
 If a required API response has not yet landed, show a truthful unavailable/loading state and document the gap in the PR. Do not add fictional figures, people, partner photos, availability or reward calculations.

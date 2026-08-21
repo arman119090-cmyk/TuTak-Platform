@@ -7,8 +7,8 @@ This file turns the visual boards into an implementation checklist. The SVG file
 | Item | Open first | Exact use |
 | --- | --- | --- |
 | Product overview | `TUTAK_V2_DESIGN_PREVIEW.svg` | Home, Map, QR, Wallet hierarchy |
-| Referral network | `TUTAK_V2_REFERRAL_PREVIEW.svg` | three-level referral screen and privacy rules |
-| Component sheet | `TUTAK_V2_COMPONENT_SHEET.svg` | buttons, fields, chips, status pills and navigation |
+| Referral network | `TUTAK_V2_REFERRAL_PREVIEW.svg` | three-level referral screen and privacy rules; vector source scales without loss |
+| Component sheet | `TUTAK_V2_COMPONENT_SHEET.svg` | buttons, fields, chips, status pills and navigation; vector source scales without loss |
 | Hero image | `assets/tutak-home-hero-parrot-v2.jpg` | Home balance-card background only |
 | Small Jako brand mark | `packages/design/src/brand/jako.svg` | logo, empty states and small brand moments |
 

@@ -13,7 +13,7 @@
     <rect width="510" height="334" rx="26" fill="#fff" filter="url(#shadow)"/>
     <text x="32" y="47" class="t h2">Кнопки и метки</text>
     <text x="32" y="74" class="t small muted">Высота 52–58px · радиус 16px · touch target ≥44px</text>
-    <rect x="32" y="96" width="446" height="58" rx="17" fill="url(#brand)"/><text x="255" y="132" text-anchor="middle" class="t h3 white">Сканировать QR</text>
+    <rect x="32" y="96" width="446" height="58" rx="17" fill="url(#brand)"/><path d="M55 135c2-8 6-12 15-13-1 8-5 13-13 14M58 133c3-1 5-3 8-7M61 135c2-1 4-2 6-5" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><text x="255" y="132" text-anchor="middle" class="t h3 white">Сканировать QR</text>
     <rect x="32" y="170" width="216" height="52" rx="16" fill="#fff" stroke="#D0D5DD"/><text x="140" y="202" text-anchor="middle" class="t h3 green">Копировать код</text>
     <rect x="263" y="170" width="215" height="52" rx="16" fill="#DCFCE7"/><text x="370" y="202" text-anchor="middle" class="t h3 green">Поделиться кодом</text>
     <rect x="32" y="238" width="103" height="32" rx="16" fill="#FEF3C7"/><text x="83" y="259" text-anchor="middle" class="t tiny amber">Ожидает</text>
@@ -46,13 +46,13 @@
 
   <g transform="translate(90,537)">
     <rect width="790" height="280" rx="26" fill="#fff" filter="url(#shadow)"/>
-    <text x="32" y="48" class="t h2">Навигация</text><text x="32" y="74" class="t small muted">QR — единственное центральное действие. Рефералы — яркая точка входа из Главной.</text><text x="32" y="94" class="t small muted">Они не шестая вкладка и не конкурируют с QR.</text>
+    <text x="32" y="48" class="t h2">Навигация Жако</text><text x="32" y="74" class="t small muted">QR — единственное центральное действие. Иконки используют гнездо, полёт, глаз и перо.</text><text x="32" y="94" class="t small muted">Рефералы — яркая точка входа из Главной, но не шестая вкладка.</text>
     <rect x="32" y="113" width="726" height="101" rx="23" fill="#F7F9F8"/>
-    <path d="M77 151l12-11 12 11v18H77zM69 151l20-18 20 18" class="icon"/><text x="89" y="197" text-anchor="middle" class="t small green">Главная</text>
-    <circle cx="232" cy="153" r="11" fill="none" stroke="#98A2B3" stroke-width="2.5"/><path d="M232 142v11l7 6" fill="none" stroke="#98A2B3" stroke-width="2.5" stroke-linecap="round"/><text x="232" y="197" text-anchor="middle" class="t small muted">Карта</text>
-    <circle cx="386" cy="152" r="33" fill="url(#brand)"/><rect x="374" y="140" width="24" height="24" rx="5" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="386" cy="152" r="4" fill="#fff"/><text x="386" y="207" text-anchor="middle" class="t small green">QR</text>
-    <path d="M513 142h21l8 10-8 10h-21l-8-10z" fill="none" stroke="#98A2B3" stroke-width="2.5"/><text x="524" y="197" text-anchor="middle" class="t small muted">Кошелёк</text>
-    <circle cx="671" cy="146" r="9" fill="none" stroke="#98A2B3" stroke-width="2.5"/><path d="M656 169c2-9 8-14 15-14s13 5 15 14" fill="none" stroke="#98A2B3" stroke-width="2.5" stroke-linecap="round"/><text x="671" y="197" text-anchor="middle" class="t small muted">Профиль</text>
+    <path d="M77 151c3-6 7-10 12-13 5 3 9 7 12 13M81 149v18h16v-18M77 167h24M85 142c2 1 4 2 6 5" class="icon"/><text x="89" y="197" text-anchor="middle" class="t small green">Главная</text>
+    <path d="M232 140c-6 0-10 4-10 10 0 8 10 16 10 16s10-8 10-16c0-6-4-10-10-10zM228 150c2-3 5-3 7 0-2 3-5 3-7 0zM218 142c2-3 5-4 8-4" fill="none" stroke="#98A2B3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 3"/><text x="232" y="197" text-anchor="middle" class="t small muted">Карта</text>
+    <circle cx="386" cy="152" r="33" fill="url(#brand)"/><path d="M380 143h-4a3 3 0 0 0-3 3v4M392 143h4a3 3 0 0 1 3 3v4M380 161h-4a3 3 0 0 1-3-3v-4M392 161h4a3 3 0 0 0 3-3v-4M380 152c2-3 8-3 10 0-2 3-8 3-10 0z" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/><circle cx="385" cy="152" r="2" fill="#fff"/><text x="386" y="207" text-anchor="middle" class="t small green">QR</text>
+    <path d="M513 142h19a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-17a4 4 0 0 1-4-4v-13a3 3 0 0 1 3-3h5M529 150h8v7h-8a3.5 3.5 0 0 1 0-7zM516 144c3 1 5 3 6 6M515 149c3 1 5 3 6 6" fill="none" stroke="#98A2B3" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><text x="524" y="197" text-anchor="middle" class="t small muted">Кошелёк</text>
+    <path d="M667 142c4-2 9 1 9 6 0 4-3 7-7 7-4 0-7-3-7-7 0-3 2-5 5-6zM666 142c1-3 4-5 7-5M656 169c2-9 8-14 15-14s13 5 15 14" fill="none" stroke="#98A2B3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="671" cy="148" r="1.3" fill="#98A2B3"/><text x="671" y="197" text-anchor="middle" class="t small muted">Профиль</text>
     <rect x="32" y="231" width="726" height="25" rx="12" fill="#DCFCE7"/><text x="395" y="248" text-anchor="middle" class="t tiny green">Главная → «Пригласить друзей» → «Моя сеть»</text>
   </g>
 

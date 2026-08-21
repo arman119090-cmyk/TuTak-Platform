@@ -14,7 +14,8 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
    - `docs/design/TUTAK_V2_JAKO_ICON_SYSTEM.svg` — branded icon rules and allowed exceptions.
 5. Use the SVGs as the final visual source: they are vector-based and scale without quality loss. `TUTAK_V2_DESIGN_PREVIEW.png` is an additional rendered overview for quick review.
 6. Read `docs/design/TUTAK_V2_UI_ASSET_MANIFEST.md` and open every file under `docs/design/assets/v2/`.
-7. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
+7. Read `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md` — the authoritative media/upload/privacy scope added after the original visual handoff.
+8. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
 
 ## Exact deliverables to implement
 
@@ -25,11 +26,12 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
 - individually exported vector button and bottom-navigation sources under `docs/design/assets/v2/`, with the exact values in `docs/design/TUTAK_V2_TOKENS.json`;
 - the Jako-derived icon family: open nest/perch, flight pin, QR eye, folded-wing wallet, profile head and 3-feather referral branch; never use the mark on danger or disabled controls;
 - referral hierarchy: personally invited Level-1 list; aggregate count only for Levels 2 and 3;
+- official partner logos/covers, optional customer avatars, and the immutable partner-brand snapshot in customer operations;
 - loading, empty, error, long-text and narrow-screen states.
 
 ## Absolute constraints
 
-- The visual direction does not authorise changes to money/discount logic, QR/PurchaseIntent state machine, partner settlement, EV/OCPI or database structure.
+- The visual direction does not authorise changes to money/discount logic, QR/PurchaseIntent state machine, partner settlement or EV/OCPI. The narrowly scoped media migration/API changes required by `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` are authorised; unrelated database changes are not.
 - The 3-level referral engine is an approved separate/queued product task. If working on it, follow `docs/NEXT_CLAUDE_TASK.md` exactly. The client must not calculate tiers or rewards.
 - Do not expose indirect referral identities or their relationship graph. Levels 2 and 3 are counts only.
 - Do not use competitor screenshots, arbitrary web images or AI images as partner branding/media. Only TuTak-owned art and official/licensed partner assets belong in the product.

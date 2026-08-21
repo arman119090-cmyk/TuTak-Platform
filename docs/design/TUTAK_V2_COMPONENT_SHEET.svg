@@ -68,7 +68,7 @@
   <g transform="translate(90,855)">
     <rect width="1620" height="250" rx="26" fill="#0B5D3B"/>
     <text x="38" y="50" class="t h2 white">Как Claude должен использовать пакет</text>
-    <text x="38" y="82" class="t body white" opacity=".86">1. Открыть все три SVG — это масштабируемые исходники. 2. Сверить PNG — это контроль финального рендера. 3. Реализовать токены и компоненты.</text>
+    <text x="38" y="82" class="t body white" opacity=".86">1. Открыть экранные SVG, манифест и отдельные SVG-контролы. 2. Сверить PNG — это контроль финального рендера. 3. Реализовать токены и компоненты.</text>
     <text x="38" y="111" class="t body white" opacity=".86">4. Использовать Jako SVG для знака и HD JPG только для Home hero. 5. Не создавать фиктивные фото партнёров и не менять реферальную экономику.</text>
     <rect x="38" y="145" width="316" height="66" rx="18" fill="#fff" opacity=".16"/><text x="61" y="173" class="t h3 white">SVG = исходник</text><text x="61" y="197" class="t tiny white" opacity=".82">без потери качества при масштабировании</text>
     <rect x="376" y="145" width="316" height="66" rx="18" fill="#fff" opacity=".16"/><text x="399" y="173" class="t h3 white">PNG = проверка</text><text x="399" y="197" class="t tiny white" opacity=".82">визуальное совпадение перед merge</text>

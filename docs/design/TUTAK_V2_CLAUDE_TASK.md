@@ -7,11 +7,12 @@ Read first, in this order:
 3. `docs/design/TUTAK_V2_DESIGN_PREVIEW.png`
 4. `docs/design/TUTAK_V2_REFERRAL_PREVIEW.svg`
 5. `docs/design/TUTAK_V2_COMPONENT_SHEET.svg`
-6. `docs/design/TUTAK_V2_UI_ASSET_MANIFEST.md` and `docs/design/assets/v2/`
-7. `docs/design/TUTAK_V2_TOKENS.json`
-8. `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`
-9. `docs/design/README_ASSETS_V2.md`
-10. `docs/NEXT_CLAUDE_TASK.md` — the approved 3-level referral economics and queued engine work
+6. `docs/design/TUTAK_V2_JAKO_ICON_SYSTEM.svg`
+7. `docs/design/TUTAK_V2_UI_ASSET_MANIFEST.md` and `docs/design/assets/v2/`
+8. `docs/design/TUTAK_V2_TOKENS.json`
+9. `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`
+10. `docs/design/README_ASSETS_V2.md`
+11. `docs/NEXT_CLAUDE_TASK.md` — the approved 3-level referral economics and queued engine work
 
 ## Goal
 

@@ -1,3 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="Home navigation icon">
-  <path d="M15 24l9-8 9 8v12H15zM11 24l13-12 13 12" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 25c3-6 7-10 12-13 5 3 9 7 12 13M16 23v14h16V23M12 37h24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 17c2 1 4 2 6 5M17 22c3 .5 5 2 7 5" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
 </svg>

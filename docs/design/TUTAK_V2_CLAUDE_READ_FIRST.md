@@ -11,7 +11,7 @@ This is the entry point for the mobile-app redesign. Do **not** begin from a sin
    - `docs/design/TUTAK_V2_DESIGN_PREVIEW.svg` — Home, Map, QR, Wallet;
    - `docs/design/TUTAK_V2_REFERRAL_PREVIEW.svg` — Referral Network;
    - `docs/design/TUTAK_V2_COMPONENT_SHEET.svg` — components, labels, states and navigation.
-5. Compare against the associated PNGs — high-resolution rendered review copies.
+5. Use the SVGs as the final visual source: they are vector-based and scale without quality loss. `TUTAK_V2_DESIGN_PREVIEW.png` is an additional rendered overview for quick review.
 6. Read `docs/design/TUTAK_V2_COMPONENT_INVENTORY.md`, then `docs/design/TUTAK_V2_CLAUDE_TASK.md`.
 
 ## Exact deliverables to implement

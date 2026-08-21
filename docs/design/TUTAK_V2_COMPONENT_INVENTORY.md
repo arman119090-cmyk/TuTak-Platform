@@ -34,7 +34,7 @@ This file turns the visual boards into an implementation checklist. The SVG file
 | Search field | `Поиск адреса или партнёра` | search icon, clear/filters, keyboard-safe |
 | Chips | `Станции`, `Магазины`, `Кафе`, `Рестораны`, `Ещё` | icon + text; selection is not colour-only |
 | Status pill | `Ожидает`, `Подтверждено`, `Отклонено`, `Истёк` | server state only; colour plus text/icon |
-| Bottom nav | `Главная`, `Карта`, `QR`, `Кошелёк`, `Профиль` | QR is central/larger; referral is accessed from Home and Profile, not a sixth tab |
+| Bottom nav | `Главная`, `Карта`, `QR`, `Кошелёк`, `Профиль` | use the Jako-derived SVG family: open nest, flight pin, QR eye, folded wing, profile head; QR is central/larger; referral is accessed from Home and Profile, not a sixth tab |
 
 ## Screen-critical copy
 
@@ -45,6 +45,12 @@ This file turns the visual boards into an implementation checklist. The SVG file
 | QR | `Оплата QR`, `Покажите QR партнёру`, `Как это работает` |
 | Wallet | `Доступно для скидки`, `Зарезервировано`, `Получено всего`, `История` |
 | Referrals | `Моя сеть`, `Ваш реферальный код`, `Приглашены лично`, `Друзья друзей`, `Следующий уровень`, `Открыть список друзей` |
+
+## Jako icon boundary
+
+- Use the wing signature on safe primary/secondary CTAs, Home/referral entry and the branded navigation only.
+- Never put the Jako mark on `Отклонить`, error/rejection, disabled or dense operational controls.
+- A Jako-derived icon may be distinctive, but never replaces the control label, semantic name or status text.
 
 ## Referral privacy contract
 

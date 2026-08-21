@@ -29,5 +29,12 @@
     "secondaryButtonHeight": 52,
     "cardBorderWidth": 1,
     "borderColor": "#E5E7EB"
+  },
+  "icon": {
+    "navigationSize": 24,
+    "navigationStrokeWidth": 2.7,
+    "jakoSignatureSize": 18,
+    "positiveColor": "#00B676",
+    "inactiveColor": "#667085"
   }
 }

@@ -7,12 +7,13 @@
 - `TUTAK_V2_DESIGN_PREVIEW.svg` / `.png` — static review board, not application code.
 - `TUTAK_V2_REFERRAL_PREVIEW.svg` — vector-first, high-resolution design board for the three-level referral experience and its privacy boundary.
 - `TUTAK_V2_COMPONENT_SHEET.svg` — vector-first, high-resolution component/state sheet for controls, navigation and copy hierarchy.
+- `TUTAK_V2_JAKO_ICON_SYSTEM.svg` — vector-first source for the Jako-derived navigation, CTA and referral icon language.
 - `TUTAK_V2_COMPONENT_INVENTORY.md` — implementation checklist for every shared control, label and critical state.
 - `TUTAK_V2_UI_ASSET_MANIFEST.md` — complete asset-by-asset delivery list, including intentional exclusions.
 - `TUTAK_V2_TOKENS.json` — exact colour, type, spacing, radius and component values.
 - `TUTAK_V2_CLAUDE_READ_FIRST.md` — mandatory entry point and viewing order for Claude.
 - `assets/v2/controls/*.svg` — individually exported primary, secondary, destructive, icon-only and disabled button samples.
-- `assets/v2/icons/*.svg` — individually exported bottom-navigation icon sources.
+- `assets/v2/icons/*.svg` — individually exported Jako-derived navigation, referral and CTA-mark icon sources.
 
 ## Asset rules
 

@@ -136,7 +136,7 @@ Use an official partner image at 3:2, with an accessibility-safe gradient overla
 
 ### 6. Referral network — `Моя сеть`
 
-This is a first-class screen, entered from Home and Wallet/Profile shortcuts, not a tab that competes with QR. The visual reference is `TUTAK_V2_REFERRAL_PREVIEW.svg` / `.png`.
+This is a first-class screen, entered from Home and Wallet/Profile shortcuts, not a tab that competes with QR. The visual reference is `TUTAK_V2_REFERRAL_PREVIEW.svg`.
 
 1. **Invitation card.** Show the user’s referral code/link, copy and native share actions. Explain simply that a friend joins with the code and the network can earn from confirmed qualifying purchases. Do not promise cash-out or use a vague “free money” claim.
 2. **Three-level summary.** Present three distinct level cards, in the customer’s own orientation:

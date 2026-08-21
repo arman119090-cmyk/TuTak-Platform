@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="52" viewBox="0 0 220 52" role="img" aria-label="Secondary action button sample">
+  <rect x=".5" y=".5" width="219" height="51" rx="16" fill="#fff" stroke="#D0D5DD"/>
+  <path d="M22 19h10a3 3 0 0 1 3 3v10H25a3 3 0 0 1-3-3zM28 16h8a3 3 0 0 1 3 3v9" fill="none" stroke="#0B5D3B" stroke-width="2" stroke-linejoin="round"/>
+  <text x="124" y="32" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="800" fill="#009B61">Копировать код</text>
+</svg>

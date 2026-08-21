@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F1FBF5"/><stop offset="1" stop-color="#F7F9F8"/></linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00B676"/><stop offset="1" stop-color="#0B5D3B"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#172033" flood-opacity=".09"/></filter>
+    <style>.t{font-family:Inter,Arial,sans-serif;fill:#172033}.h1{font-size:42px;font-weight:800}.h2{font-size:23px;font-weight:800}.h3{font-size:18px;font-weight:800}.body{font-size:15px;font-weight:500}.small{font-size:13px;font-weight:600}.tiny{font-size:11px;font-weight:600}.muted{fill:#667085}.white{fill:#fff}.green{fill:#009B61}.line{stroke:#E5E7EB;stroke-width:1}.jako{fill:none;stroke:#0B5D3B;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.mute{fill:none;stroke:#667085;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}</style>
+  </defs>
+  <rect width="1800" height="1180" fill="url(#bg)"/>
+  <text x="90" y="80" class="t h1">TuTak · язык иконок Жако</text>
+  <text x="90" y="116" class="t body muted">Не попугай на каждой кнопке, а узнаваемые мотивы: гнездо, полёт, глаз, перо и ветка.</text>
+
+  <g transform="translate(90,164)">
+    <rect width="1620" height="112" rx="25" fill="#0B5D3B"/>
+    <path d="M44 78c4-17 12-26 31-29-2 17-10 28-26 31M51 74c6-2 11-7 16-15M58 78c5-2 8-5 12-10" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="104" y="49" class="t h2 white">Правило бренда</text><text x="104" y="78" class="t body white" opacity=".9">Мотив помогает узнать TuTak, но иконка сохраняет привычный смысл. Всегда есть текстовая подпись и accessible name.</text>
+  </g>
+
+  <!-- Home -->
+  <g transform="translate(90,316)" filter="url(#shadow)"><rect width="250" height="250" rx="26" fill="#fff"/><circle cx="125" cy="86" r="45" fill="#DCFCE7"/><path d="M92 91c8-16 19-26 33-33 14 7 25 17 33 33M103 86v34h44V86M92 120h66M114 67c5 2 9 5 13 11" class="jako"/><text x="125" y="164" text-anchor="middle" class="t h3">Главная</text><text x="125" y="190" text-anchor="middle" class="t small muted">Открытое гнездо</text><text x="125" y="212" text-anchor="middle" class="t tiny muted">и жердочка, не клетка</text></g>
+  <!-- Map -->
+  <g transform="translate(370,316)" filter="url(#shadow)"><rect width="250" height="250" rx="26" fill="#fff"/><circle cx="125" cy="86" r="45" fill="#E9F4FF"/><path d="M125 52c-14 0-24 10-24 24 0 19 24 35 24 35s24-16 24-35c0-14-10-24-24-24zM116 76c5-7 13-7 18 0-5 7-13 7-18 0zM91 57c5-7 12-10 19-10" class="jako" stroke="#2F80ED"/><text x="125" y="164" text-anchor="middle" class="t h3">Карта</text><text x="125" y="190" text-anchor="middle" class="t small muted">Геометка и след</text><text x="125" y="212" text-anchor="middle" class="t tiny muted">полёта Жако</text></g>
+  <!-- QR -->
+  <g transform="translate(650,316)" filter="url(#shadow)"><rect width="250" height="250" rx="26" fill="#fff"/><circle cx="125" cy="86" r="45" fill="url(#brand)"/><path d="M118 59h-7a5 5 0 0 0-5 5v7M132 59h7a5 5 0 0 1 5 5v7M118 113h-7a5 5 0 0 1-5-5v-7M132 113h7a5 5 0 0 0 5-5v-7M116 86c4-7 14-7 18 0-4 7-14 7-18 0z" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="125" cy="86" r="3.6" fill="#fff"/><text x="125" y="164" text-anchor="middle" class="t h3">QR</text><text x="125" y="190" text-anchor="middle" class="t small muted">Сканер и глаз</text><text x="125" y="212" text-anchor="middle" class="t tiny muted">центральный action</text></g>
+  <!-- Wallet -->
+  <g transform="translate(930,316)" filter="url(#shadow)"><rect width="250" height="250" rx="26" fill="#fff"/><circle cx="125" cy="86" r="45" fill="#FFF7ED"/><path d="M94 59h41a7 7 0 0 1 7 7v28a7 7 0 0 1-7 7h-37a7 7 0 0 1-7-7V64a5 5 0 0 1 5-5h10M127 75h18v12h-18a6 6 0 0 1 0-12zM100 63c6 2 10 6 12 12M98 72c6 2 10 6 12 12" class="jako" stroke="#B65F00"/><circle cx="130" cy="81" r="2" fill="#B65F00"/><text x="125" y="164" text-anchor="middle" class="t h3">Кошелёк</text><text x="125" y="190" text-anchor="middle" class="t small muted">Складка крыла</text><text x="125" y="212" text-anchor="middle" class="t tiny muted">внутри силуэта кошелька</text></g>
+  <!-- Profile -->
+  <g transform="translate(1210,316)" filter="url(#shadow)"><rect width="250" height="250" rx="26" fill="#fff"/><circle cx="125" cy="86" r="45" fill="#F3F5F8"/><path d="M117 58c9-4 19 3 19 13 0 8-6 14-14 14-8 0-14-6-14-14 0-6 4-11 9-13zM116 58c2-6 7-9 13-10M94 116c3-14 12-22 25-22s22 8 25 22" class="mute"/><circle cx="125" cy="71" r="2" fill="#667085"/><text x="125" y="164" text-anchor="middle" class="t h3">Профиль</text><text x="125" y="190" text-anchor="middle" class="t small muted">Голова Жако</text><text x="125" y="212" text-anchor="middle" class="t tiny muted">плюс профиль человека</text></g>
+  <!-- Referral -->
+  <g transform="translate(1490,316)" filter="url(#shadow)"><rect width="220" height="250" rx="26" fill="#fff"/><circle cx="110" cy="86" r="45" fill="#E9F4FF"/><path d="M99 108c7-3 11-10 14-22M113 86c5 2 10 9 15 22M102 98c5 2 8 5 11 10M89 108c5-8 11-8 15 0-5 4-10 4-15 0zM106 83c5-8 11-8 15 0-5 4-10 4-15 0zM123 108c5-8 11-8 15 0-5 4-10 4-15 0z" class="jako" stroke="#2F80ED"/><text x="110" y="164" text-anchor="middle" class="t h3">Рефералы</text><text x="110" y="190" text-anchor="middle" class="t small muted">Ветка и 3 пера</text><text x="110" y="212" text-anchor="middle" class="t tiny muted">вход в «Моя сеть»</text></g>
+
+  <g transform="translate(90,616)">
+    <text x="0" y="0" class="t h2">Кнопки: фирменная подпись, а не декорация</text>
+    <rect x="0" y="28" width="800" height="220" rx="26" fill="#fff" filter="url(#shadow)"/>
+    <text x="34" y="68" class="t h3">Безопасный primary action</text><text x="34" y="94" class="t small muted">Крыло Жако ставится перед текстом. Оно не заменяет название действия.</text>
+    <rect x="34" y="122" width="470" height="58" rx="17" fill="url(#brand)"/><path d="M58 159c2-8 6-12 15-13-1 8-5 13-13 14M61 157c3-1 5-3 8-7M64 159c2-1 4-2 6-5" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><text x="274" y="159" text-anchor="middle" class="t h3 white">Сканировать QR</text>
+    <rect x="540" y="122" width="216" height="58" rx="17" fill="#fff" stroke="#D0D5DD"/><path d="M563 159c2-8 6-12 15-13-1 8-5 13-13 14M566 157c3-1 5-3 8-7" fill="none" stroke="#0B5D3B" stroke-width="2.1" stroke-linecap="round"/><text x="659" y="159" text-anchor="middle" class="t h3 green">Поделиться</text>
+    <text x="34" y="213" class="t tiny muted">Допустимо: primary, secondary, Home/referral entry. Не использовать в destructive или disabled.</text>
+
+    <rect x="830" y="28" width="790" height="220" rx="26" fill="#FFF7ED" filter="url(#shadow)"/>
+    <text x="864" y="68" class="t h3">Функциональные исключения</text><text x="864" y="94" class="t small muted">Опасность и недоступность должны читаться моментально — без брендового знака.</text>
+    <rect x="864" y="122" width="250" height="58" rx="17" fill="#E5484D"/><path d="M890 142l15 15M905 142l-15 15" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><text x="1002" y="159" text-anchor="middle" class="t h3 white">Отклонить</text>
+    <rect x="1142" y="122" width="322" height="58" rx="17" fill="#D0D5DD"/><text x="1303" y="159" text-anchor="middle" class="t h3" fill="#667085">Ожидайте подтверждения</text>
+    <text x="864" y="213" class="t tiny muted">Красный используется только для ошибки/отказа; disabled получает пояснение, а не просто серую «мертвую» кнопку.</text>
+  </g>
+
+  <g transform="translate(90,920)"><rect width="1620" height="150" rx="26" fill="#E9F4FF"/><text x="34" y="47" class="t h2">Поставка для Cloud</text><text x="34" y="77" class="t body muted">Отдельные исходники лежат в `docs/design/assets/v2/icons/`. SVG используют `currentColor`; активное состояние — brand-600, неактивное — ink-600.</text><text x="34" y="107" class="t body muted">Реализовать как нативные иконки/компоненты, сохранять доступные подписи и не использовать изображения как недоступные кнопки.</text></g>
+  <text x="90" y="1127" class="t tiny muted">Источник: TUTAK_UI_UX_MASTER_SPEC_V2.md · Мотивы Жако — фирменный интерфейсный язык, не замена функции.</text>
+</svg>

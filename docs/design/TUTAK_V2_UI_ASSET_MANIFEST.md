@@ -9,6 +9,7 @@ Every deliverable below is either an original scalable SVG, an original high-res
 | `TUTAK_V2_DESIGN_PREVIEW.svg` | 1800×1520 scalable vector | Home, Map, QR, Wallet composition |
 | `TUTAK_V2_REFERRAL_PREVIEW.svg` | 1800×1280 scalable vector | three-level network, Level-1 list, Level-2/3 count-only privacy |
 | `TUTAK_V2_COMPONENT_SHEET.svg` | 1800×1220 scalable vector | review of shared controls and cards |
+| `TUTAK_V2_JAKO_ICON_SYSTEM.svg` | 1800×1180 scalable vector | Jako-derived navigation, CTA and referral icon rules |
 | `assets/tutak-home-hero-parrot-v2.jpg` | 1600×800 original TuTak-owned raster | Home balance card background only |
 | `packages/design/src/brand/jako.svg` | canonical scalable vector | small brand mark, never rasterise for UI controls |
 | `TUTAK_V2_TOKENS.json` | exact source values | colour, type, grid, radius and component dimensions |
@@ -19,8 +20,8 @@ These are visual reference exports, not image buttons to place inside the app. B
 
 | Asset | Sample state | Required app behaviour |
 | --- | --- | --- |
-| `assets/v2/controls/button-primary.svg` | enabled primary | green gradient, 56px high, icon optional, localized label |
-| `assets/v2/controls/button-secondary.svg` | enabled secondary | quiet white surface/border, 52px high |
+| `assets/v2/controls/button-primary.svg` | enabled primary | green gradient, 56px high, small Jako wing signature, localized label |
+| `assets/v2/controls/button-secondary.svg` | enabled secondary | quiet white surface/border, 52px high, restrained Jako wing signature |
 | `assets/v2/controls/button-danger.svg` | destructive | only with confirmation; never standard promotion/navigation |
 | `assets/v2/controls/button-icon.svg` | icon-only action | 44px or greater touch target and accessible name |
 | `assets/v2/controls/button-disabled.svg` | disabled | disabled only with visible explanation, never a dead unexplained CTA |
@@ -36,6 +37,8 @@ All use `currentColor`: render them with `brand-600` when active and `ink-600`/a
 | `assets/v2/icons/nav-qr.svg` | central QR action |
 | `assets/v2/icons/nav-wallet.svg` | Wallet |
 | `assets/v2/icons/nav-profile.svg` | Profile |
+| `assets/v2/icons/referral-network.svg` | referral-network entry, not a sixth tab |
+| `assets/v2/icons/jako-wing-mark.svg` | positive CTA signature only |
 
 ## UI units that must be built as components, not bitmap assets
 

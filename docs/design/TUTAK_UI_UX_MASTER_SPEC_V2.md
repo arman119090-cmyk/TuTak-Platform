@@ -16,7 +16,7 @@ TuTak is not a generic cashback catalogue. It is a single everyday wallet for:
 
 The customer must understand the product in five seconds: **find a place, scan a QR, pay the remainder normally, and use an earned discount safely.**
 
-The visual character is a clean Armenian mobility-and-loyalty product: bright, calm, trustworthy, and mobile-first. The African Grey mascot **Jako** is used as a warm brand signal, never as decoration on every screen.
+The visual character is a clean Armenian mobility-and-loyalty product: bright, calm, trustworthy, and mobile-first. The African Grey mascot **Jako** is both a warm brand signal and a restrained interface language — a feather, flight path, eye and perch — never a full decorative parrot stamped onto every control.
 
 ## Important boundaries
 
@@ -76,6 +76,22 @@ Never reuse red for normal navigation or promotions. In the competitor UI it is 
 - Use the supplied `tutak-home-hero-parrot-v2.jpg` as the Home hero background. Application text must be layered in the empty left portion; do not burn text into the image.
 - The existing vector `packages/design/src/brand/jako.svg` remains the canonical small logo/mark. Do not rasterise it for buttons, navigation, or app icons.
 - The screen must still work if every external partner image fails to load: use an initial/logo fallback with a neutral tinted surface.
+
+### Jako interface language
+
+Use `docs/design/assets/v2/icons/` as the source for a coherent, subtle Jako-derived pictogram family. Every icon still has a text label/accessible name; the bird motif is reinforcement, not the only way to understand an action.
+
+| Surface | Jako cue | Rule |
+| --- | --- | --- |
+| Home | an open nest/perch and feather roof | never a cage — it would imply confinement rather than a welcoming home |
+| Map | flight route inside/along the location pin | preserves a familiar map-pin silhouette |
+| Central QR | scan corners framing Jako’s eye | remains recognisably a QR action at 24dp |
+| Wallet | folded wing/feather lines | retains wallet silhouette and balance meaning |
+| Profile | minimal parrot head/eye plus human-profile body | no full mascot portrait in navigation |
+| Referral entry | branch with three feather nodes | represents the 3-level network without exposing its people |
+| Safe primary CTA | small `jako-wing-mark` on the leading edge | a signature, not an illustration; localised label remains central |
+
+Do **not** put the mascot/wing mark on danger, rejection, disabled, emergency or dense operational controls. Their functional meaning must be immediate. Use the Jako language most visibly in navigation, the QR action, the Home/referral entry and safe positive CTAs.
 
 ## Customer screens
 
@@ -167,6 +183,8 @@ Use the same token set, but do **not** copy the mobile navigation. These are ope
 | --- | --- | --- |
 | Small Jako mark | existing SVG | use canonical vector from `packages/design` |
 | Home Jako hero | `assets/tutak-home-hero-parrot-v2.jpg` | text overlay left, crop right, never stretch |
+| Jako icon family | `assets/v2/icons/*.svg` | UI icons remain vector, use a label/accessibility name and `currentColor` state tokens |
+| Jako CTA mark | `assets/v2/icons/jako-wing-mark.svg` | use only on safe primary/secondary brand actions, never danger/disabled |
 | Partner cover | partner-supplied JPG/WebP, 3:2, ≥1600px wide | license and partner approval required |
 | Partner logo | partner-supplied SVG/PNG, 1:1, ≥512px | no AI recreation of trademarks |
 | EV station imagery | owner/operator image, ≥1600px wide | do not fake station availability/photo |
@@ -175,7 +193,7 @@ Use the same token set, but do **not** copy the mobile navigation. These are ope
 ## Implementation contract for Claude
 
 1. Add only visual assets and presentation changes. Do not alter the financial domain, API contracts, state machine, database or business rules in this task.
-2. Reuse `packages/design` tokens and the canonical `Jako` component/SVG. Move repeated values into tokens; do not hard-code competing greens in individual screens.
+2. Reuse `packages/design` tokens, the canonical `Jako` component/SVG and the delivered `assets/v2/icons/` family. Move repeated values into tokens; do not hard-code competing greens or substitute generic icon packs for the branded mobile navigation.
 3. Build the new navigation shell first, then Home, Map, Wallet, QR flow, Partner detail, Referral network and Profile. Keep existing routes and backend queries intact.
 4. Replace every customer-facing “bonus” label with approved discount wording **only where it represents the current discount model**. Do not rename raw internal fields/API enums merely for the UI.
 5. Add loading, empty, error, offline/retry, long-text and large-AMD states to each changed screen.
@@ -191,4 +209,5 @@ Use the same token set, but do **not** copy the mobile navigation. These are ope
 - No fictional partner photo is included as real production data.
 - Reserved funds cannot be mistaken for available discounts.
 - Referral acquisition is visible from Home, and the dedicated referral screen respects the Level-1 list / Levels-2-and-3 counts-only privacy boundary.
+- Jako’s icon language is visible on the branded navigation and positive key actions without reducing the clarity of danger/disabled controls.
 - All existing business flows and API-backed state remain correct.

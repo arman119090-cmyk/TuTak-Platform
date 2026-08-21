@@ -5,6 +5,10 @@
 - `assets/tutak-home-hero-parrot-v2.jpg` — 1600×800 px, high-quality JPEG, designed for the Home balance-card background. The left side is intentionally clear for app-rendered text; Jako sits at the right.
 - `TUTAK_UI_UX_MASTER_SPEC_V2.md` — implementation source of truth for the visual redesign.
 - `TUTAK_V2_DESIGN_PREVIEW.svg` / `.png` — static review board, not application code.
+- `TUTAK_V2_REFERRAL_PREVIEW.svg` / `.png` — static high-resolution design board for the three-level referral experience and its privacy boundary.
+- `TUTAK_V2_COMPONENT_SHEET.svg` / `.png` — static high-resolution component/state sheet for controls, navigation and copy hierarchy.
+- `TUTAK_V2_COMPONENT_INVENTORY.md` — implementation checklist for every shared control, label and critical state.
+- `TUTAK_V2_CLAUDE_READ_FIRST.md` — mandatory entry point and viewing order for Claude.
 
 ## Asset rules
 
@@ -12,6 +16,7 @@
 - Do not put permanent text into the hero artwork. The app must render localized text over it.
 - The hero art is TuTak-owned generic brand imagery. It is not a replacement for partner photos.
 - Add real partner media to a separate, reviewable manifest that records partner name, source URL/file, approval/licence owner, crop, and last verification date.
+- The referral board is vector-first and can be scaled without quality loss. It intentionally uses no real customer data or partner imagery.
 
 ## Files intentionally not included
 

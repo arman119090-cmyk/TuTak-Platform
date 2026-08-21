@@ -10,7 +10,9 @@ their changes into one unreviewable implementation:
 1. rework the referral engine from single-level to a 3-level upward chain;
 2. after the referral work is complete and green, implement the approved
    mobile v2 redesign and media system in PR #29
-   (`docs/design/TUTAK_V2_CLAUDE_READ_FIRST.md` and `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md`).
+   (`docs/design/TUTAK_V2_CLAUDE_READ_FIRST.md`,
+   `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md` and
+   `docs/design/TUTAK_V2_ANDROID_SYSTEM_UI_QA.md`).
 
 The referral task was decided by Arman (2026-08-19), not yet implemented —
 budget ran out before starting. Do it first. The media/redesign task was
@@ -99,6 +101,9 @@ The detailed source of truth is in PR #29, not this summary:
 - follow `docs/design/TUTAK_V2_CLAUDE_TASK.md` for the implementation order;
 - follow `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md` for partner logo,
   customer avatar, approval, privacy, storage and operation-history rules.
+- follow `docs/design/TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` for the mandatory
+  Samsung S25 system-navigation, safe-area, keyboard, light-theme and
+  uncropped native-build acceptance proof.
 
 This task authorises only the narrow media/API/schema changes described
 there, plus the customer mobile redesign. It does **not** authorise a change

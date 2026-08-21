@@ -26,6 +26,7 @@ The visual character is a clean Armenian mobility-and-loyalty product: bright, c
 4. Partner photos/logos in production must be supplied by the partner or properly licensed. AI images are acceptable only for TuTak-owned generic campaign art, never as a fake representation of a real partner, restaurant, charger or product.
 5. Referrals are a core growth loop, not a secondary Profile setting. The approved product model is a three-level upward chain: Level 1 earns 1% of the partner commission pool, Levels 2 and 3 earn 0.5% each. The backend task that delivers these values is already queued in `docs/NEXT_CLAUDE_TASK.md`; do not replace it with an invented client-side calculation.
 6. Referral privacy is deliberate: the user may see the personally invited Level-1 people, but may see **counts only** for Levels 2 and 3. The UI must never reveal who invited someone else, another user’s referral link/code, phone number, email, purchase, reward amount or relationship path.
+7. The supplied v2 boards describe an app surface, not the operating-system insets around it. Treat `docs/design/TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` as part of this visual specification: the v2 customer release is light-only and every bottom/edge control must be proven above real Samsung gesture and three-button system navigation.
 
 ## Navigation and information architecture
 
@@ -197,7 +198,7 @@ Use the same token set, but do **not** copy the mobile navigation. These are ope
 3. Build the new navigation shell first, then Home, Map, Wallet, QR flow, Partner detail, Referral network and Profile. Keep existing routes and backend queries intact.
 4. Replace every customer-facing “bonus” label with approved discount wording **only where it represents the current discount model**. Do not rename raw internal fields/API enums merely for the UI.
 5. Add loading, empty, error, offline/retry, long-text and large-AMD states to each changed screen.
-6. Validate on narrow Android (360dp), common iPhone width (390pt), Armenian, Russian and English. The keyboard must not cover amount fields or primary CTAs.
+6. Validate on narrow Android (360dp), common iPhone width (390pt), Armenian, Russian and English. The keyboard must not cover amount fields or primary CTAs. Complete the physical Samsung system-bar, font-scale and QR checks in `TUTAK_V2_ANDROID_SYSTEM_UI_QA.md`; code that merely contains a safe-area hook is not acceptance.
 7. Run the existing mobile tests and add presentation tests for: available vs reserved balance visibility, PurchaseIntent pending countdown, partner amount immutability, inaccessible image fallback, a Level-1 identity list and Levels-2/3 aggregate-only privacy. Test that no referral relation is rendered from an indirect identity response.
 8. Treat `docs/NEXT_CLAUDE_TASK.md` as the sole authority for referral economics and its pending 3-level engine work. This visual handoff defines placement, hierarchy and privacy only. Do not use it to change rates, accounting, eligibility, the reward challenge or server-side chain resolution.
 

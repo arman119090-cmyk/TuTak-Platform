@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280">
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EEF9F3"/><stop offset=".52" stop-color="#F7F9F8"/><stop offset="1" stop-color="#EEF6FF"/></linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00B676"/><stop offset="1" stop-color="#0B5D3B"/></linearGradient>
+    <linearGradient id="level1" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E7FFF1"/><stop offset="1" stop-color="#D5F8E5"/></linearGradient>
+    <linearGradient id="level2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EFF7FF"/><stop offset="1" stop-color="#E2F0FF"/></linearGradient>
+    <linearGradient id="level3" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFF8E7"/><stop offset="1" stop-color="#FFF0C7"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#172033" flood-opacity=".12"/></filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#172033" flood-opacity=".08"/></filter>
+    <style>
+      .t{font-family:Inter,Arial,sans-serif;fill:#172033}.h1{font-size:42px;font-weight:800}.h2{font-size:25px;font-weight:800}.h3{font-size:19px;font-weight:800}.body{font-size:16px;font-weight:500}.small{font-size:13px;font-weight:600}.tiny{font-size:11px;font-weight:600}.muted{fill:#667085}.white{fill:#fff}.green{fill:#009B61}.blue{fill:#2F80ED}.amber{fill:#B65F00}.line{stroke:#E5E7EB;stroke-width:1}.icon{fill:none;stroke:#0B5D3B;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+  </defs>
+
+  <rect width="1800" height="1280" fill="url(#page)"/>
+  <text x="90" y="82" class="t h1">TuTak · реферальная сеть</text>
+  <text x="90" y="118" class="t body muted">Три уровня роста — с прозрачной границей приватности. Значения и имена на макете демонстрационные.</text>
+
+  <!-- Phone / Referral screen -->
+  <g transform="translate(112,180)" filter="url(#shadow)">
+    <rect width="442" height="900" rx="44" fill="#F7F9F8"/>
+    <rect x="18" y="18" width="406" height="864" rx="32" fill="#F7F9F8"/>
+    <path d="M54 60l-12 12 12 12M42 72h23" class="icon"/>
+    <text x="82" y="78" class="t h2">Моя сеть</text>
+    <text x="82" y="99" class="t tiny muted">Приглашайте и растите вместе</text>
+    <circle cx="383" cy="73" r="19" fill="#fff" stroke="#E5E7EB"/><path d="M376 76h14M379 67a4 4 0 0 1 8 0c0 5 4 5 4 8h-16c0-3 4-3 4-8z" class="icon"/>
+
+    <rect x="24" y="126" width="394" height="168" rx="23" fill="url(#brand)"/>
+    <circle cx="355" cy="177" r="68" fill="#fff" opacity=".10"/><circle cx="377" cy="228" r="58" fill="#fff" opacity=".08"/>
+    <path d="M323 167c0-20 15-34 34-34 18 0 33 14 33 32 0 21-18 37-34 50-17-13-33-29-33-48z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round" opacity=".92"/>
+    <circle cx="345" cy="166" r="8" fill="#fff" opacity=".95"/><circle cx="370" cy="155" r="8" fill="#fff" opacity=".95"/><circle cx="362" cy="190" r="8" fill="#fff" opacity=".95"/>
+    <text x="49" y="160" class="t small white">ВАШ РЕФЕРАЛЬНЫЙ КОД</text>
+    <text x="49" y="198" class="t h2 white" letter-spacing="1">TT-ARMAN</text>
+    <text x="49" y="224" class="t small white" opacity=".86">Дайте код другу при регистрации</text>
+    <rect x="49" y="241" width="158" height="32" rx="11" fill="#fff"/>
+    <path d="M68 251h10a3 3 0 0 1 3 3v10H71a3 3 0 0 1-3-3z" fill="none" stroke="#0B5D3B" stroke-width="2"/><path d="M74 248h8a3 3 0 0 1 3 3v9" fill="none" stroke="#0B5D3B" stroke-width="2"/>
+    <text x="94" y="262" class="t small green">Копировать код</text>
+
+    <text x="24" y="331" class="t h3">Ваша сеть</text>
+    <text x="418" y="331" text-anchor="end" class="t tiny muted">доля комиссии партнёра</text>
+    <!-- tier one -->
+    <rect x="24" y="347" width="394" height="103" rx="19" fill="url(#level1)"/>
+    <circle cx="56" cy="384" r="17" fill="#00B676"/><text x="56" y="389" text-anchor="middle" class="t small white">1</text>
+    <text x="84" y="377" class="t h3">Приглашены лично</text><text x="84" y="399" class="t tiny muted">Вы видите, кого пригласили сами</text>
+    <text x="377" y="380" text-anchor="end" class="t h2 green">12</text><text x="377" y="401" text-anchor="end" class="t tiny green">1%</text>
+    <path d="M48 423h346" class="line"/><text x="49" y="440" class="t small green">Открыть список друзей</text><text x="395" y="440" text-anchor="end" class="t h3 green">›</text>
+    <!-- tier two -->
+    <rect x="24" y="464" width="190" height="101" rx="19" fill="url(#level2)"/>
+    <circle cx="54" cy="493" r="16" fill="#2F80ED"/><text x="54" y="498" text-anchor="middle" class="t small white">2</text>
+    <text x="194" y="499" text-anchor="end" class="t h2 blue">38</text><text x="194" y="519" text-anchor="end" class="t tiny blue">0,5%</text>
+    <text x="43" y="540" class="t small">Друзья друзей</text><text x="43" y="557" class="t tiny muted">Только количество</text>
+    <!-- tier three -->
+    <rect x="228" y="464" width="190" height="101" rx="19" fill="url(#level3)"/>
+    <circle cx="258" cy="493" r="16" fill="#E7A21A"/><text x="258" y="498" text-anchor="middle" class="t small white">3</text>
+    <text x="398" y="499" text-anchor="end" class="t h2 amber">127</text><text x="398" y="519" text-anchor="end" class="t tiny amber">0,5%</text>
+    <text x="247" y="540" class="t small">Следующий уровень</text><text x="247" y="557" class="t tiny muted">Только количество</text>
+    <text x="28" y="587" class="t tiny muted">Уровни 2 и 3 не раскрывают имена и связи друзей.</text>
+
+    <text x="24" y="624" class="t h3">Приглашены лично</text><text x="418" y="624" text-anchor="end" class="t small green">Все 12 ›</text>
+    <rect x="24" y="640" width="394" height="122" rx="18" fill="#fff" filter="url(#soft)"/>
+    <circle cx="57" cy="677" r="18" fill="#DCFCE7"/><text x="57" y="683" text-anchor="middle" class="t small green">АМ</text>
+    <text x="86" y="672" class="t small">Ани М.</text><text x="86" y="692" class="t tiny muted">Квалифицирован · 14 авг.</text><text x="392" y="681" text-anchor="end" class="t small green">Готово</text>
+    <path d="M42 703h358" class="line"/><circle cx="57" cy="731" r="18" fill="#E9F4FF"/><text x="57" y="737" text-anchor="middle" class="t small blue">ДГ</text>
+    <text x="86" y="726" class="t small">Давид Г.</text><text x="86" y="746" class="t tiny muted">Ожидает первую покупку</text><text x="392" y="735" text-anchor="end" class="t small amber">В ожидании</text>
+
+    <rect x="24" y="781" width="394" height="58" rx="18" fill="#FFF7ED"/>
+    <path d="M48 800l11-12 11 12v18H48zM53 808h12" fill="none" stroke="#B65F00" stroke-width="2.2" stroke-linejoin="round"/>
+    <text x="83" y="806" class="t small">Первые 3 квалифицированных друга</text><text x="83" y="826" class="t tiny muted">Прогресс и вознаграждение — только по данным сервера</text>
+    <rect x="24" y="856" width="394" height="26" rx="13" fill="#fff"/><text x="221" y="874" text-anchor="middle" class="t tiny muted">Главная · Карта · QR · Кошелёк · Профиль</text>
+  </g>
+  <text x="333" y="1126" text-anchor="middle" class="t h2">Экран «Моя сеть»</text>
+  <text x="333" y="1152" text-anchor="middle" class="t body muted">Доступен из Главной и Профиля</text>
+
+  <!-- Right-side rules -->
+  <g transform="translate(650,190)">
+    <rect width="1060" height="218" rx="28" fill="#fff" filter="url(#soft)"/>
+    <text x="38" y="50" class="t h2">Кто что видит</text>
+    <text x="38" y="79" class="t body muted">Ориентация всегда от текущего пользователя: «мои лично приглашённые» → «друзья друзей» → «следующий уровень».</text>
+    <rect x="38" y="108" width="294" height="76" rx="18" fill="url(#level1)"/><circle cx="68" cy="145" r="16" fill="#00B676"/><text x="68" y="150" text-anchor="middle" class="t small white">1</text><text x="96" y="139" class="t h3">Список людей</text><text x="96" y="162" class="t tiny muted">Имя + инициал, статус, дата</text>
+    <rect x="350" y="108" width="294" height="76" rx="18" fill="url(#level2)"/><circle cx="380" cy="145" r="16" fill="#2F80ED"/><text x="380" y="150" text-anchor="middle" class="t small white">2</text><text x="408" y="139" class="t h3">Только число</text><text x="408" y="162" class="t tiny muted">Ни имён, ни связей, ни сумм</text>
+    <rect x="662" y="108" width="360" height="76" rx="18" fill="url(#level3)"/><circle cx="692" cy="145" r="16" fill="#E7A21A"/><text x="692" y="150" text-anchor="middle" class="t small white">3</text><text x="720" y="139" class="t h3">Только число</text><text x="720" y="162" class="t tiny muted">Никакого обхода приватности</text>
+
+    <text x="0" y="286" class="t h2">Трёхуровневая механика — объясняется, но не рассчитывается на клиенте</text>
+    <rect x="0" y="311" width="1060" height="222" rx="28" fill="#0B5D3B"/>
+    <circle cx="139" cy="423" r="57" fill="#fff" opacity=".11"/><circle cx="524" cy="423" r="57" fill="#fff" opacity=".11"/><circle cx="907" cy="423" r="57" fill="#fff" opacity=".11"/>
+    <text x="139" y="402" text-anchor="middle" class="t h1 white">1%</text><text x="139" y="432" text-anchor="middle" class="t h3 white">Уровень 1</text><text x="139" y="456" text-anchor="middle" class="t tiny white" opacity=".82">лично приглашены</text>
+    <path d="M220 423H410" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".65"/><path d="M400 414l10 9-10 9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".65"/>
+    <text x="524" y="402" text-anchor="middle" class="t h1 white">0,5%</text><text x="524" y="432" text-anchor="middle" class="t h3 white">Уровень 2</text><text x="524" y="456" text-anchor="middle" class="t tiny white" opacity=".82">друзья друзей</text>
+    <path d="M606 423H794" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".65"/><path d="M784 414l10 9-10 9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".65"/>
+    <text x="907" y="402" text-anchor="middle" class="t h1 white">0,5%</text><text x="907" y="432" text-anchor="middle" class="t h3 white">Уровень 3</text><text x="907" y="456" text-anchor="middle" class="t tiny white" opacity=".82">следующий уровень</text>
+    <text x="530" y="502" text-anchor="middle" class="t small white" opacity=".86">Доли считаются от комиссии партнёра на сервере. Клиент показывает только подтверждённый результат.</text>
+
+    <rect x="0" y="568" width="514" height="265" rx="28" fill="#fff" filter="url(#soft)"/>
+    <text x="34" y="614" class="t h2">Обязательные состояния</text>
+    <circle cx="47" cy="656" r="9" fill="#00B676"/><text x="69" y="662" class="t body">Пустая сеть: код + понятное приглашение</text>
+    <circle cx="47" cy="697" r="9" fill="#F59E0B"/><text x="69" y="703" class="t body">Ожидание: друг ещё не квалифицировался</text>
+    <circle cx="47" cy="738" r="9" fill="#2F80ED"/><text x="69" y="744" class="t body">Загрузка/нет данных: не показывать «0»</text>
+    <circle cx="47" cy="779" r="9" fill="#E5484D"/><text x="69" y="785" class="t body">Ошибка: Retry, не выдумывать статус</text>
+
+    <rect x="546" y="568" width="514" height="265" rx="28" fill="#FFF7ED" filter="url(#soft)"/>
+    <text x="580" y="614" class="t h2">Никогда не показывать</text>
+    <text x="580" y="660" class="t body">• Телефон, email, полный профиль</text>
+    <text x="580" y="698" class="t body">• Кто кого пригласил во 2/3 уровне</text>
+    <text x="580" y="736" class="t body">• Чужие покупки или личные суммы</text>
+    <text x="580" y="774" class="t body">• «Виртуальные» начисления без сервера</text>
+
+    <rect x="0" y="868" width="1060" height="144" rx="28" fill="#E9F4FF"/>
+    <text x="38" y="914" class="t h2">Поставка Claude</text>
+    <text x="38" y="944" class="t body muted">Нужны: список Level-1, агрегированные Level-2/Level-3, статусы квалификации и серверные состояния.</text>
+    <text x="38" y="974" class="t body muted">Экономика, цепочка и защита от злоупотреблений — только по `docs/NEXT_CLAUDE_TASK.md`.</text>
+  </g>
+
+  <text x="90" y="1217" class="t tiny muted">Источник интерфейсных правил: TUTAK_UI_UX_MASTER_SPEC_V2.md · Векторный исходник можно масштабировать без потери качества.</text>
+</svg>

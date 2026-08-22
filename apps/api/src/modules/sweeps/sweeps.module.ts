@@ -27,6 +27,17 @@ import { SweepsProcessor } from './sweeps.processor';
 import { SweepsScheduler } from './sweeps.scheduler';
 
 /**
+ * Same flag, same reasoning, as `app.module.ts`'s own `cardPaymentsEnabled`
+ * and `sweeps.jobs.ts`'s copy of it: `PaymentsModule` must stay out of the
+ * dependency graph entirely unless the legacy card-payment subsystem is
+ * explicitly turned on, because its own provider factory refuses to boot in
+ * production without a real PSP or `DEMO_MODE=true` — a canonical
+ * deployment (no PSP, no card payments) must not be forced through that
+ * guard just because this module unconditionally imported it.
+ */
+const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
+
+/**
  * Everything that runs without a request behind it.
  *
  * This module is the only place recurring work is wired up, and it depends on
@@ -45,7 +56,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
     WalletModule,
     EvChargingModule,
     LedgerModule,
-    PaymentsModule,
+    ...(cardPaymentsEnabled ? [PaymentsModule] : []),
     PurchaseIntentsModule,
     ReconciliationModule,
     RetentionModule,
@@ -68,7 +79,12 @@ import { SweepsScheduler } from './sweeps.scheduler';
         RetentionService,
         DeferredBonusLotService,
         PurchaseIntentsService,
-        RefundEngineService,
+        // Only resolvable when PaymentsModule was actually imported above —
+        // Nest calls useFactory with exactly as many arguments as `inject`
+        // has entries, so `refunds` below is simply never passed (and stays
+        // `undefined`) when this is omitted, rather than a missing-provider
+        // boot error.
+        ...(cardPaymentsEnabled ? [RefundEngineService] : []),
       ],
       useFactory: (
         bonus: BonusEngineService,
@@ -81,7 +97,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         retention: RetentionService,
         deferredBonusLots: DeferredBonusLotService,
         purchaseIntents: PurchaseIntentsService,
-        refunds: RefundEngineService,
+        refunds?: RefundEngineService,
       ): SweepDependencies => ({
         bonus,
         reservations,

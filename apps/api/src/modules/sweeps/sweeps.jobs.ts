@@ -13,6 +13,21 @@ import type { RetentionService } from '../retention/retention.service';
 export const SWEEPS_QUEUE = 'sweeps';
 
 /**
+ * Same gate, same reasoning, as `app.module.ts`'s own `cardPaymentsEnabled`
+ * constant: the canonical TuTak model never takes customer money, so
+ * `PaymentsModule` (and everything that only exists because of it, like the
+ * PSP-refund reconciliation sweep below) is off by default and only ever
+ * loaded when a deployment explicitly turns the legacy card-payment
+ * subsystem on. A sweep that unconditionally depended on
+ * `RefundEngineService` would force `PaymentsModule` — and its production
+ * boot guard requiring a real PSP or `DEMO_MODE=true` — into every
+ * deployment regardless of this flag, which is exactly the regression
+ * `production-boot.int-spec.ts` exists to catch (caught here: adding the
+ * reconciliation sweep first broke that test by doing exactly this).
+ */
+const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
+
+/**
  * Injection token for the bundle below.
  *
  * The processor takes the whole bundle rather than one constructor parameter
@@ -35,7 +50,8 @@ export interface SweepDependencies {
   retention: RetentionService;
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
-  refunds: RefundEngineService;
+  /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
+  refunds?: RefundEngineService;
 }
 
 export interface SweepDefinition {
@@ -203,16 +219,25 @@ export const SWEEPS: readonly SweepDefinition[] = [
     lockTtlMs: 60_000,
     run: ({ purchaseIntents }) => purchaseIntents.expireStale(),
   },
-  {
-    name: 'payments.reconcile-pending-refunds',
-    why: "P0 finding, 2026-08-19 hardening pass: a refund the PSP never confirmed synchronously (a timeout, a crash, an acquirer that answers 'processing') stays PENDING — no ledger posting, no bonus clawback, nothing that implies money moved — until something asks the acquirer again. Without this sweep a genuinely-confirmed refund could sit unreconciled indefinitely, and the customer's clawback and the ledger's reversal would never happen even though the money already moved.",
-    // Every two minutes: a refund is a customer-facing action an operator is
-    // often watching, so ambiguity should clear in minutes, not hours.
-    repeat: { every: 2 * 60_000 },
-    maxSilenceMs: 30 * 60_000,
-    lockTtlMs: 4 * 60_000,
-    run: ({ refunds }) => refunds.reconcilePendingRefunds(),
-  },
+  // Only registered when the legacy card-payment subsystem is actually on —
+  // see `cardPaymentsEnabled` above. `refunds` in `SweepDependencies` is
+  // `undefined` whenever this branch is not taken, and nothing else in the
+  // array ever reads it, so that stays sound.
+  ...(cardPaymentsEnabled
+    ? [
+        {
+          name: 'payments.reconcile-pending-refunds',
+          why: "P0 finding, 2026-08-19 hardening pass: a refund the PSP never confirmed synchronously (a timeout, a crash, an acquirer that answers 'processing') stays PENDING — no ledger posting, no bonus clawback, nothing that implies money moved — until something asks the acquirer again. Without this sweep a genuinely-confirmed refund could sit unreconciled indefinitely, and the customer's clawback and the ledger's reversal would never happen even though the money already moved.",
+          // Every two minutes: a refund is a customer-facing action an
+          // operator is often watching, so ambiguity should clear in
+          // minutes, not hours.
+          repeat: { every: 2 * 60_000 },
+          maxSilenceMs: 30 * 60_000,
+          lockTtlMs: 4 * 60_000,
+          run: ({ refunds }: SweepDependencies) => refunds!.reconcilePendingRefunds(),
+        } satisfies SweepDefinition,
+      ]
+    : []),
   {
     name: 'reconciliation.nightly',
     why: 'Replays every account against its own postings. Catches the ledger disagreeing with itself, which is a bug in this codebase rather than a dispute with a third party — and the only unattended check that can find it.',

@@ -127,4 +127,35 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
       await app.close();
     }
   });
+
+  /**
+   * P0 hardening pass, 2026-08-19: the new refund-PSP-confirmation sweep
+   * (`payments.reconcile-pending-refunds`) depends on `RefundEngineService`,
+   * which only exists when `PaymentsModule` is loaded. `SweepsModule` used
+   * to import `PaymentsModule` and inject that service unconditionally —
+   * which meant `SweepsModule` (itself unconditional in `AppModule`) forced
+   * `PaymentsModule`'s own production boot guard (real PSP or
+   * `DEMO_MODE=true`) into *every* deployment regardless of
+   * `CARD_PAYMENTS_ENABLED`, breaking test A above the moment the sweep was
+   * added. Fixed by gating `SweepsModule`'s `PaymentsModule` import and the
+   * sweep's own registration on the identical `cardPaymentsEnabled` flag
+   * `app.module.ts` already uses. This test proves both directions
+   * explicitly, at the `SWEEPS` registry level rather than only indirectly
+   * through test A's boot succeeding.
+   */
+  it('D: the PSP-refund reconciliation sweep exists only when card payments are enabled', async () => {
+    configureProductionExceptPsp();
+    delete process.env.CARD_PAYMENTS_ENABLED;
+
+    jest.resetModules();
+    const disabled = await import('../src/modules/sweeps/sweeps.jobs');
+    expect(disabled.SWEEPS.some((s) => s.name === 'payments.reconcile-pending-refunds')).toBe(
+      false,
+    );
+
+    process.env.CARD_PAYMENTS_ENABLED = 'true';
+    jest.resetModules();
+    const enabled = await import('../src/modules/sweeps/sweeps.jobs');
+    expect(enabled.SWEEPS.some((s) => s.name === 'payments.reconcile-pending-refunds')).toBe(true);
+  });
 });

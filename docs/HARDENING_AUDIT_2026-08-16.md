@@ -919,3 +919,366 @@ apps/partner 16/16, all passing.
 open. See the full report's §6/§7 for the specific MEDIUM/LOW items and
 verification-depth gaps (a live Docker boot and the Playwright e2e suite
 were not run this pass; recommend both before the next real deploy).
+
+## S. Referral engine rework — single-level to 3-level upward chain (2026-08-22)
+
+Implements the decision recorded in `docs/NEXT_CLAUDE_TASK.md` (2026-08-19,
+Arman) and detailed in full in GitHub Issue #28 comment 5360139848
+(2026-08-20) — the authoritative spec this section follows. Replaces
+**only** the referral engine's economics; nothing else in this hardening
+pass's prior findings (§A-R) was touched or weakened.
+
+**HEAD BEFORE:** `947988235e8d31dee76f486d030f820d48cc5859` (`9479882`,
+the tip of the 2026-08-19 hardening pass, §R above).
+**HEAD AFTER (code):** `f2f978ebcbce4ca6eab8b2a58654844a36c4acf1` (`f2f978e`)
+— the last commit that changes code or tests. This document and
+`docs/NEXT_CLAUDE_TASK.md` are committed immediately after, as
+documentation-only commits on top of that SHA.
+**Branch:** `claude/tutak-loyalty-mvp-e485jm`, pushed.
+
+Five commits in scope, in order:
+
+1. `f1ee435` — schema + config: `ReferralProgramVersion` enum, per-level
+   referrer snapshot columns on `PurchaseIntent`/`EvSession`, six bps
+   config fields + boot validation. Additive migration, no backfill.
+2. `11ca319` — `ReferralService`: `resolveReferralChain`,
+   `computePoolSplit`, `creditChainShares` — the chain's single canonical
+   implementation.
+3. `565520a` — `PurchaseIntentsService`/`PurchaseIntentRefundService`: the
+   canonical purchase settlement and its refund reversal, dispatching on
+   `programVersion`. Also fixes a same-process self-deadlock this rework's
+   first draft introduced (see the commit message and §S.6 below).
+4. `3f01f0a` — `EvSessionsService`/`EvCdrReconciliationService`: the EV
+   settlement and CDR-correction mirror of (3), and removal of the
+   duplicate `evTutakUpfrontBps` cut for the new program.
+5. `f2f978e` — test coverage: new/updated regression tests across all of
+   the above (see §S.5).
+
+### S.1 The financial formula
+
+**Only the commission pool the partner pays TuTak is distributed** — never
+a percentage of gross, never money added on top of the pool. Given
+`pool = grossAmount × negotiatedRateBps ÷ 10000` (unchanged from the
+single-level model, `roundIssued`-truncated), the pool now splits into six
+legs instead of four:
+
+| Recipient | Share of pool | Config field |
+|---|---:|---|
+| Customer GREEN (available) | 20% | `poolGreenBps` = 2000 |
+| Customer DEFERRED (black) | 30% | `poolDeferredBps` = 3000 |
+| Referrer L1 (direct referrer) | 10% | `poolReferrerL1Bps` = 1000 |
+| Referrer L2 (whoever referred L1) | 5% | `poolReferrerL2Bps` = 500 |
+| Referrer L3 (whoever referred L2) | 5% | `poolReferrerL3Bps` = 500 |
+| TuTak | 30% + every missing level's share | `poolTutakBps` = 3000, **residual** |
+
+`assertPoolSplitSums` (`src/config/configuration.ts`) refuses to boot
+unless all six legs are non-negative integers ≤ 10000 that sum to exactly
+10000 — the same "fail loudly at startup, not silently at settlement time"
+discipline the four-leg config already had.
+
+**Worked example** (Arman's own, 10% commission on a 100,000 AMD gross
+sale): pool = 10,000 AMD → green 2,000, deferred 3,000, L1 1,000, L2 500,
+L3 500, TuTak (with a full 3-level chain) 3,000. Sum: 10,000 — the whole
+pool, nothing added.
+
+**TuTak's leg is always the residual**, never independently rounded:
+`tutak = pool − green − deferred − l1 − l2 − l3`
+(`ReferralService.computePoolSplit`, the single place this is computed).
+Because `l1`/`l2`/`l3` are individually 0 whenever that level has no
+recipient, a missing level's whole bps allocation folds into `tutak`
+automatically — no special-casing needed, no level ever left unpaid, no
+level's share ever redistributed to a level that does exist. This is the
+same "derive the last leg as a residual rather than round it
+independently" technique the four-leg model already used, generalised
+from one residual leg to the same one residual leg across six.
+
+**The chain**, walked by `ReferralService.resolveReferralChain`
+(`ReferralInvite`'s existing schema — `refereeUserId` unique, so every
+user has at most one parent and the attribution graph is structurally a
+forest):
+
+- L1 = whoever directly referred the customer.
+- L2 = whoever referred L1 (only resolved if L1 is a USER).
+- L3 = whoever referred L2 (only resolved if L2 is a USER).
+- **A PARTNER referrer at any level is paid but does not continue the
+  chain** — pushed as that level's own entry, then the walk stops. This
+  generalises the spec's explicit L1 case ("a partner is not a
+  continuation of the customer chain") to any level a partner occupies,
+  since a partner never has a `ReferralInvite` row of its own as a
+  referee to walk further.
+- **Self-referral and cycles are refused defensively.** A `Set` of every
+  subject already in the chain (including the customer themselves) is
+  checked before each level is added; a repeat — impossible through the
+  normal registration flow, since attribution is written exactly once,
+  but defended against regardless, the same posture
+  `advanceChallengeProgress` already takes for its own self-referral
+  guard — stops the walk with a logged warning and no payout for the
+  repeat.
+- **The same subject is never paid twice in one operation**, by
+  construction of the cycle guard above.
+
+**A PARTNER referrer receives its share via the existing
+partner-payable/ledger model**, never a wallet bonus — `creditChainShares`
+skips PARTNER-type levels entirely; `postContributionLedger`/
+`postEvContributionLedgerIdempotent` route each PARTNER-type level's share
+to its own `PARTNER_PAYABLE` credit instead of folding it into
+`BONUS_LIABILITY`.
+
+### S.2 Transition boundary — the explicit persisted eligibility marker
+
+`ReferralProgramVersion` (`LEGACY_SINGLE_LEVEL` implicit-null /
+`THREE_LEVEL_V2`) is a new column on both `PurchaseIntent` and `EvSession`,
+set explicitly by every new confirmation/settlement and left `null` on
+every row that predates it — **never inferred from `createdAt` vs. a
+release date**, per the rework's own requirement. Every `THREE_LEVEL_V2`
+row also carries the full per-level snapshot
+(`referrer1Type`/`referrer1UserId`/`referrer1PartnerId`/`referrer1Amount`
+through `referrer3*`, plus `tutakAmount`) alongside the pre-existing
+`poolAmount`/`greenAmount`/`deferredAmount` — six calculated/actually-paid
+amounts and every recipient's identity and type, immutably, at the moment
+of settlement.
+
+**A refund/CDR-correction never re-walks the current chain.** Both
+`PurchaseIntentRefundService` and `EvCdrReconciliationService` dispatch on
+the row's own `programVersion`:
+
+- `THREE_LEVEL_V2` → `reverseLoyaltyEffectsV2`/`correctOverchargeLegsV2`,
+  reading every referrer level from the row's own stored snapshot columns,
+  never calling `resolveReferralChain` again. The attribution is immutable
+  so re-walking would answer identically today — but reading the snapshot
+  makes "never re-walk" true by construction, not by coincidence, and is
+  what stops a hypothetical future mutation of the chain from silently
+  changing what a historical reversal targets.
+- legacy (`programVersion` null) → the original single-referrer reversal
+  path, renamed `*Legacy` but otherwise byte-for-byte unchanged, still
+  calling `resolveReferrer` live (as it always did — this was already the
+  legacy behavior before this rework and is left exactly as-is, since
+  "don't weaken existing fixes" applies to it too).
+
+No purchase confirmed after this rework can produce a legacy row, and no
+historical row is ever reinterpreted or backfilled into the 3-level shape
+— old `PurchaseIntent`/`EvSession` rows created before this rework remain
+legacy forever, matching the spec's explicit instruction that historical
+referral records cannot be retroactively turned into 3-level.
+
+### S.3 EV: no duplicate TuTak cut
+
+The old EV settlement took `evTutakUpfrontBps` (40%) off the pool *before*
+splitting the remainder by the (then four-leg) green/deferred/referrer/
+tutak ratios — an extra TuTak cut on top of its own share of the
+remainder. Requirement 4 of the rework explicitly forbids this for the new
+program: `EvSessionsService.stopOnce` now calls
+`ReferralService.computePoolSplit` on the *whole* pool, exactly like
+`PurchaseIntentsService.settlePurchase` — no separate upfront cut, no
+duplicate TuTak share. The `evTutakUpfrontBps` config field is removed
+entirely (not merely unused) — a legacy `EvSession.tutakUpfrontAmount`
+column remains, deprecated, purely so a pre-rework session's historical
+CDR correction can still read what was actually posted for it.
+
+### S.4 Referral Challenge — untouched
+
+Per requirement 6, the 1,000+1,000 AMD Referral Challenge
+(`ReferralChallengeParticipant`, `advanceChallengeProgress`,
+`tryRewardChallengeSlot`) is not extended to L2/L3 and its already-approved
+model is unchanged — it only ever looks at a referee's *direct* (L1)
+referrer, exactly as before. `referral-abuse.int-spec.ts` (13 tests) and
+`refund-clawback-deep.int-spec.ts`'s Challenge-reward-reversal suite (11
+tests) both re-run unmodified and pass unchanged, confirming this by
+absence of any diff needed.
+
+### S.5 Tests added/updated
+
+New:
+- `src/config/configuration.spec.ts` (unit, 8 tests) — the six-leg boot
+  validation: sum invariant, per-leg range checks, and the exact mistake
+  the rework's spec warns against (reusing the old 20% single-level
+  referrer bps for the new L1).
+- `purchase-intents.int-spec.ts`: full 3-level split with the exact pool
+  example; chain lengths 0/1/2 (`it.each`) proving missing levels fold to
+  TuTak; direct partner-referrer (L1 only, L2/L3 to TuTak); the
+  odd-rate reconciliation invariant re-proved for six legs (was four);
+  self-referral; a forged 2-cycle (defence in depth, since the normal
+  registration flow cannot produce one).
+- `purchase-intent-refund.int-spec.ts`: a legacy (`programVersion` null)
+  row reverses via its own `referrerAmount` snapshot only, proven by
+  building a *real, resolvable* 3-level chain around it today and showing
+  L2/L3 are untouched by the refund.
+
+Updated (every hardcoded pool-split expectation, from the old
+`evTutakUpfrontBps`-then-four-leg shape to the new direct six-leg shape):
+`purchase-intents.int-spec.ts`, `purchase-intent-refund.int-spec.ts`,
+`ev-charging.int-spec.ts`, `ev-cdr-reconciliation.int-spec.ts`,
+`ev-metering.int-spec.ts`, `money-rounding.int-spec.ts`,
+`concurrency-probe.int-spec.ts`, `self-dealing.int-spec.ts`,
+`qr-payments.int-spec.ts` (comment only, no assertion changed).
+
+**Git-stash verification** (repo convention): stashed `configuration.ts`
+alone → `configuration.spec.ts` fails to compile (`assertPoolSplitSums`/
+the six new field names don't exist on pre-fix code); popped, passes.
+Stashed all six touched `src/` files plus `schema.prisma` together →
+every touched integration test file fails to compile (`ReferralChainLevel`/
+`computePoolSplit`/`resolveReferralChain`/`programVersion` etc. don't
+exist on pre-fix code); popped, passes. Confirms the whole batch of new/
+changed assertions is genuinely exercising the new code, not tautological.
+
+### S.6 A bug caught before it shipped: same-process self-deadlock
+
+While generalising `postContributionLedger` to route PARTNER-type referrer
+legs to their own `accountFor` lookups, the first draft passed the
+settlement's own open transaction (`tx`) to *every* `accountFor` call in
+that method, reasoning (incorrectly, for this specific transaction) that
+it was "more correct" than the pre-existing tx-less calls. This broke the
+"posts the contribution and the bonus-redemption compensation as two
+separate, unnetted entries" test — not with a wrong number, but with a
+5-second hang ending in `Transaction API error: Transaction already
+closed`.
+
+Root cause: `settlePurchase`'s transaction is Read Committed (not
+Serializable — `LedgerService.accountFor`'s own docblock is explicit that
+Read Committed callers never need `tx` passed, because each statement
+re-snapshots). Creating the partner's `PARTNER_PAYABLE` account *inside*
+the still-open transaction left it uncommitted; the very next step,
+`postRedemptionCompensation`'s own (unmodified, tx-less) `accountFor` call
+for the *same* account, ran on a separate connection and blocked waiting
+for that uncommitted row's lock to release — a lock the first transaction
+can never release, because it is itself `await`ing this blocked query.
+Two connections, each waiting on the other, resolved only by Prisma's 5s
+interactive-transaction timeout aborting the whole settlement.
+
+Fixed by reverting to the pre-existing (correct) tx-less pattern for
+`postContributionLedger`'s own `accountFor` calls, including the new
+PARTNER-type referrer ones — matching what `postRedemptionCompensation`
+already did and had always done. Caught by this pass's own narrow test run
+before it ever reached the full suite; recorded here per the standing
+instruction to disclose bugs found and fixed during implementation, not
+just the ones a launch verdict cares about.
+
+### S.7 Files changed, grouped by area
+
+**Schema/config:**
+- `apps/api/prisma/schema.prisma` — `ReferralProgramVersion` enum,
+  per-level referrer snapshot columns on `PurchaseIntent`/`EvSession`.
+- `apps/api/prisma/migrations/20260822000000_referral_three_level_chain/migration.sql`
+  — additive, no backfill.
+- `apps/api/src/config/configuration.ts` — six bps fields,
+  `assertPoolSplitSums` generalised and exported; `evTutakUpfrontBps`
+  removed.
+
+**Referral chain:**
+- `apps/api/src/modules/referral/referral.service.ts` —
+  `resolveReferralChain`, `computePoolSplit`, `creditChainShares`,
+  `CURRENT_REFERRAL_PROGRAM_VERSION`; `resolveReferrer`/
+  `creditUserReferrerShare` kept for the legacy program and the Challenge.
+
+**PurchaseIntent:**
+- `apps/api/src/modules/purchase-intents/purchase-intents.service.ts` —
+  `settlePurchase`/`postContributionLedger`.
+- `apps/api/src/modules/purchase-intents/purchase-intent-refund.service.ts`
+  — `reverseLoyaltyEffectsV2`/`postReversalLedgerV2` (new),
+  `reverseLoyaltyEffectsLegacy`/`postReversalLedgerLegacy` (renamed,
+  unchanged), dispatch on `programVersion`.
+
+**EV/FastCharge:**
+- `apps/api/src/modules/ev-charging/ev-sessions.service.ts` —
+  `stopOnce`'s earning branch, `postEvContributionLedgerIdempotent`.
+- `apps/api/src/modules/ev-charging/ev-cdr-reconciliation.service.ts` —
+  `correctOverchargeLegsV2`/`postEvCorrectionLedgerV2Idempotent` (new),
+  `correctOverchargeLegsLegacy`/`postEvCorrectionLedgerLegacyIdempotent`
+  (renamed, unchanged), dispatch on `programVersion`.
+
+**Tests:** see §S.5.
+
+### S.8 Commands run and results
+
+| Command | Result |
+|---|---|
+| `npx tsc --noEmit -p tsconfig.spec.json` | PASS |
+| `npx tsc --noEmit -p tsconfig.build.json` | PASS |
+| `npx eslint src test` | PASS — 0 problems |
+| `npx nest build` | PASS |
+| git-stash verification (configuration.ts alone; all six src files + schema together) | FAIL to compile pre-fix, PASS post-fix, both popped cleanly |
+| `npx jest --selectProjects integration --testPathPattern "purchase-intents\|purchase-intent-refund"` (narrow, iterative during implementation) | PASS, 72/72, after fixing S.6's self-deadlock |
+| `npx jest --selectProjects integration --testPathPattern "ev-cdr-reconciliation\|ev-charging\|ev-lifecycle-probe\|ev-metering"` | PASS, 60/60 |
+| `npx jest --selectProjects integration --testPathPattern "referral-abuse\|refund-clawback-deep"` (Challenge, unmodified) | PASS, 35/35, no diff needed |
+| `npx jest --selectProjects integration --testPathPattern "money-rounding\|self-dealing\|qr-payments\|concurrency-probe"` | PASS, 102/102 |
+| `npx jest --selectProjects integration unit --testTimeout=30000 --forceExit` (apps/api, full suite, in isolation) | **PASS — 988/988, 70/70 suites** |
+| `npx prisma migrate status` (`tutak_test`) | Up to date (applied via global test setup) |
+| `npx prisma migrate status` (`tutak`, dev DB, pre-existing data) | Detected the one new migration, nothing else |
+| `npx prisma migrate deploy` (`tutak`, dev DB) | Applied cleanly against a database with real pre-existing rows; `migrate status` clean afterward |
+| `npx jest` (apps/mobile) | PASS — 203/203, 23/23 suites, no source changes needed (referral screen only ever displayed L1 invites — the payout split is invisible to it) |
+| `npx jest` (apps/admin) | PASS — 29/29, 5/5 suites |
+| `npx jest` (apps/partner) | PASS — 16/16, 2/2 suites |
+
+### S.9 Matrix — old / new / refund / EV / partner scenarios
+
+| Scenario | Path | Result |
+|---|---|---|
+| Chain length 0 (no referrer) | PurchaseIntent confirm | Green 100, deferred 150, L1/L2/L3 all 0, TuTak 250 (150 base + 100 folded) — verified |
+| Chain length 1 (L1 only, USER) | PurchaseIntent confirm | L1 gets 50 (10%), L2/L3 fold into TuTak — verified |
+| Chain length 2 | PurchaseIntent confirm | L1 50, L2 25, L3 folds into TuTak — verified |
+| Chain length 3 (full) | PurchaseIntent confirm | L1 50, L2 25, L3 25, TuTak base 150 only — verified |
+| Direct partner referrer (L1 = PARTNER) | PurchaseIntent confirm | L1's share credited to their `PARTNER_PAYABLE`, never a wallet; L2/L3 absent, fold to TuTak — verified |
+| Self-referral (forged row) | `resolveReferralChain` | Refused, no payout, chain walk stops — verified |
+| Cycle (forged 2-cycle) | `resolveReferralChain` | L1 real leg paid, cycle refused at L2, no payout around it — verified |
+| Legacy record (programVersion null) | Refund | Reverses via `referrerAmount` snapshot only; today's real 3-level chain around it is never touched — verified |
+| Odd/non-dividing pool split | PurchaseIntent confirm | All six legs sum to pool exactly (`LedgerService.post()`'s own balance check as the proof) — verified |
+| Full refund | PurchaseIntentRefundService | Every leg (green/deferred/L1/L2/L3/TuTak-residual) reverses to net zero — verified |
+| Partial refund, proportional | PurchaseIntentRefundService | Proportional delta construction, unchanged from the four-leg model, generalised to six — verified |
+| EV settlement, no referrer | `EvSessionsService.stopOnce` | Same six-leg split as PurchaseIntent, no upfront TuTak cut — verified |
+| EV settlement, L1 referrer | `EvSessionsService.stopOnce` | L1 credited straight into wallet — verified |
+| CDR overcharge correction, legacy session | `EvCdrReconciliationService` | Original four-leg-plus-upfront clawback path, unchanged — verified (existing tests, no diff) |
+| CDR overcharge correction, THREE_LEVEL_V2 session | `EvCdrReconciliationService` | Proportional clawback across green/deferred/L1/TuTak-residual — verified |
+| Duplicate/concurrent CDR correction | `EvCdrReconciliationService` | Existing idempotency (`reconcilingAt` claim, existing-posting check) untouched, re-verified passing |
+| Concurrent/repeated confirm | `PurchaseIntentsService` | Existing claim-then-act atomicity untouched, re-verified passing |
+| Referral Challenge (1000+1000 AMD) | `ReferralService` | Entirely unmodified — L1-only, no L2/L3 multiplication — re-verified passing, no diff |
+
+### S.10 Remaining risks / `NOT VERIFIED`
+
+- **NOT VERIFIED — outbox payload shape during a live cutover.**
+  `EvSessionsService`'s `ev.contribution.ledger_post` outbox handler was
+  changed to read the new six-leg payload shape (`l1`/`l2`/`l3`/`tutak`/
+  `chain`) instead of the old four-leg one
+  (`tutakUpfront`/`referrerShare`/`referrerType`/`referrerId`). Any
+  `OutboxEvent` row of this type still `PENDING` at the moment this
+  deploy lands (queued by a pre-rework `stopOnce` fast-path failure,
+  awaiting `outbox.drain`'s retry) would be drained by the *new* handler
+  against the *old* payload shape and throw (`new Decimal(undefined)`).
+  Not reproducible or testable against this repo's own state — there is
+  no real production traffic yet (per `docs/LAUNCH_READINESS_2026-08-16.md`,
+  this repository has not reached a production launch), so no such row
+  exists to test against, and manufacturing one would test a scenario
+  that cannot occur here. Flagged for whoever operates the real cutover:
+  drain the outbox fully (or confirm it is empty) immediately before
+  deploying this change.
+- **NOT VERIFIED — a live Docker Compose boot and the Playwright e2e
+  suite**, same as §7 of `docs/HARDENING_AUDIT_2026-08-19-P0-P3.md` — this
+  pass's time budget went to the API-level integration suite (988 tests,
+  the layer every finding here actually lives at), not those two,
+  unchanged by this pass's diff from where §7 already left them.
+- **LOW, not a defect:** `EvSession.tutakUpfrontAmount` and
+  `PurchaseIntent`/`EvSession`'s legacy `referrerAmount` columns are now
+  permanently deprecated (read-only for legacy-row reversal) but not
+  dropped — deliberate, matching this codebase's own established
+  "additive migration, never destructive" discipline for exactly this
+  reason: a historical row's own reversal path depends on them existing.
+
+No CRITICAL or HIGH risk identified. Every P0-shaped requirement in the
+rework's own spec (the exact pool example, the sum invariant, the
+transition boundary, no duplicate EV cut, Challenge untouched, refund/CDR
+symmetry) is implemented and covered by a passing regression test that was
+verified to fail against pre-fix code first.
+
+### S.11 Launch verdict
+
+**READY FOR INDEPENDENT AUDIT**, on the same basis §R already established
+for the rest of the platform: the 3-level referral chain is implemented
+exactly to the spec in Issue #28 comment 5360139848, the migration is
+additive and was proven safe against a database with real pre-existing
+rows (not just a fresh test database), the full 988-test API suite plus
+all three frontend suites pass, typecheck/lint/build are clean, and the
+one gap this pass could not close (§S.10's outbox-cutover note) is a
+genuine operational instruction for a real deploy, not a code defect —
+this repository still has no production traffic for it to affect. Every
+number in the worked example and the sum invariant was proven by the
+database's own `LedgerService.post()` balance check, not merely asserted
+in a test.

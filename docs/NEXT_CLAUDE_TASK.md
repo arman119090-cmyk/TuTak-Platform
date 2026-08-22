@@ -2,14 +2,33 @@
 
 This file is the canonical current task for Claude. Before starting or continuing implementation, read this file together with `docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md`, `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` (when present), `docs/HARDENING_AUDIT_2026-08-16.md`, `docs/LAUNCH_READINESS_2026-08-16.md`, and GitHub Issue #28 `TuTak — Independent Audit Findings`.
 
-## STATUS AS OF 2026-08-19
+## STATUS AS OF 2026-08-22
 
-**One engineering task is now queued: rework the referral engine from
-single-level to a 3-level upward chain.** Decided by Arman (2026-08-19),
-not yet implemented — budget ran out before starting. Do this next, before
-picking up anything else on this file.
+**The 3-level referral chain rework is DONE, implemented, tested, and
+pushed to `claude/tutak-loyalty-mvp-e485jm`.** See
+`docs/HARDENING_AUDIT_2026-08-16.md`'s 2026-08-22 entry for the full
+implementation report (formula, migration, files, test matrix, commands,
+remaining risks). No engineering task is currently queued on this file.
 
-### Queued task: 3-level referral chain
+Summary for anyone landing here without reading the audit doc: the
+single-level 20/30/20/30 pool split (green/deferred/referrer/TuTak) is
+replaced outright by a six-leg split — 20% green / 30% deferred / 10% L1 /
+5% L2 / 5% L3 / 30% TuTak (residual) — paid up to 3 levels up the referral
+chain (L1 = direct referrer, L2 = whoever referred L1, L3 = whoever
+referred L2). A partner referrer at any level is paid via the existing
+partner-payable ledger, never a wallet, and does not continue the chain. A
+missing level's share always folds into TuTak's residual, never left
+unpaid or redistributed. `ReferralProgramVersion` (`LEGACY_SINGLE_LEVEL` /
+`THREE_LEVEL_V2`) is the explicit, persisted eligibility boundary on every
+`PurchaseIntent`/`EvSession` row — old rows are never reinterpreted, and a
+refund/CDR-correction on a legacy row reverses it exactly as it was
+originally priced, never re-walking today's chain. The Referral Challenge
+(1,000+1,000 AMD, TuTak-funded) is untouched — L1-only, as it always was.
+
+<details>
+<summary>Archived: the original queued-task record for this rework (2026-08-19, kept for history)</summary>
+
+### Queued task: 3-level referral chain — RESOLVED 2026-08-22, see above
 
 **The decision, recorded exactly as given:**
 
@@ -82,6 +101,8 @@ made unilaterally during implementation without asking Arman first:
 When implemented: update this file to remove this entry, and record the
 decision + implementation in `docs/HARDENING_AUDIT_2026-08-16.md` the way
 every prior decision has been recorded.
+
+</details>
 
 ---
 

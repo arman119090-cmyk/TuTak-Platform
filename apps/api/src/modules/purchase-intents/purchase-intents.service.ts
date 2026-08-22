@@ -18,7 +18,7 @@ import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { PartnersService } from '../partners/partners.service';
-import { ReferralService } from '../referral/referral.service';
+import { CURRENT_REFERRAL_PROGRAM_VERSION, ReferralChainLevel, ReferralService } from '../referral/referral.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { WalletService } from '../wallet/wallet.service';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
@@ -300,30 +300,24 @@ export class PurchaseIntentsService {
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
     staffUserId: string,
   ): Promise<'settled' | 'already-resolved'> {
-    const policy = this.config.get('purchasePolicy', { infer: true });
-
     // Spec §12: the pool is gross × the *snapshotted* negotiated rate — not
     // whatever the partner's rate is today. Rounded down to the column's own
-    // 4-decimal-place precision up front, not left as a raw product: green/
-    // deferred/referrerShare are each independently truncated below, and
-    // tutakBase is defined as whatever's left rather than independently
-    // rounded — so the four legs always sum to exactly `pool` by
-    // construction. Rounding only `pool` and letting all four legs be
-    // independently truncated used to leave a residue of up to
-    // 3 × 0.0001 that the debit (the raw, unrounded pool) didn't match,
-    // which `LedgerService.post` correctly rejected as an unbalanced
-    // transaction — deterministically, for any gross/rate combination whose
-    // product didn't happen to divide evenly across all three truncations.
+    // 4-decimal-place precision up front, not left as a raw product.
     const pool = roundIssued(intent.grossAmount.times(intent.negotiatedRateBps).dividedBy(10_000));
-    const green = roundIssued(pool.times(policy.poolGreenBps).dividedBy(10_000));
-    const deferred = roundIssued(pool.times(policy.poolDeferredBps).dividedBy(10_000));
-    const referrerShare = roundIssued(pool.times(policy.poolReferrerBps).dividedBy(10_000));
-    const tutakBase = pool.minus(green).minus(deferred).minus(referrerShare);
 
-    // Read-only, and safe to resolve before the transaction: an attribution
-    // is immutable once created (spec §5), so it cannot change between this
-    // read and the transaction below using it.
-    const referrer = await this.referralService.resolveReferrer(intent.customerId);
+    // Read-only, and safe to resolve before the transaction: attribution is
+    // immutable once created (spec §5) at every level, so the chain cannot
+    // change between this read and the transaction below using it. The
+    // 2026-08-22 3-level rework's own single source of truth for the split —
+    // see `ReferralService.computePoolSplit`'s docblock for why `tutak` is
+    // always the residual, never independently rounded, so all six legs
+    // always sum to exactly `pool`.
+    const chain = await this.referralService.resolveReferralChain(intent.customerId);
+    const split = this.referralService.computePoolSplit(pool, chain);
+    const { green, deferred, l1, l2, l3, tutak } = split;
+    const l1Entry = chain.find((c) => c.level === 1) ?? null;
+    const l2Entry = chain.find((c) => c.level === 2) ?? null;
+    const l3Entry = chain.find((c) => c.level === 3) ?? null;
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -342,10 +336,29 @@ export class PurchaseIntentsService {
             // GitHub issue #28, HEAD 0a9c7d5). `negotiatedRateBps` was
             // already snapshotted at creation; this is the other half of
             // "never recompute from live config" for the pool itself.
+            //
+            // 2026-08-22 3-level referral rework: `programVersion` is the
+            // explicit, persisted eligibility boundary — every purchase
+            // confirmed from here on is THREE_LEVEL_V2, and its own
+            // per-level referrer snapshot lives in `referrer1..3*`/
+            // `tutakAmount` below, never the legacy `referrerAmount` column.
             poolAmount: pool,
             greenAmount: green,
             deferredAmount: deferred,
-            referrerAmount: referrerShare,
+            programVersion: CURRENT_REFERRAL_PROGRAM_VERSION,
+            referrer1Type: l1Entry?.type ?? null,
+            referrer1UserId: l1Entry?.type === 'USER' ? l1Entry.userId : null,
+            referrer1PartnerId: l1Entry?.type === 'PARTNER' ? l1Entry.partnerId : null,
+            referrer1Amount: l1,
+            referrer2Type: l2Entry?.type ?? null,
+            referrer2UserId: l2Entry?.type === 'USER' ? l2Entry.userId : null,
+            referrer2PartnerId: l2Entry?.type === 'PARTNER' ? l2Entry.partnerId : null,
+            referrer2Amount: l2,
+            referrer3Type: l3Entry?.type ?? null,
+            referrer3UserId: l3Entry?.type === 'USER' ? l3Entry.userId : null,
+            referrer3PartnerId: l3Entry?.type === 'PARTNER' ? l3Entry.partnerId : null,
+            referrer3Amount: l3,
+            tutakAmount: tutak,
           },
         });
         if (claimed.count === 0) return 'already-resolved' as const;
@@ -386,20 +399,17 @@ export class PurchaseIntentsService {
           );
         }
 
-        if (referrer?.type === 'USER' && referrerShare.greaterThan(0)) {
-          await this.referralService.creditUserReferrerShare(
-            referrer.userId,
-            referrerShare,
-            intent.sourceTransactionId!,
-            tx,
-          );
-        }
-
-        await this.postContributionLedger(
-          intent,
-          { pool, green, deferred, referrerShare, tutakBase, referrer },
+        // Every USER-type level (L1/L2/L3) is credited straight into its
+        // wallet; a PARTNER-type level is deliberately skipped here — its
+        // share is the ledger-only leg `postContributionLedger` posts below.
+        await this.referralService.creditChainShares(
+          chain,
+          { l1, l2, l3 },
+          intent.sourceTransactionId!,
           tx,
         );
+
+        await this.postContributionLedger(intent, { pool, green, deferred, l1, l2, l3, tutak, chain }, tx);
 
         if (intent.bonusAmountRequested.greaterThan(0)) {
           await this.postRedemptionCompensation(intent, tx);
@@ -422,8 +432,19 @@ export class PurchaseIntentsService {
    * Spec §12 + §22-24: the full contribution pool, split by who receives
    * each slice, as one balanced double-entry transaction. See the migration
    * doc §3 for why this is one `LedgerService.post()` call rather than
-   * being split across the referral module — the referrer leg has to
+   * being split across the referral module — the referrer legs have to
    * balance against the same purchase's contribution posting.
+   *
+   * 2026-08-22 3-level rework: up to three referrer legs now, not one. A
+   * USER-type level's share is folded into the same `bonusLiabilityAccount`
+   * credit as green/deferred (it is spendable wallet value, same as
+   * before); a PARTNER-type level gets its own `PARTNER_PAYABLE` credit,
+   * one per distinct partner in the chain (at most one, in practice — a
+   * partner referrer never continues the chain, so the chain can contain at
+   * most one PARTNER entry, always its own terminal level). `tutak` is
+   * already the pool's residual (`ReferralService.computePoolSplit`), so it
+   * needs no further adjustment for missing levels the way the old
+   * single-referrer code needed `.plus(referrer ? 0 : referrerShare)`.
    */
   private async postContributionLedger(
     intent: { id: string; partnerId: string; sourceTransactionId: string | null },
@@ -431,46 +452,63 @@ export class PurchaseIntentsService {
       pool: Decimal;
       green: Decimal;
       deferred: Decimal;
-      referrerShare: Decimal;
-      tutakBase: Decimal;
-      referrer: { type: 'USER'; userId: string } | { type: 'PARTNER'; partnerId: string } | null;
+      l1: Decimal;
+      l2: Decimal;
+      l3: Decimal;
+      tutak: Decimal;
+      chain: ReferralChainLevel[];
     },
     tx: Tx,
   ): Promise<void> {
     if (amounts.pool.lessThanOrEqualTo(0)) return;
 
+    // Deliberately *not* passing `tx` to any `accountFor` call below — same
+    // as this method always did, and same as the sibling
+    // `postRedemptionCompensation` still does: `settlePurchase`'s own
+    // transaction is Read Committed (not Serializable), so a find/create
+    // outside it commits immediately and is visible to the next statement
+    // either way (see `LedgerService.accountFor`'s own docblock on this).
+    // Passing `tx` here once caused a same-process self-deadlock instead: an
+    // account created *inside* this still-open transaction is invisible to
+    // `postRedemptionCompensation`'s own (tx-less) lookup moments later,
+    // whose insert then blocks on this transaction's own uncommitted row —
+    // a lock wait this transaction can never resolve because it is itself
+    // waiting on that query to return. Caught by the integration suite
+    // timing out at Prisma's 5s interactive-transaction default.
     const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
       this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }),
       this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
       this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }),
     ]);
 
-    const customerLiability = amounts.green
-      .plus(amounts.deferred)
-      .plus(amounts.referrer?.type === 'USER' ? amounts.referrerShare : 0);
-    const tutakRevenue = amounts.tutakBase.plus(amounts.referrer ? 0 : amounts.referrerShare);
+    const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
+    const userLiability = amounts.chain
+      .filter((c) => c.type === 'USER')
+      .reduce((sum, c) => sum.plus(byLevel[c.level]), new Decimal(0));
+    const customerLiability = amounts.green.plus(amounts.deferred).plus(userLiability);
+
+    const partnerReferrerPostings = await Promise.all(
+      amounts.chain
+        .filter((c): c is ReferralChainLevel & { type: 'PARTNER' } => c.type === 'PARTNER')
+        .map(async (c) => {
+          const share = byLevel[c.level];
+          if (share.lessThanOrEqualTo(0)) return null;
+          const account = await this.ledger.accountFor({
+            type: LedgerAccountType.PARTNER_PAYABLE,
+            partnerId: c.partnerId,
+          });
+          return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
+        }),
+    );
 
     const postings = [
       { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.pool },
       ...(customerLiability.greaterThan(0)
         ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
         : []),
-      ...(amounts.referrer?.type === 'PARTNER' && amounts.referrerShare.greaterThan(0)
-        ? [
-            {
-              accountId: (
-                await this.ledger.accountFor({
-                  type: LedgerAccountType.PARTNER_PAYABLE,
-                  partnerId: amounts.referrer.partnerId,
-                })
-              ).id,
-              direction: PostingDirection.CREDIT,
-              amount: amounts.referrerShare,
-            },
-          ]
-        : []),
-      ...(tutakRevenue.greaterThan(0)
-        ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: tutakRevenue }]
+      ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
+      ...(amounts.tutak.greaterThan(0)
+        ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: amounts.tutak }]
         : []),
     ];
 

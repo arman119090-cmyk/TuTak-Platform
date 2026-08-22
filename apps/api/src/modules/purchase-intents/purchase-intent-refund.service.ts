@@ -12,6 +12,8 @@ import {
   PostingDirection,
   Prisma,
   PurchaseIntentStatus,
+  ReferralProgramVersion,
+  ReferrerType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
@@ -22,6 +24,15 @@ import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
 import { ReferralService, ResolvedReferrer } from '../referral/referral.service';
+
+/** One stored (never re-walked) snapshot level of a THREE_LEVEL_V2 `PurchaseIntent`'s referrer chain. */
+interface SnapshotLevel {
+  level: 1 | 2 | 3;
+  type: ReferrerType | null;
+  userId: string | null;
+  partnerId: string | null;
+  amountΔ: Decimal;
+}
 
 type Tx = Prisma.TransactionClient;
 
@@ -149,21 +160,45 @@ export class PurchaseIntentRefundService {
     if (intent.status !== PurchaseIntentStatus.CONFIRMED) {
       throw new BadRequestException('Only a confirmed purchase can be refunded');
     }
-    // `poolAmount`/`greenAmount`/`deferredAmount`/`referrerAmount` are
-    // nullable columns added by migration `20260817010000` with no backfill
-    // — every `settlePurchase` confirmation since has written all four
-    // unconditionally (even when the pool is genuinely zero), so `null` here
-    // can only mean this purchase was confirmed *before* that migration
-    // existed, when nothing captured its pool split at all. `?? 0` further
-    // down would silently reverse zero loyalty effects for a purchase that
-    // may really have granted real bonus — this repository has not yet
-    // reached a production launch with real customer data (see
-    // `docs/LAUNCH_READINESS_2026-08-16.md`), so no safe reconstruction is
-    // possible or necessary: launch requires a clean database with no
-    // pre-migration `PurchaseIntent` rows, and this fails closed instead of
-    // ever silently under-reversing one (independent audit, GitHub issue
-    // #28).
-    if (
+    // `poolAmount`/`greenAmount`/`deferredAmount` are nullable columns added
+    // by migration `20260817010000` with no backfill — every `settlePurchase`
+    // confirmation since has written them unconditionally (even when the
+    // pool is genuinely zero), so `null` here can only mean this purchase was
+    // confirmed *before* that migration existed, when nothing captured its
+    // pool split at all. `?? 0` further down would silently reverse zero
+    // loyalty effects for a purchase that may really have granted real bonus
+    // — this repository has not yet reached a production launch with real
+    // customer data (see `docs/LAUNCH_READINESS_2026-08-16.md`), so no safe
+    // reconstruction is possible or necessary: launch requires a clean
+    // database with no pre-migration `PurchaseIntent` rows, and this fails
+    // closed instead of ever silently under-reversing one (independent
+    // audit, GitHub issue #28).
+    //
+    // `programVersion` (2026-08-22 3-level rework) is the explicit,
+    // persisted eligibility boundary — which snapshot columns are the
+    // authoritative ones to check and later reverse. THREE_LEVEL_V2 rows
+    // always carry `referrer1..3Amount`/`tutakAmount` (written as 0, never
+    // left null, even when a level had no recipient); legacy (`null`) rows
+    // carry the old singular `referrerAmount` instead. Reversing a legacy
+    // row still never re-walks the live referral chain — see
+    // `reverseLoyaltyEffectsLegacy` — matching THREE_LEVEL_V2's own
+    // snapshot-only reversal.
+    if (intent.programVersion === ReferralProgramVersion.THREE_LEVEL_V2) {
+      if (
+        intent.poolAmount === null ||
+        intent.greenAmount === null ||
+        intent.deferredAmount === null ||
+        intent.referrer1Amount === null ||
+        intent.referrer2Amount === null ||
+        intent.referrer3Amount === null ||
+        intent.tutakAmount === null
+      ) {
+        throw new InternalServerErrorException(
+          `Purchase intent ${intent.id} is THREE_LEVEL_V2 but its pool-split snapshot is incomplete — cannot be ` +
+            'refunded automatically. Requires manual reconciliation.',
+        );
+      }
+    } else if (
       intent.poolAmount === null ||
       intent.greenAmount === null ||
       intent.deferredAmount === null ||
@@ -200,13 +235,16 @@ export class PurchaseIntentRefundService {
       data: { refundedAmount: cumulativeAfter },
     });
 
-    const { bonusRestored, ledgerTransactionId, shortfall } = await this.reverseLoyaltyEffects(
-      tx,
-      intent,
-      cumulativeBefore,
-      cumulativeAfter,
-      reason,
-    );
+    // Dispatch on the persisted eligibility boundary — never on today's
+    // config, and never by re-walking the live referral chain (spec:
+    // "subsequent refund/CDR/retry must never re-walk the current chain").
+    // A THREE_LEVEL_V2 row reverses against its own `referrer1..3Amount`/
+    // `tutakAmount` snapshot; a legacy row reverses exactly as it always
+    // has, against `referrerAmount`.
+    const { bonusRestored, ledgerTransactionId, shortfall } =
+      intent.programVersion === ReferralProgramVersion.THREE_LEVEL_V2
+        ? await this.reverseLoyaltyEffectsV2(tx, intent, cumulativeBefore, cumulativeAfter, reason)
+        : await this.reverseLoyaltyEffectsLegacy(tx, intent, cumulativeBefore, cumulativeAfter, reason);
 
     const refund = await tx.purchaseIntentRefund.create({
       data: {
@@ -253,7 +291,8 @@ export class PurchaseIntentRefundService {
   }
 
   /**
-   * Reverses every loyalty effect this purchase's own confirmation created,
+   * LEGACY single-level program only (`programVersion` null) — reverses
+   * every loyalty effect this purchase's own confirmation created,
    * proportional to `amount / grossAmount`, computed as the difference
    * between the cumulative entitlement at the new and old refunded totals —
    * so a full refund always reverses exactly the original amounts (the
@@ -268,8 +307,11 @@ export class PurchaseIntentRefundService {
    * percentages change between confirmation and refund, recomputing from
    * today's configuration would reverse different amounts than the ones on
    * the books (independent audit, GitHub issue #28, HEAD `0a9c7d5`).
+   *
+   * Untouched by the 2026-08-22 3-level rework — see `reverseLoyaltyEffectsV2`
+   * for the current program's own reversal, which never calls this.
    */
-  private async reverseLoyaltyEffects(
+  private async reverseLoyaltyEffectsLegacy(
     tx: Tx,
     intent: {
       id: string;
@@ -392,7 +434,7 @@ export class PurchaseIntentRefundService {
       await this.bonusEngine.restoreSpentBonus(wallet.id, bonusRestoreΔ, sourceTransactionId, reason, tx);
     }
 
-    const ledgerTransactionId = await this.postReversalLedger(tx, intent, {
+    const ledgerTransactionId = await this.postReversalLedgerLegacy(tx, intent, {
       poolΔ,
       greenClawed,
       deferredLiabilityToReverse,
@@ -408,23 +450,24 @@ export class PurchaseIntentRefundService {
   }
 
   /**
-   * The mirror image of `PurchaseIntentsService.postContributionLedger` +
-   * `postRedemptionCompensation`, scaled to this refund's proportional
-   * share — never `LedgerService.reverse()`, which flips a transaction's
-   * postings verbatim and has no notion of a partial amount.
+   * LEGACY single-level program only — the mirror image of
+   * `PurchaseIntentsService.postContributionLedger` + `postRedemptionCompensation`,
+   * scaled to this refund's proportional share — never `LedgerService.reverse()`,
+   * which flips a transaction's postings verbatim and has no notion of a
+   * partial amount.
    *
    * `poolΔ` (what the partner is credited back) always stays the full
    * theoretical merchandise-refund share — the partner's contribution
    * obligation shrinks by exactly the fraction of the sale reversed,
    * regardless of what later happened to the bonus it funded. `greenClawed`
    * / `deferredLiabilityToReverse` / `referrerClawed` are what actually came
-   * back from wallets (see `reverseLoyaltyEffects`), so `customerLiabilityΔ`
+   * back from wallets (see `reverseLoyaltyEffectsLegacy`), so `customerLiabilityΔ`
    * can be smaller than the theoretical share; `shortfall` — the difference
    * — is folded into `tutakRevenueΔ` so the posting still balances to
    * `poolΔ` by construction, the same remainder technique `tutakBaseΔ`
    * itself already uses.
    */
-  private async postReversalLedger(
+  private async postReversalLedgerLegacy(
     tx: Tx,
     intent: { id: string; partnerId: string },
     amounts: {
@@ -478,6 +521,280 @@ export class PurchaseIntentRefundService {
               },
             ]
           : []),
+        ...(tutakRevenueΔ.greaterThan(0)
+          ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: tutakRevenueΔ }]
+          : []),
+      ];
+
+      const transaction = await this.ledger.post(
+        {
+          kind: 'partner.contribution_refund',
+          sourceType: 'PurchaseIntent',
+          sourceId: intent.id,
+          postings,
+        },
+        tx,
+      );
+      primaryTransactionId = transaction.id;
+    }
+
+    if (amounts.bonusRestoreΔ.greaterThan(0)) {
+      await this.ledger.post(
+        {
+          kind: 'partner.bonus_redemption_compensation_refund',
+          sourceType: 'PurchaseIntent',
+          sourceId: intent.id,
+          postings: [
+            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: amounts.bonusRestoreΔ },
+            { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.bonusRestoreΔ },
+          ],
+        },
+        tx,
+      );
+    }
+
+    return primaryTransactionId;
+  }
+
+  /**
+   * THREE_LEVEL_V2 program only (2026-08-22 rework) — the 3-level
+   * generalisation of `reverseLoyaltyEffectsLegacy`, same proportional
+   * `amount / grossAmount` construction, but reversing up to three referrer
+   * legs plus `tutakAmount` instead of one referrer leg plus a residual
+   * `tutakBase`.
+   *
+   * Deliberately reads every referrer level from the `PurchaseIntent`'s own
+   * stored snapshot columns (`referrer1..3Type/UserId/PartnerId/Amount`) —
+   * never `ReferralService.resolveReferralChain` again. The spec is
+   * explicit that a refund/CDR-correction/retry must never re-walk the
+   * current chain; the attribution is immutable so re-walking would answer
+   * identically today, but reading the snapshot is what makes that
+   * guarantee true by construction rather than by coincidence, and is what
+   * lets a levels's *type* (a user who later somehow lost their invite row,
+   * for instance) never silently change what a historical reversal targets.
+   */
+  private async reverseLoyaltyEffectsV2(
+    tx: Tx,
+    intent: {
+      id: string;
+      customerId: string;
+      partnerId: string;
+      grossAmount: Decimal;
+      bonusAmountRequested: Decimal;
+      poolAmount: Decimal | null;
+      greenAmount: Decimal | null;
+      deferredAmount: Decimal | null;
+      referrer1Type: ReferrerType | null;
+      referrer1UserId: string | null;
+      referrer1PartnerId: string | null;
+      referrer1Amount: Decimal | null;
+      referrer2Type: ReferrerType | null;
+      referrer2UserId: string | null;
+      referrer2PartnerId: string | null;
+      referrer2Amount: Decimal | null;
+      referrer3Type: ReferrerType | null;
+      referrer3UserId: string | null;
+      referrer3PartnerId: string | null;
+      referrer3Amount: Decimal | null;
+      tutakAmount: Decimal | null;
+      sourceTransactionId: string | null;
+    },
+    cumulativeBefore: Decimal,
+    cumulativeAfter: Decimal,
+    reason: string,
+  ): Promise<{ bonusRestored: Decimal; ledgerTransactionId: string | null; shortfall: Decimal }> {
+    const grossAmount = intent.grossAmount;
+    const sourceTransactionId = intent.sourceTransactionId!;
+    const zero = new Decimal(0);
+
+    const shareAt = (total: Decimal, cumulative: Decimal): Decimal =>
+      total.lessThanOrEqualTo(0) ? zero : roundIssued(total.times(cumulative).dividedBy(grossAmount));
+    const delta = (total: Decimal): Decimal => shareAt(total, cumulativeAfter).minus(shareAt(total, cumulativeBefore));
+
+    // Only ever null for an intent whose snapshot was already validated
+    // complete by `postRefund` before this is reached.
+    const pool = intent.poolAmount ?? zero;
+    const green = intent.greenAmount ?? zero;
+    const deferred = intent.deferredAmount ?? zero;
+
+    const greenΔ = delta(green);
+    const deferredΔ = delta(deferred);
+    const bonusRestoreΔ = delta(intent.bonusAmountRequested);
+
+    const levels: SnapshotLevel[] = [
+      {
+        level: 1,
+        type: intent.referrer1Type,
+        userId: intent.referrer1UserId,
+        partnerId: intent.referrer1PartnerId,
+        amountΔ: delta(intent.referrer1Amount ?? zero),
+      },
+      {
+        level: 2,
+        type: intent.referrer2Type,
+        userId: intent.referrer2UserId,
+        partnerId: intent.referrer2PartnerId,
+        amountΔ: delta(intent.referrer2Amount ?? zero),
+      },
+      {
+        level: 3,
+        type: intent.referrer3Type,
+        userId: intent.referrer3UserId,
+        partnerId: intent.referrer3PartnerId,
+        amountΔ: delta(intent.referrer3Amount ?? zero),
+      },
+    ];
+    // The remainder, exactly like `ReferralService.computePoolSplit`'s own
+    // `tutak` — never independently rounded, so all six legs always sum to
+    // exactly `poolΔ`.
+    const poolΔ = delta(pool);
+    const tutakΔ = poolΔ.minus(greenΔ).minus(deferredΔ).minus(levels.reduce((s, l) => s.plus(l.amountΔ), zero));
+
+    // Same reasoning as the legacy method: `reverseAccrualLot` claws back
+    // only a lot's unspent remainder; whatever the theoretical share could
+    // not reclaim is `shortfall`, tracked explicitly rather than assumed.
+    let greenClawed = zero;
+    if (greenΔ.greaterThan(0)) {
+      const greenLot = await tx.bonusLot.findFirst({
+        where: { sourceTransactionId, type: BonusEntryType.ACCRUAL_PURCHASE },
+      });
+      if (greenLot) {
+        const clawed = await this.bonusEngine.reverseAccrualLot(greenLot.id, reason, greenΔ, tx);
+        greenClawed = clawed ?? zero;
+      }
+    }
+    const greenShortfall = greenΔ.minus(greenClawed);
+
+    // Per-level clawback: a USER-type level's share was accrued into their
+    // wallet as its own `BonusLot` (keyed by walletId, so a repeated
+    // recipient across levels — already impossible by construction, see
+    // `resolveReferralChain` — could never collide two levels' lots even if
+    // it somehow occurred). A PARTNER-type level never had a wallet lot to
+    // begin with — its whole `amountΔ` reverses directly in the ledger step
+    // below, mirroring how it was credited directly to their payable.
+    const perLevelClawed: Record<1 | 2 | 3, Decimal> = { 1: zero, 2: zero, 3: zero };
+    let referrerShortfall = zero;
+    for (const lvl of levels) {
+      if (lvl.type !== ReferrerType.USER || !lvl.userId || lvl.amountΔ.lessThanOrEqualTo(0)) continue;
+      const wallet = await tx.wallet.findUnique({ where: { userId: lvl.userId } });
+      const lot = wallet
+        ? await tx.bonusLot.findFirst({
+            where: { sourceTransactionId, type: BonusEntryType.ACCRUAL_REFERRAL, walletId: wallet.id },
+          })
+        : null;
+      const clawed = lot ? ((await this.bonusEngine.reverseAccrualLot(lot.id, reason, lvl.amountΔ, tx)) ?? zero) : zero;
+      perLevelClawed[lvl.level] = clawed;
+      referrerShortfall = referrerShortfall.plus(lvl.amountΔ.minus(clawed));
+    }
+
+    let deferredLiabilityToReverse = zero;
+    let deferredShortfall = zero;
+    if (deferredΔ.greaterThan(0)) {
+      const result = await this.deferredBonusLots.reverseForRefund(sourceTransactionId, deferredΔ, reason, tx);
+      deferredLiabilityToReverse = result.liabilityToReverse;
+      deferredShortfall = result.shortfall;
+    }
+
+    // Same as the legacy method: this purchase's own turnover contribution
+    // to other deferred lots and to the Referral Challenge (L1-only,
+    // unaffected by the 3-level rework — requirement 6) is a straight
+    // dollar-for-dollar relationship on the raw refunded amount, not the
+    // pool split.
+    const rawRefundΔ = cumulativeAfter.minus(cumulativeBefore);
+    await this.deferredBonusLots.reverseExternalContributions(sourceTransactionId, rawRefundΔ, reason, tx);
+    await this.referralService.reverseChallengeContribution(sourceTransactionId, rawRefundΔ, reason, tx);
+
+    const shortfall = greenShortfall.plus(referrerShortfall).plus(deferredShortfall);
+    if (shortfall.greaterThan(0)) {
+      this.logger.warn(
+        `Purchase intent ${intent.id} refund (3-level): ${shortfall.toString()} of the earned bonus liability ` +
+          'could not be reclaimed from wallets (already spent or expired) and was released to platform revenue.',
+      );
+    }
+
+    if (bonusRestoreΔ.greaterThan(0)) {
+      const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: intent.customerId } });
+      await this.bonusEngine.restoreSpentBonus(wallet.id, bonusRestoreΔ, sourceTransactionId, reason, tx);
+    }
+
+    const ledgerTransactionId = await this.postReversalLedgerV2(tx, intent, {
+      poolΔ,
+      greenClawed,
+      deferredLiabilityToReverse,
+      levels,
+      perLevelClawed,
+      tutakΔ,
+      bonusRestoreΔ,
+      shortfall,
+    });
+
+    return { bonusRestored: bonusRestoreΔ, ledgerTransactionId, shortfall };
+  }
+
+  /**
+   * THREE_LEVEL_V2 program only — the mirror image of
+   * `PurchaseIntentsService.postContributionLedger`'s 3-level posting,
+   * scaled to this refund's proportional share. Same construction as
+   * `postReversalLedgerLegacy`: `poolΔ` is the full theoretical share
+   * credited back to the partner; each USER-type level's clawed amount (not
+   * the theoretical share) reduces `BONUS_LIABILITY`; each PARTNER-type
+   * level's full theoretical `amountΔ` reverses directly against their own
+   * `PARTNER_PAYABLE` (a partner has no wallet lot to claw back from, so
+   * there is no shortfall concept on that leg); and `shortfall` — value a
+   * USER-type level could not reclaim — folds into `tutakRevenueΔ` so the
+   * posting still balances to `poolΔ` by construction.
+   */
+  private async postReversalLedgerV2(
+    tx: Tx,
+    intent: { id: string; partnerId: string },
+    amounts: {
+      poolΔ: Decimal;
+      greenClawed: Decimal;
+      deferredLiabilityToReverse: Decimal;
+      levels: SnapshotLevel[];
+      perLevelClawed: Record<1 | 2 | 3, Decimal>;
+      tutakΔ: Decimal;
+      bonusRestoreΔ: Decimal;
+      shortfall: Decimal;
+    },
+  ): Promise<string | null> {
+    if (amounts.poolΔ.lessThanOrEqualTo(0) && amounts.bonusRestoreΔ.lessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+    ]);
+
+    let primaryTransactionId: string | null = null;
+
+    if (amounts.poolΔ.greaterThan(0)) {
+      const userLevelsClawed = amounts.levels
+        .filter((l) => l.type === ReferrerType.USER)
+        .reduce((s, l) => s.plus(amounts.perLevelClawed[l.level]), new Decimal(0));
+      const customerLiabilityΔ = amounts.greenClawed.plus(amounts.deferredLiabilityToReverse).plus(userLevelsClawed);
+      const tutakRevenueΔ = amounts.tutakΔ.plus(amounts.shortfall);
+
+      const partnerReferrerPostings = await Promise.all(
+        amounts.levels
+          .filter((l) => l.type === ReferrerType.PARTNER && l.partnerId && l.amountΔ.greaterThan(0))
+          .map(async (l) => {
+            const account = await this.ledger.accountFor(
+              { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: l.partnerId! },
+              tx,
+            );
+            return { accountId: account.id, direction: PostingDirection.DEBIT, amount: l.amountΔ };
+          }),
+      );
+
+      const postings = [
+        { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: amounts.poolΔ },
+        ...(customerLiabilityΔ.greaterThan(0)
+          ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: customerLiabilityΔ }]
+          : []),
+        ...partnerReferrerPostings,
         ...(tutakRevenueΔ.greaterThan(0)
           ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: tutakRevenueΔ }]
           : []),

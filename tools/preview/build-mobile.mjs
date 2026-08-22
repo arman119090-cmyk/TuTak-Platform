@@ -18,7 +18,11 @@ await esbuild.build({
   format: 'iife',
   target: ['chrome120'],
   jsx: 'automatic',
-  loader: { '.js': 'jsx', '.png': 'dataurl', '.ttf': 'dataurl' },
+  // `.jpg`/`.jpeg` added alongside the pre-existing `.png`/`.ttf` for the v2
+  // Home hero (`docs/design/assets/tutak-home-hero-parrot-v2.jpg`,
+  // `BalanceCard.tsx`) — the first JPEG `require()`d from application code;
+  // everything else here is unchanged.
+  loader: { '.js': 'jsx', '.png': 'dataurl', '.jpg': 'dataurl', '.jpeg': 'dataurl', '.ttf': 'dataurl' },
   resolveExtensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
   alias: {
     // `apps/mobile` pins its own React (matching the Expo SDK) separately

@@ -10,8 +10,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { BalanceCard } from '../../components/BalanceCard';
+import { Button } from '../../components/Button';
 import { HomeHeader } from '../../components/HomeHeader';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { QuickAction } from '../../components/QuickAction';
+import { ReferralEntryCard } from '../../components/ReferralEntryCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import { ListRow } from '../../components/ListRow';
 import { EmptyState } from '../../components/EmptyState';
@@ -102,22 +105,44 @@ export function HomeScreen({ navigation }: Props) {
           </Pressable>
         ) : null}
 
-        {/* Primary actions. Pay is first — it is why the app exists. */}
+        {/* Primary action — master spec §1: "The primary action is a
+            full-width green 'Сканировать QR'. Below it: two equal quick
+            actions, 'Начать зарядку' and 'Найти партнёра'." The Jako wing
+            signature is permitted on this button: a safe, positive,
+            full-width primary CTA is exactly the icon-boundary table's
+            allowed case. */}
+        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[6] }}>
+          <Button
+            label={t('qr.scanQr')}
+            onPress={() => navigation.navigate('ScanQr')}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
+        </View>
+
         <View
           style={[
             styles.actions,
-            { paddingHorizontal: layout.screenPaddingX, marginTop: space[6], gap: space[3] },
+            { paddingHorizontal: layout.screenPaddingX, marginTop: space[3], gap: space[3] },
           ]}
         >
-          <QuickAction icon="qr-code" label={t('qr.myQr')} onPress={() => navigation.navigate('Main', { screen: 'Pay' } as never)} />
-          <QuickAction icon="scan" label={t('qr.scanQr')} onPress={() => navigation.navigate('ScanQr')} />
           <QuickAction
             icon="flash"
             label={t('ev.stations')}
             tone="reserved"
             onPress={() => navigation.navigate('Main', { screen: 'Partners', params: { filter: 'stations' } } as never)}
           />
-          <QuickAction icon="gift" label={t('referral.invite')} tone="pending" onPress={() => navigation.navigate('Referral')} />
+          <QuickAction
+            icon="map"
+            label={t('partners.findPartner')}
+            onPress={() => navigation.navigate('Main', { screen: 'Partners' } as never)}
+          />
+        </View>
+
+        {/* Referral entry — master spec §1: "sits immediately after the
+            quick actions — before long transaction history — because it is
+            a primary acquisition loop." */}
+        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[5] }}>
+          <ReferralEntryCard onPress={() => navigation.navigate('Referral')} />
         </View>
 
         <View style={{ paddingHorizontal: layout.screenPaddingX }}>

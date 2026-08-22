@@ -1,11 +1,20 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ImageBackground, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { JakoWatermark } from './Jako';
 import { Skeleton } from './Skeleton';
 import { formatPoints } from '../utils/format';
+
+// `TUTAK_V2_UI_ASSET_MANIFEST.md` / `README_ASSETS_V2.md`: 1600×800,
+// designed with the left side clear for app-rendered text and Jako at the
+// right; "keep the original file dimensions; crop with resizeMode
+// 'cover'... from the right-side subject position", and "do not put
+// permanent text into the hero artwork — the app must render localized
+// text over it" (already true here: every string below is `t(...)`).
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const heroImage = require('../../../assets/tutak-home-hero-parrot-v2.jpg');
 
 interface Props {
   available?: string;
@@ -15,42 +24,76 @@ interface Props {
 }
 
 /**
- * The hero of the app.
- *
- * The blue→violet gradient, edge-to-edge, with the available balance set
- * very large and everything else deliberately quiet — the one number a user
- * opens the app to see. It is the only full-bleed gradient in the app; the
- * primary button borrows the same ramp at a fraction of the area, which is
- * what ties the screen together without two things competing to be the
- * brightest.
- *
- * Jako sits behind it as a large, cropped, 10%-opacity silhouette: present
- * enough to make the card unmistakably TuTak, faint enough that it never
- * competes with the balance. The opacity is up from 7% because the mark now
- * sits on saturated blue rather than flat green, where white loses contrast.
+ * The hero of the app — Home only (see `TUTAK_UI_UX_MASTER_SPEC_V2.md` §1
+ * "Hero balance card... Jako artwork on the right, screen text on the
+ * left"). Master spec: "The screen must still work if every external
+ * partner image fails to load: use an initial/logo fallback with a neutral
+ * tinted surface" — the hero art here is a bundled TuTak asset, not a
+ * remote partner image, so it cannot fail to load the way a network image
+ * can, but `onError` still degrades to the plain brand gradient + Jako
+ * watermark this card used before the hero art existed, rather than an
+ * empty background, in case a bundler/platform ever fails to resolve it.
  */
 export function BalanceCard({ available, pending, reserved, loading }: Props) {
-  const { color, space, radius, text, gradients, glow } = useTheme();
+  const { color, space, radius, gradients, glow } = useTheme();
+  const [heroFailed, setHeroFailed] = useState(false);
+
+  if (heroFailed) {
+    return (
+      <LinearGradient
+        colors={[...gradients.primary]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.card, glow.md.native, { borderRadius: radius['2xl'], padding: space[6] }]}
+      >
+        <View style={styles.watermark} pointerEvents="none">
+          <JakoWatermark size={260} color={color.textInverse} opacity={0.1} />
+        </View>
+        <BalanceCardBody
+          available={available}
+          pending={pending}
+          reserved={reserved}
+          loading={loading}
+        />
+      </LinearGradient>
+    );
+  }
+
+  return (
+    <ImageBackground
+      source={heroImage}
+      resizeMode="cover"
+      onError={() => setHeroFailed(true)}
+      style={[styles.card, glow.md.native, { borderRadius: radius['2xl'] }]}
+      imageStyle={{ borderRadius: radius['2xl'] }}
+    >
+      {/* Accessibility-safe gradient scrim over the photo, left-weighted —
+          the same "gradient overlay only when text is shown on it" rule the
+          master spec gives partner cards, applied to TuTak's own hero. */}
+      <LinearGradient
+        colors={['rgba(11,93,59,0.82)', 'rgba(11,93,59,0.38)', 'rgba(11,93,59,0.05)']}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={[StyleSheet.absoluteFill, { borderRadius: radius['2xl'] }]}
+      />
+      <View style={{ padding: space[6] }}>
+        <BalanceCardBody
+          available={available}
+          pending={pending}
+          reserved={reserved}
+          loading={loading}
+        />
+      </View>
+    </ImageBackground>
+  );
+}
+
+function BalanceCardBody({ available, pending, reserved, loading }: Props) {
+  const { color, space, text } = useTheme();
   const { t } = useTranslation();
 
   return (
-    <LinearGradient
-      colors={[...gradients.primary]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[
-        styles.card,
-        glow.md.native,
-        {
-          borderRadius: radius['2xl'],
-          padding: space[6],
-        },
-      ]}
-    >
-      <View style={styles.watermark} pointerEvents="none">
-        <JakoWatermark size={260} color={color.textInverse} opacity={0.1} />
-      </View>
-
+    <>
       <Text style={[text.caption, { color: 'rgba(255,255,255,0.72)' }]}>
         {t('wallet.available')}
       </Text>
@@ -77,7 +120,7 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
           reserved={reserved ?? 0}
         />
       </View>
-    </LinearGradient>
+    </>
   );
 }
 

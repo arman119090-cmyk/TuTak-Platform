@@ -5,6 +5,7 @@ export * from './tokens/motion';
 export * from './tokens/premium';
 export * from './tokens/light-premium';
 export * from './brand/jako-paths';
+export * from './brand/v2-icons';
 export { buildCssVariables } from './css';
 
 import { semantic, bonusStateColors, palette, neutral, brand as brandRamp } from './tokens/color';

@@ -134,16 +134,20 @@ module.exports = ({ config }) => ({
   version: '0.1.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
-  // The app is dark-only. 'automatic' let the OS hand a light system
-  // background to anything the app had not painted itself.
-  userInterfaceStyle: 'dark',
+  // v2 is a light-only release (TUTAK_V2_CLAUDE_READ_FIRST.md: "the v2
+  // customer release is light-only... neither a fresh nor an existing
+  // customer [may] silently land in the legacy dark shell"). 'automatic'
+  // would hand a system-driven scheme to anything the app had not painted
+  // itself, which is exactly the partial-dark outcome that document forbids.
+  userInterfaceStyle: 'light',
   scheme: 'tutak',
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',
-    // The app's own ground colour, so the splash does not flash a different
-    // shade before the first frame renders.
-    backgroundColor: '#0A0A0F',
+    // The v2 app's own ground colour (`canvas` in TUTAK_V2_TOKENS.json /
+    // `neutral[50]` in packages/design), so the splash does not flash the
+    // legacy dark shell before the first frame renders.
+    backgroundColor: '#F8F9FB',
   },
   assetBundlePatterns: ['**/*'],
   ios: {

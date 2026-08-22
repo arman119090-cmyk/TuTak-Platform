@@ -1,6 +1,5 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,8 +11,8 @@ import { Surface } from '../../components/Surface';
 import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Button } from '../../components/Button';
+import { UserAvatar } from '../../components/UserAvatar';
 import { useAuthStore } from '../../../data/stores/authStore';
-import { useThemeStore, type ThemeMode } from '../../../data/stores/themeStore';
 import { authApi } from '../../../data/api/authApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
 
@@ -23,16 +22,11 @@ const LOCALE_LABELS: Record<string, string> = {
   en: 'English',
 };
 
-const APPEARANCE_MODES: ThemeMode[] = ['dark', 'light'];
-
 export function SettingsScreen() {
   const { t, i18n } = useTranslation();
-  const { color, space, text, radius, gradients } = useTheme();
+  const { color, space, text } = useTheme();
   const { user, deviceId, clear } = useAuthStore();
-  const { mode, setMode } = useThemeStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
-  const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
 
   const handleLogout = () => {
     Alert.alert(t('settings.logout'), t('auth.logoutConfirm'), [
@@ -53,20 +47,15 @@ export function SettingsScreen() {
 
   return (
     <Screen title={t('settings.title')}>
-      {/* Identity card — initials avatar avoids demanding a photo upload. */}
+      {/* Identity card. `UserAvatar` falls back to initials on the brand
+          gradient today — no `avatarUrl` field exists yet on
+          `AuthenticatedUserDto` (the optional avatar-upload backend from
+          `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §3 is not implemented in this
+          delivery; see the completion report) — and starts showing a real
+          photo the moment that field lands, with no change here. */}
       <Surface>
         <View style={styles.profile}>
-          {/* The gradient avatar is the one place a person's own identity
-              gets the brand ramp — small, and the only warm spot on an
-              otherwise informational screen. */}
-          <LinearGradient
-            colors={[...gradients.primary]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.avatar, { borderRadius: radius.full }]}
-          >
-            <Text style={[text.title, { color: color.textInverse }]}>{initials || '—'}</Text>
-          </LinearGradient>
+          <UserAvatar firstName={user?.firstName} lastName={user?.lastName} size={56} />
           <View style={[styles.flex, { marginLeft: space[4] }]}>
             <Text style={[text.headline, { color: color.textPrimary }]}>
               {user?.firstName} {user?.lastName}
@@ -94,30 +83,6 @@ export function SettingsScreen() {
                   ) : undefined
                 }
                 last={i === SUPPORTED_LOCALES.length - 1}
-              />
-            );
-          })}
-        </View>
-      </Surface>
-
-      <SectionHeader title={t('settings.appearance')} />
-      <Surface padded={false}>
-        <View style={{ paddingHorizontal: space[5] }}>
-          {APPEARANCE_MODES.map((appearanceMode, i) => {
-            const active = mode === appearanceMode;
-            return (
-              <ListRow
-                key={appearanceMode}
-                title={t(
-                  appearanceMode === 'dark' ? 'settings.appearanceDark' : 'settings.appearanceLight',
-                )}
-                onPress={() => setMode(appearanceMode)}
-                trailing={
-                  active ? (
-                    <Ionicons name="checkmark" size={20} color={color.primary} />
-                  ) : undefined
-                }
-                last={i === APPEARANCE_MODES.length - 1}
               />
             );
           })}
@@ -205,6 +170,5 @@ function SettingIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   profile: { flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
   settingIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 });

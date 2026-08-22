@@ -1,39 +1,40 @@
 import React, { createContext, useContext, useEffect } from 'react';
-import { tutakTheme, tutakMobileLightTheme, TutakTheme } from '@tutak/design';
+import { tutakMobileLightTheme, TutakTheme } from '@tutak/design';
 import { useThemeStore } from '../../data/stores/themeStore';
 
 /**
- * Two premium schemes, one behind a persisted user toggle: the dark scheme
- * this app shipped with first, and a light "glossy" scheme approved against
- * a reference design. `useThemeStore` holds which one is active, defaulting
- * to `'dark'` — so an install that never opens the new Appearance setting in
- * `SettingsScreen` renders exactly as before.
+ * The v2 customer release is light-only — `TUTAK_V2_CLAUDE_READ_FIRST.md`:
+ * "The legacy app defaults to dark today, while v2 is explicitly a
+ * light-only delivery. Migrate the default/persisted theme behaviour so
+ * neither a fresh nor an existing customer silently lands in the legacy
+ * dark shell; do not build an unapproved partial dark v2 variant." This
+ * provider therefore always renders `tutakMobileLightTheme` — the premium
+ * light "glossy" scheme already approved and shipped behind the old
+ * Appearance toggle (`SettingsScreen`, now removed) — never the dark
+ * `tutakTheme` a customer could previously opt into.
  *
- * Every screen still reads colour, spacing and radius through a single
- * `useTheme()` call. That is what makes the swap safe: nothing here branches
- * per screen, `TutakTheme` is one shape both objects satisfy (checked at
- * compile time in `@tutak/design`), and a screen that never hardcodes a
- * colour outside this context renders correctly under either theme with no
- * changes of its own.
+ * `useThemeStore` still exists (see its own docblock) purely to migrate a
+ * pre-v2 install's persisted `'dark'` value so nothing re-reads it as a
+ * live preference; this provider does not branch on `mode` any more, since
+ * there is only one theme to branch to.
+ *
+ * `TutakTheme` stays the type every screen reads through `useTheme()` —
+ * unchanged so no screen needs to change how it consumes colour, spacing or
+ * radius, even though only one concrete value now flows through it.
  */
-const ThemeContext = createContext<TutakTheme>(tutakTheme);
+const ThemeContext = createContext<TutakTheme>(tutakMobileLightTheme);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const mode = useThemeStore((s) => s.mode);
   const hydrate = useThemeStore((s) => s.hydrate);
 
   useEffect(() => {
-    // Non-blocking: the store already defaults to 'dark', which is the
-    // correct render for every screen mounted before this resolves — unlike
-    // auth, there is no wrong screen to show while a theme preference is
-    // still loading, so this never gates the splash the way `hydrate` on
-    // `authStore` does.
+    // Non-blocking, and now purely a one-time storage migration (see
+    // `themeStore.ts`) — the render is 'light' immediately regardless of
+    // whether this has resolved yet, so there is no loading state to gate.
     hydrate();
   }, [hydrate]);
 
-  const theme = mode === 'light' ? tutakMobileLightTheme : tutakTheme;
-
-  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={tutakMobileLightTheme}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): TutakTheme {

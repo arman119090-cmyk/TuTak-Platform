@@ -627,10 +627,59 @@ model PurchaseIntent {
   /// `confirmedAt`); a purchase that never confirms has nothing to refund.
   /// `tutakBase` is not stored — it was, and remains, `pool` minus the
   /// other three, by construction.
+  ///
+  /// `referrerAmount` (singular) is the LEGACY single-level program's own
+  /// snapshot — written only by a `PurchaseIntent` confirmed before the
+  /// 3-level referral rework shipped (2026-08-22). It is never written
+  /// (and never read) by a row whose `programVersion` is `THREE_LEVEL_V2`;
+  /// see `referrer1Amount`/`referrer2Amount`/`referrer3Amount` below for
+  /// that program's own per-level snapshot. This column is kept, unrenamed
+  /// and unbackfilled, purely so historical rows and their refunds stay
+  /// reconstructable exactly as they were confirmed — the transition
+  /// boundary this repository's referral rework requires never reinterprets
+  /// old rows into the new shape.
   poolAmount     Decimal? @db.Decimal(18, 4)
   greenAmount    Decimal? @db.Decimal(18, 4)
   deferredAmount Decimal? @db.Decimal(18, 4)
   referrerAmount Decimal? @db.Decimal(18, 4)
+
+  /// Which referral program priced this purchase — the explicit,
+  /// persisted eligibility boundary the 3-level referral rework requires
+  /// (2026-08-22): never inferred from `createdAt` vs. a release date.
+  /// Null for every row confirmed before this column existed (the legacy
+  /// single-level program, `referrerAmount` above); `THREE_LEVEL_V2` for
+  /// every row confirmed after. `PurchaseIntentRefundService` branches on
+  /// this to decide which snapshot columns to reverse, and never re-walks
+  /// the live referral chain for a refund — see that service.
+  programVersion ReferralProgramVersion?
+
+  /// The 3-level program's own per-level snapshot (2026-08-22 referral
+  /// rework) — who L1/L2/L3 actually were and what each was actually paid,
+  /// captured at confirmation exactly like `greenAmount`/`deferredAmount`
+  /// above, for the same reason: a later refund reverses the *historical*
+  /// allocation, never a recomputed one. Exactly one of
+  /// `referrerNUserId`/`referrerNPartnerId` is set per populated level,
+  /// matching `referrerNType` — same shape as `ReferralInvite`'s own
+  /// `referrerUserId`/`referrerPartnerId` pair. A level with no recipient
+  /// (chain shorter than 3) leaves that level's three columns null and its
+  /// `Amount` column unset/zero; its share is already folded into
+  /// `tutakAmount`, which is TuTak's residual share — `pool - green -
+  /// deferred - referrer1Amount - referrer2Amount - referrer3Amount` by
+  /// construction, never independently rounded, so all six legs always sum
+  /// to exactly `pool`.
+  referrer1Type    ReferrerType?
+  referrer1UserId    String?
+  referrer1PartnerId String?
+  referrer1Amount    Decimal?      @db.Decimal(18, 4)
+  referrer2Type      ReferrerType?
+  referrer2UserId    String?
+  referrer2PartnerId String?
+  referrer2Amount    Decimal?      @db.Decimal(18, 4)
+  referrer3Type      ReferrerType?
+  referrer3UserId    String?
+  referrer3PartnerId String?
+  referrer3Amount    Decimal?      @db.Decimal(18, 4)
+  tutakAmount        Decimal?      @db.Decimal(18, 4)
 
   bonusReservationId  String?
   sourceTransactionId String?
@@ -873,6 +922,22 @@ enum ReferralInviteStatus {
 enum ReferrerType {
   USER
   PARTNER
+}
+
+/// Explicit, persisted eligibility boundary between the referral engine's
+/// two economic models (2026-08-22 rework) — deliberately a stored value
+/// on each priced money operation, never inferred by comparing a row's
+/// `createdAt`/`confirmedAt` to a release date. `PurchaseIntent`/`EvSession`
+/// rows with this column null are LEGACY (confirmed before this enum
+/// existed, single-level referrer share only); `THREE_LEVEL_V2` rows are
+/// priced by the new six-leg pool split (`ReferralService.computePoolSplit`)
+/// and carry the new `referrer1Amount`/`referrer2Amount`/`referrer3Amount`/
+/// `tutakAmount` snapshot columns instead of the legacy `referrerAmount`.
+/// Nothing here retroactively reprices a legacy row, and no code path walks
+/// a legacy row's referral chain as though it were 3 levels deep.
+enum ReferralProgramVersion {
+  LEGACY_SINGLE_LEVEL
+  THREE_LEVEL_V2
 }
 
 /// Attribution record — who referred whom, set once at registration and
@@ -1180,10 +1245,40 @@ model EvSession {
   /// remains, `poolAmount - tutakUpfrontAmount - greenAmount -
   /// deferredAmount - referrerAmount`, by construction.
   poolAmount         Decimal?        @db.Decimal(18, 4)
+  /// @deprecated LEGACY single-level program only — the extra TuTak cut
+  /// taken off the top before the old green/deferred/referrer/tutak split.
+  /// The 3-level program (`programVersion = THREE_LEVEL_V2`) does not use
+  /// this: its whole pool splits directly by the six-leg rule, with no
+  /// separate upfront cut (`docs/NEXT_CLAUDE_TASK.md`, 2026-08-22 rework,
+  /// requirement 4 — a duplicate TuTak cut on top of the six-leg split is
+  /// explicitly forbidden). Null for any row settled under the new program.
   tutakUpfrontAmount Decimal?        @db.Decimal(18, 4)
   greenAmount        Decimal?        @db.Decimal(18, 4)
   deferredAmount     Decimal?        @db.Decimal(18, 4)
+  /// @deprecated LEGACY single-level program's own referrer snapshot — see
+  /// `PurchaseIntent.referrerAmount`'s docblock for why this is kept
+  /// unrenamed rather than reused by the new program.
   referrerAmount     Decimal?        @db.Decimal(18, 4)
+  /// Explicit, persisted eligibility boundary — same meaning as
+  /// `PurchaseIntent.programVersion`. Null for every session settled before
+  /// the 3-level referral rework; `THREE_LEVEL_V2` after.
+  programVersion     ReferralProgramVersion?
+  /// The 3-level program's own per-level snapshot — same shape and same
+  /// reasoning as `PurchaseIntent`'s own `referrer1Type`/etc. columns; see
+  /// that model's docblock.
+  referrer1Type      ReferrerType?
+  referrer1UserId    String?
+  referrer1PartnerId String?
+  referrer1Amount    Decimal?        @db.Decimal(18, 4)
+  referrer2Type      ReferrerType?
+  referrer2UserId    String?
+  referrer2PartnerId String?
+  referrer2Amount    Decimal?        @db.Decimal(18, 4)
+  referrer3Type      ReferrerType?
+  referrer3UserId    String?
+  referrer3PartnerId String?
+  referrer3Amount    Decimal?        @db.Decimal(18, 4)
+  tutakAmount        Decimal?        @db.Decimal(18, 4)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 

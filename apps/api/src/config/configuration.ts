@@ -163,27 +163,25 @@ export interface AppConfig {
     /** Spec §7. How long a PurchaseIntent waits for staff confirmation. */
     intentTimeoutSeconds: number;
     /**
-     * Spec §12. Fractions of `grossAmount × negotiatedRateBps` that go to,
-     * respectively: the customer's immediate green bonus, the customer's
-     * deferred/locked bonus, the direct referrer (or TuTak if none), and
-     * TuTak itself. Basis points so the four are exact integers that sum to
-     * 10 000 — `PurchasePolicyService` asserts this at boot rather than
-     * trusting the deployment config.
+     * 2026-08-22 3-level referral rework. Fractions of `grossAmount ×
+     * negotiatedRateBps` (the contribution pool) that go to, respectively:
+     * the customer's immediate green bonus, the customer's deferred/locked
+     * bonus, the Level-1/2/3 referrer (their whole chain, up to 3 people —
+     * a level with no recipient folds into TuTak's own leg instead of being
+     * left unpaid or redistributed), and TuTak itself. Basis points so all
+     * six are exact integers that sum to 10 000 —
+     * `assertPoolSplitSums` asserts this at boot rather than trusting the
+     * deployment config. Replaces the old single-leg `poolReferrerBps`
+     * (20/30/20/30) outright; do not resurrect it or reuse its old value
+     * for `poolReferrerL1Bps` — see docs/NEXT_CLAUDE_TASK.md and
+     * `docs/HARDENING_AUDIT_2026-08-16.md` for the full worked example.
      */
     poolGreenBps: number;
     poolDeferredBps: number;
-    poolReferrerBps: number;
+    poolReferrerL1Bps: number;
+    poolReferrerL2Bps: number;
+    poolReferrerL3Bps: number;
     poolTutakBps: number;
-    /**
-     * Business decision (2026-08-18, GitHub issue #28): FastCharge/EV
-     * settles like every other purchase now, not as its own flat-rate
-     * special case. TuTak takes this share of the EV commission pool
-     * immediately, off the top; what remains then splits by the *same*
-     * green/deferred/referrer/tutak ratios above as a confirmed
-     * PurchaseIntent — see `EvSessionsService.stopOnce`, which mirrors
-     * `PurchaseIntentsService.settlePurchase`.
-     */
-    evTutakUpfrontBps: number;
     /** Spec §13. Deferred lot unlock window, in months. */
     deferredWindowMonths: number;
     /** Spec §13. Cumulative gross turnover required to unlock a deferred lot. */
@@ -204,19 +202,29 @@ export interface AppConfig {
  * provider. A typo in one env var here would otherwise mint or destroy value
  * on every single purchase and nobody would notice until reconciliation.
  */
-function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
-  const total =
-    policy.poolGreenBps + policy.poolDeferredBps + policy.poolReferrerBps + policy.poolTutakBps;
+export function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
+  const legs = [
+    policy.poolGreenBps,
+    policy.poolDeferredBps,
+    policy.poolReferrerL1Bps,
+    policy.poolReferrerL2Bps,
+    policy.poolReferrerL3Bps,
+    policy.poolTutakBps,
+  ];
+  if (legs.some((bps) => !Number.isInteger(bps) || bps < 0 || bps > 10_000)) {
+    throw new Error(
+      `purchasePolicy pool split legs must each be an integer between 0 and 10000, got ` +
+        `green ${policy.poolGreenBps}, deferred ${policy.poolDeferredBps}, L1 ${policy.poolReferrerL1Bps}, ` +
+        `L2 ${policy.poolReferrerL2Bps}, L3 ${policy.poolReferrerL3Bps}, tutak ${policy.poolTutakBps}`,
+    );
+  }
+  const total = legs.reduce((sum, bps) => sum + bps, 0);
   if (total !== 10_000) {
     throw new Error(
       `purchasePolicy pool split must sum to 10000 basis points, got ${total} ` +
         `(green ${policy.poolGreenBps} + deferred ${policy.poolDeferredBps} + ` +
-        `referrer ${policy.poolReferrerBps} + tutak ${policy.poolTutakBps})`,
-    );
-  }
-  if (policy.evTutakUpfrontBps < 0 || policy.evTutakUpfrontBps > 10_000) {
-    throw new Error(
-      `purchasePolicy.evTutakUpfrontBps must be between 0 and 10000, got ${policy.evTutakUpfrontBps}`,
+        `L1 ${policy.poolReferrerL1Bps} + L2 ${policy.poolReferrerL2Bps} + L3 ${policy.poolReferrerL3Bps} + ` +
+        `tutak ${policy.poolTutakBps})`,
     );
   }
 }
@@ -382,16 +390,21 @@ const buildConfig = (): AppConfig => ({
       process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180',
       10,
     ),
-    // 20/30/20/30, per spec §12, in basis points of the contribution pool
-    // (not of the gross purchase — the pool is gross × negotiatedRateBps
-    // first, then split this way).
+    // 30/20/30/10/5/5 (TuTak/Green/Deferred/L1/L2/L3), per the 2026-08-22
+    // 3-level referral rework (docs/NEXT_CLAUDE_TASK.md, GitHub issue #28
+    // comment 5360139848) — six legs of the contribution pool in basis
+    // points (not of the gross purchase — the pool is gross ×
+    // negotiatedRateBps first, then split this way). Replaces the old
+    // single-leg `poolReferrerBps`/20-30-20-30 split outright; a level with
+    // no recipient (chain shorter than 3) has its share fold into TuTak's
+    // own leg as a residual — see `ReferralService.computePoolSplit`, the
+    // single place this split is actually computed.
     poolGreenBps: parseInt(process.env.PURCHASE_POOL_GREEN_BPS ?? '2000', 10),
     poolDeferredBps: parseInt(process.env.PURCHASE_POOL_DEFERRED_BPS ?? '3000', 10),
-    poolReferrerBps: parseInt(process.env.PURCHASE_POOL_REFERRER_BPS ?? '2000', 10),
+    poolReferrerL1Bps: parseInt(process.env.PURCHASE_POOL_REFERRER_L1_BPS ?? '1000', 10),
+    poolReferrerL2Bps: parseInt(process.env.PURCHASE_POOL_REFERRER_L2_BPS ?? '500', 10),
+    poolReferrerL3Bps: parseInt(process.env.PURCHASE_POOL_REFERRER_L3_BPS ?? '500', 10),
     poolTutakBps: parseInt(process.env.PURCHASE_POOL_TUTAK_BPS ?? '3000', 10),
-    // 40%, per the 2026-08-18 business decision — TuTak's upfront cut of the
-    // EV commission pool, before the remainder splits the normal way.
-    evTutakUpfrontBps: parseInt(process.env.EV_TUTAK_UPFRONT_BPS ?? '4000', 10),
     // 3 months / 54 000 AMD cumulative, per spec §13.
     deferredWindowMonths: parseInt(
       process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3',

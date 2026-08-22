@@ -298,9 +298,9 @@ describe('QR payments (integration)', () => {
   // it. `QrPaymentsController.redeem()` — the only way an HTTP caller could
   // ever invoke `QrPaymentsService.redeem()` — now refuses unconditionally.
   // Ordinary customer purchases settle exclusively through PurchaseIntent's
-  // 20/30/20/30 pool split with partner/cashier confirmation; nothing a
-  // customer, a script, or an attacker can do over the API reaches the old
-  // formula any more.
+  // six-leg pool split (green/deferred/L1/L2/L3/TuTak) with partner/cashier
+  // confirmation; nothing a customer, a script, or an attacker can do over
+  // the API reaches the old formula any more.
   describe('the /qr/redeem HTTP surface no longer settles money (GitHub issue #28)', () => {
     it('refuses a well-formed, authenticated request instead of settling it', async () => {
       const { user, wallet } = await createCustomer(prisma);

@@ -239,13 +239,13 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
 
       const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% = 5 pool
 
-      // FastCharge settles like every other purchase (business decision,
-      // 2026-08-18): TuTak takes 40% of the pool off the top (2), leaving
-      // 3 to split 20/30/20/30 — the customer's immediate green share is
-      // 20% of that = 0.6.
-      expect(result.bonusEarned).toBe('0.6');
+      // FastCharge settles like every other purchase (2026-08-22 3-level
+      // referral rework): the whole pool splits directly by the six-leg
+      // rule, no upfront TuTak cut — the customer's immediate green share
+      // is 20% of 5 = 1.
+      expect(result.bonusEarned).toBe('1');
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.lifetimeEarned.toFixed(4)).toBe('0.6000');
+      expect(after.lifetimeEarned.toFixed(4)).toBe('1.0000');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
@@ -311,8 +311,8 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       const result = await sessions.stop(session.id, user.id, {});
 
       // 1200 kWh x 100 AMD x 5% = 6000 pool, whatever the session's age.
-      // Green is 20% of the 60% remainder after TuTak's 40% cut = 720.
-      expect(result.bonusEarned).toBe('720');
+      // Green is 20% of the whole pool, directly (no upfront TuTak cut) = 1200.
+      expect(result.bonusEarned).toBe('1200');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 

@@ -89,11 +89,10 @@ describe('EV metering authorization (integration)', () => {
 
       const result = await sessions.stop(session.id, user.id, {});
       // 52 kWh x 100 AMD = 5200; 5% = 260 pool. Bounded, not fifty
-      // million. FastCharge settles like every other purchase (business
-      // decision, 2026-08-18): the customer's immediate green share is
-      // 20% of the 60% remainder after TuTak's 40% upfront cut =
-      // 260 * 0.6 * 0.2 = 31.2.
-      expect(result.bonusEarned).toBe('31.2');
+      // million. FastCharge settles like every other purchase (2026-08-22
+      // 3-level referral rework): the customer's immediate green share is
+      // 20% of the whole pool, directly — 260 * 0.2 = 52.
+      expect(result.bonusEarned).toBe('52');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 

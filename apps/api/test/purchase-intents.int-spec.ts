@@ -718,13 +718,32 @@ describe('PurchaseIntents (integration)', () => {
       expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000');
     });
 
-    it('splits the pool 20% green / 30% deferred / 20% referrer / 30% TuTak', async () => {
-      const referrer = await createCustomer(prisma);
-      await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER1' } });
+    /**
+     * Builds an N-level upward chain (0-3) ending in `referee` — L1 refers
+     * `referee`, L2 refers L1, L3 refers L2 — exactly the shape
+     * `ReferralService.resolveReferralChain` walks. Each level gets its own
+     * `ReferralCode`/`ReferralInvite` row, same as a real registration would
+     * produce. Returns the levels in order (`[0]` is L1, `[2]` is L3) so a
+     * test can assert against whichever levels it created.
+     */
+    const buildChain = async (refereeId: string, levels: number) => {
+      const users: { id: string }[] = [];
+      let childId = refereeId;
+      for (let i = 0; i < levels; i += 1) {
+        const { user } = await createCustomer(prisma);
+        await prisma.referralCode.create({ data: { userId: user.id, code: `TT-CHAIN-${childId}-${i}` } });
+        await prisma.referralInvite.create({
+          data: { referrerType: 'USER', referrerUserId: user.id, refereeUserId: childId },
+        });
+        users.push(user);
+        childId = user.id;
+      }
+      return users;
+    };
+
+    it('splits the pool 20% green / 30% deferred / 10%/5%/5% L1/L2/L3 / 30% TuTak with a full 3-level chain', async () => {
       const { user: referee } = await createCustomer(prisma);
-      await prisma.referralInvite.create({
-        data: { referrerType: 'USER', referrerUserId: referrer.user.id, refereeUserId: referee.id },
-      });
+      const [l1, l2, l3] = await buildChain(referee.id, 3);
 
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 }); // pool = 500
       const staff = await staffMember(partner.id);
@@ -733,7 +752,9 @@ describe('PurchaseIntents (integration)', () => {
         { partnerId: partner.id, grossAmount: '10000' },
         referee.id,
       );
-      await purchaseIntents.confirm(intent.id, staff.id);
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+
+      expect(confirmed.programVersion).toBe('THREE_LEVEL_V2');
 
       const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
       expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // green, 20% of 500
@@ -742,19 +763,96 @@ describe('PurchaseIntents (integration)', () => {
       expect(lot.amount.toFixed(4)).toBe('150.0000'); // deferred, 30% of 500
       expect(lot.requiredTurnover.toFixed(4)).toBe('54000.0000');
 
-      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
-      expect(referrerWallet.availableBonus.toFixed(4)).toBe('100.0000'); // referrer, 20% of 500
+      const l1Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l1!.id } });
+      expect(l1Wallet.availableBonus.toFixed(4)).toBe('50.0000'); // L1, 10% of 500
+      const l2Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l2!.id } });
+      expect(l2Wallet.availableBonus.toFixed(4)).toBe('25.0000'); // L2, 5% of 500
+      const l3Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l3!.id } });
+      expect(l3Wallet.availableBonus.toFixed(4)).toBe('25.0000'); // L3, 5% of 500
 
       const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
       });
       const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
-      // TuTak's 30% base (150) is the only thing left in revenue — the
-      // referrer's cut went to the referrer, not to TuTak.
+      // TuTak's 30% (150) — every level had a recipient, so nothing extra
+      // folds into it.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('150.0000');
-      // Partner owed 10000 (gross of the sale itself is out of scope here —
-      // this ledger only carries the pool) less by the 500 contribution.
       expect(partnerAccount.balance.toFixed(4)).toBe('500.0000');
+
+      // Sum invariant: all six legs reconstruct the pool exactly.
+      expect(
+        refereeWallet.availableBonus
+          .plus(lot.amount)
+          .plus(l1Wallet.availableBonus)
+          .plus(l2Wallet.availableBonus)
+          .plus(l3Wallet.availableBonus)
+          .plus(revenueAccount.balance.negated())
+          .toFixed(4),
+      ).toBe('500.0000');
+    });
+
+    it.each([0, 1, 2] as const)(
+      'chain length %i: the missing levels fold into TuTak, never left unpaid or redistributed',
+      async (chainLength) => {
+        const { user: referee } = await createCustomer(prisma);
+        const chain = await buildChain(referee.id, chainLength);
+
+        const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 }); // pool = 500
+        const staff = await staffMember(partner.id);
+
+        const intent = await purchaseIntents.create(
+          { partnerId: partner.id, grossAmount: '10000' },
+          referee.id,
+        );
+        await purchaseIntents.confirm(intent.id, staff.id);
+
+        // Every level that exists gets exactly its own bps share.
+        const expectedByLevel = [50, 25, 25]; // L1/L2/L3, AMD
+        for (let i = 0; i < chainLength; i += 1) {
+          const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: chain[i]!.id } });
+          expect(wallet.availableBonus.toFixed(4)).toBe(`${expectedByLevel[i]}.0000`);
+        }
+
+        const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+        // TuTak's base 30% (150) plus whatever the missing levels would have
+        // paid — never left unallocated, never redistributed to the levels
+        // that do exist.
+        const missingLevelsTotal = expectedByLevel.slice(chainLength).reduce((a, b) => a + b, 0);
+        expect(revenueAccount.balance.negated().toFixed(4)).toBe(`${150 + missingLevelsTotal}.0000`);
+      },
+    );
+
+    it('direct partner-referrer: only L1 is paid (via the partner-payable ledger), L2/L3 go to TuTak', async () => {
+      const referrerPartner = await createPartner(prisma, { displayName: 'Referrer Co' });
+      await prisma.referralCode.create({ data: { partnerId: referrerPartner.id, code: 'TP-CHAIN1' } });
+      const { user: referee } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: { referrerType: 'PARTNER', referrerPartnerId: referrerPartner.id, refereeUserId: referee.id },
+      });
+
+      const sellingPartner = await createPartner(prisma, { bonusAccrualRateBps: 500 }); // pool = 500
+      const staff = await staffMember(sellingPartner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: sellingPartner.id, grossAmount: '10000' },
+        referee.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      // A partner referrer is not a continuation of the chain — its own L1
+      // share lands in its PARTNER_PAYABLE, never a wallet, and L2/L3 simply
+      // don't exist (no user chain to walk further).
+      const referrerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: referrerPartner.id },
+      });
+      expect(referrerAccount.balance.negated().toFixed(4)).toBe('50.0000'); // L1, 10% of 500
+
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
+      expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share
+
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      // TuTak base 30% (150) + L2/L3's missing shares (25 + 25) = 200.
+      expect(revenueAccount.balance.negated().toFixed(4)).toBe('200.0000');
     });
 
     /**
@@ -768,19 +866,16 @@ describe('PurchaseIntents (integration)', () => {
      * referrerShare`) by testing the boundary it exists for, not just the
      * happy-path round numbers every other test in this file uses.
      */
-    it('reconciles green + deferred + referrer + TuTak to the pool exactly, even when no leg divides evenly', async () => {
-      const referrer = await createCustomer(prisma);
-      await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER9' } });
+    it('reconciles green + deferred + L1 + L2 + L3 + TuTak to the pool exactly, even when no leg divides evenly', async () => {
       const { user: referee } = await createCustomer(prisma);
-      await prisma.referralInvite.create({
-        data: { referrerType: 'USER', referrerUserId: referrer.user.id, refereeUserId: referee.id },
-      });
+      const [l1, l2, l3] = await buildChain(referee.id, 3);
 
       // 350 bps (3.5%, a valid on-grid rate — partners_commission_rate_on_grid
       // requires a multiple of 50 bps) of 9999.9999 is 349.999965, which
       // roundIssued truncates to 349.9999 — a pool that does not divide
-      // evenly by 20%/30%/20%/30% at 4 decimal places under any rounding
-      // rule, without needing an off-grid commission rate to get there.
+      // evenly by 20%/30%/10%/5%/5%/30% at 4 decimal places under any
+      // rounding rule, without needing an off-grid commission rate to get
+      // there.
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 350 });
       const staff = await staffMember(partner.id);
 
@@ -801,9 +896,12 @@ describe('PurchaseIntents (integration)', () => {
       const deferred = lot.amount;
       expect(deferred.toFixed(4)).toBe('104.9999'); // truncated down from 104.99997
 
-      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
-      const referrerShare = referrerWallet.availableBonus;
-      expect(referrerShare.toFixed(4)).toBe('69.9999'); // same bps as green
+      const l1Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l1!.id } });
+      expect(l1Wallet.availableBonus.toFixed(4)).toBe('34.9999'); // truncated down from 34.99999
+      const l2Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l2!.id } });
+      expect(l2Wallet.availableBonus.toFixed(4)).toBe('17.4999'); // truncated down from 17.499995
+      const l3Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l3!.id } });
+      expect(l3Wallet.availableBonus.toFixed(4)).toBe('17.4999');
 
       const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
@@ -811,19 +909,25 @@ describe('PurchaseIntents (integration)', () => {
       const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       const tutakRevenue = revenueAccount.balance.negated();
       // Not 104.9999 (what independently rounding 30% would give) —
-      // 105.0002, the residual that absorbs the other three legs'
-      // cumulative truncation loss. This is the number this test exists to
-      // pin: an independently-rounded fourth leg is exactly the bug this
+      // 105.0004, the residual that absorbs the other five legs' cumulative
+      // truncation loss. This is the number this test exists to pin: an
+      // independently-rounded sixth leg is exactly the bug this
       // construction prevents.
-      expect(tutakRevenue.toFixed(4)).toBe('105.0002');
+      expect(tutakRevenue.toFixed(4)).toBe('105.0004');
 
       // The reconciliation invariant itself: every leg the pool was split
       // into sums back to the pool, to the last ten-thousandth, with no
       // leg left over and none invented. LedgerService.post() would have
       // thrown rather than let this settle if it did not.
-      expect(green.plus(deferred).plus(referrerShare).plus(tutakRevenue).toFixed(4)).toBe(
-        pool.toFixed(4),
-      );
+      expect(
+        green
+          .plus(deferred)
+          .plus(l1Wallet.availableBonus)
+          .plus(l2Wallet.availableBonus)
+          .plus(l3Wallet.availableBonus)
+          .plus(tutakRevenue)
+          .toFixed(4),
+      ).toBe(pool.toFixed(4));
       expect(partnerAccount.balance.toFixed(4)).toBe(pool.toFixed(4));
 
       for (const account of await prisma.ledgerAccount.findMany()) {
@@ -832,13 +936,9 @@ describe('PurchaseIntents (integration)', () => {
       }
     });
 
-    it('credits the user referrer recurring green bonus on every subsequent purchase, no cap', async () => {
-      const referrer = await createCustomer(prisma);
-      await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER2' } });
+    it('credits the L1 referrer recurring green bonus on every subsequent purchase, no cap', async () => {
       const { user: referee } = await createCustomer(prisma);
-      await prisma.referralInvite.create({
-        data: { referrerType: 'USER', referrerUserId: referrer.user.id, refereeUserId: referee.id },
-      });
+      const [l1] = await buildChain(referee.id, 1);
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const staff = await staffMember(partner.id);
 
@@ -850,44 +950,12 @@ describe('PurchaseIntents (integration)', () => {
         await purchaseIntents.confirm(intent.id, staff.id);
       }
 
-      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
-      // 100 AMD referrer share on each of three purchases — recurring, not one-time.
-      expect(referrerWallet.availableBonus.toFixed(4)).toBe('300.0000');
+      const l1Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: l1!.id } });
+      // 50 AMD L1 share (10% of 500) on each of three purchases — recurring, not one-time.
+      expect(l1Wallet.availableBonus.toFixed(4)).toBe('150.0000');
     });
 
-    it('credits a partner referrer only via the settlement ledger, never a wallet bonus', async () => {
-      const referrerPartner = await createPartner(prisma, { displayName: 'Referrer Co' });
-      await prisma.referralCode.create({ data: { partnerId: referrerPartner.id, code: 'TP-REFER1' } });
-      const { user: referee } = await createCustomer(prisma);
-      await prisma.referralInvite.create({
-        data: {
-          referrerType: 'PARTNER',
-          referrerPartnerId: referrerPartner.id,
-          refereeUserId: referee.id,
-        },
-      });
-
-      const sellingPartner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
-      const staff = await staffMember(sellingPartner.id);
-
-      const intent = await purchaseIntents.create(
-        { partnerId: sellingPartner.id, grossAmount: '10000' },
-        referee.id,
-      );
-      await purchaseIntents.confirm(intent.id, staff.id);
-
-      // No wallet exists at all for a partner — the only place a partner
-      // referrer's cut can land is its own PARTNER_PAYABLE ledger account.
-      const referrerAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PARTNER_PAYABLE', partnerId: referrerPartner.id },
-      });
-      expect(referrerAccount.balance.negated().toFixed(4)).toBe('100.0000'); // 20% of 500
-
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
-      expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share
-    });
-
-    it('routes the referrer share to TuTak revenue when the customer has no referrer', async () => {
+    it('routes every referrer level share to TuTak revenue when the customer has no referrer at all', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const staff = await staffMember(partner.id);
@@ -899,8 +967,64 @@ describe('PurchaseIntents (integration)', () => {
       await purchaseIntents.confirm(intent.id, staff.id);
 
       const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
-      // TuTak base (150) + referrer share that has nowhere else to go (100) = 250.
+      // TuTak base (150) + L1/L2/L3 shares that have nowhere else to go
+      // (50 + 25 + 25) = 250.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('250.0000');
+    });
+
+    it('self-referral creates no chain and no extra payout', async () => {
+      const { user } = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: user.id, code: 'TT-SELF1' } });
+      // createAttribution already refuses to create a self-referral row —
+      // this simulates a forged/legacy row bypassing that guard, so
+      // resolveReferralChain's own defence in depth is what is under test.
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: user.id, refereeUserId: user.id },
+      });
+
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+      const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, user.id);
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
+      // Only the green share — no self-paid referral leg. 100 (green) + 0
+      // referral, never 150 (green + a self-referral share).
+      expect(wallet.availableBonus.toFixed(4)).toBe('100.0000');
+
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      // The whole 500 pool that isn't green/deferred (150 + 50 + 25 + 25 = 250) goes to TuTak.
+      expect(revenueAccount.balance.negated().toFixed(4)).toBe('250.0000');
+    });
+
+    it('a cycle in the referral chain stops the walk safely with no payout around the cycle', async () => {
+      // Forge a 2-cycle (A refers B, B refers A) directly — unreachable via
+      // createAttribution's normal immutable-attribution flow, but
+      // resolveReferralChain must still never credit money around it.
+      const { user: userA } = await createCustomer(prisma);
+      const { user: userB } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: userB.id, refereeUserId: userA.id },
+      });
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: userA.id, refereeUserId: userB.id },
+      });
+
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+      const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, userA.id);
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      // L1 (userB) is legitimately paid — that part of the chain is real.
+      const l1Wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: userB.id } });
+      expect(l1Wallet.availableBonus.toFixed(4)).toBe('50.0000');
+      // L2 would be userA again (the cycle) — refused, no payout to self.
+      const userAWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: userA.id } });
+      expect(userAWallet.availableBonus.toFixed(4)).toBe('100.0000'); // green only
+
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      // TuTak gets base (150) + the refused L2/L3 shares (25 + 25) = 200.
+      expect(revenueAccount.balance.negated().toFixed(4)).toBe('200.0000');
     });
   });
 

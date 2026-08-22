@@ -355,7 +355,7 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
 
     const referrerWalletBefore = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
-    expect(referrerWalletBefore.availableBonus.toFixed(4)).toBe('100.0000');
+    expect(referrerWalletBefore.availableBonus.toFixed(4)).toBe('50.0000'); // L1, 10% of 500
 
     await refunds.refund({
       purchaseIntentId: confirmed.id,
@@ -375,9 +375,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     });
     expect(lot.refundedAmount.toFixed(4)).toBe('150.0000');
 
-    // customerLiability (green 100 + deferred 150 + referrer 100) is fully
-    // reversed; only the referrerless remainder never existed here, so
-    // revenue (tutak base 150) also nets back to zero.
+    // customerLiability (green 100 + deferred 150 + L1 50) is fully
+    // reversed; L2/L3 never existed here (chain length 1), so revenue
+    // (tutak residual 200) also nets back to zero.
     const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
     const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('0.0000');
@@ -1115,4 +1115,103 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const untouched = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(untouched.refundedAmount.toFixed(4)).toBe('0.0000');
   });
+
+  // ── 2026-08-22 3-level rework: legacy/new program boundary ──────────────
+
+  it(
+    'reverses a legacy (programVersion null) purchase via its single referrerAmount snapshot only — ' +
+      'never re-walks the current referral chain, and L2/L3 are never touched even though a full 3-level ' +
+      'chain exists today',
+    async () => {
+      const { user: referee } = await createCustomer(prisma);
+
+      // A full 3-level chain, resolvable *today* — the temptation this test
+      // guards against is `reverseLoyaltyEffects` calling
+      // `resolveReferralChain` (or otherwise re-deriving L2/L3) for a row
+      // that predates the 3-level program, instead of trusting its own
+      // immutable snapshot.
+      const l1User = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: l1User.user.id, code: 'TT-LEGACY-L1' } });
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: l1User.user.id, refereeUserId: referee.id },
+      });
+      const l2User = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: l2User.user.id, code: 'TT-LEGACY-L2' } });
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: l2User.user.id, refereeUserId: l1User.user.id },
+      });
+      const l3User = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: l3User.user.id, code: 'TT-LEGACY-L3' } });
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: l3User.user.id, refereeUserId: l2User.user.id },
+      });
+
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+      const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, referee.id);
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+
+      // This purchase actually confirmed under THREE_LEVEL_V2 (there's no
+      // other program available going forward) — L1/L2/L3 each really were
+      // paid their own share.
+      expect(confirmed.programVersion).toBe('THREE_LEVEL_V2');
+      const l1Before = await prisma.wallet.findUniqueOrThrow({ where: { userId: l1User.user.id } });
+      const l2Before = await prisma.wallet.findUniqueOrThrow({ where: { userId: l2User.user.id } });
+      const l3Before = await prisma.wallet.findUniqueOrThrow({ where: { userId: l3User.user.id } });
+      expect(l1Before.availableBonus.toFixed(4)).toBe('50.0000');
+      expect(l2Before.availableBonus.toFixed(4)).toBe('25.0000');
+      expect(l3Before.availableBonus.toFixed(4)).toBe('25.0000');
+
+      // Roll this specific row back to the shape a genuinely legacy
+      // (pre-rework) confirmation would have left: no program version, a
+      // single `referrerAmount` snapshot (the old single-level share) and
+      // none of the per-level columns populated. No purchase can actually
+      // reach this shape going forward — this reconstructs the boundary
+      // directly, the same way the "pool-split snapshot is missing" test
+      // above does for the pre-`20260817010000` boundary.
+      await prisma.purchaseIntent.update({
+        where: { id: confirmed.id },
+        data: {
+          programVersion: null,
+          referrerAmount: '100',
+          referrer1Type: null,
+          referrer1UserId: null,
+          referrer1PartnerId: null,
+          referrer1Amount: null,
+          referrer2Type: null,
+          referrer2UserId: null,
+          referrer2PartnerId: null,
+          referrer2Amount: null,
+          referrer3Type: null,
+          referrer3UserId: null,
+          referrer3PartnerId: null,
+          referrer3Amount: null,
+          tutakAmount: null,
+        },
+      });
+
+      await refunds.refund({
+        purchaseIntentId: confirmed.id,
+        reason: 'full return',
+        actorId: staff.id,
+        idempotencyKey: 'legacy-boundary-1',
+      });
+
+      // The legacy path resolves *today's* direct referrer (L1 — the same
+      // person legacy attribution always meant) via `resolveReferrer` and
+      // claws back proportional to the legacy `referrerAmount` (100) — but
+      // only ever finds L1's real V2-confirmed lot (50), so it reclaims
+      // that in full; nothing more exists to reclaim.
+      const l1After = await prisma.wallet.findUniqueOrThrow({ where: { userId: l1User.user.id } });
+      expect(l1After.availableBonus.toFixed(4)).toBe('0.0000');
+
+      // L2 and L3 are untouched by the refund — proof the legacy reversal
+      // never re-walked the chain to find them. If it had, both would have
+      // been clawed back too (they were never part of the legacy snapshot).
+      const l2After = await prisma.wallet.findUniqueOrThrow({ where: { userId: l2User.user.id } });
+      const l3After = await prisma.wallet.findUniqueOrThrow({ where: { userId: l3User.user.id } });
+      expect(l2After.availableBonus.toFixed(4)).toBe('25.0000');
+      expect(l3After.availableBonus.toFixed(4)).toBe('25.0000');
+    },
+  );
 });

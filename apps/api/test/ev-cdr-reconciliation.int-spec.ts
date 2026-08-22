@@ -205,18 +205,19 @@ describe('Roaming CDR reconciliation (integration)', () => {
       const { wallet, session } = await roamingSession('20');
       const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       // 5% of 2000 = 100 pool. FastCharge settles like every other purchase
-      // (business decision, 2026-08-18): TuTak takes 40% off the top,
-      // leaving 60 to split 20/30/20/30 — the customer's immediate green
-      // share, the only leg that reaches the wallet, is 20% of 60 = 12.
-      expect(before.pendingBonus.plus(before.availableBonus).toString()).toBe('12');
+      // (2026-08-22 3-level referral rework): the whole pool splits
+      // directly by the six-leg rule, no upfront TuTak cut — the
+      // customer's immediate green share, the only leg that reaches the
+      // wallet, is 20% of 100 = 20.
+      expect(before.pendingBonus.plus(before.availableBonus).toString()).toBe('20');
 
       cpoReports(15, 1500);
       await reconciler.reconcilePending();
 
-      // 5% of 1500 = 75 pool → 45 remainder → 9 green, the same fraction
-      // (75%) of the original green the correction reduced the bill by.
+      // 5% of 1500 = 75 pool → 15 green, the same fraction (75%) of the
+      // original green the correction reduced the bill by.
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('9');
+      expect(after.pendingBonus.plus(after.availableBonus).toString()).toBe('15');
       await assertWalletIntegrity(prisma, wallet.id);
       expect((await cdrFor(session.id)).reconciliation).toBe(EvCdrReconciliation.CORRECTED);
     });
@@ -242,10 +243,10 @@ describe('Roaming CDR reconciliation (integration)', () => {
       const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PLATFORM_REVENUE' },
       });
-      // Pool 100 (5% of 2000) → remainder 60 → tutakUpfront 40, green 12,
-      // deferred 18, referrer 12 (absent referrer, folds into revenue),
-      // tutakBase 18. Partner DEBIT 100, liability CREDIT 30, revenue
-      // CREDIT 70.
+      // Pool 100 (5% of 2000) → green 20, deferred 30 (liability 50), no
+      // referrer at any level so L1/L2/L3 are all 0 and TuTak's residual is
+      // 100 − 20 − 30 = 50. Partner DEBIT 100, liability CREDIT 50, revenue
+      // CREDIT 50.
       const partnerBefore = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
       expect(partnerBefore.balance.toFixed(4)).toBe('100.0000');
 
@@ -253,13 +254,11 @@ describe('Roaming CDR reconciliation (integration)', () => {
       await reconciler.reconcilePending();
 
       // Corrected to 75% of the bill: every leg the pool split granted is
-      // clawed back by that same fraction, including the ones that never
-      // touch the wallet — tutakUpfront 40→30 (clawback 10) and the
-      // remainder's own tutak share 18→13.5 (clawback 4.5), on top of the
-      // wallet-side green 12→9 (3) and deferred 18→13.5 (4.5) and the
-      // absent referrer's 12→9 (3). Total clawback: 10+4.5+3+4.5+3 = 25,
-      // which is exactly 25% of the original pool of 100 — the same
-      // fraction the transaction amount itself was corrected by.
+      // clawed back by that same fraction — green 20→15 (clawback 5),
+      // deferred 30→22.5 (clawback 7.5), on top of TuTak's own residual
+      // 50→37.5 (clawback 12.5). Total clawback: 5+7.5+12.5 = 25, which is
+      // exactly 25% of the original pool of 100 — the same fraction the
+      // transaction amount itself was corrected by.
       const correction = await prisma.ledgerTransaction.findFirstOrThrow({
         where: { kind: 'ev.charging.contribution.correction', sourceType: 'Transaction' },
         include: { postings: true },
@@ -273,9 +272,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
       expect(partnerLeg?.direction).toBe('CREDIT');
       expect(partnerLeg?.amount.toFixed(4)).toBe('25.0000');
       expect(liabilityLeg?.direction).toBe('DEBIT');
-      expect(liabilityLeg?.amount.toFixed(4)).toBe('7.5000');
+      expect(liabilityLeg?.amount.toFixed(4)).toBe('12.5000');
       expect(revenueLeg?.direction).toBe('DEBIT');
-      expect(revenueLeg?.amount.toFixed(4)).toBe('17.5000');
+      expect(revenueLeg?.amount.toFixed(4)).toBe('12.5000');
 
       const partnerAfter = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
       expect(partnerAfter.balance.toFixed(4)).toBe('75.0000');
@@ -303,23 +302,25 @@ describe('Roaming CDR reconciliation (integration)', () => {
       await sessions.reportMeterValue(session.id, '20', referee.id);
       const result = await sessions.stop(session.id, referee.id, {});
 
-      // Pool 100 → remainder 60 → deferred 18, referrer 12.
+      // Pool 100 → deferred 30 (20% green/30% deferred, unchanged), L1
+      // (this referrer, the direct referrer) 10% of 100 = 10.
       const lotBefore = await prisma.deferredBonusLot.findFirstOrThrow({
         where: { sourceTransactionId: result.transactionId },
       });
-      expect(lotBefore.amount.toFixed(4)).toBe('18.0000');
+      expect(lotBefore.amount.toFixed(4)).toBe('30.0000');
       const referrerBefore = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
-      expect(referrerBefore.availableBonus.toFixed(4)).toBe('12.0000');
+      expect(referrerBefore.availableBonus.toFixed(4)).toBe('10.0000');
 
       cpoReports(15, 1500);
       await reconciler.reconcilePending();
 
       // Corrected to 75% of the original bill — every leg the pool split
-      // granted is clawed back by that same fraction, not just green.
+      // granted is clawed back by that same fraction, not just green:
+      // deferred 30→22.5 (clawback 7.5), L1 10→7.5 (clawback 2.5).
       const lotAfter = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lotBefore.id } });
-      expect(lotAfter.refundedAmount.toFixed(4)).toBe('4.5000');
+      expect(lotAfter.refundedAmount.toFixed(4)).toBe('7.5000');
       const referrerAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
-      expect(referrerAfter.availableBonus.toFixed(4)).toBe('9.0000');
+      expect(referrerAfter.availableBonus.toFixed(4)).toBe('7.5000');
 
       await assertWalletIntegrity(prisma, wallet.id);
       await assertWalletIntegrity(prisma, referrerWallet.id);

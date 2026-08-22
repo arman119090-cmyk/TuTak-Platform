@@ -45,6 +45,17 @@ export interface AppConfig {
   };
   rateLimit: { ttlSeconds: number; maxRequests: number };
   cors: { origins: string[] };
+  /**
+   * Raw value of `TRUST_PROXY`, handed to Express's `app.set('trust proxy', …)`
+   * verbatim when non-empty — a specific IP/CIDR, a comma-separated list of
+   * them, or one of Express's named subnets (`loopback`, `linklocal`,
+   * `uniquelocal`), matching this deployment's actual reverse proxy. Empty
+   * means untrusted (`main.ts` leaves Express's own default, `false`, in
+   * effect): `req.ip` is then the real TCP peer address, which a client
+   * cannot spoof via `X-Forwarded-For`. See `main.ts` for why a bare hop
+   * count (`1`) is deliberately not accepted here.
+   */
+  trustProxy: string;
   ocpi: {
     partyId: string;
     countryCode: string;
@@ -302,6 +313,7 @@ const buildConfig = (): AppConfig => ({
     ttlSeconds: parseInt(process.env.RATE_LIMIT_TTL_SECONDS ?? '60', 10),
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS ?? '120', 10),
   },
+  trustProxy: (process.env.TRUST_PROXY ?? '').trim(),
   cors: {
     origins: (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean),
   },

@@ -7,13 +7,14 @@ import { startTracing, stopTracing } from './common/observability/tracing';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
+import { resolveTrustProxySetting } from './config/trust-proxy';
 import { StructuredLogger } from './common/observability/structured-logger';
 
 const tracingEnabled = startTracing({
@@ -64,10 +65,45 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Behind an ingress every request shares the proxy's address, which turns
-  // the per-IP throttler into one platform-wide bucket and records the proxy
-  // in every audit row (§M6).
-  app.set('trust proxy', 1);
+  // P2 finding, security/financial hardening pass (2026-08-19, live pentest
+  // on this exact codebase, 2026-08-19): this used to be `app.set('trust
+  // proxy', 1)` unconditionally, in every environment. A bare hop count of
+  // `1` tells Express "trust the outermost `X-Forwarded-For` entry as the
+  // real client IP" with no check on *who* set that header — safe only when
+  // exactly one real reverse proxy sits in front of this process and that
+  // proxy itself strips any inbound `X-Forwarded-For` before appending its
+  // own. This deployment topology has no such proxy, so any client could
+  // set `X-Forwarded-For` to a fresh value on every request and have it
+  // believed as the source IP, fully bypassing every per-IP rate limit —
+  // login, OTP request/verify, password reset — since `ThrottlerGuard` keys
+  // its bucket on `req.ip`, which `trust proxy` controls.
+  //
+  // Fixed by trusting nothing unless an operator explicitly says what to
+  // trust: `TRUST_PROXY` must name the real proxy — an IP, a CIDR subnet, a
+  // comma-separated list, or one of Express's named subnets (`loopback`,
+  // `linklocal`, `uniquelocal`) — never a bare hop count, which trusts
+  // whoever is topologically closest rather than a specific, known address.
+  // Left unset (the default), Express's own default (`false`) applies:
+  // `req.ip` is the real TCP peer address, which a client cannot spoof via a
+  // header, and every rate limit keys on the address that actually made the
+  // request.
+  const trustProxyConfig = resolveTrustProxySetting(config.get('trustProxy', { infer: true }));
+  if (trustProxyConfig) {
+    app.set('trust proxy', trustProxyConfig);
+  } else if (isPublicFacing) {
+    // Not a boot failure — a deployment with no reverse proxy at all is a
+    // valid topology, and `req.ip` is still correct and unspoofable there.
+    // But a deployment that *does* have a proxy and forgot to set this would
+    // otherwise silently rate-limit every client behind it as one address,
+    // which is worth a loud line on a public-facing boot either way.
+    new Logger('Bootstrap').warn(
+      'TRUST_PROXY is not set. Per-IP rate limiting and audit logging will use the direct ' +
+        'TCP peer address for every request. If this deployment sits behind a real reverse ' +
+        'proxy or load balancer, set TRUST_PROXY to its IP/CIDR so client IPs resolve ' +
+        'correctly — leaving it unset there under-counts abuse from behind that proxy rather ' +
+        'than over-trusting a spoofable header, which is the safe direction to be wrong in.',
+    );
+  }
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 

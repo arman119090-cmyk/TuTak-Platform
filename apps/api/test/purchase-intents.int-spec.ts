@@ -757,6 +757,81 @@ describe('PurchaseIntents (integration)', () => {
       expect(partnerAccount.balance.toFixed(4)).toBe('500.0000');
     });
 
+    /**
+     * P1 finding, 2026-08-19 hardening brief ("consistent financial
+     * economics"): a reconciliation test asserting green + deferred +
+     * referrer share + TuTak's own leg sum exactly to the pool, deliberately
+     * chosen so no individual leg divides evenly — the exact condition that
+     * used to leave a residue `LedgerService.post()` rejected as an
+     * unbalanced transaction (see `settlePurchase`'s own docblock). Proves
+     * the residual construction (`tutakBase = pool - green - deferred -
+     * referrerShare`) by testing the boundary it exists for, not just the
+     * happy-path round numbers every other test in this file uses.
+     */
+    it('reconciles green + deferred + referrer + TuTak to the pool exactly, even when no leg divides evenly', async () => {
+      const referrer = await createCustomer(prisma);
+      await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER9' } });
+      const { user: referee } = await createCustomer(prisma);
+      await prisma.referralInvite.create({
+        data: { referrerType: 'USER', referrerUserId: referrer.user.id, refereeUserId: referee.id },
+      });
+
+      // 350 bps (3.5%, a valid on-grid rate — partners_commission_rate_on_grid
+      // requires a multiple of 50 bps) of 9999.9999 is 349.999965, which
+      // roundIssued truncates to 349.9999 — a pool that does not divide
+      // evenly by 20%/30%/20%/30% at 4 decimal places under any rounding
+      // rule, without needing an off-grid commission rate to get there.
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 350 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '9999.9999' },
+        referee.id,
+      );
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+
+      const pool = new Decimal('349.9999');
+      expect(confirmed.poolAmount!.toFixed(4)).toBe(pool.toFixed(4));
+
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
+      const green = refereeWallet.availableBonus;
+      expect(green.toFixed(4)).toBe('69.9999'); // truncated down from 69.99998, never up
+
+      const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: referee.id } });
+      const deferred = lot.amount;
+      expect(deferred.toFixed(4)).toBe('104.9999'); // truncated down from 104.99997
+
+      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
+      const referrerShare = referrerWallet.availableBonus;
+      expect(referrerShare.toFixed(4)).toBe('69.9999'); // same bps as green
+
+      const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      const tutakRevenue = revenueAccount.balance.negated();
+      // Not 104.9999 (what independently rounding 30% would give) —
+      // 105.0002, the residual that absorbs the other three legs'
+      // cumulative truncation loss. This is the number this test exists to
+      // pin: an independently-rounded fourth leg is exactly the bug this
+      // construction prevents.
+      expect(tutakRevenue.toFixed(4)).toBe('105.0002');
+
+      // The reconciliation invariant itself: every leg the pool was split
+      // into sums back to the pool, to the last ten-thousandth, with no
+      // leg left over and none invented. LedgerService.post() would have
+      // thrown rather than let this settle if it did not.
+      expect(green.plus(deferred).plus(referrerShare).plus(tutakRevenue).toFixed(4)).toBe(
+        pool.toFixed(4),
+      );
+      expect(partnerAccount.balance.toFixed(4)).toBe(pool.toFixed(4));
+
+      for (const account of await prisma.ledgerAccount.findMany()) {
+        const replayed = await ledger.replayBalance(account.id);
+        expect(account.balance.toFixed(4)).toBe(replayed.toFixed(4));
+      }
+    });
+
     it('credits the user referrer recurring green bonus on every subsequent purchase, no cap', async () => {
       const referrer = await createCustomer(prisma);
       await prisma.referralCode.create({ data: { userId: referrer.user.id, code: 'TT-REFER2' } });

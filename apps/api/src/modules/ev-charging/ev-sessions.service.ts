@@ -33,7 +33,11 @@ import { IdempotencyService } from '../ledger/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { OutboxService } from '../ledger/outbox.service';
 import { PartnersService } from '../partners/partners.service';
-import { ReferralService, ResolvedReferrer } from '../referral/referral.service';
+import {
+  CURRENT_REFERRAL_PROGRAM_VERSION,
+  ReferralChainLevel,
+  ReferralService,
+} from '../referral/referral.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 import { StartSessionDto, StopSessionDto } from './dto/start-session.dto';
 
@@ -65,6 +69,23 @@ const ENERGY_SCALE = 3;
  */
 const MAX_BILLABLE_HOURS = new Decimal(24);
 const STALE_SESSION_HOURS = 24;
+
+/** JSON-safe wire shape of one `ReferralChainLevel`, for the outbox payload — plain strings only. */
+type SerializedChainLevel =
+  | { level: 1 | 2 | 3; type: 'USER'; userId: string }
+  | { level: 1 | 2 | 3; type: 'PARTNER'; partnerId: string };
+
+function serializeChainLevel(entry: ReferralChainLevel): SerializedChainLevel {
+  return entry.type === 'USER'
+    ? { level: entry.level, type: 'USER', userId: entry.userId }
+    : { level: entry.level, type: 'PARTNER', partnerId: entry.partnerId };
+}
+
+function deserializeChainLevel(entry: SerializedChainLevel): ReferralChainLevel {
+  return entry.type === 'USER'
+    ? { level: entry.level, type: 'USER', userId: entry.userId }
+    : { level: entry.level, type: 'PARTNER', partnerId: entry.partnerId };
+}
 
 function parseEnergyKwh(value: string): Decimal {
   const reading = parseMoney(value, 'energyKwh');
@@ -128,24 +149,19 @@ export class EvSessionsService {
     // block in `stopOnce` for why the event is published atomically with
     // the wallet-side effects it accounts for.
     this.outbox.register('ev.contribution.ledger_post', async (payload) => {
-      const referrerType = payload.referrerType as 'USER' | 'PARTNER' | null;
-      const referrerId = payload.referrerId as string | null;
-      const referrer: ResolvedReferrer | null =
-        referrerType === 'USER'
-          ? { type: 'USER', userId: referrerId! }
-          : referrerType === 'PARTNER'
-            ? { type: 'PARTNER', partnerId: referrerId! }
-            : null;
+      const chain = (payload.chain as SerializedChainLevel[] | undefined) ?? [];
 
       await this.postEvContributionLedgerIdempotent(
         payload.partnerId as string,
         {
           pool: new Decimal(payload.pool as string),
-          tutakUpfront: new Decimal(payload.tutakUpfront as string),
           green: new Decimal(payload.green as string),
           deferred: new Decimal(payload.deferred as string),
-          referrerShare: new Decimal(payload.referrerShare as string),
-          referrer,
+          l1: new Decimal(payload.l1 as string),
+          l2: new Decimal(payload.l2 as string),
+          l3: new Decimal(payload.l3 as string),
+          tutak: new Decimal(payload.tutak as string),
+          chain: chain.map(deserializeChainLevel),
         },
         payload.transactionId as string,
       );
@@ -502,31 +518,29 @@ export class EvSessionsService {
         : false;
       if (rateBps && canEarn && !affiliated) {
         const paidPortion = cost.minus(bonusToApply);
-        // Business decision (2026-08-18, GitHub issue #28): FastCharge
-        // settles like every other purchase now, not as its own flat-rate
-        // special case where the customer received the whole commission
-        // pool and TuTak received nothing. `pool` is unchanged from before
-        // — the paid-portion commission this connector's partner rate
-        // produces — but it is no longer handed to the customer whole:
-        // TuTak takes `evTutakUpfrontBps` off the top, and what remains
-        // splits by the *same* green/deferred/referrer/tutak ratios a
-        // confirmed PurchaseIntent uses — see
-        // `PurchaseIntentsService.settlePurchase`, which this mirrors leg
-        // for leg.
+        // Business decision (2026-08-22, 3-level referral rework):
+        // FastCharge's whole commission pool splits directly by the same
+        // six-leg rule a confirmed PurchaseIntent uses — no separate
+        // upfront TuTak cut layered on top (requirement 4: a duplicate
+        // TuTak cut on the EV pool, on top of the six-leg split, is
+        // explicitly forbidden). `pool` is the paid-portion commission this
+        // connector's partner rate produces, unchanged from before; what
+        // changed is that it is no longer cut once for TuTak and then split
+        // again — see `ReferralService.computePoolSplit`, which this calls
+        // and only this, exactly as `PurchaseIntentsService.settlePurchase`
+        // does.
         const pool = roundIssued(paidPortion.times(rateBps).dividedBy(10_000));
-        const policy = this.config.get('purchasePolicy', { infer: true });
-        const tutakUpfront = roundIssued(pool.times(policy.evTutakUpfrontBps).dividedBy(10_000));
-        const remainder = pool.minus(tutakUpfront);
-        green = roundIssued(remainder.times(policy.poolGreenBps).dividedBy(10_000));
-        const deferred = roundIssued(remainder.times(policy.poolDeferredBps).dividedBy(10_000));
-        const referrerShare = roundIssued(remainder.times(policy.poolReferrerBps).dividedBy(10_000));
-        // The remainder's own tutak share is never independently rounded —
-        // same reasoning as `PurchaseIntentsService.settlePurchase`'s
-        // `tutakBase`, so the three legs above always sum to `remainder`.
+        const chain = await this.referralService.resolveReferralChain(userId);
+        const split = this.referralService.computePoolSplit(pool, chain);
+        green = split.green;
+        const deferred = split.deferred;
+        const { l1, l2, l3, tutak } = split;
+        const l1Entry = chain.find((c) => c.level === 1) ?? null;
+        const l2Entry = chain.find((c) => c.level === 2) ?? null;
+        const l3Entry = chain.find((c) => c.level === 3) ?? null;
 
         const walletId = await this.walletService.getWalletIdForUser(userId);
         const partnerId = session.connector.station.partnerId;
-        const referrer = await this.referralService.resolveReferrer(userId);
 
         // The wallet-side effects and the durable promise to post their
         // accounting entry commit atomically: a wallet credit must never
@@ -542,10 +556,22 @@ export class EvSessionsService {
             where: { id: session.id },
             data: {
               poolAmount: pool,
-              tutakUpfrontAmount: tutakUpfront,
               greenAmount: green,
               deferredAmount: deferred,
-              referrerAmount: referrerShare,
+              programVersion: CURRENT_REFERRAL_PROGRAM_VERSION,
+              referrer1Type: l1Entry?.type ?? null,
+              referrer1UserId: l1Entry?.type === 'USER' ? l1Entry.userId : null,
+              referrer1PartnerId: l1Entry?.type === 'PARTNER' ? l1Entry.partnerId : null,
+              referrer1Amount: l1,
+              referrer2Type: l2Entry?.type ?? null,
+              referrer2UserId: l2Entry?.type === 'USER' ? l2Entry.userId : null,
+              referrer2PartnerId: l2Entry?.type === 'PARTNER' ? l2Entry.partnerId : null,
+              referrer2Amount: l2,
+              referrer3Type: l3Entry?.type ?? null,
+              referrer3UserId: l3Entry?.type === 'USER' ? l3Entry.userId : null,
+              referrer3PartnerId: l3Entry?.type === 'PARTNER' ? l3Entry.partnerId : null,
+              referrer3Amount: l3,
+              tutakAmount: tutak,
             },
           });
 
@@ -565,9 +591,10 @@ export class EvSessionsService {
             await this.deferredBonusLots.createLot(userId, deferred, transaction.id, tx);
           }
 
-          if (referrer?.type === 'USER' && referrerShare.greaterThan(0)) {
-            await this.referralService.creditUserReferrerShare(referrer.userId, referrerShare, transaction.id, tx);
-          }
+          // Every USER-type level (L1/L2/L3) straight into its wallet; a
+          // PARTNER-type level is skipped here — its share is the
+          // ledger-only leg `postEvContributionLedgerIdempotent` posts.
+          await this.referralService.creditChainShares(chain, { l1, l2, l3 }, transaction.id, tx);
 
           await this.outbox.publish(tx, {
             aggregateType: 'Transaction',
@@ -576,12 +603,13 @@ export class EvSessionsService {
             payload: {
               partnerId,
               pool: pool.toString(),
-              tutakUpfront: tutakUpfront.toString(),
               green: green.toString(),
               deferred: deferred.toString(),
-              referrerShare: referrerShare.toString(),
-              referrerType: referrer?.type ?? null,
-              referrerId: referrer ? (referrer.type === 'USER' ? referrer.userId : referrer.partnerId) : null,
+              l1: l1.toString(),
+              l2: l2.toString(),
+              l3: l3.toString(),
+              tutak: tutak.toString(),
+              chain: chain.map(serializeChainLevel),
               transactionId: transaction.id,
             },
           });
@@ -604,7 +632,7 @@ export class EvSessionsService {
         // turns "logged and forgotten" into "guaranteed, just not yet".
         await this.postEvContributionLedgerIdempotent(
           partnerId,
-          { pool, tutakUpfront, green, deferred, referrerShare, referrer },
+          { pool, green, deferred, l1, l2, l3, tutak, chain },
           transaction.id,
         ).catch((e) =>
           this.logger.error(
@@ -663,12 +691,11 @@ export class EvSessionsService {
   /**
    * Posts the accounting side of an EV session's settled contribution pool:
    * the partner now owes the platform the full pool, split across the
-   * customer's immediate green bonus, their deferred/locked bonus, the
-   * referrer's cut, and TuTak's own share (the upfront cut plus its share
-   * of what remained). Mirrors `PurchaseIntentsService.postContributionLedger`
-   * leg for leg — same account types, same directions — because this is
-   * the same kind of event (a partner-funded contribution pool), not a new
-   * one.
+   * customer's immediate green bonus, their deferred/locked bonus, up to
+   * three referrer legs, and TuTak's own residual share. Mirrors
+   * `PurchaseIntentsService.postContributionLedger` leg for leg — same
+   * account types, same directions — because this is the same kind of
+   * event (a partner-funded contribution pool), not a new one.
    *
    * Idempotent: both the fast-path attempt in `stopOnce` and the outbox's
    * guaranteed retry call this for the same `transactionId`, and — in a
@@ -684,11 +711,13 @@ export class EvSessionsService {
     partnerId: string,
     amounts: {
       pool: Decimal;
-      tutakUpfront: Decimal;
       green: Decimal;
       deferred: Decimal;
-      referrerShare: Decimal;
-      referrer: ResolvedReferrer | null;
+      l1: Decimal;
+      l2: Decimal;
+      l3: Decimal;
+      tutak: Decimal;
+      chain: ReferralChainLevel[];
     },
     transactionId: string,
   ) {
@@ -707,43 +736,34 @@ export class EvSessionsService {
         this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
       ]);
 
-      // tutakBaseOfRemainder — the remainder's own tutak share, never
-      // independently rounded, exactly like `postContributionLedger`'s own
-      // `tutakBase`.
-      const tutakBaseOfRemainder = amounts.pool
-        .minus(amounts.tutakUpfront)
-        .minus(amounts.green)
-        .minus(amounts.deferred)
-        .minus(amounts.referrerShare);
+      const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
+      const userLiability = amounts.chain
+        .filter((c) => c.type === 'USER')
+        .reduce((sum, c) => sum.plus(byLevel[c.level]), new Decimal(0));
+      const customerLiability = amounts.green.plus(amounts.deferred).plus(userLiability);
 
-      const customerLiability = amounts.green
-        .plus(amounts.deferred)
-        .plus(amounts.referrer?.type === 'USER' ? amounts.referrerShare : 0);
-      const tutakRevenue = amounts.tutakUpfront
-        .plus(tutakBaseOfRemainder)
-        .plus(amounts.referrer ? 0 : amounts.referrerShare);
+      const partnerReferrerPostings = await Promise.all(
+        amounts.chain
+          .filter((c): c is ReferralChainLevel & { type: 'PARTNER' } => c.type === 'PARTNER')
+          .map(async (c) => {
+            const share = byLevel[c.level];
+            if (share.lessThanOrEqualTo(0)) return null;
+            const account = await this.ledger.accountFor(
+              { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: c.partnerId },
+              tx,
+            );
+            return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
+          }),
+      );
 
       const postings = [
         { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.pool },
         ...(customerLiability.greaterThan(0)
           ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
           : []),
-        ...(amounts.referrer?.type === 'PARTNER' && amounts.referrerShare.greaterThan(0)
-          ? [
-              {
-                accountId: (
-                  await this.ledger.accountFor(
-                    { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.referrer.partnerId },
-                    tx,
-                  )
-                ).id,
-                direction: PostingDirection.CREDIT,
-                amount: amounts.referrerShare,
-              },
-            ]
-          : []),
-        ...(tutakRevenue.greaterThan(0)
-          ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: tutakRevenue }]
+        ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
+        ...(amounts.tutak.greaterThan(0)
+          ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: amounts.tutak }]
           : []),
       ];
 

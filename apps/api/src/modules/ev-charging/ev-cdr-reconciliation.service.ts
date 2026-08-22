@@ -5,6 +5,8 @@ import {
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  ReferralProgramVersion,
+  ReferrerType,
   TransactionStatus,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -18,6 +20,15 @@ import { LedgerService } from '../ledger/ledger.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
+
+/** One stored (never re-walked) snapshot level of a THREE_LEVEL_V2 `EvSession`'s referrer chain. */
+interface SnapshotLevel {
+  level: 1 | 2 | 3;
+  type: ReferrerType | null;
+  userId: string | null;
+  partnerId: string | null;
+  amount: Decimal;
+}
 
 /**
  * How far our figure and the CPO's may differ before it counts as a
@@ -242,17 +253,20 @@ export class EvCdrReconciliationService {
         const originalCost = transaction.amount;
         const applied = transaction.bonusAppliedAmount;
 
-        // Points earned — across every leg the 2026-08-18 pool split grants,
-        // not just the customer's own green share — on money that was never
-        // spent.
+        // Points earned — across every leg the pool split grants, not just
+        // the customer's own green share — on money that was never spent.
         //
-        // `session.greenAmount`/`deferredAmount`/`referrerAmount` are the
-        // *historical* snapshot `EvSessionsService.stopOnce` actually
-        // posted (independent audit, GitHub issue #28: recomputing from
-        // today's `purchasePolicy` would claw back different amounts than
-        // the ones on the books). `poolAmount` null means this session
-        // never reached the earning-eligible branch at all — nothing was
-        // split, so there is nothing here to claw back.
+        // `session.greenAmount`/`deferredAmount`/etc. are the *historical*
+        // snapshot `EvSessionsService.stopOnce` actually posted (independent
+        // audit, GitHub issue #28: recomputing from today's `purchasePolicy`
+        // would claw back different amounts than the ones on the books).
+        // `poolAmount` null means this session never reached the
+        // earning-eligible branch at all — nothing was split, so there is
+        // nothing here to claw back.
+        //
+        // `programVersion` (2026-08-22 3-level rework) picks which snapshot
+        // shape is authoritative — never re-derived from today's referral
+        // chain (spec: a correction must never re-walk the current chain).
         if (session.poolAmount && session.poolAmount.greaterThan(0)) {
           const paidPortionBefore = Decimal.max(originalCost.minus(applied), new Decimal(1));
           const paidPortionAfter = cpoCost.minus(Decimal.min(applied, cpoCost));
@@ -261,93 +275,11 @@ export class EvCdrReconciliationService {
             return Decimal.max(granted.minus(keep), new Decimal(0));
           };
 
-          const greenAmount = session.greenAmount ?? new Decimal(0);
-          const deferredAmount = session.deferredAmount ?? new Decimal(0);
-          const referrerAmount = session.referrerAmount ?? new Decimal(0);
-          const tutakUpfrontAmount = session.tutakUpfrontAmount ?? new Decimal(0);
-          // The remainder's own tutak share — never independently stored,
-          // rebuilt from the same four snapshot columns
-          // `postEvContributionLedgerIdempotent` itself derives
-          // `tutakBaseOfRemainder` from, so a clawback on it uses exactly
-          // the value the original posting actually credited.
-          const tutakBaseAmount = session.poolAmount
-            .minus(tutakUpfrontAmount)
-            .minus(greenAmount)
-            .minus(deferredAmount)
-            .minus(referrerAmount);
-
-          const greenClawback = clawbackShare(greenAmount);
-          const deferredClawback = clawbackShare(deferredAmount);
-          const referrerClawback = clawbackShare(referrerAmount);
-          const tutakUpfrontClawback = clawbackShare(tutakUpfrontAmount);
-          const tutakBaseClawback = clawbackShare(tutakBaseAmount);
-
-          // Resolved once regardless of which legs are non-zero — needed for
-          // both the wallet-side referral-lot reversal below and the ledger
-          // correction's routing (a USER referrer's share lives in bonus
-          // liability, a PARTNER referrer's in their own payable).
-          const referrer = await this.referralService.resolveReferrer(session.userId);
-
-          if (greenClawback.greaterThan(0)) {
-            const greenLot = await tx.bonusLot.findFirst({
-              where: { sourceTransactionId: transaction.id, type: BonusEntryType.ACCRUAL_PURCHASE },
-            });
-            if (greenLot) {
-              await this.bonusEngine.reverseAccrualLot(greenLot.id, 'ev_cdr_overbilled', greenClawback, tx);
-            }
+          if (session.programVersion === ReferralProgramVersion.THREE_LEVEL_V2) {
+            await this.correctOverchargeLegsV2(tx, session, transaction.id, clawbackShare);
+          } else {
+            await this.correctOverchargeLegsLegacy(tx, session, transaction.id, clawbackShare);
           }
-
-          if (deferredClawback.greaterThan(0)) {
-            await this.deferredBonusLots.reverseForRefund(
-              transaction.id,
-              deferredClawback,
-              'ev_cdr_overbilled',
-              tx,
-            );
-          }
-
-          if (referrerClawback.greaterThan(0) && referrer?.type === 'USER') {
-            const referrerWallet = await tx.wallet.findUnique({ where: { userId: referrer.userId } });
-            const referralLot = referrerWallet
-              ? await tx.bonusLot.findFirst({
-                  where: {
-                    sourceTransactionId: transaction.id,
-                    type: BonusEntryType.ACCRUAL_REFERRAL,
-                    walletId: referrerWallet.id,
-                  },
-                })
-              : null;
-            if (referralLot) {
-              await this.bonusEngine.reverseAccrualLot(
-                referralLot.id,
-                'ev_cdr_overbilled',
-                referrerClawback,
-                tx,
-              );
-            }
-          }
-
-          // The double-entry side of the same correction. The original
-          // `ev.charging.contribution` posting (partner debited the full
-          // pool; bonus liability, an optional referrer-partner, and
-          // platform revenue credited their shares) was computed against
-          // the original, now-superseded cost — without this, correcting
-          // the customer's wallet and the Transaction row still leaves the
-          // partner owing the old inflated pool and platform revenue
-          // overstated by exactly the clawed-back amount. The ledger would
-          // stop reconstructing partner balances from immutable postings,
-          // which is the one invariant this accounting system exists to
-          // hold (independent audit, GitHub issue #28).
-          await this.postEvCorrectionLedgerIdempotent(tx, {
-            partnerId: session.connector.station.partnerId,
-            transactionId: transaction.id,
-            tutakUpfrontClawback,
-            tutakBaseClawback,
-            greenClawback,
-            deferredClawback,
-            referrerClawback,
-            referrer,
-          });
         }
 
         // Points spent on a bill that turned out to be smaller than the hold.
@@ -407,11 +339,218 @@ export class EvCdrReconciliationService {
   }
 
   /**
-   * The ledger side of an overcharge correction: reverses, proportionally,
-   * the exact double-entry postings `EvSessionsService`'s
-   * `postEvContributionLedgerIdempotent` made for this transaction —
-   * partner payable, bonus liability, an optional referrer-partner's own
-   * payable, and platform revenue.
+   * LEGACY single-level program only (`session.programVersion` null) — the
+   * exact clawback logic this file always had, moved into its own method
+   * unchanged so `correctOvercharge` can dispatch on `programVersion`
+   * instead of re-deriving the split it should reverse.
+   */
+  private async correctOverchargeLegsLegacy(
+    tx: Tx,
+    session: {
+      userId: string;
+      poolAmount: Decimal | null;
+      greenAmount: Decimal | null;
+      deferredAmount: Decimal | null;
+      referrerAmount: Decimal | null;
+      tutakUpfrontAmount: Decimal | null;
+      connector: { station: { partnerId: string } };
+    },
+    transactionId: string,
+    clawbackShare: (granted: Decimal) => Decimal,
+  ): Promise<void> {
+    const poolAmount = session.poolAmount ?? new Decimal(0);
+    const greenAmount = session.greenAmount ?? new Decimal(0);
+    const deferredAmount = session.deferredAmount ?? new Decimal(0);
+    const referrerAmount = session.referrerAmount ?? new Decimal(0);
+    const tutakUpfrontAmount = session.tutakUpfrontAmount ?? new Decimal(0);
+    // The remainder's own tutak share — never independently stored,
+    // rebuilt from the same four snapshot columns
+    // `postEvContributionLedgerIdempotent` itself derives
+    // `tutakBaseOfRemainder` from, so a clawback on it uses exactly the
+    // value the original posting actually credited.
+    const tutakBaseAmount = poolAmount
+      .minus(tutakUpfrontAmount)
+      .minus(greenAmount)
+      .minus(deferredAmount)
+      .minus(referrerAmount);
+
+    const greenClawback = clawbackShare(greenAmount);
+    const deferredClawback = clawbackShare(deferredAmount);
+    const referrerClawback = clawbackShare(referrerAmount);
+    const tutakUpfrontClawback = clawbackShare(tutakUpfrontAmount);
+    const tutakBaseClawback = clawbackShare(tutakBaseAmount);
+
+    // Resolved once regardless of which legs are non-zero — needed for both
+    // the wallet-side referral-lot reversal below and the ledger
+    // correction's routing (a USER referrer's share lives in bonus
+    // liability, a PARTNER referrer's in their own payable). Legacy-only:
+    // this row predates the 3-level rework, so its single referrer is still
+    // resolved live — same as `PurchaseIntentRefundService`'s own legacy path.
+    const referrer = await this.referralService.resolveReferrer(session.userId);
+
+    if (greenClawback.greaterThan(0)) {
+      const greenLot = await tx.bonusLot.findFirst({
+        where: { sourceTransactionId: transactionId, type: BonusEntryType.ACCRUAL_PURCHASE },
+      });
+      if (greenLot) {
+        await this.bonusEngine.reverseAccrualLot(greenLot.id, 'ev_cdr_overbilled', greenClawback, tx);
+      }
+    }
+
+    if (deferredClawback.greaterThan(0)) {
+      await this.deferredBonusLots.reverseForRefund(transactionId, deferredClawback, 'ev_cdr_overbilled', tx);
+    }
+
+    if (referrerClawback.greaterThan(0) && referrer?.type === 'USER') {
+      const referrerWallet = await tx.wallet.findUnique({ where: { userId: referrer.userId } });
+      const referralLot = referrerWallet
+        ? await tx.bonusLot.findFirst({
+            where: {
+              sourceTransactionId: transactionId,
+              type: BonusEntryType.ACCRUAL_REFERRAL,
+              walletId: referrerWallet.id,
+            },
+          })
+        : null;
+      if (referralLot) {
+        await this.bonusEngine.reverseAccrualLot(referralLot.id, 'ev_cdr_overbilled', referrerClawback, tx);
+      }
+    }
+
+    // The double-entry side of the same correction. The original
+    // `ev.charging.contribution` posting (partner debited the full pool;
+    // bonus liability, an optional referrer-partner, and platform revenue
+    // credited their shares) was computed against the original,
+    // now-superseded cost — without this, correcting the customer's wallet
+    // and the Transaction row still leaves the partner owing the old
+    // inflated pool and platform revenue overstated by exactly the
+    // clawed-back amount. The ledger would stop reconstructing partner
+    // balances from immutable postings, which is the one invariant this
+    // accounting system exists to hold (independent audit, GitHub issue #28).
+    await this.postEvCorrectionLedgerLegacyIdempotent(tx, {
+      partnerId: session.connector.station.partnerId,
+      transactionId,
+      tutakUpfrontClawback,
+      tutakBaseClawback,
+      greenClawback,
+      deferredClawback,
+      referrerClawback,
+      referrer,
+    });
+  }
+
+  /**
+   * THREE_LEVEL_V2 program only (2026-08-22 rework) — same proportional
+   * `clawbackShare` construction as the legacy method, generalised to up to
+   * three referrer legs plus `tutakAmount`, reading every level from the
+   * `EvSession`'s own stored snapshot (`referrer1..3Type/UserId/PartnerId/
+   * Amount`) — never `ReferralService.resolveReferralChain` again, matching
+   * `PurchaseIntentRefundService.reverseLoyaltyEffectsV2`'s identical
+   * reasoning: a correction must never re-walk the current chain.
+   */
+  private async correctOverchargeLegsV2(
+    tx: Tx,
+    session: {
+      greenAmount: Decimal | null;
+      deferredAmount: Decimal | null;
+      referrer1Type: ReferrerType | null;
+      referrer1UserId: string | null;
+      referrer1PartnerId: string | null;
+      referrer1Amount: Decimal | null;
+      referrer2Type: ReferrerType | null;
+      referrer2UserId: string | null;
+      referrer2PartnerId: string | null;
+      referrer2Amount: Decimal | null;
+      referrer3Type: ReferrerType | null;
+      referrer3UserId: string | null;
+      referrer3PartnerId: string | null;
+      referrer3Amount: Decimal | null;
+      tutakAmount: Decimal | null;
+      connector: { station: { partnerId: string } };
+    },
+    transactionId: string,
+    clawbackShare: (granted: Decimal) => Decimal,
+  ): Promise<void> {
+    const zero = new Decimal(0);
+    const greenAmount = session.greenAmount ?? zero;
+    const deferredAmount = session.deferredAmount ?? zero;
+    const tutakAmount = session.tutakAmount ?? zero;
+
+    const levels: SnapshotLevel[] = [
+      {
+        level: 1,
+        type: session.referrer1Type,
+        userId: session.referrer1UserId,
+        partnerId: session.referrer1PartnerId,
+        amount: clawbackShare(session.referrer1Amount ?? zero),
+      },
+      {
+        level: 2,
+        type: session.referrer2Type,
+        userId: session.referrer2UserId,
+        partnerId: session.referrer2PartnerId,
+        amount: clawbackShare(session.referrer2Amount ?? zero),
+      },
+      {
+        level: 3,
+        type: session.referrer3Type,
+        userId: session.referrer3UserId,
+        partnerId: session.referrer3PartnerId,
+        amount: clawbackShare(session.referrer3Amount ?? zero),
+      },
+    ];
+
+    const greenClawback = clawbackShare(greenAmount);
+    const deferredClawback = clawbackShare(deferredAmount);
+    const tutakClawback = clawbackShare(tutakAmount);
+
+    if (greenClawback.greaterThan(0)) {
+      const greenLot = await tx.bonusLot.findFirst({
+        where: { sourceTransactionId: transactionId, type: BonusEntryType.ACCRUAL_PURCHASE },
+      });
+      if (greenLot) {
+        await this.bonusEngine.reverseAccrualLot(greenLot.id, 'ev_cdr_overbilled', greenClawback, tx);
+      }
+    }
+
+    if (deferredClawback.greaterThan(0)) {
+      await this.deferredBonusLots.reverseForRefund(transactionId, deferredClawback, 'ev_cdr_overbilled', tx);
+    }
+
+    // Per-level clawback — a USER-type level's share lives in its own
+    // wallet's `BonusLot` (keyed by walletId, never colliding across
+    // levels — see `ReferralService.resolveReferralChain`'s cycle guard); a
+    // PARTNER-type level has no wallet lot, so its whole clawback amount
+    // reverses directly against their `PARTNER_PAYABLE` in the ledger step.
+    for (const lvl of levels) {
+      if (lvl.type !== ReferrerType.USER || !lvl.userId || lvl.amount.lessThanOrEqualTo(0)) continue;
+      const wallet = await tx.wallet.findUnique({ where: { userId: lvl.userId } });
+      const lot = wallet
+        ? await tx.bonusLot.findFirst({
+            where: { sourceTransactionId: transactionId, type: BonusEntryType.ACCRUAL_REFERRAL, walletId: wallet.id },
+          })
+        : null;
+      if (lot) {
+        await this.bonusEngine.reverseAccrualLot(lot.id, 'ev_cdr_overbilled', lvl.amount, tx);
+      }
+    }
+
+    await this.postEvCorrectionLedgerV2Idempotent(tx, {
+      partnerId: session.connector.station.partnerId,
+      transactionId,
+      greenClawback,
+      deferredClawback,
+      tutakClawback,
+      levels,
+    });
+  }
+
+  /**
+   * LEGACY single-level program only — the ledger side of an overcharge
+   * correction: reverses, proportionally, the exact double-entry postings
+   * `EvSessionsService`'s legacy `postEvContributionLedgerIdempotent` made
+   * for this transaction — partner payable, bonus liability, an optional
+   * referrer-partner's own payable, and platform revenue.
    *
    * The five clawback legs the caller passes in were all derived from the
    * same pool split (`tutakUpfront + tutakBase + green + deferred +
@@ -420,7 +559,7 @@ export class EvCdrReconciliationService {
    * rounding, the same way the original posting's `tutakBaseOfRemainder`
    * is a residual rather than an independently rounded figure.
    */
-  private async postEvCorrectionLedgerIdempotent(
+  private async postEvCorrectionLedgerLegacyIdempotent(
     tx: Tx,
     amounts: {
       partnerId: string;
@@ -491,6 +630,90 @@ export class EvCdrReconciliationService {
         : []),
       ...(tutakRevenueClawback.greaterThan(0)
         ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: tutakRevenueClawback }]
+        : []),
+    ];
+
+    await this.ledger.post(
+      {
+        kind: 'ev.charging.contribution.correction',
+        sourceType: 'Transaction',
+        sourceId: amounts.transactionId,
+        postings,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * THREE_LEVEL_V2 program only — the mirror image of
+   * `EvSessionsService.postEvContributionLedgerIdempotent`'s 3-level
+   * posting, scaled to this correction's proportional clawback. The six
+   * clawback legs (`green`, `deferred`, up to three referrer levels,
+   * `tutak`) were all derived from the same `clawbackShare` function
+   * applied to the original six-leg split, so their sum equals the pool's
+   * own clawback exactly, by construction — the posting below balances
+   * regardless of any per-leg rounding, the same residual reasoning
+   * `ReferralService.computePoolSplit`'s `tutak` already relies on.
+   */
+  private async postEvCorrectionLedgerV2Idempotent(
+    tx: Tx,
+    amounts: {
+      partnerId: string;
+      transactionId: string;
+      greenClawback: Decimal;
+      deferredClawback: Decimal;
+      tutakClawback: Decimal;
+      levels: SnapshotLevel[];
+    },
+  ): Promise<void> {
+    const poolClawback = amounts.greenClawback
+      .plus(amounts.deferredClawback)
+      .plus(amounts.tutakClawback)
+      .plus(amounts.levels.reduce((s, l) => s.plus(l.amount), new Decimal(0)));
+    if (poolClawback.lessThanOrEqualTo(0)) return;
+
+    const existing = await tx.ledgerTransaction.findFirst({
+      where: {
+        kind: 'ev.charging.contribution.correction',
+        sourceType: 'Transaction',
+        sourceId: amounts.transactionId,
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.partnerId }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+    ]);
+
+    const userLevelsClawback = amounts.levels
+      .filter((l) => l.type === ReferrerType.USER)
+      .reduce((s, l) => s.plus(l.amount), new Decimal(0));
+    const customerLiabilityClawback = amounts.greenClawback.plus(amounts.deferredClawback).plus(userLevelsClawback);
+
+    const partnerReferrerPostings = await Promise.all(
+      amounts.levels
+        .filter((l) => l.type === ReferrerType.PARTNER && l.partnerId && l.amount.greaterThan(0))
+        .map(async (l) => {
+          const account = await this.ledger.accountFor(
+            { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: l.partnerId! },
+            tx,
+          );
+          return { accountId: account.id, direction: PostingDirection.DEBIT, amount: l.amount };
+        }),
+    );
+
+    const postings = [
+      // Reverses the original DEBIT: the partner now owes TuTak less.
+      { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: poolClawback },
+      ...(customerLiabilityClawback.greaterThan(0)
+        ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: customerLiabilityClawback }]
+        : []),
+      ...partnerReferrerPostings,
+      ...(amounts.tutakClawback.greaterThan(0)
+        ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: amounts.tutakClawback }]
         : []),
     ];
 

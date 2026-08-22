@@ -176,7 +176,23 @@
     "shareMessage": "Միացիր ինձ TuTak-ում և ստացիր բոնուս միավորներ։ Իմ կոդը՝ {{code}}",
     "noInvitesTitle": "Դեռ հրավերներ չկան",
     "noInvitesMessage": "Կիսվեք ձեր կոդով ընկերոջ հետ՝ բոնուսներ վաստակելու համար։",
-    "unknownReferee": "Հրավիրված ընկեր"
+    "unknownReferee": "Հրավիրված ընկեր",
+    "networkBenefit": "Ցանց՝ մինչև 3 մակարդակ",
+    "openMyNetwork": "Իմ ցանցը",
+    "myNetwork": "Իմ ցանցը",
+    "level1Title": "Անձամբ հրավիրվածներ",
+    "level2Title": "Ընկերների ընկերները",
+    "level3Title": "Հաջորդ մակարդակ",
+    "level1Description": "Մարդիկ, ում դուք անձամբ եք հրավիրել։",
+    "level2Description": "Ձեր ընկերների սեփական ընկերները։",
+    "level3Description": "Ցանցի երրորդ մակարդակը։",
+    "openInvitesList": "Բացել ընկերների ցանկը",
+    "ratePoolNote": "Բաժին է գործընկերոջ կոմիսիոն ֆոնդից, ոչ թե գնման գումարից։",
+    "aggregateOnlyNote": "Այստեղ ցուցադրում ենք միայն թիվը — ձեր ընկերների սեփական կապերը մնում են գաղտնի։",
+    "levelUnavailableTitle": "Դեռ հասանելի չէ",
+    "levelUnavailableMessage": "Այս մակարդակի տվյալները կհայտնվեն, երբ եռամակարդակ ցանցի հաշվարկը հասանելի դառնա սերվերում։",
+    "level1EmptyMessage": "Հրավիրեք ձեր առաջին ընկերոջը՝ նրան այստեղ տեսնելու համար։",
+    "joinedOn": "Միացել է {{date}}"
   },
   "partner": {
     "dashboard": "Վահանակ",
@@ -206,9 +222,6 @@
   "settings": {
     "title": "Կարգավորումներ",
     "language": "Լեզու",
-    "appearance": "Տեսք",
-    "appearanceDark": "Մուգ",
-    "appearanceLight": "Բաց",
     "notifications": "Ծանուցումներ",
     "security": "Անվտանգություն",
     "logout": "Դուրս գալ",
@@ -293,6 +306,7 @@
   },
   "partners": {
     "title": "Քարտեզ",
+    "findPartner": "Գտնել գործընկեր",
     "nearYou": "Ձեր մոտ",
     "searchPlaceholder": "Խանութ, սրճարան, փողոց…",
     "all": "Բոլորը",

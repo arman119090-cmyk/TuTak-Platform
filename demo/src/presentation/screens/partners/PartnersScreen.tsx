@@ -29,6 +29,7 @@ import { SectionHeader } from '../../components/SectionHeader';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { StatePill } from '../../components/StatePill';
+import { PartnerMark } from '../../components/PartnerMark';
 import { TileMap, type MapMarker } from '../../components/map/TileMap';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { evApi } from '../../../data/api/evApi';
@@ -422,7 +423,7 @@ function PartnerCard({
   selected: boolean;
   onPress: () => void;
 }) {
-  const { color, space, text, radius, premium } = useTheme();
+  const { color, space, text, premium } = useTheme();
   const { t } = useTranslation();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -435,18 +436,14 @@ function PartnerCard({
         }}
       >
         <View style={styles.cardRow}>
-          <View
-            style={[
-              styles.cardIcon,
-              { backgroundColor: color.surfaceSunken, borderRadius: radius.md },
-            ]}
-          >
-            <Ionicons
-              name={CATEGORY_ICONS[partner.category]}
-              size={20}
-              color={color.textSecondary}
-            />
-          </View>
+          {/* Master spec §5 / `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3: the map/
+              directory card is one of the surfaces that must identify the
+              partner by its own mark, not a generic category glyph. No
+              `NearbyPartnerDto` field carries a logo yet (see `PartnerMark`'s
+              own docblock), so this renders the deterministic initial
+              fallback today and becomes the real logo the moment that field
+              exists. */}
+          <PartnerMark name={partner.name} size={40} />
 
           <View style={[styles.flex, { marginLeft: space[3] }]}>
             <Text style={[text.headline, { color: color.textPrimary }]} numberOfLines={1}>

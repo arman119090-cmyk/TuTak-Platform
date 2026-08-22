@@ -176,7 +176,23 @@
     "shareMessage": "Join me on TuTak and get bonus points. Use my code: {{code}}",
     "noInvitesTitle": "No invites yet",
     "noInvitesMessage": "Share your code with a friend to start earning referral bonuses.",
-    "unknownReferee": "Invited friend"
+    "unknownReferee": "Invited friend",
+    "networkBenefit": "A network up to 3 levels",
+    "openMyNetwork": "My network",
+    "myNetwork": "My network",
+    "level1Title": "Personally invited",
+    "level2Title": "Friends of friends",
+    "level3Title": "Next level",
+    "level1Description": "People you invited yourself.",
+    "level2Description": "Your friends' own friends.",
+    "level3Description": "The network's third level.",
+    "openInvitesList": "Open friends list",
+    "ratePoolNote": "A share of the partner commission pool, not of the purchase amount.",
+    "aggregateOnlyNote": "We only show a count here — your friends' own connections stay private.",
+    "levelUnavailableTitle": "Not available yet",
+    "levelUnavailableMessage": "This level's data will appear once the server-side three-level network calculation is available.",
+    "level1EmptyMessage": "Invite your first friend to see them here.",
+    "joinedOn": "Joined {{date}}"
   },
   "partner": {
     "dashboard": "Dashboard",
@@ -206,9 +222,6 @@
   "settings": {
     "title": "Settings",
     "language": "Language",
-    "appearance": "Appearance",
-    "appearanceDark": "Dark",
-    "appearanceLight": "Light",
     "notifications": "Notifications",
     "security": "Security",
     "logout": "Log out",
@@ -293,6 +306,7 @@
   },
   "partners": {
     "title": "Map",
+    "findPartner": "Find a partner",
     "nearYou": "Near you",
     "searchPlaceholder": "Shop, café, street…",
     "all": "All",

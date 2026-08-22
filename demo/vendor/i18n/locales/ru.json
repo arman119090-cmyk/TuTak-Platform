@@ -176,7 +176,23 @@
     "shareMessage": "Присоединяйтесь ко мне в TuTak и получите бонусные баллы. Мой код: {{code}}",
     "noInvitesTitle": "Пока нет приглашений",
     "noInvitesMessage": "Поделитесь кодом с другом, чтобы начать зарабатывать бонусы.",
-    "unknownReferee": "Приглашённый друг"
+    "unknownReferee": "Приглашённый друг",
+    "networkBenefit": "Сеть до 3 уровней",
+    "openMyNetwork": "Моя сеть",
+    "myNetwork": "Моя сеть",
+    "level1Title": "Приглашены лично",
+    "level2Title": "Друзья друзей",
+    "level3Title": "Следующий уровень",
+    "level1Description": "Люди, которых вы пригласили лично.",
+    "level2Description": "Друзья ваших друзей.",
+    "level3Description": "Следующий, третий уровень сети.",
+    "openInvitesList": "Открыть список друзей",
+    "ratePoolNote": "Доля от пула партнёрской комиссии, не от суммы покупки.",
+    "aggregateOnlyNote": "Мы показываем только количество — связи друзей остаются приватными.",
+    "levelUnavailableTitle": "Пока недоступно",
+    "levelUnavailableMessage": "Данные по этому уровню появятся, когда серверный расчёт трёхуровневой сети станет доступен.",
+    "level1EmptyMessage": "Пригласите первого друга, чтобы увидеть его здесь.",
+    "joinedOn": "Присоединился {{date}}"
   },
   "partner": {
     "dashboard": "Панель управления",
@@ -206,9 +222,6 @@
   "settings": {
     "title": "Настройки",
     "language": "Язык",
-    "appearance": "Оформление",
-    "appearanceDark": "Тёмное",
-    "appearanceLight": "Светлое",
     "notifications": "Уведомления",
     "security": "Безопасность",
     "logout": "Выйти",
@@ -293,6 +306,7 @@
   },
   "partners": {
     "title": "Карта",
+    "findPartner": "Найти партнёра",
     "nearYou": "Рядом с вами",
     "searchPlaceholder": "Магазин, кафе, улица…",
     "all": "Все",

@@ -40,6 +40,22 @@ undeployable rather than safe:
 `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are validated at 32 characters
 minimum by `env.validation.ts` in every environment.
 
+**`TRUST_PROXY` does not block boot, but matters as much as `CORS_ORIGINS`
+does for any deployment that sits behind a real reverse proxy or load
+balancer.** Security/financial hardening pass, 2026-08-19 (GitHub issue #28):
+a live pentest found rate limiting on login/OTP/password-reset fully
+bypassable by spoofing a rotating `X-Forwarded-For` header, because `main.ts`
+used to trust a bare hop count (`app.set('trust proxy', 1)`) unconditionally
+with no real proxy in front of it to have stripped that header first. Left
+unset (the default), `req.ip` is the real TCP peer address — correct and safe
+with no proxy in front, but if this deployment *does* put a reverse proxy or
+load balancer in front of the API, every client behind it will otherwise
+appear to rate-limit as one shared address. Set it to that proxy's IP/CIDR
+(or one of Express's named subnets — `loopback`, `linklocal`, `uniquelocal`)
+once the proxy is confirmed to strip any inbound `X-Forwarded-For` before
+appending its own. See `.env.example` and `apps/api/src/config/trust-proxy.ts`
+for the full reasoning — never set this to a bare hop count.
+
 So the first production deploy is blocked on commercial decisions — an
 acquirer contract, a carrier account, an Expo project — not on engineering.
 Until those exist, run the rehearsal environment with `NODE_ENV=staging` (not

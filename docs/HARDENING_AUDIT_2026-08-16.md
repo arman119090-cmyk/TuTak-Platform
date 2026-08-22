@@ -825,3 +825,97 @@ Highest-risk code, in priority order:
 pass; the one open EV finding (§H, §M-7) is a pre-existing gap unrelated to
 this feature, not something the core-business-architecture work introduced
 or worsened.
+
+---
+
+## R. Security/financial hardening pass — 2026-08-19 (GitHub issue #28 execution brief)
+
+Full report: `docs/HARDENING_AUDIT_2026-08-19-P0-P3.md`. Arman posted a
+formal, structured execution brief as a comment on Issue #28 covering
+P0 (CRITICAL) through P3 (LOW); this pass verified every item against
+current HEAD (`c0bec0c` → `899c093`) rather than trusting the historical
+issue comments, fixed what was genuinely still open, and marked what was
+already fixed with fresh evidence rather than reimplementing it.
+
+**P0/CRITICAL — real fix.** `PspAdapter` exposed `charge()` but no refund
+operation, and `RefundEngineService` could post reversing ledger entries,
+claw back bonus, and mark a refund complete without ever asking the
+acquirer to move money. Fixed: `PspAdapter.refund()`/`checkRefundStatus()`
+added; `Refund` is now born `PENDING` (additive migration,
+`RefundPspStatus`), with the claim against `Payment.refundedAmount` and the
+durable row created atomically before the PSP is ever called; the ledger
+post and bonus clawback are deferred until the PSP confirms — synchronously
+or via a new `reconcilePendingRefunds()` sweep (every 2 minutes, gated on
+`CARD_PAYMENTS_ENABLED`, mirroring `app.module.ts`'s own gate for the same
+reason). Also found and fixed while adding the finalize transaction
+boundary: the bonus clawback and the ledger post used to be two independent
+statements rather than one transaction — a clawback that succeeded while
+the following ledger post failed left points taken back with no ledger
+entry to justify it. 12 new tests
+(`test/refund-psp-confirmation.int-spec.ts`) covering decline,
+timeout/unknown outcome, PSP-success-then-local-crash recovered via
+reconciliation, duplicate/concurrent requests, and the captured-amount cap
+holding while a refund is still PENDING — git-stash-verified to fail to
+compile against the pre-fix code.
+
+**P1/HIGH — three of four already fixed, evidence refreshed; one gained a
+new test.** PurchaseIntent terminal-transition atomicity, self-dealing/
+affiliation-bypass coverage, and QR substitution/merchant-identity
+resolution were all found already correct on current HEAD — no code
+change, existing regression suites re-run and re-confirmed passing. The
+fourth item (consistent financial economics across live paths) is a
+recorded business decision (three formulas, not a defect) that was missing
+the rounding-boundary reconciliation test the brief specifically asked
+for; added one, and proved it meaningful by temporarily reintroducing the
+historical independent-rounding bug and watching `LedgerService.post()`'s
+own balance check reject it with the exact predicted imbalance.
+
+**P2 — one live gap, fixed; the rest already clean.** A live pentest on
+this exact codebase (2026-08-19, not committed anywhere but named in the
+brief) found login/OTP/password-reset rate limiting fully bypassable by
+spoofing `X-Forwarded-For`, because `main.ts` trusted a bare hop count
+(`app.set('trust proxy', 1)`) unconditionally with no real reverse proxy in
+front of it to have stripped that header first. Fixed with a new
+`TRUST_PROXY` env var — untrusted by default, and when set, passed to
+Express as a string an operator must name explicitly (an IP/CIDR/named
+subnet), never a hop count. Verified against the installed
+`express`/`proxy-addr` source directly, not assumed. Integration activation
+type confusion, IDOR/RBAC/tenant isolation, replay/idempotency/concurrency,
+and the rest of the auth/OTP/session review were all found already fixed,
+backed by extensive existing suites (`idor-sweep.int-spec.ts`,
+`partner-tenant-isolation.int-spec.ts`, `authorization.int-spec.ts`,
+`session-security.int-spec.ts`, `concurrency-probe.int-spec.ts`, and
+others — 149+ tests across the ones checked). The webhook/CDR trust
+boundary item is **not reproducible** on current HEAD: no inbound
+integration-event endpoint exists yet to forge against (confirmed still
+deliberately unbuilt per §M item 8 above); EV's own self-reported
+meter-value threat is a different, already-mitigated model (a
+physical-plausibility ceiling), and OCPI CDR fetching is outbound-only
+using this server's own configured credentials.
+
+**P3 — clean.** DTO whitelist, CORS fail-closed, Helmet, Swagger
+production/staging exposure, refresh-cookie flags, raw SQL (all
+parameterized), SSRF (all four outbound `fetch()` sites use
+server-configured URLs only), and stored/reflected HTML sinks (the one
+`dangerouslySetInnerHTML` use is a static theme-init script, not user
+data) were all re-verified clean, backed by `error-disclosure.int-spec.ts`
+and siblings.
+
+**One new LOW finding, disclosed but not fixed** (pre-existing, not
+introduced by this pass, bounded impact): `RefundEngineService.refund()`'s
+top-level bounds check can reject a legitimate retry of an *omitted-amount
+full refund* with "already refunded in full" instead of replaying the
+original result, because that check runs before the idempotency-replay
+lookup using the post-claim `refundedAmount`. See the full report §2 for
+detail.
+
+**Test results:** apps/api full suite 974/974 passed (69/69 suites,
+including the 12 new P0 tests and the new P1/P2 tests); typecheck, lint,
+and `nest build` all clean; both `tutak_test` and `tutak` (dev) databases
+migration-current with no drift; apps/mobile 203/203, apps/admin 29/29,
+apps/partner 16/16, all passing.
+
+**Verdict:** READY FOR INDEPENDENT AUDIT — no CRITICAL or HIGH risk left
+open. See the full report's §6/§7 for the specific MEDIUM/LOW items and
+verification-depth gaps (a live Docker boot and the Playwright e2e suite
+were not run this pass; recommend both before the next real deploy).

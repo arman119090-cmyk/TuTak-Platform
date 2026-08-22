@@ -67,6 +67,9 @@ describe('Sweeps (integration)', () => {
   const retention = { prune: jest.fn(record('retention.prune')) };
   const deferredBonusLots = { expireOverdueLots: jest.fn(record('deferred-bonus.expire-lots')) };
   const purchaseIntents = { expireStale: jest.fn(record('purchase-intent.expire')) };
+  const refunds = {
+    reconcilePendingRefunds: jest.fn(record('payments.reconcile-pending-refunds')),
+  };
 
   beforeAll(async () => {
     // A keyspace of this suite's own, so a run here cannot disturb the
@@ -104,6 +107,7 @@ describe('Sweeps (integration)', () => {
             retention,
             deferredBonusLots,
             purchaseIntents,
+            refunds,
           },
         },
       ],

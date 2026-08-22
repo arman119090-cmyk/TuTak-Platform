@@ -5,6 +5,7 @@ import type { EvReservationsService } from '../ev-charging/ev-reservations.servi
 import type { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation.service';
 import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
+import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
@@ -34,6 +35,7 @@ export interface SweepDependencies {
   retention: RetentionService;
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
+  refunds: RefundEngineService;
 }
 
 export interface SweepDefinition {
@@ -200,6 +202,16 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 5 * 60_000,
     lockTtlMs: 60_000,
     run: ({ purchaseIntents }) => purchaseIntents.expireStale(),
+  },
+  {
+    name: 'payments.reconcile-pending-refunds',
+    why: "P0 finding, 2026-08-19 hardening pass: a refund the PSP never confirmed synchronously (a timeout, a crash, an acquirer that answers 'processing') stays PENDING — no ledger posting, no bonus clawback, nothing that implies money moved — until something asks the acquirer again. Without this sweep a genuinely-confirmed refund could sit unreconciled indefinitely, and the customer's clawback and the ledger's reversal would never happen even though the money already moved.",
+    // Every two minutes: a refund is a customer-facing action an operator is
+    // often watching, so ambiguity should clear in minutes, not hours.
+    repeat: { every: 2 * 60_000 },
+    maxSilenceMs: 30 * 60_000,
+    lockTtlMs: 4 * 60_000,
+    run: ({ refunds }) => refunds.reconcilePendingRefunds(),
   },
   {
     name: 'reconciliation.nightly',

@@ -47,6 +47,10 @@ export class RefundsController {
         amount: result.amount,
         totalRefunded: result.totalRefunded,
         bonusClawedBack: result.bonusClawedBack,
+        // PENDING here means the PSP has not yet confirmed the money moved —
+        // see RefundEngineService's class docblock. The audit record must
+        // not read as "money moved" until it actually has.
+        pspStatus: result.pspStatus,
         reason: dto.reason,
       },
     });

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
 import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { PurchaseIntentsModule } from '../purchase-intents/purchase-intents.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { RetentionModule } from '../retention/retention.module';
@@ -13,6 +14,7 @@ import { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation
 import { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import { OutboxService } from '../ledger/outbox.service';
+import { RefundEngineService } from '../payments/refund-engine.service';
 import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { RetentionService } from '../retention/retention.service';
@@ -43,6 +45,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
     WalletModule,
     EvChargingModule,
     LedgerModule,
+    PaymentsModule,
     PurchaseIntentsModule,
     ReconciliationModule,
     RetentionModule,
@@ -65,6 +68,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         RetentionService,
         DeferredBonusLotService,
         PurchaseIntentsService,
+        RefundEngineService,
       ],
       useFactory: (
         bonus: BonusEngineService,
@@ -77,6 +81,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         retention: RetentionService,
         deferredBonusLots: DeferredBonusLotService,
         purchaseIntents: PurchaseIntentsService,
+        refunds: RefundEngineService,
       ): SweepDependencies => ({
         bonus,
         reservations,
@@ -88,6 +93,7 @@ import { SweepsScheduler } from './sweeps.scheduler';
         retention,
         deferredBonusLots,
         purchaseIntents,
+        refunds,
       }),
     },
     SweepsProcessor,

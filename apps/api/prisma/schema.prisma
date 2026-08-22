@@ -1597,6 +1597,30 @@ model AcquirerSettlement {
   @@map("acquirer_settlements")
 }
 
+/// Whether the acquirer has actually accepted a refund, distinct from the
+/// row's mere existence. P0 finding (2026-08-19 hardening pass): a `Refund`
+/// row, `Payment.refundedAmount`, the reversing ledger postings and any
+/// bonus clawback used to all get written the moment this engine *decided*
+/// to refund, with no PSP call in between — the PSP boundary had `charge()`
+/// but no `refund()` at all, so "the customer was refunded" was recorded
+/// with no acquirer ever having moved the money. `PENDING` is the state
+/// between "we asked the acquirer" and "the acquirer answered" — a refund
+/// must never be reported financially complete while it is PENDING, and the
+/// ledger/clawback effects below are only ever posted once it reaches
+/// CONFIRMED.
+enum RefundPspStatus {
+  /// Submitted to the acquirer; outcome not yet known (in flight, timed out,
+  /// or an explicit "processing" response). Reconciled by
+  /// `RefundEngineService.reconcilePendingRefunds()`.
+  PENDING
+  /// The acquirer has confirmed the money moved. Only past this point are
+  /// the reversing ledger postings and any bonus clawback applied.
+  CONFIRMED
+  /// The acquirer declined or the refund otherwise definitively failed.
+  /// `Payment.refundedAmount`'s claim for this refund has been released.
+  FAILED
+}
+
 /// A refund of some or all of a captured payment.
 model Refund {
   id                  String   @id @default(uuid())
@@ -1604,10 +1628,12 @@ model Refund {
   amount              Decimal  @db.Decimal(18, 4)
   reason              String
   /// The reversing ledger transaction. Postings are immutable, so a refund is
-  /// a new transaction pointing back at the original, never an edit.
+  /// a new transaction pointing back at the original, never an edit. Null
+  /// until `pspStatus` reaches CONFIRMED — see `RefundPspStatus`.
   ledgerTransactionId String?  @unique
   /// Points reclaimed from the customer, if the payment had already settled
-  /// and accrued. Zero when it had not.
+  /// and accrued. Zero when it had not, and zero while `pspStatus` is not
+  /// yet CONFIRMED.
   bonusClawedBack     Decimal  @default(0) @db.Decimal(18, 4)
   /// Who authorised this refund. Recorded on the row the money moved through
   /// rather than only in the audit log, for the reason `Payout` gives about
@@ -1623,6 +1649,21 @@ model Refund {
   /// part of it was "within bounds". Demonstrated, not theorised: see
   /// `refund-payout-key-durability.int-spec.ts`.
   idempotencyKey      String?
+  /// See `RefundPspStatus`. Defaults to PENDING — a row only exists once the
+  /// claim against `Payment.refundedAmount` has been taken, which happens
+  /// before the PSP is ever called.
+  pspStatus           RefundPspStatus @default(PENDING)
+  /// The acquirer's own reference for this refund, set once CONFIRMED.
+  pspRefundReference  String?
+  /// The stable, deterministic key sent to the PSP as *its* idempotency key
+  /// — derived from (paymentId, actorId, idempotencyKey) rather than a fresh
+  /// UUID, so a retry after this process crashes mid-refund recomputes the
+  /// exact same external key without needing anything to have been
+  /// persisted first, and the acquirer's own idempotency guarantee is what
+  /// stops a retried external call from refunding twice.
+  pspIdempotencyKey   String?
+  /// Why the acquirer declined, when pspStatus is FAILED.
+  pspDeclineReason    String?
   createdAt           DateTime @default(now())
 
   payment           Payment            @relation(fields: [paymentId], references: [id])
@@ -1632,6 +1673,8 @@ model Refund {
   /// scope — two operators may legitimately choose the same key.
   @@unique([actorId, idempotencyKey])
   @@index([paymentId])
+  /// What `reconcilePendingRefunds()` sweeps.
+  @@index([pspStatus])
   @@map("refunds")
 }
 

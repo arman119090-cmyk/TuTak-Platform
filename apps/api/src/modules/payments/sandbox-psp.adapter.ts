@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { PspAdapter, PspChargeRequest, PspChargeResult } from './psp-adapter.interface';
+import {
+  PspAdapter,
+  PspChargeRequest,
+  PspChargeResult,
+  PspRefundRequest,
+  PspRefundResult,
+} from './psp-adapter.interface';
 
 /**
  * Source tokens that trigger a specific sandbox outcome, the same convention
@@ -14,6 +20,28 @@ export const SANDBOX_TOKENS = {
   DECLINE_GENERIC: 'tok_decline_generic',
   /** Simulates the acquirer being unreachable — an infra failure, not a decline. */
   PSP_UNAVAILABLE: 'tok_psp_unavailable',
+} as const;
+
+/**
+ * Markers embedded in `RefundParams.reason` to steer the sandbox's refund
+ * outcome for tests — `refund()` has no source-token-like field of its own
+ * (a refund reverses an existing charge; there is no new payment method to
+ * tokenize), so the free-text reason is the only caller-supplied input left
+ * to carry a test trigger, the same role `sourceToken` plays for `charge()`.
+ * A marker is a substring match, so a real reason can still read naturally
+ * around it in a test (e.g. `${SANDBOX_REFUND_TRIGGERS.DECLINE}: card blocked`).
+ */
+export const SANDBOX_REFUND_TRIGGERS = {
+  /** The acquirer refuses the refund outright. */
+  DECLINE: '__sandbox_refund_decline__',
+  /** `refund()` throws, simulating an unreachable acquirer — never resolves via `checkRefundStatus` either. */
+  UNREACHABLE: '__sandbox_refund_unreachable__',
+  /** `refund()` returns PENDING; `checkRefundStatus` later reports CONFIRMED — the common "async acquirer" case. */
+  PENDING_THEN_CONFIRMED: '__sandbox_refund_pending_then_confirmed__',
+  /** `refund()` returns PENDING; `checkRefundStatus` later reports it was actually declined. */
+  PENDING_THEN_DECLINED: '__sandbox_refund_pending_then_declined__',
+  /** `refund()` returns PENDING and stays genuinely unresolved — `checkRefundStatus` keeps reporting PENDING. */
+  PENDING_FOREVER: '__sandbox_refund_pending_forever__',
 } as const;
 
 /**
@@ -31,6 +59,19 @@ export const SANDBOX_TOKENS = {
 @Injectable()
 export class SandboxPspAdapter implements PspAdapter {
   private readonly logger = new Logger(SandboxPspAdapter.name);
+
+  /**
+   * The sandbox's own memory of what each refund idempotency key eventually
+   * resolves to — a fake's stand-in for the acquirer's own server-side
+   * refund records, which is what `checkRefundStatus` would poll on a real
+   * integration. Scoped to this adapter instance (a live Nest process), not
+   * persisted — a real acquirer's records outlive this process; this map
+   * only needs to outlive one test run.
+   */
+  private readonly refundOutcomes = new Map<
+    string,
+    { outcome: 'CONFIRMED' | 'FAILED' | 'PENDING'; declineReason?: string }
+  >();
 
   charge(request: PspChargeRequest): Promise<PspChargeResult> {
     if (request.sourceToken === SANDBOX_TOKENS.PSP_UNAVAILABLE) {
@@ -65,5 +106,68 @@ export class SandboxPspAdapter implements PspAdapter {
       default:
         return null;
     }
+  }
+
+  refund(request: PspRefundRequest): Promise<PspRefundResult> {
+    const reason = request.reason;
+
+    if (reason.includes(SANDBOX_REFUND_TRIGGERS.UNREACHABLE)) {
+      // Deliberately not recorded in refundOutcomes: a genuinely unreachable
+      // acquirer never told us anything to remember, and checkRefundStatus
+      // must fall back to reporting PENDING for a key it has never heard of.
+      throw new Error('Sandbox PSP: simulated timeout on refund');
+    }
+
+    if (reason.includes(SANDBOX_REFUND_TRIGGERS.DECLINE)) {
+      const declineReason = 'sandbox_refund_declined';
+      this.refundOutcomes.set(request.idempotencyKey, { outcome: 'FAILED', declineReason });
+      this.logger.log(`Sandbox PSP declined refund ${request.idempotencyKey}: ${declineReason}`);
+      return Promise.resolve({ outcome: 'DECLINED', declineReason });
+    }
+
+    if (reason.includes(SANDBOX_REFUND_TRIGGERS.PENDING_THEN_CONFIRMED)) {
+      this.refundOutcomes.set(request.idempotencyKey, { outcome: 'CONFIRMED' });
+      return Promise.resolve({ outcome: 'PENDING' });
+    }
+    if (reason.includes(SANDBOX_REFUND_TRIGGERS.PENDING_THEN_DECLINED)) {
+      this.refundOutcomes.set(request.idempotencyKey, {
+        outcome: 'FAILED',
+        declineReason: 'sandbox_refund_declined_after_pending',
+      });
+      return Promise.resolve({ outcome: 'PENDING' });
+    }
+    if (reason.includes(SANDBOX_REFUND_TRIGGERS.PENDING_FOREVER)) {
+      this.refundOutcomes.set(request.idempotencyKey, { outcome: 'PENDING' });
+      return Promise.resolve({ outcome: 'PENDING' });
+    }
+
+    // The ordinary case: the acquirer confirms synchronously. Deterministic
+    // on the idempotency key, same reasoning as charge()'s pspReference.
+    const pspRefundReference = this.referenceFor(request.idempotencyKey);
+    this.refundOutcomes.set(request.idempotencyKey, { outcome: 'CONFIRMED' });
+    return Promise.resolve({ outcome: 'REFUNDED', pspRefundReference });
+  }
+
+  checkRefundStatus(idempotencyKey: string): Promise<PspRefundResult> {
+    const remembered = this.refundOutcomes.get(idempotencyKey);
+    // A key this adapter has never seen resolve is indistinguishable from
+    // one still being processed — report PENDING rather than guessing.
+    if (!remembered || remembered.outcome === 'PENDING') {
+      return Promise.resolve({ outcome: 'PENDING' });
+    }
+    if (remembered.outcome === 'FAILED') {
+      return Promise.resolve({
+        outcome: 'DECLINED',
+        declineReason: remembered.declineReason ?? 'sandbox_refund_declined',
+      });
+    }
+    return Promise.resolve({
+      outcome: 'REFUNDED',
+      pspRefundReference: this.referenceFor(idempotencyKey),
+    });
+  }
+
+  private referenceFor(idempotencyKey: string): string {
+    return `sandbox_refund_${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 24)}`;
   }
 }

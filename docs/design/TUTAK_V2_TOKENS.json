@@ -1,0 +1,40 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "meta": {
+    "name": "TuTak mobile v2",
+    "usage": "Visual source of truth for the customer mobile app. All user-facing labels stay localized in application code."
+  },
+  "color": {
+    "brand": { "700": "#0B5D3B", "600": "#00B676", "100": "#DCFCE7" },
+    "ink": { "900": "#172033", "600": "#667085" },
+    "canvas": "#F7F9F8",
+    "surface": "#FFFFFF",
+    "line": "#E5E7EB",
+    "info": "#2F80ED",
+    "warning": "#F59E0B",
+    "danger": "#E5484D"
+  },
+  "spacing": { "1": 4, "2": 8, "3": 12, "4": 16, "5": 24, "6": 32 },
+  "radius": { "chip": 12, "button": 16, "card": 20, "sheet": 24 },
+  "type": {
+    "display": { "fontSize": 28, "fontWeight": 800, "lineHeight": 34 },
+    "heading": { "fontSize": 20, "fontWeight": 800, "lineHeight": 26 },
+    "body": { "fontSize": 16, "fontWeight": 500, "lineHeight": 22 },
+    "label": { "fontSize": 13, "fontWeight": 700, "lineHeight": 18 },
+    "caption": { "fontSize": 12, "fontWeight": 600, "lineHeight": 16 }
+  },
+  "component": {
+    "minTouchTarget": 44,
+    "primaryButtonHeight": 56,
+    "secondaryButtonHeight": 52,
+    "cardBorderWidth": 1,
+    "borderColor": "#E5E7EB"
+  },
+  "icon": {
+    "navigationSize": 24,
+    "navigationStrokeWidth": 2.7,
+    "jakoSignatureSize": 18,
+    "positiveColor": "#00B676",
+    "inactiveColor": "#667085"
+  }
+}

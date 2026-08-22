@@ -2,12 +2,22 @@
 
 This file is the canonical current task for Claude. Before starting or continuing implementation, read this file together with `docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md`, `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` (when present), `docs/HARDENING_AUDIT_2026-08-16.md`, `docs/LAUNCH_READINESS_2026-08-16.md`, and GitHub Issue #28 `TuTak — Independent Audit Findings`.
 
-## STATUS AS OF 2026-08-19
+## STATUS AS OF 2026-08-21
 
-**One engineering task is now queued: rework the referral engine from
-single-level to a 3-level upward chain.** Decided by Arman (2026-08-19),
-not yet implemented — budget ran out before starting. Do this next, before
-picking up anything else on this file.
+**Two explicitly ordered engineering tasks are now queued.** Do not merge
+their changes into one unreviewable implementation:
+
+1. rework the referral engine from single-level to a 3-level upward chain;
+2. after the referral work is complete and green, implement the approved
+   mobile v2 redesign and media system in PR #29
+   (`docs/design/TUTAK_V2_CLAUDE_READ_FIRST.md`,
+   `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md` and
+   `docs/design/TUTAK_V2_ANDROID_SYSTEM_UI_QA.md`).
+
+The referral task was decided by Arman (2026-08-19), not yet implemented —
+budget ran out before starting. Do it first. The media/redesign task was
+approved by Arman (2026-08-21); it must use the documented secure storage,
+privacy and historical-brand-snapshot rules, not a mock image URL.
 
 ### Queued task: 3-level referral chain
 
@@ -82,6 +92,23 @@ made unilaterally during implementation without asking Arman first:
 When implemented: update this file to remove this entry, and record the
 decision + implementation in `docs/HARDENING_AUDIT_2026-08-16.md` the way
 every prior decision has been recorded.
+
+### Queued task after the referral engine: mobile v2 and media
+
+The detailed source of truth is in PR #29, not this summary:
+
+- start at `docs/design/TUTAK_V2_CLAUDE_READ_FIRST.md`;
+- follow `docs/design/TUTAK_V2_CLAUDE_TASK.md` for the implementation order;
+- follow `docs/design/TUTAK_V2_MEDIA_SYSTEM_SPEC.md` for partner logo,
+  customer avatar, approval, privacy, storage and operation-history rules.
+- follow `docs/design/TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` for the mandatory
+  Samsung S25 system-navigation, safe-area, keyboard, light-theme and
+  uncropped native-build acceptance proof.
+
+This task authorises only the narrow media/API/schema changes described
+there, plus the customer mobile redesign. It does **not** authorise a change
+to financial rules, settlement, QR confirmation semantics, EV/OCPI or
+referral economics.
 
 ---
 

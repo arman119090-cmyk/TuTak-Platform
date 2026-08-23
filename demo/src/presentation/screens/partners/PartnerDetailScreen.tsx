@@ -1,9 +1,10 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import type { NearbyPartnerDto } from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
@@ -30,6 +31,17 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * than the thumbnail, since it is rendered at 72pt here against 40pt in the
  * list. A partner that has published none falls back to `PartnerMark`'s
  * neutral mark, which is what every partner predating the media system shows.
+ *
+ * `NearbyPartnerDto.cover` (spec §2 "official cover photo/logo" / §5 "3:2
+ * partner image") is the wide banner this screen adds on top of that logo.
+ * Same approval rule as the logo — null for a partner who never published
+ * one, which is every partner today, since no real cover has been supplied
+ * (`TUTAK_V2_UI_ASSET_MANIFEST.md`'s "intentional omissions"). Null renders
+ * no cover block at all rather than a broken image or an invented one — the
+ * centred logo-only card underneath is the honest fallback, not a stand-in
+ * photo. `CoverImage` hides itself the same way on a load failure, so a
+ * cover URL that 404s degrades to the same logo-only card rather than an
+ * empty grey rectangle.
  */
 export function PartnerDetailScreen() {
   const { t } = useTranslation();
@@ -40,26 +52,22 @@ export function PartnerDetailScreen() {
 
   return (
     <Screen title={partner.name} subtitle={partner.branchName}>
-      {/* Centred on an inner view rather than by `alignItems` on the
-          Surface: `Surface` nests its children under a full-width fill, so
-          alignment set on the outer element centres that fill and leaves the
-          content flush left. Invisible while the mark was a placeholder;
-          obvious the moment a real logo landed in it. */}
-      <Surface style={{ paddingVertical: space[6] }}>
-        <View style={{ alignItems: 'center' }}>
-          <PartnerMark name={partner.name} logoUrl={partner.logo?.url} size={72} />
-          <View style={[styles.categoryRow, { marginTop: space[3] }]}>
-            <Ionicons
-              name={CATEGORY_ICONS[partner.category]}
-              size={14}
-              color={color.textSecondary}
-            />
-            <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>
-              {t(`partnerCategory.${partner.category}`)}
-            </Text>
-          </View>
-        </View>
-      </Surface>
+      {partner.cover ? (
+        <Surface padded={false}>
+          <CoverImage url={partner.cover.url} name={partner.name}>
+            <LogoBlock partner={partner} size={64} paddingVertical={space[5]} />
+          </CoverImage>
+        </Surface>
+      ) : (
+        // Centred on an inner view rather than by `alignItems` on the
+        // Surface: `Surface` nests its children under a full-width fill, so
+        // alignment set on the outer element centres that fill and leaves the
+        // content flush left. Invisible while the mark was a placeholder;
+        // obvious the moment a real logo landed in it.
+        <Surface style={{ paddingVertical: space[6] }}>
+          <LogoBlock partner={partner} size={72} />
+        </Surface>
+      )}
 
       <View style={[styles.statsRow, { marginTop: space[3], gap: space[3] }]}>
         <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
@@ -136,6 +144,74 @@ export function PartnerDetailScreen() {
   );
 }
 
+/**
+ * The 3:2 cover banner, spec §5. `children` — the logo/category block — is
+ * rendered underneath it inside the same card rather than layered on top:
+ * spec §5's gradient-overlay rule applies only when text sits *on* the
+ * photo, and nothing here does, so there is nothing to darken for contrast.
+ *
+ * A failed load hides the `Image` but keeps `children` on screen — the same
+ * "degrade to the logo, never to a broken box" contract `PartnerMark` keeps
+ * for the logo itself, applied to the cover.
+ */
+function CoverImage({
+  url,
+  name,
+  children,
+}: {
+  url: string;
+  name: string;
+  children: React.ReactNode;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <View>
+      {!failed ? (
+        <Image
+          source={{ uri: url }}
+          onError={() => setFailed(true)}
+          style={styles.cover}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+          accessibilityLabel={name}
+        />
+      ) : null}
+      {children}
+    </View>
+  );
+}
+
+/** The logo mark plus its category caption — identical content whether it
+ * sits alone in a padded card (no cover) or under the cover banner, just at
+ * a different size and with the cover's own padding standing in for the
+ * card's. */
+function LogoBlock({
+  partner,
+  size,
+  paddingVertical,
+}: {
+  partner: NearbyPartnerDto;
+  size: number;
+  /** Omitted when the enclosing `Surface` already supplies its own padding. */
+  paddingVertical?: number;
+}) {
+  const { color, space, text } = useTheme();
+  const { t } = useTranslation();
+
+  return (
+    <View style={[styles.logoBlock, paddingVertical !== undefined ? { paddingVertical } : null]}>
+      <PartnerMark name={partner.name} logoUrl={partner.logo?.url} size={size} />
+      <View style={[styles.categoryRow, { marginTop: space[3] }]}>
+        <Ionicons name={CATEGORY_ICONS[partner.category]} size={14} color={color.textSecondary} />
+        <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>
+          {t(`partnerCategory.${partner.category}`)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 /** Same leading-icon bubble `SettingsScreen` rows use, so a detail row here
  * reads the same as everywhere else in the app. */
 function InfoIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
@@ -150,6 +226,9 @@ function InfoIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
 }
 
 const styles = StyleSheet.create({
+  // 3:2 per spec §5 ("Use an official partner image at 3:2…").
+  cover: { width: '100%', aspectRatio: 3 / 2 },
+  logoBlock: { alignItems: 'center' },
   categoryRow: { flexDirection: 'row', alignItems: 'center' },
   statsRow: { flexDirection: 'row' },
   infoIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },

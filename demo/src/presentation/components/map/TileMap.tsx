@@ -18,7 +18,7 @@ import {
   TILE_SIZE,
   type LatLng,
 } from './mercator';
-import { ATTRIBUTION, SCRIM_OPACITY, tileUrl } from './tileSource';
+import { ATTRIBUTION, tileUrl } from './tileSource';
 
 /**
  * A slippy map, built out of `<Image>` and arithmetic.
@@ -184,15 +184,15 @@ export function TileMap({
         />
       ))}
 
-      {/* Darkens a light basemap to sit inside a dark app. `pointerEvents`
-          none so it never eats a drag or a pin press. */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.scrim,
-          { backgroundColor: premium.background.base, opacity: SCRIM_OPACITY },
-        ]}
-      />
+      {/* v1 painted a translucent scrim here to darken OSM's light basemap
+          for a near-black app. The app is light now (see
+          `ThemeProvider.tsx`'s doc comment), so a light basemap needs no
+          darkening — `light-premium.ts`'s `background.base` already made
+          this scrim fully transparent, which is why it is gone rather than
+          retuned: a `View` painting nothing at any opacity was dead code
+          describing behaviour nobody saw. Nothing replaces it — the frame's
+          own border and rounded corners are enough to separate the map from
+          the rest of the screen. */}
 
       {placed.map(({ marker, at }) => (
         <View
@@ -279,7 +279,6 @@ function ZoomButton({
 
 const styles = StyleSheet.create({
   frame: { overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
-  scrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   markerAnchor: { transform: [{ translateX: -18 }, { translateY: -36 }] },
   zoomStack: { position: 'absolute', gap: 8 },
   zoomButton: {

@@ -14,6 +14,7 @@ const NAV: NavItem[] = [
   { href: '/earnings', label: 'Earnings', icon: <NavIcon d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" /> },
   { href: '/ev-stations', label: 'EV stations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
   { href: '/branding', label: 'Branding', icon: <NavIcon d="M4 16.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5Zm0 0 4.5-4.5 3 3 3.5-3.5L20 15M9 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z" /> },
+  { href: '/profile', label: 'Public profile', icon: <NavIcon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" /> },
   { href: '/integrations', label: 'Integrations', icon: <NavIcon d="M8 12a4 4 0 1 1 8 0 4 4 0 0 1-8 0ZM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /> },
 ];
 

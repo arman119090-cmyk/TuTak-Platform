@@ -50,17 +50,3 @@ export function tileUrl(x: number, y: number, z: number): string {
   const host = SUBDOMAINS[(x + y) % SUBDOMAINS.length];
   return `https://${host}.tile.openstreetmap.org/${z}/${x}/${y}.png`;
 }
-
-/**
- * How dark to paint over the tiles.
- *
- * The app is a dark product and OSM's standard style is a light one. The
- * alternative to a scrim is a dark tile style, and the free ones with a dark
- * variant all want an API key — the thing this file exists to avoid.
- *
- * 0.55 was picked by what stays readable: street names survive it, the paper
- * white of the base map does not, and the brand-coloured pins sit clearly
- * above it. Much darker and the map stops being useful; much lighter and it
- * glares against every other screen in the app.
- */
-export const SCRIM_OPACITY = 0.55;

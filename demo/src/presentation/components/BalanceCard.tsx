@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { ImageBackground, StyleSheet, Text, View } from 'react-native';
+import { Image, ImageBackground, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../app/theme/ThemeProvider';
-import { JakoWatermark } from './Jako';
 import { Skeleton } from './Skeleton';
 import { formatPoints } from '../utils/format';
 
@@ -30,12 +29,12 @@ interface Props {
  * partner image fails to load: use an initial/logo fallback with a neutral
  * tinted surface" — the hero art here is a bundled TuTak asset, not a
  * remote partner image, so it cannot fail to load the way a network image
- * can, but `onError` still degrades to the plain brand gradient + Jako
- * watermark this card used before the hero art existed, rather than an
- * empty background, in case a bundler/platform ever fails to resolve it.
+ * can, but `onError` still degrades to the plain brand gradient + a ghosted
+ * logo watermark, rather than an empty background, in case a bundler/
+ * platform ever fails to resolve it.
  */
 export function BalanceCard({ available, pending, reserved, loading }: Props) {
-  const { color, space, radius, gradients, glow } = useTheme();
+  const { space, radius, gradients, glow } = useTheme();
   const [heroFailed, setHeroFailed] = useState(false);
 
   if (heroFailed) {
@@ -47,7 +46,13 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
         style={[styles.card, glow.md.native, { borderRadius: radius['2xl'], padding: space[6] }]}
       >
         <View style={styles.watermark} pointerEvents="none">
-          <JakoWatermark size={260} color={color.textInverse} opacity={0.1} />
+          <Image
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('../../../assets/logo-mark.png')}
+            style={styles.watermarkImage}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
         </View>
         <BalanceCardBody
           available={available}
@@ -191,6 +196,7 @@ function BonusCompositionOnBrand({
 const styles = StyleSheet.create({
   card: { overflow: 'hidden', position: 'relative' },
   watermark: { position: 'absolute', right: -70, top: -50 },
+  watermarkImage: { width: 260, height: 260, opacity: 0.1 },
   amountRow: { flexDirection: 'row', alignItems: 'flex-end' },
   track: { height: 8, overflow: 'hidden', width: '100%' },
   trackInner: { flexDirection: 'row', height: '100%', width: '100%' },

@@ -4,11 +4,10 @@ export * from './tokens/layout';
 export * from './tokens/motion';
 export * from './tokens/premium';
 export * from './tokens/light-premium';
-export * from './brand/jako-paths';
 export * from './brand/v2-icons';
 export { buildCssVariables } from './css';
 
-import { semantic, bonusStateColors, palette, neutral, brand as brandRamp } from './tokens/color';
+import { semantic, bonusStateColors, palette, neutral } from './tokens/color';
 import { textStyles, fontFamily } from './tokens/typography';
 import { space, radius, elevation, layout } from './tokens/layout';
 import { duration, easing, springConfig } from './tokens/motion';
@@ -171,40 +170,3 @@ export const tutakLightTheme = {
   motion: { duration, easing, springConfig },
 } as const;
 
-import type { JakoColors } from './brand/jako-paths';
-
-/** Default Jako palette — the mark as it appears on white surfaces. */
-export const jakoDefaultColors: JakoColors = {
-  brand: brandRamp[600],
-  body: neutral[400],
-  crown: neutral[300],
-  beak: neutral[700],
-  beakShadow: neutral[800],
-  scallops: '#B6BDC9',
-  eyePatch: neutral[25],
-  pupil: neutral[900],
-  catchlight: neutral[0],
-};
-
-
-/**
- * Jako on the dark scheme.
- *
- * Two changes from the light palette, both forced by the ground. The wing
- * accent moves from the old brand green to the premium blue — a green bird in
- * a blue-and-violet app looks like a leftover, which is exactly what it was.
- * And the plumage steps *lighter*: the greys chosen to sit on white are only
- * a few percent off #0A0A0F, so on the dark ground the bird was a silhouette
- * of itself.
- */
-export const jakoPremiumColors: JakoColors = {
-  brand: premium.brand.primary,
-  body: neutral[300],
-  crown: neutral[200],
-  beak: neutral[600],
-  beakShadow: neutral[700],
-  scallops: '#8B93A1',
-  eyePatch: neutral[25],
-  pupil: neutral[900],
-  catchlight: neutral[0],
-};

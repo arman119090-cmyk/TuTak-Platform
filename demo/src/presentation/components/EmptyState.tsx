@@ -1,13 +1,16 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
-import { Jako } from './Jako';
 import { Button } from './Button';
 
 /**
- * Empty states are the one place Jako earns his keep in-product: a real
- * illustration would be decoration, but here the mark gives an otherwise
- * blank screen a moment of brand warmth without adding noise.
+ * Empty states are the one place the mark earns its keep in-product: a real
+ * illustration would be decoration, but here the logo gives an otherwise
+ * blank screen a moment of brand warmth without adding noise. Renders the
+ * same glossy Jako lockup as `UserAvatar`/`SplashScreen` (`assets/logo-mark.png`),
+ * dimmed via opacity rather than the small flat vector mark this used to
+ * draw — per Arman's request, 2026-08-23, that the actual logo photo appear
+ * everywhere a bird does, not a separately-drawn approximation of it.
  */
 export function EmptyState({
   title,
@@ -20,17 +23,18 @@ export function EmptyState({
   actionLabel?: string;
   onAction?: () => void;
 }) {
-  const { color, space, text, premium } = useTheme();
+  const { color, space, text } = useTheme();
 
   return (
     <View style={[styles.wrap, { paddingVertical: space[10], gap: space[3] }]}>
-      {/* Dimmed one step from the mark's normal plumage, not two. The
-          border tokens this used to reach for are 8-10% white — a bird
-          nobody can see — and the tertiary/muted pair was barely better.
-          An empty state should be quiet, not empty of its own illustration. */}
-      <Jako
-        size={56}
-        colors={{ body: color.textSecondary, crown: color.textTertiary, brand: premium.brand.dark }}
+      {/* Dimmed, not full-strength — an empty state should be quiet, not
+          empty of its own illustration. */}
+      <Image
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source={require('../../../assets/logo-mark.png')}
+        style={styles.mark}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
       />
       <Text style={[text.headline, { color: color.textPrimary, marginTop: space[2] }]}>
         {title}
@@ -51,4 +55,5 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  mark: { width: 56, height: 56, opacity: 0.55 },
 });

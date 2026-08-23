@@ -1,5 +1,5 @@
 import React from 'react';
-import { Share, StyleSheet, Text, View } from 'react-native';
+import { Image, Share, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -13,7 +13,6 @@ import { StatePill } from '../../components/StatePill';
 import { SectionHeader } from '../../components/SectionHeader';
 import { EmptyState } from '../../components/EmptyState';
 import { UserAvatar } from '../../components/UserAvatar';
-import { JakoWatermark } from '../../components/Jako';
 import { referralApi } from '../../../data/api/referralApi';
 import { formatDate, formatPoints } from '../../utils/format';
 
@@ -73,7 +72,13 @@ export function ReferralScreen() {
         ]}
       >
         <View style={styles.watermark} pointerEvents="none">
-          <JakoWatermark size={200} color={color.textInverse} opacity={0.07} />
+          <Image
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('../../../../assets/logo-mark.png')}
+            style={styles.watermarkImage}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
         </View>
 
         <Text style={[text.caption, { color: 'rgba(255,255,255,0.72)' }]}>
@@ -260,6 +265,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   codeCard: { overflow: 'hidden', position: 'relative' },
   watermark: { position: 'absolute', right: -50, top: -40 },
+  watermarkImage: { width: 200, height: 200, opacity: 0.07 },
   stats: { flexDirection: 'row' },
   levelRow: { flexDirection: 'row', alignItems: 'flex-start' },
   ratePill: { paddingVertical: 4, alignSelf: 'flex-start' },

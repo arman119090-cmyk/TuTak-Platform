@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,6 @@ import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
-import { Jako } from '../../components/Jako';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { formatAmd, formatPoints } from '../../utils/format';
 
@@ -103,7 +102,13 @@ export function PurchaseIntentStatusScreen() {
             <Button label={t('common.done')} onPress={done} />
           </View>
           <View style={{ marginTop: space[8], opacity: 0.35 }}>
-            <Jako size={32} />
+            <Image
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              source={require('../../../../assets/logo-mark.png')}
+              style={{ width: 32, height: 32 }}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
           </View>
         </View>
       </SafeAreaView>

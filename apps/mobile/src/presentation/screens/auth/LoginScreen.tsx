@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
 import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
-import { Jako } from '../../components/Jako';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { authApi } from '../../../data/api/authApi';
@@ -81,8 +80,14 @@ export function LoginScreen({ navigation }: Props) {
             { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
           ]}
         >
-          {/* Jako appears once, at the top, as the mark — not decoration. */}
-          <Jako size={52} />
+          {/* The logo appears once, at the top, as the mark — not decoration. */}
+          <Image
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('../../../../assets/logo-mark.png')}
+            style={styles.mark}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
 
           <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
             {t('auth.welcomeBack')}
@@ -176,4 +181,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { flexGrow: 1, paddingBottom: 40 },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  mark: { width: 52, height: 52 },
 });

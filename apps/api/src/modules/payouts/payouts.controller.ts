@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertPartnerScope } from '../../common/auth/partner-scope';
 import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../auth/types/request-user.type';
@@ -86,7 +87,7 @@ export class PayoutsController {
   }
 
   @Get('partners/:partnerId/balance')
-  async balance(@CurrentUser() user: RequestUser, @Param('partnerId') partnerId: string) {
+  async balance(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     const available = await this.payouts.availableBalance(partnerId);
     return { partnerId, availableBalance: available.toFixed(4), currency: 'AMD' };
@@ -98,13 +99,13 @@ export class PayoutsController {
   // method, while the sibling `balance` above only ever rejects. Nest copes
   // with either; a caller reading the class should not have to.
   @Get('partners/:partnerId/settlements')
-  async settlements(@CurrentUser() user: RequestUser, @Param('partnerId') partnerId: string) {
+  async settlements(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     return this.settlement.listForPartner(partnerId);
   }
 
   @Get('partners/:partnerId')
-  async list(@CurrentUser() user: RequestUser, @Param('partnerId') partnerId: string) {
+  async list(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     return this.payouts.listForPartner(partnerId);
   }
@@ -139,7 +140,7 @@ export class PayoutsController {
   @RequirePermissions(PermissionName.PAYOUT_MANAGE)
   async confirm(
     @CurrentUser() admin: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: ConfirmPayoutDto,
   ) {
     await this.payouts.confirmPaid(id, dto.bankReference, admin.id);
@@ -157,7 +158,7 @@ export class PayoutsController {
   @RequirePermissions(PermissionName.PAYOUT_MANAGE)
   async fail(
     @CurrentUser() admin: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: FailPayoutDto,
   ) {
     await this.payouts.markFailed(id, dto.failureReason);

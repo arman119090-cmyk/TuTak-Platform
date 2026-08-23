@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PermissionName } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { RequestUser } from '../auth/types/request-user.type';
 import { FraudDetectionService } from './fraud-detection.service';
 
@@ -20,7 +21,7 @@ export class SecurityController {
 
   @Post(':id/resolve')
   @RequirePermissions(PermissionName.ADMIN_AUDIT_READ)
-  resolve(@CurrentUser() admin: RequestUser, @Param('id') id: string) {
+  resolve(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string) {
     return this.fraudDetectionService.resolve(id, admin.id);
   }
 }

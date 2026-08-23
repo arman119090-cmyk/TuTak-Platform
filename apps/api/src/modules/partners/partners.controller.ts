@@ -1,8 +1,9 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import {
   assertPartnerOwner,
@@ -82,7 +83,7 @@ export class PartnersController {
   }
 
   @Get(':id')
-  get(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  get(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     // A partner's own people see their own record in full — the dashboard
     // shows them their tax ID and their commission — but nobody else's.
     // `hasPartnerScope` already lets platform admins through.
@@ -94,7 +95,7 @@ export class PartnersController {
   @Get(':id/transactions')
   async transactions(
     @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Query() query: CursorPaginationQueryDto,
   ) {
     if (!hasPartnerScope(user, id) && !(await this.partnersService.isMember(id, user.id))) {
@@ -151,7 +152,7 @@ export class PartnersController {
 
   @Post(':id/approve')
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
-  async approvePartner(@CurrentUser() admin: RequestUser, @Param('id') id: string) {
+  async approvePartner(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string) {
     assertPlatformAdmin(admin, 'Approving a partner application');
     const partner = await this.partnersService.approve(id);
     await this.auditService.record({
@@ -168,7 +169,7 @@ export class PartnersController {
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async rejectPartner(
     @CurrentUser() admin: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: RejectPartnerDto,
   ) {
     assertPlatformAdmin(admin, 'Rejecting a partner application');
@@ -191,7 +192,7 @@ export class PartnersController {
   @Patch(':id/commercial-settings')
   async updateCommercialSettings(
     @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: UpdateCommercialSettingsDto,
   ) {
     assertPartnerScope(user, id);
@@ -226,7 +227,7 @@ export class PartnersController {
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async setActive(
     @CurrentUser() admin: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: SetActiveDto,
   ) {
     assertPlatformAdmin(admin, 'Enabling or disabling a partner');

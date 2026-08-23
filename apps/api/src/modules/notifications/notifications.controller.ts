@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { RequestUser } from '../auth/types/request-user.type';
 import { NotificationsService } from './notifications.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
@@ -18,7 +19,7 @@ export class NotificationsController {
   }
 
   @Post(':id/read')
-  markRead(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  markRead(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     return this.notificationsService.markRead(id, user.id);
   }
 

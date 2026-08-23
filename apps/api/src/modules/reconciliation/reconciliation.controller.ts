@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../auth/types/request-user.type';
@@ -42,7 +43,7 @@ export class ReconciliationController {
    */
   @Get('ledger/accounts/:id/postings')
   @RequirePermissions(PermissionName.LEDGER_READ)
-  async postings(@Param('id') id: string, @Query('limit') limit?: string) {
+  async postings(@UuidParam('id') id: string, @Query('limit') limit?: string) {
     const account = await this.prisma.ledgerAccount.findUniqueOrThrow({ where: { id } });
     const take = Math.min(Number(limit) || 100, 500);
 
@@ -114,7 +115,7 @@ export class ReconciliationController {
    */
   @Post('partners/:partnerId/payout-block/clear')
   @RequirePermissions(PermissionName.PAYOUT_MANAGE)
-  async clearBlock(@CurrentUser() admin: RequestUser, @Param('partnerId') partnerId: string) {
+  async clearBlock(@CurrentUser() admin: RequestUser, @UuidParam('partnerId') partnerId: string) {
     await this.reconciliation.clearPayoutBlock(partnerId, admin.id);
     await this.audit.record({
       actorUserId: admin.id,

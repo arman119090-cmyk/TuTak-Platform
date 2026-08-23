@@ -11,6 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { MediaAssetKind, MediaAssetStatus } from '@prisma/client';
 import type { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { MediaDeliveryService } from '../../infrastructure/media/media-delivery.service';
 import { isMediaVariant, MediaVariant } from '../../infrastructure/media/media-keys';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -84,7 +85,7 @@ export class MediaDeliveryController {
   @Public()
   @Get('brand/:assetId/:variant')
   async brand(
-    @Param('assetId') assetId: string,
+    @UuidParam('assetId') assetId: string,
     @Param('variant') variant: string,
     @Res() res: Response,
   ): Promise<void> {
@@ -122,7 +123,7 @@ export class MediaDeliveryController {
   @Public()
   @Get('private/:assetId/:variant')
   async private(
-    @Param('assetId') assetId: string,
+    @UuidParam('assetId') assetId: string,
     @Param('variant') variant: string,
     @Query('aud') aud: string | undefined,
     @Query('exp') exp: string | undefined,

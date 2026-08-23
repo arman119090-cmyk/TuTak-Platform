@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   assertPartnerOwner,
@@ -6,6 +6,7 @@ import {
   assertPlatformAdmin,
 } from '../../common/auth/partner-scope';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { PartnerIntegrationsService } from './partner-integrations.service';
@@ -24,7 +25,7 @@ export class PartnerIntegrationsController {
    * them, only view is blocked too, not just create.
    */
   @Get()
-  list(@CurrentUser() user: RequestUser, @Param('partnerId') partnerId: string) {
+  list(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     assertPartnerOwner(user, partnerId, 'list partner integrations');
     return this.integrations.list(partnerId);
@@ -33,7 +34,7 @@ export class PartnerIntegrationsController {
   @Post()
   create(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
     @Body() dto: CreateIntegrationDto,
   ) {
     assertPartnerScope(user, partnerId);
@@ -45,8 +46,8 @@ export class PartnerIntegrationsController {
   @Post(':integrationId/verify-website')
   verifyWebsite(
     @CurrentUser() admin: RequestUser,
-    @Param('partnerId') partnerId: string,
-    @Param('integrationId') integrationId: string,
+    @UuidParam('partnerId') partnerId: string,
+    @UuidParam('integrationId') integrationId: string,
   ) {
     assertPlatformAdmin(admin, 'Verifying a partner website');
     return this.integrations.markWebsiteVerified(partnerId, integrationId, admin.id);

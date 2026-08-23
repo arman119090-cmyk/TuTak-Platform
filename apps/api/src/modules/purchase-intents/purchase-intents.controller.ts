@@ -1,8 +1,9 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PermissionName, PurchaseIntentStatus } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertPartnerScope, hasPartnerScope } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
@@ -27,7 +28,7 @@ export class PurchaseIntentsController {
   }
 
   @Get(':id')
-  async get(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  async get(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     if (intent.customerId !== user.id && !hasPartnerScope(user, intent.partnerId)) {
       throw new ForbiddenException('You may not view this purchase intent');
@@ -50,7 +51,7 @@ export class PurchaseIntentsController {
   /** Spec §7 steps 9-11 / §25-26. Any partner staff tier scoped to this intent's partner. */
   @Post(':id/confirm')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
-  async confirm(@CurrentUser() staff: RequestUser, @Param('id') id: string) {
+  async confirm(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertPartnerScope(staff, intent.partnerId);
     return this.purchaseIntents.toDto(await this.purchaseIntents.confirm(id, staff.id));
@@ -60,7 +61,7 @@ export class PurchaseIntentsController {
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
   async reject(
     @CurrentUser() staff: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: RejectPurchaseIntentDto,
   ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
@@ -78,7 +79,7 @@ export class PurchaseIntentsController {
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
   async refund(
     @CurrentUser() staff: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: RefundPurchaseIntentDto,
   ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
@@ -93,7 +94,7 @@ export class PurchaseIntentsController {
   }
 
   @Get(':id/refunds')
-  async listRefunds(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  async listRefunds(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     if (intent.customerId !== user.id && !hasPartnerScope(user, intent.partnerId)) {
       throw new ForbiddenException('You may not view this purchase intent');

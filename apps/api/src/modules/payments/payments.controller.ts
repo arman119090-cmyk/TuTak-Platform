@@ -1,9 +1,10 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PermissionName } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { isPlatformAdmin } from '../../common/auth/partner-scope';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { RequestUser } from '../auth/types/request-user.type';
@@ -69,12 +70,12 @@ export class PaymentsController {
   }
 
   @Get(':id')
-  async get(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  async get(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     return this.ownedPayment(user, id);
   }
 
   @Get(':id/refunds')
-  async refundsFor(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  async refundsFor(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     await this.ownedPayment(user, id);
     return this.refunds.listForPayment(id);
   }

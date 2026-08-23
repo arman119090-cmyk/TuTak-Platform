@@ -1,8 +1,9 @@
-import { Controller, ForbiddenException, Get, Param, Query } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PermissionName } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { hasPartnerScope, isPlatformAdmin } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AnalyticsService } from './analytics.service';
@@ -18,7 +19,7 @@ export class AnalyticsController {
   @RequirePermissions(PermissionName.ANALYTICS_READ)
   async partner(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
     @Query() query: AnalyticsRangeDto,
   ) {
     if (!hasPartnerScope(user, partnerId)) {

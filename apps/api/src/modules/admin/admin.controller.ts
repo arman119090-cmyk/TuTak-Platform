@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Patch, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
@@ -70,7 +71,7 @@ export class AdminController {
   @Patch('users/:id/active')
   async setActive(
     @CurrentUser() admin: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: SetActiveDto,
   ) {
     const isActive = dto.isActive;

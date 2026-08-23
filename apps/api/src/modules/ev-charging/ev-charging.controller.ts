@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsNumber } from 'class-validator';
 import { PermissionName } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertPartnerScope, resolveOperatorPartner } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreateConnectorDto } from './dto/create-connector.dto';
@@ -50,7 +51,7 @@ export class EvChargingController {
   }
 
   @Get('stations/:id')
-  getStation(@Param('id') id: string) {
+  getStation(@UuidParam('id') id: string) {
     return this.stationsService.findStationOrThrow(id);
   }
 
@@ -81,7 +82,7 @@ export class EvChargingController {
   }
 
   @Post('reservations/:id/cancel')
-  cancelReservation(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+  cancelReservation(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     return this.reservationsService.cancel(id, user.id);
   }
 
@@ -103,7 +104,7 @@ export class EvChargingController {
   @Post('sessions/:id/meter-value')
   reportMeterValue(
     @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: MeterValueDto,
   ) {
     const operatorPartnerId = resolveOperatorPartner(user);
@@ -118,7 +119,7 @@ export class EvChargingController {
   @Post('sessions/:id/stop')
   stopSession(
     @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
+    @UuidParam('id') id: string,
     @Body() dto: StopSessionDto,
   ) {
     return this.sessionsService.stop(id, user.id, dto);

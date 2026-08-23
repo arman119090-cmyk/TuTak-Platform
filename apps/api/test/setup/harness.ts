@@ -1,9 +1,13 @@
+import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitter2, EventEmitterModule } from '@nestjs/event-emitter';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import configuration from '../../src/config/configuration';
 import type Redis from 'ioredis';
+import { AllExceptionsFilter } from '../../src/common/filters/all-exceptions.filter';
+import { TransformInterceptor } from '../../src/common/interceptors/transform.interceptor';
 import { PrismaModule } from '../../src/infrastructure/prisma/prisma.module';
 import { REDIS_CLIENT, RedisModule } from '../../src/infrastructure/redis/redis.module';
 import { SmsModule } from '../../src/infrastructure/sms/sms.module';
@@ -132,17 +136,18 @@ export async function settleEvents(): Promise<void> {
 /** Tables holding reference data that survives per-test truncation. */
 const PRESERVED_TABLES = new Set(['roles', 'permissions', 'role_permissions', '_prisma_migrations']);
 
-export async function createTestHarness(): Promise<TestHarness> {
-  const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
-
-  const alerts = new RecordingAlertChannel();
-  const emitter = new SettleableEventEmitter();
-  // Spec §3.2: "tests use an in-memory fake". Everything above the storage
-  // boundary is the real code — the image pipeline really re-encodes, the
-  // delivery service really signs — only the bytes' destination changes.
-  const mediaStorage = new MemoryMediaStorage();
-
-  const moduleRef = await Test.createTestingModule({
+/**
+ * The domain module set every suite in this file boots, shared by both
+ * harnesses below so the two can never drift apart on what "the real app,
+ * minus infra swapped for fakes" means.
+ */
+function domainTestingModuleBuilder(
+  prisma: PrismaClient,
+  alerts: RecordingAlertChannel,
+  mediaStorage: MemoryMediaStorage,
+  emitter: SettleableEventEmitter,
+) {
+  return Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
       EventEmitterModule.forRoot(),
@@ -185,8 +190,20 @@ export async function createTestHarness(): Promise<TestHarness> {
     // instance, so replacing the instance is enough — no listener needs to
     // know it happened.
     .overrideProvider(EventEmitter2)
-    .useValue(emitter)
-    .compile();
+    .useValue(emitter);
+}
+
+export async function createTestHarness(): Promise<TestHarness> {
+  const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
+
+  const alerts = new RecordingAlertChannel();
+  const emitter = new SettleableEventEmitter();
+  // Spec §3.2: "tests use an in-memory fake". Everything above the storage
+  // boundary is the real code — the image pipeline really re-encodes, the
+  // delivery service really signs — only the bytes' destination changes.
+  const mediaStorage = new MemoryMediaStorage();
+
+  const moduleRef = await domainTestingModuleBuilder(prisma, alerts, mediaStorage, emitter).compile();
 
   // TestingModule *is* an application context — no HTTP adapter is created,
   // so the suites exercise the services directly with no server listening.
@@ -218,6 +235,92 @@ export async function createTestHarness(): Promise<TestHarness> {
       // Jest worker alive after every test in the file has finished.
       await redis.quit();
       await moduleRef.close();
+      await prisma.$disconnect();
+    },
+  };
+}
+
+export interface HttpTestHarness {
+  app: INestApplication;
+  /** `http://127.0.0.1:<port>` of the listening instance — build request URLs off this. */
+  baseUrl: string;
+  prisma: PrismaClient;
+  close(): Promise<void>;
+}
+
+/**
+ * `createTestHarness` above is deliberately not this: as its own docblock
+ * says, nothing in this suite drives a real HTTP request, because the
+ * properties under test almost always live below the controller layer. A
+ * `ParseUUIDPipe` on a route parameter is the opposite case — it is
+ * Nest's request-argument pipeline itself, which only runs when a real
+ * HTTP request is dispatched through a real Nest application, the same way
+ * `ThrottlerGuard` only runs there (see `media-system.int-spec.ts`'s
+ * "upload rate limiting" tests and docs/PENTEST_2026-08-23.md §B.1 for that
+ * precedent, which pins the guard's config via reflection instead — not
+ * viable here, since `ParseUUIDPipe` is a bare class reference on `@Param`,
+ * not `@Throttle`'s inspectable metadata).
+ *
+ * This exists only for `id-validation.int-spec.ts`. It reuses the exact same
+ * domain modules and fakes as `createTestHarness` — so it is exercising the
+ * real `ValidationPipe`/`ParseUUIDPipe`/`AllExceptionsFilter` wiring
+ * `main.ts` installs, just assembled here instead of read off a running
+ * process — but note that `AppModule`'s global guards
+ * (`JwtAuthGuard`/`RolesGuard`/`PermissionsGuard`/`PasswordRotationGuard`/
+ * `ThrottlerGuard`) are `APP_GUARD` providers declared on `AppModule`
+ * itself, which neither harness imports, so requests here reach the
+ * controller with no auth enforcement. That is fine for what this file
+ * proves — a pipe rejects a malformed id during argument resolution, before
+ * the handler body (and therefore before whatever `@CurrentUser()` would
+ * have needed) ever runs — and it is why the fix's live proof against the
+ * real running server, in docs/ID_VALIDATION_2026-08-23.md, is the evidence
+ * that authenticated routes behave the same way end-to-end, guards included.
+ */
+export async function createHttpTestHarness(): Promise<HttpTestHarness> {
+  const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
+  const alerts = new RecordingAlertChannel();
+  const emitter = new SettleableEventEmitter();
+  const mediaStorage = new MemoryMediaStorage();
+
+  const moduleRef = await domainTestingModuleBuilder(prisma, alerts, mediaStorage, emitter).compile();
+
+  const app = moduleRef.createNestApplication<NestExpressApplication>();
+  // Mirrors `main.ts` bootstrap and `AppModule`'s global providers for the
+  // pieces that matter to this suite: the same `ValidationPipe` options, the
+  // same `/v1` URI versioning, and the same `AllExceptionsFilter`/
+  // `TransformInterceptor` (both `APP_FILTER`/`APP_INTERCEPTOR` on
+  // `AppModule`, so — like the guards discussed above — they have to be
+  // attached by hand here rather than inherited).
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new TransformInterceptor());
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  await app.init();
+  await app.listen(0);
+  const address = app.getHttpServer().address();
+  const port = typeof address === 'object' && address ? address.port : address;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  activeEmitter = emitter;
+  const redis = moduleRef.get<Redis>(REDIS_CLIENT);
+
+  return {
+    app,
+    baseUrl,
+    prisma,
+    async close() {
+      await emitter.settle();
+      if (activeEmitter === emitter) activeEmitter = null;
+      await redis.quit();
+      await app.close();
       await prisma.$disconnect();
     },
   };

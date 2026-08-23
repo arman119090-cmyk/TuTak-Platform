@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseFilePipeBuilder,
   Post,
   Put,
@@ -25,6 +24,7 @@ import {
 } from '../../common/auth/partner-scope';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { MAX_UPLOAD_BYTES } from '../../infrastructure/media/media-image.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { RequestUser } from '../auth/types/request-user.type';
@@ -73,7 +73,7 @@ export class PartnerMediaController {
   @Get('media')
   async list(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
   ): Promise<PartnerMediaDto> {
     assertPartnerScope(user, partnerId);
     const partner = await this.prisma.partner.findUnique({
@@ -116,7 +116,7 @@ export class PartnerMediaController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async putLogo(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
     @UploadedFile(uploadPipe()) file: UploadedImage,
     @Req() req: Request,
   ): Promise<MediaAssetDto> {
@@ -130,7 +130,7 @@ export class PartnerMediaController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async putCover(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
     @UploadedFile(uploadPipe()) file: UploadedImage,
     @Req() req: Request,
   ): Promise<MediaAssetDto> {
@@ -149,8 +149,8 @@ export class PartnerMediaController {
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async approve(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
-    @Param('assetId') assetId: string,
+    @UuidParam('partnerId') partnerId: string,
+    @UuidParam('assetId') assetId: string,
     @Req() req: Request,
   ): Promise<MediaAssetDto> {
     assertPlatformAdmin(user, 'Approving partner brand media');
@@ -166,7 +166,7 @@ export class PartnerMediaController {
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async deleteLogo(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
     @Req() req: Request,
   ) {
     assertPlatformAdmin(user, 'Removing partner brand media');
@@ -181,7 +181,7 @@ export class PartnerMediaController {
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   async deleteCover(
     @CurrentUser() user: RequestUser,
-    @Param('partnerId') partnerId: string,
+    @UuidParam('partnerId') partnerId: string,
     @Req() req: Request,
   ) {
     assertPlatformAdmin(user, 'Removing partner brand media');

@@ -8,6 +8,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { ListRow } from '../../components/ListRow';
+import { PartnerMark } from '../../components/PartnerMark';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { transactionsApi } from '../../../data/api/transactionsApi';
@@ -68,31 +69,56 @@ export function TransactionHistoryScreen() {
                   return (
                     <ListRow
                       key={tx.id}
+                      /* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3 lists the full
+                         transaction history — and the refund/reversal rows
+                         inside it, which are ordinary rows of type REFUND —
+                         among the surfaces that must identify the partner.
+                         §2.2 is why this uses `tx.partnerBrand` rather than
+                         looking the partner up: the row shows the brand the
+                         operation was recorded under, so a rebrand does not
+                         retroactively rewrite a receipt from last March.
+
+                         A row with no partner (a manual adjustment, an
+                         expiry) keeps the direction glyph — there is no
+                         business to name, and naming one would be a lie. */
                       leading={
-                        <View
-                          style={[
-                            styles.icon,
-                            {
-                              backgroundColor:
-                                tone === 'positive' ? color.availableSurface : color.surfaceSunken,
-                              borderRadius: radius.md,
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            name={transactionIcon(tx.type)}
-                            size={18}
-                            color={tone === 'positive' ? color.availableText : color.textSecondary}
+                        tx.partnerBrand ? (
+                          <PartnerMark
+                            name={tx.partnerBrand.displayName}
+                            logoUrl={tx.partnerBrand.logo?.thumbnailUrl}
+                            size={40}
                           />
-                        </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.icon,
+                              {
+                                backgroundColor:
+                                  tone === 'positive' ? color.availableSurface : color.surfaceSunken,
+                                borderRadius: radius.md,
+                              },
+                            ]}
+                          >
+                            <Ionicons
+                              name={transactionIcon(tx.type)}
+                              size={18}
+                              color={tone === 'positive' ? color.availableText : color.textSecondary}
+                            />
+                          </View>
+                        )
                       }
-                      title={t(`transactionType.${tx.type}`, { defaultValue: tx.type })}
+                      title={
+                        tx.partnerBrand?.displayName ??
+                        t(`transactionType.${tx.type}`, { defaultValue: tx.type })
+                      }
                       subtitle={
                         Number(tx.bonusAppliedAmount) > 0
                           ? t('qr.bonusAppliedShort', {
                               amount: formatPoints(tx.bonusAppliedAmount),
                             })
-                          : t(`transactionStatus.${tx.status}`, { defaultValue: tx.status })
+                          : tx.partnerBrand
+                            ? `${t(`transactionType.${tx.type}`, { defaultValue: tx.type })} · ${t(`transactionStatus.${tx.status}`, { defaultValue: tx.status })}`
+                            : t(`transactionStatus.${tx.status}`, { defaultValue: tx.status })
                       }
                       value={
                         tone === 'positive'

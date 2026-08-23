@@ -1,4 +1,5 @@
 import { Role } from '../enums/roles';
+import type { MediaImageDto } from './media';
 
 export interface RegisterRequestDto {
   phone: string;
@@ -40,6 +41,18 @@ export interface AuthenticatedUserDto {
   partnerScopes: Record<string, string[]>;
   locale: string;
   isPhoneVerified: boolean;
+  /**
+   * This customer's own avatar, or null — spec §4: "the authenticated user's
+   * own profile returns `avatar`". Signed and short-lived; it is theirs and
+   * nobody else's to fetch.
+   */
+  avatar: MediaImageDto | null;
+  /**
+   * Whether they have agreed to their avatar appearing in their direct
+   * referrer's Level-1 list. Default false. Returned so the Profile screen's
+   * toggle can render the truth rather than an optimistic guess.
+   */
+  showAvatarInReferralList: boolean;
 }
 
 export interface AuthResponseDto {

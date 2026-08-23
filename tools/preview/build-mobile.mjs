@@ -41,6 +41,7 @@ await esbuild.build({
     'expo-localization': join(stubs, 'expo-localization.js'),
     'expo-constants': join(stubs, 'expo-constants.js'),
     'expo-camera': join(stubs, 'expo-camera.jsx'),
+    'expo-image-picker': join(stubs, 'expo-image-picker.js'),
     'expo-status-bar': join(stubs, 'expo-status-bar.js'),
     // Screens that read navigation from context rather than from props throw
     // without a navigator above them, and a throwing screen photographs as a

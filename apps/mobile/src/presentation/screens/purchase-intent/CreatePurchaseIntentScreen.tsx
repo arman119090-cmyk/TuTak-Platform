@@ -8,6 +8,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
+import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
 import { JakoWingMark } from '../../components/V2NavIcon';
@@ -136,6 +137,31 @@ export function CreatePurchaseIntentScreen() {
 
   return (
     <Screen title={t('purchaseIntent.createTitle')} subtitle={partner.displayName}>
+      {/* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3: the QR purchase preview is a
+          named surface. This is the moment the customer commits an amount to
+          a business they have just scanned a code for, so it is the moment
+          they most need to see that business's own mark and not a generic
+          symbol — the logo is a second, non-textual confirmation that the
+          scanned id resolved to who they think they are standing in front of.
+
+          Deliberately the *current* published logo (`partner.logo`, from the
+          server read this screen already does — never the scanned code's
+          claim). The snapshot only becomes authoritative once the intent
+          exists; see `PurchaseIntentStatusScreen`. */}
+      <Surface style={{ alignItems: 'center', paddingVertical: space[5], marginBottom: space[4] }}>
+        {/* The name is deliberately not repeated here — `Screen`'s subtitle
+            above already carries it, from the same server-resolved record.
+            Two copies of it would be noise, and the mark's own accessibility
+            label names the partner for a screen reader. */}
+        <PartnerMark name={partner.displayName} logoUrl={partner.logo?.url} size={64} />
+        <Text style={[text.caption, { color: color.textSecondary, marginTop: space[3] }]}>
+          {t('purchaseIntent.cashbackHere', {
+            percent: partner.bonusAccrualRateBps / 100,
+            defaultValue: `${partner.bonusAccrualRateBps / 100}% back`,
+          })}
+        </Text>
+      </Surface>
+
       <TextField
         label={t('purchaseIntent.grossAmount')}
         keyboardType="decimal-pad"

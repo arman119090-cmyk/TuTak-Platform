@@ -350,6 +350,24 @@
     "youPay": "You pay",
     "purchaseId": "Purchase ID",
     "createNew": "Create new purchase",
-    "goHome": "Go home"
+    "goHome": "Go home",
+    "cashbackHere": "{{percent}}% back here"
+  },
+  "profile": {
+    "sectionTitle": "Photo",
+    "avatarTitle": "Your photo",
+    "avatarHint": "Optional. Only you see it, unless you turn on the setting below.",
+    "avatarNotSavedYet": "Not saved yet — tap Save to upload it.",
+    "avatarChoose": "Choose photo",
+    "avatarReplace": "Replace",
+    "avatarRemove": "Remove",
+    "avatarSave": "Save",
+    "avatarUploadFailed": "Could not upload the photo. Please try again.",
+    "avatarRemoveFailed": "Could not remove the photo. Please try again.",
+    "avatarConsentFailed": "Could not change that setting. Please try again.",
+    "avatarPermissionDenied": "TuTak needs access to your photos to set a picture.",
+    "avatarConsentTitle": "Show my photo to the person who invited me",
+    "avatarConsentExplain": "Only them. Nobody further up the chain, and no partner, ever sees it.",
+    "avatarPrivacyNote": "We strip location data from every photo before storing it. You can remove yours at any time."
   }
 }

@@ -12,6 +12,7 @@ import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Button } from '../../components/Button';
 import { UserAvatar } from '../../components/UserAvatar';
+import { AvatarControl } from '../../components/AvatarControl';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
@@ -48,15 +49,19 @@ export function SettingsScreen() {
 
   return (
     <Screen title={t('settings.title')}>
-      {/* Identity card. `UserAvatar` falls back to initials on the brand
-          gradient today — no `avatarUrl` field exists yet on
-          `AuthenticatedUserDto` (the optional avatar-upload backend from
-          `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §3 is not implemented in this
-          delivery; see the completion report) — and starts showing a real
-          photo the moment that field lands, with no change here. */}
+      {/* Identity card. The avatar is the customer's own uploaded photo when
+          they have one (`AuthenticatedUserDto.avatar`, signed to them and
+          nobody else) and `UserAvatar`'s neutral mark when they do not — spec
+          §1.2 keeps the fallback everywhere, because an avatar is optional
+          and always will be. */}
       <Surface>
         <View style={styles.profile}>
-          <UserAvatar firstName={user?.firstName} lastName={user?.lastName} size={56} />
+          <UserAvatar
+            firstName={user?.firstName}
+            lastName={user?.lastName}
+            avatarUrl={user?.avatar?.thumbnailUrl}
+            size={56}
+          />
           <View style={[styles.flex, { marginLeft: space[4] }]}>
             <Text style={[text.headline, { color: color.textPrimary }]}>
               {user?.firstName} {user?.lastName}
@@ -67,6 +72,15 @@ export function SettingsScreen() {
           </View>
         </View>
       </Surface>
+
+      {/* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §4: the explicit avatar control —
+          choose, preview, save, replace, remove, and the Level-1 consent
+          switch with its own explanation. Its own component rather than
+          inline here, because it owns real upload state (a pending local
+          preview, a failure message, three in-flight mutations) and this
+          screen is otherwise a list of links. */}
+      <SectionHeader title={t('profile.sectionTitle')} />
+      <AvatarControl />
 
       <SectionHeader title={t('settings.language')} />
       <Surface padded={false}>

@@ -7,6 +7,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { ListRow } from '../../components/ListRow';
+import { PartnerMark } from '../../components/PartnerMark';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { evApi } from '../../../data/api/evApi';
@@ -54,17 +55,35 @@ export function EvHistoryScreen() {
             sessions.map((s, i) => (
               <ListRow
                 key={s.id}
+                /* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3 lists charging-session
+                   history among the surfaces that must identify the partner —
+                   a customer scrolling past four sessions needs to know which
+                   operator each one was with, and a row of identical lightning
+                   bolts does not tell them. The bolt stays as the fallback for
+                   a session whose operator has published no logo. */
                 leading={
-                  <View
-                    style={[
-                      styles.icon,
-                      { backgroundColor: color.reservedSurface, borderRadius: radius.md },
-                    ]}
-                  >
-                    <Ionicons name="flash" size={18} color={color.reservedText} />
-                  </View>
+                  s.partnerBrand ? (
+                    <PartnerMark
+                      name={s.partnerBrand.displayName}
+                      logoUrl={s.partnerBrand.logo?.thumbnailUrl}
+                      size={40}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.icon,
+                        { backgroundColor: color.reservedSurface, borderRadius: radius.md },
+                      ]}
+                    >
+                      <Ionicons name="flash" size={18} color={color.reservedText} />
+                    </View>
+                  )
                 }
-                title={formatEnergy(s.energyKwh ?? 0)}
+                title={
+                  s.partnerBrand
+                    ? `${s.partnerBrand.displayName} · ${formatEnergy(s.energyKwh ?? 0)}`
+                    : formatEnergy(s.energyKwh ?? 0)
+                }
                 subtitle={s.stoppedAt ? formatDateTime(s.stoppedAt) : t(`evStatus.${s.status}`, { defaultValue: s.status })}
                 value={formatAmd(s.cost ?? 0)}
                 last={i === sessions.length - 1}

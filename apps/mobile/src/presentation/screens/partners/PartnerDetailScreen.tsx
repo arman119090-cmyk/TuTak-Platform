@@ -25,15 +25,15 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * partner's own page rather than only scroll to and expand its card in the
  * list below (which a station pin still does; this screen is partner-only).
  *
- * The logo is `PartnerMark`'s deterministic fallback today — `NearbyPartnerDto`
- * carries no logo field yet, same gap `PartnerMark`'s own docblock and
- * `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` describe. Nothing here needs to change once
- * a real partner-uploaded logo exists — `PartnerMark` renders it the moment
- * the field is populated.
+ * The logo is the partner's own published one, from `NearbyPartnerDto.logo`
+ * (`TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3/§4) — the display derivative rather
+ * than the thumbnail, since it is rendered at 72pt here against 40pt in the
+ * list. A partner that has published none falls back to `PartnerMark`'s
+ * neutral mark, which is what every partner predating the media system shows.
  */
 export function PartnerDetailScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text } = useTheme();
   const { params } = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const { partner } = params;
@@ -41,7 +41,7 @@ export function PartnerDetailScreen() {
   return (
     <Screen title={partner.name} subtitle={partner.branchName}>
       <Surface style={{ alignItems: 'center', paddingVertical: space[6] }}>
-        <PartnerMark name={partner.name} size={72} />
+        <PartnerMark name={partner.name} logoUrl={partner.logo?.url} size={72} />
         <View style={[styles.categoryRow, { marginTop: space[3] }]}>
           <Ionicons name={CATEGORY_ICONS[partner.category]} size={14} color={color.textSecondary} />
           <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>

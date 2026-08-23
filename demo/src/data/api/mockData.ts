@@ -6,6 +6,7 @@ import type {
   EvStationDto,
   NearbyPartnerDto,
   NotificationDto,
+  PartnerBrandDto,
   PurchaseIntentDto,
   ReferralCodeDto,
   ReferralInviteDto,
@@ -58,6 +59,11 @@ export const MOCK_USER: AuthenticatedUserDto = {
   partnerScopes: {},
   locale: 'ru',
   isPhoneVerified: true,
+  // Offline, there is nothing to serve an avatar from — see MOCK_BRANDS on
+  // why a fabricated URL would be worse than none. `UserAvatar` renders its
+  // neutral mark, which is what a real account without a photo shows.
+  avatar: null,
+  showAvatarInReferralList: false,
 };
 
 export function mockTokens() {
@@ -92,6 +98,12 @@ export interface MockState {
     updatedAt: string;
   };
   ledger: BonusLedgerEntryDto[];
+  /**
+   * The signed-in customer, mutable — the avatar and the referral-list
+   * consent flag are both editable from the Profile screen now, so this can
+   * no longer be the frozen `MOCK_USER` constant.
+   */
+  user: AuthenticatedUserDto;
   lots: BonusLotDto[];
   transactions: TransactionDto[];
   partners: NearbyPartnerDto[];
@@ -105,6 +117,29 @@ export interface MockState {
 
 const WALLET_ID = 'mock-wallet-1';
 
+/**
+ * The mock partners' brands, keyed by partner id.
+ *
+ * `logo: null` throughout, and deliberately: the mock adapter replaces the
+ * transport, not the CDN — it has no server to serve derivatives from, and
+ * inventing a URL would produce the one thing
+ * `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §6 forbids, a broken image. Null renders
+ * `PartnerMark`'s neutral mark, which is exactly what a real partner that has
+ * not uploaded a logo shows.
+ *
+ * The *names* are real, and that is the part that matters offline: the demo
+ * exercises the brand-snapshot code path end to end, so a history row reads
+ * "Ջազվե" rather than "QR_PAYMENT".
+ */
+const MOCK_BRANDS: Record<string, PartnerBrandDto> = {
+  'partner-1': { partnerId: 'partner-1', displayName: 'Ջազվե', logo: null },
+  'partner-2': { partnerId: 'partner-2', displayName: 'Երևան Սիթի', logo: null },
+  'partner-3': { partnerId: 'partner-3', displayName: 'TuTak Charge', logo: null },
+};
+
+export const mockBrandFor = (partnerId: string | null): PartnerBrandDto | null =>
+  partnerId ? (MOCK_BRANDS[partnerId] ?? null) : null;
+
 function ledgerEntry(
   over: Partial<BonusLedgerEntryDto> & Pick<BonusLedgerEntryDto, 'id' | 'type' | 'direction' | 'amount' | 'balanceAfter' | 'createdAt'>,
 ): BonusLedgerEntryDto {
@@ -117,12 +152,14 @@ function ledgerEntry(
     relatedReservationId: null,
     sourceTransactionId: null,
     metadata: null,
+    partnerBrand: null,
     ...over,
   };
 }
 
 export function freshMockState(): MockState {
   return {
+    user: { ...MOCK_USER },
     wallet: {
       id: WALLET_ID,
       userId: MOCK_USER.id,
@@ -250,6 +287,7 @@ export function freshMockState(): MockState {
         id: 'tx-2',
         userId: MOCK_USER.id,
         partnerId: 'partner-1',
+        partnerBrand: mockBrandFor('partner-1'),
         type: TransactionType.QR_PAYMENT,
         status: TransactionStatus.COMPLETED,
         amount: '2400',
@@ -265,6 +303,7 @@ export function freshMockState(): MockState {
         id: 'tx-1',
         userId: MOCK_USER.id,
         partnerId: 'partner-2',
+        partnerBrand: mockBrandFor('partner-2'),
         type: TransactionType.QR_PAYMENT,
         status: TransactionStatus.COMPLETED,
         amount: '6050',
@@ -280,6 +319,7 @@ export function freshMockState(): MockState {
         id: 'tx-4',
         userId: MOCK_USER.id,
         partnerId: 'partner-3',
+        partnerBrand: mockBrandFor('partner-3'),
         type: TransactionType.EV_CHARGING,
         status: TransactionStatus.COMPLETED,
         amount: '3180',
@@ -295,6 +335,7 @@ export function freshMockState(): MockState {
         id: 'tx-3',
         userId: MOCK_USER.id,
         partnerId: 'partner-1',
+        partnerBrand: mockBrandFor('partner-1'),
         type: TransactionType.QR_PAYMENT,
         status: TransactionStatus.COMPLETED,
         amount: '4500',
@@ -310,6 +351,7 @@ export function freshMockState(): MockState {
         id: 'tx-5',
         userId: MOCK_USER.id,
         partnerId: 'partner-2',
+        partnerBrand: mockBrandFor('partner-2'),
         type: TransactionType.REFUND,
         status: TransactionStatus.COMPLETED,
         amount: '1200',
@@ -349,6 +391,8 @@ export function freshMockState(): MockState {
         longitude: 44.5148,
         cashbackPercent: 5,
         distanceKm: 0.3,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-2',
@@ -362,6 +406,8 @@ export function freshMockState(): MockState {
         longitude: 44.493,
         cashbackPercent: 5,
         distanceKm: 2.9,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-3',
@@ -375,6 +421,8 @@ export function freshMockState(): MockState {
         longitude: 44.5075,
         cashbackPercent: 4,
         distanceKm: 1.0,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-4',
@@ -388,6 +436,8 @@ export function freshMockState(): MockState {
         longitude: 44.517,
         cashbackPercent: 10,
         distanceKm: 1.0,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-5',
@@ -401,6 +451,8 @@ export function freshMockState(): MockState {
         longitude: 44.5142,
         cashbackPercent: 8,
         distanceKm: 0.2,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-6',
@@ -414,6 +466,8 @@ export function freshMockState(): MockState {
         longitude: 44.5133,
         cashbackPercent: 7,
         distanceKm: 0.8,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-7',
@@ -427,6 +481,8 @@ export function freshMockState(): MockState {
         longitude: 44.5162,
         cashbackPercent: 6,
         distanceKm: 0.7,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-8',
@@ -440,6 +496,8 @@ export function freshMockState(): MockState {
         longitude: 44.5138,
         cashbackPercent: 3,
         distanceKm: 0.7,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-9',
@@ -453,6 +511,8 @@ export function freshMockState(): MockState {
         longitude: 44.499,
         cashbackPercent: 3,
         distanceKm: 2.5,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-10',
@@ -466,6 +526,8 @@ export function freshMockState(): MockState {
         longitude: 44.4941,
         cashbackPercent: 2,
         distanceKm: 2.4,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-11',
@@ -479,6 +541,8 @@ export function freshMockState(): MockState {
         longitude: 44.5202,
         cashbackPercent: 12,
         distanceKm: 1.1,
+        logo: null,
+        cover: null,
       },
       {
         id: 'branch-12',
@@ -492,6 +556,8 @@ export function freshMockState(): MockState {
         longitude: 44.5126,
         cashbackPercent: 6,
         distanceKm: 0.0,
+        logo: null,
+        cover: null,
       },
     ],
 
@@ -643,7 +709,7 @@ export function freshMockState(): MockState {
         id: 'inv-1',
         referrerUserId: MOCK_USER.id,
         refereeUserId: 'mock-user-2',
-        referee: { id: 'mock-user-2', firstName: 'Давид', lastName: 'Петросян' },
+        referee: { id: 'mock-user-2', firstName: 'Давид', lastName: 'Петросян' , avatar: null },
         status: ReferralInviteStatus.REWARDED,
         qualifyingAction: 'QR_PAYMENT',
         rewardAmount: '75',
@@ -654,7 +720,7 @@ export function freshMockState(): MockState {
         id: 'inv-2',
         referrerUserId: MOCK_USER.id,
         refereeUserId: 'mock-user-3',
-        referee: { id: 'mock-user-3', firstName: 'Мариам', lastName: 'Хачатрян' },
+        referee: { id: 'mock-user-3', firstName: 'Мариам', lastName: 'Хачатрян' , avatar: null },
         status: ReferralInviteStatus.PENDING,
         qualifyingAction: null,
         rewardAmount: null,
@@ -665,7 +731,7 @@ export function freshMockState(): MockState {
         id: 'inv-3',
         referrerUserId: MOCK_USER.id,
         refereeUserId: 'mock-user-4',
-        referee: { id: 'mock-user-4', firstName: 'Гор', lastName: 'Саргсян' },
+        referee: { id: 'mock-user-4', firstName: 'Гор', lastName: 'Саргсян' , avatar: null },
         status: ReferralInviteStatus.EXPIRED,
         qualifyingAction: null,
         rewardAmount: null,

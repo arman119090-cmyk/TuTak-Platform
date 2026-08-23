@@ -1,3 +1,4 @@
+import type { PartnerBrandDto } from './media';
 import { BonusEntryStatus, BonusEntryType, LedgerDirection } from '../enums/bonus';
 
 /** Mirrors the Wallet row the API returns from GET /wallet/me. */
@@ -18,6 +19,16 @@ export interface WalletBalanceDto {
 export interface BonusLedgerEntryDto {
   id: string;
   walletId: string;
+  /**
+   * Who the points came from or went to, when that is a business — spec
+   * §1.3's "wallet source rows when the source is a partner".
+   *
+   * Resolved through the entry's `sourceTransactionId`, so it is the snapshot
+   * that transaction recorded, not the partner's brand as it stands today. Null
+   * for every entry with no partner behind it: an expiry, a manual adjustment,
+   * a referral reward.
+   */
+  partnerBrand: PartnerBrandDto | null;
   type: BonusEntryType;
   direction: LedgerDirection;
   /** Magnitude of the movement. Never negative; `direction` carries the sign. */

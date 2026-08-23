@@ -15,6 +15,17 @@ interface AuthState {
   isHydrated: boolean;
   hydrate: () => Promise<void>;
   setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => Promise<void>;
+  /**
+   * Replaces the stored user without touching the session.
+   *
+   * Needed because the profile can now change while signed in — the avatar
+   * and the referral-list consent flag both live on `AuthenticatedUserDto`,
+   * and both are edited from the Profile screen. Persisted as well as set:
+   * the stored copy is what hydration reads on the next cold start, and a
+   * customer who uploads a photo and reopens the app to their old one would
+   * reasonably conclude the upload had not worked.
+   */
+  setUser: (user: AuthenticatedUserDto) => void;
   setTokens: (tokens: Pick<AuthTokensDto, 'accessToken' | 'refreshToken'>) => Promise<void>;
   clear: () => Promise<void>;
 }
@@ -93,6 +104,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       setItem(USER_KEY, JSON.stringify(user)),
     ]);
     set({ user, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+  },
+
+  setUser: (user) => {
+    set({ user });
+    // Fire-and-forget, deliberately. The in-memory update is what the screen
+    // is waiting on; a keystore that refuses the write should cost the
+    // customer a stale avatar after a cold start, not a failed save.
+    void setItem(USER_KEY, JSON.stringify(user));
   },
 
   setTokens: async (tokens) => {

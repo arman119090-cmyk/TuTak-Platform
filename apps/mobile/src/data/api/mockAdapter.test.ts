@@ -31,6 +31,23 @@ function request(method: string, url: string, data?: unknown): InternalAxiosRequ
 const call = (method: string, url: string, data?: unknown) =>
   mockAdapter(request(method, url, data));
 
+/**
+ * A request whose body is passed through untouched.
+ *
+ * `request` above JSON-stringifies, which is what axios does to a plain
+ * object. It is *not* what axios does to a `FormData`: that is handed to the
+ * adapter as-is so the transport can stream it. The upload tests need the
+ * real thing.
+ */
+const callRaw = (method: string, url: string, data: unknown) =>
+  mockAdapter({
+    method,
+    url,
+    baseURL: 'http://offline.invalid/v1',
+    data,
+    headers: {},
+  } as unknown as InternalAxiosRequestConfig);
+
 describe('normalisePath', () => {
   it('strips the base URL and the version prefix', () => {
     expect(normalisePath(request('get', '/wallet/me'))).toBe('/wallet/me');
@@ -138,17 +155,68 @@ describe('mockAdapter', () => {
 
     expect(calls.size).toBeGreaterThan(20);
 
+    /**
+     * Routes that legitimately refuse the synthetic JSON body below.
+     *
+     * `PUT /users/me/avatar` is `multipart/form-data` with a picked file in
+     * it; handed `{ connectorId, amount }` it answers 400 "No image was
+     * uploaded", which is the mock working correctly rather than the mock
+     * being absent. What this test is actually for is catching a route with
+     * *no handler at all*, so for these the bar is "not a 404" — and the
+     * upload path's own success case is covered directly, below.
+     */
+    const REJECTS_A_SYNTHETIC_BODY = new Set(['put /users/me/avatar']);
+
     const unmocked: string[] = [];
     for (const entry of calls) {
       const [method, path] = entry.split(' ');
       const response = await call(method!, path!, { connectorId: 'conn-1', amount: '100' }).catch(
         (error: { response?: { status?: number } }) => error.response,
       );
-      if (response?.status !== 200) unmocked.push(entry);
+      const acceptable = REJECTS_A_SYNTHETIC_BODY.has(entry)
+        ? response?.status !== undefined && response.status !== 404
+        : response?.status === 200;
+      if (!acceptable) unmocked.push(entry);
     }
 
     expect(unmocked).toEqual([]);
   }, 15000); // Every discovered route pays LATENCY_MS in sequence; the route count keeps growing.
+
+  /**
+   * The avatar upload, driven the way the app drives it.
+   *
+   * The mock echoes back the local URI the picker produced rather than
+   * inventing a URL — see the handler's own docblock for why that is the only
+   * honest option with no server behind it. Worth a test of its own because
+   * the two runtimes disagree about what a `FormData` is (React Native keeps
+   * `_parts`; the DOM's returns the entry from `get`), and the handler has to
+   * read both.
+   */
+  it('stores and returns a picked avatar, then removes it', async () => {
+    // React Native's own FormData shape. jsdom's `FormData` would stringify a
+    // plain object to "[object Object]" rather than keeping it, which is
+    // exactly why `usersApi.uploadAvatar` branches on the implementation —
+    // this asserts the native branch, the one a phone actually takes.
+    const form = { _parts: [['file', { uri: 'file:///tmp/me.jpg', name: 'me.jpg', type: 'image/jpeg' }]] };
+
+    const uploaded = await callRaw('put', '/users/me/avatar', form);
+    expect(uploaded.status).toBe(200);
+    expect(uploaded.data.data).toMatchObject({ url: 'file:///tmp/me.jpg' });
+
+    const me = await call('get', '/users/me');
+    expect(me.data.data.avatar.url).toBe('file:///tmp/me.jpg');
+
+    const removed = await call('delete', '/users/me/avatar');
+    expect(removed.data.data.removedAssetId).toEqual(expect.any(String));
+    expect((await call('get', '/users/me')).data.data.avatar).toBeNull();
+  });
+
+  it('records the Level-1 avatar consent decision, defaulting to off', async () => {
+    expect((await call('get', '/users/me')).data.data.showAvatarInReferralList).toBe(false);
+    const on = await call('patch', '/users/me/avatar-consent', { showAvatarInReferralList: true });
+    expect(on.data.data.showAvatarInReferralList).toBe(true);
+    expect((await call('get', '/users/me')).data.data.showAvatarInReferralList).toBe(true);
+  });
 
   it('rejects an unknown route instead of resolving with nothing', async () => {
     // Resolving would give the caller `undefined` and a blank screen. The

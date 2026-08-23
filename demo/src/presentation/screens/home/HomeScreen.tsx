@@ -17,6 +17,7 @@ import { QuickAction } from '../../components/QuickAction';
 import { ReferralEntryCard } from '../../components/ReferralEntryCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import { ListRow } from '../../components/ListRow';
+import { PartnerMark } from '../../components/PartnerMark';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { walletApi } from '../../../data/api/walletApi';
@@ -170,9 +171,38 @@ export function HomeScreen({ navigation }: Props) {
             recent.map((tx, i) => (
               <ListRow
                 key={tx.id}
-                leading={<TransactionIcon type={tx.type} />}
-                title={t(`transactionType.${tx.type}`, { defaultValue: tx.type })}
-                subtitle={formatDayGroup(tx.createdAt)}
+                /* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1: "TuTak must not show
+                   anonymous generic symbols where a customer is dealing with
+                   a real business." So a row that has a partner behind it
+                   leads with that partner's mark and is titled by its name;
+                   the operation type moves to the subtitle, where it is more
+                   use than "PARTNER_PURCHASE" was as a headline. A row with
+                   no partner — a manual adjustment, an expiry — keeps the
+                   type icon, because inventing a business for it would be
+                   worse than a glyph.
+
+                   The brand is the operation's own snapshot (§2.2), so a
+                   partner rebranding tomorrow does not rewrite this row. */
+                leading={
+                  tx.partnerBrand ? (
+                    <PartnerMark
+                      name={tx.partnerBrand.displayName}
+                      logoUrl={tx.partnerBrand.logo?.thumbnailUrl}
+                      size={40}
+                    />
+                  ) : (
+                    <TransactionIcon type={tx.type} />
+                  )
+                }
+                title={
+                  tx.partnerBrand?.displayName ??
+                  t(`transactionType.${tx.type}`, { defaultValue: tx.type })
+                }
+                subtitle={
+                  tx.partnerBrand
+                    ? `${t(`transactionType.${tx.type}`, { defaultValue: tx.type })} · ${formatDayGroup(tx.createdAt)}`
+                    : formatDayGroup(tx.createdAt)
+                }
                 value={formatSigned(
                   transactionTone(tx.type) === 'positive' ? tx.bonusEarnedAmount : `-${tx.amount}`,
                   transactionTone(tx.type) === 'positive' ? 'points' : 'amd',

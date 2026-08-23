@@ -9,6 +9,7 @@ import { Surface } from '../../components/Surface';
 import { BonusComposition } from '../../components/BonusComposition';
 import { SectionHeader } from '../../components/SectionHeader';
 import { ListRow } from '../../components/ListRow';
+import { PartnerMark } from '../../components/PartnerMark';
 import { StatePill } from '../../components/StatePill';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
@@ -134,8 +135,26 @@ export function WalletScreen() {
               return (
                 <ListRow
                   key={entry.id}
+                  /* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3: "wallet source rows
+                     when the source is a partner". Most rows here have no
+                     partner at all — an expiry, a referral reward, a manual
+                     adjustment — and those keep the plain layout rather than
+                     being given a business they had nothing to do with. */
+                  leading={
+                    entry.partnerBrand ? (
+                      <PartnerMark
+                        name={entry.partnerBrand.displayName}
+                        logoUrl={entry.partnerBrand.logo?.thumbnailUrl}
+                        size={36}
+                      />
+                    ) : undefined
+                  }
                   title={t(`bonusEntryType.${entry.type}`, { defaultValue: entry.type })}
-                  subtitle={formatDate(entry.createdAt)}
+                  subtitle={
+                    entry.partnerBrand
+                      ? `${entry.partnerBrand.displayName} · ${formatDate(entry.createdAt)}`
+                      : formatDate(entry.createdAt)
+                  }
                   value={amount.value}
                   valueTone={amount.tone}
                   last={i === ledger.items.length - 1}

@@ -1,3 +1,5 @@
+import type { MediaImageDto } from './media';
+
 /**
  * What any authenticated caller sees.
  *
@@ -14,6 +16,18 @@ export interface PartnerPublicDto {
   bonusAccrualRateBps: number;
   isActive: boolean;
   createdAt: string;
+  /**
+   * The partner's published logo, or null when it has none — spec §1.3/§4.
+   *
+   * Only ever an ACTIVE asset a platform administrator has confirmed: a
+   * submission still in `PENDING_REVIEW` is deliberately invisible here, so an
+   * owner-account compromise cannot change a public business identity on its
+   * own (spec §1). Null is the ordinary case for a partner that has not
+   * uploaded one, and the client renders the neutral mark.
+   */
+  logo: MediaImageDto | null;
+  /** Optional wide cover for the detail card. Same approval rule as `logo`. */
+  cover: MediaImageDto | null;
 }
 
 /**
@@ -83,6 +97,17 @@ export interface NearbyPartnerDto {
   cashbackPercent: number;
   /** Straight-line kilometres from the point asked about, to one decimal. */
   distanceKm: number;
+  /**
+   * The chain's published logo — spec §1.3's "catalogue/map card".
+   *
+   * Per *partner*, not per branch: a chain's four shops are four pins with one
+   * identity, and a branch does not have a logo of its own. Null when the
+   * partner has published none, which every partner that predates the media
+   * system does.
+   */
+  logo: MediaImageDto | null;
+  /** The chain's published cover, for the partner detail card. */
+  cover: MediaImageDto | null;
 }
 
 /**

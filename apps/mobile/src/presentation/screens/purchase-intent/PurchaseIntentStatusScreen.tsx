@@ -5,12 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { PurchaseIntentStatus as Status } from '@tutak/shared-types';
+import { PurchaseIntentStatus as Status, type PurchaseIntentDto } from '@tutak/shared-types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
+import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
@@ -82,6 +83,7 @@ export function PurchaseIntentStatusScreen() {
           <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
             {t('purchaseIntent.confirmed')}
           </Text>
+          <BrandLine brand={intent.partnerBrand} />
           <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
             {formatAmd(intent.grossAmount)}
           </Text>
@@ -137,6 +139,7 @@ export function PurchaseIntentStatusScreen() {
           <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
             {t('purchaseIntent.rejected')}
           </Text>
+          <BrandLine brand={intent.partnerBrand} />
           <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
             {formatAmd(intent.grossAmount)}
           </Text>
@@ -170,6 +173,7 @@ export function PurchaseIntentStatusScreen() {
       <Screen title={t('purchaseIntent.statusTitle')}>
         <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <Ionicons name="time-outline" size={32} color={color.pendingText} />
+          <BrandLine brand={intent.partnerBrand} />
           <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[4] }]}>
             {formatAmd(intent.grossAmount)}
           </Text>
@@ -204,6 +208,7 @@ export function PurchaseIntentStatusScreen() {
         <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
           {t('purchaseIntent.awaiting')}
         </Text>
+        <BrandLine brand={intent.partnerBrand} />
         <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
           {formatAmd(intent.grossAmount)}
         </Text>
@@ -244,6 +249,33 @@ function formatCountdown(total: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * Who this purchase is with, on every one of the four states.
+ *
+ * `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3 names "pending/confirmed/rejected/
+ * expired purchase state" individually, and all four get the same treatment
+ * here rather than only the happy one — a customer looking at a rejection
+ * needs to know which business rejected them at least as much as they needed
+ * to know who confirmed.
+ *
+ * `intent.partnerBrand` is the snapshot taken when the intent was created
+ * (spec §2.2), not a live read: a partner replacing its logo while a purchase
+ * is still awaiting confirmation must not change what the customer is looking
+ * at mid-transaction.
+ */
+function BrandLine({ brand }: { brand: PurchaseIntentDto['partnerBrand'] }) {
+  const { color, space, text } = useTheme();
+  if (!brand) return null;
+  return (
+    <View style={{ alignItems: 'center', marginTop: space[4] }}>
+      <PartnerMark name={brand.displayName} logoUrl={brand.logo?.url} size={48} />
+      <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2] }]}>
+        {brand.displayName}
+      </Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

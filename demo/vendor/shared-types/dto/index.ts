@@ -8,3 +8,4 @@ export * from './referral';
 export * from './notification';
 export * from './purchase-intent';
 export * from './partner-integration';
+export * from './media';

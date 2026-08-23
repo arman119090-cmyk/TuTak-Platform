@@ -450,12 +450,13 @@ function PartnerCard({
         <View style={styles.cardRow}>
           {/* Master spec §5 / `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3: the map/
               directory card is one of the surfaces that must identify the
-              partner by its own mark, not a generic category glyph. No
-              `NearbyPartnerDto` field carries a logo yet (see `PartnerMark`'s
-              own docblock), so this renders the deterministic initial
-              fallback today and becomes the real logo the moment that field
-              exists. */}
-          <PartnerMark name={partner.name} size={40} />
+              partner by its own mark, not a generic category glyph.
+              `NearbyPartnerDto.logo` is the partner's *current* published
+              logo — spec §4 explicitly allows the live brand on a directory
+              card, and requires the operation snapshot only in history and
+              detail views. Null for a partner that has published none, which
+              `PartnerMark` renders as the neutral mark rather than a gap. */}
+          <PartnerMark name={partner.name} logoUrl={partner.logo?.thumbnailUrl} size={40} />
 
           <View style={[styles.flex, { marginLeft: space[3] }]}>
             <Text style={[text.headline, { color: color.textPrimary }]} numberOfLines={1}>

@@ -1,3 +1,4 @@
+import type { PartnerBrandDto } from './media';
 import {
   EvConnectorStatus,
   EvConnectorType,
@@ -67,6 +68,16 @@ export interface EvSessionDto {
    * nothing a customer can read — the price and the station name live here.
    */
   connector?: EvConnectorDto & { station: Omit<EvStationDto, 'connectors'> };
+  /**
+   * The operator's identity — spec §1.3's "charging-session detail/history".
+   *
+   * Present on the history endpoint. Taken from the session's own transaction
+   * snapshot once it has one, so a completed session keeps showing the brand
+   * it was charged under; a session still running falls back to the station's
+   * partner as it is right now, which is the honest answer for something
+   * happening now.
+   */
+  partnerBrand?: PartnerBrandDto | null;
 }
 
 /** See StartEvSessionRequestDto on why there is no `userId`. */

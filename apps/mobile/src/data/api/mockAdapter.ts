@@ -1,7 +1,7 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
-import { MOCK_USER, freshMockState, mockTokens, type MockState } from './mockData';
+import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
 /**
  * Serves the app from memory instead of from a server.
@@ -63,6 +63,46 @@ function body<T>(config: InternalAxiosRequestConfig): T {
     }
   }
   return (config.data ?? {}) as T;
+}
+
+/**
+ * The local URI of the file in a multipart upload, whichever FormData this
+ * runtime provides.
+ *
+ * React Native's FormData keeps its entries on a private `_parts` array and
+ * accepts the `{ uri, name, type }` triple the platform streams from disk.
+ * The DOM's FormData (react-native-web, jsdom under Jest) is a real one and
+ * hands the same object straight back from `get`, because the app passes a
+ * plain object cast to `Blob` rather than an actual Blob. Both shapes are
+ * checked here so the preview harness and a device behave identically —
+ * everywhere else in this file the two are indistinguishable, and this is
+ * the one place they are not.
+ */
+function uploadedFileUri(config: InternalAxiosRequestConfig): string | null {
+  const data = config.data as
+    | { _parts?: [string, { uri?: string }][]; get?: (name: string) => unknown }
+    | undefined;
+  if (!data) return null;
+
+  const fromParts = data._parts?.find(([name]) => name === 'file')?.[1];
+  if (fromParts?.uri) return fromParts.uri;
+
+  const fromGet = typeof data.get === 'function' ? data.get('file') : null;
+  if (!fromGet) return null;
+
+  const uri = (fromGet as { uri?: string }).uri;
+  if (typeof uri === 'string' && uri.length > 0) return uri;
+
+  // The DOM's FormData holds a real Blob (see `usersApi.uploadAvatar`). An
+  // object URL is the local equivalent of the URI the native path carries —
+  // same bytes, addressable by the same `<Image>`. Guarded because a
+  // non-browser DOM shim may not implement it, and an upload failing in a
+  // *mock* over a missing URL factory would be a maddening thing to debug.
+  const isBlobLike = typeof (fromGet as Blob).size === 'number';
+  if (isBlobLike && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    return URL.createObjectURL(fromGet as Blob);
+  }
+  return null;
 }
 
 function paged<T>(items: T[]) {
@@ -127,6 +167,51 @@ function handle(
         deletedAt: new Date().toISOString(),
         anonymizedAfter: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       });
+
+    // ── Profile and avatar ──────────────────────────────────────────────
+    case 'GET /users/me':
+      return envelope(state.user);
+
+    /**
+     * The offline avatar upload.
+     *
+     * It echoes back the local URI the picker produced, rather than
+     * fabricating a URL or a placeholder image. That is the only honest thing
+     * available here: there is no server and no CDN, and a made-up URL would
+     * render as the broken image `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §6
+     * specifically requires never to appear. Echoing the picked file means
+     * the demo shows the customer the photo they actually chose, and the
+     * whole choose → preview → save → replace → remove flow behaves exactly
+     * as it does against the real API.
+     *
+     * What it deliberately does *not* simulate is the server-side pipeline:
+     * nothing here re-encodes, strips EXIF or enforces the 5 MB limit,
+     * because none of that is the client's job and pretending otherwise in a
+     * mock would be a claim about behaviour that lives elsewhere.
+     */
+    case 'PUT /users/me/avatar': {
+      const uri = uploadedFileUri(config);
+      const avatar = uri
+        ? { assetId: `mock-avatar-${Date.now()}`, url: uri, thumbnailUrl: uri, width: 1024, height: 1024 }
+        : null;
+      state.user = { ...state.user, avatar };
+      return avatar
+        ? envelope(avatar)
+        : { body: { message: 'No image was uploaded' }, status: 400 };
+    }
+
+    case 'DELETE /users/me/avatar': {
+      const removedAssetId = state.user.avatar?.assetId ?? null;
+      state.user = { ...state.user, avatar: null };
+      return envelope({ removedAssetId });
+    }
+
+    case 'PATCH /users/me/avatar-consent': {
+      const dto = body<{ showAvatarInReferralList?: boolean }>(config);
+      const showAvatarInReferralList = dto.showAvatarInReferralList === true;
+      state.user = { ...state.user, showAvatarInReferralList };
+      return envelope({ showAvatarInReferralList });
+    }
 
     // ── Wallet ──────────────────────────────────────────────────────────
     case 'GET /wallet/me':
@@ -288,6 +373,15 @@ function handle(
         ),
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
         maxBonusPaymentPercent: 50,
+        // The brand snapshot the real API takes at creation — see
+        // `PurchaseIntent.brandDisplayName` and TUTAK_V2_MEDIA_SYSTEM_SPEC.md
+        // §2.2. Captured here too so the offline demo exercises the same code
+        // path the server does, rather than a shape only the mock has.
+        partnerBrand: mockBrandFor(dto.partnerId) ?? {
+          partnerId: dto.partnerId,
+          displayName: partner?.name ?? 'TuTak',
+          logo: null,
+        },
         confirmedByUserId: null,
         rejectionReason: null,
         createdAt: new Date().toISOString(),
@@ -358,6 +452,11 @@ function handle(
       id,
       customerId: MOCK_USER.id,
       partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+      partnerBrand: mockBrandFor(state.partners[0]?.partnerId ?? 'partner-1') ?? {
+        partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+        displayName: state.partners[0]?.name ?? 'TuTak',
+        logo: null,
+      },
       partnerBranchId: null,
       status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
       grossAmount: '5000',
@@ -423,6 +522,8 @@ function handle(
           category: match.category,
           bonusAccrualRateBps: Math.round(match.cashbackPercent * 100),
           isActive: true,
+          logo: match.logo,
+          cover: match.cover,
           createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
         }
       : {
@@ -431,6 +532,8 @@ function handle(
           category: 'retail',
           bonusAccrualRateBps: 500,
           isActive: true,
+          logo: null,
+          cover: null,
           createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
         };
     return envelope(partner);

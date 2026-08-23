@@ -158,9 +158,17 @@ export function ReferralScreen() {
               <ListRow
                 key={invite.id}
                 leading={
+                  /* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.4/§4: an avatar
+                     appears here only when that person has actively consented,
+                     and the *server* decides — the DTO simply has no URL in it
+                     otherwise, so there is nothing for this screen to
+                     accidentally render. Everyone else gets the neutral mark,
+                     which is also what somebody who has consented but never
+                     uploaded a photo gets. */
                   <UserAvatar
                     firstName={invite.referee?.firstName}
                     lastName={invite.referee?.lastName}
+                    avatarUrl={invite.referee?.avatar?.thumbnailUrl}
                     size={40}
                   />
                 }

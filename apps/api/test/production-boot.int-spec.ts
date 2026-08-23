@@ -33,6 +33,13 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
     'PUSH_ENABLED',
     'PUSH_ENDPOINT',
     'REDIS_URL',
+    'MEDIA_STORAGE_DRIVER',
+    'MEDIA_STORAGE_S3_ENDPOINT',
+    'MEDIA_STORAGE_S3_BUCKET',
+    'MEDIA_STORAGE_S3_REGION',
+    'MEDIA_STORAGE_S3_ACCESS_KEY_ID',
+    'MEDIA_STORAGE_S3_SECRET_ACCESS_KEY',
+    'MEDIA_PUBLIC_BASE_URL',
   ] as const;
   const saved: Partial<Record<(typeof envKeys)[number], string>> = {};
 
@@ -62,6 +69,17 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
     process.env.PUSH_ENABLED = 'true';
     process.env.PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
     process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+    // MediaStorageModule is a boot guard of exactly the same shape (see its
+    // docblock), added 2026-08-23. Configured here for the same reason as
+    // the three above: so a failure in these tests is unambiguously about
+    // the PSP and not a sibling guard tripping.
+    process.env.MEDIA_STORAGE_DRIVER = 's3';
+    process.env.MEDIA_STORAGE_S3_ENDPOINT = 'https://s3.example.test';
+    process.env.MEDIA_STORAGE_S3_BUCKET = 'tutak-media';
+    process.env.MEDIA_STORAGE_S3_REGION = 'eu-central-1';
+    process.env.MEDIA_STORAGE_S3_ACCESS_KEY_ID = 'AKIAEXAMPLE';
+    process.env.MEDIA_STORAGE_S3_SECRET_ACCESS_KEY = 'secret';
+    process.env.MEDIA_PUBLIC_BASE_URL = 'https://api.example.test';
   }
 
   /** Re-imports `AppModule` and `NestFactory` together, from one fresh module registry. */
@@ -157,5 +175,85 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
     jest.resetModules();
     const enabled = await import('../src/modules/sweeps/sweeps.jobs');
     expect(enabled.SWEEPS.some((s) => s.name === 'payments.reconcile-pending-refunds')).toBe(true);
+  });
+
+  /**
+   * The media system's own production guard (TUTAK_V2_MEDIA_SYSTEM_SPEC.md
+   * §3.2, added 2026-08-23), tested here alongside its siblings because it
+   * has the same shape and the same reason to exist.
+   *
+   * The failure it prevents is quieter than a missing acquirer and worse to
+   * find late: production on the local-disk driver looks entirely healthy.
+   * Uploads succeed. The image comes back — from the replica that handled
+   * the upload. Then the load balancer picks the other one and half the
+   * partner logos on the network are 404s, and a database restore makes it
+   * *every* logo, because the bytes were never in anything backed up.
+   */
+  describe('E: media storage must be durable in production', () => {
+    it('refuses to boot on the local-disk driver', async () => {
+      configureProductionExceptPsp();
+      delete process.env.CARD_PAYMENTS_ENABLED;
+      process.env.MEDIA_STORAGE_DRIVER = 'local';
+
+      const { AppModule, NestFactory } = await freshAppModuleAndFactory();
+      await expect(
+        NestFactory.createApplicationContext(AppModule, { logger: false, abortOnError: false }),
+      ).rejects.toThrow(/MEDIA_STORAGE_DRIVER .* in production/);
+    });
+
+    it('refuses to boot on s3 with a credential missing', async () => {
+      configureProductionExceptPsp();
+      delete process.env.CARD_PAYMENTS_ENABLED;
+      delete process.env.MEDIA_STORAGE_S3_SECRET_ACCESS_KEY;
+
+      const { AppModule, NestFactory } = await freshAppModuleAndFactory();
+      await expect(
+        NestFactory.createApplicationContext(AppModule, { logger: false, abortOnError: false }),
+      ).rejects.toThrow(/MEDIA_STORAGE_S3_SECRET_ACCESS_KEY/);
+    });
+
+    it('refuses to boot without a public base URL for the media it serves', async () => {
+      configureProductionExceptPsp();
+      delete process.env.CARD_PAYMENTS_ENABLED;
+      delete process.env.MEDIA_PUBLIC_BASE_URL;
+
+      const { AppModule, NestFactory } = await freshAppModuleAndFactory();
+      await expect(
+        NestFactory.createApplicationContext(AppModule, { logger: false, abortOnError: false }),
+      ).rejects.toThrow(/MEDIA_PUBLIC_BASE_URL/);
+    });
+
+    it('is not exempted by demo mode, unlike the carrier and the acquirer', async () => {
+      // A demonstration has no telco contract and no bank, and faking those
+      // costs nothing. Object storage has no such excuse — a bucket costs
+      // cents, and the demo's own images vanishing on the next redeploy
+      // would be visible to precisely the audience the demo exists for.
+      configureProductionExceptPsp();
+      delete process.env.CARD_PAYMENTS_ENABLED;
+      process.env.DEMO_MODE = 'true';
+      process.env.MEDIA_STORAGE_DRIVER = 'local';
+
+      const { AppModule, NestFactory } = await freshAppModuleAndFactory();
+      await expect(
+        NestFactory.createApplicationContext(AppModule, { logger: false, abortOnError: false }),
+      ).rejects.toThrow(/MEDIA_STORAGE_DRIVER .* in production/);
+    });
+
+    it('boots on a fully configured s3 driver', async () => {
+      configureProductionExceptPsp();
+      delete process.env.CARD_PAYMENTS_ENABLED;
+
+      const { AppModule, NestFactory } = await freshAppModuleAndFactory();
+      const app: INestApplicationContext = await NestFactory.createApplicationContext(AppModule, {
+        logger: false,
+        abortOnError: false,
+      });
+      try {
+        const { MEDIA_STORAGE } = await import('../src/infrastructure/media/media-storage.interface');
+        expect(app.get(MEDIA_STORAGE).driverName).toBe('s3');
+      } finally {
+        await app.close();
+      }
+    });
   });
 });

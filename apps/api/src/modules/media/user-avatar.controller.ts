@@ -20,7 +20,7 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { UpdateAvatarConsentDto } from './dto/update-avatar-consent.dto';
 import { MediaViewService } from './media-view.service';
 import { MediaService } from './media.service';
-import { actorFrom } from './partner-media.controller';
+import { actorFrom, type UploadedImage } from './partner-media.controller';
 
 /**
  * A customer's own avatar — spec §3.3's first three endpoints.
@@ -55,7 +55,7 @@ export class UserAvatarController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
   async upload(
     @CurrentUser() user: RequestUser,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFile() file: UploadedImage | undefined,
     @Req() req: Request,
   ): Promise<MediaImageDto> {
     if (!file?.buffer?.length) {

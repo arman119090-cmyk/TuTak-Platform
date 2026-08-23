@@ -41,6 +41,12 @@ describe('Transaction disclosure (integration)', () => {
     'bonusEarnedAmount',
     'description',
     'metadata',
+    // The partner brand snapshot — TUTAK_V2_MEDIA_SYSTEM_SPEC.md §1.3/§2.2,
+    // added 2026-08-23. A resolved, delivery-safe shape, deliberately not the
+    // raw `brandDisplayName`/`brandLogoAssetId` columns behind it: a storage
+    // key must never reach a client (spec §3.3), and this list is exactly the
+    // place a leak like that would otherwise slip in unnoticed.
+    'partnerBrand',
     'createdAt',
     'updatedAt',
   ];

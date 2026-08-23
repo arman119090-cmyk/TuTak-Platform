@@ -65,3 +65,11 @@ playwright-report/
 # Local database dumps. Never committed — a dump carries every phone
 # number and password hash on the platform.
 backups/
+
+# Objects written by the local-disk MediaStorage driver
+# (MEDIA_STORAGE_LOCAL_ROOT, development only — see
+# apps/api/src/infrastructure/media/media-storage.module.ts). These are real
+# uploaded partner logos and customer avatars: developer-machine data that
+# does not belong in the repository, and a directory production is refused
+# permission to use at all.
+apps/api/.media-storage/

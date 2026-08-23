@@ -9,6 +9,10 @@ import { REDIS_CLIENT, RedisModule } from '../../src/infrastructure/redis/redis.
 import { SmsModule } from '../../src/infrastructure/sms/sms.module';
 import { PushModule } from '../../src/infrastructure/push/push.module';
 import { AlertsModule } from '../../src/infrastructure/alerts/alerts.module';
+import { MediaStorageModule } from '../../src/infrastructure/media/media-storage.module';
+import { MEDIA_STORAGE } from '../../src/infrastructure/media/media-storage.interface';
+import { MemoryMediaStorage } from '../../src/infrastructure/media/memory-media-storage';
+import { MediaModule } from '../../src/modules/media/media.module';
 import { ALERT_CHANNEL } from '../../src/infrastructure/alerts/alert-channel.interface';
 import { RecordingAlertChannel } from './recording-alert.channel';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
@@ -59,6 +63,8 @@ export interface TestHarness {
    * them apart before production does.
    */
   alerts: RecordingAlertChannel;
+  /** The in-memory object store the media suites read back out of. */
+  mediaStorage: MemoryMediaStorage;
   /** Clears captured alerts *and* the Redis suppression window. */
   resetAlerts(): Promise<void>;
   close(): Promise<void>;
@@ -131,6 +137,10 @@ export async function createTestHarness(): Promise<TestHarness> {
 
   const alerts = new RecordingAlertChannel();
   const emitter = new SettleableEventEmitter();
+  // Spec §3.2: "tests use an in-memory fake". Everything above the storage
+  // boundary is the real code — the image pipeline really re-encodes, the
+  // delivery service really signs — only the bytes' destination changes.
+  const mediaStorage = new MemoryMediaStorage();
 
   const moduleRef = await Test.createTestingModule({
     imports: [
@@ -141,6 +151,8 @@ export async function createTestHarness(): Promise<TestHarness> {
       SmsModule,
       PushModule,
       AlertsModule,
+      MediaStorageModule,
+      MediaModule,
       WalletModule,
       TransactionsModule,
       QrPaymentsModule,
@@ -167,6 +179,8 @@ export async function createTestHarness(): Promise<TestHarness> {
     .useValue(prisma)
     .overrideProvider(ALERT_CHANNEL)
     .useValue(alerts)
+    .overrideProvider(MEDIA_STORAGE)
+    .useValue(mediaStorage)
     // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
     // instance, so replacing the instance is enough — no listener needs to
     // know it happened.
@@ -185,6 +199,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     app: moduleRef,
     prisma,
     alerts,
+    mediaStorage,
     async resetAlerts() {
       alerts.clear();
       // Suppression lives in Redis and survives table truncation, so without

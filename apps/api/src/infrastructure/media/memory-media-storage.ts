@@ -15,20 +15,27 @@ export class MemoryMediaStorage implements MediaStorage {
 
   private readonly objects = new Map<string, StoredObject>();
 
-  async put(key: string, body: Buffer, contentType: string): Promise<void> {
+  // These three are synchronous underneath and return resolved promises. The
+  // interface is async because every real backend is; a fake that resolved
+  // synchronously would let an ordering bug pass here and fail in production.
+  put(key: string, body: Buffer, contentType: string): Promise<void> {
     // Copied, not referenced. sharp hands back buffers backed by pooled
     // memory; keeping the caller's buffer would let a later write mutate an
     // object that is supposed to be immutable once stored.
     this.objects.set(key, { body: Buffer.from(body), contentType });
+    return Promise.resolve();
   }
 
-  async get(key: string): Promise<StoredObject | null> {
+  get(key: string): Promise<StoredObject | null> {
     const found = this.objects.get(key);
-    return found ? { body: Buffer.from(found.body), contentType: found.contentType } : null;
+    return Promise.resolve(
+      found ? { body: Buffer.from(found.body), contentType: found.contentType } : null,
+    );
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.objects.delete(key);
+    return Promise.resolve();
   }
 
   /** Test-only introspection. Not on the interface — nothing in `src/` calls it. */

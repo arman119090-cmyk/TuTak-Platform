@@ -104,7 +104,7 @@ export class PartnerMediaController {
   async putLogo(
     @CurrentUser() user: RequestUser,
     @Param('partnerId') partnerId: string,
-    @UploadedFile(uploadPipe()) file: Express.Multer.File,
+    @UploadedFile(uploadPipe()) file: UploadedImage,
     @Req() req: Request,
   ): Promise<MediaAssetDto> {
     return this.submit(user, partnerId, MediaAssetKind.PARTNER_LOGO, file, req);
@@ -116,7 +116,7 @@ export class PartnerMediaController {
   async putCover(
     @CurrentUser() user: RequestUser,
     @Param('partnerId') partnerId: string,
-    @UploadedFile(uploadPipe()) file: Express.Multer.File,
+    @UploadedFile(uploadPipe()) file: UploadedImage,
     @Req() req: Request,
   ): Promise<MediaAssetDto> {
     return this.submit(user, partnerId, MediaAssetKind.PARTNER_COVER, file, req);
@@ -181,7 +181,7 @@ export class PartnerMediaController {
     user: RequestUser,
     partnerId: string,
     kind: Extract<MediaAssetKind, 'PARTNER_LOGO' | 'PARTNER_COVER'>,
-    file: Express.Multer.File,
+    file: UploadedImage,
     req: Request,
   ): Promise<MediaAssetDto> {
     assertPartnerScope(user, partnerId);
@@ -212,6 +212,22 @@ function uploadPipe() {
   return new ParseFilePipeBuilder()
     .addMaxSizeValidator({ maxSize: MAX_UPLOAD_BYTES, message: 'The image must be 5 MB or smaller' })
     .build({ fileIsRequired: true });
+}
+
+/**
+ * The part of multer's uploaded-file object this code actually reads.
+ *
+ * Declared here rather than using the ambient `Express.Multer.File`: that type
+ * is a global augmentation from `@types/multer`, and this app's spec tsconfig
+ * pins `types` to `["jest", "node"]` so the augmentation is not in scope there.
+ * A four-field structural type is also simply a more honest contract — nothing
+ * below cares about destination paths, field names or stream handles.
+ */
+export interface UploadedImage {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
 }
 
 export function actorFrom(user: RequestUser, req: Request): ActorContext {

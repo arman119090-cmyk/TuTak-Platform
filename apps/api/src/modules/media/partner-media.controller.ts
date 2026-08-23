@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MediaAssetKind, MediaAssetStatus, PermissionName } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import type { MediaAssetDto, PartnerMediaDto } from './media.contracts';
 import {
@@ -98,9 +99,21 @@ export class PartnerMediaController {
     };
   }
 
+  /**
+   * Own throttle, distinct from the platform-wide 120/minute default —
+   * matching `POST /payments`'s precedent for an endpoint that is
+   * meaningfully more expensive than an ordinary read: every call here runs
+   * the full `sharp` decode/validate/re-encode pipeline (CPU) and writes
+   * three new objects to storage that are *never* garbage-collected (spec
+   * §3.3's retention rule keeps every `REPLACED`/`REVOKED` derivative
+   * forever, by design, for history). Nobody legitimately re-submits a
+   * partner logo ten times a minute; an account that does is either testing
+   * or spending someone else's CPU and disk on purpose.
+   */
   @Put('logo')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async putLogo(
     @CurrentUser() user: RequestUser,
     @Param('partnerId') partnerId: string,
@@ -110,9 +123,11 @@ export class PartnerMediaController {
     return this.submit(user, partnerId, MediaAssetKind.PARTNER_LOGO, file, req);
   }
 
+  /** Same reasoning as `putLogo` above. */
   @Put('cover')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async putCover(
     @CurrentUser() user: RequestUser,
     @Param('partnerId') partnerId: string,

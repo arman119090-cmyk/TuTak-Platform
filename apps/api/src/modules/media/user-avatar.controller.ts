@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import type { MediaImageDto } from './media.contracts';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -49,10 +50,22 @@ export class UserAvatarController {
    * the Profile screen "must not falsely show success until the server has
    * stored the derived asset". Nothing here is queued or optimistic; if this
    * responds 200, the image exists and the URL in the response resolves.
+   *
+   * Own throttle, distinct from the platform-wide 120/minute default —
+   * matching `POST /payments`'s precedent (`payments.controller.ts`) for an
+   * endpoint meaningfully more expensive than an ordinary read: every call
+   * runs the full `sharp` decode/validate/re-encode pipeline (CPU) and writes
+   * three new objects to storage, none of which are ever garbage-collected —
+   * a replaced avatar's derivatives are retained forever by design (so an
+   * already-issued signed URL keeps resolving), which is exactly what makes
+   * unbounded repeat uploads a real storage-accumulation vector and not just
+   * a CPU one. Nobody legitimately replaces their own photo ten times a
+   * minute.
    */
   @Put('avatar')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async upload(
     @CurrentUser() user: RequestUser,
     @UploadedFile() file: UploadedImage | undefined,

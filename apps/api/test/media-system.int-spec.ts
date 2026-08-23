@@ -655,4 +655,56 @@ describe('Media system (integration)', () => {
       logo: null,
     });
   });
+
+  // ── Upload abuse: every image-processing endpoint has its own throttle ──
+
+  describe('upload rate limiting', () => {
+    /**
+     * Proven live against the running server before this fix, not just
+     * reasoned about: an authenticated account could `PUT /users/me/avatar`
+     * in a tight loop bounded only by the platform-wide 120/minute default —
+     * every call runs the full image pipeline (CPU) and writes three new
+     * storage objects that are *never* garbage-collected (§3.3's retention
+     * rule keeps every `REPLACED` derivative forever, by design). A ~5.9 MB
+     * `.media-storage` directory and 858 avatar files were produced by noisy
+     * manual testing alone, with no throttle in the way. Every other
+     * meaningfully-expensive mutation in this codebase (`POST /payments`,
+     * `POST /payouts`, every OTP-issuing route) already carries its own
+     * `@Throttle`, distinct from the global default — the upload endpoints
+     * were the one CPU/storage-expensive class of route missing it.
+     *
+     * This asserts the decorator's metadata directly (the same technique
+     * `financial-authorization.int-spec.ts` uses for `@RequirePermissions`)
+     * rather than driving real HTTP 429s, because nothing in this suite goes
+     * through the HTTP layer — every other test in this file calls
+     * controllers as plain TypeScript methods, and `ThrottlerGuard` only runs
+     * as part of Nest's request pipeline. Reading the metadata `ThrottlerGuard`
+     * itself reads is what actually regresses if the decorator is removed or
+     * loosened; a real HTTP loop against the metadata-less pre-fix code
+     * eventually hitting exactly 121 requests before its first 429 is the
+     * live behaviour this metadata is standing in for.
+     */
+    const throttleOn = (
+      controller: object,
+      method: string,
+    ): { limit: number; ttl: number } | null => {
+      const target = (controller as Record<string, unknown>)[method];
+      const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', target as object) as
+        | number
+        | undefined;
+      const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', target as object) as
+        | number
+        | undefined;
+      return limit !== undefined && ttl !== undefined ? { limit, ttl } : null;
+    };
+
+    it('caps avatar uploads well under the platform-wide default', () => {
+      expect(throttleOn(userAvatar, 'upload')).toEqual({ limit: 10, ttl: 60_000 });
+    });
+
+    it('caps partner logo and cover uploads the same way', () => {
+      expect(throttleOn(partnerMedia, 'putLogo')).toEqual({ limit: 10, ttl: 60_000 });
+      expect(throttleOn(partnerMedia, 'putCover')).toEqual({ limit: 10, ttl: 60_000 });
+    });
+  });
 });

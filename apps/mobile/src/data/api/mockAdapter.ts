@@ -524,6 +524,8 @@ function handle(
           isActive: true,
           logo: match.logo,
           cover: match.cover,
+          about: null,
+          offerings: [],
           createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
         }
       : {
@@ -534,6 +536,8 @@ function handle(
           isActive: true,
           logo: null,
           cover: null,
+          about: null,
+          offerings: [],
           createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
         };
     return envelope(partner);

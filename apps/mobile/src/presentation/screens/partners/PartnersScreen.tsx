@@ -189,8 +189,10 @@ export function PartnersScreen() {
               position: { lat: item.partner.latitude, lng: item.partner.longitude },
               render: (selected: boolean) => (
                 <PartnerPin
+                  name={item.partner.name}
                   category={item.partner.category}
                   cashbackPercent={item.partner.cashbackPercent}
+                  logoUrl={item.partner.logo?.url}
                   selected={selected}
                 />
               ),

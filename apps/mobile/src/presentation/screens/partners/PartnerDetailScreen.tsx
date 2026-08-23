@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import type { NearbyPartnerDto } from '@tutak/shared-types';
+import type { NearbyPartnerDto, PartnerOfferingDto } from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
@@ -14,6 +15,8 @@ import { ListRow } from '../../components/ListRow';
 import { PartnerMark } from '../../components/PartnerMark';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { TileMap } from '../../components/map/TileMap';
+import { partnersApi } from '../../../data/api/partnersApi';
+import { formatAmd } from '../../utils/format';
 import { CATEGORY_ICONS, formatDistance } from './categories';
 import { PartnerPin } from './PartnerPin';
 
@@ -42,6 +45,18 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * photo. `CoverImage` hides itself the same way on a load failure, so a
  * cover URL that 404s degrades to the same logo-only card rather than an
  * empty grey rectangle.
+ *
+ * The "about" text and offerings list (partner public profile, confirmed
+ * with Arman 2026-08-23) live only on `PartnerPublicDto`, not the
+ * `NearbyPartnerDto` this screen is opened with — see that DTO's own doc
+ * comment for why the nearby/map projection deliberately stays lean. So this
+ * screen now also fetches `GET /partners/:id` on mount
+ * (`CreatePurchaseIntentScreen`'s exact pattern: the nav-param data renders
+ * immediately as a placeholder, the fetched detail replaces only the fields
+ * that were never on the nav param). Everything the nav param already carries
+ * cheaply — distance, the mini-map coordinate, the logo/cover shown above —
+ * keeps reading from `partner`, the trusted `NearbyPartnerDto`; nothing here
+ * moves wholesale onto the fetched object.
  */
 export function PartnerDetailScreen() {
   const { t } = useTranslation();
@@ -49,6 +64,11 @@ export function PartnerDetailScreen() {
   const { params } = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const { partner } = params;
+
+  const { data: detail } = useQuery({
+    queryKey: ['partner', partner.partnerId],
+    queryFn: () => partnersApi.get(partner.partnerId),
+  });
 
   return (
     <Screen title={partner.name} subtitle={partner.branchName}>
@@ -96,8 +116,10 @@ export function PartnerDetailScreen() {
               position: { lat: partner.latitude, lng: partner.longitude },
               render: () => (
                 <PartnerPin
+                  name={partner.name}
                   category={partner.category}
                   cashbackPercent={partner.cashbackPercent}
+                  logoUrl={partner.logo?.url}
                   selected
                 />
               ),
@@ -117,6 +139,37 @@ export function PartnerDetailScreen() {
           last
         />
       </Surface>
+
+      {detail?.about ? (
+        <Surface style={{ marginTop: space[3] }}>
+          <Text style={[text.headline, { color: color.textPrimary }]}>
+            {t('partners.about')}
+          </Text>
+          {/* The partner's own freeform text — never translated, rendered
+              exactly as they wrote it, same as `partner.name`/`address`
+              above. */}
+          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2] }]}>
+            {detail.about}
+          </Text>
+        </Surface>
+      ) : null}
+
+      {detail?.offerings && detail.offerings.length > 0 ? (
+        <Surface style={{ marginTop: space[3] }} padded={false}>
+          <View style={{ paddingHorizontal: space[4], paddingTop: space[4] }}>
+            <Text style={[text.headline, { color: color.textPrimary }]}>
+              {t('partners.offerings')}
+            </Text>
+          </View>
+          {detail.offerings.map((offering, index) => (
+            <OfferingRow
+              key={offering.id}
+              offering={offering}
+              last={index === detail.offerings.length - 1}
+            />
+          ))}
+        </Surface>
+      ) : null}
 
       <Text
         style={[
@@ -178,6 +231,27 @@ function CoverImage({
         />
       ) : null}
       {children}
+    </View>
+  );
+}
+
+/**
+ * One row of the partner's optional offerings list — name, price, and an
+ * optional description, matching `ListRow`'s own title/subtitle/value shape.
+ * Deliberately no `onPress`: this is a read-only listing, not a catalogue a
+ * customer can tap into — there is no marketplace behind it yet, per Arman's
+ * explicit "полноценный маркетплейс сейчас НЕ строим".
+ */
+function OfferingRow({ offering, last }: { offering: PartnerOfferingDto; last: boolean }) {
+  const { space } = useTheme();
+  return (
+    <View style={{ paddingHorizontal: space[4] }}>
+      <ListRow
+        title={offering.name}
+        subtitle={offering.description ?? undefined}
+        value={formatAmd(offering.price)}
+        last={last}
+      />
     </View>
   );
 }

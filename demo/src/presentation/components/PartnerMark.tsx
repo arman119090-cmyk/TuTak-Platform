@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import { reserved } from '@tutak/design';
 import { useTheme } from '../../app/theme/ThemeProvider';
+import { Jako } from './Jako';
 
 /**
  * `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §4: "create one reusable `PartnerMark`
- * component that renders a logo, loading/error state, and deterministic
- * initial fallback... Do not paste separate image-loading logic into each
- * screen." Every customer-facing operation surface the spec's §1 lists
- * (map/directory card, PurchaseIntent, transaction/wallet rows, EV-session
- * history, refund rows) is meant to render a partner identity through this
- * one component.
+ * component that renders a logo, loading/error state, and [a] fallback...
+ * Do not paste separate image-loading logic into each screen." Every
+ * customer-facing operation surface the spec's §1 lists (map/directory
+ * card, PurchaseIntent, transaction/wallet rows, EV-session history, refund
+ * rows) is meant to render a partner identity through this one component.
+ *
+ * The fallback is the Jako mark, recoloured to a distinct blue accent so a
+ * partner without a logo is still visually distinguishable at a glance from
+ * `UserAvatar`'s green customer fallback — per Arman's explicit request,
+ * 2026-08-23, which supersedes this component's earlier initials-only
+ * fallback (the spec's written "initials" instruction predates that
+ * request).
  *
  * `logoUrl` is intentionally optional and currently unused by every caller
  * in this delivery: no DTO in `@tutak/shared-types` yet returns a partner
@@ -18,29 +26,22 @@ import { useTheme } from '../../app/theme/ThemeProvider';
  * migration, storage backend, and DTO extension the spec's §2-§4 describe,
  * which this visual-and-media-boundary delivery does not implement (see
  * the completion report). Every current call site therefore renders the
- * initials fallback deterministically, which is correct today and becomes
- * the real logo/fallback pair for free once a caller starts passing a real
+ * fallback deterministically, which is correct today and becomes the real
+ * logo/fallback pair for free once a caller starts passing a real
  * `logoUrl` — no call site needs to change.
- *
- * Deliberately initials, not the Jako brand mark: `TUTAK_V2_MEDIA_SYSTEM_SPEC.md`
- * says so explicitly and three times over ("initials remain the fallback
- * everywhere" §1.2; "neutral initial/logo fallback" §2.1; "deterministic
- * initial fallback" §4) — see the completion report for the reconciliation
- * against a later verbal request for a Jako-mark fallback.
  */
 export function PartnerMark({
   name,
   logoUrl,
   size = 40,
 }: {
-  /** The partner's display name — source of the deterministic initial. */
+  /** The partner's display name — used for the accessibility label. */
   name: string;
   logoUrl?: string | null;
   size?: number;
 }) {
   const { color, radius } = useTheme();
   const [failed, setFailed] = useState(false);
-  const initial = name.trim().charAt(0).toUpperCase() || '?';
 
   if (logoUrl && !failed) {
     return (
@@ -62,9 +63,7 @@ export function PartnerMark({
         { width: size, height: size, borderRadius: radius.md, backgroundColor: color.surfaceSunken },
       ]}
     >
-      <Text style={{ color: color.textSecondary, fontWeight: '700', fontSize: size * 0.4 }}>
-        {initial}
-      </Text>
+      <Jako size={size * 0.72} colors={{ brand: reserved[600] }} />
     </View>
   );
 }

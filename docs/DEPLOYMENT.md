@@ -38,7 +38,25 @@ undeployable rather than safe:
 | `REDIS_URL` | `RedisModule` | The variable has a `redis://localhost:6379` default so local dev never needs an env file — the same default in production would silently point advisory locks and the sweep queue at an empty local instance instead of the real shared one. Added 2026-08-16, launch-readiness pass. |
 
 `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are validated at 32 characters
-minimum by `env.validation.ts` in every environment.
+minimum by `env.validation.ts` in every environment. **In `production`
+specifically** (security hardening, 2026-08-23), the process additionally
+refuses to start if either secret matches a known placeholder pattern
+(`change-me-*`, `example`, `your-secret`, `insecure`, `test-secret`, and
+similar — see `PLACEHOLDER_SECRET_PATTERNS` in `env.validation.ts`), is
+low-entropy (fewer than 8 distinct characters — catches a repeated or
+cyclic value that happens to be 32+ characters long; 8 rather than
+something closer to a hex secret's 16-symbol alphabet, because a 20,000-
+sample check of genuinely random hex strings found real ones occasionally
+landing as low as 9 distinct characters by chance — see the comment on
+`hasLowEntropy` in `env.validation.ts`), or is identical to
+the other secret. This closed a real gap: before this guard, the exact
+`.env.example` values — `change-me-access-secret-min-32-chars-long` and its
+refresh counterpart, both 32+ characters — passed the length-only check and
+would have let `NODE_ENV=production` boot on secrets anyone can read in this
+repository, a total authentication bypass (anyone who knows or guesses the
+secret can mint access/refresh tokens for any user, role, or partner scope).
+Generate real ones with `openssl rand -hex 32` — two separate invocations,
+one for each secret.
 
 **`TRUST_PROXY` does not block boot, but matters as much as `CORS_ORIGINS`
 does for any deployment that sits behind a real reverse proxy or load
@@ -63,6 +81,79 @@ Until those exist, run the rehearsal environment with `NODE_ENV=staging` (not
 enforcement, no exposed Swagger UI, and a `Secure` refresh cookie without
 requiring a live carrier or acquirer. `NODE_ENV=development` is for a
 developer's own machine only.
+
+---
+
+## 1a. Network / firewall requirements — Postgres and Redis
+
+Security hardening (2026-08-23). Neither Postgres nor Redis should ever be
+reachable from the public internet in production — only `tutak-api` (and,
+for Postgres, whatever runs backups/migrations) needs to reach them, and
+both hold data or capabilities that a stolen password alone should not be
+enough to get to from anywhere in the world: Redis has no network-layer
+access control beyond its one shared `--requirepass` value, and Postgres's
+own password can be brute-forced or leaked far more easily than "also has to
+already be on the private network."
+
+**What this repository ships:**
+
+- `docker-compose.yml` is documented at the top of this file as a **local**
+  stack, and its own comments say so again at the Postgres/Redis blocks —
+  but nothing enforced that until this pass. Their `ports:` mappings are now
+  bound to `127.0.0.1` explicitly (`"127.0.0.1:5432:5432"`,
+  `"127.0.0.1:6379:6379"`) rather than left unqualified, which used to
+  publish both to every interface on the host, including whatever network
+  the host itself is on. Local development is unaffected — `psql -h
+  localhost` and every tool on the host machine itself still connects
+  exactly as before.
+- `render.yaml`'s Redis (`type: keyvalue`) already set `ipAllowList: []`,
+  which Render documents as blocking every external connection while
+  same-region services (`tutak-api`) still reach it over Render's internal
+  network. Its Postgres (`databases:`) did **not** have the same setting —
+  Render's own documented default for an omitted `ipAllowList` is "reachable
+  from any IP with valid credentials," i.e. publicly exposed to a
+  password-guessing/brute-force attempt from anywhere on the internet. Fixed
+  in this pass by adding the same `ipAllowList: []` to the `tutak-db` entry.
+- `railway.json` declares only the API service's build/deploy behaviour; it
+  does not provision Postgres or Redis at all. A Railway deployment adds
+  those as separate managed plugins/services through Railway's own console
+  or `railway.toml`, which this repository does not define — see "What this
+  does not (and cannot) cover" below.
+- No `docker-compose.prod.yml`, Kubernetes manifest, Terraform, or other
+  production-specific infrastructure-as-code file exists in this repository
+  (`infra/docker/` is present but empty). Production is documented, not
+  templated: §8 below and the environment-variable reference in §4 are what
+  a self-managed deployment follows by hand.
+
+**If you self-host Postgres/Redis (rather than a managed provider) for a
+real deployment**, beyond what any file here can enforce:
+
+- Do not publish 5432/6379 to a public interface at all — no `-p
+  5432:5432` / `-p 6379:6379` on a host with a public IP, whether run via
+  Docker or bare-metal. Bind to the container network or `127.0.0.1` only,
+  and let `tutak-api` reach them over that private path (Docker's internal
+  DNS between services in one Compose/Swarm/Kubernetes network, or the cloud
+  provider's VPC).
+- If the database host is unavoidably reachable on a public IP (a cloud VM
+  with no VPC peering to the API host), put a firewall/security-group rule
+  in front of it that allows inbound 5432/6379 **only** from the API
+  server's own IP (or its NAT gateway/VPC CIDR) — never `0.0.0.0/0`. AWS
+  security groups, GCP firewall rules, and every major cloud's equivalent
+  all support source-IP/CIDR restriction on a per-port basis for exactly
+  this.
+- Managed instances remain the right default regardless (§8.1) — a managed
+  provider's private networking is one setting away, rather than a firewall
+  rule an operator has to remember to write and keep correct as
+  infrastructure changes.
+
+**What this does not (and cannot) cover.** Nothing in this repository can
+enforce a cloud firewall, security group, or VPC configuration that lives
+outside it — those are provisioned by whoever stands up the actual hosting,
+not by application code or a compose file. This section documents the
+requirement; verifying `nmap` or the provider's own network console shows
+5432/6379 closed to the public internet on the actual production host is
+an operational step for whoever runs that deployment, the same way rotating
+`SEED_ADMIN_PASSWORD` after first boot (§8.5) is.
 
 ---
 

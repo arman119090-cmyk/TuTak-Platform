@@ -52,7 +52,19 @@ services:
       # archive_command inherits the postmaster's environment, which is this.
       PITR_ARCHIVE_DIR: /var/lib/tutak/wal-archive
     ports:
-      - "5432:5432"
+      # Security hardening (2026-08-23): bound to loopback only. An
+      # unqualified "5432:5432" publishes to every interface on the host —
+      # on a developer's laptop behind a firewall that is low-risk, but this
+      # file is the one the WAL-archiving comment above admits gets copied
+      # onto a real server, and an unqualified mapping there puts Postgres
+      # on the open network with only its password standing guard. Binding
+      # to 127.0.0.1 keeps `psql -h localhost` and every tool on the host
+      # itself working exactly as before; nothing off-host could ever reach
+      # this port either way, since a real production deployment does not
+      # use this compose file (see docs/DEPLOYMENT.md §1) — Render and
+      # Railway both provision Postgres as a separate managed/internal
+      # service, never through this file.
+      - "127.0.0.1:5432:5432"
     volumes:
       - tutak_postgres_data:/var/lib/postgresql/data
       # A separate volume on purpose. WAL that lives on the same disk as the
@@ -80,7 +92,8 @@ services:
     # else can see is all three of those, writable.
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-tutak_dev_password}"]
     ports:
-      - "6379:6379"
+      # Loopback only — same reasoning as Postgres's port mapping above.
+      - "127.0.0.1:6379:6379"
     healthcheck:
       # The ping has to authenticate too, or the container reports healthy
       # while every real client is being refused.

@@ -59,6 +59,15 @@ databases:
     databaseName: tutak
     user: tutak
     plan: free
+    # Security hardening (2026-08-23): omitting this field allows connections
+    # from any IP that has valid credentials — Render's own documented
+    # default for a Postgres instance with no ipAllowList, unlike the Redis
+    # `keyvalue` service below, which was already locked down this way. An
+    # empty list blocks every external connection while same-region Render
+    # services (tutak-api) keep reaching it over the internal network
+    # regardless of this setting — exactly the "private/internal-only"
+    # posture required here, matching the Redis line below.
+    ipAllowList: []          # reachable only from inside the Render network
 
 services:
   # ── Redis ─────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFactory as NestFactoryType } from '@nestjs/core';
+import { randomBytes } from 'node:crypto';
 
 /**
  * The canonical TuTak model never charges the customer's card — the
@@ -40,6 +41,23 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
     'MEDIA_STORAGE_S3_ACCESS_KEY_ID',
     'MEDIA_STORAGE_S3_SECRET_ACCESS_KEY',
     'MEDIA_PUBLIC_BASE_URL',
+    // Security hardening (2026-08-23): every test in this file boots a real
+    // `NODE_ENV=production` context, which since that pass includes
+    // `assertProductionJwtSecretsAreStrong` (env.validation.ts) — production
+    // now refuses to start on a placeholder-shaped or low-entropy JWT
+    // secret. This file used to boot on whatever `JWT_ACCESS_SECRET`/
+    // `JWT_REFRESH_SECRET` happened to already be sitting in `process.env`
+    // rather than setting them itself, which is fragile independent of that
+    // guard — a local `apps/api/.env` file (present in some dev sandboxes,
+    // never committed) gets loaded into `process.env` ambiently by
+    // Prisma's own auto-`.env`-loading during `globalSetup`, ahead of
+    // `jest-setup.ts`'s `??=` defaults, so this suite's "production" boot
+    // could silently run on whatever a developer's local `.env` happened to
+    // contain. Saved/restored here and set explicitly below so this file's
+    // production context never depends on ambient state for something
+    // security-critical, in this sandbox or any other.
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
   ] as const;
   const saved: Partial<Record<(typeof envKeys)[number], string>> = {};
 
@@ -65,6 +83,14 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
   function configureProductionExceptPsp(): void {
     process.env.NODE_ENV = 'production';
     delete process.env.DEMO_MODE;
+    // Two independently strong, distinct secrets — satisfies
+    // `assertProductionJwtSecretsAreStrong` so every test below fails (or
+    // succeeds) for the reason it is actually testing (PSP/media-storage
+    // configuration), not because of whatever JWT secret happened to be
+    // ambiently set. Regenerated per call so no single fixed value could
+    // itself accidentally start matching a future placeholder pattern.
+    process.env.JWT_ACCESS_SECRET = randomBytes(32).toString('hex');
+    process.env.JWT_REFRESH_SECRET = randomBytes(32).toString('hex');
     process.env.SMS_ENDPOINT = 'https://sms.example.test/send';
     process.env.PUSH_ENABLED = 'true';
     process.env.PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';

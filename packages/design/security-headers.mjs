@@ -86,9 +86,20 @@ export function contentSecurityPolicy(options) {
     "script-src 'self' 'unsafe-inline'",
     // Tailwind and the theme tokens are injected as style elements.
     "style-src 'self' 'unsafe-inline'",
-    // `data:` covers the inlined SVG brand marks. No remote image host: an
-    // image URL is a perfectly good exfiltration channel.
-    "img-src 'self' data: blob:",
+    // `data:` and `blob:` cover the inlined SVG brand marks and locally
+    // previewed uploads. The API origin is here for a real reason and for
+    // exactly one: partner logos, covers and customer avatars are served by
+    // the API (TUTAK_V2_MEDIA_SYSTEM_SPEC.md §3.2), so the branding page and
+    // the brand-media review queue load images cross-origin. Without it the
+    // browser blocks them with a bare `csp` failure and every preview renders
+    // as a broken image — which is how this was found, in a screenshot.
+    //
+    // It costs nothing against the threat this directive exists for. An image
+    // URL is an exfiltration channel because it reaches an *attacker's* host;
+    // the API origin is already an allowed `connect-src`, so a payload that
+    // wanted to send a stolen token there could always do so directly. No new
+    // destination is opened. Any other host is still refused.
+    `img-src ${['\'self\'', 'data:', 'blob:', ...(api ? [api] : [])].join(' ')}`,
     "font-src 'self' data:",
     `connect-src ${connect.join(' ')}`,
     "object-src 'none'",

@@ -143,6 +143,17 @@ model User {
   /// entries that reference it must not be.
   anonymizedAt       DateTime?
 
+  /// The customer's current avatar, or null. Optional forever — spec §1.2:
+  /// initials/the neutral mark remain the fallback everywhere, and every
+  /// account that predates the media migration keeps working untouched.
+  avatarAssetId             String?
+  /// Spec §1.4 / §3.3: whether this person agreed to their avatar being
+  /// rendered in their *direct* referrer's Level-1 list. Default false, and
+  /// it controls nothing else — no Level-2/3 surface, no partner-facing
+  /// list, and no admin response ever reads it as permission to expose an
+  /// avatar.
+  avatarConsentReferralList Boolean @default(false)
+
   roles                     UserRole[]
   wallet                    Wallet?
   devices                   Device[]
@@ -166,6 +177,11 @@ model User {
   passwordResets            PasswordResetToken[]
   phoneVerifications        PhoneVerificationToken[]
   payments                  Payment[]
+
+  avatarAsset         MediaAsset?  @relation("UserAvatarAsset", fields: [avatarAssetId], references: [id])
+  mediaAssets         MediaAsset[] @relation("MediaAssetSubjectUser")
+  mediaAssetsUploaded MediaAsset[] @relation("MediaAssetUploader")
+  mediaAssetsApproved MediaAsset[] @relation("MediaAssetApprover")
 
   @@index([createdAt])
   /// The anonymisation sweep asks for "deleted, not yet scrubbed", which is a
@@ -272,15 +288,15 @@ enum AuthOtpPurpose {
 /// keeps a REGISTER code from being replayable as a LOGIN code and vice
 /// versa on the same number.
 model AuthOtpToken {
-  id         String          @id @default(uuid())
+  id         String         @id @default(uuid())
   phone      String
   purpose    AuthOtpPurpose
   /// SHA-256 of the code delivered to the user. Never the code itself.
   codeHash   String
   expiresAt  DateTime
   consumedAt DateTime?
-  attempts   Int             @default(0)
-  createdAt  DateTime        @default(now())
+  attempts   Int            @default(0)
+  createdAt  DateTime       @default(now())
 
   @@index([phone, purpose, consumedAt])
   @@index([expiresAt])
@@ -527,13 +543,26 @@ model Transaction {
   /// future payment into a silent no-op.
   idempotencyKey     String?
   metadata           Json?
+  /// Spec §2.2 — the same immutable brand snapshot `PurchaseIntent` carries,
+  /// on the customer-facing record itself. Written at creation for every
+  /// transaction that has a partner (purchase settlement, QR redemption, an
+  /// EV session becoming a customer operation); a refund/reversal copies the
+  /// snapshot of the operation it reverses rather than re-reading the
+  /// partner's brand as it stands today.
+  ///
+  /// Null on every row written before this migration, and on any transaction
+  /// with no partner at all (a manual adjustment, an expiry). Nothing
+  /// financial depends on these two columns: they are display-only.
+  brandDisplayName   String?
+  brandLogoAssetId   String?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  user      User       @relation(fields: [userId], references: [id])
-  partner   Partner?   @relation(fields: [partnerId], references: [id])
-  qrCode    QrCode?
-  evSession EvSession?
+  user           User        @relation(fields: [userId], references: [id])
+  partner        Partner?    @relation(fields: [partnerId], references: [id])
+  brandLogoAsset MediaAsset? @relation("TransactionBrandLogo", fields: [brandLogoAssetId], references: [id])
+  qrCode         QrCode?
+  evSession      EvSession?
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
@@ -667,7 +696,7 @@ model PurchaseIntent {
   /// deferred - referrer1Amount - referrer2Amount - referrer3Amount` by
   /// construction, never independently rounded, so all six legs always sum
   /// to exactly `pool`.
-  referrer1Type    ReferrerType?
+  referrer1Type      ReferrerType?
   referrer1UserId    String?
   referrer1PartnerId String?
   referrer1Amount    Decimal?      @db.Decimal(18, 4)
@@ -680,6 +709,19 @@ model PurchaseIntent {
   referrer3PartnerId String?
   referrer3Amount    Decimal?      @db.Decimal(18, 4)
   tutakAmount        Decimal?      @db.Decimal(18, 4)
+
+  /// Spec §2.2 — the brand this purchase was actually made under, captured
+  /// once at creation and never rewritten. Showing the partner's *current*
+  /// logo on an old financial record is not enough: a partner may rebrand,
+  /// replace a mistaken file, or have an asset revoked, and a customer
+  /// scrolling their history must still recognise where they spent.
+  ///
+  /// Both nullable, and null on every row that predates this migration —
+  /// the resolver falls back to the partner's live display name and the
+  /// neutral mark for those, which is exactly the behaviour they have today.
+  /// `brandLogoAssetId` may point at a `REPLACED` asset; that is the point.
+  brandDisplayName String?
+  brandLogoAssetId String?
 
   bonusReservationId  String?
   sourceTransactionId String?
@@ -697,10 +739,12 @@ model PurchaseIntent {
   confirmedAt DateTime?
   rejectedAt  DateTime?
 
-  customer    User           @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
-  partner     Partner        @relation(fields: [partnerId], references: [id])
-  branch      PartnerBranch? @relation(fields: [partnerBranchId], references: [id])
-  confirmedBy User?          @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  brandLogoAsset MediaAsset? @relation("PurchaseIntentBrandLogo", fields: [brandLogoAssetId], references: [id])
+
+  customer    User                   @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
+  partner     Partner                @relation(fields: [partnerId], references: [id])
+  branch      PartnerBranch?         @relation(fields: [partnerBranchId], references: [id])
+  confirmedBy User?                  @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
   refunds     PurchaseIntentRefund[]
 
   @@index([partnerId, status])
@@ -717,25 +761,25 @@ model PurchaseIntent {
 /// the merchandise the partner is taking back, tracked immutably against the
 /// intent it refunds — see `PurchaseIntentRefundService`.
 model PurchaseIntentRefund {
-  id               String  @id @default(uuid())
-  purchaseIntentId String
+  id                  String   @id @default(uuid())
+  purchaseIntentId    String
   /// The merchandise refund amount the partner entered — always ≤ what
   /// remains of `PurchaseIntent.grossAmount`, enforced by a conditional
   /// UPDATE on `refundedAmount`, the same guard `Payment.refundedAmount` uses.
-  amount           Decimal @db.Decimal(18, 4)
+  amount              Decimal  @db.Decimal(18, 4)
   /// This refund's own proportional slice of the bonus the customer spent on
   /// the original purchase, restored to their wallet.
-  bonusRestored    Decimal @default(0) @db.Decimal(18, 4)
-  reason           String
+  bonusRestored       Decimal  @default(0) @db.Decimal(18, 4)
+  reason              String
   /// The reversing ledger transaction for the pool-contribution leg.
   /// Postings are immutable, so a refund is a new transaction pointing back
   /// at the original, never an edit.
-  ledgerTransactionId String? @unique
-  actorId          String
+  ledgerTransactionId String?  @unique
+  actorId             String
   /// Scoped to the actor, matching `IdempotencyService`'s
   /// `purchase-intent-refund:<actorId>` scope.
-  idempotencyKey   String?
-  createdAt        DateTime @default(now())
+  idempotencyKey      String?
+  createdAt           DateTime @default(now())
 
   purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
@@ -792,6 +836,13 @@ model Partner {
   /// paying out at all.
   payoutsBlockedAt         DateTime?
   payoutsBlockedReason     String?
+  /// The partner's official square logo, or null. Spec §1.1: a business
+  /// identity, published only after a platform administrator confirms it —
+  /// see `MediaAssetStatus.PENDING_REVIEW`. Nullable forever: every partner
+  /// that predates this migration renders the neutral mark.
+  logoAssetId              String?
+  /// Optional wide cover for the catalogue/detail card. Same approval rule.
+  coverAssetId             String?
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -810,6 +861,10 @@ model Partner {
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
   referralCode        ReferralCode?
   referralInvitesMade ReferralInvite[]     @relation("PartnerReferrer")
+
+  logoAsset   MediaAsset?  @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
+  coverAsset  MediaAsset?  @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
+  mediaAssets MediaAsset[] @relation("MediaAssetSubjectPartner")
 
   @@map("partners")
 }
@@ -989,25 +1044,25 @@ enum DeferredBonusLotStatus {
 /// wrong for a turnover-gated unlock. A real, spendable `BonusLot` is only
 /// created (via `BonusEngineService.accrue`) at the moment this unlocks.
 model DeferredBonusLot {
-  id                  String                 @id @default(uuid())
-  userId              String
-  sourceTransactionId String
+  id                       String                 @id @default(uuid())
+  userId                   String
+  sourceTransactionId      String
   /// The original, immutable grant — `amounts_sane` requires this stay
   /// strictly positive for as long as the row exists, so a
   /// `PurchaseIntentRefundService` refund reduces `refundedAmount` instead
   /// of this column, the same way `PurchaseIntent` tracks its own refunds
   /// separately from `grossAmount`.
-  amount              Decimal                @db.Decimal(18, 4)
-  status              DeferredBonusLotStatus @default(DEFERRED)
-  requiredTurnover    Decimal                @db.Decimal(18, 4)
+  amount                   Decimal                @db.Decimal(18, 4)
+  status                   DeferredBonusLotStatus @default(DEFERRED)
+  requiredTurnover         Decimal                @db.Decimal(18, 4)
   /// Cumulative eligible gross purchases applied to this lot so far. Spec
   /// §14: no monthly minimum, purely cumulative within the window.
-  progressTurnover    Decimal                @default(0) @db.Decimal(18, 4)
+  progressTurnover         Decimal                @default(0) @db.Decimal(18, 4)
   /// Running total reversed by TuTak refunds against *this lot's own*
   /// originating purchase (`sourceTransactionId`) — never more than
   /// `amount`, and untouched by an *external* contributing purchase's
   /// refund (see `forfeitedAmount` and `reverseUnlock`).
-  refundedAmount      Decimal                @default(0) @db.Decimal(18, 4)
+  refundedAmount           Decimal                @default(0) @db.Decimal(18, 4)
   /// Running total permanently forfeited because a *previous* unlock's
   /// grant was already partly spent by the time an external contributing
   /// purchase's refund invalidated it — that spent slice can never be
@@ -1021,15 +1076,15 @@ model DeferredBonusLot {
   /// available to grant again in full if this lot re-qualifies. Together
   /// with `refundedAmount`, what remains ever-grantable is always
   /// `amount - refundedAmount - forfeitedAmount`.
-  forfeitedAmount     Decimal                @default(0) @db.Decimal(18, 4)
-  createdAt           DateTime               @default(now())
-  deadline            DateTime
-  unlockedAt          DateTime?
-  expiredAt           DateTime?
+  forfeitedAmount          Decimal                @default(0) @db.Decimal(18, 4)
+  createdAt                DateTime               @default(now())
+  deadline                 DateTime
+  unlockedAt               DateTime?
+  expiredAt                DateTime?
   /// The BonusLot backing this lot's *currently live* grant, for
   /// traceability — null while `DEFERRED` (never unlocked, or reverted to
   /// re-accumulate after `reverseUnlock` clawed an invalid grant back).
-  grantedBonusLotId   String?
+  grantedBonusLotId        String?
   /// How much of the *currently live* grant (`grantedBonusLotId`) has
   /// already been clawed back and accounted for by `reverseForRefund` (this
   /// lot's own originating purchase being partially refunded while the lot
@@ -1045,7 +1100,7 @@ model DeferredBonusLot {
   /// amount of this lot's still-valid entitlement that was never refunded
   /// (independent audit, GitHub issue #28 — found by a second audit pass
   /// against the `forfeitedAmount` fix itself, before this field existed).
-  liveGrantReclaimedAmount Decimal @default(0) @db.Decimal(18, 4)
+  liveGrantReclaimedAmount Decimal                @default(0) @db.Decimal(18, 4)
 
   user          User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   contributions DeferredBonusLotContribution[]
@@ -1098,14 +1153,14 @@ enum ReferralChallengeParticipantStatus {
 /// the same concurrency idiom `BonusEngineService.reserve` already uses,
 /// rather than a new primitive.
 model ReferralChallengeParticipant {
-  id             String                             @id @default(uuid())
-  referrerUserId String
-  refereeUserId  String                             @unique
-  status         ReferralChallengeParticipantStatus @default(IN_PROGRESS)
-  requiredAmount Decimal                            @db.Decimal(18, 4)
-  progressAmount Decimal                            @default(0) @db.Decimal(18, 4)
-  qualifiedAt    DateTime?
-  rewardedAt     DateTime?
+  id                 String                             @id @default(uuid())
+  referrerUserId     String
+  refereeUserId      String                             @unique
+  status             ReferralChallengeParticipantStatus @default(IN_PROGRESS)
+  requiredAmount     Decimal                            @db.Decimal(18, 4)
+  progressAmount     Decimal                            @default(0) @db.Decimal(18, 4)
+  qualifiedAt        DateTime?
+  rewardedAt         DateTime?
   /// The two `BonusLot`s `tryRewardChallengeSlot` granted on REWARDED — one
   /// per side — so a later refund that drops `progressAmount` back below
   /// `requiredAmount` can find and claw them back precisely, the same
@@ -1114,10 +1169,10 @@ model ReferralChallengeParticipant {
   /// (and unless) REWARDED.
   referrerBonusLotId String?
   refereeBonusLotId  String?
-  createdAt      DateTime                           @default(now())
+  createdAt          DateTime                           @default(now())
 
-  referrer User @relation("ChallengeReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
-  referee  User @relation("ChallengeReferee", fields: [refereeUserId], references: [id], onDelete: Cascade)
+  referrer      User                            @relation("ChallengeReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referee       User                            @relation("ChallengeReferee", fields: [refereeUserId], references: [id], onDelete: Cascade)
   contributions ReferralChallengeContribution[]
 
   @@index([referrerUserId, status])
@@ -1135,12 +1190,12 @@ model ReferralChallengeParticipant {
 /// this refund does not attempt to claw back (independent audit, GitHub
 /// issue #28).
 model ReferralChallengeContribution {
-  id            String   @id @default(uuid())
-  participantId String
-  transactionId String   @unique
-  amount        Decimal  @db.Decimal(18, 4)
-  reversedAmount Decimal @default(0) @db.Decimal(18, 4)
-  createdAt     DateTime @default(now())
+  id             String   @id @default(uuid())
+  participantId  String
+  transactionId  String   @unique
+  amount         Decimal  @db.Decimal(18, 4)
+  reversedAmount Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt      DateTime @default(now())
 
   participant ReferralChallengeParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
@@ -1220,18 +1275,18 @@ enum EvSessionStatus {
 }
 
 model EvSession {
-  id                String          @id @default(uuid())
-  connectorId       String
-  userId            String
-  reservationId     String?         @unique
-  status            EvSessionStatus @default(AUTHORIZED)
-  startedAt         DateTime?
-  stoppedAt         DateTime?
-  energyKwh         Decimal?        @db.Decimal(10, 3)
-  cost              Decimal?        @db.Decimal(18, 4)
-  bonusEarnedAmount Decimal?        @db.Decimal(18, 4)
-  transactionId     String?         @unique
-  ocpiCdrId         String?         @unique
+  id                 String                  @id @default(uuid())
+  connectorId        String
+  userId             String
+  reservationId      String?                 @unique
+  status             EvSessionStatus         @default(AUTHORIZED)
+  startedAt          DateTime?
+  stoppedAt          DateTime?
+  energyKwh          Decimal?                @db.Decimal(10, 3)
+  cost               Decimal?                @db.Decimal(18, 4)
+  bonusEarnedAmount  Decimal?                @db.Decimal(18, 4)
+  transactionId      String?                 @unique
+  ocpiCdrId          String?                 @unique
   /// The pool split's actual settled amounts — the 2026-08-18 business
   /// decision's `evTutakUpfrontBps` cut plus the green/deferred/referrer
   /// legs `EvSessionsService.stopOnce` posted, snapshotted at settlement so
@@ -1244,7 +1299,7 @@ model EvSession {
   /// to snapshot. `tutakBaseOfRemainder` is not stored — it is, and
   /// remains, `poolAmount - tutakUpfrontAmount - greenAmount -
   /// deferredAmount - referrerAmount`, by construction.
-  poolAmount         Decimal?        @db.Decimal(18, 4)
+  poolAmount         Decimal?                @db.Decimal(18, 4)
   /// @deprecated LEGACY single-level program only — the extra TuTak cut
   /// taken off the top before the old green/deferred/referrer/tutak split.
   /// The 3-level program (`programVersion = THREE_LEVEL_V2`) does not use
@@ -1252,13 +1307,13 @@ model EvSession {
   /// separate upfront cut (`docs/NEXT_CLAUDE_TASK.md`, 2026-08-22 rework,
   /// requirement 4 — a duplicate TuTak cut on top of the six-leg split is
   /// explicitly forbidden). Null for any row settled under the new program.
-  tutakUpfrontAmount Decimal?        @db.Decimal(18, 4)
-  greenAmount        Decimal?        @db.Decimal(18, 4)
-  deferredAmount     Decimal?        @db.Decimal(18, 4)
+  tutakUpfrontAmount Decimal?                @db.Decimal(18, 4)
+  greenAmount        Decimal?                @db.Decimal(18, 4)
+  deferredAmount     Decimal?                @db.Decimal(18, 4)
   /// @deprecated LEGACY single-level program's own referrer snapshot — see
   /// `PurchaseIntent.referrerAmount`'s docblock for why this is kept
   /// unrenamed rather than reused by the new program.
-  referrerAmount     Decimal?        @db.Decimal(18, 4)
+  referrerAmount     Decimal?                @db.Decimal(18, 4)
   /// Explicit, persisted eligibility boundary — same meaning as
   /// `PurchaseIntent.programVersion`. Null for every session settled before
   /// the 3-level referral rework; `THREE_LEVEL_V2` after.
@@ -1269,18 +1324,18 @@ model EvSession {
   referrer1Type      ReferrerType?
   referrer1UserId    String?
   referrer1PartnerId String?
-  referrer1Amount    Decimal?        @db.Decimal(18, 4)
+  referrer1Amount    Decimal?                @db.Decimal(18, 4)
   referrer2Type      ReferrerType?
   referrer2UserId    String?
   referrer2PartnerId String?
-  referrer2Amount    Decimal?        @db.Decimal(18, 4)
+  referrer2Amount    Decimal?                @db.Decimal(18, 4)
   referrer3Type      ReferrerType?
   referrer3UserId    String?
   referrer3PartnerId String?
-  referrer3Amount    Decimal?        @db.Decimal(18, 4)
-  tutakAmount        Decimal?        @db.Decimal(18, 4)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  referrer3Amount    Decimal?                @db.Decimal(18, 4)
+  tutakAmount        Decimal?                @db.Decimal(18, 4)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   connector   EvConnector    @relation(fields: [connectorId], references: [id])
   user        User           @relation(fields: [userId], references: [id])
@@ -1478,8 +1533,8 @@ model LedgerTransaction {
   payment              Payment?
   refund               Refund?
   purchaseIntentRefund PurchaseIntentRefund?
-  payoutRequested      Payout?             @relation("PayoutRequested")
-  payoutSettled        Payout?             @relation("PayoutSettled")
+  payoutRequested      Payout?               @relation("PayoutRequested")
+  payoutSettled        Payout?               @relation("PayoutSettled")
   acquirerSettlement   AcquirerSettlement?
 
   @@index([sourceType, sourceId])
@@ -1718,18 +1773,18 @@ enum RefundPspStatus {
 
 /// A refund of some or all of a captured payment.
 model Refund {
-  id                  String   @id @default(uuid())
+  id                  String          @id @default(uuid())
   paymentId           String
-  amount              Decimal  @db.Decimal(18, 4)
+  amount              Decimal         @db.Decimal(18, 4)
   reason              String
   /// The reversing ledger transaction. Postings are immutable, so a refund is
   /// a new transaction pointing back at the original, never an edit. Null
   /// until `pspStatus` reaches CONFIRMED — see `RefundPspStatus`.
-  ledgerTransactionId String?  @unique
+  ledgerTransactionId String?         @unique
   /// Points reclaimed from the customer, if the payment had already settled
   /// and accrued. Zero when it had not, and zero while `pspStatus` is not
   /// yet CONFIRMED.
-  bonusClawedBack     Decimal  @default(0) @db.Decimal(18, 4)
+  bonusClawedBack     Decimal         @default(0) @db.Decimal(18, 4)
   /// Who authorised this refund. Recorded on the row the money moved through
   /// rather than only in the audit log, for the reason `Payout` gives about
   /// `confirmedByUserId`: an audit log can be argued with, a column cannot.
@@ -1759,7 +1814,7 @@ model Refund {
   pspIdempotencyKey   String?
   /// Why the acquirer declined, when pspStatus is FAILED.
   pspDeclineReason    String?
-  createdAt           DateTime @default(now())
+  createdAt           DateTime        @default(now())
 
   payment           Payment            @relation(fields: [paymentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
@@ -1919,6 +1974,17 @@ enum AuditAction {
   /// A partner refunded merchandise value against a confirmed purchase —
   /// see `PurchaseIntentRefundService`.
   PURCHASE_INTENT_REFUNDED
+  /// Media system (spec §3.3): every mutation of a brand asset or an avatar
+  /// writes one of these, with the actor, the target and the asset id. A
+  /// partner's public identity is exactly the kind of thing that must be
+  /// reconstructable after the fact — who submitted it, who let it through.
+  MEDIA_ASSET_UPLOADED
+  MEDIA_ASSET_APPROVED
+  MEDIA_ASSET_REPLACED
+  MEDIA_ASSET_REVOKED
+  /// A customer changed whether their avatar may appear in their direct
+  /// referrer's Level-1 list. Audited because it is a consent decision.
+  MEDIA_AVATAR_CONSENT_CHANGED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.
@@ -1992,4 +2058,103 @@ model SweepRun {
   didWork        Boolean  @default(true)
 
   @@map("sweep_runs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Media — partner brand assets and customer avatars
+// (TUTAK_V2_MEDIA_SYSTEM_SPEC.md §2, 2026-08-23)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum MediaAssetKind {
+  USER_AVATAR
+  PARTNER_LOGO
+  PARTNER_COVER
+}
+
+enum MediaAssetStatus {
+  /// Submitted by a partner OWNER, not yet confirmed by a platform
+  /// administrator. Never public — spec §1: an owner-account compromise must
+  /// not be able to change a public business identity on its own.
+  PENDING_REVIEW
+  /// The live asset. At most one ACTIVE asset per (owner, kind) is pointed at
+  /// by `User.avatarAssetId` / `Partner.logoAssetId` / `Partner.coverAssetId`.
+  ACTIVE
+  /// Superseded by a newer asset. Deliberately still deliverable: spec §2.2
+  /// requires an old operation to keep rendering the brand it was created
+  /// under, and that brand is exactly this row.
+  REPLACED
+  /// Taken down by a platform administrator — the file itself was wrong.
+  /// Unlike REPLACED this is NOT publicly deliverable: revocation exists for
+  /// the case where the image must stop being shown at all, so a historical
+  /// operation falls back to the neutral mark while keeping its snapshotted
+  /// display name.
+  REVOKED
+}
+
+/// An immutable record of one processed, validated image plus its derivatives.
+///
+/// The bytes are never in PostgreSQL and the source of truth is never a
+/// caller-supplied URL — spec §2. What is stored here is metadata plus opaque
+/// storage keys the API owns; `MediaStorage` resolves those keys to bytes.
+///
+/// Rows are never mutated except to move `status` forward
+/// (PENDING_REVIEW → ACTIVE → REPLACED/REVOKED) and to stamp the
+/// corresponding timestamp. Nothing rewrites `storageKey`, `sha256`, or the
+/// dimensions: an operation that snapshotted this asset must be able to
+/// render exactly what it snapshotted, for the financial-record retention
+/// period.
+model MediaAsset {
+  id     String           @id @default(uuid())
+  kind   MediaAssetKind
+  status MediaAssetStatus @default(PENDING_REVIEW)
+
+  /// Set for USER_AVATAR. Null for partner media.
+  userId    String?
+  /// Set for PARTNER_LOGO / PARTNER_COVER. Null for a user avatar.
+  partnerId String?
+
+  /// Opaque key for the processed original inside `MediaStorage`. Never
+  /// returned to any client — spec §3.3.
+  storageKey   String @unique
+  /// 1024px long-edge derivative, spec §3.1.
+  displayKey   String @unique
+  /// 128px square-ish thumbnail, spec §3.1.
+  thumbnailKey String @unique
+
+  /// Dimensions of the *display* derivative, so a client can reserve space.
+  width  Int
+  height Int
+
+  /// The format actually produced by the server after re-encoding — one of
+  /// image/webp or image/png. Never the caller's declared content type; that
+  /// is not evidence of anything.
+  mimeType String
+  /// Byte size of the display derivative.
+  byteSize Int
+  /// SHA-256 of the accepted original bytes. Deduplication and forensics.
+  sha256   String
+
+  uploadedByUserId String?
+  approvedByUserId String?
+
+  createdAt  DateTime  @default(now())
+  approvedAt DateTime?
+  replacedAt DateTime?
+  revokedAt  DateTime?
+
+  user       User?    @relation("MediaAssetSubjectUser", fields: [userId], references: [id], onDelete: Cascade)
+  partner    Partner? @relation("MediaAssetSubjectPartner", fields: [partnerId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("MediaAssetUploader", fields: [uploadedByUserId], references: [id])
+  approvedBy User?    @relation("MediaAssetApprover", fields: [approvedByUserId], references: [id])
+
+  avatarOfUsers   User[]           @relation("UserAvatarAsset")
+  logoOfPartners  Partner[]        @relation("PartnerLogoAsset")
+  coverOfPartners Partner[]        @relation("PartnerCoverAsset")
+  brandedIntents  PurchaseIntent[] @relation("PurchaseIntentBrandLogo")
+  brandedTxns     Transaction[]    @relation("TransactionBrandLogo")
+
+  @@index([partnerId, kind, status])
+  @@index([userId, kind, status])
+  @@index([status, createdAt])
+  @@map("media_assets")
 }

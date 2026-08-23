@@ -320,7 +320,9 @@
     "approximateLocation": "Shown from the centre of Yerevan. Drag the map to look around.",
     "address": "Address",
     "distance": "Distance",
-    "cashback": "Cashback"
+    "cashback": "Cashback",
+    "about": "About",
+    "offerings": "Products & services"
   },
   "partnerCategory": {
     "grocery": "Groceries",

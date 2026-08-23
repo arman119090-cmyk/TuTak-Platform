@@ -35,6 +35,8 @@ import { NotificationsScreen } from '../../../apps/mobile/src/presentation/scree
 import { SettingsScreen } from '../../../apps/mobile/src/presentation/screens/settings/SettingsScreen';
 import { PartnersScreen } from '../../../apps/mobile/src/presentation/screens/partners/PartnersScreen';
 import { PartnerDetailScreen } from '../../../apps/mobile/src/presentation/screens/partners/PartnerDetailScreen';
+import { CreatePurchaseIntentScreen } from '../../../apps/mobile/src/presentation/screens/purchase-intent/CreatePurchaseIntentScreen';
+import { PurchaseIntentStatusScreen } from '../../../apps/mobile/src/presentation/screens/purchase-intent/PurchaseIntentStatusScreen';
 
 const params = new URLSearchParams(location.search);
 const screen = params.get('screen') ?? 'home';
@@ -81,6 +83,12 @@ const SCREENS: Record<string, React.ReactNode> = {
   settings: <SettingsScreen />,
   partners: <PartnersScreen />,
   'partner-detail': <PartnerDetailScreen />,
+  // Both read their route params through `useRoute`, which the harness's
+  // navigation stub feeds from the `params` query string — so a purchase can
+  // be previewed against a real partner id and a real intent id, with the
+  // brand snapshot resolved by the live API rather than staged.
+  'create-purchase-intent': <CreatePurchaseIntentScreen />,
+  'purchase-intent-status': <PurchaseIntentStatusScreen />,
 };
 
 function Harness() {

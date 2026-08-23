@@ -44,8 +44,15 @@ export function MainTabNavigator() {
   // guessed/fixed device constant — `layout.tabBarHeight` is the bar's own
   // fixed content height, and `insets.bottom` (read live, every render) is
   // what is added on top of it for Android, exactly as before.
+  //
+  // Real-device evidence (Arman, 2026-08-23, 3-button nav): a device that
+  // reports a zero/near-zero live inset still puts its own back/home/recent
+  // row directly beneath our tab icons, close enough to read as one row —
+  // the old 12px floor wasn't enough breathing room against buttons that
+  // are not our own to move. Raised to 20px; devices with a real inset
+  // larger than that are untouched, they already clear this by definition.
   const insets = useSafeAreaInsets();
-  const androidBottomPadding = Math.max(12, insets.bottom);
+  const androidBottomPadding = Math.max(20, insets.bottom);
 
   return (
     <Tab.Navigator

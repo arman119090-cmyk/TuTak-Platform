@@ -567,6 +567,43 @@ describe('Media system (integration)', () => {
     });
   });
 
+  /**
+   * A regression test for a bug that reached a screenshot.
+   *
+   * `helmet()` defaults `Cross-Origin-Resource-Policy` to `same-origin`,
+   * which silently discarded every logo and avatar in the mobile app and both
+   * dashboards — all three are separate origins from the API. The images
+   * fetched with a 200 and were then thrown away by the browser, so every
+   * surface fell back to the neutral mark and looked exactly like a feature
+   * nobody had wired up. Nothing in the API, the DTOs or the tests was wrong;
+   * only the header was, and only a rendered page could show it.
+   */
+  it('serves media with headers that let another origin embed it', async () => {
+    const partner = await createPartner(prisma);
+    const { user: platformAdmin } = await createCustomer(prisma);
+    const uploaded = await partnerMedia.putLogo(
+      admin(platformAdmin.id),
+      partner.id,
+      await png(300),
+      req,
+    );
+
+    const brand = fakeRes();
+    await delivery.brand(uploaded.id, 'display', brand.res);
+    expect(brand.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    expect(brand.headers['x-content-type-options']).toBe('nosniff');
+    expect(brand.headers['content-security-policy']).toContain('sandbox');
+
+    const { user } = await createCustomer(prisma);
+    const avatar = await userAvatar.upload(asUser({ id: user.id }), await png(300), req);
+    const q = query(avatar.url);
+    const priv = fakeRes();
+    await delivery.private(avatar.assetId, 'display', q.aud, q.exp, q.sig, priv.res);
+    expect(priv.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    // Still private to a cache, and still only reachable with the signature.
+    expect(priv.headers['cache-control']).toContain('private');
+  });
+
   // ── Spec §3.3: audit ──────────────────────────────────────────────────
 
   it('audits every media mutation with actor, target and asset', async () => {

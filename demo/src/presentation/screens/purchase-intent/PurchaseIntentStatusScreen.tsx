@@ -77,7 +77,12 @@ export function PurchaseIntentStatusScreen() {
     return (
       <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
         <View style={[styles.wrap, { padding: layout.screenPaddingX }]}>
-          <View style={[styles.mark, { backgroundColor: color.availableSurface, borderRadius: radius.full }]}>
+          <View
+            style={[
+              styles.mark,
+              { backgroundColor: color.availableSurface, borderRadius: radius.full },
+            ]}
+          >
             <Ionicons name="checkmark" size={40} color={color.availableText} />
           </View>
           <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
@@ -132,24 +137,34 @@ export function PurchaseIntentStatusScreen() {
   if (status === Status.REJECTED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
-          <View style={[styles.mark, { backgroundColor: color.dangerSurface, borderRadius: radius.full }]}>
-            <Ionicons name="close" size={32} color={color.dangerText} />
-          </View>
-          <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
-            {t('purchaseIntent.rejected')}
-          </Text>
-          <BrandLine brand={intent.partnerBrand} />
-          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
-            {formatAmd(intent.grossAmount)}
-          </Text>
-          {intent.rejectionReason ? (
-            <Text
-              style={[text.bodySm, { color: color.textSecondary, textAlign: 'center', marginTop: space[2] }]}
+        <Surface style={{ paddingVertical: space[8] }}>
+          <View style={{ alignItems: 'center' }}>
+            <View
+              style={[
+                styles.mark,
+                { backgroundColor: color.dangerSurface, borderRadius: radius.full },
+              ]}
             >
-              {intent.rejectionReason}
+              <Ionicons name="close" size={32} color={color.dangerText} />
+            </View>
+            <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
+              {t('purchaseIntent.rejected')}
             </Text>
-          ) : null}
+            <BrandLine brand={intent.partnerBrand} />
+            <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
+              {formatAmd(intent.grossAmount)}
+            </Text>
+            {intent.rejectionReason ? (
+              <Text
+                style={[
+                  text.bodySm,
+                  { color: color.textSecondary, textAlign: 'center', marginTop: space[2] },
+                ]}
+              >
+                {intent.rejectionReason}
+              </Text>
+            ) : null}
+          </View>
         </Surface>
         <View style={{ marginTop: space[6], gap: space[3] }}>
           <Button
@@ -171,17 +186,22 @@ export function PurchaseIntentStatusScreen() {
   if (status === Status.EXPIRED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
-          <Ionicons name="time-outline" size={32} color={color.pendingText} />
-          <BrandLine brand={intent.partnerBrand} />
-          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[4] }]}>
-            {formatAmd(intent.grossAmount)}
-          </Text>
-          <Text
-            style={[text.bodySm, { color: color.textSecondary, textAlign: 'center', marginTop: space[2] }]}
-          >
-            {t('purchaseIntent.expired')}
-          </Text>
+        <Surface style={{ paddingVertical: space[8] }}>
+          <View style={{ alignItems: 'center' }}>
+            <Ionicons name="time-outline" size={32} color={color.pendingText} />
+            <BrandLine brand={intent.partnerBrand} />
+            <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[4] }]}>
+              {formatAmd(intent.grossAmount)}
+            </Text>
+            <Text
+              style={[
+                text.bodySm,
+                { color: color.textSecondary, textAlign: 'center', marginTop: space[2] },
+              ]}
+            >
+              {t('purchaseIntent.expired')}
+            </Text>
+          </View>
         </Surface>
         <View style={{ marginTop: space[6], gap: space[3] }}>
           <Button
@@ -203,43 +223,48 @@ export function PurchaseIntentStatusScreen() {
   // AWAITING_CONFIRMATION
   return (
     <Screen title={t('purchaseIntent.statusTitle')}>
-      <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
-        <ActivityIndicator color={color.primary} />
-        <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
-          {t('purchaseIntent.awaiting')}
-        </Text>
-        <BrandLine brand={intent.partnerBrand} />
-        <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
-          {formatAmd(intent.grossAmount)}
-        </Text>
-        {Number(intent.bonusAmountRequested) > 0 ? (
-          <Text style={[text.bodySm, { color: color.reservedText, marginTop: space[2] }]}>
-            −{formatPoints(intent.bonusAmountRequested)} {t('qr.applyBonus').toLowerCase()}
+      <Surface style={{ paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center' }}>
+          <ActivityIndicator color={color.primary} />
+          <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
+            {t('purchaseIntent.awaiting')}
           </Text>
-        ) : null}
-        <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
-          {t('purchaseIntent.purchaseId')}: {intent.id.slice(-8).toUpperCase()}
-        </Text>
-        {secondsLeft !== null ? (
-          <View
-            style={[
-              styles.timer,
-              {
-                backgroundColor: secondsLeft < 60 ? color.pendingSurface : color.surfaceSunken,
-                borderRadius: radius.full,
-                paddingHorizontal: space[3],
-                paddingVertical: space[2],
-                marginTop: space[5],
-              },
-            ]}
-          >
-            <Text
-              style={[text.caption, { color: secondsLeft < 60 ? color.pendingText : color.textSecondary }]}
-            >
-              {t('qr.expiresIn', { time: formatCountdown(secondsLeft) })}
+          <BrandLine brand={intent.partnerBrand} />
+          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
+            {formatAmd(intent.grossAmount)}
+          </Text>
+          {Number(intent.bonusAmountRequested) > 0 ? (
+            <Text style={[text.bodySm, { color: color.reservedText, marginTop: space[2] }]}>
+              −{formatPoints(intent.bonusAmountRequested)} {t('qr.applyBonus').toLowerCase()}
             </Text>
-          </View>
-        ) : null}
+          ) : null}
+          <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
+            {t('purchaseIntent.purchaseId')}: {intent.id.slice(-8).toUpperCase()}
+          </Text>
+          {secondsLeft !== null ? (
+            <View
+              style={[
+                styles.timer,
+                {
+                  backgroundColor: secondsLeft < 60 ? color.pendingSurface : color.surfaceSunken,
+                  borderRadius: radius.full,
+                  paddingHorizontal: space[3],
+                  paddingVertical: space[2],
+                  marginTop: space[5],
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  text.caption,
+                  { color: secondsLeft < 60 ? color.pendingText : color.textSecondary },
+                ]}
+              >
+                {t('qr.expiresIn', { time: formatCountdown(secondsLeft) })}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </Surface>
     </Screen>
   );

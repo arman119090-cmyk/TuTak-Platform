@@ -40,25 +40,40 @@ export function PartnerDetailScreen() {
 
   return (
     <Screen title={partner.name} subtitle={partner.branchName}>
-      <Surface style={{ alignItems: 'center', paddingVertical: space[6] }}>
-        <PartnerMark name={partner.name} logoUrl={partner.logo?.url} size={72} />
-        <View style={[styles.categoryRow, { marginTop: space[3] }]}>
-          <Ionicons name={CATEGORY_ICONS[partner.category]} size={14} color={color.textSecondary} />
-          <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>
-            {t(`partnerCategory.${partner.category}`)}
-          </Text>
+      {/* Centred on an inner view rather than by `alignItems` on the
+          Surface: `Surface` nests its children under a full-width fill, so
+          alignment set on the outer element centres that fill and leaves the
+          content flush left. Invisible while the mark was a placeholder;
+          obvious the moment a real logo landed in it. */}
+      <Surface style={{ paddingVertical: space[6] }}>
+        <View style={{ alignItems: 'center' }}>
+          <PartnerMark name={partner.name} logoUrl={partner.logo?.url} size={72} />
+          <View style={[styles.categoryRow, { marginTop: space[3] }]}>
+            <Ionicons
+              name={CATEGORY_ICONS[partner.category]}
+              size={14}
+              color={color.textSecondary}
+            />
+            <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>
+              {t(`partnerCategory.${partner.category}`)}
+            </Text>
+          </View>
         </View>
       </Surface>
 
       <View style={[styles.statsRow, { marginTop: space[3], gap: space[3] }]}>
         <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
-          <Text style={[text.caption, { color: color.textSecondary }]}>{t('partners.cashback')}</Text>
+          <Text style={[text.caption, { color: color.textSecondary }]}>
+            {t('partners.cashback')}
+          </Text>
           <Text style={[text.titleLg, { color: color.availableText, marginTop: space[1] }]}>
             {partner.cashbackPercent}%
           </Text>
         </Surface>
         <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
-          <Text style={[text.caption, { color: color.textSecondary }]}>{t('partners.distance')}</Text>
+          <Text style={[text.caption, { color: color.textSecondary }]}>
+            {t('partners.distance')}
+          </Text>
           <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[1] }]}>
             {formatDistance(partner.distanceKm)}
           </Text>
@@ -72,7 +87,11 @@ export function PartnerDetailScreen() {
               id: partner.id,
               position: { lat: partner.latitude, lng: partner.longitude },
               render: () => (
-                <PartnerPin category={partner.category} cashbackPercent={partner.cashbackPercent} selected />
+                <PartnerPin
+                  category={partner.category}
+                  cashbackPercent={partner.cashbackPercent}
+                  selected
+                />
               ),
             },
           ]}
@@ -92,7 +111,10 @@ export function PartnerDetailScreen() {
       </Surface>
 
       <Text
-        style={[text.bodySm, { color: color.textSecondary, textAlign: 'center', marginTop: space[4] }]}
+        style={[
+          text.bodySm,
+          { color: color.textSecondary, textAlign: 'center', marginTop: space[4] },
+        ]}
       >
         {t('partners.howToEarn', { percent: partner.cashbackPercent })}
       </Text>
@@ -119,7 +141,9 @@ export function PartnerDetailScreen() {
 function InfoIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
   const { color, radius } = useTheme();
   return (
-    <View style={[styles.infoIcon, { backgroundColor: color.surfaceSunken, borderRadius: radius.md }]}>
+    <View
+      style={[styles.infoIcon, { backgroundColor: color.surfaceSunken, borderRadius: radius.md }]}
+    >
       <Ionicons name={name} size={18} color={color.textSecondary} />
     </View>
   );

@@ -148,18 +148,25 @@ export function CreatePurchaseIntentScreen() {
           server read this screen already does — never the scanned code's
           claim). The snapshot only becomes authoritative once the intent
           exists; see `PurchaseIntentStatusScreen`. */}
-      <Surface style={{ alignItems: 'center', paddingVertical: space[5], marginBottom: space[4] }}>
-        {/* The name is deliberately not repeated here — `Screen`'s subtitle
+      <Surface style={{ marginBottom: space[4] }}>
+        {/* Centred on an inner view, not via `alignItems` on the Surface:
+            `Surface` nests its children under a full-width fill, so alignment
+            set on the outer element centres that fill rather than anything in
+            it.
+
+            The name is deliberately not repeated here — `Screen`'s subtitle
             above already carries it, from the same server-resolved record.
             Two copies of it would be noise, and the mark's own accessibility
             label names the partner for a screen reader. */}
-        <PartnerMark name={partner.displayName} logoUrl={partner.logo?.url} size={64} />
-        <Text style={[text.caption, { color: color.textSecondary, marginTop: space[3] }]}>
-          {t('purchaseIntent.cashbackHere', {
-            percent: partner.bonusAccrualRateBps / 100,
-            defaultValue: `${partner.bonusAccrualRateBps / 100}% back`,
-          })}
-        </Text>
+        <View style={{ alignItems: 'center' }}>
+          <PartnerMark name={partner.displayName} logoUrl={partner.logo?.url} size={64} />
+          <Text style={[text.caption, { color: color.textSecondary, marginTop: space[3] }]}>
+            {t('purchaseIntent.cashbackHere', {
+              percent: partner.bonusAccrualRateBps / 100,
+              defaultValue: `${partner.bonusAccrualRateBps / 100}% back`,
+            })}
+          </Text>
+        </View>
       </Surface>
 
       <TextField
@@ -180,14 +187,14 @@ export function CreatePurchaseIntentScreen() {
       />
 
       {error ? (
-        <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}>
-          {error}
-        </Text>
+        <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}>{error}</Text>
       ) : null}
 
       {grossValid ? (
         <Surface style={{ marginTop: space[4] }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+          >
             <Text style={[text.bodySm, { color: color.textSecondary }]}>
               {t('purchaseIntent.youPay')}
             </Text>

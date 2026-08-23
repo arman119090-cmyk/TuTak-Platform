@@ -33,6 +33,36 @@ import { MediaService } from './media.service';
  * token would be: a 15-minute access token keeps working after consent is
  * withdrawn, and this does not.
  */
+/**
+ * The headers every media response carries.
+ *
+ * `Cross-Origin-Resource-Policy: cross-origin` is the load-bearing one, and it
+ * exists because of a bug this codebase actually shipped into a screenshot
+ * before anyone noticed. `helmet()` defaults CORP to `same-origin`, which is
+ * the right default for an API that returns JSON to its own front end — and
+ * exactly wrong for one that serves images embedded by three separate
+ * origins. Every single partner logo and customer avatar was being fetched
+ * successfully and then discarded by the browser, so every surface fell back
+ * to the neutral mark and looked, convincingly, like a feature that had not
+ * been wired up. Found by looking at a screenshot, not by reading the code.
+ *
+ * Relaxing CORP here gives away nothing. CORP governs *embedding*, not
+ * reading: a page that embeds one of these URLs still cannot read the pixels
+ * back without CORS, which this API does not grant for these routes. The
+ * brand route is public by design anyway, and the private route's protection
+ * is its signature plus a fresh authorisation check on every hit — neither of
+ * which CORP was contributing to.
+ *
+ * The other two are unchanged: `nosniff` so a mislabelled or hostile file that
+ * somehow got stored cannot be reinterpreted as a document, and a `sandbox`
+ * CSP so that even if it were, it executes nothing.
+ */
+function applyImageHeaders(res: Response): void {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+}
+
 @ApiTags('media')
 @Controller('media')
 export class MediaDeliveryController {
@@ -69,10 +99,7 @@ export class MediaDeliveryController {
     const object = await this.media.readVariant(asset, parsed);
     res.setHeader('Content-Type', object.contentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    // Nothing here is a document, but a mislabelled or hostile file that
-    // somehow got stored should not be interpretable as one by a browser.
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    applyImageHeaders(res);
     res.end(object.body);
   }
 
@@ -120,8 +147,7 @@ export class MediaDeliveryController {
     // one customer's face keyed by a URL another customer could be handed is
     // not a risk worth taking for a few kilobytes.
     res.setHeader('Cache-Control', 'private, max-age=300');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    applyImageHeaders(res);
     res.end(object.body);
   }
 

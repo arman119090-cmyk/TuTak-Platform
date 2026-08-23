@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
-import { Jako } from './Jako';
 
 /**
  * `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §4: "Create one `UserAvatar` component
  * that uses the same safe fallback [as `PartnerMark`]." Renders a photo when
- * one is supplied and loads successfully, otherwise the Jako mark on a
- * neutral surface — a customer without a photo still gets a recognisably
- * TuTak avatar rather than a generic placeholder, and `PartnerMark`'s
- * distinct accent colour is what tells the two apart at a glance (per
- * Arman's explicit request, 2026-08-23 — supersedes this component's
- * earlier initials-only fallback).
+ * one is supplied and loads successfully, otherwise the full glossy Jako
+ * lockup (`assets/logo-mark.png` — the same emblem `SplashScreen` uses, not
+ * the small flat vector mark) on a green-tinted surface — a customer
+ * without a photo still gets a recognisably TuTak avatar rather than a
+ * generic placeholder, and the green tint is what tells a customer apart
+ * from `PartnerMark`'s blue-tinted fallback at a glance. Per Arman's
+ * explicit request, 2026-08-23 (first as the small vector mark, then
+ * corrected to this exact logo image) — supersedes this component's
+ * earlier initials-only fallback.
  *
  * `avatarUrl` has no live data source yet: `AuthenticatedUserDto` and the
  * Level-1 referral DTO carry no avatar field in this delivery (the upload/
@@ -51,10 +53,18 @@ export function UserAvatar({
       accessibilityLabel={label}
       style={[
         styles.fallback,
-        { width: size, height: size, borderRadius: radius.full, backgroundColor: color.surfaceSunken },
+        { width: size, height: size, borderRadius: radius.full, backgroundColor: color.availableSurface },
       ]}
     >
-      <Jako size={size * 0.72} />
+      <Image
+        // Metro's static-asset pipeline is require()-based — see the same
+        // note in SplashScreen.tsx, the other place this exact asset loads.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source={require('../../../assets/logo-mark.png')}
+        style={{ width: size * 0.72, height: size * 0.72 }}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
+      />
     </View>
   );
 }

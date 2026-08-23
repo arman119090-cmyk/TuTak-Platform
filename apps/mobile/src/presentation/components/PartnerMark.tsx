@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
-import { reserved } from '@tutak/design';
 import { useTheme } from '../../app/theme/ThemeProvider';
-import { Jako } from './Jako';
 
 /**
  * `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §4: "create one reusable `PartnerMark`
@@ -12,12 +10,15 @@ import { Jako } from './Jako';
  * card, PurchaseIntent, transaction/wallet rows, EV-session history, refund
  * rows) is meant to render a partner identity through this one component.
  *
- * The fallback is the Jako mark, recoloured to a distinct blue accent so a
- * partner without a logo is still visually distinguishable at a glance from
- * `UserAvatar`'s green customer fallback — per Arman's explicit request,
- * 2026-08-23, which supersedes this component's earlier initials-only
- * fallback (the spec's written "initials" instruction predates that
- * request).
+ * The fallback is the same glossy Jako lockup `UserAvatar` and `SplashScreen`
+ * use (`assets/logo-mark.png`, not the small flat vector mark), on a
+ * blue-tinted surface so a partner without a logo is still visually
+ * distinguishable at a glance from `UserAvatar`'s green-tinted customer
+ * fallback — per Arman's explicit request, 2026-08-23 (first as the small
+ * vector mark recoloured, then corrected to this exact logo image on a
+ * tinted background instead), which supersedes this component's earlier
+ * initials-only fallback (the spec's written "initials" instruction
+ * predates that request).
  *
  * `logoUrl` is intentionally optional and currently unused by every caller
  * in this delivery: no DTO in `@tutak/shared-types` yet returns a partner
@@ -60,10 +61,16 @@ export function PartnerMark({
       style={[
         styles.mark,
         styles.fallback,
-        { width: size, height: size, borderRadius: radius.md, backgroundColor: color.surfaceSunken },
+        { width: size, height: size, borderRadius: radius.md, backgroundColor: color.reservedSurface },
       ]}
     >
-      <Jako size={size * 0.72} colors={{ brand: reserved[600] }} />
+      <Image
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source={require('../../../assets/logo-mark.png')}
+        style={{ width: size * 0.72, height: size * 0.72 }}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
+      />
     </View>
   );
 }

@@ -22,6 +22,7 @@ import { generateOpaqueToken, sha256Hex } from '../../common/utils/crypto';
 import { parseDurationMs } from '../../common/utils/duration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MediaViewService } from '../media/media-view.service';
 import { UsersService } from '../users/users.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
 import { ReferralService } from '../referral/referral.service';
@@ -56,6 +57,7 @@ export class AuthService {
     private readonly fraudDetection: FraudDetectionService,
     private readonly referralService: ReferralService,
     private readonly authOtpService: AuthOtpService,
+    private readonly mediaView: MediaViewService,
   ) {}
 
   /**
@@ -148,7 +150,7 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, user.phone, dto.deviceId, meta);
     const claims = await this.usersService.buildRequestUserClaims(user.id);
-    return { user: this.toAuthenticatedUser(user, claims), tokens };
+    return { user: await this.toAuthenticatedUser(user, claims), tokens };
   }
 
   /**
@@ -225,7 +227,7 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, user.phone, dto.deviceId, meta);
     const claims = await this.usersService.buildRequestUserClaims(user.id);
-    return { user: this.toAuthenticatedUser(user, claims), tokens };
+    return { user: await this.toAuthenticatedUser(user, claims), tokens };
   }
 
   /**
@@ -317,7 +319,7 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, user.phone, dto.deviceId, meta);
     const claims = await this.usersService.buildRequestUserClaims(user.id);
-    return { user: this.toAuthenticatedUser(user, claims), tokens };
+    return { user: await this.toAuthenticatedUser(user, claims), tokens };
   }
 
   /**
@@ -382,7 +384,7 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, user.phone, dto.deviceId, meta);
     const claims = await this.usersService.buildRequestUserClaims(user.id);
-    return { user: this.toAuthenticatedUser(user, claims), tokens };
+    return { user: await this.toAuthenticatedUser(user, claims), tokens };
   }
 
   /**
@@ -461,8 +463,20 @@ export class AuthService {
     return { success: true };
   }
 
-  /** Strips internal-only fields (passwordHash, lockout counters, ...) before returning to the client. */
-  private toAuthenticatedUser(user: User, claims: Omit<RequestUser, 'deviceId'>) {
+  /**
+   * Strips internal-only fields (passwordHash, lockout counters, ...) before
+   * returning to the client.
+   *
+   * Async only because of the avatar: the signed delivery URL has to be built
+   * from the asset's dimensions, so the row has to be read. Worth the await —
+   * the alternative is an authenticated session whose own user object has no
+   * picture in it until some later screen happens to refetch, which is exactly
+   * the sort of "loads eventually" behaviour that reads as a bug.
+   */
+  private async toAuthenticatedUser(user: User, claims: Omit<RequestUser, 'deviceId'>) {
+    const avatarAsset = user.avatarAssetId
+      ? await this.prisma.mediaAsset.findUnique({ where: { id: user.avatarAssetId } })
+      : null;
     return {
       id: user.id,
       phone: user.phone,
@@ -471,6 +485,10 @@ export class AuthService {
       lastName: user.lastName,
       locale: user.locale,
       isPhoneVerified: user.isPhoneVerified,
+      // Signed to this user and nobody else — it is their own face on their
+      // own profile, and the URL says so.
+      avatar: this.mediaView.signedImage(avatarAsset, user.id),
+      showAvatarInReferralList: user.avatarConsentReferralList,
       roles: claims.roles,
       permissions: claims.permissions,
       partnerScopes: claims.partnerScopes,

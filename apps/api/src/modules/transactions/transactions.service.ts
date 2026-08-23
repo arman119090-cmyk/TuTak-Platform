@@ -7,6 +7,7 @@ import { parseMoney } from '../../common/utils/money';
 import { TransactionHistoryQueryDto } from './dto/transaction-history-query.dto';
 import { OutboxService } from '../ledger/outbox.service';
 import { TransactionCompletedEvent } from './events/transaction-completed.event';
+import { MediaViewService } from '../media/media-view.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -20,6 +21,19 @@ export interface CreateTransactionParams {
   description?: string;
   idempotencyKey?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * The partner brand this operation should be recorded under — spec §2.2.
+   *
+   * Almost never passed. Left undefined (the normal case) the snapshot is
+   * taken from the partner as it stands *right now*, which is correct for
+   * every operation that is happening now. It is passed explicitly by exactly
+   * one kind of caller: a refund or reversal, which must carry the brand of
+   * the operation it reverses rather than today's — spec §2.2's "a
+   * refund/reversal must resolve to the source operation's snapshot".
+   *
+   * Display-only either way. Nothing financial reads these two columns.
+   */
+  brand?: { displayName: string; logoAssetId: string | null } | null;
 }
 
 @Injectable()
@@ -28,6 +42,7 @@ export class TransactionsService {
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
     private readonly outbox: OutboxService,
+    private readonly media: MediaViewService,
   ) {}
 
   async create(params: CreateTransactionParams, tx?: Tx) {
@@ -36,11 +51,14 @@ export class TransactionsService {
     // external, may write a negative or malformed monetary value.
     const amount = parseMoney(params.amount, 'transaction amount');
     const bonusApplied = parseMoney(params.bonusAppliedAmount ?? 0, 'bonusAppliedAmount');
+    const brand = await this.resolveBrandSnapshot(client, params);
 
     return client.transaction.create({
       data: {
         userId: params.userId,
         partnerId: params.partnerId ?? undefined,
+        brandDisplayName: brand?.displayName ?? null,
+        brandLogoAssetId: brand?.logoAssetId ?? null,
         type: params.type,
         status: TransactionStatus.INITIATED,
         amount,
@@ -51,6 +69,27 @@ export class TransactionsService {
         metadata: (params.metadata ?? undefined) as Prisma.InputJsonValue,
       },
     });
+  }
+
+  /**
+   * The brand to stamp on a new transaction.
+   *
+   * One read, inside whatever transaction the caller is already in, and it
+   * cannot fail the write: a partner row that has somehow gone missing yields
+   * a null snapshot rather than an exception, because a display column must
+   * never be the reason a financial record fails to persist.
+   */
+  private async resolveBrandSnapshot(
+    client: Tx | PrismaService,
+    params: CreateTransactionParams,
+  ): Promise<{ displayName: string; logoAssetId: string | null } | null> {
+    if (params.brand !== undefined) return params.brand;
+    if (!params.partnerId) return null;
+    const partner = await client.partner.findUnique({
+      where: { id: params.partnerId },
+      select: { displayName: true, logoAssetId: true },
+    });
+    return partner ? { displayName: partner.displayName, logoAssetId: partner.logoAssetId } : null;
   }
 
   /**
@@ -183,14 +222,25 @@ export class TransactionsService {
         metadata: true,
         createdAt: true,
         updatedAt: true,
+        // Spec §1.3/§2.2: every customer-facing operation row shows who the
+        // customer was dealing with, as *that operation* recorded it.
+        brandDisplayName: true,
+        brandLogoAssetId: true,
       },
       take: query.limit,
       ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
       orderBy: { createdAt: 'desc' },
     });
 
+    // One batched resolution for the whole page rather than two queries per
+    // row — see `MediaViewService.brandsFor`.
+    const brands = await this.media.brandsFor(items);
+
     return {
-      items,
+      items: items.map((item) => {
+        const { brandDisplayName: _name, brandLogoAssetId: _asset, ...row } = item;
+        return { ...row, partnerBrand: brands.get(item) ?? null };
+      }),
       nextCursor: items.length === query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }

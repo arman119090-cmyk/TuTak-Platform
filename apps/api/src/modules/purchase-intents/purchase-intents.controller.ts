@@ -22,8 +22,8 @@ export class PurchaseIntentsController {
 
   /** Spec §7 steps 1-8. Any authenticated customer, for themselves. */
   @Post()
-  create(@CurrentUser() customer: RequestUser, @Body() dto: CreatePurchaseIntentDto) {
-    return this.purchaseIntents.create(dto, customer.id);
+  async create(@CurrentUser() customer: RequestUser, @Body() dto: CreatePurchaseIntentDto) {
+    return this.purchaseIntents.toDto(await this.purchaseIntents.create(dto, customer.id));
   }
 
   @Get(':id')
@@ -32,19 +32,19 @@ export class PurchaseIntentsController {
     if (intent.customerId !== user.id && !hasPartnerScope(user, intent.partnerId)) {
       throw new ForbiddenException('You may not view this purchase intent');
     }
-    return intent;
+    return this.purchaseIntents.toDto(intent);
   }
 
   /** The partner's own queue of incoming purchases awaiting confirmation. */
   @Get()
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
-  list(
+  async list(
     @CurrentUser() user: RequestUser,
     @Query('partnerId') partnerId: string,
     @Query('status') status?: PurchaseIntentStatus,
   ) {
     assertPartnerScope(user, partnerId);
-    return this.purchaseIntents.listForPartner(partnerId, status);
+    return this.purchaseIntents.toDtos(await this.purchaseIntents.listForPartner(partnerId, status));
   }
 
   /** Spec §7 steps 9-11 / §25-26. Any partner staff tier scoped to this intent's partner. */
@@ -53,7 +53,7 @@ export class PurchaseIntentsController {
   async confirm(@CurrentUser() staff: RequestUser, @Param('id') id: string) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertPartnerScope(staff, intent.partnerId);
-    return this.purchaseIntents.confirm(id, staff.id);
+    return this.purchaseIntents.toDto(await this.purchaseIntents.confirm(id, staff.id));
   }
 
   @Post(':id/reject')
@@ -65,7 +65,7 @@ export class PurchaseIntentsController {
   ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertPartnerScope(staff, intent.partnerId);
-    return this.purchaseIntents.reject(id, staff.id, dto);
+    return this.purchaseIntents.toDto(await this.purchaseIntents.reject(id, staff.id, dto));
   }
 
   /**

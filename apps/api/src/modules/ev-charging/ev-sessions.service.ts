@@ -33,6 +33,7 @@ import { IdempotencyService } from '../ledger/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { OutboxService } from '../ledger/outbox.service';
 import { PartnersService } from '../partners/partners.service';
+import { MediaViewService } from '../media/media-view.service';
 import {
   CURRENT_REFERRAL_PROGRAM_VERSION,
   ReferralChainLevel,
@@ -141,6 +142,7 @@ export class EvSessionsService {
     private readonly ledger: LedgerService,
     private readonly outbox: OutboxService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly media: MediaViewService,
   ) {
     // Guaranteed-retry backstop for `postEvContributionLedgerIdempotent`'s
     // fast path below: `outbox.drain()` (the `outbox.drain` sweep) replays
@@ -895,11 +897,42 @@ export class EvSessionsService {
     });
   }
 
-  historyForUser(userId: string) {
-    return this.prisma.evSession.findMany({
+  /**
+   * A customer's charging history — spec §1.3 lists "charging-session
+   * detail/history" among the surfaces that must identify the partner.
+   *
+   * The brand comes from the session's own transaction snapshot when there is
+   * one, which is the honest answer: that is the operator's identity as
+   * recorded when the session became a customer operation. A session still
+   * running has no transaction yet, so it falls back to the station's partner
+   * *as it is now* — which is correct, because "now" is when that session is
+   * happening.
+   */
+  async historyForUser(userId: string) {
+    const sessions = await this.prisma.evSession.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      include: { connector: { include: { station: true } }, cdr: true },
+      include: {
+        connector: { include: { station: { include: { partner: { select: { id: true, displayName: true, logoAssetId: true } } } } } },
+        cdr: true,
+        transaction: {
+          select: { partnerId: true, brandDisplayName: true, brandLogoAssetId: true },
+        },
+      },
+    });
+
+    const brandSources = sessions.map((session) =>
+      session.transaction ?? {
+        partnerId: session.connector.station.partner.id,
+        brandDisplayName: session.connector.station.partner.displayName,
+        brandLogoAssetId: session.connector.station.partner.logoAssetId,
+      },
+    );
+    const brands = await this.media.brandsFor(brandSources);
+
+    return sessions.map((session, index) => {
+      const { transaction: _txn, ...rest } = session;
+      return { ...rest, partnerBrand: brands.get(brandSources[index]!) ?? null };
     });
   }
 }

@@ -14,6 +14,7 @@ import { AppConfig } from '../../config/configuration';
 import { parseMoney, parsePositiveMoney, roundCharge, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MediaViewService } from '../media/media-view.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -75,6 +76,7 @@ export class PurchaseIntentsService {
     private readonly ledger: LedgerService,
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly media: MediaViewService,
   ) {}
 
   async findByIdOrThrow(id: string) {
@@ -87,6 +89,33 @@ export class PurchaseIntentsService {
     return this.prisma.purchaseIntent.findMany({
       where: { partnerId, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Swaps the raw brand-snapshot columns for the renderable `partnerBrand`
+   * the client's `PurchaseIntentDto` declares — spec §4.
+   *
+   * A separate step rather than something `findByIdOrThrow` does, because
+   * `findByIdOrThrow` is also the internal lookup used by `confirm`,
+   * `reject` and the expiry sweep, none of which want a formatted DTO and
+   * all of which would then be paying for an extra query.
+   */
+  async toDto<T extends { partnerId: string; brandDisplayName: string | null; brandLogoAssetId: string | null }>(
+    intent: T,
+  ) {
+    const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
+    const brand = await this.media.brandFor(intent);
+    return { ...rest, partnerBrand: brand! };
+  }
+
+  async toDtos<T extends { partnerId: string; brandDisplayName: string | null; brandLogoAssetId: string | null }>(
+    intents: T[],
+  ) {
+    const brands = await this.media.brandsFor(intents);
+    return intents.map((intent) => {
+      const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
+      return { ...rest, partnerBrand: brands.get(intent)! };
     });
   }
 
@@ -200,6 +229,13 @@ export class PurchaseIntentsService {
           // partner's settings never touch a PurchaseIntent already created.
           negotiatedRateBps: partner.bonusAccrualRateBps,
           maxBonusPaymentPercent: partner.maxBonusPaymentPercent,
+          // Brand snapshot — spec §2.2, and frozen for the same reason the
+          // commercial snapshot above is. The QR purchase preview, the
+          // pending/confirmed/rejected/expired views, and the transaction this
+          // becomes must all show one consistent identity, even if the partner
+          // replaces its logo while the customer is still standing at the till.
+          brandDisplayName: partner.displayName,
+          brandLogoAssetId: partner.logoAssetId,
           bonusReservationId,
           sourceTransactionId: transaction.id,
           expiresAt,

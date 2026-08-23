@@ -151,6 +151,53 @@ export interface AppConfig {
     cardPaymentsEnabled: boolean;
   };
   /**
+   * Where partner brand assets and customer avatars actually live
+   * (TUTAK_V2_MEDIA_SYSTEM_SPEC.md §3.2), and how the URLs that reach them
+   * are authorised.
+   *
+   * `driver` is the one setting that decides durability, and it is the one
+   * setting production is not allowed to get wrong: `MediaModule` refuses to
+   * boot `NODE_ENV=production` on anything but `s3`, because a local
+   * directory silently fails across replicas, backups and redeploys — the
+   * database would survive a restore holding `MediaAsset` rows that point at
+   * bytes nobody has any more. Same discipline, same failure mode, as
+   * `SmsModule` refusing to boot without a carrier.
+   */
+  media: {
+    /** `local` (default outside production), `s3`, or `memory` (tests only). */
+    driver: 'local' | 's3' | 'memory';
+    /** `local` only: the directory objects are written under. */
+    localRoot: string;
+    s3: {
+      endpoint: string;
+      region: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      forcePathStyle: boolean;
+    };
+    /**
+     * How long a signed avatar-delivery URL stays valid.
+     *
+     * A customer avatar is not public, so its URL carries an HMAC over the
+     * asset, the variant, the expiry and *who it was issued to* — see
+     * `MediaDeliveryService`. Twelve hours is long enough that a URL embedded
+     * in a screen the customer left open still loads, short enough that a URL
+     * leaked into a log or a screenshot stops working the same day.
+     */
+    signedUrlTtlSeconds: number;
+    /**
+     * Absolute origin every media URL this API hands out is built on, e.g.
+     * `https://api.tutak.am`. Absolute rather than root-relative because the
+     * consumers are a React Native app, a Next.js partner dashboard and a
+     * Next.js admin dashboard, none of which are served from this origin —
+     * three separate places would otherwise each have to re-derive it, and
+     * the one that got it wrong would show broken images rather than fail
+     * loudly. Required in production; defaults to the local API in dev.
+     */
+    publicBaseUrl: string;
+  };
+  /**
    * Every number the new core-business spec fixes, in one place, per its own
    * §37 ("Centralized business configuration") and §12/§13/§18. Read by
    * `PurchaseIntentService`, `DeferredBonusLotService` and `ReferralService`
@@ -381,6 +428,28 @@ const buildConfig = (): AppConfig => ({
     // announce, so the safe default is "this subsystem does not exist,"
     // not "on until proven otherwise."
     cardPaymentsEnabled: process.env.CARD_PAYMENTS_ENABLED === 'true',
+  },
+  media: {
+    // Local disk unless told otherwise. That is the right default for a
+    // developer's machine and the wrong one for production, which is exactly
+    // why `MediaModule` refuses to boot production on it rather than quietly
+    // defaulting production into a storage backend that loses files.
+    driver: (process.env.MEDIA_STORAGE_DRIVER as AppConfig['media']['driver']) ?? 'local',
+    localRoot: process.env.MEDIA_STORAGE_LOCAL_ROOT ?? '.media-storage',
+    s3: {
+      endpoint: process.env.MEDIA_STORAGE_S3_ENDPOINT ?? '',
+      region: process.env.MEDIA_STORAGE_S3_REGION ?? 'us-east-1',
+      bucket: process.env.MEDIA_STORAGE_S3_BUCKET ?? '',
+      accessKeyId: process.env.MEDIA_STORAGE_S3_ACCESS_KEY_ID ?? '',
+      secretAccessKey: process.env.MEDIA_STORAGE_S3_SECRET_ACCESS_KEY ?? '',
+      // Path-style by default: every self-hosted S3-compatible (MinIO, Ceph)
+      // needs it, and AWS accepts it too, so the default that works
+      // everywhere is the safer one to be wrong about.
+      forcePathStyle: process.env.MEDIA_STORAGE_S3_FORCE_PATH_STYLE !== 'false',
+    },
+    signedUrlTtlSeconds: parseInt(process.env.MEDIA_SIGNED_URL_TTL_SECONDS ?? '43200', 10),
+    publicBaseUrl: (process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`)
+      .replace(/\/+$/, ''),
   },
   purchasePolicy: {
     // 3 minutes, per spec §7 — long enough for a cashier mid-queue to glance

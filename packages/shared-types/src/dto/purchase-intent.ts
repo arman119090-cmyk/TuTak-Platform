@@ -1,4 +1,5 @@
 import { PurchaseIntentStatus } from '../enums/purchase-intent';
+import type { PartnerBrandDto } from './media';
 
 export interface CreatePurchaseIntentRequestDto {
   partnerId: string;
@@ -26,6 +27,14 @@ export interface PurchaseIntentDto {
   ordinaryPaymentRemainder: string;
   negotiatedRateBps: number;
   maxBonusPaymentPercent: number;
+  /**
+   * The partner's brand as it was at the moment this intent was created —
+   * spec §2.2. Snapshotted, not resolved live, so the QR purchase preview and
+   * every later pending/confirmed/rejected/expired view of the same intent
+   * agree with each other and with the transaction it becomes, even if the
+   * partner replaces its logo in between.
+   */
+  partnerBrand: PartnerBrandDto;
   confirmedByUserId: string | null;
   rejectionReason: string | null;
   createdAt: string;

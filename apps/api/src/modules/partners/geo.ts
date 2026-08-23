@@ -1,3 +1,5 @@
+import type { MediaImageDto } from '../media/media.contracts';
+
 export { haversineKm } from '../../common/utils/geo';
 
 /**
@@ -51,6 +53,16 @@ export interface NearbyPartner {
   longitude: number;
   cashbackPercent: number;
   distanceKm: number;
+  /**
+   * The chain's published logo/cover — spec §1.3's "catalogue/map card".
+   *
+   * Per *partner*, not per branch: four shops of one chain are four pins with
+   * one identity, and a branch has no brand of its own. Null when the partner
+   * has published none, which is every partner that predates the media system
+   * — the client renders the neutral mark, never a broken image.
+   */
+  logo: MediaImageDto | null;
+  cover: MediaImageDto | null;
 }
 
 const KNOWN = new Set<string>(PARTNER_CATEGORIES);

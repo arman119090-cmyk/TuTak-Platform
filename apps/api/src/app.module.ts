@@ -12,6 +12,7 @@ import { QueueModule } from './infrastructure/queue/queue.module';
 import { SmsModule } from './infrastructure/sms/sms.module';
 import { PushModule } from './infrastructure/push/push.module';
 import { AlertsModule } from './infrastructure/alerts/alerts.module';
+import { MediaStorageModule } from './infrastructure/media/media-storage.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestContextMiddleware } from './common/observability/request-context.middleware';
@@ -22,6 +23,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
 import { PasswordRotationGuard } from './common/guards/password-rotation.guard';
 
 import { AuditModule } from './modules/audit/audit.module';
+import { MediaModule } from './modules/media/media.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { WalletModule } from './modules/wallet/wallet.module';
@@ -78,8 +80,10 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     SmsModule,
     PushModule,
     AlertsModule,
+    MediaStorageModule,
 
     AuditModule,
+    MediaModule,
     UsersModule,
     AuthModule,
     WalletModule,

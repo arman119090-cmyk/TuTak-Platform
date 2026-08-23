@@ -1,14 +1,21 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { PartnerStatus, Prisma, RoleName } from '@prisma/client';
+import { MediaAsset, PartnerStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { MediaViewService } from '../media/media-view.service';
 import { isCommissionRateBps } from '../../common/validators/is-commission-rate-bps.validator';
 import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { haversineKm, toPartnerCategory, type NearbyPartner } from './geo';
 
+/** A joined-in `MediaAsset`, which may legitimately be absent. */
+type MediaAssetRow = MediaAsset | null;
+
 @Injectable()
 export class PartnersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaViewService,
+  ) {}
 
   async create(dto: CreatePartnerDto) {
     // The DTO already validates this; re-checked here so a caller that
@@ -202,19 +209,48 @@ export class PartnersService {
     bonusAccrualRateBps: true,
     isActive: true,
     createdAt: true,
+    // The brand a directory card shows — spec §1.3/§4. The whole asset row is
+    // selected rather than just the id because `MediaViewService` needs its
+    // status to decide whether it is deliverable at all: a submission still
+    // in PENDING_REVIEW must never reach a customer through this projection,
+    // and `logoAssetId` alone cannot express that.
+    logoAsset: true,
+    coverAsset: true,
   } as const;
 
+  /**
+   * Strips the raw asset rows off a public projection and replaces them with
+   * delivery-safe references.
+   *
+   * The rows themselves carry storage keys, which spec §3.3 says never reach a
+   * client. Doing this in one private helper — rather than in each of the
+   * three call sites — is what stops one of them from being forgotten.
+   */
+  private toPublicDto<T extends { logoAsset: MediaAssetRow; coverAsset: MediaAssetRow }>(partner: T) {
+    const { logoAsset, coverAsset, ...rest } = partner;
+    return {
+      ...rest,
+      logo: this.media.currentPartnerImage(logoAsset),
+      cover: this.media.currentPartnerImage(coverAsset),
+    };
+  }
+
   /** Every partner, in the projection safe for any authenticated caller. */
-  listPublic() {
-    return this.prisma.partner.findMany({
+  async listPublic() {
+    const partners = await this.prisma.partner.findMany({
       select: PartnersService.PUBLIC_FIELDS,
       orderBy: { createdAt: 'desc' },
     });
+    return partners.map((partner) => this.toPublicDto(partner));
   }
 
   /** Every partner, in full. Callers must hold PARTNER_MANAGE. */
-  list() {
-    return this.prisma.partner.findMany({ orderBy: { createdAt: 'desc' } });
+  async list() {
+    const partners = await this.prisma.partner.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { logoAsset: true, coverAsset: true },
+    });
+    return partners.map((partner) => this.toPublicDto(partner));
   }
 
   /** One partner, in the projection safe for any authenticated caller. */
@@ -224,7 +260,7 @@ export class PartnersService {
       select: PartnersService.PUBLIC_FIELDS,
     });
     if (!partner) throw new NotFoundException('Partner not found');
-    return partner;
+    return this.toPublicDto(partner);
   }
 
   async isMember(partnerId: string, userId: string) {
@@ -348,7 +384,13 @@ export class PartnersService {
         latitude: true,
         longitude: true,
         partner: {
-          select: { displayName: true, category: true, bonusAccrualRateBps: true },
+          select: {
+            displayName: true,
+            category: true,
+            bonusAccrualRateBps: true,
+            logoAsset: true,
+            coverAsset: true,
+          },
         },
       },
       // A generous ceiling: enough that a dense city centre is not silently
@@ -371,6 +413,8 @@ export class PartnersService {
         // forgot to divide would advertise 300% cashback.
         cashbackPercent: b.partner.bonusAccrualRateBps / 100,
         distanceKm: haversineKm(lat, lng, b.latitude, b.longitude),
+        logo: this.media.currentPartnerImage(b.partner.logoAsset),
+        cover: this.media.currentPartnerImage(b.partner.coverAsset),
       }))
       .filter((b) => b.distanceKm <= radiusKm)
       .sort((a, b) => a.distanceKm - b.distanceKm);

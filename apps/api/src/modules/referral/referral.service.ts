@@ -16,6 +16,7 @@ import { AppConfig } from '../../config/configuration';
 import { roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MediaViewService } from '../media/media-view.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 
@@ -99,19 +100,61 @@ export class ReferralService {
     private readonly config: ConfigService<AppConfig, true>,
     private readonly auditService: AuditService,
     private readonly ledger: LedgerService,
+    private readonly media: MediaViewService,
   ) {}
 
   getMyCode(userId: string) {
     return this.prisma.referralCode.findUniqueOrThrow({ where: { userId } });
   }
 
-  listMyInvites(userId: string) {
-    return this.prisma.referralInvite.findMany({
+  /**
+   * The Level-1 list — spec §1.4/§4, and the one referral surface that carries
+   * identities at all.
+   *
+   * The avatar is attached **only** when the referred person has actively
+   * turned consent on. Two things make that a real control rather than a
+   * client-side courtesy:
+   *
+   *  1. the URL is not in the response at all without consent, so there is
+   *     nothing for a client to render by mistake or on purpose;
+   *  2. the URL that *is* returned is signed to this referrer specifically,
+   *     and the delivery route re-checks both the consent flag and the
+   *     one-hop referral relationship on every fetch — so withdrawing consent
+   *     stops working URLs immediately rather than at expiry.
+   *
+   * Levels 2 and 3 have no method here and never will. They are aggregate
+   * counts, computed elsewhere, with no identity to expose in the first
+   * place — which is a stronger guarantee than filtering fields out of a
+   * response that could have carried them.
+   */
+  async listMyInvites(userId: string) {
+    const invites = await this.prisma.referralInvite.findMany({
       where: { referrerUserId: userId },
       orderBy: { createdAt: 'desc' },
       include: {
-        referee: { select: { id: true, firstName: true, lastName: true, createdAt: true } },
+        referee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            createdAt: true,
+            avatarConsentReferralList: true,
+            avatarAsset: true,
+          },
+        },
       },
+    });
+
+    return invites.map((invite) => {
+      if (!invite.referee) return { ...invite, referee: null };
+      const { avatarConsentReferralList, avatarAsset, ...referee } = invite.referee;
+      return {
+        ...invite,
+        referee: {
+          ...referee,
+          avatar: avatarConsentReferralList ? this.media.signedImage(avatarAsset, userId) : null,
+        },
+      };
     });
   }
 

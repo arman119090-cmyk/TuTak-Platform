@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { Prisma, RoleName } from '@prisma/client';
+import { MediaAsset, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { MediaViewService } from '../media/media-view.service';
 import { RequestUser } from '../auth/types/request-user.type';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaViewService,
+  ) {}
 
   findByPhone(phone: string) {
     return this.prisma.user.findUnique({ where: { phone } });
@@ -16,8 +20,8 @@ export class UsersService {
   }
 
   /** Like findById, but never includes passwordHash — safe to return over HTTP. */
-  findSafeById(id: string) {
-    return this.prisma.user.findUnique({
+  async findSafeById(id: string) {
+    const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
         id: true,
@@ -30,8 +34,31 @@ export class UsersService {
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        avatarConsentReferralList: true,
+        avatarAsset: true,
       },
     });
+    return user && this.withAvatar(user);
+  }
+
+  /**
+   * Replaces the joined `MediaAsset` row with a delivery-safe, signed
+   * reference to it.
+   *
+   * The row itself carries storage keys, and spec §3.3 says those never reach
+   * a client. The URL is signed to this user because it is their own avatar —
+   * `GET /users/me` is the only route that returns it, and the only person who
+   * can call it for a given account is that account.
+   */
+  private withAvatar<T extends { id: string; avatarAsset: MediaAsset | null; avatarConsentReferralList: boolean }>(
+    user: T,
+  ) {
+    const { avatarAsset, avatarConsentReferralList, ...rest } = user;
+    return {
+      ...rest,
+      avatar: this.media.signedImage(avatarAsset, user.id),
+      showAvatarInReferralList: avatarConsentReferralList,
+    };
   }
 
   async createCustomer(
@@ -117,7 +144,7 @@ export class UsersService {
     userId: string,
     data: Partial<{ firstName: string; lastName: string; email: string; locale: string }>,
   ) {
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id: userId },
       data,
       select: {
@@ -131,8 +158,11 @@ export class UsersService {
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        avatarConsentReferralList: true,
+        avatarAsset: true,
       },
     });
+    return this.withAvatar(user);
   }
 
   /**

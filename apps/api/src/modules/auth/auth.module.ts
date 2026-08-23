@@ -15,6 +15,7 @@ import { PhoneVerificationService } from './phone-verification.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SecurityModule } from '../security/security.module';
 import { ReferralModule } from '../referral/referral.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ReferralModule } from '../referral/referral.module';
     NotificationsModule,
     SecurityModule,
     ReferralModule,
+    MediaModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) => ({

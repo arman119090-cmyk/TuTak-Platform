@@ -1,6 +1,37 @@
 import type { MediaImageDto } from './media';
 
 /**
+ * One row of a partner's optional public product/service list — the
+ * "товары/услуги с ценами" half of the public profile confirmed with Arman
+ * 2026-08-23. Read-only from the customer's side: there is deliberately no
+ * "add to cart"/"order" affordance anywhere this is rendered — see
+ * `docs/PARTNER_PROFILE_2026-08-23.md`.
+ */
+export interface PartnerOfferingDto {
+  id: string;
+  name: string;
+  description: string | null;
+  /** AMD, implicit — same convention as every other money string in this
+   * package (see `CreatePurchaseIntentRequestDto.grossAmount`). */
+  price: string;
+}
+
+/** One entry the partner submits when replacing their whole offerings list. */
+export interface PartnerOfferingInputDto {
+  name: string;
+  description?: string | null;
+  price: string;
+}
+
+export interface ReplacePartnerOfferingsRequestDto {
+  offerings: PartnerOfferingInputDto[];
+}
+
+export interface UpdatePartnerAboutRequestDto {
+  about: string | null;
+}
+
+/**
  * What any authenticated caller sees.
  *
  * A customer needs the directory to find where their points are worth
@@ -28,6 +59,20 @@ export interface PartnerPublicDto {
   logo: MediaImageDto | null;
   /** Optional wide cover for the detail card. Same approval rule as `logo`. */
   cover: MediaImageDto | null;
+  /**
+   * The partner's own "about" text, or null when they haven't written one.
+   * Freeform, partner-entered content — same as `displayName` — so it is
+   * never translated and rendered exactly as submitted. Live the instant the
+   * partner saves it; unlike `logo`/`cover` there is no admin review step.
+   */
+  about: string | null;
+  /**
+   * Optional product/service list, oldest-first replacement order — see
+   * `PartnerOfferingItem.displayOrder`. Empty, never omitted, when the
+   * partner has listed nothing: the mobile client's contract is "hide the
+   * section on an empty array", not "handle a missing field".
+   */
+  offerings: PartnerOfferingDto[];
 }
 
 /**

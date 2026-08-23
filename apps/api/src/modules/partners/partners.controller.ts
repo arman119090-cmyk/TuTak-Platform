@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction, PermissionName } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -18,7 +18,9 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { RejectPartnerDto } from './dto/reject-partner.dto';
+import { ReplacePartnerOfferingsDto } from './dto/replace-partner-offerings.dto';
 import { UpdateCommercialSettingsDto } from './dto/update-commercial-settings.dto';
+import { UpdatePartnerAboutDto } from './dto/update-partner-about.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
 import { NearbyPartnersQueryDto } from './dto/nearby-partners.query.dto';
 import { PartnersService } from './partners.service';
@@ -208,6 +210,58 @@ export class PartnersController {
       metadata: { maxBonusPaymentPercent: partner.maxBonusPaymentPercent },
     });
     return partner;
+  }
+
+  /**
+   * The public profile's "about" text — confirmed with Arman 2026-08-23.
+   * Same OWNER-only scoping as `commercial-settings` above and the same
+   * reasoning: this is the partner's own public identity, and a STAFF/MANAGER
+   * operator changing what customers read about the business is a call the
+   * owner should make, not delegate implicitly. No admin review afterwards —
+   * unlike `PUT :id/logo`/`:id/cover`, this takes effect the instant it saves.
+   */
+  @Patch(':id/about')
+  async updateAbout(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: UpdatePartnerAboutDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, "change the partner's public profile text");
+    const partner = await this.partnersService.updateAbout(id, dto.about);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: partner.id,
+      metadata: { field: 'about' },
+    });
+    return partner;
+  }
+
+  /**
+   * Replaces the partner's whole offerings list — see
+   * `ReplacePartnerOfferingsDto` for why this is a bulk replace rather than
+   * per-item endpoints. Same OWNER-only scoping as `updateAbout` above, and
+   * the same immediacy: no admin review, live as soon as it saves.
+   */
+  @Put(':id/offerings')
+  async replaceOfferings(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: ReplacePartnerOfferingsDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, "change the partner's offerings list");
+    const offerings = await this.partnersService.replaceOfferings(id, dto.offerings);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: id,
+      metadata: { field: 'offerings', count: offerings.length },
+    });
+    return offerings;
   }
 
   /**

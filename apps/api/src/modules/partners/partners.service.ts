@@ -1,10 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MediaAsset, PartnerStatus, Prisma, RoleName } from '@prisma/client';
+import { MediaAsset, PartnerOfferingItem, PartnerStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MediaViewService } from '../media/media-view.service';
 import { isCommissionRateBps } from '../../common/validators/is-commission-rate-bps.validator';
+import { parseMoney } from '../../common/utils/money';
 import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
+import { PartnerOfferingInputDto } from './dto/replace-partner-offerings.dto';
 import { haversineKm, toPartnerCategory, type NearbyPartner } from './geo';
 
 /** A joined-in `MediaAsset`, which may legitimately be absent. */
@@ -162,8 +164,62 @@ export class PartnersService {
     return this.prisma.partner.update({ where: { id }, data });
   }
 
+  /**
+   * Sets the partner's own "about" text. No approval step — see `about`'s
+   * doc comment on the schema. An empty/whitespace-only string is stored as
+   * `null` rather than as an empty paragraph, so `PartnerPublicDto.about`
+   * stays a clean "has one or doesn't" signal for the client's "don't render
+   * an empty section" rule.
+   */
+  async updateAbout(id: string, about: string | null | undefined) {
+    if (about === undefined) return this.findByIdOrThrow(id);
+    const trimmed = about?.trim() || null;
+    await this.prisma.partner.update({ where: { id }, data: { about: trimmed } });
+    return this.findByIdOrThrow(id);
+  }
+
+  /**
+   * Replaces the partner's whole offering list in one transaction — see
+   * `ReplacePartnerOfferingsDto`'s doc comment for why bulk-replace rather
+   * than per-item CRUD. `displayOrder` is written as the submitted array's
+   * own index, so the order the partner saves is the order the customer
+   * sees; re-submitting the same list with items reordered is exactly how a
+   * partner reorders it.
+   *
+   * Old rows are deleted and new ones created rather than diffed and
+   * updated in place: a diff buys nothing here (nobody else references an
+   * offering row by id — see the model's own doc comment on why that is
+   * deliberate for now) and a delete-then-insert is simpler to get right
+   * inside one transaction than reconciling adds/removes/reorders by hand.
+   */
+  async replaceOfferings(id: string, items: PartnerOfferingInputDto[]) {
+    const parsed = items.map((item) => ({
+      name: item.name.trim(),
+      description: item.description?.trim() || null,
+      price: parseMoney(item.price, 'price', { allowZero: false }),
+    }));
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.partnerOfferingItem.deleteMany({ where: { partnerId: id } });
+      if (parsed.length > 0) {
+        await tx.partnerOfferingItem.createMany({
+          data: parsed.map((item, index) => ({ ...item, partnerId: id, displayOrder: index })),
+        });
+      }
+    });
+
+    const offerings = await this.prisma.partnerOfferingItem.findMany({
+      where: { partnerId: id },
+      orderBy: { displayOrder: 'asc' },
+    });
+    return offerings.map((o) => PartnersService.offeringDto(o));
+  }
+
   findById(id: string) {
-    return this.prisma.partner.findUnique({ where: { id }, include: { branches: true } });
+    return this.prisma.partner.findUnique({
+      where: { id },
+      include: { branches: true, offerings: { orderBy: { displayOrder: 'asc' } } },
+    });
   }
 
   async findByIdOrThrow(id: string) {
@@ -216,6 +272,12 @@ export class PartnersService {
     // and `logoAssetId` alone cannot express that.
     logoAsset: true,
     coverAsset: true,
+    // The public profile confirmed with Arman 2026-08-23. Unlike the media
+    // fields above there is no status to gate on — `about`/`offerings` are
+    // live the instant the partner writes them, so the raw column and the
+    // ordered child rows are the whole story.
+    about: true,
+    offerings: { orderBy: { displayOrder: 'asc' as const } },
   } as const;
 
   /**
@@ -226,13 +288,25 @@ export class PartnersService {
    * client. Doing this in one private helper — rather than in each of the
    * three call sites — is what stops one of them from being forgotten.
    */
-  private toPublicDto<T extends { logoAsset: MediaAssetRow; coverAsset: MediaAssetRow }>(partner: T) {
-    const { logoAsset, coverAsset, ...rest } = partner;
+  private toPublicDto<
+    T extends { logoAsset: MediaAssetRow; coverAsset: MediaAssetRow; offerings?: PartnerOfferingItem[] },
+  >(partner: T) {
+    const { logoAsset, coverAsset, offerings, ...rest } = partner;
     return {
       ...rest,
       logo: this.media.currentPartnerImage(logoAsset),
       cover: this.media.currentPartnerImage(coverAsset),
+      offerings: (offerings ?? []).map((o) => PartnersService.offeringDto(o)),
     };
+  }
+
+  /**
+   * `PartnerOfferingItem` → `PartnerOfferingDto`. Strips `partnerId`,
+   * `displayOrder`, `createdAt`, `updatedAt` — internal-only, same discipline
+   * `PUBLIC_FIELDS` applies to the partner row itself.
+   */
+  private static offeringDto(item: PartnerOfferingItem) {
+    return { id: item.id, name: item.name, description: item.description, price: item.price };
   }
 
   /** Every partner, in the projection safe for any authenticated caller. */
@@ -248,7 +322,7 @@ export class PartnersService {
   async list() {
     const partners = await this.prisma.partner.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { logoAsset: true, coverAsset: true },
+      include: { logoAsset: true, coverAsset: true, offerings: { orderBy: { displayOrder: 'asc' } } },
     });
     return partners.map((partner) => this.toPublicDto(partner));
   }

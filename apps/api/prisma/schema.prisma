@@ -843,6 +843,15 @@ model Partner {
   logoAssetId              String?
   /// Optional wide cover for the catalogue/detail card. Same approval rule.
   coverAssetId             String?
+  /// Free text the partner writes about themselves — the public profile
+  /// confirmed with Arman 2026-08-23: "текст «о себе»", shown on the
+  /// partner's detail page. Deliberately no approval workflow, unlike
+  /// `logoAssetId`/`coverAssetId` above: a string carries no impersonation
+  /// risk the way an uploaded image does, so the partner's own write is
+  /// live immediately. Capped length enforced at the DTO boundary
+  /// (`UpdatePartnerAboutDto`), matching how `displayName`/`legalName` are
+  /// capped in this schema — see `ApplyPartnerDto`.
+  about                    String?
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -857,6 +866,7 @@ model Partner {
   settlements         Settlement[]
   payouts             Payout[]
   purchaseIntents     PurchaseIntent[]
+  offerings           PartnerOfferingItem[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
   referralCode        ReferralCode?
@@ -943,6 +953,45 @@ model PartnerBranch {
   purchaseIntents PurchaseIntent[]
 
   @@map("partner_branches")
+}
+
+/// One row of the partner's optional public product/service list — the
+/// "список из своих товаров/услуг с ценами" half of the public profile
+/// Arman confirmed 2026-08-23. Deliberately partner-level, not per-branch,
+/// same reasoning as `logoAssetId`/`coverAssetId`: a chain's offering is one
+/// identity, not one per shop front.
+///
+/// This is explicitly NOT a marketplace: there is no `PurchaseIntent` or
+/// `Transaction` reference to a row here, no stock/inventory, no cart. It is
+/// a read-only listing the customer sees on the partner's page. The shape
+/// (its own table, one row per item, a stable id, a price in the platform's
+/// own money precision) is chosen so that a real "order this" flow could be
+/// layered on top later — e.g. a future `PurchaseIntent.offeringId` — without
+/// reshaping this table, per Arman's explicit "база данных будет сделана
+/// так, чтобы потом было легко это добавить".
+model PartnerOfferingItem {
+  id          String   @id @default(uuid())
+  partnerId   String
+  name        String
+  description String?
+  /// AMD, implicit — same as every other money column in this schema; see
+  /// the file header note. No currency field for the same reason none of the
+  /// transaction/payment tables carry one.
+  price       Decimal  @db.Decimal(18, 4)
+  /// Explicit rather than `createdAt` ordering: a partner reordering their
+  /// own list (moving their best seller to the top) is an expected edit, and
+  /// `createdAt` cannot express "move item 3 first" without rewriting
+  /// timestamps. Written by `PartnersService.replaceOfferings` as the
+  /// submitted array's own index — see that method's doc comment for why a
+  /// bulk replace rather than per-item reordering.
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@map("partner_offering_items")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

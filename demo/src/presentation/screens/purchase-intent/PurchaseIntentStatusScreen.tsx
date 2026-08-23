@@ -12,6 +12,7 @@ import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { formatAmd, formatPoints } from '../../utils/format';
 
@@ -99,7 +100,11 @@ export function PurchaseIntentStatusScreen() {
           ) : null}
 
           <View style={{ width: '100%', marginTop: space[8] }}>
-            <Button label={t('common.done')} onPress={done} />
+            <Button
+              label={t('common.done')}
+              onPress={done}
+              icon={<JakoWingMark size={16} color={color.textInverse} />}
+            />
           </View>
           <View style={{ marginTop: space[8], opacity: 0.35 }}>
             <Image

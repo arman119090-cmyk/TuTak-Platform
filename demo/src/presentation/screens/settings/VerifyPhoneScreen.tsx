@@ -6,6 +6,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
@@ -82,7 +83,12 @@ export function VerifyPhoneScreen({ navigation }: Props) {
   return (
       <Screen title={t('auth.otpTitle')} subtitle={t('auth.verifyPhoneSubtitle', { phone: user?.phone })}>
         {!codeSent ? (
-          <Button label={t('auth.sendVerificationCode')} onPress={handleSendCode} loading={sending} />
+          <Button
+            label={t('auth.sendVerificationCode')}
+            onPress={handleSendCode}
+            loading={sending}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
         ) : (
           <>
             <TextField
@@ -99,6 +105,7 @@ export function VerifyPhoneScreen({ navigation }: Props) {
               onPress={handleConfirm}
               loading={confirming}
               disabled={code.length !== 6 || confirming}
+              icon={<JakoWingMark size={16} color={color.textInverse} />}
             />
             <Button
               label={t('auth.resendCode')}

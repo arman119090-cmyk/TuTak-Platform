@@ -8,6 +8,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
@@ -128,6 +129,7 @@ export function LoginScreen({ navigation }: Props) {
               onPress={handleLogin}
               loading={loading}
               disabled={!canSubmit}
+              icon={<JakoWingMark size={16} color={color.textInverse} />}
             />
           </View>
 

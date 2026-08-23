@@ -9,6 +9,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
@@ -107,6 +108,7 @@ export function OtpLoginScreen({ navigation }: Props) {
                 onPress={handleSendCode}
                 loading={sending}
                 disabled={!canSend}
+                icon={<JakoWingMark size={16} color={color.textInverse} />}
               />
             </View>
           </>
@@ -127,6 +129,7 @@ export function OtpLoginScreen({ navigation }: Props) {
                 onPress={handleVerify}
                 loading={verifying}
                 disabled={!canVerify}
+                icon={<JakoWingMark size={16} color={color.textInverse} />}
               />
               <Button
                 label={t('auth.resendCode')}

@@ -10,6 +10,7 @@ import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
@@ -185,6 +186,7 @@ export function CreatePurchaseIntentScreen() {
           }}
           loading={create.isPending}
           disabled={!grossValid}
+          icon={<JakoWingMark size={16} color={color.textInverse} />}
         />
       </View>
     </Screen>

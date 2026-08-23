@@ -9,6 +9,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import type { AuthStackParamList } from '../../../app/navigation/types';
@@ -93,6 +94,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
             onPress={handleSubmit}
             loading={loading}
             disabled={!canSubmit}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
           />
         </KeyboardAwareScroll>
     </SafeAreaView>

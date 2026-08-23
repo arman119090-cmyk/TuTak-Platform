@@ -12,6 +12,7 @@ import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { DemoOnly } from '../../components/DemoOnly';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { parsePartnerPayQr } from '../../utils/partnerPayQr';
 
 /**
@@ -79,7 +80,13 @@ export function ScanQrScreen() {
           >
             {t('qr.cameraMessage')}
           </Text>
-          <Button label={t('qr.allowCamera')} onPress={requestPermission} size="md" fullWidth={false} />
+          <Button
+            label={t('qr.allowCamera')}
+            onPress={requestPermission}
+            size="md"
+            fullWidth={false}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
         </Surface>
       </Screen>
     );

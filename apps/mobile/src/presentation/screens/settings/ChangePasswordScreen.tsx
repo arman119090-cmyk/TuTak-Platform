@@ -5,8 +5,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
+import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChangePassword'>;
@@ -18,6 +20,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ChangePassword'>;
  */
 export function ChangePasswordScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const { color } = useTheme();
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -65,6 +68,7 @@ export function ChangePasswordScreen({ navigation }: Props) {
           onPress={handleSubmit}
           loading={loading}
           disabled={!canSubmit}
+          icon={<JakoWingMark size={16} color={color.textInverse} />}
         />
       </Screen>
   );

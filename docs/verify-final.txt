@@ -1,0 +1,68 @@
+
+  PASS  admin signs in
+  PASS  two partners created
+  PASS  owner may submit a logo — status 200
+  PASS  owner submission lands PENDING_REVIEW — status=PENDING_REVIEW
+  PASS  a pending logo is invisible to customers — logo=null
+  PASS  owner cannot approve their own submission — status 403
+  PASS  owner B cannot upload to partner A — status 403
+  PASS  owner B cannot approve partner A media — status 403
+  PASS  submission appears in the admin queue
+  PASS  administrator approves — status 201/ACTIVE
+  PASS  approved logo is visible to customers — http://localhost:4000/v1/media/brand/1c2219b7-7893-4c87-b82a-91ca8f464bfe/display
+  PASS  brand derivative serves real image bytes — 200 png 1024x1024
+  PASS  brand derivative is immutably cacheable — public, max-age=31536000, immutable
+  PASS  brand derivative is PNG (source had alpha) — png
+  PASS  NearbyPartnerDto carries the logo — http://localhost:4000/v1/media/brand/1c2219b7-7893-4c87-b82a-91ca8f464bfe/thumb
+  PASS  a partner with no logo yields null, not a broken URL — null
+  PASS  a PDF renamed .png with image/png is rejected — status 400: That file could not be read as an image. Accepted formats are JPEG, PNG and WebP.
+  PASS  HTML disguised as a JPEG is rejected — status 400
+  PASS  an animated/GIF upload is rejected — status 400: Unsupported image format "gif". Accepted formats are JPEG, PNG and WebP.
+  PASS  an over-5MB upload is rejected — status 413
+  PASS  partner SVG is accepted and rasterised — status 200
+  PASS  rasterised SVG is stored as a raster type — image/png
+  PASS  the rasterised SVG is served as raster bytes, with no markup — image/png 201
+  PASS  the test photo really carries EXIF before upload — exif 236B
+  PASS  an SVG avatar is refused — status 400
+  PASS  customer uploads their own avatar — status 200
+  PASS  the stored avatar derivative has no EXIF — exif=none
+  PASS  the stored avatar has no GPS/XMP/IPTC
+  PASS  avatar delivery is private-cached — private, max-age=300
+  PASS  GET /users/me returns the avatar
+  PASS  consent defaults to false
+  PASS  an avatar URL with a swapped audience is refused — status 403
+  PASS  an avatar URL with a forged signature is refused — status 403
+  PASS  the referred friend uploads an avatar
+  PASS  L1 row exists for the referred friend
+  PASS  without consent, the L1 avatar is null — null
+  PASS  the friend can turn consent on
+  PASS  with consent, the L1 avatar is present — http://localhost:4000/v1/media/private/e3ed5577-cbc0-466f-ae62-40110474245b/thumb?aud=0dc7a26e-ba46-4da8-aa84-4c5276948e13&exp=1787534406&sig=QXuFuvRovHc56vnLp4b1WFREQTNMYlYuohV7M1-MF_c
+  PASS  the referrer can actually fetch the consented L1 avatar — status 200
+  PASS  a stranger cannot reuse a consented L1 URL — status 403
+  PASS  withdrawing consent invalidates an already-issued URL immediately — status 403
+  PASS  L2 person never appears in the L1 list
+  PASS  no L2/L3 avatar or identity is reachable from the referral response
+  PASS  purchase intent created — status 201 {"id":"993ca2a3-d72b-4bf7-a948-a9b3e7a40860","customerId":"0dc7a26e-ba46-4da8-aa84-4c5276948e13","partnerId":"fdef0693-bb10-427e-82cb-75752f47d231","partnerBran
+  PASS  the intent carries a brand snapshot with the v1 logo — 1c2219b7-7893-4c87-b82a-91ca8f464bfe vs 1c2219b7-7893-4c87-b82a-91ca8f464bfe
+  PASS  the intent snapshot carries the display name — Jazzve Coffee
+  PASS  the intent confirms — status 201 {"id":"993ca2a3-d72b-4bf7-a948-a9b3e7a40860","customerId":"0dc7a26e-ba46-4da8-aa84-4c5276948e13","partnerId":"fdef0693-bb10-427e-82cb-75752f47d231","partnerBranchId":null,"status":"CONFIRMED","grossAm
+  PASS  the partner rebrands — status 201/ACTIVE
+  PASS  the directory card now shows the NEW logo — 30650f15-7657-4210-bac8-cca59c449688
+  PASS  the old asset is REPLACED, not deleted
+  PASS  the already-created intent still shows its HISTORICAL logo — 1c2219b7-7893-4c87-b82a-91ca8f464bfe (expected 1c2219b7-7893-4c87-b82a-91ca8f464bfe)
+  PASS  the historical (REPLACED) logo still serves bytes — status 200
+  PASS  the completed transaction carries a brand snapshot — "Jazzve Coffee"
+  PASS  the completed transaction shows its HISTORICAL logo — 1c2219b7-7893-4c87-b82a-91ca8f464bfe (expected 1c2219b7-7893-4c87-b82a-91ca8f464bfe)
+  PASS  a wallet source row resolves the partner brand — Jazzve Coffee
+  PASS  an administrator can revoke a published logo — status 200
+  PASS  a revoked logo disappears from the public DTO
+  PASS  an owner cannot revoke their own published logo — status 403
+  PASS  a customer can remove their own avatar — status 200
+  PASS  the profile falls back to no avatar after removal
+  PASS  every media mutation wrote an audit row — 14 rows
+  PASS  all five media audit actions are exercised — MEDIA_ASSET_UPLOADED,MEDIA_ASSET_APPROVED,MEDIA_ASSET_REVOKED,MEDIA_AVATAR_CONSENT_CHANGED
+  PASS  never two ACTIVE assets for one partner+kind — 0
+
+63 passed, 0 failed
+
+creds written

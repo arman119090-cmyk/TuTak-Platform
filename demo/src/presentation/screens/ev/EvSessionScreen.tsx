@@ -8,6 +8,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
+import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { StatePill } from '../../components/StatePill';
@@ -140,17 +141,32 @@ export function EvSessionScreen() {
     <Screen title={t('ev.sessionTitle')} subtitle={session.connector?.station.name}>
       <Surface>
         <View style={styles.headerRow}>
-          <View
-            style={[
-              styles.icon,
-              { backgroundColor: color.availableSurface, borderRadius: radius.md },
-            ]}
-          >
-            <Ionicons name="flash" size={20} color={color.availableText} />
-          </View>
+          {/* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3 names charging-session
+              *detail* alongside history. The operator is a partner like any
+              other, and a customer mid-session should be able to see whose
+              bay they are plugged into. The bolt stays for an operator that
+              has published no logo. */}
+          {session.partnerBrand ? (
+            <PartnerMark
+              name={session.partnerBrand.displayName}
+              logoUrl={session.partnerBrand.logo?.thumbnailUrl}
+              size={40}
+            />
+          ) : (
+            <View
+              style={[
+                styles.icon,
+                { backgroundColor: color.availableSurface, borderRadius: radius.md },
+              ]}
+            >
+              <Ionicons name="flash" size={20} color={color.availableText} />
+            </View>
+          )}
           <View style={[styles.flex, { marginLeft: space[3] }]}>
             <Text style={[text.headline, { color: color.textPrimary }]}>
-              {session.connector?.connectorType.replace('_', ' ') ?? t('ev.connector')}
+              {session.partnerBrand?.displayName ??
+                session.connector?.connectorType.replace('_', ' ') ??
+                t('ev.connector')}
             </Text>
             {price ? (
               <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>

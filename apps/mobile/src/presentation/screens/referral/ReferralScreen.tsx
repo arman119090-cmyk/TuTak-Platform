@@ -104,19 +104,19 @@ export function ReferralScreen() {
         <LevelCard
           title={t('referral.level1Title')}
           description={t('referral.level1Description')}
-          rate="1%"
+          rate="10%"
           count={list.length}
         />
         <LevelCard
           title={t('referral.level2Title')}
           description={t('referral.level2Description')}
-          rate="0,5%"
+          rate="5%"
           count={null}
         />
         <LevelCard
           title={t('referral.level3Title')}
           description={t('referral.level3Description')}
-          rate="0,5%"
+          rate="5%"
           count={null}
         />
       </View>

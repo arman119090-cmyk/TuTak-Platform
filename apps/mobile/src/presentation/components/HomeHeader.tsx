@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,11 @@ import { useTheme } from '../../app/theme/ThemeProvider';
  * makes it a blurry disc; putting it on a ring around the disc makes the
  * disc look lit. It is the only element on the home screen that glows this
  * strongly, which is what makes it read as the user's own corner of the app.
+ *
+ * This header has no photo source to fall back from yet (no avatarUrl is
+ * threaded in here — see `UserAvatar`'s doc comment), so the disc always
+ * shows the Jako mark, same as every other avatar fallback in the app
+ * (Arman, 2026-08-23: emblem everywhere a photo is missing, not initials).
  *
  * The brand line sits above the greeting rather than below it. On a screen
  * whose whole job is to show a balance, the person already knows their own
@@ -40,8 +45,6 @@ export function HomeHeader({
   const { color, space, radius, text, glass, premium } = useTheme();
   const { t } = useTranslation();
 
-  const initials = (firstName ?? '').trim().slice(0, 1).toUpperCase();
-
   return (
     <View style={[styles.wrapper, { borderRadius: radius.xl, borderColor: glass.border }]}>
       <GlassBar>
@@ -63,11 +66,13 @@ export function HomeHeader({
               ]}
             >
               <View style={[styles.avatar, { backgroundColor: premium.brand.primary + 'BF' }]}>
-                {initials ? (
-                  <Text style={[text.headline, { color: color.textInverse }]}>{initials}</Text>
-                ) : (
-                  <Ionicons name="person" size={20} color={color.textInverse} />
-                )}
+                <Image
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('../../../assets/logo-mark.png')}
+                  style={styles.avatarMark}
+                  resizeMode="contain"
+                  accessibilityIgnoresInvertColors
+                />
               </View>
             </Pressable>
 
@@ -133,5 +138,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  avatarMark: { width: 28, height: 28 },
   bell: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 });

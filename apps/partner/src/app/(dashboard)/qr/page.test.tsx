@@ -39,6 +39,8 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     partnerScopes: { PARTNER_OWNER: ['partner-1'] },
     locale: 'hy',
     isPhoneVerified: true,
+    avatar: null,
+    showAvatarInReferralList: false,
     ...overrides,
   };
 }

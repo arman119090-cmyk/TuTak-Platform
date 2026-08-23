@@ -12,6 +12,8 @@ const user: AuthenticatedUserDto = {
   partnerScopes: {},
   locale: 'hy',
   isPhoneVerified: true,
+  avatar: null,
+  showAvatarInReferralList: false,
 };
 
 const tokens: AuthTokensDto = {

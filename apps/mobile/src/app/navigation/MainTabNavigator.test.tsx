@@ -81,14 +81,18 @@ describe('MainTabNavigator — Android bottom safe-area clearance', () => {
   it('renders exactly the fixed bar height when the device reports zero bottom inset', () => {
     const style = tabBarStyleFor(0);
     expect(style.height).toBe(layout.tabBarHeight);
-    // Math.max(12, insets.bottom) — a zero inset still gets the 12px floor.
-    expect(style.paddingBottom).toBe(12);
+    // Math.max(20, insets.bottom) — a zero inset still gets the 20px floor.
+    // Raised from 12: a real 3-button-nav device reporting ~zero inset still
+    // put its own back/home/recent row close enough beneath ours to read as
+    // one row (Arman, 2026-08-23).
+    expect(style.paddingBottom).toBe(20);
   });
 
   it('grows by the live inset — three-button nav (small inset)', () => {
     const style = tabBarStyleFor(16);
     expect(style.height).toBe(layout.tabBarHeight + 16);
-    expect(style.paddingBottom).toBe(16);
+    // The 20px floor still wins over a 16px live inset that's smaller than it.
+    expect(style.paddingBottom).toBe(20);
   });
 
   it('grows by the live inset — gesture nav (larger inset), not a fixed device constant', () => {

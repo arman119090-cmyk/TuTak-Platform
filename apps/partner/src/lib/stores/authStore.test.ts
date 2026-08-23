@@ -20,6 +20,8 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     partnerScopes: {},
     locale: 'hy',
     isPhoneVerified: true,
+    avatar: null,
+    showAvatarInReferralList: false,
     ...overrides,
   };
 }

@@ -35,14 +35,40 @@ export function PartnerMark({
   name,
   logoUrl,
   size = 40,
+  circular = false,
+  fallback,
+  fallbackBackgroundColor,
 }: {
   /** The partner's display name — used for the accessibility label. */
   name: string;
   logoUrl?: string | null;
   size?: number;
+  /**
+   * Renders fully round (`radius.full`) instead of this component's usual
+   * soft-square `radius.md`. Added for `PartnerPin`: the map pin needs "a
+   * small circular avatar" per Arman's request, 2026-08-23, while every
+   * other surface (list cards, the detail header) keeps the rounded-square
+   * logo treatment this component has always used.
+   */
+  circular?: boolean;
+  /**
+   * What to render instead of the glossy Jako lockup when there is no logo
+   * (or it failed to load). Added for `PartnerPin` — the map pin's confirmed
+   * behaviour is "the partner's own logo, falling back to the *category*
+   * icon", not this component's generic neutral mark, per Arman's request,
+   * 2026-08-23. Every other call site omits this and keeps the original
+   * fallback unchanged.
+   */
+  fallback?: React.ReactNode;
+  /** Paired with a custom `fallback` that wants a different tint than the
+   * default blue-tinted surface — e.g. the map pin's own disc colour, so the
+   * category icon sits on the same background the pin already renders on
+   * rather than a mismatched square behind a round disc. */
+  fallbackBackgroundColor?: string;
 }) {
   const { color, radius } = useTheme();
   const [failed, setFailed] = useState(false);
+  const cornerRadius = circular ? radius.full : radius.md;
 
   if (logoUrl && !failed) {
     return (
@@ -50,8 +76,28 @@ export function PartnerMark({
         source={{ uri: logoUrl }}
         onError={() => setFailed(true)}
         accessibilityLabel={name}
-        style={[styles.mark, { width: size, height: size, borderRadius: radius.md }]}
+        style={[styles.mark, { width: size, height: size, borderRadius: cornerRadius }]}
       />
+    );
+  }
+
+  if (fallback) {
+    return (
+      <View
+        accessibilityLabel={name}
+        style={[
+          styles.mark,
+          styles.fallback,
+          {
+            width: size,
+            height: size,
+            borderRadius: cornerRadius,
+            backgroundColor: fallbackBackgroundColor ?? color.reservedSurface,
+          },
+        ]}
+      >
+        {fallback}
+      </View>
     );
   }
 
@@ -61,7 +107,7 @@ export function PartnerMark({
       style={[
         styles.mark,
         styles.fallback,
-        { width: size, height: size, borderRadius: radius.md, backgroundColor: color.reservedSurface },
+        { width: size, height: size, borderRadius: cornerRadius, backgroundColor: color.reservedSurface },
       ]}
     >
       <Image

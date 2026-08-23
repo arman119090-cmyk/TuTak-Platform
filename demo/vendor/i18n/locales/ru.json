@@ -320,7 +320,9 @@
     "approximateLocation": "Показано от центра Еревана. Двигайте карту, чтобы осмотреться.",
     "address": "Адрес",
     "distance": "Расстояние",
-    "cashback": "Кэшбэк"
+    "cashback": "Кэшбэк",
+    "about": "О партнёре",
+    "offerings": "Товары и услуги"
   },
   "partnerCategory": {
     "grocery": "Продукты",

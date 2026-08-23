@@ -40,6 +40,7 @@ run and the result actually looked at.
 | `d15c97d` | `feat(partner,admin)`: branding page and the brand-media approval queue |
 | `92de355` | `fix(api,mobile)`: serve media cross-origin, and centre the brand blocks |
 | `4987ea1` | `fix(design)`: let the dashboards load images from the API origin |
+| `8c03b92` | `feat(mobile)`: brand the live charging-session detail, and this report |
 
 ---
 

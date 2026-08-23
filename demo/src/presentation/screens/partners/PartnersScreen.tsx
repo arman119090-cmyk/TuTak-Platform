@@ -211,6 +211,17 @@ export function PartnersScreen() {
   );
 
   const selectFromMap = (id: string) => {
+    // A partner's pin opens its own page — a location on the map is
+    // expected to open what's there, per Arman's request, 2026-08-23. A
+    // station's pin still only selects and scrolls: there is no equivalent
+    // "station page" being asked for, and the expanded card already carries
+    // everything a station needs (connectors, availability, start action).
+    const item = items.find((i) => i.id === id);
+    if (item?.kind === 'partner') {
+      navigation.navigate('PartnerDetail', { partner: item.partner });
+      return;
+    }
+
     setSelectedId(id);
     const offset = cardOffsets.current[id];
     if (offset !== undefined) {

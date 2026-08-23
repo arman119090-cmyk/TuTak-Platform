@@ -317,7 +317,10 @@
     "clearFilters": "Clear filters",
     "loadFailed": "Could not load partners. Check your connection.",
     "howToEarn": "Pay through TuTak and earn {{percent}}% back in points.",
-    "approximateLocation": "Shown from the centre of Yerevan. Drag the map to look around."
+    "approximateLocation": "Shown from the centre of Yerevan. Drag the map to look around.",
+    "address": "Address",
+    "distance": "Distance",
+    "cashback": "Cashback"
   },
   "partnerCategory": {
     "grocery": "Groceries",

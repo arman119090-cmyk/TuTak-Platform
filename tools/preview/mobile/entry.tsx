@@ -34,6 +34,7 @@ import { TransactionHistoryScreen } from '../../../apps/mobile/src/presentation/
 import { NotificationsScreen } from '../../../apps/mobile/src/presentation/screens/notifications/NotificationsScreen';
 import { SettingsScreen } from '../../../apps/mobile/src/presentation/screens/settings/SettingsScreen';
 import { PartnersScreen } from '../../../apps/mobile/src/presentation/screens/partners/PartnersScreen';
+import { PartnerDetailScreen } from '../../../apps/mobile/src/presentation/screens/partners/PartnerDetailScreen';
 
 const params = new URLSearchParams(location.search);
 const screen = params.get('screen') ?? 'home';
@@ -79,6 +80,7 @@ const SCREENS: Record<string, React.ReactNode> = {
   notifications: <NotificationsScreen />,
   settings: <SettingsScreen />,
   partners: <PartnersScreen />,
+  'partner-detail': <PartnerDetailScreen />,
 };
 
 function Harness() {

@@ -1,4 +1,4 @@
-import type { EvSessionDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type { EvSessionDto, NearbyPartnerDto, PurchaseIntentDto } from '@tutak/shared-types';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -41,6 +41,12 @@ export type RootStackParamList = {
       and now enters the gross amount and, optionally, how much bonus to
       apply — the intent itself does not exist yet. */
   CreatePurchaseIntent: { partnerId: string; partnerBranchId?: string; partnerName?: string };
+  /** Opened by tapping a partner's pin on the map (`PartnersScreen`). The
+      record travels through nav params rather than a fresh fetch — it came
+      from `/partners/nearby` moments earlier in this same session, and this
+      screen moves no money itself; `CreatePurchaseIntent` re-verifies the
+      partner by id from its own params before any amount is entered. */
+  PartnerDetail: { partner: NearbyPartnerDto };
   /** The intent already exists; this screen only tracks it to a terminal
       state. Passed through so the screen renders instantly, the same way
       `EvSession` receives its session — it re-polls for the authoritative

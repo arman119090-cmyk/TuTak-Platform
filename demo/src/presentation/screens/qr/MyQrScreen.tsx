@@ -9,6 +9,7 @@ import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Skeleton } from '../../components/Skeleton';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { qrApi } from '../../../data/api/qrApi';
 import { walletApi } from '../../../data/api/walletApi';
 import { formatPoints } from '../../utils/format';
@@ -136,6 +137,7 @@ export function MyQrScreen() {
               size="md"
               loading={isRefetching}
               fullWidth={false}
+              icon={<JakoWingMark size={14} color={color.textPrimary} />}
             />
           </View>
         ) : (

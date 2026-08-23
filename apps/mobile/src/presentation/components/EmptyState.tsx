@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { Button } from './Button';
+import { JakoWingMark } from './V2NavIcon';
 
 /**
  * Empty states are the one place the mark earns its keep in-product: a real
@@ -46,7 +47,14 @@ export function EmptyState({
       ) : null}
       {actionLabel && onAction ? (
         <View style={{ marginTop: space[4] }}>
-          <Button label={actionLabel} onPress={onAction} variant="secondary" size="md" fullWidth={false} />
+          <Button
+            label={actionLabel}
+            onPress={onAction}
+            variant="secondary"
+            size="md"
+            fullWidth={false}
+            icon={<JakoWingMark size={14} color={color.textPrimary} />}
+          />
         </View>
       ) : null}
     </View>

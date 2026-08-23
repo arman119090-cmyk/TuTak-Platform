@@ -103,6 +103,7 @@ export function CreatePurchaseIntentScreen() {
             onPress={() => refetchPartner()}
             variant="secondary"
             loading={partnerRetrying}
+            icon={<JakoWingMark size={16} color={color.textPrimary} />}
           />
         </View>
       </Screen>

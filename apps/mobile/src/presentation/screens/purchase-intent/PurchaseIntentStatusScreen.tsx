@@ -149,8 +149,17 @@ export function PurchaseIntentStatusScreen() {
           ) : null}
         </Surface>
         <View style={{ marginTop: space[6], gap: space[3] }}>
-          <Button label={t('purchaseIntent.createNew')} onPress={createAnother} />
-          <Button label={t('purchaseIntent.goHome')} onPress={done} variant="tertiary" />
+          <Button
+            label={t('purchaseIntent.createNew')}
+            onPress={createAnother}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
+          <Button
+            label={t('purchaseIntent.goHome')}
+            onPress={done}
+            variant="tertiary"
+            icon={<JakoWingMark size={16} color={color.textBrand} />}
+          />
         </View>
       </Screen>
     );
@@ -171,8 +180,17 @@ export function PurchaseIntentStatusScreen() {
           </Text>
         </Surface>
         <View style={{ marginTop: space[6], gap: space[3] }}>
-          <Button label={t('purchaseIntent.createNew')} onPress={createAnother} />
-          <Button label={t('purchaseIntent.goHome')} onPress={done} variant="tertiary" />
+          <Button
+            label={t('purchaseIntent.createNew')}
+            onPress={createAnother}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
+          <Button
+            label={t('purchaseIntent.goHome')}
+            onPress={done}
+            variant="tertiary"
+            icon={<JakoWingMark size={16} color={color.textBrand} />}
+          />
         </View>
       </Screen>
     );

@@ -111,6 +111,7 @@ export function VerifyPhoneScreen({ navigation }: Props) {
               label={t('auth.resendCode')}
               onPress={handleSendCode}
               variant="tertiary"
+              icon={<JakoWingMark size={16} color={color.textBrand} />}
               loading={sending}
             />
           </>

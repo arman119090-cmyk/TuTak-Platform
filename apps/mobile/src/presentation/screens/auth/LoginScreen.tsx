@@ -139,6 +139,7 @@ export function LoginScreen({ navigation }: Props) {
               variant="secondary"
               onPress={() => navigation.replace('OtpLogin')}
               disabled={loading}
+              icon={<JakoWingMark size={16} color={color.textPrimary} />}
             />
           </View>
 
@@ -149,6 +150,7 @@ export function LoginScreen({ navigation }: Props) {
                 variant="secondary"
                 onPress={handleDemo}
                 disabled={loading}
+                icon={<JakoWingMark size={16} color={color.textPrimary} />}
               />
               <Text
                 style={[

@@ -9,6 +9,7 @@ import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
@@ -124,6 +125,7 @@ export function DeleteAccountScreen({ navigation }: Props) {
           loading={loading}
           disabled={password.length === 0 || loading}
           variant="destructive"
+          icon={<JakoWingMark size={16} color={color.dangerText} />}
         />
 
         <View style={{ marginTop: space[3] }}>
@@ -132,6 +134,7 @@ export function DeleteAccountScreen({ navigation }: Props) {
             onPress={() => navigation.goBack()}
             variant="tertiary"
             disabled={loading}
+            icon={<JakoWingMark size={16} color={color.textBrand} />}
           />
         </View>
       </Screen>

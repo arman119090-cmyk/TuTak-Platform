@@ -9,6 +9,7 @@ import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { StatePill } from '../../components/StatePill';
 import { TextField } from '../../components/TextField';
 import { Skeleton } from '../../components/Skeleton';
@@ -123,7 +124,12 @@ export function EvSessionScreen() {
         <Surface>
           <Text style={[text.body, { color: color.textSecondary }]}>{t('ev.noActiveSession')}</Text>
           <View style={{ marginTop: space[4] }}>
-            <Button label={t('common.back')} variant="secondary" onPress={() => navigation.goBack()} />
+            <Button
+              label={t('common.back')}
+              variant="secondary"
+              onPress={() => navigation.goBack()}
+              icon={<JakoWingMark size={16} color={color.textPrimary} />}
+            />
           </View>
         </Surface>
       </Screen>
@@ -204,6 +210,7 @@ export function EvSessionScreen() {
           variant="destructive"
           loading={stop.isPending}
           disabled={stop.isPending || bonusTooLarge}
+          icon={<JakoWingMark size={16} color={color.dangerText} />}
           onPress={() => stop.mutate()}
         />
       </View>

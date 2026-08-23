@@ -140,6 +140,7 @@ export function RegisterScreen({ navigation }: Props) {
               variant="secondary"
               onPress={() => navigation.replace('OtpRegister')}
               disabled={loading}
+              icon={<JakoWingMark size={16} color={color.textPrimary} />}
             />
           </View>
 

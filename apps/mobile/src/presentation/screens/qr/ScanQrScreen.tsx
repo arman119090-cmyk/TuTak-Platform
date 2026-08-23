@@ -107,7 +107,12 @@ export function ScanQrScreen() {
           </Text>
         </Surface>
         <View style={{ marginTop: space[5] }}>
-          <Button label={t('common.retry')} onPress={retry} variant="secondary" />
+          <Button
+            label={t('common.retry')}
+            onPress={retry}
+            variant="secondary"
+            icon={<JakoWingMark size={16} color={color.textPrimary} />}
+          />
         </View>
       </Screen>
     );
@@ -140,6 +145,7 @@ export function ScanQrScreen() {
                 label={t('qr.demoSimulateScan')}
                 onPress={() => handleScan({ data: 'TUTAK-PAY:partner-sas' })}
                 variant="secondary"
+                icon={<JakoWingMark size={16} color={color.textPrimary} />}
               />
             </View>
           </DemoOnly>

@@ -161,6 +161,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
                 onPress={handleSendCode}
                 variant="tertiary"
                 loading={sending}
+                icon={<JakoWingMark size={16} color={color.textBrand} />}
               />
             </View>
           </>

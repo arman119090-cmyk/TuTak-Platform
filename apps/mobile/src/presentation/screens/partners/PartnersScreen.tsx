@@ -25,6 +25,7 @@ import type { MainTabParamList, RootStackParamList } from '../../../app/navigati
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { SectionHeader } from '../../components/SectionHeader';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
@@ -486,6 +487,7 @@ function PartnerCard({
                     partnerName: partner.name,
                   })
                 }
+                icon={<JakoWingMark size={14} color={color.textInverse} />}
               />
             </View>
           </>

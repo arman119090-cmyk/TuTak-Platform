@@ -12,6 +12,7 @@ import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Button } from '../../components/Button';
 import { UserAvatar } from '../../components/UserAvatar';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
@@ -138,7 +139,12 @@ export function SettingsScreen() {
       </Surface>
 
       <View style={{ marginTop: space[7] }}>
-        <Button label={t('settings.logout')} onPress={handleLogout} variant="destructive" />
+        <Button
+          label={t('settings.logout')}
+          onPress={handleLogout}
+          variant="destructive"
+          icon={<JakoWingMark size={16} color={color.dangerText} />}
+        />
       </View>
 
       <Text

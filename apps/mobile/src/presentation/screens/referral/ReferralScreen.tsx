@@ -3,7 +3,6 @@ import { Image, Share, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
@@ -13,6 +12,7 @@ import { StatePill } from '../../components/StatePill';
 import { SectionHeader } from '../../components/SectionHeader';
 import { EmptyState } from '../../components/EmptyState';
 import { UserAvatar } from '../../components/UserAvatar';
+import { JakoWingMark } from '../../components/V2NavIcon';
 import { referralApi } from '../../../data/api/referralApi';
 import { formatDate, formatPoints } from '../../utils/format';
 
@@ -98,7 +98,7 @@ export function ReferralScreen() {
             label={t('referral.shareCode')}
             onPress={handleShare}
             variant="secondary"
-            icon={<Ionicons name="share-outline" size={18} color={color.textPrimary} />}
+            icon={<JakoWingMark size={16} color={color.textPrimary} />}
           />
         </View>
       </LinearGradient>

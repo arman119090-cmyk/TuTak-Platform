@@ -378,14 +378,15 @@ export class PayoutEngineService {
         data: { settlementLedgerTransactionId: ledgerTransaction.id },
       });
 
-      // The clock the biweekly settlement-check sweep reads per partner —
-      // see `Partner.lastSettledAt`. A confirmed payout is a real,
-      // bank-confirmed zeroing of this partner's settlement cycle, exactly
-      // like `PartnerCollectionService.record` is for the other direction.
-      await tx.partner.update({
-        where: { id: payout.partnerId },
-        data: { lastSettledAt: new Date() },
-      });
+      // `Partner.lastSettledAt` is not touched here on purpose. This
+      // settlement posting moves money between BANK_CLEARING and
+      // PLATFORM_BANK, neither of which is the partner's own
+      // PARTNER_PAYABLE — that account was already debited back at
+      // `requestPayout`, which is the moment the partner's balance actually
+      // changed. `LedgerService.post`/`.reverse` keep that clock honest by
+      // watching every PARTNER_PAYABLE posting for a zero crossing, not by
+      // any particular call site setting it — see that column's own
+      // docblock.
     });
 
     this.logger.log(`Payout ${payoutId} confirmed paid, bank ref ${bankReference}`);

@@ -43,6 +43,30 @@ export async function createCustomer(
   return { user, wallet: user.wallet! };
 }
 
+/**
+ * A minimal admin/staff user row — nothing more than what `AuditLog.actor`'s
+ * foreign key requires. Tests that exercise a service method directly
+ * (bypassing the controller, and so its `CurrentUser`-sourced actor id) still
+ * need a real `User` row when that service writes its own audit record —
+ * `PartnerCollectionService.confirm` is the first one to do this from inside
+ * a transaction rather than leaving it to the controller.
+ */
+export async function createStaffUser(
+  prisma: PrismaClient,
+  overrides: Partial<{ firstName: string; lastName: string }> = {},
+): Promise<User> {
+  return prisma.user.create({
+    data: {
+      phone: `+3747${Math.floor(Math.random() * 90_000_000 + 10_000_000)}`,
+      passwordHash: 'test-not-a-real-hash',
+      firstName: overrides.firstName ?? 'Staff',
+      lastName: overrides.lastName ?? 'Admin',
+      isActive: true,
+      isPhoneVerified: true,
+    },
+  });
+}
+
 export async function createPartner(
   prisma: PrismaClient,
   overrides: Partial<{ bonusAccrualRateBps: number; displayName: string }> = {},

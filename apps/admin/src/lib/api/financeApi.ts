@@ -75,10 +75,15 @@ export interface PartnerCollection {
   id: string;
   partnerId: string;
   amount: string;
+  status: 'PENDING' | 'CONFIRMED';
   bankReference: string;
+  bankTransactionId: string | null;
   createdAt: string;
+  /** The maker and checker of the two-person rule. Ids for the check, names to read. */
   recordedByUserId: string | null;
   recordedByName: string | null;
+  confirmedByUserId: string | null;
+  confirmedByName: string | null;
 }
 
 export interface PaymentRow {
@@ -201,14 +206,27 @@ export const financeApi = {
     partnerId: string,
     amount: string,
     bankReference: string,
+    bankTransactionId: string,
     idempotencyKey: string,
   ) {
     const { data } = await httpClient.post('/payouts/collections', {
       partnerId,
       amount,
       bankReference,
+      bankTransactionId,
       idempotencyKey,
     });
+    return data.data;
+  },
+
+  /**
+   * The checker half of the two-person rule on collections: a different
+   * admin than whoever recorded it confirms a PENDING collection, which is
+   * the moment it actually posts to the ledger. See
+   * `PartnerCollectionService.confirm`'s own docblock.
+   */
+  async confirmCollection(collectionId: string) {
+    const { data } = await httpClient.post(`/payouts/collections/${collectionId}/confirm`, {});
     return data.data;
   },
 

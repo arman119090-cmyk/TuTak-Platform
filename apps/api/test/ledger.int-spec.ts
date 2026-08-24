@@ -361,6 +361,145 @@ describe('Double-entry ledger (integration)', () => {
     });
   });
 
+  // ── PARTNER_PAYABLE zero-crossing (Problem 2b) ─────────────────────────
+  //
+  // `Partner.lastSettledAt` is not a field any of these tests set directly —
+  // it is a side effect of `post`/`reverse` themselves, on every posting that
+  // touches a PARTNER_PAYABLE account, regardless of which module made the
+  // call. See that column's own docblock in schema.prisma.
+
+  describe('PARTNER_PAYABLE zero-crossing', () => {
+    it('sets lastSettledAt when a posting moves a partner-payable balance away from zero', async () => {
+      const { partner, payable, revenue } = await twoAccounts();
+      const before = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(before.lastSettledAt).toBeNull();
+
+      await ledger.post({
+        kind: 'test.new_debt',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-1',
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.DEBIT, amount: '100' },
+          { accountId: revenue.id, direction: PostingDirection.CREDIT, amount: '100' },
+        ],
+      });
+
+      const after = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(after.lastSettledAt).not.toBeNull();
+      expect(Date.now() - after.lastSettledAt!.getTime()).toBeLessThan(10_000);
+    });
+
+    it('does not move lastSettledAt when a posting leaves the balance non-zero on both sides', async () => {
+      const { partner, payable, revenue } = await twoAccounts();
+
+      await ledger.post({
+        kind: 'test.new_debt',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-2a',
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.CREDIT, amount: '1000' },
+          { accountId: revenue.id, direction: PostingDirection.DEBIT, amount: '1000' },
+        ],
+      });
+      const afterFirst = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      const settledAt = afterFirst.lastSettledAt!;
+
+      // A partial move that leaves the balance non-zero — the whole point of
+      // Problem 2b: this must not touch the clock.
+      await ledger.post({
+        kind: 'test.partial_settle',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-2b',
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.DEBIT, amount: '1' },
+          { accountId: revenue.id, direction: PostingDirection.CREDIT, amount: '1' },
+        ],
+      });
+
+      const afterSecond = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(afterSecond.lastSettledAt!.getTime()).toBe(settledAt.getTime());
+    });
+
+    it('resets lastSettledAt when a posting brings the balance back to exactly zero', async () => {
+      const { partner, payable, revenue } = await twoAccounts();
+
+      await ledger.post({
+        kind: 'test.new_debt',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-3a',
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.CREDIT, amount: '500' },
+          { accountId: revenue.id, direction: PostingDirection.DEBIT, amount: '500' },
+        ],
+      });
+
+      await ledger.post({
+        kind: 'test.full_settle',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-3b',
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.DEBIT, amount: '500' },
+          { accountId: revenue.id, direction: PostingDirection.CREDIT, amount: '500' },
+        ],
+      });
+
+      const after = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(after.lastSettledAt).not.toBeNull();
+      expect(Date.now() - after.lastSettledAt!.getTime()).toBeLessThan(10_000);
+      expect((await balanceOf(payable.id)).toFixed(4)).toBe('0.0000');
+    });
+
+    it('reversing a posting back to zero also resets the clock', async () => {
+      const { partner, payable, revenue } = await twoAccounts();
+
+      const tx = await ledger.post({
+        kind: 'test.new_debt',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-4',
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.DEBIT, amount: '200' },
+          { accountId: revenue.id, direction: PostingDirection.CREDIT, amount: '200' },
+        ],
+      });
+      const settledAt = (await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } }))
+        .lastSettledAt!;
+      // Push the clock artificially into the past so the reversal's own
+      // reset is unambiguous.
+      await prisma.partner.update({
+        where: { id: partner.id },
+        data: { lastSettledAt: new Date(settledAt.getTime() - 20 * 24 * 60 * 60_000) },
+      });
+
+      await ledger.reverse(tx.id, 'test.void');
+
+      const after = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(Date.now() - after.lastSettledAt!.getTime()).toBeLessThan(10_000);
+      expect((await balanceOf(payable.id)).toFixed(4)).toBe('0.0000');
+    });
+
+    it('does not touch lastSettledAt for accounts that are not PARTNER_PAYABLE', async () => {
+      const { revenue } = await twoAccounts();
+      const { user } = await createCustomer(prisma);
+      const bonus = await ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY });
+      void user;
+
+      await ledger.post({
+        kind: 'test.no_partner',
+        sourceType: 'Test',
+        sourceId: 'zero-cross-5',
+        postings: [
+          { accountId: bonus.id, direction: PostingDirection.DEBIT, amount: '50' },
+          { accountId: revenue.id, direction: PostingDirection.CREDIT, amount: '50' },
+        ],
+      });
+
+      // No partner was ever touched — nothing to assert against, and no
+      // error, either. This is really just "the general path still works
+      // when a transaction contains zero PARTNER_PAYABLE legs".
+      expect((await balanceOf(bonus.id)).toFixed(4)).toBe('50.0000');
+    });
+  });
+
   // ── Outbox ─────────────────────────────────────────────────────────────
 
   describe('outbox', () => {

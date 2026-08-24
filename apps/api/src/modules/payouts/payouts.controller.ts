@@ -101,9 +101,9 @@ export class PayoutsController {
   // The other direction of settlement (doc §2/§7): a partner's own bank
   // transfer paying down commission they owe TuTak. Gated on PAYOUT_MANAGE,
   // the same permission as every other route on this controller that moves
-  // or records money against a partner's balance — see
-  // `PartnerCollectionService`'s own docblock for why this is *not*, unlike
-  // `confirm` below, also behind the two-person rule.
+  // or records money against a partner's balance. Recording one is also
+  // subject to its own two-person rule now (when `payouts.dualControl` is
+  // on) — see `PartnerCollectionService`'s own docblock for why.
 
   @Get('partners/:partnerId/collections')
   async listCollections(
@@ -125,6 +125,7 @@ export class PayoutsController {
       partnerId: dto.partnerId,
       amount: dto.amount,
       bankReference: dto.bankReference,
+      bankTransactionId: dto.bankTransactionId,
       actorId: admin.id,
       idempotencyKey: dto.idempotencyKey,
     });
@@ -137,12 +138,24 @@ export class PayoutsController {
       metadata: {
         partnerId: dto.partnerId,
         amount: result.amount,
+        status: result.status,
         bankReference: dto.bankReference,
         remainingOwed: result.remainingOwed,
       },
     });
 
     return result;
+  }
+
+  // Confirmation is the checker half of Problem 2's maker-checker control —
+  // see `PartnerCollectionService.confirm`'s own docblock. Its audit record
+  // is written *inside* that method's own transaction, not here, precisely
+  // so a failure at this layer after the service call cannot leave a posted
+  // collection with no audit trail.
+  @Post('collections/:id/confirm')
+  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
+  async confirmCollection(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string) {
+    return this.collections.confirm(id, admin.id);
   }
 
   // `async` on both of these is deliberate, not incidental. Without it the

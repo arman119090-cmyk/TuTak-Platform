@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Role } from '@tutak/shared-types';
 import PayoutsPage from './page';
-import { financeApi, type Payout } from '@/lib/api/financeApi';
+import { financeApi, type Payout, type PartnerCollection } from '@/lib/api/financeApi';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { useAuthStore } from '@/lib/stores/authStore';
 
@@ -29,6 +29,7 @@ jest.mock('@/lib/api/financeApi', () => ({
     failPayout: jest.fn(),
     partnerCollections: jest.fn(),
     recordCollection: jest.fn(),
+    confirmCollection: jest.fn(),
   },
 }));
 
@@ -111,7 +112,11 @@ describe('PayoutsPage', () => {
     mockedFinance.confirmPayout.mockResolvedValue(undefined);
     mockedFinance.failPayout.mockResolvedValue(undefined);
     mockedFinance.partnerCollections.mockResolvedValue([]);
-    mockedFinance.recordCollection.mockResolvedValue({ collectionId: 'collection-1' } as never);
+    mockedFinance.recordCollection.mockResolvedValue({
+      collectionId: 'collection-1',
+      status: 'PENDING',
+    } as never);
+    mockedFinance.confirmCollection.mockResolvedValue({ status: 'CONFIRMED' } as never);
   });
 
   afterEach(() => {
@@ -249,6 +254,9 @@ describe('PayoutsPage', () => {
       fireEvent.change(screen.getByPlaceholderText('e.g. SWIFT-99120'), {
         target: { value: 'SWIFT-COLLECT-1' },
       });
+      fireEvent.change(screen.getByPlaceholderText("the statement's own transaction id"), {
+        target: { value: 'TXN-COLLECT-1' },
+      });
       fireEvent.click(screen.getByText('Record collection'));
 
       await waitFor(() =>
@@ -256,6 +264,7 @@ describe('PayoutsPage', () => {
           'partner-1',
           '1200',
           'SWIFT-COLLECT-1',
+          'TXN-COLLECT-1',
           expect.any(String),
         ),
       );
@@ -265,7 +274,7 @@ describe('PayoutsPage', () => {
       mockedFinance.partnerBalance.mockResolvedValue({ availableBalance: '-1200.00' });
       mockedFinance.recordCollection
         .mockRejectedValueOnce(new Error('timeout of 15000ms exceeded'))
-        .mockResolvedValueOnce({ collectionId: 'collection-2' } as never);
+        .mockResolvedValueOnce({ collectionId: 'collection-2', status: 'PENDING' } as never);
 
       renderPage();
       await selectPartner();
@@ -279,17 +288,77 @@ describe('PayoutsPage', () => {
       fireEvent.change(screen.getByPlaceholderText('e.g. SWIFT-99120'), {
         target: { value: 'SWIFT-COLLECT-2' },
       });
+      fireEvent.change(screen.getByPlaceholderText("the statement's own transaction id"), {
+        target: { value: 'TXN-COLLECT-2' },
+      });
       fireEvent.click(screen.getByText('Record collection'));
       await screen.findByText('timeout of 15000ms exceeded');
 
       fireEvent.click(screen.getByText('Record collection'));
       await waitFor(() => expect(mockedFinance.recordCollection).toHaveBeenCalledTimes(2));
 
-      const [, , , firstKey] = mockedFinance.recordCollection.mock.calls[0]!;
-      const [, , , secondKey] = mockedFinance.recordCollection.mock.calls[1]!;
+      const [, , , , firstKey] = mockedFinance.recordCollection.mock.calls[0]!;
+      const [, , , , secondKey] = mockedFinance.recordCollection.mock.calls[1]!;
 
       expect(firstKey).toBeTruthy();
       expect(secondKey).toBe(firstKey);
+    });
+
+    // ── Confirming a collection: the checker half of the two-person rule ──
+
+    const pendingBySomeoneElse: PartnerCollection = {
+      id: 'collection-pending-1',
+      partnerId: 'partner-1',
+      amount: '1200.00',
+      status: 'PENDING',
+      bankReference: 'SWIFT-COLLECT-3',
+      bankTransactionId: 'TXN-COLLECT-3',
+      createdAt: '2026-08-24T10:00:00.000Z',
+      recordedByUserId: 'someone-else',
+      recordedByName: 'Narek',
+      confirmedByUserId: null,
+      confirmedByName: null,
+    };
+
+    // `selectPartner()` waits for the payouts table's own "Confirm" button,
+    // which collides once a collection also has one on screen — so these two
+    // pick the partner directly rather than reusing that shared helper.
+    const selectPartnerForCollections = async () => {
+      await screen.findByRole('option', { name: 'Coffee Bar' });
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'partner-1' } });
+      await screen.findByText('pending');
+    };
+
+    it('shows a PENDING collection recorded by someone else with a working Confirm button', async () => {
+      mockedFinance.partnerCollections.mockResolvedValue([pendingBySomeoneElse]);
+
+      renderPage();
+      await selectPartnerForCollections();
+
+      fireEvent.click(screen.getByRole('button', { name: /confirm the 1,200 collection/i }));
+
+      await waitFor(() =>
+        expect(mockedFinance.confirmCollection).toHaveBeenCalledWith('collection-pending-1'),
+      );
+    });
+
+    it('disables confirmation and explains why for a collection the current admin recorded themselves', async () => {
+      mockedFinance.partnerCollections.mockResolvedValue([
+        { ...pendingBySomeoneElse, recordedByUserId: 'me', recordedByName: 'Ani' },
+      ]);
+
+      renderPage();
+      await selectPartnerForCollections();
+
+      expect(await screen.findByText(/you recorded this/i)).toBeTruthy();
+      const confirmButton = screen.getByRole('button', {
+        name: /confirm the 1,200 collection/i,
+      }) as HTMLButtonElement;
+      expect(confirmButton.disabled).toBe(true);
+
+      fireEvent.click(confirmButton);
+      await settle();
+      expect(mockedFinance.confirmCollection).not.toHaveBeenCalled();
     });
   });
 });

@@ -104,6 +104,76 @@ export class LedgerService {
     return direction === PostingDirection.DEBIT ? amount : amount.negated();
   }
 
+  /**
+   * Moves every account's balance by its net delta from one transaction —
+   * the shared tail of `post` and `reverse`, since a reversal is exactly the
+   * same kind of balance move as the posting it undoes.
+   *
+   * `PARTNER_PAYABLE` accounts get one extra thing: this is also the single
+   * place in the codebase that decides when `Partner.lastSettledAt` moves.
+   * See that column's own docblock in schema.prisma for the full reasoning;
+   * the short version is that every module which can change a partner's
+   * payable balance — purchases, refunds, referral commissions, EV CDR
+   * reconciliation, payouts, collections — reaches that balance only through
+   * `post`/`reverse` (never a direct `ledgerAccount.update`, which is a
+   * closed fact this codebase's own tests hold it to), so putting the
+   * zero-crossing check here means no future balance-changing code path can
+   * forget to keep the settlement clock honest. Reasoning from the balance
+   * itself, not from "a payout was confirmed" or "a collection was
+   * recorded", is exactly what closes the gap where a 1 AMD partial payment
+   * used to buy a partner 14 days of silence on a much larger debt.
+   *
+   * Every account, `PARTNER_PAYABLE` included, still moves through the same
+   * lock-free `SET balance = balance + delta` the concurrency test at the
+   * bottom of this file relies on staying cheap — there is no separate
+   * `SELECT ... FOR UPDATE` here, on purpose. Postgres's `UPDATE` already
+   * returns the *new* balance for free, and this method already knows
+   * `delta`, so `previous = updated - delta` falls out with no extra lock,
+   * no extra round trip, and exactly the same row-lock lifetime the
+   * increment-only version always had — a second posting to the same
+   * account still simply waits for this statement's transaction to commit,
+   * the same as before this pass. An earlier version of this method issued
+   * its own `SELECT ... FOR UPDATE` first to get the previous balance, which
+   * is real double-locking on top of what `UPDATE` itself already takes, and
+   * a 20-way concurrency test against a single `PARTNER_PAYABLE` account
+   * timed out waiting on Prisma's interactive-transaction pool as a direct
+   * result — the arithmetic below is the fix, not a workaround.
+   *
+   * Processed in ascending account id order so that two transactions
+   * touching the same two `PARTNER_PAYABLE` accounts can never deadlock by
+   * acquiring their locks in opposite orders.
+   */
+  private async applyNetDeltas(client: Tx, net: Map<string, Decimal>): Promise<void> {
+    const nonZero = [...net.entries()]
+      .filter(([, delta]) => !delta.isZero())
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    if (nonZero.length === 0) return;
+
+    const accounts = await client.ledgerAccount.findMany({
+      where: { id: { in: nonZero.map(([accountId]) => accountId) } },
+      select: { id: true, type: true, partnerId: true },
+    });
+    const accountById = new Map(accounts.map((a) => [a.id, a]));
+
+    for (const [accountId, delta] of nonZero) {
+      const updated = await client.ledgerAccount.update({
+        where: { id: accountId },
+        data: { balance: { increment: delta }, version: { increment: 1 } },
+      });
+
+      const meta = accountById.get(accountId);
+      if (meta?.type !== LedgerAccountType.PARTNER_PAYABLE || !meta.partnerId) continue;
+
+      const previous = updated.balance.minus(delta);
+      if (previous.isZero() !== updated.balance.isZero()) {
+        await client.partner.update({
+          where: { id: meta.partnerId },
+          data: { lastSettledAt: new Date() },
+        });
+      }
+    }
+  }
+
   async post(params: PostParams, tx?: Tx) {
     if (params.postings.length < 2) {
       // A single-sided posting is single-entry wearing a double-entry table.
@@ -155,13 +225,7 @@ export class LedgerService {
         );
       }
 
-      for (const [accountId, delta] of net) {
-        if (delta.isZero()) continue;
-        await client.ledgerAccount.update({
-          where: { id: accountId },
-          data: { balance: { increment: delta }, version: { increment: 1 } },
-        });
-      }
+      await this.applyNetDeltas(client, net);
 
       for (const event of params.events ?? []) {
         await client.outboxEvent.create({
@@ -240,13 +304,7 @@ export class LedgerService {
         net.set(posting.accountId, previous.plus(LedgerService.signed(flipped, posting.amount)));
       }
 
-      for (const [accountId, delta] of net) {
-        if (delta.isZero()) continue;
-        await client.ledgerAccount.update({
-          where: { id: accountId },
-          data: { balance: { increment: delta }, version: { increment: 1 } },
-        });
-      }
+      await this.applyNetDeltas(client, net);
 
       return reversal;
     };

@@ -852,20 +852,37 @@ model Partner {
   /// (`UpdatePartnerAboutDto`), matching how `displayName`/`legalName` are
   /// capped in this schema — see `ApplyPartnerDto`.
   about                    String?
-  /// The last time this partner's PARTNER_PAYABLE balance was actually
-  /// zeroed out against the bank — either direction. Set by
-  /// `PayoutEngineService.confirmPaid` (TuTak paid the partner) and by
-  /// `PartnerCollectionService.record` (the partner paid TuTak), never by
-  /// anything that only reads the balance. This is the clock the biweekly
-  /// settlement-check sweep reads to decide who is due: per doc §2, netting
-  /// happens on a roughly-14-day cadence *per partner*, not on one calendar
-  /// date for the whole platform, so "due" means "14+ days since this
-  /// partner's own last settlement", not "it is the 1st and 15th". Null for
-  /// every partner that has never had a payout confirmed or a collection
-  /// recorded — including every partner that predates this column — and the
-  /// sweep treats null as overdue exactly like a real 14-day-old timestamp
-  /// would be, so a partner is never silently skipped just because they are
-  /// new.
+  /// The start of this partner's *current* settlement cycle — not "the last
+  /// time some settlement-shaped event happened", which is what this column
+  /// used to mean and why it was wrong (see docs/PARTNER_COLLECTIONS_HARDENING
+  /// for the full story). It is set to `now()` only when this partner's
+  /// `PARTNER_PAYABLE` balance actually *crosses zero* — either direction:
+  ///
+  ///  - non-zero → zero: a real, full settlement just happened. The sweep
+  ///    below never alerts on a zero balance anyway, so this mostly just
+  ///    keeps the clock honest for whenever the balance moves again.
+  ///  - zero → non-zero: a fresh debt or credit was just born. The 14-day
+  ///    clock for *this* balance starts now, not whenever the partner was
+  ///    last settled — otherwise a brand-new balance inherits a stale
+  ///    timestamp and looks instantly overdue.
+  ///
+  /// A balance that stays non-zero through a *partial* collection or payout
+  /// does not cross zero, so this column does not move — the sweep keeps
+  /// counting from whenever the debt actually started, which is the whole
+  /// point: a 1 AMD payment against a 500,000 AMD debt must not buy 14 more
+  /// days of silence.
+  ///
+  /// This is enforced in exactly one place — `LedgerService.post`/`.reverse`,
+  /// the sole write path for every `PARTNER_PAYABLE`-affecting posting in the
+  /// system (purchases, refunds, referral commissions, EV CDR reconciliation,
+  /// payouts, collections) — rather than at each call site, so a future
+  /// balance-changing code path cannot forget to keep this clock honest.
+  ///
+  /// Null for every partner that has never had a `PARTNER_PAYABLE` balance
+  /// move at all — including every partner that predates this column — and
+  /// the sweep treats null as overdue exactly like a real 14-day-old
+  /// timestamp would be, so a partner is never silently skipped just because
+  /// they are new.
   lastSettledAt            DateTime?
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
@@ -1938,46 +1955,94 @@ model Payout {
   @@map("payouts")
 }
 
+enum CollectionStatus {
+  /// Recorded by one admin (the "maker"). Nothing has posted yet: no ledger
+  /// transaction, no balance change. Only reached when `payouts.dualControl`
+  /// is on — see `PartnerCollectionService`'s docblock.
+  PENDING
+  /// A different admin (the "checker") confirmed it, or dual control was off
+  /// and the single-step path posted it immediately. Either way,
+  /// `ledgerTransactionId` is set and the posting has happened.
+  CONFIRMED
+}
+
 /// The other direction of settlement: a partner wiring money to TuTak to pay
 /// down a `PARTNER_PAYABLE` balance that has gone against them (they owe more
 /// commission than the discount compensation they are owed — doc §2/§7).
 ///
-/// Deliberately single-step, unlike `Payout`'s request/confirm split. A
-/// payout has two moments worth recording separately because the platform
-/// controls the transfer and can still fail after committing to it (the bank
-/// rejects it). A collection has only one moment TuTak has any information
-/// about: an operator reading a bank statement that already shows the
-/// transfer landed — the same "already happened, an operator attests to it"
-/// shape as `AcquirerSettlement`, not the "about to happen" shape of
-/// `Payout.requestPayout`. There is nothing to confirm or fail after the
-/// fact; if the transfer bounces, that shows up as a fresh debit against the
-/// partner the same way any other correction would.
+/// Two-step (`PENDING` → `CONFIRMED`) when `payouts.dualControl` is on, the
+/// same shape as `Payout.requestPayout`/`confirmPaid` — see
+/// `PartnerCollectionService`'s own docblock for why a collection also earns
+/// a second pair of eyes now, even though nothing here moves money out of
+/// the platform: a fabricated or duplicated collection still misstates what
+/// a partner owes, silently and in the partner's favor. Single-step when
+/// dual control is off, matching this model's original design: an operator
+/// reading a bank statement that already shows the transfer landed has only
+/// one moment to record, the same "already happened" shape as
+/// `AcquirerSettlement`. Either way there is nothing to *fail* after the
+/// fact the way a `Payout` can — if a transfer bounces, that shows up as a
+/// fresh debit against the partner, not a status flip on this row.
 model PartnerCollection {
-  id                  String   @id @default(uuid())
-  partnerId           String
-  amount              Decimal  @db.Decimal(18, 4)
-  currency            Currency @default(AMD)
+  id            String           @id @default(uuid())
+  partnerId     String
+  amount        Decimal          @db.Decimal(18, 4)
+  currency      Currency         @default(AMD)
   /// The partner's own bank transfer reference, as it appears on the
-  /// statement — the collection-side counterpart to `Payout.bankReference`.
-  bankReference       String
-  ledgerTransactionId String?  @unique
-  /// The admin who keyed this in from the statement. Nullable only for the
-  /// same reason `Payout.requestedByUserId` is: forward-compatible with a
-  /// system-recorded row that has no human maker, never used to make a real
-  /// admin action anonymous.
+  /// statement — a free-text label, the collection-side counterpart to
+  /// `Payout.bankReference`. Not the uniqueness key — see
+  /// `bankTransactionId`.
+  bankReference String
+  /// The bank statement's own external transaction id — the unique key a
+  /// real transfer can only ever appear under once. Normalized by
+  /// `normalizeBankTransactionId` (trim + strip internal whitespace +
+  /// uppercase) before it reaches this column, so the same real transfer
+  /// collides no matter which admin typed it in or how they spaced it.
+  /// Nullable only for rows that predate this column (see the migration's
+  /// own comment) — every row created through `PartnerCollectionService`
+  /// going forward has one; enforced at the DTO/service boundary, not by a
+  /// database NOT NULL, because a NOT NULL cannot be added retroactively
+  /// without fabricating a value for pre-existing rows. Immutable: nothing
+  /// in this codebase ever updates it after creation.
+  bankTransactionId String?
+  status              CollectionStatus @default(PENDING)
+  ledgerTransactionId String?          @unique
+  /// The admin who keyed this in from the statement (the "maker"). Nullable
+  /// only for the same reason `Payout.requestedByUserId` is:
+  /// forward-compatible with a system-recorded row that has no human maker,
+  /// never used to make a real admin action anonymous.
   recordedByUserId    String?
+  /// Who confirmed it (the "checker") — set on the `PENDING` → `CONFIRMED`
+  /// transition when dual control is on. Left null for a single-step
+  /// collection (dual control off): there was no separate confirming admin
+  /// to name, and inventing one would misstate who did what, the same
+  /// reasoning `Payout.confirmedByUserId` documents for its own legacy rows.
+  confirmedByUserId String?
+  confirmedAt       DateTime?
   /// Same durability role as `Payout.idempotencyKey`: `IdempotencyService`'s
   /// own record is the primary guard, this is the fallback lookup for the
   /// crash-between-two-transactions case — see `PartnerCollectionService`.
-  idempotencyKey      String?
-  createdAt           DateTime @default(now())
+  idempotencyKey String?
+  createdAt      DateTime @default(now())
 
   partner           Partner            @relation(fields: [partnerId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
 
   /// Matches `IdempotencyService`'s `partner-collection:<actorId>` scope.
   @@unique([recordedByUserId, idempotencyKey])
+  /// The database-level control Problem 1 exists for: the *same real bank
+  /// transfer* can never be recorded twice, no matter which admin enters it
+  /// or what idempotency key they use — that pair is only ever a proxy for
+  /// "this admin's own retry", not for "this transfer hasn't been claimed by
+  /// anyone yet". Scoped by currency for the same reason
+  /// `LedgerAccount`'s own per-type-per-currency uniqueness is: there is one
+  /// `PLATFORM_BANK` account per currency, and a transaction id is only
+  /// unique within the statement of the account it landed in. Postgres does
+  /// not consider two NULLs equal in a unique index, so the legacy rows
+  /// above with no `bankTransactionId` never collide with each other or with
+  /// anything else.
+  @@unique([currency, bankTransactionId])
   @@index([partnerId, createdAt])
+  @@index([status])
   @@map("partner_collections")
 }
 
@@ -2067,8 +2132,15 @@ enum AuditAction {
   /// An operator recorded a partner's bank transfer settling a debt to
   /// TuTak. Same reasoning as ACQUIRER_SETTLEMENT_RECORDED: it is an
   /// operator's unverified assertion that money arrived, so who entered it
-  /// and when has to be on the record.
+  /// and when has to be on the record. Written whether the row lands
+  /// `PENDING` or, dual control off, straight to `CONFIRMED`.
   PARTNER_COLLECTION_RECORDED
+  /// A second admin confirmed a `PENDING` collection, posting it. Written
+  /// inside the same database transaction as the claim and the ledger
+  /// posting — never afterwards — so a controller-level failure can never
+  /// leave a posted collection with no audit trail, and a retried
+  /// confirmation can never produce two of these for one collection.
+  PARTNER_COLLECTION_CONFIRMED
   RECONCILIATION_RUN
   /// A customer deleted their own account. Recorded because access ends at
   /// that instant and every subsequent refusal for that user needs an

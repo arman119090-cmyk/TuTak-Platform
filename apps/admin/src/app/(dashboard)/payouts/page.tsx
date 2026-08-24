@@ -28,6 +28,11 @@ const STATUS_TONE = {
   FAILED: 'danger',
 } as const;
 
+const COLLECTION_STATUS_TONE = {
+  PENDING: 'pending',
+  CONFIRMED: 'available',
+} as const;
+
 const fmt = (v: string | number) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
@@ -38,6 +43,7 @@ export default function PayoutsPage() {
   const [amount, setAmount] = useState('');
   const [collectionAmount, setCollectionAmount] = useState('');
   const [collectionReference, setCollectionReference] = useState('');
+  const [collectionTxnId, setCollectionTxnId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [collectionError, setCollectionError] = useState<string | null>(null);
 
@@ -47,9 +53,11 @@ export default function PayoutsPage() {
    * — the server is the authority and enforces this regardless. Recording a
    * collection is gated on the same permission as everything else here,
    * because it is the same class of "money moved, someone attests to it"
-   * action as recording an acquirer settlement — see
-   * `PartnerCollectionService`'s own docblock for why it is *not* also
-   * behind the two-person rule `confirm` below is.
+   * action as recording an acquirer settlement. A recorded collection also
+   * sits behind its own two-person rule now, same as a payout's confirm
+   * step below — see `PartnerCollectionService.confirm`'s own docblock —
+   * because a fabricated or duplicated collection still misstates what a
+   * partner owes, even though it moves nothing external.
    */
   const canMoveMoney = user?.roles?.includes(Role.SUPER_ADMIN) ?? false;
 
@@ -84,20 +92,43 @@ export default function PayoutsPage() {
   // gets its own key; the same pair retried after a timeout keeps it, which
   // is what lets the server recognise the retry instead of paying twice.
   const payoutKey = useIdempotencyKey([partnerId, amount]);
-  // Same reasoning, plus the bank reference: a different reference is a
-  // different transfer being recorded, not a retry of the last one.
-  const collectionKey = useIdempotencyKey([partnerId, collectionAmount, collectionReference]);
+  // Same reasoning, plus the bank reference and transaction id: a different
+  // one of either is a different transfer being recorded, not a retry of the
+  // last one.
+  const collectionKey = useIdempotencyKey([
+    partnerId,
+    collectionAmount,
+    collectionReference,
+    collectionTxnId,
+  ]);
 
   const recordCollection = useMutation({
     mutationFn: () =>
-      financeApi.recordCollection(partnerId, collectionAmount, collectionReference, collectionKey),
+      financeApi.recordCollection(
+        partnerId,
+        collectionAmount,
+        collectionReference,
+        collectionTxnId,
+        collectionKey,
+      ),
     onSuccess: () => {
       setCollectionAmount('');
       setCollectionReference('');
+      setCollectionTxnId('');
       setCollectionError(null);
       invalidateCollections();
     },
     onError: (e: Error) => setCollectionError(e.message),
+  });
+
+  const [confirmCollectionError, setConfirmCollectionError] = useState<string | null>(null);
+  const confirmCollection = useMutation({
+    mutationFn: (collectionId: string) => financeApi.confirmCollection(collectionId),
+    onSuccess: () => {
+      setConfirmCollectionError(null);
+      invalidateCollections();
+    },
+    onError: (e: Error) => setConfirmCollectionError(e.message),
   });
 
   // Available balance is negated PARTNER_PAYABLE — negative means the
@@ -245,7 +276,8 @@ export default function PayoutsPage() {
           <h2 className="text-[14px] font-semibold text-ink">Record a collection</h2>
           <p className="mt-1 text-[13px] text-muted">
             The other direction: a partner&apos;s own bank transfer paying down commission they
-            owe TuTak. Only usable up to what the balance actually shows against them.
+            owe TuTak. Only usable up to what the balance actually shows against them. A
+            different admin must confirm it below before it posts.
           </p>
 
           {owedToUs > 0 ? (
@@ -274,6 +306,16 @@ export default function PayoutsPage() {
                   />
                 </Field>
               </div>
+              <div className="w-56">
+                <Field label="Bank transaction ID">
+                  <Input
+                    value={collectionTxnId}
+                    onChange={(e) => setCollectionTxnId(e.target.value)}
+                    placeholder="the statement's own transaction id"
+                    disabled={!canMoveMoney}
+                  />
+                </Field>
+              </div>
               <Button
                 onClick={() => {
                   setCollectionError(null);
@@ -283,6 +325,7 @@ export default function PayoutsPage() {
                   !canMoveMoney ||
                   !collectionAmount ||
                   !collectionReference.trim() ||
+                  !collectionTxnId.trim() ||
                   recordCollection.isPending
                 }
               >
@@ -404,9 +447,11 @@ export default function PayoutsPage() {
               <thead>
                 <tr>
                   <Th align="right">Amount</Th>
+                  <Th>Status</Th>
                   <Th>Bank reference</Th>
                   <Th>Recorded by</Th>
                   <Th>Recorded</Th>
+                  <Th align="right" />
                 </tr>
               </thead>
               <tbody>
@@ -415,13 +460,54 @@ export default function PayoutsPage() {
                     <Td align="right" className="tabular font-medium text-ink">
                       {fmt(c.amount)}
                     </Td>
+                    <Td>
+                      <Badge tone={COLLECTION_STATUS_TONE[c.status] ?? 'neutral'}>
+                        {c.status.toLowerCase()}
+                      </Badge>
+                    </Td>
                     <Td className="tabular text-[12px] text-muted">{c.bankReference}</Td>
-                    <Td className="text-muted">{c.recordedByName ?? '—'}</Td>
+                    <Td className="text-muted">
+                      {c.recordedByName ?? '—'}
+                      {c.confirmedByName && (
+                        <span className="block text-[12px]">confirmed by {c.confirmedByName}</span>
+                      )}
+                    </Td>
                     <Td className="text-muted">{new Date(c.createdAt).toLocaleString()}</Td>
+                    <Td align="right">
+                      {c.status === 'PENDING' && canMoveMoney && (
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Own record: the API would refuse this, so the
+                              button says why instead of producing a 403 the
+                              admin has to interpret. */}
+                          {c.recordedByUserId === user?.id && (
+                            <span className="text-[12px] text-muted">
+                              You recorded this — someone else must confirm it
+                            </span>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={c.recordedByUserId === user?.id || confirmCollection.isPending}
+                            aria-label={`Confirm the ${Number(c.amount).toLocaleString('en-US')} collection recorded by ${c.recordedByName ?? 'an unknown admin'}`}
+                            onClick={() => {
+                              setConfirmCollectionError(null);
+                              confirmCollection.mutate(c.id);
+                            }}
+                          >
+                            {confirmCollection.isPending && confirmCollection.variables === c.id
+                              ? 'Confirming…'
+                              : 'Confirm'}
+                          </Button>
+                        </div>
+                      )}
+                    </Td>
                   </Tr>
                 ))}
               </tbody>
             </Table>
+          )}
+          {confirmCollectionError && (
+            <p className="mt-2 text-[13px] text-danger">{confirmCollectionError}</p>
           )}
         </div>
       )}

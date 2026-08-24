@@ -1,7 +1,8 @@
 import { LedgerAccountType, PostingDirection, PrismaClient } from '@prisma/client';
 import { PartnerSettlementCheckService } from '../src/modules/payouts/partner-settlement-check.service';
+import { PartnerCollectionService } from '../src/modules/payouts/partner-collection.service';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
-import { createPartner } from './setup/fixtures';
+import { createPartner, createStaffUser } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60_000;
@@ -17,22 +18,32 @@ describe('PartnerSettlementCheckService (integration)', () => {
   let prisma: PrismaClient;
   let check: PartnerSettlementCheckService;
   let ledger: LedgerService;
+  let collections: PartnerCollectionService;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     check = harness.app.get(PartnerSettlementCheckService);
     ledger = harness.app.get(LedgerService);
+    collections = harness.app.get(PartnerCollectionService);
   });
 
   afterAll(async () => {
     await harness.close();
   });
 
+  // Real `User` rows for the maker-checker tests below — see
+  // `createStaffUser`'s own docblock for why `confirm` needs them.
+  let admin1 = '';
+  let admin2 = '';
+
   beforeEach(async () => {
     await truncateAll(prisma);
     await harness.resetAlerts();
     jest.restoreAllMocks();
+    const [a1, a2] = await Promise.all([createStaffUser(prisma), createStaffUser(prisma)]);
+    admin1 = a1.id;
+    admin2 = a2.id;
   });
 
   /** Posts a real balance for `partnerId` — positive `amount` means TuTak owes them. */
@@ -113,10 +124,35 @@ describe('PartnerSettlementCheckService (integration)', () => {
     expect(alert!.context?.netAmount).toBe('1200.0000');
   });
 
-  it('treats a partner never settled as immediately due', async () => {
+  it('gives a brand-new balance a fresh cycle rather than an immediate alert', async () => {
+    // Problem 2b: `lastSettledAt` is no longer just "null until someone
+    // settles" — `LedgerService` itself stamps it the moment a balance is
+    // born (zero → non-zero), so this partner's very first debt already has
+    // a known start date and is not instantly, noisily "overdue" on day
+    // zero. See the "reflects the real balance" describe block below for
+    // the full zero-crossing behaviour.
     const partner = await createPartner(prisma);
     await seedBalance(partner.id, '500');
-    expect(partner.lastSettledAt).toBeNull();
+
+    const stored = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+    expect(stored.lastSettledAt).not.toBeNull();
+
+    const result = await check.checkOverdueSettlements();
+
+    expect(result.overdue).toBe(0);
+    expect(harness.alerts.matching(`partner.settlement-due:${partner.id}`)).toHaveLength(0);
+  });
+
+  it('still treats a genuinely unknown cycle start (null lastSettledAt) as immediately due', async () => {
+    // The one legitimate way `lastSettledAt` stays null with a real balance
+    // on the books: a partner whose balance predates this column entirely,
+    // for whom there is no true cycle-start date to backfill (see the
+    // column's own migration). `LedgerService` cannot invent history for a
+    // partner it never saw move, so this partner is exactly what the
+    // null-is-overdue fallback exists to protect.
+    const partner = await createPartner(prisma);
+    await seedBalance(partner.id, '500');
+    await prisma.partner.update({ where: { id: partner.id }, data: { lastSettledAt: null } });
 
     const result = await check.checkOverdueSettlements();
 
@@ -206,5 +242,106 @@ describe('PartnerSettlementCheckService (integration)', () => {
     expect(result.overdue).toBe(1);
     expect(harness.alerts.matching(`partner.settlement-due:${withBalance.id}`)).toHaveLength(1);
     expect(harness.alerts.matching(`partner.settlement-due:${withoutBalance.id}`)).toHaveLength(0);
+  });
+
+  // ── Problem 2b: lastSettledAt reflects the real balance, not any activity ──
+  //
+  // These prove the actual defect the brief describes: a partial payment
+  // used to reset `lastSettledAt` unconditionally, which pulled the partner
+  // out of `duePartners`' candidate pool for a full 14 days regardless of
+  // how much they still owed — see `PartnerSettlementCheckService`'s query,
+  // which filters *before* it ever looks at the live balance.
+
+  describe('the settlement clock reflects the real balance (Problem 2b)', () => {
+    it('is not reset by a 1 AMD partial collection against a much larger debt', async () => {
+      const partner = await createPartner(prisma);
+      await seedBalance(partner.id, '-500000'); // partner owes TuTak 500,000
+      // Simulate that this debt has genuinely sat unsettled for 20 days.
+      const settledAt = daysAgo(20);
+      await prisma.partner.update({
+        where: { id: partner.id },
+        data: { lastSettledAt: settledAt },
+      });
+
+      const recorded = await collections.record({
+        partnerId: partner.id,
+        amount: '1',
+        bankReference: 'SWIFT-TOKEN-PAYMENT',
+        bankTransactionId: 'CLOCK-TEST-PARTIAL-1',
+        actorId: admin1,
+        idempotencyKey: 'clock-partial-1',
+      });
+      await collections.confirm(recorded.collectionId, admin2);
+
+      // The balance barely moved, and neither did the clock — a 1 AMD
+      // payment must not buy 14 more days of silence on 499,999 AMD.
+      const stored = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(stored.lastSettledAt!.getTime()).toBe(settledAt.getTime());
+
+      const result = await check.checkOverdueSettlements();
+      expect(result.overdue).toBe(1);
+      const [alert] = harness.alerts.matching(`partner.settlement-due:${partner.id}`);
+      expect(alert!.context?.direction).toBe('partner_owes_tutak');
+      expect(alert!.context?.netAmount).toBe('499999.0000');
+    });
+
+    it('resets the cycle on a full settlement to zero', async () => {
+      const partner = await createPartner(prisma);
+      await seedBalance(partner.id, '-500');
+      await prisma.partner.update({
+        where: { id: partner.id },
+        data: { lastSettledAt: daysAgo(20) },
+      });
+
+      const recorded = await collections.record({
+        partnerId: partner.id,
+        amount: '500',
+        bankReference: 'SWIFT-FULL-SETTLE',
+        bankTransactionId: 'CLOCK-TEST-FULL-1',
+        actorId: admin1,
+        idempotencyKey: 'clock-full-1',
+      });
+      await collections.confirm(recorded.collectionId, admin2);
+
+      const stored = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(Date.now() - stored.lastSettledAt!.getTime()).toBeLessThan(10_000);
+
+      // And the sweep agrees there is nothing left to chase.
+      const result = await check.checkOverdueSettlements();
+      expect(result.overdue).toBe(0);
+    });
+
+    it('starts a clean, fresh cycle when a new balance appears after a full settlement', async () => {
+      const partner = await createPartner(prisma);
+      await seedBalance(partner.id, '-500');
+      const recorded = await collections.record({
+        partnerId: partner.id,
+        amount: '500',
+        bankReference: 'SWIFT-FULL-SETTLE-2',
+        bankTransactionId: 'CLOCK-TEST-FULL-2',
+        actorId: admin1,
+        idempotencyKey: 'clock-full-2',
+      });
+      await collections.confirm(recorded.collectionId, admin2);
+
+      // The partner then sat quiet, genuinely settled, for a long time.
+      await prisma.partner.update({
+        where: { id: partner.id },
+        data: { lastSettledAt: daysAgo(200) },
+      });
+
+      // A brand-new debt is born today.
+      await seedBalance(partner.id, '-300');
+
+      // The clock must read "today", not the 200-day-old settlement date —
+      // otherwise this partner would look instantly, wrongly overdue on a
+      // debt that is zero days old.
+      const stored = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
+      expect(Date.now() - stored.lastSettledAt!.getTime()).toBeLessThan(10_000);
+
+      const result = await check.checkOverdueSettlements();
+      expect(result.overdue).toBe(0);
+      expect(harness.alerts.matching(`partner.settlement-due:${partner.id}`)).toHaveLength(0);
+    });
   });
 });

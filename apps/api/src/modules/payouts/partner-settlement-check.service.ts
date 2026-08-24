@@ -27,14 +27,21 @@ export interface SettlementCheckResult {
  *
  * Read-only and notify-only by design. Nothing here moves a dram: it exists
  * to make sure a human looks at every partner whose `PARTNER_PAYABLE`
- * balance has gone two-plus weeks without a real settlement event — either
- * a confirmed `Payout` or a recorded `PartnerCollection`, both of which
- * reset `Partner.lastSettledAt` — and tells them the net figure and which
- * way it points. Turning that into an actual transfer is `PayoutEngineService`
- * (TuTak owes the partner) or `PartnerCollectionService` (the partner owes
- * TuTak), both of which already carry their own concurrency and idempotency
- * guarantees; duplicating any of that here would be building a second, less
- * careful way to move the same money.
+ * balance has gone two-plus weeks without netting back to zero. `duePartners`
+ * below is only a candidate filter — the actual decision to alert always
+ * re-reads the live balance, because `Partner.lastSettledAt` is not "the
+ * last time a `Payout` or `PartnerCollection` happened" (a partial one of
+ * either leaves this partner's balance non-zero and must not silence the
+ * sweep). It is the start of the *current* cycle — the last time this
+ * balance actually crossed zero, either direction — kept honest by
+ * `LedgerService` itself on every posting that touches a `PARTNER_PAYABLE`
+ * account, not by this sweep or by `PayoutEngineService`/
+ * `PartnerCollectionService` reaching in to set it. Turning a real non-zero
+ * balance into an actual transfer is still `PayoutEngineService` (TuTak owes
+ * the partner) or `PartnerCollectionService` (the partner owes TuTak), both
+ * of which already carry their own concurrency and idempotency guarantees;
+ * duplicating any of that here would be building a second, less careful way
+ * to move the same money.
  *
  * "Due" is evaluated per partner from their own `lastSettledAt`, not from a
  * single platform-wide date — see `SETTLEMENT_CYCLE_MS`'s docblock. The

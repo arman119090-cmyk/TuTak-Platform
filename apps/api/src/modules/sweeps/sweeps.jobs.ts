@@ -6,6 +6,7 @@ import type { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconcili
 import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { RefundEngineService } from '../payments/refund-engine.service';
+import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
@@ -50,6 +51,7 @@ export interface SweepDependencies {
   retention: RetentionService;
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
+  partnerSettlement: PartnerSettlementCheckService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -238,6 +240,19 @@ export const SWEEPS: readonly SweepDefinition[] = [
         } satisfies SweepDefinition,
       ]
     : []),
+  {
+    name: 'partner-settlement.biweekly-check',
+    why: "Doc §2/§7: TuTak↔partner settlement is periodic netting, not a per-purchase transfer — nothing else ever looks back at a partner's PARTNER_PAYABLE balance and asks whether it has gone unsettled too long. Without this a balance can sit for months with neither a payout nor a collection ever recorded, and nobody would know until a partner asked.",
+    // Daily, not every-14-days: the *selection* of who gets notified is
+    // per-partner from their own `lastSettledAt` (see
+    // `PartnerSettlementCheckService`'s docblock), so the sweep's own poll
+    // only has to be frequent enough that no partner's 14-day anniversary is
+    // missed by more than a day.
+    repeat: { pattern: '0 6 * * *', tz: 'Asia/Yerevan' },
+    maxSilenceMs: 26 * 60 * 60_000,
+    lockTtlMs: 10 * 60_000,
+    run: ({ partnerSettlement }) => partnerSettlement.checkOverdueSettlements(),
+  },
   {
     name: 'reconciliation.nightly',
     why: 'Replays every account against its own postings. Catches the ledger disagreeing with itself, which is a bug in this codebase rather than a dispute with a third party — and the only unattended check that can find it.',

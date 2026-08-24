@@ -11,8 +11,10 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { SettlementService } from '../settlement/settlement.service';
 import { ConfirmPayoutDto, FailPayoutDto, RequestPayoutDto } from './dto/request-payout.dto';
 import { RecordAcquirerSettlementDto } from './dto/record-acquirer-settlement.dto';
+import { RecordPartnerCollectionDto } from './dto/record-partner-collection.dto';
 import { PayoutEngineService } from './payout-engine.service';
 import { AcquirerSettlementService } from './acquirer-settlement.service';
+import { PartnerCollectionService } from './partner-collection.service';
 
 /**
  * Reads are partner-scoped; writes are platform-admin only.
@@ -34,6 +36,7 @@ export class PayoutsController {
   constructor(
     private readonly payouts: PayoutEngineService,
     private readonly acquirerSettlements: AcquirerSettlementService,
+    private readonly collections: PartnerCollectionService,
     private readonly settlement: SettlementService,
     private readonly audit: AuditService,
   ) {}
@@ -91,6 +94,55 @@ export class PayoutsController {
     assertPartnerScope(user, partnerId);
     const available = await this.payouts.availableBalance(partnerId);
     return { partnerId, availableBalance: available.toFixed(4), currency: 'AMD' };
+  }
+
+  // ── Money arriving from a partner ──────────────────────────────────────
+  //
+  // The other direction of settlement (doc §2/§7): a partner's own bank
+  // transfer paying down commission they owe TuTak. Gated on PAYOUT_MANAGE,
+  // the same permission as every other route on this controller that moves
+  // or records money against a partner's balance — see
+  // `PartnerCollectionService`'s own docblock for why this is *not*, unlike
+  // `confirm` below, also behind the two-person rule.
+
+  @Get('partners/:partnerId/collections')
+  async listCollections(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('partnerId') partnerId: string,
+  ) {
+    assertPartnerScope(user, partnerId);
+    return this.collections.listForPartner(partnerId);
+  }
+
+  @Post('collections')
+  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async recordCollection(
+    @CurrentUser() admin: RequestUser,
+    @Body() dto: RecordPartnerCollectionDto,
+  ) {
+    const result = await this.collections.record({
+      partnerId: dto.partnerId,
+      amount: dto.amount,
+      bankReference: dto.bankReference,
+      actorId: admin.id,
+      idempotencyKey: dto.idempotencyKey,
+    });
+
+    await this.audit.record({
+      actorUserId: admin.id,
+      action: AuditAction.PARTNER_COLLECTION_RECORDED,
+      entityType: 'PartnerCollection',
+      entityId: result.collectionId,
+      metadata: {
+        partnerId: dto.partnerId,
+        amount: result.amount,
+        bankReference: dto.bankReference,
+        remainingOwed: result.remainingOwed,
+      },
+    });
+
+    return result;
   }
 
   // `async` on both of these is deliberate, not incidental. Without it the

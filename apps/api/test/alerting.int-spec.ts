@@ -196,6 +196,7 @@ describe('Alerting (integration)', () => {
           retention: undefined as never,
           deferredBonusLots: undefined as never,
           purchaseIntents: undefined as never,
+          partnerSettlement: undefined as never,
           refunds: undefined as never,
         },
         harness.app.get(DistributedLockService),

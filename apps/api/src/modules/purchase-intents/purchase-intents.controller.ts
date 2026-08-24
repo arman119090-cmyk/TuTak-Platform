@@ -48,6 +48,19 @@ export class PurchaseIntentsController {
     return this.purchaseIntents.toDtos(await this.purchaseIntents.listForPartner(partnerId, status));
   }
 
+  /**
+   * A partner's own confirmed QR activity, grouped by day — the real-data
+   * counterpart to `GET /payouts/partners/:partnerId/settlements`, which
+   * only ever has rows for the legacy card-payment pipeline. See
+   * `PurchaseIntentsService.dailyActivityForPartner` for why this lives
+   * here rather than being folded into that endpoint.
+   */
+  @Get('activity/daily')
+  async dailyActivity(@CurrentUser() user: RequestUser, @Query('partnerId') partnerId: string) {
+    assertPartnerScope(user, partnerId);
+    return this.purchaseIntents.dailyActivityForPartner(partnerId);
+  }
+
   /** Spec §7 steps 9-11 / §25-26. Any partner staff tier scoped to this intent's partner. */
   @Post(':id/confirm')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)

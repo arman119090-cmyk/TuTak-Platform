@@ -11,7 +11,13 @@ import {
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
-import { parseMoney, parsePositiveMoney, roundCharge, roundIssued } from '../../common/utils/money';
+import {
+  MONEY_SCALE,
+  parseMoney,
+  parsePositiveMoney,
+  roundCharge,
+  roundIssued,
+} from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MediaViewService } from '../media/media-view.service';
@@ -90,6 +96,104 @@ export class PurchaseIntentsService {
       where: { partnerId, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * A partner's own confirmed QR/PurchaseIntent activity, grouped by day —
+   * the real-activity counterpart to `SettlementService.listForPartner`'s
+   * daily rollup of the legacy card-payment pipeline.
+   *
+   * `Settlement` rows only ever exist for a captured `Payment` — the
+   * card-charge path gated behind `CARD_PAYMENTS_ENABLED`, which stays off in
+   * production (docs/LAUNCH_READINESS_2026-08-16.md). A partner running only the live QR flow
+   * has confirmed purchases and a real `PARTNER_PAYABLE` balance, but zero
+   * `Settlement` rows — so this reads the same source `postContributionLedger`
+   * and `postRedemptionCompensation` already posted from, rather than adding
+   * a third parallel rollup table.
+   *
+   * Two figures per day, matching doc §2's own worked example exactly:
+   * `discountGivenAmount` is what `bonusAmountRequested` compensated the
+   * partner for (TuTak's obligation), `commissionOwedAmount` is `poolAmount`
+   * (the partner's commission obligation on the same purchase) — `net =
+   * discount - commission`, positive in the partner's favor when the
+   * discount they gave out exceeds what they owe in commission, exactly
+   * doc §2's 5,000 − 1,200 = 3,800.
+   *
+   * Deliberately scoped to purchases where *this* partner is the merchant —
+   * not purchases where this partner was paid a referral share as the
+   * terminal link in another purchase's chain (`postContributionLedger`'s
+   * `partnerReferrerPostings`). That is real income too, but it lives on a
+   * different partner's `PurchaseIntent` rows and has no `grossAmount` of
+   * its own to report against; folding it into "this partner's daily
+   * activity" would make the gross/discount/commission figures not add up
+   * to any single purchase a reader could look up. It still shows up in the
+   * partner's own `PARTNER_PAYABLE` balance and payout history — just not
+   * itemised in this table. Left out of this pass for that reason, not
+   * because it doesn't matter.
+   *
+   * Aggregated in application code rather than a SQL `GROUP BY` on a
+   * truncated date: nothing else in this codebase groups by day that way
+   * either (`SettlementService` maintains a running total per calendar day
+   * as each payment settles, rather than aggregating historical rows), and a
+   * partner's confirmed-purchase volume is nowhere near the scale where a
+   * bounded window of rows read into memory would be the wrong call.
+   */
+  async dailyActivityForPartner(partnerId: string, days = 30) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60_000);
+    const intents = await this.prisma.purchaseIntent.findMany({
+      where: {
+        partnerId,
+        status: PurchaseIntentStatus.CONFIRMED,
+        confirmedAt: { gte: since },
+      },
+      select: {
+        confirmedAt: true,
+        grossAmount: true,
+        bonusAmountRequested: true,
+        poolAmount: true,
+      },
+      orderBy: { confirmedAt: 'desc' },
+    });
+
+    interface DayTotals {
+      periodStart: string;
+      grossAmount: Decimal;
+      discountGivenAmount: Decimal;
+      commissionOwedAmount: Decimal;
+      purchaseCount: number;
+    }
+
+    const byDay = new Map<string, DayTotals>();
+    for (const intent of intents) {
+      // `confirmedAt` is set in the same transaction as `status: CONFIRMED`
+      // (see `settlePurchase`), so a row selected above always has one.
+      const at = intent.confirmedAt!;
+      const key = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate())).toISOString();
+
+      const existing = byDay.get(key) ?? {
+        periodStart: key,
+        grossAmount: new Decimal(0),
+        discountGivenAmount: new Decimal(0),
+        commissionOwedAmount: new Decimal(0),
+        purchaseCount: 0,
+      };
+      existing.grossAmount = existing.grossAmount.plus(intent.grossAmount);
+      existing.discountGivenAmount = existing.discountGivenAmount.plus(intent.bonusAmountRequested);
+      existing.commissionOwedAmount = existing.commissionOwedAmount.plus(intent.poolAmount ?? 0);
+      existing.purchaseCount += 1;
+      byDay.set(key, existing);
+    }
+
+    return Array.from(byDay.values())
+      .sort((a, b) => b.periodStart.localeCompare(a.periodStart))
+      .map((day) => ({
+        periodStart: day.periodStart,
+        grossAmount: day.grossAmount.toFixed(MONEY_SCALE),
+        discountGivenAmount: day.discountGivenAmount.toFixed(MONEY_SCALE),
+        commissionOwedAmount: day.commissionOwedAmount.toFixed(MONEY_SCALE),
+        netAmount: day.discountGivenAmount.minus(day.commissionOwedAmount).toFixed(MONEY_SCALE),
+        purchaseCount: day.purchaseCount,
+      }));
   }
 
   /**

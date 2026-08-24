@@ -852,6 +852,21 @@ model Partner {
   /// (`UpdatePartnerAboutDto`), matching how `displayName`/`legalName` are
   /// capped in this schema — see `ApplyPartnerDto`.
   about                    String?
+  /// The last time this partner's PARTNER_PAYABLE balance was actually
+  /// zeroed out against the bank — either direction. Set by
+  /// `PayoutEngineService.confirmPaid` (TuTak paid the partner) and by
+  /// `PartnerCollectionService.record` (the partner paid TuTak), never by
+  /// anything that only reads the balance. This is the clock the biweekly
+  /// settlement-check sweep reads to decide who is due: per doc §2, netting
+  /// happens on a roughly-14-day cadence *per partner*, not on one calendar
+  /// date for the whole platform, so "due" means "14+ days since this
+  /// partner's own last settlement", not "it is the 1st and 15th". Null for
+  /// every partner that has never had a payout confirmed or a collection
+  /// recorded — including every partner that predates this column — and the
+  /// sweep treats null as overdue exactly like a real 14-day-old timestamp
+  /// would be, so a partner is never silently skipped just because they are
+  /// new.
+  lastSettledAt            DateTime?
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -865,6 +880,7 @@ model Partner {
   payments            Payment[]
   settlements         Settlement[]
   payouts             Payout[]
+  collections         PartnerCollection[]
   purchaseIntents     PurchaseIntent[]
   offerings           PartnerOfferingItem[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
@@ -1585,6 +1601,7 @@ model LedgerTransaction {
   payoutRequested      Payout?               @relation("PayoutRequested")
   payoutSettled        Payout?               @relation("PayoutSettled")
   acquirerSettlement   AcquirerSettlement?
+  partnerCollection    PartnerCollection?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -1921,6 +1938,49 @@ model Payout {
   @@map("payouts")
 }
 
+/// The other direction of settlement: a partner wiring money to TuTak to pay
+/// down a `PARTNER_PAYABLE` balance that has gone against them (they owe more
+/// commission than the discount compensation they are owed — doc §2/§7).
+///
+/// Deliberately single-step, unlike `Payout`'s request/confirm split. A
+/// payout has two moments worth recording separately because the platform
+/// controls the transfer and can still fail after committing to it (the bank
+/// rejects it). A collection has only one moment TuTak has any information
+/// about: an operator reading a bank statement that already shows the
+/// transfer landed — the same "already happened, an operator attests to it"
+/// shape as `AcquirerSettlement`, not the "about to happen" shape of
+/// `Payout.requestPayout`. There is nothing to confirm or fail after the
+/// fact; if the transfer bounces, that shows up as a fresh debit against the
+/// partner the same way any other correction would.
+model PartnerCollection {
+  id                  String   @id @default(uuid())
+  partnerId           String
+  amount              Decimal  @db.Decimal(18, 4)
+  currency            Currency @default(AMD)
+  /// The partner's own bank transfer reference, as it appears on the
+  /// statement — the collection-side counterpart to `Payout.bankReference`.
+  bankReference       String
+  ledgerTransactionId String?  @unique
+  /// The admin who keyed this in from the statement. Nullable only for the
+  /// same reason `Payout.requestedByUserId` is: forward-compatible with a
+  /// system-recorded row that has no human maker, never used to make a real
+  /// admin action anonymous.
+  recordedByUserId    String?
+  /// Same durability role as `Payout.idempotencyKey`: `IdempotencyService`'s
+  /// own record is the primary guard, this is the fallback lookup for the
+  /// crash-between-two-transactions case — see `PartnerCollectionService`.
+  idempotencyKey      String?
+  createdAt           DateTime @default(now())
+
+  partner           Partner            @relation(fields: [partnerId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  /// Matches `IdempotencyService`'s `partner-collection:<actorId>` scope.
+  @@unique([recordedByUserId, idempotencyKey])
+  @@index([partnerId, createdAt])
+  @@map("partner_collections")
+}
+
 enum ReconciliationStatus {
   CLEAN
   DRIFT_DETECTED
@@ -2004,6 +2064,11 @@ enum AuditAction {
   /// it is the one entry point through which cash appears in the books
   /// without a customer transaction behind it.
   ACQUIRER_SETTLEMENT_RECORDED
+  /// An operator recorded a partner's bank transfer settling a debt to
+  /// TuTak. Same reasoning as ACQUIRER_SETTLEMENT_RECORDED: it is an
+  /// operator's unverified assertion that money arrived, so who entered it
+  /// and when has to be on the record.
+  PARTNER_COLLECTION_RECORDED
   RECONCILIATION_RUN
   /// A customer deleted their own account. Recorded because access ends at
   /// that instant and every subsequent refusal for that user needs an

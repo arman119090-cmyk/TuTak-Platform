@@ -28,17 +28,28 @@ const STATUS_TONE = {
   FAILED: 'danger',
 } as const;
 
+const fmt = (v: string | number) =>
+  Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
 export default function PayoutsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [partnerId, setPartnerId] = useState('');
   const [amount, setAmount] = useState('');
+  const [collectionAmount, setCollectionAmount] = useState('');
+  const [collectionReference, setCollectionReference] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
 
   /**
    * PAYOUT_MANAGE is granted to SUPER_ADMIN only, so an ADMIN would get a
    * 403 from every button below. Hiding them is a courtesy, not the control
-   * — the server is the authority and enforces this regardless.
+   * — the server is the authority and enforces this regardless. Recording a
+   * collection is gated on the same permission as everything else here,
+   * because it is the same class of "money moved, someone attests to it"
+   * action as recording an acquirer settlement — see
+   * `PartnerCollectionService`'s own docblock for why it is *not* also
+   * behind the two-person rule `confirm` below is.
    */
   const canMoveMoney = user?.roles?.includes(Role.SUPER_ADMIN) ?? false;
 
@@ -53,16 +64,46 @@ export default function PayoutsPage() {
     queryFn: () => financeApi.partnerPayouts(partnerId),
     enabled: !!partnerId,
   });
+  const { data: collections } = useQuery({
+    queryKey: ['partner-collections', partnerId],
+    queryFn: () => financeApi.partnerCollections(partnerId),
+    enabled: !!partnerId,
+  });
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['partner-balance', partnerId] });
     queryClient.invalidateQueries({ queryKey: ['partner-payouts', partnerId] });
   };
 
+  const invalidateCollections = () => {
+    queryClient.invalidateQueries({ queryKey: ['partner-balance', partnerId] });
+    queryClient.invalidateQueries({ queryKey: ['partner-collections', partnerId] });
+  };
+
   // A different partner or a different amount is a different intention and
   // gets its own key; the same pair retried after a timeout keeps it, which
   // is what lets the server recognise the retry instead of paying twice.
   const payoutKey = useIdempotencyKey([partnerId, amount]);
+  // Same reasoning, plus the bank reference: a different reference is a
+  // different transfer being recorded, not a retry of the last one.
+  const collectionKey = useIdempotencyKey([partnerId, collectionAmount, collectionReference]);
+
+  const recordCollection = useMutation({
+    mutationFn: () =>
+      financeApi.recordCollection(partnerId, collectionAmount, collectionReference, collectionKey),
+    onSuccess: () => {
+      setCollectionAmount('');
+      setCollectionReference('');
+      setCollectionError(null);
+      invalidateCollections();
+    },
+    onError: (e: Error) => setCollectionError(e.message),
+  });
+
+  // Available balance is negated PARTNER_PAYABLE — negative means the
+  // partner, not TuTak, is in the red. That is the only state a collection
+  // is meaningful in.
+  const owedToUs = balance ? Math.max(0, -Number(balance.availableBalance)) : 0;
 
   const request = useMutation({
     mutationFn: () => financeApi.requestPayout(partnerId, amount, payoutKey),
@@ -130,6 +171,7 @@ export default function PayoutsPage() {
   };
 
   const rows: Payout[] = payouts ?? [];
+  const collectionRows = collections ?? [];
 
   return (
     <>
@@ -197,6 +239,70 @@ export default function PayoutsPage() {
         )}
         {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
       </Surface>
+
+      {partnerId && (
+        <Surface className="mt-4">
+          <h2 className="text-[14px] font-semibold text-ink">Record a collection</h2>
+          <p className="mt-1 text-[13px] text-muted">
+            The other direction: a partner&apos;s own bank transfer paying down commission they
+            owe TuTak. Only usable up to what the balance actually shows against them.
+          </p>
+
+          {owedToUs > 0 ? (
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <p className="w-full text-[13px] text-muted">
+                Owed to TuTak:{' '}
+                <span className="tabular font-medium text-ink">{fmt(owedToUs)} AMD</span>
+              </p>
+              <div className="w-44">
+                <Field label="Amount (AMD)">
+                  <Input
+                    value={collectionAmount}
+                    onChange={(e) => setCollectionAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                    placeholder="0.00"
+                    disabled={!canMoveMoney}
+                  />
+                </Field>
+              </div>
+              <div className="w-56">
+                <Field label="Bank reference">
+                  <Input
+                    value={collectionReference}
+                    onChange={(e) => setCollectionReference(e.target.value)}
+                    placeholder="e.g. SWIFT-99120"
+                    disabled={!canMoveMoney}
+                  />
+                </Field>
+              </div>
+              <Button
+                onClick={() => {
+                  setCollectionError(null);
+                  recordCollection.mutate();
+                }}
+                disabled={
+                  !canMoveMoney ||
+                  !collectionAmount ||
+                  !collectionReference.trim() ||
+                  recordCollection.isPending
+                }
+              >
+                {recordCollection.isPending ? 'Recording…' : 'Record collection'}
+              </Button>
+            </div>
+          ) : (
+            <p className="mt-3 text-[13px] text-muted">
+              This partner does not currently owe TuTak anything — there is nothing to collect.
+            </p>
+          )}
+          {!canMoveMoney && owedToUs > 0 && (
+            <p className="mt-2 text-[13px] text-muted">
+              Recording a collection requires SUPER_ADMIN, the same as every other route on this
+              screen that touches a partner&apos;s balance.
+            </p>
+          )}
+          {collectionError && <p className="mt-2 text-[13px] text-danger">{collectionError}</p>}
+        </Surface>
+      )}
 
       <div className="mt-6">
         {!partnerId ? (
@@ -284,6 +390,41 @@ export default function PayoutsPage() {
           </Table>
         )}
       </div>
+
+      {partnerId && (
+        <div className="mt-6">
+          <h2 className="mb-3 text-[15px] font-semibold text-ink">Collections</h2>
+          {collectionRows.length === 0 ? (
+            <EmptyState
+              title="No collections yet"
+              message="Nothing has been recorded as transferred in from this partner."
+            />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th align="right">Amount</Th>
+                  <Th>Bank reference</Th>
+                  <Th>Recorded by</Th>
+                  <Th>Recorded</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {collectionRows.map((c) => (
+                  <Tr key={c.id}>
+                    <Td align="right" className="tabular font-medium text-ink">
+                      {fmt(c.amount)}
+                    </Td>
+                    <Td className="tabular text-[12px] text-muted">{c.bankReference}</Td>
+                    <Td className="text-muted">{c.recordedByName ?? '—'}</Td>
+                    <Td className="text-muted">{new Date(c.createdAt).toLocaleString()}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      )}
     </>
   );
 }

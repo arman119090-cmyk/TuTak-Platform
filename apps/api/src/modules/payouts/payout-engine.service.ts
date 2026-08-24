@@ -377,6 +377,15 @@ export class PayoutEngineService {
         where: { id: payoutId },
         data: { settlementLedgerTransactionId: ledgerTransaction.id },
       });
+
+      // The clock the biweekly settlement-check sweep reads per partner —
+      // see `Partner.lastSettledAt`. A confirmed payout is a real,
+      // bank-confirmed zeroing of this partner's settlement cycle, exactly
+      // like `PartnerCollectionService.record` is for the other direction.
+      await tx.partner.update({
+        where: { id: payout.partnerId },
+        data: { lastSettledAt: new Date() },
+      });
     });
 
     this.logger.log(`Payout ${payoutId} confirmed paid, bank ref ${bankReference}`);

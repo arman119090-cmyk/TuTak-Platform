@@ -71,6 +71,16 @@ export interface Payout {
   confirmedByName: string | null;
 }
 
+export interface PartnerCollection {
+  id: string;
+  partnerId: string;
+  amount: string;
+  bankReference: string;
+  createdAt: string;
+  recordedByUserId: string | null;
+  recordedByName: string | null;
+}
+
 export interface PaymentRow {
   id: string;
   amount: string;
@@ -175,6 +185,31 @@ export const financeApi = {
 
   async failPayout(payoutId: string, failureReason: string): Promise<void> {
     await httpClient.post(`/payouts/${payoutId}/fail`, { failureReason });
+  },
+
+  // ── Money arriving from a partner ──────────────────────────────────────
+  //
+  // The other settlement direction (doc §2/§7): a partner's own bank
+  // transfer paying down commission they owe TuTak.
+
+  async partnerCollections(partnerId: string): Promise<PartnerCollection[]> {
+    const { data } = await httpClient.get(`/payouts/partners/${partnerId}/collections`);
+    return data.data;
+  },
+
+  async recordCollection(
+    partnerId: string,
+    amount: string,
+    bankReference: string,
+    idempotencyKey: string,
+  ) {
+    const { data } = await httpClient.post('/payouts/collections', {
+      partnerId,
+      amount,
+      bankReference,
+      idempotencyKey,
+    });
+    return data.data;
   },
 
   // ── Money arriving from the acquirer ───────────────────────────────────

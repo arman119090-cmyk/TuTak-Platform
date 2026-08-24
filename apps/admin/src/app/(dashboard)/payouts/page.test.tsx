@@ -27,6 +27,8 @@ jest.mock('@/lib/api/financeApi', () => ({
     requestPayout: jest.fn(),
     confirmPayout: jest.fn(),
     failPayout: jest.fn(),
+    partnerCollections: jest.fn(),
+    recordCollection: jest.fn(),
   },
 }));
 
@@ -108,6 +110,8 @@ describe('PayoutsPage', () => {
     mockedFinance.partnerPayouts.mockResolvedValue([requested]);
     mockedFinance.confirmPayout.mockResolvedValue(undefined);
     mockedFinance.failPayout.mockResolvedValue(undefined);
+    mockedFinance.partnerCollections.mockResolvedValue([]);
+    mockedFinance.recordCollection.mockResolvedValue({ collectionId: 'collection-1' } as never);
   });
 
   afterEach(() => {
@@ -215,5 +219,77 @@ describe('PayoutsPage', () => {
 
     expect(firstKey).toBeTruthy();
     expect(secondKey).toBe(firstKey);
+  });
+
+  // ── Collections: the other settlement direction ──────────────────────
+
+  describe('collections', () => {
+    it("has nothing to collect when the balance is in the partner's favor", async () => {
+      renderPage();
+      await selectPartner();
+
+      expect(
+        await screen.findByText(/does not currently owe TuTak anything/i),
+      ).toBeTruthy();
+      expect(screen.queryByText('Record collection')).toBeNull();
+    });
+
+    it('records a collection with the amount and reference typed in', async () => {
+      mockedFinance.partnerBalance.mockResolvedValue({ availableBalance: '-1200.00' });
+
+      renderPage();
+      await selectPartner();
+      await screen.findByText(/owed to tutak/i);
+
+      // Two amount fields are on screen once a partner in the red is
+      // selected — the payout request form and this one — so the plain
+      // singular query would be ambiguous.
+      const amountFields = screen.getAllByPlaceholderText('0.00');
+      fireEvent.change(amountFields[amountFields.length - 1]!, { target: { value: '1200' } });
+      fireEvent.change(screen.getByPlaceholderText('e.g. SWIFT-99120'), {
+        target: { value: 'SWIFT-COLLECT-1' },
+      });
+      fireEvent.click(screen.getByText('Record collection'));
+
+      await waitFor(() =>
+        expect(mockedFinance.recordCollection).toHaveBeenCalledWith(
+          'partner-1',
+          '1200',
+          'SWIFT-COLLECT-1',
+          expect.any(String),
+        ),
+      );
+    });
+
+    it('retries a timed-out collection with the key the first attempt used', async () => {
+      mockedFinance.partnerBalance.mockResolvedValue({ availableBalance: '-1200.00' });
+      mockedFinance.recordCollection
+        .mockRejectedValueOnce(new Error('timeout of 15000ms exceeded'))
+        .mockResolvedValueOnce({ collectionId: 'collection-2' } as never);
+
+      renderPage();
+      await selectPartner();
+      await screen.findByText(/owed to tutak/i);
+
+      // Two amount fields are on screen once a partner in the red is
+      // selected — the payout request form and this one — so the plain
+      // singular query would be ambiguous.
+      const amountFields = screen.getAllByPlaceholderText('0.00');
+      fireEvent.change(amountFields[amountFields.length - 1]!, { target: { value: '1200' } });
+      fireEvent.change(screen.getByPlaceholderText('e.g. SWIFT-99120'), {
+        target: { value: 'SWIFT-COLLECT-2' },
+      });
+      fireEvent.click(screen.getByText('Record collection'));
+      await screen.findByText('timeout of 15000ms exceeded');
+
+      fireEvent.click(screen.getByText('Record collection'));
+      await waitFor(() => expect(mockedFinance.recordCollection).toHaveBeenCalledTimes(2));
+
+      const [, , , firstKey] = mockedFinance.recordCollection.mock.calls[0]!;
+      const [, , , secondKey] = mockedFinance.recordCollection.mock.calls[1]!;
+
+      expect(firstKey).toBeTruthy();
+      expect(secondKey).toBe(firstKey);
+    });
   });
 });

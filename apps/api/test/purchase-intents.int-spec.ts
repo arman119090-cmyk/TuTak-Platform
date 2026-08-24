@@ -1318,6 +1318,85 @@ describe('PurchaseIntents (integration)', () => {
     });
   });
 
+  // ── Daily activity — the partner Earnings page's real data source ────
+  //
+  // `SettlementService.listForPartner` only ever has rows for the legacy
+  // card-payment pipeline. This is what a QR-only partner's "Daily
+  // settlements" table now reads from instead.
+
+  describe('dailyActivityForPartner', () => {
+    it("matches doc §2's worked example exactly: 5,000 discount - 1,200 commission = 3,800 net", async () => {
+      const { user } = await fundedCustomer('6000');
+      // 10% of gross, same as the doc's own example.
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 1000 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '12000', bonusAmountRequested: '5000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      const days = await purchaseIntents.dailyActivityForPartner(partner.id);
+
+      expect(days).toHaveLength(1);
+      expect(days[0]!.grossAmount).toBe('12000.0000');
+      expect(days[0]!.discountGivenAmount).toBe('5000.0000');
+      expect(days[0]!.commissionOwedAmount).toBe('1200.0000');
+      expect(days[0]!.netAmount).toBe('3800.0000');
+      expect(days[0]!.purchaseCount).toBe(1);
+    });
+
+    it('sums several confirmed purchases on the same day into one row', async () => {
+      const { user: userA } = await fundedCustomer('1000');
+      const { user: userB } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const first = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        userA.id,
+      );
+      await purchaseIntents.confirm(first.id, staff.id);
+      const second = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '4000' },
+        userB.id,
+      );
+      await purchaseIntents.confirm(second.id, staff.id);
+
+      const days = await purchaseIntents.dailyActivityForPartner(partner.id);
+
+      expect(days).toHaveLength(1);
+      expect(days[0]!.grossAmount).toBe('14000.0000');
+      expect(days[0]!.purchaseCount).toBe(2);
+    });
+
+    it('ignores an intent nobody has confirmed yet', async () => {
+      const { user } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      await purchaseIntents.create({ partnerId: partner.id, grossAmount: '5000' }, user.id);
+
+      expect(await purchaseIntents.dailyActivityForPartner(partner.id)).toEqual([]);
+    });
+
+    it("never mixes one partner's activity into another partner's rollup", async () => {
+      const { user } = await fundedCustomer('1000');
+      const partnerA = await createPartner(prisma);
+      const partnerB = await createPartner(prisma);
+      const staffA = await staffMember(partnerA.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partnerA.id, grossAmount: '5000' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staffA.id);
+
+      expect(await purchaseIntents.dailyActivityForPartner(partnerB.id)).toEqual([]);
+      expect(await purchaseIntents.dailyActivityForPartner(partnerA.id)).toHaveLength(1);
+    });
+  });
+
   // ── Staff-role restriction — spec §11/§25/§33 ─────────────────────────
 
   describe('staff-role restriction', () => {

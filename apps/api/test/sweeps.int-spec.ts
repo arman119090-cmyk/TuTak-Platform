@@ -67,6 +67,9 @@ describe('Sweeps (integration)', () => {
   const retention = { prune: jest.fn(record('retention.prune')) };
   const deferredBonusLots = { expireOverdueLots: jest.fn(record('deferred-bonus.expire-lots')) };
   const purchaseIntents = { expireStale: jest.fn(record('purchase-intent.expire')) };
+  const partnerSettlement = {
+    checkOverdueSettlements: jest.fn(record('partner-settlement.biweekly-check')),
+  };
   const refunds = {
     reconcilePendingRefunds: jest.fn(record('payments.reconcile-pending-refunds')),
   };
@@ -107,6 +110,7 @@ describe('Sweeps (integration)', () => {
             retention,
             deferredBonusLots,
             purchaseIntents,
+            partnerSettlement,
             refunds,
           },
         },
@@ -193,6 +197,7 @@ describe('Sweeps (integration)', () => {
       expect(sessions.expireStaleSessions).toHaveBeenCalledTimes(1);
       expect(outbox.drain).toHaveBeenCalledTimes(1);
       expect(reconciliation.reconcile).toHaveBeenCalledTimes(1);
+      expect(partnerSettlement.checkOverdueSettlements).toHaveBeenCalledTimes(1);
     });
 
     it('reconciles yesterday, not today', async () => {

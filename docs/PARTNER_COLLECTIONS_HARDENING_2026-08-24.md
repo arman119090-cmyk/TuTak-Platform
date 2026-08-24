@@ -2,6 +2,7 @@
 
 **Delivered:** 2026-08-24.
 **Base commit:** `1e7b5216498e6ef72ae1e8cec2bd49014254ab86` (`feat: partner→TuTak collections, biweekly settlement check, real Earnings data`).
+**This pass's commit:** `eebca03e5afd613498c2f8b3d041fa9cad1f8e05` (`fix(payouts): unique bank-transaction control and maker-checker on partner collections`).
 **Branch:** `claude/tutak-loyalty-mvp-e485jm`.
 
 This is a financial-integrity hardening pass against `PartnerCollectionService`

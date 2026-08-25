@@ -71,7 +71,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # Regenerated rather than taken from the commit, so the APK is built from
       # whatever apps/mobile currently says. A demo that lags the app it

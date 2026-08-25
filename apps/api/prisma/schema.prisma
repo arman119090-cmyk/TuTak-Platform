@@ -173,6 +173,7 @@ model User {
   purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
   evSessions                EvSession[]
   evReservations            EvReservation[]
+  fastChargeCustomerLinks   FastChargeCustomerLink[]
   fraudSignals              FraudSignal[]
   passwordResets            PasswordResetToken[]
   phoneVerifications        PhoneVerificationToken[]
@@ -806,43 +807,61 @@ enum PartnerStatus {
 }
 
 model Partner {
-  id                       String        @id @default(uuid())
-  legalName                String
-  displayName              String
-  taxId                    String        @unique
-  category                 String
+  id                        String        @id @default(uuid())
+  legalName                 String
+  displayName               String
+  taxId                     String        @unique
+  category                  String
   /// Basis points, e.g. 300 = 3%. Restricted to the fixed rate card — 0.5%
   /// steps from 0.5% to 20% (50..2000, step 50) — enforced by
   /// `IsCommissionRateBps` at the API boundary and by
   /// `partners_commission_rate_on_grid` (CHECK) at the database boundary.
-  bonusAccrualRateBps      Int           @default(300)
+  bonusAccrualRateBps       Int           @default(300)
   /// The platform's cut of a captured payment, in basis points. Independent
   /// of bonusAccrualRateBps — one prices what the customer earns, the other
   /// what the platform keeps, and conflating them would make either one
   /// impossible to change without affecting the other.
-  paymentCommissionRateBps Int           @default(250) // 2.5%
+  paymentCommissionRateBps  Int           @default(250) // 2.5%
   /// Spec §11: the partner's own ceiling on how much of a purchase may be
   /// paid with bonus points, 0-100. Only PARTNER_OWNER may change it — see
   /// `partners.controller.ts`. Defaults to 100 (no cap), which is exactly
   /// today's behaviour before this field existed — see the migration doc's
   /// conflict table for why no lower default or platform-wide ceiling was
   /// invented.
-  maxBonusPaymentPercent   Int           @default(100)
-  status                   PartnerStatus @default(ACTIVE)
-  isActive                 Boolean       @default(true)
+  maxBonusPaymentPercent    Int           @default(100)
+  /// FastCharge wholesale-resale integration only (docs/
+  /// FASTCHARGE_INTEGRATION_2026-08-25.md) — the contractual AMD/kWh rate
+  /// TuTak owes this partner for wholesale energy, e.g. FastCharge's 75
+  /// AMD/kWh. Configurable per Arman's explicit instruction, not a literal
+  /// in service code — same discipline as `bonusAccrualRateBps` above.
+  /// Meaningless (and never read) for a partner with no `FASTCHARGE`-provider
+  /// `EvStation`; the default matches FastCharge's current rate purely so an
+  /// unrelated partner row is not left at a nonsensical 0, exactly the way
+  /// `paymentCommissionRateBps`'s default is not "this partner takes
+  /// payments" — every read of this field is already gated on the session's
+  /// station being a FastCharge one.
+  evWholesaleRatePerKwh     Decimal       @default(75.00) @db.Decimal(10, 2)
+  /// The ceiling (AMD/kWh) on how much of a FastCharge session's margin
+  /// enters the ordinary green/deferred/L1/L2/L3/TuTak split —
+  /// `min(margin, this)`. Margin above it is undivided TuTak revenue. See
+  /// `FastChargeSettlementService.computeMarginSplit` for the worked
+  /// examples this cap was confirmed against (5 / 30 / 45 AMD/kWh margins).
+  evMarginReferralCapPerKwh Decimal       @default(20.00) @db.Decimal(10, 2)
+  status                    PartnerStatus @default(ACTIVE)
+  isActive                  Boolean       @default(true)
   /// Set by reconciliation when this partner's ledger balance disagrees with
   /// the bank statement. Blocks payouts until a human clears it — paying out
   /// against a balance known to be wrong is the one thing worse than not
   /// paying out at all.
-  payoutsBlockedAt         DateTime?
-  payoutsBlockedReason     String?
+  payoutsBlockedAt          DateTime?
+  payoutsBlockedReason      String?
   /// The partner's official square logo, or null. Spec §1.1: a business
   /// identity, published only after a platform administrator confirms it —
   /// see `MediaAssetStatus.PENDING_REVIEW`. Nullable forever: every partner
   /// that predates this migration renders the neutral mark.
-  logoAssetId              String?
+  logoAssetId               String?
   /// Optional wide cover for the catalogue/detail card. Same approval rule.
-  coverAssetId             String?
+  coverAssetId              String?
   /// Free text the partner writes about themselves — the public profile
   /// confirmed with Arman 2026-08-23: "текст «о себе»", shown on the
   /// partner's detail page. Deliberately no approval workflow, unlike
@@ -851,7 +870,7 @@ model Partner {
   /// live immediately. Capped length enforced at the DTO boundary
   /// (`UpdatePartnerAboutDto`), matching how `displayName`/`legalName` are
   /// capped in this schema — see `ApplyPartnerDto`.
-  about                    String?
+  about                     String?
   /// The start of this partner's *current* settlement cycle — not "the last
   /// time some settlement-shaped event happened", which is what this column
   /// used to mean and why it was wrong (see docs/PARTNER_COLLECTIONS_HARDENING
@@ -883,27 +902,29 @@ model Partner {
   /// the sweep treats null as overdue exactly like a real 14-day-old
   /// timestamp would be, so a partner is never silently skipped just because
   /// they are new.
-  lastSettledAt            DateTime?
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @updatedAt
+  lastSettledAt             DateTime?
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
 
-  memberships         PartnerMembership[]
-  branches            PartnerBranch[]
-  integrations        PartnerIntegration[]
-  transactions        Transaction[]
-  qrCodes             QrCode[]
-  evStations          EvStation[]
-  userRoles           UserRole[]
-  payments            Payment[]
-  settlements         Settlement[]
-  payouts             Payout[]
-  collections         PartnerCollection[]
-  purchaseIntents     PurchaseIntent[]
-  offerings           PartnerOfferingItem[]
+  memberships             PartnerMembership[]
+  branches                PartnerBranch[]
+  integrations            PartnerIntegration[]
+  transactions            Transaction[]
+  qrCodes                 QrCode[]
+  evStations              EvStation[]
+  userRoles               UserRole[]
+  payments                Payment[]
+  settlements             Settlement[]
+  payouts                 Payout[]
+  collections             PartnerCollection[]
+  purchaseIntents         PurchaseIntent[]
+  offerings               PartnerOfferingItem[]
+  apiKeys                 PartnerApiKey[]
+  fastChargeCustomerLinks FastChargeCustomerLink[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
-  referralCode        ReferralCode?
-  referralInvitesMade ReferralInvite[]     @relation("PartnerReferrer")
+  referralCode            ReferralCode?
+  referralInvitesMade     ReferralInvite[]         @relation("PartnerReferrer")
 
   logoAsset   MediaAsset?  @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
   coverAsset  MediaAsset?  @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
@@ -951,11 +972,68 @@ model PartnerIntegration {
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
-  partner Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  branch  PartnerBranch? @relation(fields: [partnerBranchId], references: [id], onDelete: SetNull)
+  partner Partner         @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  branch  PartnerBranch?  @relation(fields: [partnerBranchId], references: [id], onDelete: SetNull)
+  apiKeys PartnerApiKey[]
 
   @@index([partnerId])
   @@map("partner_integrations")
+}
+
+/// One machine-to-machine credential for a `PartnerIntegration` — the "not a
+/// human login/password" M2M mechanism requirement 3 of
+/// docs/FASTCHARGE_INTEGRATION_2026-08-25.md asks for, built on top of the
+/// existing `PartnerIntegration`/`PartnerIntegrationType.API` extension point
+/// rather than a parallel auth system. Only the hash is stored — the actual
+/// key is returned once, at creation, by `PartnerApiKeyService.issue`, the
+/// same "shown once, never again" discipline any API-key system uses.
+model PartnerApiKey {
+  id            String    @id @default(uuid())
+  partnerId     String
+  integrationId String?
+  /// The public half of the credential — sent in the `x-api-key` header
+  /// alongside the secret half, e.g. `pak_live_<keyId>.<secret>`, so a
+  /// lookup never has to scan-and-compare every row's hash.
+  keyId         String    @unique
+  /// SHA-256 of the secret half. Never the secret itself — see
+  /// `PartnerApiKeyService`.
+  keyHash       String
+  label         String?
+  revokedAt     DateTime?
+  lastUsedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  partner     Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  integration PartnerIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId])
+  @@map("partner_api_keys")
+}
+
+/// TuTak `User` ↔ FastCharge customer-id mapping — "TuTak links its own User
+/// accounts to FastCharge's customer IDs (a stored mapping, not inferred)",
+/// per docs/FASTCHARGE_INTEGRATION_2026-08-25.md. Created only by an
+/// authenticated TuTak user linking their own account
+/// (`FastChargeCustomersService.link`); a settlement webhook that names an
+/// unlinked FastCharge customer id is rejected rather than guessing — see
+/// that service's docblock.
+model FastChargeCustomerLink {
+  id                   String   @id @default(uuid())
+  partnerId            String
+  fastChargeCustomerId String
+  userId               String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One FastCharge customer id names exactly one TuTak user per partner.
+  @@unique([partnerId, fastChargeCustomerId])
+  /// A settlement/link lookup by TuTak user id (e.g. "is this user already
+  /// linked?") without a table scan.
+  @@index([userId])
+  @@map("fastcharge_customer_links")
 }
 
 model PartnerMembership {
@@ -1003,23 +1081,23 @@ model PartnerBranch {
 /// reshaping this table, per Arman's explicit "база данных будет сделана
 /// так, чтобы потом было легко это добавить".
 model PartnerOfferingItem {
-  id          String   @id @default(uuid())
-  partnerId   String
-  name        String
-  description String?
+  id           String   @id @default(uuid())
+  partnerId    String
+  name         String
+  description  String?
   /// AMD, implicit — same as every other money column in this schema; see
   /// the file header note. No currency field for the same reason none of the
   /// transaction/payment tables carry one.
-  price       Decimal  @db.Decimal(18, 4)
+  price        Decimal  @db.Decimal(18, 4)
   /// Explicit rather than `createdAt` ordering: a partner reordering their
   /// own list (moving their best seller to the top) is an expected edit, and
   /// `createdAt` cannot express "move item 3 first" without rewriting
   /// timestamps. Written by `PartnersService.replaceOfferings` as the
   /// submitted array's own index — see that method's doc comment for why a
   /// bulk replace rather than per-item reordering.
-  displayOrder Int     @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
@@ -1309,34 +1387,77 @@ enum EvConnectorStatus {
   UNKNOWN
 }
 
+/// A station's control/tariff model. `INTERNAL` (the default, every station
+/// that predates this column) is a TuTak-owned or plain-roaming charger,
+/// billed at `EvConnector.pricePerKwh` and started/stopped by TuTak — the
+/// only behaviour that ever existed here. `FASTCHARGE` marks a station that
+/// belongs to the FastCharge wholesale-resale integration
+/// (docs/FASTCHARGE_INTEGRATION_2026-08-25.md): TuTak never sends a
+/// start/stop command to one of these — see the mobile `PartnersScreen`,
+/// which opens a deep link to the FastCharge app instead — and every session
+/// on one arrives already completed, settled server-to-server via
+/// `FastChargeSettlementService`, never through `EvSessionsService.start`.
+enum EvStationProvider {
+  INTERNAL
+  FASTCHARGE
+}
+
 model EvStation {
-  id             String   @id @default(uuid())
-  partnerId      String
-  name           String
-  address        String
-  city           String
-  latitude       Float
-  longitude      Float
-  ocpiLocationId String?  @unique
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                       String            @id @default(uuid())
+  partnerId                String
+  name                     String
+  address                  String
+  city                     String
+  latitude                 Float
+  longitude                Float
+  ocpiLocationId           String?           @unique
+  /// See `EvStationProvider`. Default `INTERNAL` is a no-op backfill for
+  /// every station that predates FastCharge — this migration changes
+  /// nothing about how any existing station behaves.
+  provider                 EvStationProvider @default(INTERNAL)
+  /// FastCharge's own stable id for this location, synced by
+  /// `FastChargeStationsService.sync` — the "each station/EVSE/connector
+  /// needs its own stable external ID from FastCharge" requirement. Null for
+  /// every `INTERNAL` station.
+  externalStationId        String?           @unique
+  /// FastCharge's current standard/walk-in tariff at this station — for
+  /// display/audit only. A specific session almost never settles at this
+  /// rate; see `EvSession.appliedCustomerRatePerKwh`, which is what a
+  /// session actually bills, and `EvSession.stationRetailRatePerKwh`, the
+  /// frozen copy of *this* column at the moment that session settled. A
+  /// later edit here (a station raising its posted price) never touches a
+  /// past session's own snapshot — same immutability discipline as
+  /// `PurchaseIntent.negotiatedRateBps`.
+  standardRetailRatePerKwh Decimal?          @db.Decimal(10, 2)
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
 
   partner    Partner       @relation(fields: [partnerId], references: [id])
   connectors EvConnector[]
 
+  @@index([partnerId, provider])
   @@map("ev_stations")
 }
 
 model EvConnector {
-  id            String            @id @default(uuid())
-  stationId     String
-  ocpiEvseUid   String?           @unique
-  connectorType EvConnectorType
-  status        EvConnectorStatus @default(AVAILABLE)
-  powerKw       Decimal           @db.Decimal(8, 2)
-  pricePerKwh   Decimal           @db.Decimal(10, 2)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                  String            @id @default(uuid())
+  stationId           String
+  ocpiEvseUid         String?           @unique
+  connectorType       EvConnectorType
+  status              EvConnectorStatus @default(AVAILABLE)
+  powerKw             Decimal           @db.Decimal(8, 2)
+  pricePerKwh         Decimal           @db.Decimal(10, 2)
+  /// FastCharge's own stable id for this connector/EVSE — the connector-level
+  /// half of `EvStation.externalStationId`. Null for every `INTERNAL`
+  /// connector. Deliberately separate from `ocpiEvseUid`: that column is the
+  /// *roaming OCPI* identity TuTak uses to command a remote CPO
+  /// (`OcpiAdapter.startRemoteSession`), which FastCharge sessions never go
+  /// through (requirement 1 — TuTak never starts/stops a FastCharge charger)
+  /// — conflating the two would wire a webhook-only integration into the
+  /// OCPI command path by accident.
+  externalConnectorId String?           @unique
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   station      EvStation       @relation(fields: [stationId], references: [id], onDelete: Cascade)
   sessions     EvSession[]
@@ -1357,18 +1478,18 @@ enum EvSessionStatus {
 }
 
 model EvSession {
-  id                 String                  @id @default(uuid())
-  connectorId        String
-  userId             String
-  reservationId      String?                 @unique
-  status             EvSessionStatus         @default(AUTHORIZED)
-  startedAt          DateTime?
-  stoppedAt          DateTime?
-  energyKwh          Decimal?                @db.Decimal(10, 3)
-  cost               Decimal?                @db.Decimal(18, 4)
-  bonusEarnedAmount  Decimal?                @db.Decimal(18, 4)
-  transactionId      String?                 @unique
-  ocpiCdrId          String?                 @unique
+  id                          String                  @id @default(uuid())
+  connectorId                 String
+  userId                      String
+  reservationId               String?                 @unique
+  status                      EvSessionStatus         @default(AUTHORIZED)
+  startedAt                   DateTime?
+  stoppedAt                   DateTime?
+  energyKwh                   Decimal?                @db.Decimal(10, 3)
+  cost                        Decimal?                @db.Decimal(18, 4)
+  bonusEarnedAmount           Decimal?                @db.Decimal(18, 4)
+  transactionId               String?                 @unique
+  ocpiCdrId                   String?                 @unique
   /// The pool split's actual settled amounts — the 2026-08-18 business
   /// decision's `evTutakUpfrontBps` cut plus the green/deferred/referrer
   /// legs `EvSessionsService.stopOnce` posted, snapshotted at settlement so
@@ -1381,7 +1502,7 @@ model EvSession {
   /// to snapshot. `tutakBaseOfRemainder` is not stored — it is, and
   /// remains, `poolAmount - tutakUpfrontAmount - greenAmount -
   /// deferredAmount - referrerAmount`, by construction.
-  poolAmount         Decimal?                @db.Decimal(18, 4)
+  poolAmount                  Decimal?                @db.Decimal(18, 4)
   /// @deprecated LEGACY single-level program only — the extra TuTak cut
   /// taken off the top before the old green/deferred/referrer/tutak split.
   /// The 3-level program (`programVersion = THREE_LEVEL_V2`) does not use
@@ -1389,35 +1510,84 @@ model EvSession {
   /// separate upfront cut (`docs/NEXT_CLAUDE_TASK.md`, 2026-08-22 rework,
   /// requirement 4 — a duplicate TuTak cut on top of the six-leg split is
   /// explicitly forbidden). Null for any row settled under the new program.
-  tutakUpfrontAmount Decimal?                @db.Decimal(18, 4)
-  greenAmount        Decimal?                @db.Decimal(18, 4)
-  deferredAmount     Decimal?                @db.Decimal(18, 4)
+  tutakUpfrontAmount          Decimal?                @db.Decimal(18, 4)
+  greenAmount                 Decimal?                @db.Decimal(18, 4)
+  deferredAmount              Decimal?                @db.Decimal(18, 4)
   /// @deprecated LEGACY single-level program's own referrer snapshot — see
   /// `PurchaseIntent.referrerAmount`'s docblock for why this is kept
   /// unrenamed rather than reused by the new program.
-  referrerAmount     Decimal?                @db.Decimal(18, 4)
+  referrerAmount              Decimal?                @db.Decimal(18, 4)
   /// Explicit, persisted eligibility boundary — same meaning as
   /// `PurchaseIntent.programVersion`. Null for every session settled before
   /// the 3-level referral rework; `THREE_LEVEL_V2` after.
-  programVersion     ReferralProgramVersion?
+  programVersion              ReferralProgramVersion?
   /// The 3-level program's own per-level snapshot — same shape and same
   /// reasoning as `PurchaseIntent`'s own `referrer1Type`/etc. columns; see
   /// that model's docblock.
-  referrer1Type      ReferrerType?
-  referrer1UserId    String?
-  referrer1PartnerId String?
-  referrer1Amount    Decimal?                @db.Decimal(18, 4)
-  referrer2Type      ReferrerType?
-  referrer2UserId    String?
-  referrer2PartnerId String?
-  referrer2Amount    Decimal?                @db.Decimal(18, 4)
-  referrer3Type      ReferrerType?
-  referrer3UserId    String?
-  referrer3PartnerId String?
-  referrer3Amount    Decimal?                @db.Decimal(18, 4)
-  tutakAmount        Decimal?                @db.Decimal(18, 4)
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  referrer1Type               ReferrerType?
+  referrer1UserId             String?
+  referrer1PartnerId          String?
+  referrer1Amount             Decimal?                @db.Decimal(18, 4)
+  referrer2Type               ReferrerType?
+  referrer2UserId             String?
+  referrer2PartnerId          String?
+  referrer2Amount             Decimal?                @db.Decimal(18, 4)
+  referrer3Type               ReferrerType?
+  referrer3UserId             String?
+  referrer3PartnerId          String?
+  referrer3Amount             Decimal?                @db.Decimal(18, 4)
+  tutakAmount                 Decimal?                @db.Decimal(18, 4)
+  /// The FastCharge wholesale-resale integration's own snapshot columns
+  /// (docs/FASTCHARGE_INTEGRATION_2026-08-25.md). Null for every
+  /// `INTERNAL`-provider session — populated only by
+  /// `FastChargeSettlementService.settle`, which writes every one of them in
+  /// the same transaction as the row's creation so a session is never left
+  /// half-snapshotted.
+  ///
+  /// `fastChargeExternalSessionId` is the idempotency backstop: FastCharge's
+  /// own session id, globally unique here, so a duplicate webhook delivery
+  /// for the same session can never create a second row — see that
+  /// service's docblock for why a unique index and not only
+  /// `IdempotencyService` is the guarantee.
+  fastChargeExternalSessionId String?                 @unique
+  /// FastCharge's own customer id for this session — kept here too (in
+  /// addition to `FastChargeCustomerLink`, the durable mapping) purely as an
+  /// audit trail of exactly what FastCharge reported for *this* session,
+  /// which a later change to the link must not retroactively alter.
+  fastChargeCustomerId        String?
+  /// `EvStation.standardRetailRatePerKwh` *as it was* when this session
+  /// settled — display/audit only, never what this session was billed at.
+  stationRetailRatePerKwh     Decimal?                @db.Decimal(10, 2)
+  /// The tariff this specific session actually settled at, exactly as
+  /// FastCharge reported it — never inferred, never a station default.
+  /// `cost` (already on this row) is `energyKwh * appliedCustomerRatePerKwh`,
+  /// FastCharge's own reported final amount, sanity-checked against that
+  /// product at settlement time.
+  appliedCustomerRatePerKwh   Decimal?                @db.Decimal(10, 2)
+  /// `Partner.evWholesaleRatePerKwh` *as it was* when this session settled —
+  /// the contractual per-kWh rate TuTak owed FastCharge for this session,
+  /// frozen here so a later change to the partner's contract terms never
+  /// alters a historical session's own figures.
+  wholesaleRatePerKwh         Decimal?                @db.Decimal(10, 2)
+  /// `Partner.evMarginReferralCapPerKwh` *as it was* when this session
+  /// settled — same freezing reasoning as `wholesaleRatePerKwh`.
+  marginReferralCapPerKwh     Decimal?                @db.Decimal(10, 2)
+  /// `appliedCustomerRatePerKwh - wholesaleRatePerKwh`, floored at 0 and
+  /// stored for audit even though it is fully derivable from the two columns
+  /// above — the same "store the number that was actually used" discipline
+  /// `PurchaseIntent`'s other snapshot columns already follow.
+  marginPerKwh                Decimal?                @db.Decimal(10, 2)
+  /// The slice of this session's margin *above* `marginReferralCapPerKwh`,
+  /// times `energyKwh` — pure, undivided TuTak revenue that never enters
+  /// `poolAmount`/`computePoolSplit` at all, not even TuTak's own residual
+  /// share of it. `poolAmount` (already on this row, reused unchanged from
+  /// the internal-station program) holds the *capped* margin pool that does
+  /// go through the ordinary six-leg split; this column is the separate,
+  /// simpler remainder — see `FastChargeSettlementService` for the worked
+  /// examples (5 / 30 / 45 AMD/kWh margin cases).
+  uncappedMarginRevenueAmount Decimal?                @db.Decimal(18, 4)
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
 
   connector   EvConnector    @relation(fields: [connectorId], references: [id])
   user        User           @relation(fields: [userId], references: [id])
@@ -1983,15 +2153,15 @@ enum CollectionStatus {
 /// fact the way a `Payout` can — if a transfer bounces, that shows up as a
 /// fresh debit against the partner, not a status flip on this row.
 model PartnerCollection {
-  id            String           @id @default(uuid())
-  partnerId     String
-  amount        Decimal          @db.Decimal(18, 4)
-  currency      Currency         @default(AMD)
+  id                  String           @id @default(uuid())
+  partnerId           String
+  amount              Decimal          @db.Decimal(18, 4)
+  currency            Currency         @default(AMD)
   /// The partner's own bank transfer reference, as it appears on the
   /// statement — a free-text label, the collection-side counterpart to
   /// `Payout.bankReference`. Not the uniqueness key — see
   /// `bankTransactionId`.
-  bankReference String
+  bankReference       String
   /// The bank statement's own external transaction id — the unique key a
   /// real transfer can only ever appear under once. Normalized by
   /// `normalizeBankTransactionId` (trim + strip internal whitespace +
@@ -2003,7 +2173,7 @@ model PartnerCollection {
   /// database NOT NULL, because a NOT NULL cannot be added retroactively
   /// without fabricating a value for pre-existing rows. Immutable: nothing
   /// in this codebase ever updates it after creation.
-  bankTransactionId String?
+  bankTransactionId   String?
   status              CollectionStatus @default(PENDING)
   ledgerTransactionId String?          @unique
   /// The admin who keyed this in from the statement (the "maker"). Nullable
@@ -2016,13 +2186,13 @@ model PartnerCollection {
   /// collection (dual control off): there was no separate confirming admin
   /// to name, and inventing one would misstate who did what, the same
   /// reasoning `Payout.confirmedByUserId` documents for its own legacy rows.
-  confirmedByUserId String?
-  confirmedAt       DateTime?
+  confirmedByUserId   String?
+  confirmedAt         DateTime?
   /// Same durability role as `Payout.idempotencyKey`: `IdempotencyService`'s
   /// own record is the primary guard, this is the fallback lookup for the
   /// crash-between-two-transactions case — see `PartnerCollectionService`.
-  idempotencyKey String?
-  createdAt      DateTime @default(now())
+  idempotencyKey      String?
+  createdAt           DateTime         @default(now())
 
   partner           Partner            @relation(fields: [partnerId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])

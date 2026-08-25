@@ -38,3 +38,14 @@ export enum EvReservationStatus {
   EXPIRED = 'EXPIRED',
   FULFILLED = 'FULFILLED',
 }
+
+/**
+ * A station's control/tariff model — see docs/FASTCHARGE_INTEGRATION_2026-08-25.md.
+ * `FASTCHARGE` stations are never started/stopped from TuTak (requirement 1);
+ * the mobile map/list opens a deep link to the FastCharge app for one of
+ * these instead of the ordinary Start button.
+ */
+export enum EvStationProvider {
+  INTERNAL = 'INTERNAL',
+  FASTCHARGE = 'FASTCHARGE',
+}

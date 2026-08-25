@@ -162,7 +162,11 @@
     "couldNotStop": "Could not stop charging",
     "noActiveSession": "This session has already ended.",
     "sessionEnded": "Charging finished",
-    "sessionEndedBody": "{{energy}} · {{cost}} · {{points}} points earned"
+    "sessionEndedBody": "{{energy}} · {{cost}} · {{points}} points earned",
+    "openFastChargeApp": "Open FastCharge app",
+    "openFastChargeAppAt": "Open FastCharge app to charge at {{station}}",
+    "fastChargeOpenFailed": "Couldn't open the FastCharge app",
+    "fastChargeManaged": "Managed in the FastCharge app"
   },
   "referral": {
     "inviteFriends": "Invite friends",

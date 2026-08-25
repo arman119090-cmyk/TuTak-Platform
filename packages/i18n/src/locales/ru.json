@@ -162,7 +162,11 @@
     "couldNotStop": "Не удалось остановить зарядку",
     "noActiveSession": "Эта сессия уже завершена.",
     "sessionEnded": "Зарядка завершена",
-    "sessionEndedBody": "{{energy}} · {{cost}} · начислено {{points}} бонусов"
+    "sessionEndedBody": "{{energy}} · {{cost}} · начислено {{points}} бонусов",
+    "openFastChargeApp": "Открыть приложение FastCharge",
+    "openFastChargeAppAt": "Откройте FastCharge, чтобы зарядиться на станции {{station}}",
+    "fastChargeOpenFailed": "Не удалось открыть приложение FastCharge",
+    "fastChargeManaged": "Управляется в приложении FastCharge"
   },
   "referral": {
     "inviteFriends": "Пригласить друзей",

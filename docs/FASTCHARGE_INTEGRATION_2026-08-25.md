@@ -3,6 +3,7 @@
 **Delivered:** 2026-08-25.
 **Branch:** `claude/tutak-loyalty-mvp-e485jm`.
 **Base:** `59a8b12` (`docs: record this pass's own commit SHA in the hardening report`), on top of the collections-hardening pass (83/83 suites, 1199/1199 tests at that point).
+**This pass's commit:** `f953d80` (`feat: FastCharge wholesale-resale EV charging integration`).
 
 This is a new integration built on existing rails, not a parallel system: it
 reuses `EvStation`/`EvConnector`/`EvSession`/`EvCdr`, the exact 20/30/30/10/5/5

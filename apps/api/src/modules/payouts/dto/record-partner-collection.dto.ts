@@ -1,4 +1,4 @@
-import { IsString, IsUUID, Length } from 'class-validator';
+import { IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 
 export class RecordPartnerCollectionDto {
@@ -23,6 +23,16 @@ export class RecordPartnerCollectionDto {
   @IsString()
   @Length(1, 100)
   bankTransactionId: string;
+
+  /**
+   * The invoice/фактура number this transfer was billed against, if there
+   * is one — free text, purely for reconciliation against the accountant's
+   * own paper trail. Optional: TuTak does not generate or store invoices.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  invoiceReference?: string;
 
   @IsString()
   @Length(8, 128)

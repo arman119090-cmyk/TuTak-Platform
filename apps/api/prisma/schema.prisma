@@ -2174,6 +2174,13 @@ model PartnerCollection {
   /// without fabricating a value for pre-existing rows. Immutable: nothing
   /// in this codebase ever updates it after creation.
   bankTransactionId   String?
+  /// The invoice/фактура number this transfer was billed against, if the
+  /// admin entering it had one to hand — free text, purely for
+  /// reconciliation against the accountant's own paper trail. Never the
+  /// uniqueness key (that stays `bankTransactionId`, tied to the bank
+  /// statement itself) and never required: TuTak does not generate or store
+  /// invoices, so not every collection has one to reference.
+  invoiceReference    String?
   status              CollectionStatus @default(PENDING)
   ledgerTransactionId String?          @unique
   /// The admin who keyed this in from the statement (the "maker"). Nullable

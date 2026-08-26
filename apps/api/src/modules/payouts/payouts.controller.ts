@@ -126,6 +126,7 @@ export class PayoutsController {
       amount: dto.amount,
       bankReference: dto.bankReference,
       bankTransactionId: dto.bankTransactionId,
+      invoiceReference: dto.invoiceReference,
       actorId: admin.id,
       idempotencyKey: dto.idempotencyKey,
     });

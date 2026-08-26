@@ -35,6 +35,12 @@ export interface RecordCollectionParams {
    * compared or stored — see `normalizeBankTransactionId`.
    */
   bankTransactionId: string;
+  /**
+   * The invoice/фактура number this transfer was billed against, if there is
+   * one — free text, purely for reconciliation. Optional: TuTak does not
+   * generate or store invoices itself, so not every collection has one.
+   */
+  invoiceReference?: string;
   /** The admin recording this; scopes the idempotency key and is recorded. */
   actorId: string;
   idempotencyKey: string;
@@ -196,6 +202,7 @@ export class PartnerCollectionService {
               currency,
               bankReference,
               bankTransactionId,
+              params.invoiceReference,
               params.actorId,
               params.idempotencyKey,
             )
@@ -205,6 +212,7 @@ export class PartnerCollectionService {
               currency,
               bankReference,
               bankTransactionId,
+              params.invoiceReference,
               params.actorId,
               params.idempotencyKey,
             ),
@@ -218,6 +226,7 @@ export class PartnerCollectionService {
     currency: Currency,
     bankReference: string,
     bankTransactionId: string,
+    invoiceReference: string | undefined,
     actorId: string,
     idempotencyKey: string,
   ): Promise<CollectionResult> {
@@ -247,6 +256,7 @@ export class PartnerCollectionService {
           currency,
           bankReference,
           bankTransactionId,
+          invoiceReference,
           status: CollectionStatus.PENDING,
           recordedByUserId: actorId,
           idempotencyKey,
@@ -278,6 +288,7 @@ export class PartnerCollectionService {
     currency: Currency,
     bankReference: string,
     bankTransactionId: string,
+    invoiceReference: string | undefined,
     actorId: string,
     idempotencyKey: string,
   ): Promise<CollectionResult> {
@@ -319,6 +330,7 @@ export class PartnerCollectionService {
             currency,
             bankReference,
             bankTransactionId,
+            invoiceReference,
             status: CollectionStatus.CONFIRMED,
             recordedByUserId: actorId,
             idempotencyKey,

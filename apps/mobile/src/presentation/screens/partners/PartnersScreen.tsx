@@ -20,7 +20,11 @@ import type {
   NearbyPartnerDto,
   PartnerCategory,
 } from '@tutak/shared-types';
-import { EvStationProvider } from '@tutak/shared-types';
+import {
+  EvStationProvider,
+  FuelType,
+  PartnerCategory as PartnerCategoryEnum,
+} from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { MainTabParamList, RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
@@ -50,7 +54,12 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * — they are TuTak's own charging network, a different thing from the
  * `EV_CHARGING` partner category (third-party shops that sell charging-adjacent
  * goods) — so it is its own arm of the union rather than a value inside it. */
-type Filter = { kind: 'all' } | { kind: 'category'; value: PartnerCategory } | { kind: 'stations' };
+type Filter =
+  | { kind: 'all' }
+  | { kind: 'category'; value: PartnerCategory }
+  | { kind: 'stations' }
+  /** The "fuel" chip's own sub-filter — "Газ" or "Бензин" (Arman, 2026-08-26). */
+  | { kind: 'fuelType'; value: FuelType };
 
 type MapItem =
   | { kind: 'partner'; id: string; distanceKm: number; partner: NearbyPartnerDto }
@@ -110,6 +119,7 @@ export function PartnersScreen() {
       centre.lat,
       centre.lng,
       filter.kind === 'category' ? filter.value : null,
+      filter.kind === 'fuelType' ? filter.value : null,
       query,
     ],
     queryFn: () =>
@@ -118,6 +128,7 @@ export function PartnersScreen() {
         lng: centre.lng,
         radiusKm: 25,
         ...(filter.kind === 'category' ? { category: filter.value } : {}),
+        ...(filter.kind === 'fuelType' ? { fuelType: filter.value } : {}),
         ...(query ? { q: query } : {}),
       }),
     enabled: showPartners,
@@ -313,21 +324,53 @@ export function PartnersScreen() {
             active={filter.kind === 'stations'}
             onPress={() => setFilter(filter.kind === 'stations' ? { kind: 'all' } : { kind: 'stations' })}
           />
-          {CATEGORY_ORDER.map((value) => (
-            <Chip
-              key={value}
-              label={t(`partnerCategory.${value}`)}
-              icon={CATEGORY_ICONS[value]}
-              active={filter.kind === 'category' && filter.value === value}
-              onPress={() =>
-                setFilter(
-                  filter.kind === 'category' && filter.value === value
-                    ? { kind: 'all' }
-                    : { kind: 'category', value },
-                )
-              }
-            />
-          ))}
+          {CATEGORY_ORDER.map((value) =>
+            // "Fuel" is not its own chip — a customer picking a pump wants
+            // gas or petrol specifically, not a generic АЗС chip (Arman,
+            // 2026-08-26). Two sub-filter chips take its place, in order.
+            value === PartnerCategoryEnum.FUEL ? (
+              <React.Fragment key={value}>
+                <Chip
+                  label={t('partners.gas')}
+                  icon="flame-outline"
+                  active={filter.kind === 'fuelType' && filter.value === FuelType.GAS}
+                  onPress={() =>
+                    setFilter(
+                      filter.kind === 'fuelType' && filter.value === FuelType.GAS
+                        ? { kind: 'all' }
+                        : { kind: 'fuelType', value: FuelType.GAS },
+                    )
+                  }
+                />
+                <Chip
+                  label={t('partners.petrol')}
+                  icon="car-outline"
+                  active={filter.kind === 'fuelType' && filter.value === FuelType.PETROL}
+                  onPress={() =>
+                    setFilter(
+                      filter.kind === 'fuelType' && filter.value === FuelType.PETROL
+                        ? { kind: 'all' }
+                        : { kind: 'fuelType', value: FuelType.PETROL },
+                    )
+                  }
+                />
+              </React.Fragment>
+            ) : (
+              <Chip
+                key={value}
+                label={t(`partnerCategory.${value}`)}
+                icon={CATEGORY_ICONS[value]}
+                active={filter.kind === 'category' && filter.value === value}
+                onPress={() =>
+                  setFilter(
+                    filter.kind === 'category' && filter.value === value
+                      ? { kind: 'all' }
+                      : { kind: 'category', value },
+                  )
+                }
+              />
+            ),
+          )}
         </ScrollView>
 
         {activeSession.data ? (

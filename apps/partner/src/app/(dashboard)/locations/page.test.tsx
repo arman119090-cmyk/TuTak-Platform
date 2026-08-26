@@ -35,6 +35,7 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     isPhoneVerified: true,
     avatar: null,
     showAvatarInReferralList: false,
+    personalizedRecommendationsEnabled: false,
     ...overrides,
   };
 }

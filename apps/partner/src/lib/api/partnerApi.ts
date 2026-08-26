@@ -27,6 +27,19 @@ export const partnerApi = {
   },
 
   /**
+   * What a `fuel`-category station actually sells (Arman, 2026-08-26) — see
+   * `PartnerDto.sellsGas`/`sellsPetrol`. Same immediacy as `updateAbout`:
+   * no review step, live on the customer's map the instant it saves.
+   */
+  async updateFuelTypes(id: string, fuelTypes: { sellsGas?: boolean; sellsPetrol?: boolean }) {
+    const { data } = await httpClient.patch<ApiEnvelope<PartnerDto>>(
+      `/partners/${id}/fuel-types`,
+      fuelTypes,
+    );
+    return data.data;
+  },
+
+  /**
    * Replaces the whole offerings list in one call — see
    * `ReplacePartnerOfferingsDto` on the API for why this is a bulk replace
    * rather than per-row add/update/delete. The array's order is what the

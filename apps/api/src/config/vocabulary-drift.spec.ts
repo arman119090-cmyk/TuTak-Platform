@@ -4,13 +4,14 @@ import { i18nResources, SUPPORTED_LOCALES } from '@tutak/i18n';
 import {
   BonusEntryType,
   EvSessionStatus,
+  FuelType,
   LedgerDirection,
   PartnerCategory,
   ReferralInviteStatus,
   TransactionStatus,
   TransactionType,
 } from '@tutak/shared-types';
-import { PARTNER_CATEGORIES } from '../modules/partners/geo';
+import { FUEL_TYPES, PARTNER_CATEGORIES } from '../modules/partners/geo';
 
 /**
  * The vocabulary has to say the same thing in three places.
@@ -89,6 +90,14 @@ describe('the partner categories are the same list on both sides', () => {
     expect([...PARTNER_CATEGORIES].sort()).toEqual(
       typeMembers(PartnerCategory as unknown as Record<string, string>),
     );
+  });
+});
+
+describe('the fuel sub-filter is the same list on both sides', () => {
+  // Same reasoning and the same fix as the partner-category spec above,
+  // applied to the "fuel" chip's own gas/petrol sub-filter.
+  it('geo.ts and FuelType agree in both directions', () => {
+    expect([...FUEL_TYPES].sort()).toEqual(typeMembers(FuelType as unknown as Record<string, string>));
   });
 });
 

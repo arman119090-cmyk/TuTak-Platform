@@ -78,6 +78,14 @@ export interface PartnerPublicDto {
   id: string;
   displayName: string;
   category: string;
+  /**
+   * Meaningful only when `category` is `"fuel"` — whether this station sells
+   * gas (propane and methane counted as one bucket) and/or petrol. A real
+   * station commonly sells both, so these are two independent flags rather
+   * than one choice.
+   */
+  sellsGas: boolean;
+  sellsPetrol: boolean;
   /** The cashback rate. Advertised by the partner; the customer is owed it. */
   bonusAccrualRateBps: number;
   isActive: boolean;
@@ -130,6 +138,18 @@ export interface CreatePartnerRequestDto {
   category: string;
   bonusAccrualRateBps: number;
   ownerUserId: string;
+  sellsGas?: boolean;
+  sellsPetrol?: boolean;
+}
+
+/**
+ * Partner self-service: declaring what a `fuel`-category station actually
+ * sells — see `PartnerPublicDto.sellsGas`/`sellsPetrol`. Same OWNER-only
+ * posture as `UpdatePartnerAboutRequestDto`.
+ */
+export interface UpdatePartnerFuelTypesRequestDto {
+  sellsGas?: boolean;
+  sellsPetrol?: boolean;
 }
 
 export interface PartnerAnalyticsDto {
@@ -188,6 +208,17 @@ export interface NearbyPartnerDto {
   logo: MediaImageDto | null;
   /** The chain's published cover, for the partner detail card. */
   cover: MediaImageDto | null;
+  /** See `PartnerPublicDto.sellsGas`/`sellsPetrol` — meaningful only when `category` is `"fuel"`. */
+  sellsGas: boolean;
+  sellsPetrol: boolean;
+  /**
+   * True when this branch's category is one the customer actually spends
+   * in — only ever computed when they opted in via
+   * `personalizedRecommendationsEnabled`; always false otherwise. Ranked
+   * ahead of the rest of the list, never filtered out — turning this on
+   * never hides a nearby shop, it only reorders what was already there.
+   */
+  recommended: boolean;
 }
 
 /**
@@ -207,4 +238,15 @@ export enum PartnerCategory {
   EV_CHARGING = 'ev_charging',
   BEAUTY = 'beauty',
   OTHER = 'other',
+}
+
+/**
+ * The `fuel`-category sub-filter — "Газ" (propane and methane, counted as
+ * one) vs "Бензин" (Arman, 2026-08-26). Not part of `PartnerCategory`: every
+ * `fuel` partner keeps that one category, and this narrows the search within
+ * it via `sellsGas`/`sellsPetrol` rather than widening the category set.
+ */
+export enum FuelType {
+  GAS = 'gas',
+  PETROL = 'petrol',
 }

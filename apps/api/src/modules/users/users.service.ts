@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { MediaAsset, Prisma, RoleName } from '@prisma/client';
+import { AuditAction, MediaAsset, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MediaViewService } from '../media/media-view.service';
+import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../auth/types/request-user.type';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaViewService,
+    private readonly audit: AuditService,
   ) {}
 
   findByPhone(phone: string) {
@@ -35,6 +37,7 @@ export class UsersService {
         createdAt: true,
         updatedAt: true,
         avatarConsentReferralList: true,
+        personalizedRecommendationsConsent: true,
         avatarAsset: true,
       },
     });
@@ -50,14 +53,20 @@ export class UsersService {
    * `GET /users/me` is the only route that returns it, and the only person who
    * can call it for a given account is that account.
    */
-  private withAvatar<T extends { id: string; avatarAsset: MediaAsset | null; avatarConsentReferralList: boolean }>(
-    user: T,
-  ) {
-    const { avatarAsset, avatarConsentReferralList, ...rest } = user;
+  private withAvatar<
+    T extends {
+      id: string;
+      avatarAsset: MediaAsset | null;
+      avatarConsentReferralList: boolean;
+      personalizedRecommendationsConsent: boolean;
+    },
+  >(user: T) {
+    const { avatarAsset, avatarConsentReferralList, personalizedRecommendationsConsent, ...rest } = user;
     return {
       ...rest,
       avatar: this.media.signedImage(avatarAsset, user.id),
       showAvatarInReferralList: avatarConsentReferralList,
+      personalizedRecommendationsEnabled: personalizedRecommendationsConsent,
     };
   }
 
@@ -159,10 +168,41 @@ export class UsersService {
         createdAt: true,
         updatedAt: true,
         avatarConsentReferralList: true,
+        personalizedRecommendationsConsent: true,
         avatarAsset: true,
       },
     });
     return this.withAvatar(user);
+  }
+
+  /**
+   * Turn nearby-partner personalisation on or off — spec: "как ты думаешь
+   * это правильно или нет" (Arman, 2026-08-26), answered by scoping this to
+   * an explicit, off-by-default opt-in rather than silent profiling. Mirrors
+   * `MediaService.setAvatarConsent`'s shape: a plain flag flip, audited
+   * because it is a consent decision, nothing cached or derived stored
+   * anywhere beyond the flag itself.
+   */
+  async setPersonalizationConsent(
+    userId: string,
+    consent: boolean,
+    actor: { userId: string; ipAddress: string | null; userAgent: string | null },
+  ): Promise<{ personalizedRecommendationsEnabled: boolean }> {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { personalizedRecommendationsConsent: consent },
+      select: { personalizedRecommendationsConsent: true },
+    });
+    await this.audit.record({
+      actorUserId: actor.userId,
+      action: AuditAction.PERSONALIZATION_CONSENT_CHANGED,
+      entityType: 'User',
+      entityId: userId,
+      metadata: { personalizedRecommendationsEnabled: updated.personalizedRecommendationsConsent },
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    });
+    return { personalizedRecommendationsEnabled: updated.personalizedRecommendationsConsent };
   }
 
   /**

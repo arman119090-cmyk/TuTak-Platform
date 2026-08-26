@@ -23,6 +23,7 @@ import { CreatePartnerBranchDto } from './dto/create-partner-branch.dto';
 import { UpdatePartnerBranchDto } from './dto/update-partner-branch.dto';
 import { UpdateCommercialSettingsDto } from './dto/update-commercial-settings.dto';
 import { UpdatePartnerAboutDto } from './dto/update-partner-about.dto';
+import { UpdatePartnerFuelTypesDto } from './dto/update-partner-fuel-types.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
 import { NearbyPartnersQueryDto } from './dto/nearby-partners.query.dto';
 import { PartnersService } from './partners.service';
@@ -74,14 +75,23 @@ export class PartnersController {
    * screen that answers "where are my points worth something". What it returns
    * is only what is on the shop's sign — see `NearbyPartnerDto` for what is
    * deliberately left out.
+   *
+   * `user.id` is passed through as `customerId` unconditionally — it is
+   * `listNearbyBranches`/`recommendedCategoriesFor` that decides, from the
+   * `personalizedRecommendationsConsent` flag actually stored on that user
+   * right now, whether personalisation applies. Nothing about consent is
+   * read here or baked into a token, so a toggle in Settings takes effect on
+   * this very next call.
    */
   @Get('nearby')
-  nearby(@Query() query: NearbyPartnersQueryDto) {
+  nearby(@CurrentUser() user: RequestUser, @Query() query: NearbyPartnersQueryDto) {
     return this.partnersService.listNearbyBranches({
       lat: query.lat,
       lng: query.lng,
       radiusKm: query.radiusKm ?? 10,
       category: query.category,
+      fuelType: query.fuelType,
+      customerId: user.id,
       q: query.q,
     });
   }
@@ -237,6 +247,30 @@ export class PartnersController {
       entityType: 'Partner',
       entityId: partner.id,
       metadata: { field: 'about' },
+    });
+    return partner;
+  }
+
+  /**
+   * What a `fuel`-category station actually sells — see
+   * `Partner.sellsGas`/`sellsPetrol`. Same OWNER-only scoping and immediacy
+   * as `updateAbout` above.
+   */
+  @Patch(':id/fuel-types')
+  async updateFuelTypes(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: UpdatePartnerFuelTypesDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, "change what the partner's fuel station sells");
+    const partner = await this.partnersService.updateFuelTypes(id, dto);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: partner.id,
+      metadata: { field: 'fuelTypes', sellsGas: partner.sellsGas, sellsPetrol: partner.sellsPetrol },
     });
     return partner;
   }

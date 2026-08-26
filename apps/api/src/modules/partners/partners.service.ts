@@ -2,21 +2,38 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { MediaAsset, PartnerOfferingItem, PartnerStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MediaViewService } from '../media/media-view.service';
+import { TransactionsService } from '../transactions/transactions.service';
 import { isCommissionRateBps } from '../../common/validators/is-commission-rate-bps.validator';
 import { parseMoney } from '../../common/utils/money';
 import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { PartnerOfferingInputDto } from './dto/replace-partner-offerings.dto';
-import { haversineKm, toPartnerCategory, type NearbyPartner } from './geo';
+import {
+  haversineKm,
+  toPartnerCategory,
+  type FuelType,
+  type NearbyPartner,
+  type PartnerCategory,
+} from './geo';
 
 /** A joined-in `MediaAsset`, which may legitimately be absent. */
 type MediaAssetRow = MediaAsset | null;
+
+/**
+ * Below this many completed purchases in a category, "recommending" it back
+ * to the customer would just be echoing a single coincidence — see
+ * `PartnersService.recommendedCategoriesFor`.
+ */
+const MIN_PURCHASES_FOR_RECOMMENDATION = 2;
+/** Enough to feel personal; few enough that "recommended" stays a meaningful label, not most of the list. */
+const MAX_RECOMMENDED_CATEGORIES = 2;
 
 @Injectable()
 export class PartnersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaViewService,
+    private readonly transactions: TransactionsService,
   ) {}
 
   async create(dto: CreatePartnerDto) {
@@ -38,6 +55,8 @@ export class PartnersService {
           taxId: dto.taxId,
           category: dto.category,
           bonusAccrualRateBps: dto.bonusAccrualRateBps,
+          sellsGas: dto.sellsGas ?? false,
+          sellsPetrol: dto.sellsPetrol ?? false,
           // The admin path activates immediately — same behaviour as before
           // this migration. `status` defaults to ACTIVE (see schema.prisma),
           // so nothing here needs to say so explicitly.
@@ -175,6 +194,23 @@ export class PartnersService {
     if (about === undefined) return this.findByIdOrThrow(id);
     const trimmed = about?.trim() || null;
     await this.prisma.partner.update({ where: { id }, data: { about: trimmed } });
+    return this.findByIdOrThrow(id);
+  }
+
+  /**
+   * Partner self-service: what a `fuel`-category station actually sells —
+   * see `Partner.sellsGas`/`sellsPetrol`. Meaningless for any other category,
+   * but not rejected for one: a partner that later switches its own category
+   * to `fuel` should not first have to re-declare flags it already set.
+   */
+  async updateFuelTypes(id: string, dto: { sellsGas?: boolean; sellsPetrol?: boolean }) {
+    await this.prisma.partner.update({
+      where: { id },
+      data: {
+        ...(dto.sellsGas !== undefined ? { sellsGas: dto.sellsGas } : {}),
+        ...(dto.sellsPetrol !== undefined ? { sellsPetrol: dto.sellsPetrol } : {}),
+      },
+    });
     return this.findByIdOrThrow(id);
   }
 
@@ -326,6 +362,8 @@ export class PartnersService {
     id: true,
     displayName: true,
     category: true,
+    sellsGas: true,
+    sellsPetrol: true,
     bonusAccrualRateBps: true,
     isActive: true,
     createdAt: true,
@@ -486,9 +524,19 @@ export class PartnersService {
     lng: number;
     radiusKm: number;
     category?: string;
+    /**
+     * The "fuel" chip's own sub-filter. When present it overrides `category`
+     * to `'fuel'` — see `NearbyPartnersQueryDto.fuelType`'s own doc comment.
+     */
+    fuelType?: FuelType;
     q?: string;
+    /** The signed-in customer, if any — see `recommendedCategoriesFor`. */
+    customerId?: string;
   }): Promise<NearbyPartner[]> {
-    const { lat, lng, radiusKm, category, q } = params;
+    const { lat, lng, radiusKm, category, fuelType, q, customerId } = params;
+    const recommendedCategories = customerId
+      ? await this.recommendedCategoriesFor(customerId)
+      : [];
     const latDelta = radiusKm / 111;
     const lngDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
 
@@ -499,7 +547,11 @@ export class PartnersService {
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
         partner: {
           isActive: true,
-          ...(category ? { category } : {}),
+          ...(fuelType
+            ? { category: 'fuel', ...(fuelType === 'gas' ? { sellsGas: true } : { sellsPetrol: true }) }
+            : category
+              ? { category }
+              : {}),
         },
         ...(q
           ? {
@@ -526,6 +578,8 @@ export class PartnersService {
           select: {
             displayName: true,
             category: true,
+            sellsGas: true,
+            sellsPetrol: true,
             bonusAccrualRateBps: true,
             logoAsset: true,
             coverAsset: true,
@@ -538,24 +592,57 @@ export class PartnersService {
     });
 
     return branches
-      .map((b) => ({
-        id: b.id,
-        partnerId: b.partnerId,
-        name: b.partner.displayName,
-        branchName: b.name,
-        category: toPartnerCategory(b.partner.category),
-        address: b.address,
-        city: b.city,
-        latitude: b.latitude,
-        longitude: b.longitude,
-        // Basis points to percent here, not in the client. A client that
-        // forgot to divide would advertise 300% cashback.
-        cashbackPercent: b.partner.bonusAccrualRateBps / 100,
-        distanceKm: haversineKm(lat, lng, b.latitude, b.longitude),
-        logo: this.media.currentPartnerImage(b.partner.logoAsset),
-        cover: this.media.currentPartnerImage(b.partner.coverAsset),
-      }))
+      .map((b) => {
+        const branchCategory = toPartnerCategory(b.partner.category);
+        return {
+          id: b.id,
+          partnerId: b.partnerId,
+          name: b.partner.displayName,
+          branchName: b.name,
+          category: branchCategory,
+          address: b.address,
+          city: b.city,
+          latitude: b.latitude,
+          longitude: b.longitude,
+          // Basis points to percent here, not in the client. A client that
+          // forgot to divide would advertise 300% cashback.
+          cashbackPercent: b.partner.bonusAccrualRateBps / 100,
+          distanceKm: haversineKm(lat, lng, b.latitude, b.longitude),
+          logo: this.media.currentPartnerImage(b.partner.logoAsset),
+          cover: this.media.currentPartnerImage(b.partner.coverAsset),
+          sellsGas: b.partner.sellsGas,
+          sellsPetrol: b.partner.sellsPetrol,
+          recommended: recommendedCategories.includes(branchCategory),
+        };
+      })
       .filter((b) => b.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm);
+      // Recommended first, nearest first within each group — personalising
+      // this list reorders it, it never hides anything that was already on it.
+      .sort((a, b) => Number(b.recommended) - Number(a.recommended) || a.distanceKm - b.distanceKm);
+  }
+
+  /**
+   * The customer's own top purchase categories, or an empty list when
+   * personalisation does not apply — no consent, or not enough history to
+   * mean anything yet. Computed fresh on every call: nothing about this is
+   * cached or stored beyond the one consent flag on `User`, so turning the
+   * setting off takes effect on the very next request.
+   *
+   * `MIN_PURCHASES_FOR_RECOMMENDATION` exists because a single purchase is
+   * not a preference — someone who bought fuel once while passing through
+   * should not have their whole map reordered around it.
+   */
+  private async recommendedCategoriesFor(customerId: string): Promise<PartnerCategory[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: customerId },
+      select: { personalizedRecommendationsConsent: true },
+    });
+    if (!user?.personalizedRecommendationsConsent) return [];
+
+    const counts = await this.transactions.completedPurchaseCategoryCounts(customerId);
+    return counts
+      .filter((c) => c.count >= MIN_PURCHASES_FOR_RECOMMENDATION)
+      .slice(0, MAX_RECOMMENDED_CATEGORIES)
+      .map((c) => toPartnerCategory(c.category));
   }
 }

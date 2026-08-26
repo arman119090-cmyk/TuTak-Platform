@@ -92,4 +92,16 @@ export const usersApi = {
     );
     return data.data;
   },
+
+  /**
+   * Turn nearby-partner personalisation on or off — off by default, its own
+   * route for the same reason `setAvatarConsent` has one: this is a consent
+   * decision, not a profile edit.
+   */
+  async setPersonalizationConsent(personalizedRecommendationsEnabled: boolean) {
+    const { data } = await httpClient.patch<
+      ApiEnvelope<{ personalizedRecommendationsEnabled: boolean }>
+    >('/users/me/personalization-consent', { personalizedRecommendationsEnabled });
+    return data.data;
+  },
 };

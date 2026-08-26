@@ -59,6 +59,14 @@ export default function ProfilePage() {
       <Header />
       <div className="space-y-4">
         <AboutCard partnerId={partnerId ?? ''} about={data?.about ?? null} loading={isLoading} />
+        {data?.category?.trim().toLowerCase() === 'fuel' ? (
+          <FuelTypesCard
+            partnerId={partnerId ?? ''}
+            sellsGas={data?.sellsGas ?? false}
+            sellsPetrol={data?.sellsPetrol ?? false}
+            loading={isLoading}
+          />
+        ) : null}
         <OfferingsCard
           partnerId={partnerId ?? ''}
           offerings={data?.offerings ?? []}
@@ -135,6 +143,71 @@ function AboutCard({
         <Button size="sm" onClick={() => save.mutate()} loading={save.isPending} disabled={loading}>
           Save
         </Button>
+        {savedAt && !save.isPending ? <span className="text-[13px] text-muted">Saved.</span> : null}
+        {save.isError ? (
+          <span className="text-[13px] text-danger-text">Could not save. Please try again.</span>
+        ) : null}
+      </div>
+    </Surface>
+  );
+}
+
+/**
+ * What a `fuel`-category station actually sells (Arman, 2026-08-26) —
+ * "Газ"/"Бензин" on the customer's map filter. Propane and methane are one
+ * customer-facing bucket, "Газ" — this toggle does not distinguish them.
+ * Same immediacy as `AboutCard`: no review step, live on the map instantly.
+ */
+function FuelTypesCard({
+  partnerId,
+  sellsGas,
+  sellsPetrol,
+  loading,
+}: {
+  partnerId: string;
+  sellsGas: boolean;
+  sellsPetrol: boolean;
+  loading: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const save = useMutation({
+    mutationFn: (next: { sellsGas?: boolean; sellsPetrol?: boolean }) =>
+      partnerApi.updateFuelTypes(partnerId, next),
+    onSuccess: () => {
+      setSavedAt(Date.now());
+      void queryClient.invalidateQueries({ queryKey: ['partner', partnerId] });
+    },
+  });
+
+  return (
+    <Surface>
+      <div className="text-[15px] font-semibold text-ink">What you sell</div>
+      <p className="mt-1 max-w-2xl text-[13px] text-muted">
+        Drives the "Газ"/"Бензин" filter on a customer's map. Propane and methane count as one —
+        "Газ" — so there is no need to say which.
+      </p>
+
+      <div className="mt-4 flex items-center gap-6">
+        <label className="flex items-center gap-2 text-[13px] text-ink">
+          <input
+            type="checkbox"
+            checked={sellsGas}
+            disabled={loading || save.isPending}
+            onChange={(e) => save.mutate({ sellsGas: e.target.checked })}
+          />
+          Gas
+        </label>
+        <label className="flex items-center gap-2 text-[13px] text-ink">
+          <input
+            type="checkbox"
+            checked={sellsPetrol}
+            disabled={loading || save.isPending}
+            onChange={(e) => save.mutate({ sellsPetrol: e.target.checked })}
+          />
+          Petrol
+        </label>
         {savedAt && !save.isPending ? <span className="text-[13px] text-muted">Saved.</span> : null}
         {save.isError ? (
           <span className="text-[13px] text-danger-text">Could not save. Please try again.</span>

@@ -1,4 +1,4 @@
-import { IsString, IsUUID, Length } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import { IsCommissionRateBps } from '../../../common/validators/is-commission-rate-bps.validator';
 
 export class CreatePartnerDto {
@@ -23,4 +23,14 @@ export class CreatePartnerDto {
 
   @IsUUID()
   ownerUserId: string;
+
+  /** Meaningful only when `category` is `"fuel"` — see `Partner.sellsGas`. */
+  @IsOptional()
+  @IsBoolean()
+  sellsGas?: boolean;
+
+  /** Meaningful only when `category` is `"fuel"` — see `Partner.sellsPetrol`. */
+  @IsOptional()
+  @IsBoolean()
+  sellsPetrol?: boolean;
 }

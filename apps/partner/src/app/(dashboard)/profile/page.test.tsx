@@ -13,7 +13,12 @@ import { partnerApi } from '@/lib/api/partnerApi';
  */
 
 jest.mock('@/lib/api/partnerApi', () => ({
-  partnerApi: { get: jest.fn(), updateAbout: jest.fn(), replaceOfferings: jest.fn() },
+  partnerApi: {
+    get: jest.fn(),
+    updateAbout: jest.fn(),
+    updateFuelTypes: jest.fn(),
+    replaceOfferings: jest.fn(),
+  },
 }));
 
 function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): AuthenticatedUserDto {
@@ -29,6 +34,7 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     isPhoneVerified: true,
     avatar: null,
     showAvatarInReferralList: false,
+    personalizedRecommendationsEnabled: false,
     ...overrides,
   };
 }
@@ -40,6 +46,8 @@ function partnerFixture(overrides: Partial<PartnerDto> = {}): PartnerDto {
     legalName: 'SAS Supermarket LLC',
     taxId: '00000000',
     category: 'grocery',
+    sellsGas: false,
+    sellsPetrol: false,
     bonusAccrualRateBps: 300,
     paymentCommissionRateBps: 250,
     isActive: true,

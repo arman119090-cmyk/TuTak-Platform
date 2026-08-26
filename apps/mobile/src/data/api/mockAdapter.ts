@@ -213,6 +213,13 @@ function handle(
       return envelope({ showAvatarInReferralList });
     }
 
+    case 'PATCH /users/me/personalization-consent': {
+      const dto = body<{ personalizedRecommendationsEnabled?: boolean }>(config);
+      const personalizedRecommendationsEnabled = dto.personalizedRecommendationsEnabled === true;
+      state.user = { ...state.user, personalizedRecommendationsEnabled };
+      return envelope({ personalizedRecommendationsEnabled });
+    }
+
     // ── Wallet ──────────────────────────────────────────────────────────
     case 'GET /wallet/me':
       return envelope(state.wallet);
@@ -520,6 +527,8 @@ function handle(
           id: match.partnerId,
           displayName: match.name,
           category: match.category,
+          sellsGas: match.sellsGas,
+          sellsPetrol: match.sellsPetrol,
           bonusAccrualRateBps: Math.round(match.cashbackPercent * 100),
           isActive: true,
           logo: match.logo,
@@ -532,6 +541,8 @@ function handle(
           id,
           displayName: 'Demo Partner',
           category: 'retail',
+          sellsGas: false,
+          sellsPetrol: false,
           bonusAccrualRateBps: 500,
           isActive: true,
           logo: null,

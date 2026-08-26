@@ -244,4 +244,33 @@ export class TransactionsService {
       nextCursor: items.length === query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
+
+  /**
+   * How many completed purchases this customer has made in each partner
+   * category — the raw signal `PartnersService` turns into "recommended for
+   * you" on the nearby-branches list (2026-08-26). Only real, settled money
+   * movement counts: `QR_PAYMENT` (the legacy synchronous redeem) and
+   * `PARTNER_PURCHASE` (the current confirm-flow) once `COMPLETED` — never
+   * `INITIATED`/`PENDING` (nothing happened yet), never `FAILED`/`REVERSED`
+   * (it didn't stick), and never bonus/EV/referral rows, which say nothing
+   * about which *category of shop* this person actually spends in.
+   *
+   * A join+group-by through the related `Partner.category`, which Prisma's
+   * query builder cannot express directly — `$queryRaw` rather than
+   * `groupBy` for that reason. Ordered richest-first so a caller taking the
+   * top few needs no further sorting.
+   */
+  async completedPurchaseCategoryCounts(userId: string): Promise<Array<{ category: string; count: number }>> {
+    const rows = await this.prisma.$queryRaw<Array<{ category: string; count: bigint }>>`
+      SELECT p.category AS category, COUNT(*)::bigint AS count
+      FROM "transactions" t
+      JOIN "partners" p ON p.id = t."partnerId"
+      WHERE t."userId" = ${userId}
+        AND t.status = 'COMPLETED'
+        AND t.type IN ('QR_PAYMENT', 'PARTNER_PURCHASE')
+      GROUP BY p.category
+      ORDER BY count DESC
+    `;
+    return rows.map((r) => ({ category: r.category, count: Number(r.count) }));
+  }
 }

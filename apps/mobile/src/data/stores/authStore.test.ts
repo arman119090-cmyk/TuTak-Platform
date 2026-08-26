@@ -27,6 +27,7 @@ const user: AuthenticatedUserDto = {
   isPhoneVerified: true,
   avatar: null,
   showAvatarInReferralList: false,
+  personalizedRecommendationsEnabled: false,
 };
 
 const tokens: AuthTokensDto = {

@@ -489,6 +489,7 @@ export class AuthService {
       // own profile, and the URL says so.
       avatar: this.mediaView.signedImage(avatarAsset, user.id),
       showAvatarInReferralList: user.avatarConsentReferralList,
+      personalizedRecommendationsEnabled: user.personalizedRecommendationsConsent,
       roles: claims.roles,
       permissions: claims.permissions,
       partnerScopes: claims.partnerScopes,

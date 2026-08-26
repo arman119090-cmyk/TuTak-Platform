@@ -24,6 +24,8 @@ const EMPTY = {
   category: '',
   bonusAccrualRateBps: 300,
   ownerUserId: '',
+  sellsGas: false,
+  sellsPetrol: false,
 };
 
 export default function PartnersPage() {
@@ -95,6 +97,28 @@ export default function PartnersPage() {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
               />
             </Field>
+            {form.category.trim().toLowerCase() === 'fuel' ? (
+              <Field label="Sells" hint="Propane and methane count as one bucket: &quot;gas&quot;.">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-ink">
+                    <input
+                      type="checkbox"
+                      checked={form.sellsGas}
+                      onChange={(e) => setForm({ ...form, sellsGas: e.target.checked })}
+                    />
+                    Gas
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-ink">
+                    <input
+                      type="checkbox"
+                      checked={form.sellsPetrol}
+                      onChange={(e) => setForm({ ...form, sellsPetrol: e.target.checked })}
+                    />
+                    Petrol
+                  </label>
+                </div>
+              </Field>
+            ) : null}
             <Field label="Owner user ID">
               <Input
                 required

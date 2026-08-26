@@ -1,7 +1,25 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, RoleName } from '@prisma/client';
 import { PartnersController } from '../src/modules/partners/partners.controller';
 import { NearbyPartnersQueryDto } from '../src/modules/partners/dto/nearby-partners.query.dto';
+import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { createTestHarness, TestHarness, truncateAll } from './setup/harness';
+
+/**
+ * A generic signed-in customer. No personalization consent is granted here
+ * — this suite is about distance/radius/filter arithmetic, not
+ * recommendation ranking, which has its own suite
+ * (`nearby-partners-personalization.int-spec.ts`). The id need not name a
+ * real row: `recommendedCategoriesFor` treats a lookup miss the same as no
+ * consent, exactly as it would for a real customer who never opted in.
+ */
+const asCustomer = (): RequestUser => ({
+  id: 'customer-1',
+  phone: '+37400000001',
+  roles: [RoleName.CUSTOMER],
+  permissions: [],
+  partnerScopes: {},
+  mustChangePassword: false,
+});
 
 /**
  * Where a customer can spend, near where they are standing.
@@ -90,7 +108,7 @@ describe('Nearby partners (integration)', () => {
     await createBranch({ displayName: 'Near', branchName: 'Near branch', ...kmNorth(1) });
     await createBranch({ displayName: 'Middle', branchName: 'Middle branch', ...kmNorth(4) });
 
-    const rows = await controller.nearby(query());
+    const rows = await controller.nearby(asCustomer(), query());
 
     expect(rows.map((r) => r.name)).toEqual(['Near', 'Middle', 'Far']);
     // One decimal, and actually measured — not the number the fixture used to
@@ -112,7 +130,7 @@ describe('Nearby partners (integration)', () => {
       lng: CENTRE.lng + 9 / (111 * Math.cos((CENTRE.lat * Math.PI) / 180)),
     });
 
-    const rows = await controller.nearby(query({ radiusKm: 10 }));
+    const rows = await controller.nearby(asCustomer(), query({ radiusKm: 10 }));
 
     expect(rows.map((r) => r.name)).toEqual(['Inside']);
   });
@@ -126,7 +144,7 @@ describe('Nearby partners (integration)', () => {
       isActive: false,
     });
 
-    const rows = await controller.nearby(query());
+    const rows = await controller.nearby(asCustomer(), query());
 
     expect(rows.map((r) => r.name)).toEqual(['Trading']);
   });
@@ -145,7 +163,7 @@ describe('Nearby partners (integration)', () => {
       category: 'cafe',
     });
 
-    const rows = await controller.nearby(query({ category: 'cafe' }));
+    const rows = await controller.nearby(asCustomer(), query({ category: 'cafe' }));
 
     expect(rows.map((r) => r.name)).toEqual(['Coffee']);
   });
@@ -164,15 +182,15 @@ describe('Nearby partners (integration)', () => {
     });
 
     // The partner's own name…
-    expect((await controller.nearby(query({ q: 'sas' }))).map((r) => r.name)).toEqual([
+    expect((await controller.nearby(asCustomer(), query({ q: 'sas' }))).map((r) => r.name)).toEqual([
       'SAS Supermarket',
     ]);
     // …the branch…
-    expect((await controller.nearby(query({ q: 'MASHTOTS' }))).map((r) => r.name)).toEqual([
+    expect((await controller.nearby(asCustomer(), query({ q: 'MASHTOTS' }))).map((r) => r.name)).toEqual([
       'Yerevan City',
     ]);
     // …and the street, which is how somebody looks for the one near work.
-    expect((await controller.nearby(query({ q: 'sayat' }))).map((r) => r.name)).toEqual([
+    expect((await controller.nearby(asCustomer(), query({ q: 'sayat' }))).map((r) => r.name)).toEqual([
       'Yerevan City',
     ]);
   });
@@ -185,7 +203,7 @@ describe('Nearby partners (integration)', () => {
       bonusAccrualRateBps: 750,
     });
 
-    const [row] = await controller.nearby(query());
+    const [row] = await controller.nearby(asCustomer(), query());
     if (!row) throw new Error('expected one branch back');
 
     // Basis points converted here, once. A client that had to divide would
@@ -218,7 +236,7 @@ describe('Nearby partners (integration)', () => {
       category: 'retail',
     });
 
-    const [row] = await controller.nearby(query());
+    const [row] = await controller.nearby(asCustomer(), query());
     if (!row) throw new Error('expected one branch back');
 
     expect(row.category).toBe('other');
@@ -228,7 +246,7 @@ describe('Nearby partners (integration)', () => {
     await createBranch({ displayName: 'Walkable', branchName: 'B', ...kmNorth(0.4) });
     await createBranch({ displayName: 'A drive', branchName: 'B', ...kmNorth(6) });
 
-    const rows = await controller.nearby(query({ radiusKm: 1 }));
+    const rows = await controller.nearby(asCustomer(), query({ radiusKm: 1 }));
 
     expect(rows.map((r) => r.name)).toEqual(['Walkable']);
   });

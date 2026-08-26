@@ -28,6 +28,15 @@ export const PARTNER_CATEGORIES = [
 export type PartnerCategory = (typeof PARTNER_CATEGORIES)[number];
 
 /**
+ * The `fuel`-category sub-filter — "Газ" (propane and methane, counted as
+ * one) vs "Бензин" (Arman, 2026-08-26). Mirrors `FuelType` in
+ * `@tutak/shared-types` — same reason as `PARTNER_CATEGORIES` above.
+ */
+export const FUEL_TYPES = ['gas', 'petrol'] as const;
+
+export type FuelType = (typeof FUEL_TYPES)[number];
+
+/**
  * One pin on the customer's map. Mirrors `NearbyPartnerDto` in
  * `@tutak/shared-types` — same reason as the category list above.
  *
@@ -63,6 +72,11 @@ export interface NearbyPartner {
    */
   logo: MediaImageDto | null;
   cover: MediaImageDto | null;
+  /** See `NearbyPartnerDto.sellsGas`/`sellsPetrol` in `@tutak/shared-types`. */
+  sellsGas: boolean;
+  sellsPetrol: boolean;
+  /** See `NearbyPartnerDto.recommended` in `@tutak/shared-types`. */
+  recommended: boolean;
 }
 
 const KNOWN = new Set<string>(PARTNER_CATEGORIES);

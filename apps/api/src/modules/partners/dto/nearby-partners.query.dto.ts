@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsIn, IsLatitude, IsLongitude, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-import { PARTNER_CATEGORIES, type PartnerCategory } from '../geo';
+import { FUEL_TYPES, PARTNER_CATEGORIES, type FuelType, type PartnerCategory } from '../geo';
 
 /**
  * Where the customer is, and what they are looking for.
@@ -37,6 +37,17 @@ export class NearbyPartnersQueryDto {
   @IsOptional()
   @IsIn(PARTNER_CATEGORIES)
   category?: PartnerCategory;
+
+  /**
+   * The "fuel" chip's own sub-filter — "Газ" or "Бензин" (Arman, 2026-08-26).
+   * Implies `category: 'fuel'` regardless of what `category` was actually
+   * sent — a customer picking a gas pump on the map is not also allowed to
+   * ask for gas pumps that are cafés.
+   */
+  @ApiPropertyOptional({ enum: FUEL_TYPES })
+  @IsOptional()
+  @IsIn(FUEL_TYPES)
+  fuelType?: FuelType;
 
   /** Free text over the partner's display name, its branch and the address. */
   @ApiPropertyOptional()

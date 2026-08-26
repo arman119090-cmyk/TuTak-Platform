@@ -153,6 +153,15 @@ model User {
   /// list, and no admin response ever reads it as permission to expose an
   /// avatar.
   avatarConsentReferralList Boolean @default(false)
+  /// 2026-08-26: whether this customer opted in to seeing nearby partners
+  /// ranked by their own purchase history (which categories they actually
+  /// spend in, computed on demand from `Transaction` — nothing new is
+  /// collected or stored here beyond this one flag). Default false: this is
+  /// behavioural personalisation, not just a display preference, and it
+  /// stays off until the customer actively turns it on — same consent
+  /// posture as `avatarConsentReferralList` above. Toggling takes effect on
+  /// the very next `GET /partners/nearby` call; nothing caches the decision.
+  personalizedRecommendationsConsent Boolean @default(false)
 
   roles                     UserRole[]
   wallet                    Wallet?
@@ -812,6 +821,16 @@ model Partner {
   displayName               String
   taxId                     String        @unique
   category                  String
+  /// Meaningful only when `category` is `fuel` — whether this station sells
+  /// gas. Propane and methane are one customer-facing bucket, not two: a
+  /// shopper picking "Газ" on the map does not care which of the two a given
+  /// station burns, so this is a single flag rather than a per-gas-type
+  /// field (Arman, 2026-08-26: "в категории газ пропан и метан для всех").
+  sellsGas                  Boolean       @default(false)
+  /// Meaningful only when `category` is `fuel` — whether this station sells
+  /// petrol/gasoline. Independent of `sellsGas`: a real station commonly
+  /// sells both, so these are two flags rather than one enum choice.
+  sellsPetrol               Boolean       @default(false)
   /// Basis points, e.g. 300 = 3%. Restricted to the fixed rate card — 0.5%
   /// steps from 0.5% to 20% (50..2000, step 50) — enforced by
   /// `IsCommissionRateBps` at the API boundary and by
@@ -2356,6 +2375,9 @@ enum AuditAction {
   /// A customer changed whether their avatar may appear in their direct
   /// referrer's Level-1 list. Audited because it is a consent decision.
   MEDIA_AVATAR_CONSENT_CHANGED
+  /// A customer turned personalised nearby-partner recommendations on or
+  /// off. Audited for the same reason as the avatar consent above.
+  PERSONALIZATION_CONSENT_CHANGED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

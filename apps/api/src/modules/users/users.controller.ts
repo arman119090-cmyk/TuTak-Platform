@@ -6,6 +6,7 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { AccountDeletionService } from './account-deletion.service';
 import { UsersService } from './users.service';
 import { DeleteAccountDto } from './dto/delete-account.dto';
+import { UpdatePersonalizationConsentDto } from './dto/update-personalization-consent.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @ApiTags('users')
@@ -25,6 +26,26 @@ export class UsersController {
   @Patch('me')
   async updateMe(@CurrentUser() user: RequestUser, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(user.id, dto);
+  }
+
+  /**
+   * Turn nearby-partner personalisation on or off. Separate from `PATCH
+   * /users/me` for the same reason avatar consent has its own route: this is
+   * a consent decision, not a profile edit, and bundling it into the general
+   * update would make it something that happened to the customer rather
+   * than something they chose.
+   */
+  @Patch('me/personalization-consent')
+  async updatePersonalizationConsent(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: UpdatePersonalizationConsentDto,
+    @Req() req: Request,
+  ) {
+    return this.usersService.setPersonalizationConsent(user.id, dto.personalizedRecommendationsEnabled, {
+      userId: user.id,
+      ipAddress: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
   }
 
   /**

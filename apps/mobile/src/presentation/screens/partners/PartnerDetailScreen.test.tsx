@@ -52,12 +52,17 @@ const basePartner: NearbyPartnerDto = {
   distanceKm: 1.5,
   logo: null,
   cover: null,
+  sellsGas: false,
+  sellsPetrol: false,
+  recommended: false,
 };
 
 const detailFixture = (overrides: Partial<PartnerPublicDto> = {}): PartnerPublicDto => ({
   id: 'partner-1',
   displayName: 'SAS Supermarket',
   category: 'grocery' as PartnerPublicDto['category'],
+  sellsGas: false,
+  sellsPetrol: false,
   bonusAccrualRateBps: 300,
   isActive: true,
   createdAt: new Date().toISOString(),

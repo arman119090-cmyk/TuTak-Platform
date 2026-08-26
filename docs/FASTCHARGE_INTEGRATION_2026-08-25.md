@@ -1,5 +1,19 @@
 # FastCharge wholesale-resale integration
 
+> **Amendment, 2026-08-26 (Arman):** "все станции могли заряжаться только из
+> нашего application исключительно" / "кошелёк только наш" — every station a
+> customer can find in the app must be chargeable, and paid for, through
+> TuTak alone. FastCharge stations cannot meet that today: TuTak has no
+> start/stop command for one (see requirement 1 below), and the customer pays
+> FastCharge directly, not through the TuTak wallet. Per Arman's decision,
+> `FASTCHARGE`-provider stations are now excluded from every customer-facing
+> discovery endpoint (`EvStationsService.listNearby` — see
+> `ev-stations-nearby.int-spec.ts`) and from the mobile map/list. The
+> settlement pipeline below (`FastChargeSettlementService`, the wholesale
+> margin split, cashback from that margin) is unchanged — this amendment is
+> about what a customer can *find and start in the app*, not about the
+> revenue-share relationship with FastCharge itself.
+
 **Delivered:** 2026-08-25.
 **Branch:** `claude/tutak-loyalty-mvp-e485jm`.
 **Base:** `59a8b12` (`docs: record this pass's own commit SHA in the hardening report`), on top of the collections-hardening pass (83/83 suites, 1199/1199 tests at that point).

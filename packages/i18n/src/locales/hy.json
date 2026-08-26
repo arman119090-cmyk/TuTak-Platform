@@ -162,11 +162,7 @@
     "couldNotStop": "Չհաջողվեց կանգնեցնել լիցքավորումը",
     "noActiveSession": "Այս սեսիան արդեն ավարտված է։",
     "sessionEnded": "Լիցքավորումն ավարտվեց",
-    "sessionEndedBody": "{{energy}} · {{cost}} · վաստակած {{points}} բոնուս",
-    "openFastChargeApp": "Բացել FastCharge հավելվածը",
-    "openFastChargeAppAt": "Բացեք FastCharge հավելվածը՝ {{station}} կայանում լիցքավորվելու համար",
-    "fastChargeOpenFailed": "Չհաջողվեց բացել FastCharge հավելվածը",
-    "fastChargeManaged": "Կառավարվում է FastCharge հավելվածում"
+    "sessionEndedBody": "{{energy}} · {{cost}} · վաստակած {{points}} բոնուս"
   },
   "referral": {
     "inviteFriends": "Հրավիրել ընկերների",

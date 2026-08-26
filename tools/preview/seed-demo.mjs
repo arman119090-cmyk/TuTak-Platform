@@ -7,6 +7,7 @@
  * Usage: node tools/preview/seed-demo.mjs
  */
 const API = process.env.API_URL ?? 'http://127.0.0.1:4000/v1';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const post = async (path, body, token) => {
   const res = await fetch(`${API}${path}`, {
@@ -102,30 +103,43 @@ async function main() {
     A,
   );
 
+  // ── The partner's own physical locations (2026-08-26: self-service branches) ──
+  const P = partnerUser.tokens.accessToken;
+  const branch1 = await post(
+    `/partners/${partner.id}/branches`,
+    { name: 'Republic Square', address: '1 Republic Square', city: 'Yerevan', latitude: 40.1772, longitude: 44.5126 },
+    P,
+  );
+  const branch2 = await post(
+    `/partners/${partner.id}/branches`,
+    { name: 'Northern Avenue', address: '5 Northern Ave', city: 'Yerevan', latitude: 40.1831, longitude: 44.5152 },
+    P,
+  );
+  console.log('✓ 2 branches added to', partner.displayName);
+
   // ── A spread of payments so history + analytics look real ───────────
+  // Goes through the real PurchaseIntent flow (spec §7-9) — the legacy
+  // qr/issue+qr/redeem direct-settlement path no longer completes a sale.
   const payments = [
-    { partner: partner.id, amount: '4200', bonus: '0' },
-    { partner: partner.id, amount: '7800', bonus: '2000' },
+    { partner: partner.id, branch: branch1.id, amount: '4200', bonus: '0' },
+    { partner: partner.id, branch: branch2.id, amount: '7800', bonus: '2000' },
     { partner: partner2.id, amount: '15600', bonus: '0' },
-    { partner: partner.id, amount: '3100', bonus: '1100' },
+    { partner: partner.id, branch: branch1.id, amount: '3100', bonus: '1100' },
     { partner: partner2.id, amount: '22400', bonus: '5000' },
   ];
 
-  for (const [i, p] of payments.entries()) {
-    const qr = await post(
-      '/qr/issue',
-      { type: 'DYNAMIC_INVOICE', partnerId: p.partner, amount: p.amount, expiresInSeconds: 900 },
-      A,
-    );
-    await post(
-      '/qr/redeem',
+  for (const p of payments) {
+    const intent = await post(
+      '/purchase-intents',
       {
-        token: qr.token,
-        bonusAmountToApply: p.bonus !== '0' ? p.bonus : undefined,
-        idempotencyKey: `preview-${rid}-${i}`,
+        partnerId: p.partner,
+        partnerBranchId: p.branch,
+        grossAmount: p.amount,
+        bonusAmountRequested: p.bonus !== '0' ? p.bonus : undefined,
       },
       C,
     );
+    await post(`/purchase-intents/${intent.id}/confirm`, {}, P);
   }
   console.log(`✓ ${payments.length} payments completed`);
 
@@ -173,7 +187,11 @@ async function main() {
 
   // One completed session for the customer's charging history.
   const session = await post('/ev/sessions/start', { connectorId: c1.id }, C);
-  await post(`/ev/sessions/${session.id}/meter-value`, { energyKwh: '23.4' }, C);
+  // The physical-bounds check (60kW connector) rejects a reading the
+  // elapsed wall-clock time couldn't have delivered — a real pause, not a
+  // fabricated one, so a small kWh figure over a real few seconds.
+  await sleep(6000);
+  await post(`/ev/sessions/${session.id}/meter-value`, { energyKwh: '0.08' }, C);
   await post(`/ev/sessions/${session.id}/stop`, {}, C);
   console.log('✓ EV stations + completed session');
 
@@ -188,16 +206,12 @@ async function main() {
     deviceId: 'preview-friend',
     referralCode: code.code,
   });
-  const friendQr = await post(
-    '/qr/issue',
-    { type: 'DYNAMIC_INVOICE', partnerId: partner.id, amount: '5400' },
-    A,
-  );
-  await post(
-    '/qr/redeem',
-    { token: friendQr.token, idempotencyKey: `preview-${rid}-friend` },
+  const friendIntent = await post(
+    '/purchase-intents',
+    { partnerId: partner.id, grossAmount: '5400' },
     friend.tokens.accessToken,
   );
+  await post(`/purchase-intents/${friendIntent.id}/confirm`, {}, P);
   console.log('✓ referral rewarded');
 
   const wallet = await get('/wallet/me', C);

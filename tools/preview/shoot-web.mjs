@@ -80,19 +80,16 @@ async function run() {
   await p2.waitForTimeout(900);
   await shoot(p2, 'partner-transactions');
 
-  // Generate a live invoice so the QR screen shows its active state.
+  // The payment code is static now — no amount, no generate step (spec:
+  // NEXT_CLAUDE_TASK.md requirement 1). One card per active branch if the
+  // partner has any (2026-08-26), otherwise the single whole-business code.
   await p2.getByRole('link', { name: 'Payment QR', exact: true }).click();
-  await p2.waitForTimeout(700);
-  await shoot(p2, 'partner-qr-empty');
-  await p2.locator('input').first().fill('8500');
-  const generate = p2.locator('form button[type="submit"]').first();
-  if (await generate.isEnabled()) {
-    await generate.click();
-    await p2.waitForTimeout(1800);
-  } else {
-    console.warn('  ! Generate QR disabled — capturing the empty state instead');
-  }
-  await shoot(p2, 'partner-qr-active');
+  await p2.waitForTimeout(900);
+  await shoot(p2, 'partner-qr');
+
+  await p2.getByRole('link', { name: 'Locations', exact: true }).click();
+  await p2.waitForTimeout(900);
+  await shoot(p2, 'partner-locations');
 
   await p2.getByRole('link', { name: 'EV stations', exact: true }).click();
   await p2.waitForTimeout(900);

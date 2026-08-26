@@ -215,6 +215,70 @@ export class PartnersService {
     return offerings.map((o) => PartnersService.offeringDto(o));
   }
 
+  /**
+   * A partner's own branches, active and inactive alike — the dashboard's
+   * "my locations" list needs to show a closed branch too, so the partner
+   * can reopen it rather than having to recreate it from scratch.
+   */
+  listBranches(partnerId: string) {
+    return this.prisma.partnerBranch.findMany({
+      where: { partnerId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /** Sanity ceiling, not a business limit — no real chain in this market approaches it; it exists so a scripting mistake cannot flood the map with rows. */
+  private static readonly MAX_BRANCHES_PER_PARTNER = 200;
+
+  async createBranch(partnerId: string, dto: { name: string; address: string; city: string; latitude: number; longitude: number }) {
+    const existing = await this.prisma.partnerBranch.count({ where: { partnerId } });
+    if (existing >= PartnersService.MAX_BRANCHES_PER_PARTNER) {
+      throw new BadRequestException(
+        `A partner may not have more than ${PartnersService.MAX_BRANCHES_PER_PARTNER} branches`,
+      );
+    }
+    return this.prisma.partnerBranch.create({
+      data: {
+        partnerId,
+        name: dto.name.trim(),
+        address: dto.address.trim(),
+        city: dto.city.trim(),
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+      },
+    });
+  }
+
+  /** Throws if `branchId` does not belong to `partnerId` — never lets one partner edit another's branch by guessing an id. */
+  async updateBranch(
+    partnerId: string,
+    branchId: string,
+    dto: { name?: string; address?: string; city?: string; latitude?: number; longitude?: number },
+  ) {
+    const { count } = await this.prisma.partnerBranch.updateMany({
+      where: { id: branchId, partnerId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.address !== undefined ? { address: dto.address.trim() } : {}),
+        ...(dto.city !== undefined ? { city: dto.city.trim() } : {}),
+        ...(dto.latitude !== undefined ? { latitude: dto.latitude } : {}),
+        ...(dto.longitude !== undefined ? { longitude: dto.longitude } : {}),
+      },
+    });
+    if (count === 0) throw new NotFoundException('Branch not found');
+    return this.prisma.partnerBranch.findUniqueOrThrow({ where: { id: branchId } });
+  }
+
+  /** Deactivating rather than deleting — see `PartnerBranch.isActive`'s own docblock. */
+  async setBranchActive(partnerId: string, branchId: string, isActive: boolean) {
+    const { count } = await this.prisma.partnerBranch.updateMany({
+      where: { id: branchId, partnerId },
+      data: { isActive },
+    });
+    if (count === 0) throw new NotFoundException('Branch not found');
+    return this.prisma.partnerBranch.findUniqueOrThrow({ where: { id: branchId } });
+  }
+
   findById(id: string) {
     return this.prisma.partner.findUnique({
       where: { id },
@@ -430,6 +494,7 @@ export class PartnersService {
 
     const branches = await this.prisma.partnerBranch.findMany({
       where: {
+        isActive: true,
         latitude: { gte: lat - latDelta, lte: lat + latDelta },
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
         partner: {

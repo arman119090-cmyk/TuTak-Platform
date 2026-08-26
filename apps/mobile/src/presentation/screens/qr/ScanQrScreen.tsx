@@ -47,7 +47,10 @@ export function ScanQrScreen() {
       return;
     }
     setScanned(true);
-    navigation.replace('CreatePurchaseIntent', { partnerId: parsed.partnerId });
+    navigation.replace('CreatePurchaseIntent', {
+      partnerId: parsed.partnerId,
+      partnerBranchId: parsed.branchId,
+    });
   };
 
   const retry = () => {

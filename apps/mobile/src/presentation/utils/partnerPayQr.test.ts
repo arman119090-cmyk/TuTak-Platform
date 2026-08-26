@@ -18,4 +18,11 @@ describe('parsePartnerPayQr', () => {
     expect(parsePartnerPayQr('TUTAK-PAY:')).toBeNull();
     expect(parsePartnerPayQr('TUTAK-PAY:   ')).toBeNull();
   });
+
+  it('extracts a branch id when the partner printed a per-location code', () => {
+    expect(parsePartnerPayQr('TUTAK-PAY:partner-sas:branch-downtown')).toEqual({
+      partnerId: 'partner-sas',
+      branchId: 'branch-downtown',
+    });
+  });
 });

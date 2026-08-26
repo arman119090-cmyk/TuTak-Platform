@@ -1057,6 +1057,14 @@ model PartnerBranch {
   city      String
   latitude  Float
   longitude Float
+  /// Whether this branch is currently open and should be shown to
+  /// customers. Deactivating rather than deleting: `PurchaseIntent` and
+  /// `PartnerIntegration` rows reference a branch by id, and a real
+  /// financial/audit history must keep resolving to the branch it happened
+  /// at even after that location closes. Defaults true — every branch that
+  /// predates this column is, in fact, still open; there is no historical
+  /// case where the true value is otherwise.
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
   partner         Partner              @relation(fields: [partnerId], references: [id], onDelete: Cascade)

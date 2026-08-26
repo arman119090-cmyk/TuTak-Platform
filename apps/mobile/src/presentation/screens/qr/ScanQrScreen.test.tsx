@@ -60,6 +60,19 @@ describe('ScanQrScreen', () => {
     expect(qrApi.redeem).not.toHaveBeenCalled();
   });
 
+  it("passes the branch id along when the partner printed a per-location code", () => {
+    renderScreen();
+
+    act(() => {
+      capturedOnBarcodeScanned!({ data: 'TUTAK-PAY:partner-sas:branch-downtown' });
+    });
+
+    expect(mockReplace).toHaveBeenCalledWith('CreatePurchaseIntent', {
+      partnerId: 'partner-sas',
+      partnerBranchId: 'branch-downtown',
+    });
+  });
+
   it('refuses an unrecognised code instead of guessing what it means', () => {
     const { getByText } = renderScreen();
 

@@ -32,6 +32,41 @@ export interface UpdatePartnerAboutRequestDto {
 }
 
 /**
+ * One of a partner's own physical locations — spec: partner self-service
+ * branches (Arman, 2026-08-26). Unlike `PartnerOfferingDto`, this is not a
+ * bulk-replace list: `isActive` lets a partner close a branch without
+ * deleting it, because `PurchaseIntent`/`PartnerIntegration` history keeps
+ * referencing it by id.
+ */
+export interface PartnerBranchDto {
+  id: string;
+  partnerId: string;
+  name: string;
+  address: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreatePartnerBranchRequestDto {
+  name: string;
+  address: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface UpdatePartnerBranchRequestDto {
+  name?: string;
+  address?: string;
+  city?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+/**
  * What any authenticated caller sees.
  *
  * A customer needs the directory to find where their points are worth

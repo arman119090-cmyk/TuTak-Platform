@@ -19,6 +19,8 @@ import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { RejectPartnerDto } from './dto/reject-partner.dto';
 import { ReplacePartnerOfferingsDto } from './dto/replace-partner-offerings.dto';
+import { CreatePartnerBranchDto } from './dto/create-partner-branch.dto';
+import { UpdatePartnerBranchDto } from './dto/update-partner-branch.dto';
 import { UpdateCommercialSettingsDto } from './dto/update-commercial-settings.dto';
 import { UpdatePartnerAboutDto } from './dto/update-partner-about.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
@@ -262,6 +264,85 @@ export class PartnersController {
       metadata: { field: 'offerings', count: offerings.length },
     });
     return offerings;
+  }
+
+  /**
+   * A partner's own locations — spec: partner self-service branches
+   * (Arman, 2026-08-26: partners add their own, not the platform on their
+   * behalf). Individual CRUD rather than `replaceOfferings`' bulk-replace:
+   * unlike an offering, a branch is referenced by `PurchaseIntent` and
+   * `PartnerIntegration` rows, so it can never be blindly deleted-and-
+   * recreated without breaking that history.
+   *
+   * Read is scoped to the partner's own staff (any role), matching how the
+   * dashboard shows a partner their own record in full elsewhere on this
+   * controller — write is OWNER-only, same tier as `updateAbout`/
+   * `replaceOfferings`.
+   */
+  @Get(':id/branches')
+  listBranches(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
+    assertPartnerScope(user, id);
+    return this.partnersService.listBranches(id);
+  }
+
+  @Post(':id/branches')
+  async createBranch(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: CreatePartnerBranchDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, 'add a branch');
+    const branch = await this.partnersService.createBranch(id, dto);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: id,
+      metadata: { field: 'branches', op: 'create', branchId: branch.id },
+    });
+    return branch;
+  }
+
+  @Patch(':id/branches/:branchId')
+  async updateBranch(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @UuidParam('branchId') branchId: string,
+    @Body() dto: UpdatePartnerBranchDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, 'edit a branch');
+    const branch = await this.partnersService.updateBranch(id, branchId, dto);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: id,
+      metadata: { field: 'branches', op: 'update', branchId },
+    });
+    return branch;
+  }
+
+  /** Deactivate/reactivate — see `PartnerBranch.isActive` for why this is never a hard delete. */
+  @Patch(':id/branches/:branchId/active')
+  async setBranchActive(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @UuidParam('branchId') branchId: string,
+    @Body() dto: SetActiveDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, 'deactivate or reactivate a branch');
+    const branch = await this.partnersService.setBranchActive(id, branchId, dto.isActive);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: id,
+      metadata: { field: 'branches', op: dto.isActive ? 'activate' : 'deactivate', branchId },
+    });
+    return branch;
   }
 
   /**

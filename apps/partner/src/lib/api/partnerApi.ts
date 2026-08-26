@@ -1,5 +1,6 @@
 import type {
   PartnerAnalyticsDto,
+  PartnerBranchDto,
   PartnerDto,
   PartnerOfferingDto,
   TransactionDto,
@@ -38,6 +39,46 @@ export const partnerApi = {
     const { data } = await httpClient.put<ApiEnvelope<PartnerOfferingDto[]>>(
       `/partners/${id}/offerings`,
       { offerings },
+    );
+    return data.data;
+  },
+
+  /** A partner's own locations — spec: partner self-service branches (Arman, 2026-08-26). */
+  async listBranches(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerBranchDto[]>>(
+      `/partners/${id}/branches`,
+    );
+    return data.data;
+  },
+
+  async createBranch(
+    id: string,
+    branch: { name: string; address: string; city: string; latitude: number; longitude: number },
+  ) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerBranchDto>>(
+      `/partners/${id}/branches`,
+      branch,
+    );
+    return data.data;
+  },
+
+  async updateBranch(
+    id: string,
+    branchId: string,
+    branch: Partial<{ name: string; address: string; city: string; latitude: number; longitude: number }>,
+  ) {
+    const { data } = await httpClient.patch<ApiEnvelope<PartnerBranchDto>>(
+      `/partners/${id}/branches/${branchId}`,
+      branch,
+    );
+    return data.data;
+  },
+
+  /** Deactivates/reactivates rather than deleting — see `PartnerBranchDto.isActive`. */
+  async setBranchActive(id: string, branchId: string, isActive: boolean) {
+    const { data } = await httpClient.patch<ApiEnvelope<PartnerBranchDto>>(
+      `/partners/${id}/branches/${branchId}/active`,
+      { isActive },
     );
     return data.data;
   },

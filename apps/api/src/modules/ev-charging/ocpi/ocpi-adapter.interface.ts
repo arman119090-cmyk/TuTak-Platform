@@ -1,10 +1,10 @@
 /**
  * Contract for a roaming CPO/eMSP bridge implementing OCPI 2.2.1
  * (Locations, Sessions, CDRs, Commands modules). TuTak owns its own
- * stations directly today; this interface is what a FastCharge (or any
- * other OCPI-speaking network) integration will implement so the rest of
- * the EV module never needs to change when that partner is connected —
- * it only needs an EvStation row with `ocpiEvseUid` populated.
+ * stations directly today; this interface is what an OCPI-speaking network
+ * integration will implement so the rest of the EV module never needs to
+ * change when that partner is connected — it only needs an EvStation row
+ * with `ocpiEvseUid` populated.
  */
 export interface OcpiAdapter {
   /** Pushes a start-charging command to the remote CPO for a roaming EVSE. */

@@ -16,11 +16,8 @@ export interface EvStationDto {
   latitude: number;
   longitude: number;
   ocpiLocationId: string | null;
-  /** See `EvStationProvider` — `FASTCHARGE` stations never show Start/Stop. */
+  /** See `EvStationProvider`. */
   provider: EvStationProvider;
-  externalStationId: string | null;
-  /** Display/audit only — a specific session may settle at a different rate; see `EvSessionDto.appliedCustomerRatePerKwh`. */
-  standardRetailRatePerKwh: string | null;
   connectors: EvConnectorDto[];
   /** Only set by `GET /ev/stations/nearby` — absent from `listStations`/`listAll`. */
   distanceKm?: number;
@@ -30,7 +27,6 @@ export interface EvConnectorDto {
   id: string;
   stationId: string;
   ocpiEvseUid: string | null;
-  externalConnectorId: string | null;
   connectorType: EvConnectorType;
   status: EvConnectorStatus;
   powerKw: number;
@@ -70,9 +66,6 @@ export interface EvSessionDto {
   cost: string | null;
   bonusEarned: string | null;
   ocpiCdrId: string | null;
-  /** Set only on a FastCharge-settled session — see docs/FASTCHARGE_INTEGRATION_2026-08-25.md. */
-  appliedCustomerRatePerKwh?: string | null;
-  stationRetailRatePerKwh?: string | null;
   /**
    * Present on the list endpoints, which join it. A session on its own says
    * nothing a customer can read — the price and the station name live here.

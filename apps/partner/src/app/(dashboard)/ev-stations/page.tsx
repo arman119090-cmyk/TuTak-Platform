@@ -51,21 +51,10 @@ export default function EvStationsPage() {
               <Surface key={station.id}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-[17px] font-semibold text-ink">{station.name}</div>
-                      {station.provider === 'FASTCHARGE' ? (
-                        <Badge tone="neutral">FastCharge</Badge>
-                      ) : null}
-                    </div>
+                    <div className="text-[17px] font-semibold text-ink">{station.name}</div>
                     <div className="mt-1 text-[13px] text-muted">
                       {station.address}, {station.city}
                     </div>
-                    {station.provider === 'FASTCHARGE' ? (
-                      <div className="tabular mt-1 text-[12px] text-faint">
-                        Standard rate: {station.standardRetailRatePerKwh ?? '—'} ֏/kWh — actual sessions
-                        settle at each customer's own FastCharge tariff, never this display rate.
-                      </div>
-                    ) : null}
                   </div>
                   <Badge tone={station.connectors.some((c) => c.status === 'AVAILABLE') ? 'available' : 'pending'}>
                     {station.connectors.filter((c) => c.status === 'AVAILABLE').length} of{' '}

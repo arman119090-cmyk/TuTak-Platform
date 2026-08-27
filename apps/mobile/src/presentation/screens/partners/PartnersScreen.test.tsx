@@ -101,11 +101,10 @@ describe('PartnersScreen — loading, empty and error states', () => {
 
 /**
  * Every station a customer can find here is chargeable through this app —
- * FastCharge-provider stations are excluded server-side (Arman, 2026-08-26:
- * "все станции могли заряжаться только из нашего application исключительно"
- * — see `EvStationsService.listNearby`), so this screen never has to special-
- * case one: whatever `nearbyStations` returns always gets the ordinary
- * tappable connector strip.
+ * every `EvStationProvider` value is started/stopped by TuTak (Arman,
+ * 2026-08-26: "все станции могли заряжаться только из нашего application
+ * исключительно"), so this screen never has to special-case one: whatever
+ * `nearbyStations` returns always gets the ordinary tappable connector strip.
  */
 describe('PartnersScreen — station Start behaviour', () => {
   const internalStation = {

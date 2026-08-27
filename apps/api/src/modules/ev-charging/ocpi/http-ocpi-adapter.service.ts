@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OcpiAdapter } from './ocpi-adapter.interface';
 
 export interface OcpiHttpConfig {
-  /** Base URL of the CPO's OCPI versions endpoint, e.g. https://fastcharge.am/ocpi/cpo */
+  /** Base URL of the CPO's OCPI versions endpoint. */
   baseUrl: string;
   /** Token C — the credential this platform presents as eMSP. */
   token: string;
@@ -20,7 +20,7 @@ interface OcpiEnvelope<T> {
 type CommandResult = { result: 'ACCEPTED' | 'REJECTED' | 'TIMEOUT' | 'UNKNOWN_SESSION' };
 
 /**
- * OCPI 2.2.1 client for a roaming CPO (FastCharge or any other).
+ * OCPI 2.2.1 client for a roaming CPO.
  *
  * Speaks the Commands and CDRs modules over HTTP. Authentication is the OCPI
  * `Token` scheme — base64 of the credential, which is what 2.2.1 requires and
@@ -39,7 +39,7 @@ type CommandResult = { result: 'ACCEPTED' | 'REJECTED' | 'TIMEOUT' | 'UNKNOWN_SE
  *
  * Not yet exercised against a live CPO: no credentials have been issued, so
  * every path here is verified against the specification and unit tests, not
- * against FastCharge's server. The first real handshake will need the
+ * against a real server. The first real handshake will need the
  * credentials exchange (Token A → Token C), which is a one-time operational
  * step rather than code.
  */

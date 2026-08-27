@@ -239,7 +239,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
 
       const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% = 5 pool
 
-      // FastCharge settles like every other purchase (2026-08-22 3-level
+      // An EV session settles like every other purchase (2026-08-22 3-level
       // referral rework): the whole pool splits directly by the six-leg
       // rule, no upfront TuTak cut — the customer's immediate green share
       // is 20% of 5 = 1.

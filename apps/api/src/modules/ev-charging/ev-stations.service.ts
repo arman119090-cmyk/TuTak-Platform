@@ -1,4 +1,3 @@
-import { EvStationProvider } from '@prisma/client';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { haversineKm } from '../../common/utils/geo';
@@ -42,14 +41,6 @@ export class EvStationsService {
    * `PartnersService.listNearby` computes it for partner branches, so a
    * merged map/list of stations and partners can sort the two together by
    * one consistent number.
-   *
-   * `FASTCHARGE`-provider stations are excluded (Arman, 2026-08-26: "все
-   * станции могли заряжаться только из нашего application исключительно" —
-   * every station must be chargeable only from our app). TuTak has no
-   * start/stop command for a FastCharge charger — see `EvStationProvider`'s
-   * own doc comment — so a customer who found one here could never actually
-   * charge through this app; `listAll` (the partner-facing inventory/
-   * reconciliation view) is unaffected.
    */
   async listNearby(lat: number, lng: number, radiusKm = 10) {
     const latDelta = radiusKm / 111;
@@ -59,7 +50,6 @@ export class EvStationsService {
       where: {
         latitude: { gte: lat - latDelta, lte: lat + latDelta },
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
-        provider: EvStationProvider.INTERNAL,
       },
       include: { connectors: true },
     });

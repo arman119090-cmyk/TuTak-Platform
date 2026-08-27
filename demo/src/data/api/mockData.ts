@@ -573,11 +573,14 @@ export function freshMockState(): MockState {
         longitude: 44.5126,
         ocpiLocationId: 'LOC-1',
         provider: EvStationProvider.INTERNAL,
+        externalStationId: null,
+        standardRetailRatePerKwh: null,
         connectors: [
           {
             id: 'conn-1',
             stationId: 'station-1',
             ocpiEvseUid: 'EVSE-1',
+            externalConnectorId: null,
             connectorType: EvConnectorType.TYPE_2,
             status: EvConnectorStatus.AVAILABLE,
             powerKw: 22,
@@ -587,6 +590,7 @@ export function freshMockState(): MockState {
             id: 'conn-2',
             stationId: 'station-1',
             ocpiEvseUid: 'EVSE-2',
+            externalConnectorId: null,
             connectorType: EvConnectorType.CCS2,
             status: EvConnectorStatus.CHARGING,
             powerKw: 60,
@@ -604,11 +608,14 @@ export function freshMockState(): MockState {
         longitude: 44.5152,
         ocpiLocationId: 'LOC-2',
         provider: EvStationProvider.INTERNAL,
+        externalStationId: null,
+        standardRetailRatePerKwh: null,
         connectors: [
           {
             id: 'conn-3',
             stationId: 'station-2',
             ocpiEvseUid: 'EVSE-3',
+            externalConnectorId: null,
             connectorType: EvConnectorType.CHADEMO,
             status: EvConnectorStatus.AVAILABLE,
             powerKw: 50,
@@ -626,15 +633,48 @@ export function freshMockState(): MockState {
         longitude: 44.9511,
         ocpiLocationId: 'LOC-3',
         provider: EvStationProvider.INTERNAL,
+        externalStationId: null,
+        standardRetailRatePerKwh: null,
         connectors: [
           {
             id: 'conn-4',
             stationId: 'station-3',
             ocpiEvseUid: 'EVSE-4',
+            externalConnectorId: null,
             connectorType: EvConnectorType.TYPE_2,
             status: EvConnectorStatus.OUTOFORDER,
             powerKw: 22,
             pricePerKwh: '78',
+          },
+        ],
+      },
+      {
+        // FastCharge wholesale-resale demo station — see
+        // docs/FASTCHARGE_INTEGRATION_2026-08-25.md. Shows the "Open
+        // FastCharge app" deep-link footer instead of a tappable Start
+        // strip; every session here arrives already COMPLETED via the
+        // FastCharge settlement webhook, never started from TuTak.
+        id: 'station-4',
+        partnerId: 'partner-3',
+        name: 'FastCharge Давташен',
+        address: 'Давташенское шоссе, 5',
+        city: 'Ереван',
+        latitude: 40.2103,
+        longitude: 44.4728,
+        ocpiLocationId: null,
+        provider: EvStationProvider.FASTCHARGE,
+        externalStationId: 'fc-station-davtashen',
+        standardRetailRatePerKwh: '115.00',
+        connectors: [
+          {
+            id: 'conn-5',
+            stationId: 'station-4',
+            ocpiEvseUid: null,
+            externalConnectorId: 'fc-connector-davtashen-1',
+            connectorType: EvConnectorType.CCS2,
+            status: EvConnectorStatus.AVAILABLE,
+            powerKw: 120,
+            pricePerKwh: '115.00',
           },
         ],
       },

@@ -130,7 +130,7 @@ describe('Money rounding (integration)', () => {
       const result = await sessions.stop(session.id, user.id, {});
 
       // 2518.5808 × 350 ÷ 10000 = 88.150328 — six decimals before rounding
-      // to a pool of 88.1503. An EV session settles like every other purchase
+      // to a pool of 88.1503. FastCharge settles like every other purchase
       // (2026-08-22 3-level referral rework): the whole pool splits
       // directly by the six-leg rule, no upfront TuTak cut — the
       // customer's immediate green share is 20% of 88.1503 = 17.63006,

@@ -204,7 +204,7 @@ describe('Roaming CDR reconciliation (integration)', () => {
     it('claws back the points earned on money that was never spent', async () => {
       const { wallet, session } = await roamingSession('20');
       const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-      // 5% of 2000 = 100 pool. An EV session settles like every other purchase
+      // 5% of 2000 = 100 pool. FastCharge settles like every other purchase
       // (2026-08-22 3-level referral rework): the whole pool splits
       // directly by the six-leg rule, no upfront TuTak cut — the
       // customer's immediate green share, the only leg that reaches the

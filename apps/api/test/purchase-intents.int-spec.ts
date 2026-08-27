@@ -29,7 +29,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  *
  * docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3 records why this flow is
  * additive alongside `POST /qr/redeem` rather than a replacement — the
- * EV suites are untouched by this file and keep proving the old
+ * FastCharge/EV suites are untouched by this file and keep proving the old
  * path still works.
  */
 describe('PurchaseIntents (integration)', () => {

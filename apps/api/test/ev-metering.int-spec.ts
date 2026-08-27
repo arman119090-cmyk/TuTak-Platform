@@ -89,7 +89,7 @@ describe('EV metering authorization (integration)', () => {
 
       const result = await sessions.stop(session.id, user.id, {});
       // 52 kWh x 100 AMD = 5200; 5% = 260 pool. Bounded, not fifty
-      // million. An EV session settles like every other purchase (2026-08-22
+      // million. FastCharge settles like every other purchase (2026-08-22
       // 3-level referral rework): the customer's immediate green share is
       // 20% of the whole pool, directly — 260 * 0.2 = 52.
       expect(result.bonusEarned).toBe('52');

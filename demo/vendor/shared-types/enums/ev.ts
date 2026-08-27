@@ -1,6 +1,6 @@
 /**
  * Mirrors OCPI 2.2.1 `Status` for EVSEs/connectors so the platform can
- * plug into any OCPI CPO without remapping vocab.
+ * plug into FastCharge (or any OCPI CPO) without remapping vocab.
  */
 export enum EvConnectorStatus {
   AVAILABLE = 'AVAILABLE',
@@ -40,10 +40,12 @@ export enum EvReservationStatus {
 }
 
 /**
- * A station's control/tariff model. `INTERNAL` is a TuTak-owned or
- * plain-roaming charger, started/stopped by TuTak — the only behaviour that
- * exists today.
+ * A station's control/tariff model — see docs/FASTCHARGE_INTEGRATION_2026-08-25.md.
+ * `FASTCHARGE` stations are never started/stopped from TuTak (requirement 1);
+ * the mobile map/list opens a deep link to the FastCharge app for one of
+ * these instead of the ordinary Start button.
  */
 export enum EvStationProvider {
   INTERNAL = 'INTERNAL',
+  FASTCHARGE = 'FASTCHARGE',
 }

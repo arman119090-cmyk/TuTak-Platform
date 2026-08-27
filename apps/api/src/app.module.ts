@@ -33,6 +33,7 @@ import { PartnersModule } from './modules/partners/partners.module';
 import { PurchaseIntentsModule } from './modules/purchase-intents/purchase-intents.module';
 import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
 import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
+import { FastChargeModule } from './modules/fastcharge/fastcharge.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
@@ -93,6 +94,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     PurchaseIntentsModule,
     QrPaymentsModule,
     EvChargingModule,
+    FastChargeModule,
     AdminModule,
     NotificationsModule,
     AnalyticsModule,

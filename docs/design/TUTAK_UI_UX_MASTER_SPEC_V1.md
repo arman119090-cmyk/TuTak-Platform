@@ -58,7 +58,7 @@ Filter chips: All / Confirmed / Pending / Rejected / Expired. Each row shows par
 ### 11 Profile
 Personal information, payment-related settings if supported, notifications, help/support and settings. Do not expose unsupported backend functionality as working UI.
 
-## EV charging flow
+## EV / FastCharge flow
 Integrated EV charging is auto-finalized from trusted integration/session data; it does not require cashier confirmation.
 
 ### EV 01 Map
@@ -101,7 +101,7 @@ Every partner account has an Integrations section. Registry may include WEBSITE,
 
 Each integration card should show: type, status, short purpose, configuration/details entry point. Do not pretend an integration is functional merely because a PartnerIntegration registry record exists.
 
-Manual/non-integrated purchases use partner confirmation. Trusted synchronized integrations such as OCPI roaming may auto-finalize from authenticated integration events/session data. Future POS/API auto-finalization requires a separately specified authenticated, idempotent event ingestion contract.
+Manual/non-integrated purchases use partner confirmation. Trusted synchronized integrations such as FastCharge/OCPI may auto-finalize from authenticated integration events/session data. Future POS/API auto-finalization requires a separately specified authenticated, idempotent event ingestion contract.
 
 Partner website verification remains manual unless/until a technical verification mechanism is deliberately implemented.
 

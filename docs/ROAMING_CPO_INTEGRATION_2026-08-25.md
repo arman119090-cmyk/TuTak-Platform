@@ -1,23 +1,32 @@
-# FastCharge wholesale-resale integration
+# Roaming-CPO wholesale-resale integration
 
 > **Amendment, 2026-08-26 (Arman):** "все станции могли заряжаться только из
 > нашего application исключительно" / "кошелёк только наш" — every station a
 > customer can find in the app must be chargeable, and paid for, through
-> TuTak alone. FastCharge stations cannot meet that today: TuTak has no
+> TuTak alone. Roaming-CPO stations cannot meet that today: TuTak has no
 > start/stop command for one (see requirement 1 below), and the customer pays
-> FastCharge directly, not through the TuTak wallet. Per Arman's decision,
-> `FASTCHARGE`-provider stations are now excluded from every customer-facing
+> the partner directly, not through the TuTak wallet. Per Arman's decision,
+> `ROAMING_CPO`-provider stations are now excluded from every customer-facing
 > discovery endpoint (`EvStationsService.listNearby` — see
 > `ev-stations-nearby.int-spec.ts`) and from the mobile map/list. The
-> settlement pipeline below (`FastChargeSettlementService`, the wholesale
+> settlement pipeline below (`RoamingCpoSettlementService`, the wholesale
 > margin split, cashback from that margin) is unchanged — this amendment is
 > about what a customer can *find and start in the app*, not about the
-> revenue-share relationship with FastCharge itself.
+> revenue-share relationship with the partner itself.
+>
+> **Update, 2026-08-27 (Arman):** this integration was briefly deleted
+> outright, then reinstated and generalized under the `ROAMING_CPO` name
+> (previously `FASTCHARGE`) — TuTak has since moved on from FastCharge to a
+> different EV-charging partner on better terms, and this structure (station/
+> customer sync, wholesale/margin economics, M2M API keys, settlement) is
+> exactly what the new partner will use, just without hardcoding a brand name
+> into the code or schema. Every identifier below has been renamed
+> accordingly; the worked examples and requirements are otherwise unchanged.
 
 **Delivered:** 2026-08-25.
 **Branch:** `claude/tutak-loyalty-mvp-e485jm`.
 **Base:** `59a8b12` (`docs: record this pass's own commit SHA in the hardening report`), on top of the collections-hardening pass (83/83 suites, 1199/1199 tests at that point).
-**This pass's commit:** `f953d80` (`feat: FastCharge wholesale-resale EV charging integration`).
+**This pass's commit:** `f953d80` (`feat: roaming-CPO wholesale-resale EV charging integration`).
 
 This is a new integration built on existing rails, not a parallel system: it
 reuses `EvStation`/`EvConnector`/`EvSession`/`EvCdr`, the exact 20/30/30/10/5/5
@@ -33,12 +42,12 @@ unmodified, proving that.
 
 ## The business model, precisely
 
-FastCharge is a third-party EV network. TuTak buys energy from them at a
+The roaming-CPO partner is a third-party EV network. TuTak buys energy from them at a
 contractual wholesale rate (`Partner.evWholesaleRatePerKwh`, defaulting to the
-75 AMD/kWh Arman quoted) and resells it at whatever tariff FastCharge actually
+75 AMD/kWh Arman quoted) and resells it at whatever tariff the partner actually
 applied to a given customer for a given session
 (`appliedCustomerRatePerKwh` — station tariffs and per-customer negotiated
-rates both come from FastCharge's own report, never inferred). The difference
+rates both come from the partner's own report, never inferred). The difference
 is TuTak's margin:
 
 ```
@@ -55,8 +64,8 @@ prices a confirmed `PurchaseIntent` or an internal `EvSession`. Margin above
 the cap is undivided TuTak revenue and never touches the split, not even
 TuTak's own residual share of it.
 
-`FastChargeSettlementService.computeMargin` is the whole of this arithmetic,
-in one pure static method — `fastcharge-settlement.service.spec.ts` proves it
+`RoamingCpoSettlementService.computeMargin` is the whole of this arithmetic,
+in one pure static method — `roaming-cpo-settlement.service.spec.ts` proves it
 directly against Arman's worked examples:
 
 | Applied rate | Margin | Through the split (`pool`) | Straight TuTak revenue (`uncappedRevenue`) |
@@ -66,10 +75,10 @@ directly against Arman's worked examples:
 | 120 AMD/kWh | 45 | 20 | 25 |
 
 Cap-boundary cases (exactly at 20, one under, one over) are also asserted.
-`fastcharge-settlement.int-spec.ts` re-derives the same numbers end to end —
+`roaming-cpo-settlement.int-spec.ts` re-derives the same numbers end to end —
 real database, real wallet, real double-entry ledger — and additionally
 asserts the 105-AMD/kWh case's exact ledger postings: **300 AMD debited** from
-the FastCharge partner's `PARTNER_PAYABLE` (200 capped pool + 100 uncapped,
+the partner's `PARTNER_PAYABLE` (200 capped pool + 100 uncapped,
 for a 10 kWh session), **100 AMD credited** to `BONUS_LIABILITY` (green 40 +
 deferred 60, no referrer in that scenario), **200 AMD credited** to
 `PLATFORM_REVENUE` (the pool's 100 residual + the 100 uncapped) — 300 debit =
@@ -89,36 +98,36 @@ non-nullable.
 instruction):
 
 - `EvStation` +`provider` (new `EvStationProvider` enum: `INTERNAL` |
-  `FASTCHARGE`, default `INTERNAL` — a no-op for every existing row),
-  `+externalStationId` (unique, FastCharge's own station id),
+  `ROAMING_CPO`, default `INTERNAL` — a no-op for every existing row),
+  `+externalStationId` (unique, the partner's own station id),
   `+standardRetailRatePerKwh` (the station's current walk-in tariff, display
   only).
-- `EvConnector` +`externalConnectorId` (unique, FastCharge's own
+- `EvConnector` +`externalConnectorId` (unique, the partner's own
   connector/EVSE id — deliberately separate from the existing `ocpiEvseUid`,
-  which is the *roaming-OCPI command* identity FastCharge sessions never use;
+  which is the *roaming-OCPI command* identity roaming-CPO sessions never use;
   see "Why not the existing OCPI adapter" below).
-- `EvSession` +`fastChargeExternalSessionId` (unique — the idempotency
-  backstop), `+fastChargeCustomerId`, `+stationRetailRatePerKwh`,
+- `EvSession` +`externalSessionId` (unique — the idempotency
+  backstop), `+externalCustomerId`, `+stationRetailRatePerKwh`,
   `+appliedCustomerRatePerKwh`, `+wholesaleRatePerKwh`,
   `+marginReferralCapPerKwh`, `+marginPerKwh`, `+uncappedMarginRevenueAmount`.
   The session's existing `poolAmount`/`greenAmount`/`deferredAmount`/
   `referrer1..3*`/`tutakAmount`/`programVersion` columns are **reused
   unchanged** — they are already generic enough (see their own docblocks) to
-  carry the FastCharge-margin-based pool split exactly as they carry the
+  carry the roaming-CPO-margin-based pool split exactly as they carry the
   internal accrual-rate-based one.
 - `Partner` +`evWholesaleRatePerKwh` (`Decimal(10,2)`, default `75.00`)
   +`evMarginReferralCapPerKwh` (`Decimal(10,2)`, default `20.00`) — both
   configurable per partner, read nowhere as a literal; every read is gated on
-  the session's station actually being `FASTCHARGE`-provider.
+  the session's station actually being `ROAMING_CPO`-provider.
 
 **New, genuinely new:**
 
-- `FastChargeCustomerLink` — the `User` ↔ FastCharge-customer-id mapping,
-  `@@unique([partnerId, fastChargeCustomerId])`. Created only by
-  `FastChargeCustomersService.link`, called by an authenticated TuTak user
-  naming their own FastCharge customer id — **never** created implicitly by
+- `RoamingCustomerLink` — the `User` ↔ roaming-CPO-customer-id mapping,
+  `@@unique([partnerId, externalCustomerId])`. Created only by
+  `RoamingCpoCustomersService.link`, called by an authenticated TuTak user
+  naming their own roaming-CPO customer id — **never** created implicitly by
   the settlement webhook. A settlement for an unlinked customer id is
-  rejected outright (`fastcharge-settlement.int-spec.ts`, "customer linking"
+  rejected outright (`roaming-cpo-settlement.int-spec.ts`, "customer linking"
   block).
 - `PartnerApiKey` — the M2M credential, hung off the existing
   `PartnerIntegration` extension point (`integrationId` is optional, nullable
@@ -131,76 +140,76 @@ model — a branch has no connectors, no tariff, no session concept, and
 `EvStation` already *is* TuTak's "one partner, many locations, each with its
 own connectors and pricing" model, used by every existing EV station
 (internal or roaming) today. Building a second "location" concept on
-`PartnerBranch` for FastCharge specifically would be exactly the kind of
+`PartnerBranch` for a roaming-CPO partner specifically would be exactly the kind of
 parallel structure the brief says not to build; `EvStation.provider` +
 `externalStationId` extends the one that already fits.
 
 ---
 
-## `FastChargeProvider` — the adapter boundary
+## `RoamingCpoProvider` — the adapter boundary
 
-**No real FastCharge API documentation exists.** Per requirement 4, this is
+**No real partner API documentation exists.** Per requirement 4, this is
 built as an internal adapter boundary, not a client for an endpoint that does
-not exist. `apps/api/src/modules/fastcharge/fastcharge-provider.interface.ts`:
+not exist. `apps/api/src/modules/roaming-cpo/roaming-cpo-provider.interface.ts`:
 
 ```ts
-export interface FastChargeProvider {
+export interface RoamingCpoProvider {
   notifyCustomerLinked(params: {
     partnerId: string;
-    fastChargeCustomerId: string;
+    externalCustomerId: string;
     tutakUserId: string;
   }): Promise<void>;
 }
 ```
 
 This mirrors the existing `OcpiAdapter`/`OCPI_ADAPTER` DI-token pattern
-exactly (`NoopOcpiAdapter` vs. `HttpOcpiAdapter`): `NoopFastChargeProvider` is
+exactly (`NoopOcpiAdapter` vs. `HttpOcpiAdapter`): `NoopRoamingCpoProvider` is
 the only implementation today (logs the notification), registered via the
-`FASTCHARGE_PROVIDER` token in `fastcharge.module.ts`. Swapping in a real
-`HttpFastChargeProvider` once FastCharge hands over a real endpoint is the
+`ROAMING_CPO_PROVIDER` token in `roaming-cpo.module.ts`. Swapping in a real
+`HttpRoamingCpoProvider` once the partner hands over a real endpoint is the
 same one-line `useClass` change `EvChargingModule` already does for OCPI — no
-caller of `FASTCHARGE_PROVIDER` needs to change.
+caller of `ROAMING_CPO_PROVIDER` needs to change.
 
 The relationship is deliberately the mirror image of the OCPI adapter: TuTak
-never calls out to FastCharge to command a charger (requirement 1).
-FastCharge calls **in** to TuTak instead — two `@Public()` + `x-api-key`-guarded
+never calls out to the partner to command a charger (requirement 1).
+The partner calls **in** to TuTak instead — two `@Public()` + `x-api-key`-guarded
 inbound routes:
 
-- `POST /fastcharge/stations/sync` — `FastChargeStationSyncDto`: station id,
+- `POST /roaming-cpo/stations/sync` — `RoamingCpoStationSyncDto`: station id,
   name/address/city/coordinates, `standardRetailRatePerKwh`, and an array of
-  `{ fastChargeConnectorId, connectorType, powerKw }`. Idempotent upsert keyed
-  by FastCharge's own ids (`FastChargeStationsService.sync`).
-- `POST /fastcharge/sessions/settle` — `FastChargeSessionSettleDto`: exactly
-  requirement 4's field list (`fastChargeSessionId`, `fastChargeCustomerId`,
-  `fastChargeStationId`, `fastChargeConnectorId`, `energyKwh`,
+  `{ externalConnectorId, connectorType, powerKw }`. Idempotent upsert keyed
+  by the partner's own ids (`RoamingCpoStationsService.sync`).
+- `POST /roaming-cpo/sessions/settle` — `RoamingCpoSessionSettleDto`: exactly
+  requirement 4's field list (`externalSessionId`, `externalCustomerId`,
+  `externalStationId`, `externalConnectorId`, `energyKwh`,
   `appliedCustomerRatePerKwh`, `finalAmount`, optional `bonusAmountToApply`,
   `startedAt`/`stoppedAt`).
 
-And the one thing TuTak owes FastCharge back (requirement 4: "at minimum, the
-linked TuTak user id"): `POST /fastcharge/customers/link` is a TuTak-user-
-authenticated route (JWT, not M2M) — the customer names their own FastCharge
-account inside the TuTak app, `FastChargeCustomersService.link` creates the
-mapping and calls `FastChargeProvider.notifyCustomerLinked` best-effort
+And the one thing TuTak owes the partner back (requirement 4: "at minimum, the
+linked TuTak user id"): `POST /roaming-cpo/customers/link` is a TuTak-user-
+authenticated route (JWT, not M2M) — the customer names their own the partner
+account inside the TuTak app, `RoamingCpoCustomersService.link` creates the
+mapping and calls `RoamingCpoProvider.notifyCustomerLinked` best-effort
 (logged, never blocking the customer's own linking action).
 
-### What a real FastCharge integration would need to build, once documentation exists
+### What a real roaming-CPO partner integration would need to build, once documentation exists
 
-1. **Real endpoints for the two `@Public()` M2M routes above** — FastCharge's
-   backend calling `POST https://<tutak>/v1/fastcharge/stations/sync` and
-   `POST https://<tutak>/v1/fastcharge/sessions/settle` with an `x-api-key:
+1. **Real endpoints for the two `@Public()` M2M routes above** — the partner's
+   backend calling `POST https://<tutak>/v1/roaming-cpo/stations/sync` and
+   `POST https://<tutak>/v1/roaming-cpo/sessions/settle` with an `x-api-key:
    <keyId>.<secret>` header, body shaped exactly as the two DTOs above. No
    webhook signature scheme (HMAC-over-body, timestamp/nonce replay
    protection, etc.) is implemented — see "Deliberately left out of scope"
    below for why.
-2. **A `notifyCustomerLinked` receiver on FastCharge's side**, or an
-   agreed-upon alternative mechanism, so `HttpFastChargeProvider` (the
-   eventual real implementation of `FastChargeProvider`) has somewhere to
+2. **A `notifyCustomerLinked` receiver on the partner's side**, or an
+   agreed-upon alternative mechanism, so `HttpRoamingCpoProvider` (the
+   eventual real implementation of `RoamingCpoProvider`) has somewhere to
    send the TuTak-user-id mapping.
-3. **A settlement/reconciliation process between TuTak and FastCharge for the
+3. **A settlement/reconciliation process between TuTak and the partner for the
    wholesale cost itself** — this integration records the *margin* correctly
    in TuTak's own ledger (see "Ledger accounting" below) but does not model
    the actual money movement/collection process between TuTak and
-   FastCharge for the wholesale amount owed; that is a real-world commercial
+   the partner for the wholesale amount owed; that is a real-world commercial
    settlement process outside this codebase's current ledger's scope (see
    "left out of scope").
 
@@ -214,8 +223,8 @@ transaction as its own creation: `stationRetailRatePerKwh`,
 `marginPerKwh`, `poolAmount`, `uncappedMarginRevenueAmount`. A later change to
 `Partner.evWholesaleRatePerKwh`, `Partner.evMarginReferralCapPerKwh`, or
 `EvStation.standardRetailRatePerKwh` only ever affects a *future* settlement —
-these columns are read once, at the moment `FastChargeSettlementService
-.settleOnce` computes the margin, and never again. `fastcharge-settlement
+these columns are read once, at the moment `RoamingCpoSettlementService
+.settleOnce` computes the margin, and never again. `roaming-cpo-settlement
 .int-spec.ts`'s "immutable snapshots" test proves this directly: it settles a
 session, changes the partner's wholesale rate, referral cap, and the
 station's retail rate, re-reads the already-settled session and confirms
@@ -223,8 +232,8 @@ every one of its stored figures is untouched, then settles a second session
 and confirms *that* one picks up the new terms.
 
 The same discipline extends to the admin/partner UI:
-`FastChargeStationsService.updateTariff` (used by both
-`PATCH /fastcharge/stations/:id/tariff` and the admin page) only ever writes
+`RoamingCpoStationsService.updateTariff` (used by both
+`PATCH /roaming-cpo/stations/:id/tariff` and the admin page) only ever writes
 `EvStation.standardRetailRatePerKwh` — it has no path back to any
 already-created `EvSession` row at all, so immutability holds by construction
 rather than by a guard that could be forgotten.
@@ -237,11 +246,11 @@ Two layers, matching this codebase's own dual-layer discipline (the brief's
 explicit example: the bank-transaction-control pattern from the collections
 hardening pass):
 
-1. **`IdempotencyService.run`**, scoped `fastcharge-settle:<partnerId>`, keyed
-   by FastCharge's own `fastChargeSessionId` — the ordinary "a literal retry
+1. **`IdempotencyService.run`**, scoped `roaming-cpo-settle:<partnerId>`, keyed
+   by the partner's own `externalSessionId` — the ordinary "a literal retry
    returns the original answer" guarantee every other financial mutation in
    this codebase already gets.
-2. **`EvSession.fastChargeExternalSessionId`'s unique index** — the backstop
+2. **`EvSession.externalSessionId`'s unique index** — the backstop
    for everything the first layer cannot catch (a lost/reclaimed
    `IdempotencyRecord` lease, or two deliveries racing each other directly).
    Postgres aborts a whole transaction on its first statement error, so the
@@ -254,7 +263,7 @@ hardening pass):
    directly via `this.prisma`, and returns that row's result rather than
    erroring or creating a second one.
 
-`fastcharge-settlement.int-spec.ts`'s "idempotency" block proves three
+`roaming-cpo-settlement.int-spec.ts`'s "idempotency" block proves three
 things: a literal duplicate delivery never double-posts (checked at both the
 `EvSession` and `LedgerTransaction` level, and that the wallet only saw the
 green accrual once); two concurrent deliveries for the same session
@@ -263,25 +272,25 @@ still collapse to one row via the unique-index backstop; and a transient
 `LedgerService.post` failure is recovered by `OutboxService.drain()` without
 double-posting on a second drain — the exact same fast-path-plus-guaranteed-
 retry shape `EvSessionsService.postEvContributionLedgerIdempotent` already
-uses, reused via a new `fastcharge.margin.ledger_post` outbox event
+uses, reused via a new `roaming-cpo.margin.ledger_post` outbox event
 registered the same way `ev.contribution.ledger_post` is.
 
 ---
 
 ## Ledger accounting
 
-`FastChargeSettlementService.postMarginLedgerIdempotent` mirrors
+`RoamingCpoSettlementService.postMarginLedgerIdempotent` mirrors
 `EvSessionsService.postEvContributionLedgerIdempotent` leg for leg, with one
 structural difference explained in its own docblock: that method debits the
 *station's own partner* because, in the internal-station program, the
 partner funds the bonus pool out of its own accrual rate. Here the margin is
-TuTak's own money (FastCharge is not funding a bonus programme — TuTak is
-reselling wholesale energy) — but the debit is still the FastCharge partner's
-`PARTNER_PAYABLE` account, because FastCharge is the one collecting the
+TuTak's own money (The roaming-CPO partner is not funding a bonus programme — TuTak is
+reselling wholesale energy) — but the debit is still the partner's
+`PARTNER_PAYABLE` account, because The roaming-CPO partner is the one collecting the
 customer's payment (the walk-in-equivalent amount, partly outside TuTak per
-requirement 2); crediting TuTak's margin out of FastCharge's payable balance
-is what makes a later TuTak↔FastCharge settlement of the wholesale amount net
-out correctly — the margin never needs to physically leave FastCharge's side
+requirement 2); crediting TuTak's margin out of the partner's payable balance
+is what makes a later TuTak↔partner settlement of the wholesale amount net
+out correctly — the margin never needs to physically leave the partner's side
 to reach TuTak's revenue account. Concretely, per session:
 
 - **Debit** `PARTNER_PAYABLE(fastChargePartner)` for `pool + uncappedRevenue`
@@ -307,11 +316,11 @@ it is; see `settleOnce`'s `eligible` branch.
 `PartnerApiKeyService` — a standard public-id + secret pair
 (`<keyId>.<secret>`), only the SHA-256 hash of the secret ever persisted,
 compared with `crypto.timingSafeEqual` (not `!==`, which would leak a timing
-oracle on the hash). `FastChargeApiKeyGuard` looks up by the indexed `keyId`
+oracle on the hash). `RoamingCpoApiKeyGuard` looks up by the indexed `keyId`
 first (no per-request table scan), then verifies the hash, then checks
-`revokedAt`. Issuance is platform-admin-only (`FastChargeController
+`revokedAt`. Issuance is platform-admin-only (`RoamingCpoController
 .issueApiKey`, `assertPlatformAdmin`) — per requirement 3's "not a human
-login/password", a FastCharge credential is provisioned by TuTak's own team
+login/password", a roaming-CPO credential is provisioned by TuTak's own team
 during onboarding, not self-served by a partner login. Listing (masked — no
 secret ever returned again) and revocation are partner-scoped
 (`assertPartnerScope`), so a partner can see what is issued and pull the plug
@@ -327,9 +336,9 @@ session's cost, then against `Partner.maxBonusPaymentPercent` (already a
 generic, per-partner field — not QR-specific, so EV charging did not need its
 own copy), then reserved and settled through the same
 `BonusEngineService.reserve`/`settleReservation` calls `EvSessionsService
-.stopOnce` uses. `fastcharge-settlement.int-spec.ts`'s "bonus-partial-payment"
+.stopOnce` uses. `roaming-cpo-settlement.int-spec.ts`'s "bonus-partial-payment"
 block proves the split (5,000 of 10,000 AMD from bonus, the rest — settled
-outside TuTak by FastCharge's own payment flow, per requirement 2 — reflected
+outside TuTak by the partner's own payment flow, per requirement 2 — reflected
 only in `Transaction.amount`, not in anything TuTak moves), the
 cost ceiling, and the `maxBonusPaymentPercent` ceiling.
 
@@ -338,37 +347,37 @@ cost ceiling, and the `maxBonusPaymentPercent` ceiling.
 ## Mobile / admin / partner UI
 
 **Mobile** (`apps/mobile/src/presentation/screens/partners/PartnersScreen.tsx`):
-`StationCard` now branches on `station.provider`. A `FASTCHARGE` station
-renders `FastChargeStationFooter` — a single "Open FastCharge app" button
-(`openFastChargeApp`, `apps/mobile/src/presentation/utils/
-fastChargeDeepLink.ts`) instead of the tappable per-connector Start strip.
-Every non-FastCharge station is completely unchanged — same component, same
-props, same Start behaviour. `PartnersScreen.test.tsx`'s new "FastCharge
+`StationCard` now branches on `station.provider`. A `ROAMING_CPO` station
+renders `RoamingCpoStationFooter` — a single "Open roaming-CPO app" button
+(`openRoamingCpoApp`, `apps/mobile/src/presentation/utils/
+roamingCpoDeepLink.ts`) instead of the tappable per-connector Start strip.
+Every non-roaming-CPO station is completely unchanged — same component, same
+props, same Start behaviour. `PartnersScreen.test.tsx`'s new "the partner
 stations never show Start/Stop" block is the regression net: one test proves
-the FastCharge footer replaces Start and `evApi.startSession` is never called
+the roaming-CPO footer replaces Start and `evApi.startSession` is never called
 for it; the other proves an `INTERNAL` station still shows the ordinary
 tappable Start target and calls `startSession` exactly as before.
 `EvSessionScreen` (the in-progress-session/Stop screen) needed no change: a
-FastCharge session is created directly as `COMPLETED` by the settlement
+roaming-CPO session is created directly as `COMPLETED` by the settlement
 webhook, so it never appears as an active `CHARGING` session a customer could
 attempt to stop from TuTak — the constraint holds structurally, not by an
-added guard. Completed FastCharge sessions show up in the customer's existing
+added guard. Completed roaming-CPO sessions show up in the customer's existing
 transaction history / wallet screens automatically (same `EV_CHARGING`
 `Transaction` type, same wallet posting shape) — no new screen was built, per
 Arman's "minimal" UX confirmation.
 
-**Admin** (`apps/admin/src/app/(dashboard)/fastcharge-stations/page.tsx`, new
-sidebar entry): a partner picker plus a table of that partner's FastCharge
+**Admin** (`apps/admin/src/app/(dashboard)/roaming-cpo-stations/page.tsx`, new
+sidebar entry): a partner picker plus a table of that partner's the partner
 stations — external id, standard retail rate (inline-editable), connector
-count. Editing calls the same `PATCH /fastcharge/stations/:id/tariff` route
+count. Editing calls the same `PATCH /roaming-cpo/stations/:id/tariff` route
 the partner dashboard would use; both are immutability-safe by construction
 (see above).
 
 **Partner** (`apps/partner/src/app/(dashboard)/ev-stations/page.tsx`,
-existing page extended, not duplicated): a `FastCharge` badge and the
-station's standard retail rate now show alongside every `FASTCHARGE`-provider
+existing page extended, not duplicated): a `Roaming partner` badge and the
+station's standard retail rate now show alongside every `ROAMING_CPO`-provider
 station, with a note that individual sessions settle at each customer's own
-FastCharge tariff, not this display rate. Non-FastCharge stations render
+partner-set tariff, not this display rate. Non-roaming-CPO stations render
 exactly as before.
 
 ---
@@ -392,13 +401,13 @@ history it references).
   connection counts confirmed clean before this run started) — see this
   pass's own verification log for the full run. The pre-existing baseline
   this pass started from was 83 suites / 1199 tests; this pass adds exactly 2
-  suites (`fastcharge-settlement.service.spec.ts`,
-  `fastcharge-settlement.int-spec.ts`) and 28 tests net (8 pure-arithmetic +
+  suites (`roaming-cpo-settlement.service.spec.ts`,
+  `roaming-cpo-settlement.int-spec.ts`) and 28 tests net (8 pure-arithmetic +
   20 integration), with zero tests removed or modified anywhere else.
 
-New suites added: `src/modules/fastcharge/fastcharge-settlement.service.spec.ts`
+New suites added: `src/modules/roaming-cpo/roaming-cpo-settlement.service.spec.ts`
 (8 tests, pure margin/cap-boundary arithmetic) and
-`test/fastcharge-settlement.int-spec.ts` (19 tests: worked examples + ledger
+`test/roaming-cpo-settlement.int-spec.ts` (19 tests: worked examples + ledger
 postings, idempotency ×3, immutable snapshots, customer linking ×3,
 bonus-partial-payment ×3, multi-station independence ×2, station sync,
 M2M auth). `test/ev-charging.int-spec.ts` (the pre-existing internal-EV
@@ -422,7 +431,7 @@ the existing program changed.
 - `npx tsc --noEmit` — clean.
 - `npx eslint .` — clean.
 - `npx jest` — 29 suites, 236 tests, all passing (includes the new
-  FastCharge Start/Stop regression tests in `PartnersScreen.test.tsx`).
+  roaming-CPO Start/Stop regression tests in `PartnersScreen.test.tsx`).
 
 ### `packages/shared-types`, `packages/i18n`
 
@@ -434,7 +443,7 @@ the existing program changed.
 changes. The resulting diff touches exactly the files this pass changed and
 nothing else: `demo/src/data/api/mockData.ts`,
 `demo/src/presentation/screens/partners/PartnersScreen.tsx`,
-`demo/src/presentation/utils/fastChargeDeepLink.ts` (new),
+`demo/src/presentation/utils/roamingCpoDeepLink.ts` (new),
 `demo/vendor/i18n/locales/{en,ru,hy}.json`,
 `demo/vendor/shared-types/dto/ev.ts`, `demo/vendor/shared-types/enums/ev.ts`
 — confirming zero drift.
@@ -445,39 +454,39 @@ nothing else: `demo/src/data/api/mockData.ts`,
 
 - **A real webhook signature scheme** (HMAC over the body, timestamp/nonce
   replay protection) for the two inbound M2M routes. The `x-api-key` header
-  check is real and load-bearing, but without FastCharge's actual documented
+  check is real and load-bearing, but without the partner's actual documented
   contract there is no real signature scheme to implement — inventing one now
-  risks it needing to be redone once FastCharge's real requirements are
+  risks it needing to be redone once the partner's real requirements are
   known, which is exactly the trap requirement 4 warns against. `x-api-key`
   is a legitimate, if simpler, M2M mechanism on its own and is what ships.
-- **A real TuTak↔FastCharge wholesale-cost settlement/reconciliation
+- **A real TuTak↔partner wholesale-cost settlement/reconciliation
   process.** This integration correctly *books* TuTak's margin in the
   existing ledger (see "Ledger accounting"), but does not model the actual
-  periodic cash settlement of the wholesale amount TuTak owes FastCharge —
+  periodic cash settlement of the wholesale amount TuTak owes the partner —
   that is a real commercial process (most likely modelled later as a
-  `PartnerCollection`/`Payout`-shaped flow once FastCharge's actual billing
+  `PartnerCollection`/`Payout`-shaped flow once the partner's actual billing
   cadence is known) outside this pass's scope.
 - **Partner self-service API-key issuance.** Requirement 3 explicitly frames
   the M2M credential as TuTak-provisioned, not partner-self-served, so
   issuance is platform-admin-only; a partner can list (masked) and revoke
   their own keys but cannot mint a new one without TuTak's team. Worth
-  reconsidering if FastCharge's own onboarding flow ends up wanting
+  reconsidering if the partner's own onboarding flow ends up wanting
   self-service.
-- **`FraudDetectionService.checkVelocity`** is not called from the FastCharge
+- **`FraudDetectionService.checkVelocity`** is not called from the roaming-CPO
   settlement path. That check exists specifically to catch a client
   self-reporting an implausible meter value (`EvSessionsService
-  .assertDeliverable`'s whole reason for existing); a FastCharge session's
-  energy/tariff/amount are FastCharge's own authoritative report, not a
+  .assertDeliverable`'s whole reason for existing); a roaming-CPO session's
+  energy/tariff/amount are the partner's own authoritative report, not a
   customer-controlled input, so the same fraud surface does not exist here in
-  the same shape. Worth adding if FastCharge sessions turn out to need their
+  the same shape. Worth adding if roaming-CPO sessions turn out to need their
   own velocity-abuse detection later.
-- **Reconciliation against a FastCharge-reported CDR correction.** Internal
+- **Reconciliation against a roaming-CPO-reported CDR correction.** Internal
   roaming sessions get `EvCdrReconciliationService`'s PENDING → MATCHED /
   CORRECTED / UNDERBILLED lifecycle because a roaming CPO's settled CDR
   arrives *after* the session and may disagree with what was billed.
-  FastCharge's settlement webhook *is* the final, authoritative report
+  the partner's settlement webhook *is* the final, authoritative report
   already (there is nothing further to reconcile it against), so every
-  FastCharge `EvCdr` row is stamped `NOT_APPLICABLE` — same meaning as an
+  the roaming-CPO `EvCdr` row is stamped `NOT_APPLICABLE` — same meaning as an
   internal TuTak-owned station's own meter.
 
 ---
@@ -486,23 +495,23 @@ nothing else: `demo/src/data/api/mockData.ts`,
 
 **API (new):**
 `apps/api/prisma/migrations/20260825143028_fastcharge_integration/migration.sql`,
-`apps/api/src/modules/fastcharge/fastcharge-provider.interface.ts`,
-`apps/api/src/modules/fastcharge/noop-fastcharge-provider.service.ts`,
-`apps/api/src/modules/fastcharge/partner-api-key.service.ts`,
-`apps/api/src/modules/fastcharge/fastcharge-api-key.guard.ts`,
-`apps/api/src/modules/fastcharge/decorators/fastcharge-partner.decorator.ts`,
-`apps/api/src/modules/fastcharge/dto/fastcharge-station-sync.dto.ts`,
-`apps/api/src/modules/fastcharge/dto/fastcharge-session-settle.dto.ts`,
-`apps/api/src/modules/fastcharge/dto/link-fastcharge-customer.dto.ts`,
-`apps/api/src/modules/fastcharge/dto/partner-api-key.dto.ts`,
-`apps/api/src/modules/fastcharge/dto/update-station-tariff.dto.ts`,
-`apps/api/src/modules/fastcharge/fastcharge-stations.service.ts`,
-`apps/api/src/modules/fastcharge/fastcharge-customers.service.ts`,
-`apps/api/src/modules/fastcharge/fastcharge-settlement.service.ts`,
-`apps/api/src/modules/fastcharge/fastcharge-settlement.service.spec.ts`,
-`apps/api/src/modules/fastcharge/fastcharge.controller.ts`,
-`apps/api/src/modules/fastcharge/fastcharge.module.ts`,
-`apps/api/test/fastcharge-settlement.int-spec.ts`.
+`apps/api/src/modules/roaming-cpo/roaming-cpo-provider.interface.ts`,
+`apps/api/src/modules/roaming-cpo/noop-roaming-cpo-provider.service.ts`,
+`apps/api/src/modules/roaming-cpo/partner-api-key.service.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo-api-key.guard.ts`,
+`apps/api/src/modules/roaming-cpo/decorators/roaming-cpo-partner.decorator.ts`,
+`apps/api/src/modules/roaming-cpo/dto/roaming-cpo-station-sync.dto.ts`,
+`apps/api/src/modules/roaming-cpo/dto/roaming-cpo-session-settle.dto.ts`,
+`apps/api/src/modules/roaming-cpo/dto/link-roaming-cpo-customer.dto.ts`,
+`apps/api/src/modules/roaming-cpo/dto/partner-api-key.dto.ts`,
+`apps/api/src/modules/roaming-cpo/dto/update-station-tariff.dto.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo-stations.service.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo-customers.service.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo-settlement.service.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo-settlement.service.spec.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo.controller.ts`,
+`apps/api/src/modules/roaming-cpo/roaming-cpo.module.ts`,
+`apps/api/test/roaming-cpo-settlement.int-spec.ts`.
 
 **API (edited):** `apps/api/prisma/schema.prisma`, `apps/api/src/app.module.ts`,
 `apps/api/test/setup/harness.ts`, `apps/api/test/setup/fixtures.ts`.
@@ -512,14 +521,14 @@ nothing else: `demo/src/data/api/mockData.ts`,
 
 **i18n:** `packages/i18n/src/locales/{en,ru,hy}.json` (four new `ev.*` keys).
 
-**Mobile (new):** `apps/mobile/src/presentation/utils/fastChargeDeepLink.ts`.
+**Mobile (new):** `apps/mobile/src/presentation/utils/roamingCpoDeepLink.ts`.
 **Mobile (edited):**
 `apps/mobile/src/presentation/screens/partners/PartnersScreen.tsx`,
 `apps/mobile/src/presentation/screens/partners/PartnersScreen.test.tsx`,
 `apps/mobile/src/data/api/mockData.ts`.
 
 **Admin (new):**
-`apps/admin/src/app/(dashboard)/fastcharge-stations/page.tsx`,
+`apps/admin/src/app/(dashboard)/roaming-cpo-stations/page.tsx`,
 `apps/admin/src/lib/api/fastChargeApi.ts`.
 **Admin (edited):** `apps/admin/src/components/Sidebar.tsx`.
 

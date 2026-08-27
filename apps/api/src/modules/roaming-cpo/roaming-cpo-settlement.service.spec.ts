@@ -1,21 +1,21 @@
 import { Decimal } from '@prisma/client/runtime/library';
-import { FastChargeSettlementService } from './fastcharge-settlement.service';
+import { RoamingCpoSettlementService } from './roaming-cpo-settlement.service';
 
 /**
  * The margin/split arithmetic alone, with no database — exercises exactly
  * the worked examples Arman confirmed
- * (docs/FASTCHARGE_INTEGRATION_2026-08-25.md): 80/105/120 AMD/kWh applied
+ * (docs/ROAMING_CPO_INTEGRATION_2026-08-25.md): 80/105/120 AMD/kWh applied
  * against a 75 AMD/kWh wholesale rate and a 20 AMD/kWh referral-split cap.
- * `fastcharge-settlement.int-spec.ts` re-derives the same numbers end to end
+ * `roaming-cpo-settlement.int-spec.ts` re-derives the same numbers end to end
  * through the real database, ledger and wallet — this file is the fast,
  * dependency-free half of that proof.
  */
-describe('FastChargeSettlementService.computeMargin', () => {
+describe('RoamingCpoSettlementService.computeMargin', () => {
   const wholesaleRatePerKwh = new Decimal('75.00');
   const marginReferralCapPerKwh = new Decimal('20.00');
 
   const compute = (appliedCustomerRatePerKwh: string, energyKwh: string) =>
-    FastChargeSettlementService.computeMargin({
+    RoamingCpoSettlementService.computeMargin({
       appliedCustomerRatePerKwh: new Decimal(appliedCustomerRatePerKwh),
       wholesaleRatePerKwh,
       marginReferralCapPerKwh,

@@ -14,10 +14,10 @@ import {
 import { EvConnectorType } from '@prisma/client';
 import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 
-class FastChargeConnectorSyncDto {
+class RoamingCpoConnectorSyncDto {
   @IsString()
   @Length(1, 128)
-  fastChargeConnectorId: string;
+  externalConnectorId: string;
 
   @IsEnum(EvConnectorType)
   connectorType: EvConnectorType;
@@ -29,16 +29,16 @@ class FastChargeConnectorSyncDto {
 }
 
 /**
- * One station/location and its connectors, as FastCharge reports them —
- * "each station/EVSE/connector needs its own stable external ID from
- * FastCharge, synced into TuTak" and "each station stores its own
- * standard/retail tariff". Idempotent upsert keyed by `fastChargeStationId`
- * / `fastChargeConnectorId` — see `FastChargeStationsService.sync`.
+ * One station/location and its connectors, as the roaming-CPO partner
+ * reports them — "each station/EVSE/connector needs its own stable external
+ * ID from the partner, synced into TuTak" and "each station stores its own
+ * standard/retail tariff". Idempotent upsert keyed by `externalStationId`
+ * / `externalConnectorId` — see `RoamingCpoStationsService.sync`.
  */
-export class FastChargeStationSyncDto {
+export class RoamingCpoStationSyncDto {
   @IsString()
   @Length(1, 128)
-  fastChargeStationId: string;
+  externalStationId: string;
 
   @IsString()
   @Length(1, 200)
@@ -66,6 +66,6 @@ export class FastChargeStationSyncDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => FastChargeConnectorSyncDto)
-  connectors: FastChargeConnectorSyncDto[];
+  @Type(() => RoamingCpoConnectorSyncDto)
+  connectors: RoamingCpoConnectorSyncDto[];
 }

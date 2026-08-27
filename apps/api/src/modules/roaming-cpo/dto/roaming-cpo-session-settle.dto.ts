@@ -2,29 +2,29 @@ import { IsDateString, IsOptional, IsString, Length } from 'class-validator';
 import { IsMoneyString } from '../../../common/validators/is-money-string.validator';
 
 /**
- * One completed FastCharge session, exactly the fields requirement 4 lists:
- * "FastCharge's own customer ID, session ID, actual kWh delivered, the
+ * One completed roaming-CPO session, exactly the fields requirement 4 lists:
+ * "the partner's own customer ID, session ID, actual kWh delivered, the
  * actual tariff applied to that specific customer for that specific
  * session, and the final charging amount". Shaped to match
- * `FastChargeSessionReport` field for field — see that interface's docblock
+ * `RoamingCpoSessionReport` field for field — see that interface's docblock
  * for why this DTO is not itself the adapter boundary.
  */
-export class FastChargeSessionSettleDto {
+export class RoamingCpoSessionSettleDto {
   @IsString()
   @Length(1, 128)
-  fastChargeSessionId: string;
+  externalSessionId: string;
 
   @IsString()
   @Length(1, 128)
-  fastChargeCustomerId: string;
+  externalCustomerId: string;
 
   @IsString()
   @Length(1, 128)
-  fastChargeStationId: string;
+  externalStationId: string;
 
   @IsString()
   @Length(1, 128)
-  fastChargeConnectorId: string;
+  externalConnectorId: string;
 
   @IsMoneyString({ allowZero: false })
   energyKwh: string;
@@ -35,7 +35,7 @@ export class FastChargeSessionSettleDto {
   @IsMoneyString()
   finalAmount: string;
 
-  /** AMD of `finalAmount` the customer asked to settle from their TuTak bonus balance — see `FastChargeSettlementService`. */
+  /** AMD of `finalAmount` the customer asked to settle from their TuTak bonus balance — see `RoamingCpoSettlementService`. */
   @IsOptional()
   @IsMoneyString()
   bonusAmountToApply?: string;

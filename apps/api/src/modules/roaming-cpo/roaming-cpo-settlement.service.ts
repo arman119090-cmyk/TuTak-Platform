@@ -27,7 +27,7 @@ import {
   ReferralPoolSplit,
   ReferralService,
 } from '../referral/referral.service';
-import { FastChargeSessionSettleDto } from './dto/fastcharge-session-settle.dto';
+import { RoamingCpoSessionSettleDto } from './dto/roaming-cpo-session-settle.dto';
 
 type Tx = Prisma.TransactionClient;
 
@@ -49,10 +49,10 @@ function deserializeChainLevel(entry: SerializedChainLevel): ReferralChainLevel 
 }
 
 /**
- * How far a FastCharge-reported `finalAmount` may disagree with
+ * How far a partner-reported `finalAmount` may disagree with
  * `energyKwh × appliedCustomerRatePerKwh` before settlement is refused.
  * Real invoices round; this is not a fraud check the way
- * `EvSessionsService`'s `assertDeliverable` is (FastCharge's own meter and
+ * `EvSessionsService`'s `assertDeliverable` is (the partner's own meter and
  * tariff are authoritative, not something this side can independently
  * verify) — it exists only to catch a malformed payload (wrong currency
  * unit, a field swapped for another) before it becomes a customer's bill.
@@ -61,12 +61,12 @@ const RECONCILE_TOLERANCE_PCT = new Decimal('0.01');
 const RECONCILE_TOLERANCE_FLOOR = new Decimal('1');
 
 /**
- * Settles one completed FastCharge session — the financial heart of
- * docs/FASTCHARGE_INTEGRATION_2026-08-25.md.
+ * Settles one completed roaming-CPO session — the financial heart of
+ * docs/ROAMING_CPO_INTEGRATION_2026-08-25.md.
  *
- * TuTak buys energy from FastCharge at a fixed wholesale rate
+ * TuTak buys energy from the partner at a fixed wholesale rate
  * (`Partner.evWholesaleRatePerKwh`) and resells it at whatever tariff
- * FastCharge actually applied to this customer for this session
+ * the partner actually applied to this customer for this session
  * (`appliedCustomerRatePerKwh` — never a station default, never inferred).
  * The difference is TuTak's margin. Of that margin, only the slice up to
  * `Partner.evMarginReferralCapPerKwh` AMD/kWh enters the platform's
@@ -77,7 +77,7 @@ const RECONCILE_TOLERANCE_FLOOR = new Decimal('1');
  * TuTak revenue that never enters the split at all.
  *
  * Worked examples (confirmed by Arman, reproduced as passing tests in
- * `fastcharge-settlement.int-spec.ts` and `fastcharge-settlement.service.spec.ts`):
+ * `roaming-cpo-settlement.int-spec.ts` and `roaming-cpo-settlement.service.spec.ts`):
  *  - 80 AMD/kWh applied, 75 wholesale → margin 5 → all 5 through the split.
  *  - 105 AMD/kWh applied → margin 30 → 20 through the split, 10 straight
  *    TuTak revenue.
@@ -85,9 +85,9 @@ const RECONCILE_TOLERANCE_FLOOR = new Decimal('1');
  *    TuTak revenue.
  *
  * Idempotent two ways, both required: `IdempotencyService.run`, scoped per
- * partner and keyed by FastCharge's own `fastChargeSessionId`, answers a
+ * partner and keyed by the partner's own `externalSessionId`, answers a
  * literal retry (same webhook delivery replayed) without redoing any work.
- * The `EvSession.fastChargeExternalSessionId` unique index is the backstop
+ * The `EvSession.externalSessionId` unique index is the backstop
  * for everything that isn't a literal retry — two concurrent deliveries for
  * the same session racing past the idempotency check (a lost/expired lease,
  * per `IdempotencyService`'s own docblock), or a second delivery arriving
@@ -96,8 +96,8 @@ const RECONCILE_TOLERANCE_FLOOR = new Decimal('1');
  * double-posting — see `settleOnce`'s catch around the session insert.
  */
 @Injectable()
-export class FastChargeSettlementService {
-  private readonly logger = new Logger(FastChargeSettlementService.name);
+export class RoamingCpoSettlementService {
+  private readonly logger = new Logger(RoamingCpoSettlementService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -118,7 +118,7 @@ export class FastChargeSettlementService {
     // registration, for the same reason: the wallet-side effects and the
     // durable promise to post their accounting entry commit atomically, so
     // a transient failure on the immediate attempt is only ever a delay.
-    this.outbox.register('fastcharge.margin.ledger_post', async (payload) => {
+    this.outbox.register('roaming.margin.ledger_post', async (payload) => {
       const chain = (payload.chain as SerializedChainLevel[] | undefined) ?? [];
       await this.postMarginLedgerIdempotent(
         payload.partnerId as string,
@@ -140,7 +140,7 @@ export class FastChargeSettlementService {
 
   /**
    * The margin/split math alone, with no I/O — the piece
-   * `fastcharge-settlement.service.spec.ts` exercises directly against the worked
+   * `roaming-cpo-settlement.service.spec.ts` exercises directly against the worked
    * examples, independent of the database.
    */
   static computeMargin(params: {
@@ -163,16 +163,16 @@ export class FastChargeSettlementService {
     return { marginPerKwh, cappedMarginPerKwh, uncappedMarginPerKwh, pool, uncappedRevenue };
   }
 
-  async settle(partnerId: string, dto: FastChargeSessionSettleDto) {
+  async settle(partnerId: string, dto: RoamingCpoSessionSettleDto) {
     return this.idempotency.run(
-      { scope: `fastcharge-settle:${partnerId}`, key: dto.fastChargeSessionId, request: dto },
+      { scope: `roaming-settle:${partnerId}`, key: dto.externalSessionId, request: dto },
       () => this.settleOnce(partnerId, dto),
     );
   }
 
-  private async settleOnce(partnerId: string, dto: FastChargeSessionSettleDto) {
+  private async settleOnce(partnerId: string, dto: RoamingCpoSessionSettleDto) {
     const already = await this.prisma.evSession.findUnique({
-      where: { fastChargeExternalSessionId: dto.fastChargeSessionId },
+      where: { externalSessionId: dto.externalSessionId },
     });
     if (already) return this.toResult(already);
 
@@ -183,28 +183,28 @@ export class FastChargeSettlementService {
     }
 
     const station = await this.prisma.evStation.findUnique({
-      where: { externalStationId: dto.fastChargeStationId },
+      where: { externalStationId: dto.externalStationId },
     });
     if (!station || station.partnerId !== partnerId) {
-      throw new BadRequestException('Unknown FastCharge station — sync it before settling a session on it');
+      throw new BadRequestException('Unknown roaming-CPO station — sync it before settling a session on it');
     }
     const connector = await this.prisma.evConnector.findUnique({
-      where: { externalConnectorId: dto.fastChargeConnectorId },
+      where: { externalConnectorId: dto.externalConnectorId },
     });
     if (!connector || connector.stationId !== station.id) {
-      throw new BadRequestException('Unknown FastCharge connector — sync it before settling a session on it');
+      throw new BadRequestException('Unknown roaming-CPO connector — sync it before settling a session on it');
     }
 
-    const link = await this.prisma.fastChargeCustomerLink.findUnique({
+    const link = await this.prisma.roamingCustomerLink.findUnique({
       where: {
-        partnerId_fastChargeCustomerId: { partnerId, fastChargeCustomerId: dto.fastChargeCustomerId },
+        partnerId_externalCustomerId: { partnerId, externalCustomerId: dto.externalCustomerId },
       },
     });
     if (!link) {
-      // Never inferred — see `FastChargeCustomersService`'s docblock for why
+      // Never inferred — see `RoamingCpoCustomersService`'s docblock for why
       // this is a hard rejection rather than an implicit create.
       throw new BadRequestException(
-        `FastCharge customer ${dto.fastChargeCustomerId} is not linked to a TuTak account`,
+        `Roaming-CPO customer ${dto.externalCustomerId} is not linked to a TuTak account`,
       );
     }
     const userId = link.userId;
@@ -223,7 +223,7 @@ export class FastChargeSettlementService {
           `appliedCustomerRatePerKwh (${expectedCost.toString()})`,
       );
     }
-    // FastCharge's own reported figure is the authoritative bill — requirement 4's
+    // The partner's own reported figure is the authoritative bill — requirement 4's
     // "the final charging amount" — the product above is only a sanity check.
     const cost = reportedFinal;
 
@@ -246,7 +246,7 @@ export class FastChargeSettlementService {
 
     const wholesaleRatePerKwh = partner.evWholesaleRatePerKwh;
     const marginReferralCapPerKwh = partner.evMarginReferralCapPerKwh;
-    const { marginPerKwh, pool, uncappedRevenue } = FastChargeSettlementService.computeMargin({
+    const { marginPerKwh, pool, uncappedRevenue } = RoamingCpoSettlementService.computeMargin({
       appliedCustomerRatePerKwh: appliedRate,
       wholesaleRatePerKwh,
       marginReferralCapPerKwh,
@@ -259,10 +259,10 @@ export class FastChargeSettlementService {
       type: TransactionType.EV_CHARGING,
       amount: cost,
       bonusAppliedAmount: bonusToApply,
-      description: `FastCharge session at ${station.name}`,
+      description: `Roaming-CPO session at ${station.name}`,
       metadata: {
-        fastChargeSessionId: dto.fastChargeSessionId,
-        fastChargeCustomerId: dto.fastChargeCustomerId,
+        externalSessionId: dto.externalSessionId,
+        externalCustomerId: dto.externalCustomerId,
         energyKwh: energyKwh.toString(),
       },
     });
@@ -327,8 +327,8 @@ export class FastChargeSettlementService {
               energyKwh,
               cost,
               transactionId: transaction.id,
-              fastChargeExternalSessionId: dto.fastChargeSessionId,
-              fastChargeCustomerId: dto.fastChargeCustomerId,
+              externalSessionId: dto.externalSessionId,
+              externalCustomerId: dto.externalCustomerId,
               stationRetailRatePerKwh: station.standardRetailRatePerKwh,
               appliedCustomerRatePerKwh: appliedRate,
               wholesaleRatePerKwh,
@@ -367,7 +367,7 @@ export class FastChargeSettlementService {
                     Math.round((new Date(dto.stoppedAt).getTime() - new Date(dto.startedAt).getTime()) / 1000),
                   )
                 : 0,
-            // FastCharge's own report *is* the settled CDR — there is
+            // The partner's own report *is* the settled CDR — there is
             // nothing further to reconcile it against, unlike a roaming
             // OCPI session where our figure and the CPO's arrive separately.
             reconciliation: EvCdrReconciliation.NOT_APPLICABLE,
@@ -392,7 +392,7 @@ export class FastChargeSettlementService {
         await this.outbox.publish(tx, {
           aggregateType: 'Transaction',
           aggregateId: transaction.id,
-          eventType: 'fastcharge.margin.ledger_post',
+          eventType: 'roaming.margin.ledger_post',
           payload: {
             partnerId,
             pool: pool.toString(),
@@ -426,7 +426,7 @@ export class FastChargeSettlementService {
         // concurrent winner's INSERT (or its own transaction) has committed.
         if ((err as { code?: string })?.code === 'P2002') {
           const existing = await this.prisma.evSession.findUniqueOrThrow({
-            where: { fastChargeExternalSessionId: dto.fastChargeSessionId },
+            where: { externalSessionId: dto.externalSessionId },
           });
           settled = { duplicate: true as const, session: existing, greenLotId: null, completedTx: null };
         } else {
@@ -439,9 +439,9 @@ export class FastChargeSettlementService {
         // transaction already carries the reservation this call also made,
         // so ours must be reversed, not left dangling as a second charge.
         if (reservationId) {
-          await this.bonusEngine.compensateReservation(reservationId, 'fastcharge_duplicate_delivery');
+          await this.bonusEngine.compensateReservation(reservationId, 'roaming_duplicate_delivery');
         }
-        await this.transactionsService.markFailed(transaction.id, 'duplicate_fastcharge_session');
+        await this.transactionsService.markFailed(transaction.id, 'duplicate_roaming_session');
         return this.toResult(settled.session);
       }
 
@@ -457,7 +457,7 @@ export class FastChargeSettlementService {
         transaction.id,
       ).catch((e) =>
         this.logger.error(
-          `Failed to post FastCharge margin ledger entry for session ${settled.session.id} (outbox will retry)`,
+          `Failed to post roaming-CPO margin ledger entry for session ${settled.session.id} (outbox will retry)`,
           e,
         ),
       );
@@ -466,13 +466,13 @@ export class FastChargeSettlementService {
     } catch (err) {
       if (reservationId) {
         await this.bonusEngine
-          .compensateReservation(reservationId, 'fastcharge_settle_failed')
-          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, dto.fastChargeSessionId, e));
+          .compensateReservation(reservationId, 'roaming_settle_failed')
+          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, dto.externalSessionId, e));
       }
       if (accruedLotId) {
         await this.bonusEngine
-          .reverseAccrualLot(accruedLotId, 'fastcharge_settle_failed')
-          .catch((e) => this.compensationFailed('bonus accrual', accruedLotId!, dto.fastChargeSessionId, e));
+          .reverseAccrualLot(accruedLotId, 'roaming_settle_failed')
+          .catch((e) => this.compensationFailed('bonus accrual', accruedLotId!, dto.externalSessionId, e));
       }
       await this.transactionsService.markFailed(
         transaction.id,
@@ -483,19 +483,19 @@ export class FastChargeSettlementService {
   }
 
   /**
-   * Posts the accounting side of a settled FastCharge session's margin.
+   * Posts the accounting side of a settled roaming-CPO session's margin.
    * Mirrors `EvSessionsService.postEvContributionLedgerIdempotent` leg for
    * leg, with one structural difference: that method's debit is the
    * *station's own partner*, because in the internal-station program the
    * partner funds the pool out of its own accrual rate. Here the margin is
-   * TuTak's own money (FastCharge is not funding a bonus programme, TuTak
-   * is reselling energy it bought wholesale) — but the debit is still
-   * FastCharge's own `PARTNER_PAYABLE` account, for a different reason:
-   * FastCharge collects the walk-in-equivalent amount from the customer
+   * TuTak's own money (the partner is not funding a bonus programme, TuTak
+   * is reselling energy it bought wholesale) — but the debit is still the
+   * partner's own `PARTNER_PAYABLE` account, for a different reason: the
+   * partner collects the walk-in-equivalent amount from the customer
    * (partly outside TuTak, per requirement 2) while only owing TuTak the
-   * wholesale cost, so crediting TuTak's margin out of FastCharge's payable
-   * balance is what makes TuTak's later settlement with FastCharge net out
-   * to exactly the wholesale amount — the margin never leaves FastCharge's
+   * wholesale cost, so crediting TuTak's margin out of the partner's payable
+   * balance is what makes TuTak's later settlement with the partner net out
+   * to exactly the wholesale amount — the margin never leaves the partner's
    * side to begin with. See the completion report's ledger section for the
    * full accounting walk-through.
    *
@@ -523,7 +523,7 @@ export class FastChargeSettlementService {
 
     const run = async (tx: Tx) => {
       const existing = await tx.ledgerTransaction.findFirst({
-        where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction', sourceId: transactionId },
+        where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction', sourceId: transactionId },
         select: { id: true },
       });
       if (existing) return;
@@ -568,7 +568,7 @@ export class FastChargeSettlementService {
       ];
 
       await this.ledger.post(
-        { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction', sourceId: transactionId, postings },
+        { kind: 'roaming.margin.settlement', sourceType: 'Transaction', sourceId: transactionId, postings },
         tx,
       );
     };
@@ -597,18 +597,18 @@ export class FastChargeSettlementService {
     throw new Error('runSerializable exhausted retries without a result');
   }
 
-  private compensationFailed(what: string, entityId: string, fastChargeSessionId: string, err: unknown): void {
+  private compensationFailed(what: string, entityId: string, externalSessionId: string, err: unknown): void {
     const message = err instanceof Error ? err.message : String(err);
-    this.logger.error(`Failed to compensate ${what} after FastCharge settlement failure: ${message}`);
+    this.logger.error(`Failed to compensate ${what} after roaming-CPO settlement failure: ${message}`);
     this.alerts
       .fire({
         severity: 'critical',
-        key: `compensation.failed:fastcharge:${entityId}`,
+        key: `compensation.failed:roaming:${entityId}`,
         title: `A customer's ${what} could not be rolled back`,
         body:
-          `A FastCharge session settlement failed to complete cleanly and the compensating action for ` +
+          `A roaming-CPO session settlement failed to complete cleanly and the compensating action for ` +
           `its ${what} also failed. This needs a person.`,
-        context: { entityId, fastChargeSessionId, error: message.slice(0, 200) },
+        context: { entityId, externalSessionId, error: message.slice(0, 200) },
       })
       .catch(() => undefined);
   }

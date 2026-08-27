@@ -53,17 +53,17 @@ export default function EvStationsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <div className="text-[17px] font-semibold text-ink">{station.name}</div>
-                      {station.provider === 'FASTCHARGE' ? (
-                        <Badge tone="neutral">FastCharge</Badge>
+                      {station.provider === 'ROAMING_CPO' ? (
+                        <Badge tone="neutral">Roaming partner</Badge>
                       ) : null}
                     </div>
                     <div className="mt-1 text-[13px] text-muted">
                       {station.address}, {station.city}
                     </div>
-                    {station.provider === 'FASTCHARGE' ? (
+                    {station.provider === 'ROAMING_CPO' ? (
                       <div className="tabular mt-1 text-[12px] text-faint">
                         Standard rate: {station.standardRetailRatePerKwh ?? '—'} ֏/kWh — actual sessions
-                        settle at each customer's own FastCharge tariff, never this display rate.
+                        settle at each customer's own partner-set tariff, never this display rate.
                       </div>
                     ) : null}
                   </div>

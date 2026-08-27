@@ -17,16 +17,16 @@ import {
   Tr,
 } from '@tutak/design/web';
 import { partnersApi } from '@/lib/api/partnersApi';
-import { fastChargeApi } from '@/lib/api/fastChargeApi';
+import { roamingCpoApi } from '@/lib/api/roamingCpoApi';
 
 /**
- * Admin visibility into FastCharge station-level tariffs, and the ability to
- * adjust them — docs/FASTCHARGE_INTEGRATION_2026-08-25.md's admin-panel
+ * Admin visibility into roaming-CPO station-level tariffs, and the ability to
+ * adjust them — docs/ROAMING_CPO_INTEGRATION_2026-08-25.md's admin-panel
  * requirement. Editing here only ever writes `EvStation.standardRetailRatePerKwh`
  * (the *display* tariff); it can never reach an already-settled session's own
- * frozen figures — see `FastChargeStationsService.updateTariff`'s docblock.
+ * frozen figures — see `RoamingCpoStationsService.updateTariff`'s docblock.
  */
-export default function FastChargeStationsPage() {
+export default function RoamingCpoStationsPage() {
   const queryClient = useQueryClient();
   const { data: partners } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
   const [partnerId, setPartnerId] = useState<string>('');
@@ -35,8 +35,8 @@ export default function FastChargeStationsPage() {
   const [saving, setSaving] = useState(false);
 
   const { data: stations } = useQuery({
-    queryKey: ['fastcharge-stations', partnerId],
-    queryFn: () => fastChargeApi.listStations(partnerId),
+    queryKey: ['roaming-cpo-stations', partnerId],
+    queryFn: () => roamingCpoApi.listStations(partnerId),
     enabled: !!partnerId,
   });
 
@@ -48,8 +48,8 @@ export default function FastChargeStationsPage() {
   const save = async (stationId: string) => {
     setSaving(true);
     try {
-      await fastChargeApi.updateStationTariff(stationId, draftRate);
-      await queryClient.invalidateQueries({ queryKey: ['fastcharge-stations', partnerId] });
+      await roamingCpoApi.updateStationTariff(stationId, draftRate);
+      await queryClient.invalidateQueries({ queryKey: ['roaming-cpo-stations', partnerId] });
       setEditingId(null);
     } finally {
       setSaving(false);
@@ -59,14 +59,14 @@ export default function FastChargeStationsPage() {
   return (
     <>
       <PageHeader
-        title="FastCharge stations"
-        description="Per-station standard tariffs for the FastCharge wholesale-resale integration. A change here only affects future sessions — every completed session keeps its own frozen figures."
+        title="Roaming-CPO stations"
+        description="Per-station standard tariffs for the roaming-CPO wholesale-resale integration. A change here only affects future sessions — every completed session keeps its own frozen figures."
       />
 
       <Surface className="mb-5">
         <Field label="Partner">
           <Select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
-            <option value="">Select a FastCharge partner…</option>
+            <option value="">Select a roaming-CPO partner…</option>
             {(partners ?? []).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.displayName}
@@ -78,8 +78,8 @@ export default function FastChargeStationsPage() {
 
       {!partnerId ? null : (stations ?? []).length === 0 ? (
         <EmptyState
-          title="No FastCharge stations for this partner"
-          message="Stations appear here once FastCharge syncs them via POST /fastcharge/stations/sync."
+          title="No roaming-CPO stations for this partner"
+          message="Stations appear here once the partner syncs them via POST /roaming-cpo/stations/sync."
         />
       ) : (
         <Table>

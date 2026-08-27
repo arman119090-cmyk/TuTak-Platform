@@ -20,7 +20,6 @@ import type {
   NearbyPartnerDto,
   PartnerCategory,
 } from '@tutak/shared-types';
-import { EvStationProvider } from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { MainTabParamList, RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
@@ -36,7 +35,6 @@ import { TileMap, type MapMarker } from '../../components/map/TileMap';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { evApi } from '../../../data/api/evApi';
 import { evStatusTone } from '../../utils/transactionPresentation';
-import { openFastChargeApp } from '../../utils/fastChargeDeepLink';
 import { formatAmd } from '../../utils/format';
 import { DEFAULT_CENTRE, useApproximateLocation } from './useApproximateLocation';
 import { CATEGORY_ICONS, CATEGORY_ORDER, formatDistance } from './categories';
@@ -536,10 +534,6 @@ function StationCard({
   const free = station.connectors.filter((c) => c.status === 'AVAILABLE').length;
   const total = station.connectors.length;
   const anyFree = free > 0;
-  // Requirement 1 (docs/FASTCHARGE_INTEGRATION_2026-08-25.md): TuTak never
-  // starts or stops a FastCharge charger. Every other station keeps the
-  // ordinary tappable connector strip below, unchanged.
-  const isFastCharge = station.provider === EvStationProvider.FASTCHARGE;
 
   return (
     <Pressable onPress={onPress} accessibilityRole="button">
@@ -593,14 +587,11 @@ function StationCard({
           </View>
         </View>
 
-        {isFastCharge ? (
-          <FastChargeStationFooter stationName={station.name} />
-        ) : (
-          /* Connector strip: type, power and price at a glance — and the tap
-             target that starts a session. An unavailable bay stays visible but
-             inert, because "there is a CCS2 here and someone is using it" is
-             different information from "there is no CCS2 here". */
-          <View style={[styles.connectors, { marginTop: space[4], gap: space[2] }]}>
+        {/* Connector strip: type, power and price at a glance — and the tap
+            target that starts a session. An unavailable bay stays visible but
+            inert, because "there is a CCS2 here and someone is using it" is
+            different information from "there is no CCS2 here". */}
+        <View style={[styles.connectors, { marginTop: space[4], gap: space[2] }]}>
           {station.connectors.map((c) => {
             const startable = c.status === 'AVAILABLE' && !disabled;
             const starting = startingConnectorId === c.id;
@@ -644,57 +635,9 @@ function StationCard({
               </Pressable>
             );
           })}
-          </View>
-        )}
+        </View>
       </Surface>
     </Pressable>
-  );
-}
-
-/**
- * Replaces the tappable Start-charging connector strip on a FastCharge
- * station — requirement 1: TuTak never sends a start/stop command to one of
- * these. A single deep-link button opens the FastCharge app instead; the
- * connector types/power still show for information, just not as tap targets.
- */
-function FastChargeStationFooter({ stationName }: { stationName: string }) {
-  const { color, space, text, radius, glass } = useTheme();
-  const { t } = useTranslation();
-
-  const handlePress = async () => {
-    const opened = await openFastChargeApp();
-    if (!opened) {
-      Alert.alert(t('ev.fastChargeOpenFailed'));
-    }
-  };
-
-  return (
-    <View style={{ marginTop: space[4] }}>
-      <Pressable
-        onPress={handlePress}
-        accessibilityRole="button"
-        accessibilityLabel={t('ev.openFastChargeAppAt', { station: stationName })}
-        style={({ pressed }) => [
-          styles.fastChargeButton,
-          {
-            borderColor: glass.border,
-            backgroundColor: pressed ? glass.light : 'transparent',
-            borderRadius: radius.md,
-            paddingHorizontal: space[3],
-            paddingVertical: space[3],
-            gap: space[2],
-          },
-        ]}
-      >
-        <Ionicons name="open-outline" size={18} color={color.primary} />
-        <Text style={[text.body, { color: color.textPrimary, fontWeight: '600' }]}>
-          {t('ev.openFastChargeApp')}
-        </Text>
-      </Pressable>
-      <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
-        {t('ev.fastChargeManaged')}
-      </Text>
-    </View>
   );
 }
 
@@ -783,10 +726,4 @@ const styles = StyleSheet.create({
   connectors: { flexDirection: 'row', flexWrap: 'wrap' },
   connector: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  fastChargeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-  },
 });

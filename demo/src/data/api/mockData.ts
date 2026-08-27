@@ -648,36 +648,6 @@ export function freshMockState(): MockState {
           },
         ],
       },
-      {
-        // FastCharge wholesale-resale demo station — see
-        // docs/FASTCHARGE_INTEGRATION_2026-08-25.md. Shows the "Open
-        // FastCharge app" deep-link footer instead of a tappable Start
-        // strip; every session here arrives already COMPLETED via the
-        // FastCharge settlement webhook, never started from TuTak.
-        id: 'station-4',
-        partnerId: 'partner-3',
-        name: 'FastCharge Давташен',
-        address: 'Давташенское шоссе, 5',
-        city: 'Ереван',
-        latitude: 40.2103,
-        longitude: 44.4728,
-        ocpiLocationId: null,
-        provider: EvStationProvider.FASTCHARGE,
-        externalStationId: 'fc-station-davtashen',
-        standardRetailRatePerKwh: '115.00',
-        connectors: [
-          {
-            id: 'conn-5',
-            stationId: 'station-4',
-            ocpiEvseUid: null,
-            externalConnectorId: 'fc-connector-davtashen-1',
-            connectorType: EvConnectorType.CCS2,
-            status: EvConnectorStatus.AVAILABLE,
-            powerKw: 120,
-            pricePerKwh: '115.00',
-          },
-        ],
-      },
     ],
 
     // Finished, not running.

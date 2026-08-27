@@ -138,12 +138,12 @@ export async function createEvConnector(
 }
 
 /**
- * A FastCharge-provider station + connector, external ids and all — the
- * fixture `fastcharge-settlement.int-spec.ts` builds on. `externalStationId`/
+ * A ROAMING_CPO-provider station + connector, external ids and all — the
+ * fixture `roaming-cpo-settlement.int-spec.ts` builds on. `externalStationId`/
  * `externalConnectorId` default to fresh random ids so parallel tests never
  * collide on the unique index.
  */
-export async function createFastChargeStation(
+export async function createRoamingCpoStation(
   prisma: PrismaClient,
   params: {
     partnerId: string;
@@ -155,9 +155,9 @@ export async function createFastChargeStation(
   const station = await prisma.evStation.create({
     data: {
       partnerId: params.partnerId,
-      provider: 'FASTCHARGE',
-      externalStationId: params.externalStationId ?? `fc-station-${randomUUID()}`,
-      name: 'FastCharge Test Station',
+      provider: 'ROAMING_CPO',
+      externalStationId: params.externalStationId ?? `roaming-station-${randomUUID()}`,
+      name: 'Roaming-CPO Test Station',
       address: '2 Test Ave',
       city: 'Yerevan',
       latitude: 40.18,
@@ -169,10 +169,10 @@ export async function createFastChargeStation(
   const connector = await prisma.evConnector.create({
     data: {
       stationId: station.id,
-      externalConnectorId: params.externalConnectorId ?? `fc-connector-${randomUUID()}`,
+      externalConnectorId: params.externalConnectorId ?? `roaming-connector-${randomUUID()}`,
       connectorType: EvConnectorType.CCS2,
       powerKw: '60.00',
-      // Never read for a FASTCHARGE session — every session carries its own
+      // Never read for a ROAMING_CPO session — every session carries its own
       // appliedCustomerRatePerKwh — but the column is non-null on the schema.
       pricePerKwh: params.standardRetailRatePerKwh ?? '115.00',
     },
@@ -181,15 +181,15 @@ export async function createFastChargeStation(
   return { station, connector };
 }
 
-export async function linkFastChargeCustomer(
+export async function linkRoamingCpoCustomer(
   prisma: PrismaClient,
-  params: { partnerId: string; userId: string; fastChargeCustomerId?: string },
+  params: { partnerId: string; userId: string; externalCustomerId?: string },
 ) {
-  return prisma.fastChargeCustomerLink.create({
+  return prisma.roamingCustomerLink.create({
     data: {
       partnerId: params.partnerId,
       userId: params.userId,
-      fastChargeCustomerId: params.fastChargeCustomerId ?? `fc-cust-${randomUUID()}`,
+      externalCustomerId: params.externalCustomerId ?? `roaming-cust-${randomUUID()}`,
     },
   });
 }

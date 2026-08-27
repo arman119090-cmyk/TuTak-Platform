@@ -1,30 +1,30 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { EvStationProvider } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { FastChargeStationSyncDto } from './dto/fastcharge-station-sync.dto';
+import { RoamingCpoStationSyncDto } from './dto/roaming-cpo-station-sync.dto';
 
 /**
- * Syncs one FastCharge station/location and its connectors into TuTak's own
+ * Syncs one roaming-CPO station/location and its connectors into TuTak's own
  * `EvStation`/`EvConnector` tables — "extend, don't build parallel" per the
- * task brief: multi-location FastCharge is the same `EvStation`/
+ * task brief: a multi-location roaming-CPO partner is the same `EvStation`/
  * `EvConnector` model every other EV station already uses, distinguished
- * only by `provider: FASTCHARGE` and the `external*Id` columns.
+ * only by `provider: ROAMING_CPO` and the `external*Id` columns.
  *
- * Idempotent upsert keyed by FastCharge's own ids, so re-syncing (FastCharge
- * re-sends its full station list, or corrects one field) never creates
- * duplicates and never touches a station/connector belonging to another
- * partner's `externalStationId`/`externalConnectorId` — the unique index on
- * each backs that, and the upsert is additionally scoped to the calling
- * partner's own rows only.
+ * Idempotent upsert keyed by the partner's own ids, so re-syncing (the
+ * partner re-sends its full station list, or corrects one field) never
+ * creates duplicates and never touches a station/connector belonging to
+ * another partner's `externalStationId`/`externalConnectorId` — the unique
+ * index on each backs that, and the upsert is additionally scoped to the
+ * calling partner's own rows only.
  */
 @Injectable()
-export class FastChargeStationsService {
+export class RoamingCpoStationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async sync(partnerId: string, dto: FastChargeStationSyncDto) {
+  async sync(partnerId: string, dto: RoamingCpoStationSyncDto) {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.evStation.findUnique({
-        where: { externalStationId: dto.fastChargeStationId },
+        where: { externalStationId: dto.externalStationId },
       });
       if (existing && existing.partnerId !== partnerId) {
         // Someone else's external id — never silently reassign a station
@@ -33,11 +33,11 @@ export class FastChargeStationsService {
       }
 
       const station = await tx.evStation.upsert({
-        where: { externalStationId: dto.fastChargeStationId },
+        where: { externalStationId: dto.externalStationId },
         create: {
           partnerId,
-          provider: EvStationProvider.FASTCHARGE,
-          externalStationId: dto.fastChargeStationId,
+          provider: EvStationProvider.ROAMING_CPO,
+          externalStationId: dto.externalStationId,
           name: dto.name,
           address: dto.address,
           city: dto.city,
@@ -57,25 +57,25 @@ export class FastChargeStationsService {
 
       for (const connector of dto.connectors) {
         const existingConnector = await tx.evConnector.findUnique({
-          where: { externalConnectorId: connector.fastChargeConnectorId },
+          where: { externalConnectorId: connector.externalConnectorId },
         });
         if (existingConnector && existingConnector.stationId !== station.id) {
           throw new Error('externalConnectorId belongs to a different station');
         }
 
         await tx.evConnector.upsert({
-          where: { externalConnectorId: connector.fastChargeConnectorId },
+          where: { externalConnectorId: connector.externalConnectorId },
           create: {
             stationId: station.id,
-            externalConnectorId: connector.fastChargeConnectorId,
+            externalConnectorId: connector.externalConnectorId,
             connectorType: connector.connectorType,
             powerKw: connector.powerKw,
-            // FastCharge connectors never bill at a flat connector price —
+            // Roaming-CPO connectors never bill at a flat connector price —
             // every session carries its own `appliedCustomerRatePerKwh`
             // (requirement: "never infer or guess a customer's tariff").
             // This column still exists (non-null on the schema) purely
             // because `EvConnector` is shared with `INTERNAL` stations that
-            // do bill at it; it is never read for a FASTCHARGE session.
+            // do bill at it; it is never read for a ROAMING_CPO session.
             pricePerKwh: dto.standardRetailRatePerKwh,
           },
           update: {
@@ -96,7 +96,7 @@ export class FastChargeStationsService {
   /**
    * Read-only lookup a caller must use to learn *whose* station this is
    * before authorizing a write against it — see
-   * `FastChargeController.updateStationTariff`, which checks
+   * `RoamingCpoController.updateStationTariff`, which checks
    * `assertPartnerScope` against this result before calling `updateTariff`.
    * Checking scope only *after* a write (against the row the write just
    * touched) would let the write itself happen first and be visible even if
@@ -111,7 +111,7 @@ export class FastChargeStationsService {
 
   async listForPartner(partnerId: string) {
     return this.prisma.evStation.findMany({
-      where: { partnerId, provider: EvStationProvider.FASTCHARGE },
+      where: { partnerId, provider: EvStationProvider.ROAMING_CPO },
       include: { connectors: true },
       orderBy: { createdAt: 'asc' },
     });

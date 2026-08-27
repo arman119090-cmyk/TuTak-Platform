@@ -75,7 +75,7 @@ transaction `FAILED`, so points never get stuck reserved.
 Modeled to map cleanly onto OCPI 2.2.1's Location/EVSE/Session/CDR modules:
 `EvStation` → `EvConnector` → `EvSession`/`EvReservation` → `EvCdr`. An
 `OcpiAdapter` interface (`modules/ev-charging/ocpi/`) is the seam a real
-roaming CPO integration (FastCharge or otherwise) would implement; a
+roaming CPO integration would implement; a
 `NoopOcpiAdapter` is wired in today and only gets called for stations that
 have `ocpiEvseUid` set (i.e. roaming, not TuTak-owned). TuTak-owned stations
 never touch it. Session billing reads a `meter-value` endpoint that a real

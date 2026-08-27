@@ -521,7 +521,7 @@ export class EvSessionsService {
       if (rateBps && canEarn && !affiliated) {
         const paidPortion = cost.minus(bonusToApply);
         // Business decision (2026-08-22, 3-level referral rework):
-        // FastCharge's whole commission pool splits directly by the same
+        // An EV session's whole commission pool splits directly by the same
         // six-leg rule a confirmed PurchaseIntent uses — no separate
         // upfront TuTak cut layered on top (requirement 4: a duplicate
         // TuTak cut on the EV pool, on top of the six-leg split, is

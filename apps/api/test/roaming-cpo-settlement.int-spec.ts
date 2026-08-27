@@ -1,28 +1,28 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { FastChargeSettlementService } from '../src/modules/fastcharge/fastcharge-settlement.service';
-import { FastChargeStationsService } from '../src/modules/fastcharge/fastcharge-stations.service';
-import { FastChargeCustomersService } from '../src/modules/fastcharge/fastcharge-customers.service';
-import { PartnerApiKeyService } from '../src/modules/fastcharge/partner-api-key.service';
-import { FastChargeApiKeyGuard } from '../src/modules/fastcharge/fastcharge-api-key.guard';
+import { RoamingCpoSettlementService } from '../src/modules/roaming-cpo/roaming-cpo-settlement.service';
+import { RoamingCpoStationsService } from '../src/modules/roaming-cpo/roaming-cpo-stations.service';
+import { RoamingCpoCustomersService } from '../src/modules/roaming-cpo/roaming-cpo-customers.service';
+import { PartnerApiKeyService } from '../src/modules/roaming-cpo/partner-api-key.service';
+import { RoamingCpoApiKeyGuard } from '../src/modules/roaming-cpo/roaming-cpo-api-key.guard';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import {
   createCustomer,
-  createFastChargeStation,
+  createRoamingCpoStation,
   createPartner,
-  linkFastChargeCustomer,
+  linkRoamingCpoCustomer,
 } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
 
-describe('FastCharge wholesale-resale integration (integration)', () => {
+describe('Roaming-CPO wholesale-resale integration (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
-  let settlement: FastChargeSettlementService;
-  let stationsService: FastChargeStationsService;
-  let customersService: FastChargeCustomersService;
+  let settlement: RoamingCpoSettlementService;
+  let stationsService: RoamingCpoStationsService;
+  let customersService: RoamingCpoCustomersService;
   let apiKeys: PartnerApiKeyService;
   let ledger: LedgerService;
   let outbox: OutboxService;
@@ -31,9 +31,9 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
-    settlement = harness.app.get(FastChargeSettlementService);
-    stationsService = harness.app.get(FastChargeStationsService);
-    customersService = harness.app.get(FastChargeCustomersService);
+    settlement = harness.app.get(RoamingCpoSettlementService);
+    stationsService = harness.app.get(RoamingCpoStationsService);
+    customersService = harness.app.get(RoamingCpoCustomersService);
     apiKeys = harness.app.get(PartnerApiKeyService);
     ledger = harness.app.get(LedgerService);
     outbox = harness.app.get(OutboxService);
@@ -49,7 +49,7 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   });
 
   /**
-   * A FastCharge partner (75 wholesale / 20 cap unless overridden), one
+   * A roaming-CPO partner (75 wholesale / 20 cap unless overridden), one
    * station, one linked customer — the ground every test in this file
    * stands on.
    */
@@ -69,11 +69,11 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
         ? { maxBonusPaymentPercent: options.maxBonusPaymentPercent }
         : {}),
     });
-    const { station, connector } = await createFastChargeStation(prisma, {
+    const { station, connector } = await createRoamingCpoStation(prisma, {
       partnerId: partner.id,
       standardRetailRatePerKwh: options.standardRetailRatePerKwh ?? '115.00',
     });
-    const link = await linkFastChargeCustomer(prisma, { partnerId: partner.id, userId: user.id });
+    const link = await linkRoamingCpoCustomer(prisma, { partnerId: partner.id, userId: user.id });
     return { user, wallet, partner, station, connector, link };
   };
 
@@ -84,10 +84,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       const { wallet, station, connector, link } = await scenario();
 
       const result = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-80',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-80',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '80',
         finalAmount: '80',
@@ -108,10 +108,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       const { station, connector, link } = await scenario();
 
       const result = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-105',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-105',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '105',
         finalAmount: '105',
@@ -128,10 +128,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       const { station, connector, link } = await scenario();
 
       const result = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-120',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-120',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '120',
         finalAmount: '120',
@@ -142,21 +142,21 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       expect(result.uncappedMarginRevenueAmount).toBe('25');
     });
 
-    it('posts the margin to the double-entry ledger: capped pool + uncapped revenue debited from the FastCharge partner, split across bonus liability and platform revenue', async () => {
+    it('posts the margin to the double-entry ledger: capped pool + uncapped revenue debited from the roaming-CPO partner, split across bonus liability and platform revenue', async () => {
       const { station, connector, link } = await scenario();
 
       await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-ledger',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-ledger',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '10',
         appliedCustomerRatePerKwh: '105', // margin 30/kWh × 10 kWh = 300 total; 200 capped pool, 100 uncapped.
         finalAmount: '1050',
       });
 
       const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
-        where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction' },
+        where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction' },
         include: { postings: true },
       });
 
@@ -194,13 +194,13 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   // ── Idempotency ─────────────────────────────────────────────────────────
 
   describe('idempotency', () => {
-    it('never double-posts a duplicate webhook delivery for the same FastCharge session id', async () => {
+    it('never double-posts a duplicate webhook delivery for the same roaming-CPO session id', async () => {
       const { station, connector, link, wallet } = await scenario();
       const dto = {
-        fastChargeSessionId: 'sess-dup',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-dup',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '5',
         appliedCustomerRatePerKwh: '105',
         finalAmount: '525',
@@ -213,10 +213,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       expect(second.sessionId).toBe(first.sessionId);
       expect(third.sessionId).toBe(first.sessionId);
 
-      expect(await prisma.evSession.count({ where: { fastChargeExternalSessionId: 'sess-dup' } })).toBe(1);
+      expect(await prisma.evSession.count({ where: { externalSessionId: 'sess-dup' } })).toBe(1);
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction' },
+          where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction' },
         }),
       ).toBe(1);
 
@@ -230,16 +230,16 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
     it('the unique-index backstop also prevents a double post when the two deliveries carry different idempotency framing', async () => {
       // Simulates a lost/expired IdempotencyRecord lease (the record layer's
       // own reclaim window): calling the private "no idempotency wrapper"
-      // path twice directly for the same fastChargeSessionId, bypassing
+      // path twice directly for the same externalSessionId, bypassing
       // `IdempotencyService` entirely, still must not double-post — the
-      // `EvSession.fastChargeExternalSessionId` unique index is the backstop
+      // `EvSession.externalSessionId` unique index is the backstop
       // for exactly this.
       const { station, connector, link } = await scenario();
       const dto = {
-        fastChargeSessionId: 'sess-race',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-race',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '80',
         finalAmount: '80',
@@ -250,10 +250,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
 
       const [a, b] = await Promise.all([settleOnce(station.partnerId, dto), settleOnce(station.partnerId, dto)]);
       expect((a as { sessionId: string }).sessionId).toBe((b as { sessionId: string }).sessionId);
-      expect(await prisma.evSession.count({ where: { fastChargeExternalSessionId: 'sess-race' } })).toBe(1);
+      expect(await prisma.evSession.count({ where: { externalSessionId: 'sess-race' } })).toBe(1);
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction' },
+          where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction' },
         }),
       ).toBe(1);
     });
@@ -266,10 +266,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
         .mockImplementationOnce(() => Promise.reject(new Error('transient')));
 
       const result = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-outbox',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-outbox',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '80',
         finalAmount: '80',
@@ -279,21 +279,21 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
 
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction' },
+          where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction' },
         }),
       ).toBe(0);
 
       await outbox.drain();
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction' },
+          where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction' },
         }),
       ).toBe(1);
 
       expect(await outbox.drain()).toBe(0);
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'fastcharge.margin.settlement', sourceType: 'Transaction' },
+          where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction' },
         }),
       ).toBe(1);
     });
@@ -306,10 +306,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       const { station, connector, link } = await scenario({ wholesale: '75.00', cap: '20.00' });
 
       const result = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-snapshot',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-snapshot',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '105',
         finalAmount: '105',
@@ -325,7 +325,7 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       await stationsService.updateTariff(station.id, '200.00');
 
       const stored = await prisma.evSession.findUniqueOrThrow({
-        where: { fastChargeExternalSessionId: 'sess-snapshot' },
+        where: { externalSessionId: 'sess-snapshot' },
       });
       expect(stored.wholesaleRatePerKwh?.toFixed(2)).toBe('75.00');
       expect(stored.marginReferralCapPerKwh?.toFixed(2)).toBe('20.00');
@@ -336,10 +336,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
 
       // A brand-new session on the same station now settles under the new terms.
       const after = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-after-change',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-after-change',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '105',
         finalAmount: '105',
@@ -354,15 +354,15 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   // ── Customer-ID linking ─────────────────────────────────────────────────
 
   describe('customer linking', () => {
-    it('never guesses a customer mapping — an unlinked FastCharge customer id is refused', async () => {
+    it('never guesses a customer mapping — an unlinked roaming-CPO customer id is refused', async () => {
       const { station, connector } = await scenario();
 
       await expect(
         settlement.settle(station.partnerId, {
-          fastChargeSessionId: 'sess-unlinked',
-          fastChargeCustomerId: 'fc-cust-never-linked',
-          fastChargeStationId: station.externalStationId!,
-          fastChargeConnectorId: connector.externalConnectorId!,
+          externalSessionId: 'sess-unlinked',
+          externalCustomerId: 'roaming-cust-never-linked',
+          externalStationId: station.externalStationId!,
+          externalConnectorId: connector.externalConnectorId!,
           energyKwh: '1',
           appliedCustomerRatePerKwh: '80',
           finalAmount: '80',
@@ -372,19 +372,19 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       expect(await prisma.evSession.count()).toBe(0);
     });
 
-    it('links a TuTak user to a FastCharge customer id, then settles against that mapping', async () => {
+    it('links a TuTak user to a roaming-CPO customer id, then settles against that mapping', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma, {});
-      const { station, connector } = await createFastChargeStation(prisma, { partnerId: partner.id });
+      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
 
-      const link = await customersService.link(user.id, partner.id, 'fc-cust-explicit');
+      const link = await customersService.link(user.id, partner.id, 'roaming-cust-explicit');
       expect(link.userId).toBe(user.id);
 
       const result = await settlement.settle(partner.id, {
-        fastChargeSessionId: 'sess-linked',
-        fastChargeCustomerId: 'fc-cust-explicit',
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-linked',
+        externalCustomerId: 'roaming-cust-explicit',
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '80',
         finalAmount: '80',
@@ -394,13 +394,13 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       expect(session.userId).toBe(user.id);
     });
 
-    it('refuses to relink a FastCharge customer id already linked to a different TuTak user', async () => {
+    it('refuses to relink a roaming-CPO customer id already linked to a different TuTak user', async () => {
       const { user: userA } = await createCustomer(prisma);
       const { user: userB } = await createCustomer(prisma);
       const partner = await createPartner(prisma, {});
 
-      await customersService.link(userA.id, partner.id, 'fc-cust-taken');
-      await expect(customersService.link(userB.id, partner.id, 'fc-cust-taken')).rejects.toThrow(
+      await customersService.link(userA.id, partner.id, 'roaming-cust-taken');
+      await expect(customersService.link(userB.id, partner.id, 'roaming-cust-taken')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -409,7 +409,7 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   // ── Bonus-partial-payment ────────────────────────────────────────────────
 
   describe('bonus-partial-payment', () => {
-    it('settles part of the final amount from the bonus wallet and leaves the rest as FastCharge collects it', async () => {
+    it('settles part of the final amount from the bonus wallet and leaves the rest as the partner collects it', async () => {
       const { station, connector, link, wallet } = await scenario();
       await bonusEngine.accrue({
         walletId: wallet.id,
@@ -419,10 +419,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       });
 
       const result = await settlement.settle(station.partnerId, {
-        fastChargeSessionId: 'sess-bonus',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: station.externalStationId!,
-        fastChargeConnectorId: connector.externalConnectorId!,
+        externalSessionId: 'sess-bonus',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: station.externalStationId!,
+        externalConnectorId: connector.externalConnectorId!,
         energyKwh: '100',
         appliedCustomerRatePerKwh: '100', // 10,000 AMD total.
         finalAmount: '10000',
@@ -445,10 +445,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
 
       await expect(
         settlement.settle(station.partnerId, {
-          fastChargeSessionId: 'sess-bonus-too-big',
-          fastChargeCustomerId: link.fastChargeCustomerId,
-          fastChargeStationId: station.externalStationId!,
-          fastChargeConnectorId: connector.externalConnectorId!,
+          externalSessionId: 'sess-bonus-too-big',
+          externalCustomerId: link.externalCustomerId,
+          externalStationId: station.externalStationId!,
+          externalConnectorId: connector.externalConnectorId!,
           energyKwh: '1',
           appliedCustomerRatePerKwh: '80',
           finalAmount: '80',
@@ -468,10 +468,10 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
 
       await expect(
         settlement.settle(station.partnerId, {
-          fastChargeSessionId: 'sess-bonus-cap',
-          fastChargeCustomerId: link.fastChargeCustomerId,
-          fastChargeStationId: station.externalStationId!,
-          fastChargeConnectorId: connector.externalConnectorId!,
+          externalSessionId: 'sess-bonus-cap',
+          externalCustomerId: link.externalCustomerId,
+          externalStationId: station.externalStationId!,
+          externalConnectorId: connector.externalConnectorId!,
           energyKwh: '100',
           appliedCustomerRatePerKwh: '100', // 10,000 total; 50% cap = 5,000 usable.
           finalAmount: '10000',
@@ -484,18 +484,18 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   // ── Multi-station tariff independence ────────────────────────────────────
 
   describe('multi-station tariff independence', () => {
-    it('two stations under one FastCharge partner keep independent retail tariffs and independent session snapshots', async () => {
+    it('two stations under one roaming-CPO partner keep independent retail tariffs and independent session snapshots', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma, { evWholesaleRatePerKwh: '75.00', evMarginReferralCapPerKwh: '20.00' });
-      const stationA = await createFastChargeStation(prisma, {
+      const stationA = await createRoamingCpoStation(prisma, {
         partnerId: partner.id,
         standardRetailRatePerKwh: '115.00',
       });
-      const stationB = await createFastChargeStation(prisma, {
+      const stationB = await createRoamingCpoStation(prisma, {
         partnerId: partner.id,
         standardRetailRatePerKwh: '110.00',
       });
-      const link = await linkFastChargeCustomer(prisma, { partnerId: partner.id, userId: user.id });
+      const link = await linkRoamingCpoCustomer(prisma, { partnerId: partner.id, userId: user.id });
 
       // Station A raises its posted price; station B must not move.
       await stationsService.updateTariff(stationA.station.id, '130.00');
@@ -509,19 +509,19 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       // "a customer's own negotiated tariff overrides the station's standard
       // rate at any station".
       const atA = await settlement.settle(partner.id, {
-        fastChargeSessionId: 'sess-multi-a',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: stationA.station.externalStationId!,
-        fastChargeConnectorId: stationA.connector.externalConnectorId!,
+        externalSessionId: 'sess-multi-a',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: stationA.station.externalStationId!,
+        externalConnectorId: stationA.connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '80',
         finalAmount: '80',
       });
       const atB = await settlement.settle(partner.id, {
-        fastChargeSessionId: 'sess-multi-b',
-        fastChargeCustomerId: link.fastChargeCustomerId,
-        fastChargeStationId: stationB.station.externalStationId!,
-        fastChargeConnectorId: stationB.connector.externalConnectorId!,
+        externalSessionId: 'sess-multi-b',
+        externalCustomerId: link.externalCustomerId,
+        externalStationId: stationB.station.externalStationId!,
+        externalConnectorId: stationB.connector.externalConnectorId!,
         energyKwh: '1',
         appliedCustomerRatePerKwh: '80',
         finalAmount: '80',
@@ -542,21 +542,21 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
     it('a station belonging to another partner cannot be settled against by this partner', async () => {
       const partnerX = await createPartner(prisma, {});
       const partnerY = await createPartner(prisma, {});
-      const { station, connector } = await createFastChargeStation(prisma, { partnerId: partnerX.id });
+      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partnerX.id });
       const { user } = await createCustomer(prisma);
-      const link = await linkFastChargeCustomer(prisma, { partnerId: partnerY.id, userId: user.id });
+      const link = await linkRoamingCpoCustomer(prisma, { partnerId: partnerY.id, userId: user.id });
 
       await expect(
         settlement.settle(partnerY.id, {
-          fastChargeSessionId: 'sess-cross-partner',
-          fastChargeCustomerId: link.fastChargeCustomerId,
-          fastChargeStationId: station.externalStationId!,
-          fastChargeConnectorId: connector.externalConnectorId!,
+          externalSessionId: 'sess-cross-partner',
+          externalCustomerId: link.externalCustomerId,
+          externalStationId: station.externalStationId!,
+          externalConnectorId: connector.externalConnectorId!,
           energyKwh: '1',
           appliedCustomerRatePerKwh: '80',
           finalAmount: '80',
         }),
-      ).rejects.toThrow(/Unknown FastCharge station/);
+      ).rejects.toThrow(/Unknown roaming-CPO station/);
     });
   });
 
@@ -573,7 +573,7 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
       // owning partner before any write is attempted.
       const partnerX = await createPartner(prisma, {});
       const partnerY = await createPartner(prisma, {});
-      const { station } = await createFastChargeStation(prisma, {
+      const { station } = await createRoamingCpoStation(prisma, {
         partnerId: partnerX.id,
         standardRetailRatePerKwh: '115.00',
       });
@@ -589,17 +589,17 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   });
 
   describe('station sync', () => {
-    it('upserts a station and its connectors idempotently, keyed by FastCharge external ids', async () => {
+    it("upserts a station and its connectors idempotently, keyed by the partner's external ids", async () => {
       const partner = await createPartner(prisma, {});
       const dto = {
-        fastChargeStationId: 'ext-station-1',
-        name: 'FastCharge Kentron',
+        externalStationId: 'ext-station-1',
+        name: 'Roaming-CPO Kentron',
         address: '10 Mashtots Ave',
         city: 'Yerevan',
         latitude: 40.18,
         longitude: 44.51,
         standardRetailRatePerKwh: '115.00',
-        connectors: [{ fastChargeConnectorId: 'ext-connector-1', connectorType: 'CCS2' as const, powerKw: 60 }],
+        connectors: [{ externalConnectorId: 'ext-connector-1', connectorType: 'CCS2' as const, powerKw: 60 }],
       };
 
       const first = await stationsService.sync(partner.id, dto);
@@ -617,7 +617,7 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
   describe('M2M API key auth', () => {
     it('issues a credential, verifies it, and rejects it once revoked', async () => {
       const partner = await createPartner(prisma, {});
-      const issued = await apiKeys.issue({ partnerId: partner.id, label: 'FastCharge prod' });
+      const issued = await apiKeys.issue({ partnerId: partner.id, label: 'Roaming-CPO prod' });
 
       const verified = await apiKeys.verify(issued.apiKey);
       expect(verified?.partnerId).toBe(partner.id);
@@ -627,7 +627,7 @@ describe('FastCharge wholesale-resale integration (integration)', () => {
     });
 
     it('the guard rejects a missing, malformed, or revoked x-api-key header', async () => {
-      const guard = harness.app.get(FastChargeApiKeyGuard);
+      const guard = harness.app.get(RoamingCpoApiKeyGuard);
       const ctx = (headers: Record<string, string>) =>
         ({
           switchToHttp: () => ({ getRequest: () => ({ headers }) }),

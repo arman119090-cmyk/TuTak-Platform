@@ -81,8 +81,8 @@ describe('EV charging (integration)', () => {
     await sessions.reportMeterValue(session.id, '25', user.id);
     const result = await sessions.stop(session.id, user.id, {});
 
-    // 25 kWh × 100 AMD = 2500; 5% of 2500 = 125 pool. FastCharge settles
-    // like every other purchase now (2026-08-22 3-level referral rework):
+    // 25 kWh × 100 AMD = 2500; 5% of 2500 = 125 pool. A roaming-CPO session
+    // settles like every other purchase now (2026-08-22 3-level referral rework):
     // the whole pool splits directly by the six-leg rule, no separate
     // TuTak upfront cut — the customer's immediate green share is 20% of
     // 125 = 25.

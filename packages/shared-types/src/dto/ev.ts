@@ -16,7 +16,7 @@ export interface EvStationDto {
   latitude: number;
   longitude: number;
   ocpiLocationId: string | null;
-  /** See `EvStationProvider` — `FASTCHARGE` stations never show Start/Stop. */
+  /** See `EvStationProvider` — `ROAMING_CPO` stations never show Start/Stop. */
   provider: EvStationProvider;
   externalStationId: string | null;
   /** Display/audit only — a specific session may settle at a different rate; see `EvSessionDto.appliedCustomerRatePerKwh`. */
@@ -70,7 +70,7 @@ export interface EvSessionDto {
   cost: string | null;
   bonusEarned: string | null;
   ocpiCdrId: string | null;
-  /** Set only on a FastCharge-settled session — see docs/FASTCHARGE_INTEGRATION_2026-08-25.md. */
+  /** Set only on a roaming-CPO-settled session — see docs/ROAMING_CPO_INTEGRATION_2026-08-25.md. */
   appliedCustomerRatePerKwh?: string | null;
   stationRetailRatePerKwh?: string | null;
   /**

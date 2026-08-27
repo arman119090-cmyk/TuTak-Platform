@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OcpiAdapter } from './ocpi-adapter.interface';
 
 /**
- * No-op OCPI adapter — active until a real roaming partner (e.g.
- * FastCharge) credential set is configured via OCPI_* env vars. All
+ * No-op OCPI adapter — active until a real roaming partner's credential set
+ * is configured via OCPI_* env vars. All
  * TuTak-owned stations (no `ocpiEvseUid`) never call this adapter at all;
  * it only guards the roaming-station code path so that path fails loudly
  * and safely instead of silently pretending to control real hardware.

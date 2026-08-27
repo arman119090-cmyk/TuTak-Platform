@@ -35,7 +35,7 @@ import { HealthModule } from '../../src/modules/health/health.module';
 import { SecurityModule } from '../../src/modules/security/security.module';
 import { AuditModule } from '../../src/modules/audit/audit.module';
 import { EvChargingModule } from '../../src/modules/ev-charging/ev-charging.module';
-import { FastChargeModule } from '../../src/modules/fastcharge/fastcharge.module';
+import { RoamingCpoModule } from '../../src/modules/roaming-cpo/roaming-cpo.module';
 import { QrPaymentsModule } from '../../src/modules/qr-payments/qr-payments.module';
 import { ReferralModule } from '../../src/modules/referral/referral.module';
 import { TransactionsModule } from '../../src/modules/transactions/transactions.module';
@@ -163,7 +163,7 @@ function domainTestingModuleBuilder(
       TransactionsModule,
       QrPaymentsModule,
       EvChargingModule,
-      FastChargeModule,
+      RoamingCpoModule,
       AuditModule,
       UsersModule,
       AdminModule,

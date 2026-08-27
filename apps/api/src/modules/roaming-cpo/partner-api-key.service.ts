@@ -4,14 +4,14 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 /**
  * Machine-to-machine credentials for a `PartnerIntegration` — requirement 3
- * of docs/FASTCHARGE_INTEGRATION_2026-08-25.md: "owned by their TuTak
+ * of docs/ROAMING_CPO_INTEGRATION_2026-08-25.md: "owned by their TuTak
  * partner account and use separate M2M API credentials, not a human
  * login/password". Built on `PartnerApiKey`, hung off the existing
  * `PartnerIntegration`/`PartnerIntegrationType.API` extension point — no
  * parallel auth system.
  *
  * Standard "public id + secret, only the hash stored" API-key shape: the
- * caller sends `x-api-key: <keyId>.<secret>`, `FastChargeApiKeyGuard` looks
+ * caller sends `x-api-key: <keyId>.<secret>`, `RoamingCpoApiKeyGuard` looks
  * up the row by `keyId` (indexed, O(1)) and only then hashes and compares
  * the secret — so a lookup never has to scan and compare every row's hash,
  * and the plaintext secret is never stored anywhere after `issue` returns.

@@ -182,7 +182,7 @@ model User {
   purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
   evSessions                EvSession[]
   evReservations            EvReservation[]
-  fastChargeCustomerLinks   FastChargeCustomerLink[]
+  roamingCustomerLinks      RoamingCustomerLink[]
   fraudSignals              FraudSignal[]
   passwordResets            PasswordResetToken[]
   phoneVerifications        PhoneVerificationToken[]
@@ -848,22 +848,22 @@ model Partner {
   /// conflict table for why no lower default or platform-wide ceiling was
   /// invented.
   maxBonusPaymentPercent    Int           @default(100)
-  /// FastCharge wholesale-resale integration only (docs/
-  /// FASTCHARGE_INTEGRATION_2026-08-25.md) — the contractual AMD/kWh rate
-  /// TuTak owes this partner for wholesale energy, e.g. FastCharge's 75
-  /// AMD/kWh. Configurable per Arman's explicit instruction, not a literal
-  /// in service code — same discipline as `bonusAccrualRateBps` above.
-  /// Meaningless (and never read) for a partner with no `FASTCHARGE`-provider
-  /// `EvStation`; the default matches FastCharge's current rate purely so an
-  /// unrelated partner row is not left at a nonsensical 0, exactly the way
+  /// Roaming-CPO wholesale-resale integration only (docs/
+  /// ROAMING_CPO_INTEGRATION_2026-08-25.md) — the contractual AMD/kWh rate
+  /// TuTak owes this partner for wholesale energy, e.g. 75 AMD/kWh.
+  /// Configurable per Arman's explicit instruction, not a literal in service
+  /// code — same discipline as `bonusAccrualRateBps` above. Meaningless (and
+  /// never read) for a partner with no `ROAMING_CPO`-provider `EvStation`;
+  /// the default matches a typical current rate purely so an unrelated
+  /// partner row is not left at a nonsensical 0, exactly the way
   /// `paymentCommissionRateBps`'s default is not "this partner takes
   /// payments" — every read of this field is already gated on the session's
-  /// station being a FastCharge one.
+  /// station being a roaming-CPO one.
   evWholesaleRatePerKwh     Decimal       @default(75.00) @db.Decimal(10, 2)
-  /// The ceiling (AMD/kWh) on how much of a FastCharge session's margin
+  /// The ceiling (AMD/kWh) on how much of a roaming-CPO session's margin
   /// enters the ordinary green/deferred/L1/L2/L3/TuTak split —
   /// `min(margin, this)`. Margin above it is undivided TuTak revenue. See
-  /// `FastChargeSettlementService.computeMarginSplit` for the worked
+  /// `RoamingCpoSettlementService.computeMarginSplit` for the worked
   /// examples this cap was confirmed against (5 / 30 / 45 AMD/kWh margins).
   evMarginReferralCapPerKwh Decimal       @default(20.00) @db.Decimal(10, 2)
   status                    PartnerStatus @default(ACTIVE)
@@ -939,7 +939,7 @@ model Partner {
   purchaseIntents         PurchaseIntent[]
   offerings               PartnerOfferingItem[]
   apiKeys                 PartnerApiKey[]
-  fastChargeCustomerLinks FastChargeCustomerLink[]
+  roamingCustomerLinks    RoamingCustomerLink[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
   referralCode            ReferralCode?
@@ -1001,7 +1001,7 @@ model PartnerIntegration {
 
 /// One machine-to-machine credential for a `PartnerIntegration` — the "not a
 /// human login/password" M2M mechanism requirement 3 of
-/// docs/FASTCHARGE_INTEGRATION_2026-08-25.md asks for, built on top of the
+/// docs/ROAMING_CPO_INTEGRATION_2026-08-25.md asks for, built on top of the
 /// existing `PartnerIntegration`/`PartnerIntegrationType.API` extension point
 /// rather than a parallel auth system. Only the hash is stored — the actual
 /// key is returned once, at creation, by `PartnerApiKeyService.issue`, the
@@ -1029,30 +1029,30 @@ model PartnerApiKey {
   @@map("partner_api_keys")
 }
 
-/// TuTak `User` ↔ FastCharge customer-id mapping — "TuTak links its own User
-/// accounts to FastCharge's customer IDs (a stored mapping, not inferred)",
-/// per docs/FASTCHARGE_INTEGRATION_2026-08-25.md. Created only by an
-/// authenticated TuTak user linking their own account
-/// (`FastChargeCustomersService.link`); a settlement webhook that names an
-/// unlinked FastCharge customer id is rejected rather than guessing — see
+/// TuTak `User` ↔ roaming-CPO customer-id mapping — "TuTak links its own
+/// User accounts to the partner's customer IDs (a stored mapping, not
+/// inferred)", per docs/ROAMING_CPO_INTEGRATION_2026-08-25.md. Created only
+/// by an authenticated TuTak user linking their own account
+/// (`RoamingCpoCustomersService.link`); a settlement webhook that names an
+/// unlinked external customer id is rejected rather than guessing — see
 /// that service's docblock.
-model FastChargeCustomerLink {
-  id                   String   @id @default(uuid())
-  partnerId            String
-  fastChargeCustomerId String
-  userId               String
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+model RoamingCustomerLink {
+  id                 String   @id @default(uuid())
+  partnerId          String
+  externalCustomerId String
+  userId             String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  /// One FastCharge customer id names exactly one TuTak user per partner.
-  @@unique([partnerId, fastChargeCustomerId])
+  /// One external customer id names exactly one TuTak user per partner.
+  @@unique([partnerId, externalCustomerId])
   /// A settlement/link lookup by TuTak user id (e.g. "is this user already
   /// linked?") without a table scan.
   @@index([userId])
-  @@map("fastcharge_customer_links")
+  @@map("roaming_customer_links")
 }
 
 model PartnerMembership {
@@ -1391,8 +1391,8 @@ model ReferralChallengeContribution {
 
 // ─────────────────────────────────────────────────────────────────────────
 // EV Charging (OCPI-oriented — modeled to map cleanly onto OCPI 2.2.1
-// Location/EVSE/Session/CDR modules so a FastCharge (or any CPO) adapter
-// can be plugged in without a schema change)
+// Location/EVSE/Session/CDR modules so a roaming CPO adapter can be plugged
+// in without a schema change)
 // ─────────────────────────────────────────────────────────────────────────
 
 enum EvConnectorType {
@@ -1417,16 +1417,16 @@ enum EvConnectorStatus {
 /// A station's control/tariff model. `INTERNAL` (the default, every station
 /// that predates this column) is a TuTak-owned or plain-roaming charger,
 /// billed at `EvConnector.pricePerKwh` and started/stopped by TuTak — the
-/// only behaviour that ever existed here. `FASTCHARGE` marks a station that
-/// belongs to the FastCharge wholesale-resale integration
-/// (docs/FASTCHARGE_INTEGRATION_2026-08-25.md): TuTak never sends a
-/// start/stop command to one of these — see the mobile `PartnersScreen`,
-/// which opens a deep link to the FastCharge app instead — and every session
+/// only behaviour that ever existed here. `ROAMING_CPO` marks a station that
+/// belongs to a roaming-CPO wholesale-resale integration
+/// (docs/ROAMING_CPO_INTEGRATION_2026-08-25.md): TuTak never sends a
+/// start/stop command to one of these, and customer discovery
+/// (`EvStationsService.listNearby`) excludes them outright — every session
 /// on one arrives already completed, settled server-to-server via
-/// `FastChargeSettlementService`, never through `EvSessionsService.start`.
+/// `RoamingCpoSettlementService`, never through `EvSessionsService.start`.
 enum EvStationProvider {
   INTERNAL
-  FASTCHARGE
+  ROAMING_CPO
 }
 
 model EvStation {
@@ -1439,19 +1439,19 @@ model EvStation {
   longitude                Float
   ocpiLocationId           String?           @unique
   /// See `EvStationProvider`. Default `INTERNAL` is a no-op backfill for
-  /// every station that predates FastCharge — this migration changes
-  /// nothing about how any existing station behaves.
+  /// every station that predates the roaming-CPO integration — this
+  /// migration changes nothing about how any existing station behaves.
   provider                 EvStationProvider @default(INTERNAL)
-  /// FastCharge's own stable id for this location, synced by
-  /// `FastChargeStationsService.sync` — the "each station/EVSE/connector
-  /// needs its own stable external ID from FastCharge" requirement. Null for
-  /// every `INTERNAL` station.
+  /// The roaming-CPO partner's own stable id for this location, synced by
+  /// `RoamingCpoStationsService.sync` — the "each station/EVSE/connector
+  /// needs its own stable external ID from the partner" requirement. Null
+  /// for every `INTERNAL` station.
   externalStationId        String?           @unique
-  /// FastCharge's current standard/walk-in tariff at this station — for
-  /// display/audit only. A specific session almost never settles at this
-  /// rate; see `EvSession.appliedCustomerRatePerKwh`, which is what a
-  /// session actually bills, and `EvSession.stationRetailRatePerKwh`, the
-  /// frozen copy of *this* column at the moment that session settled. A
+  /// The roaming-CPO partner's current standard/walk-in tariff at this
+  /// station — for display/audit only. A specific session almost never
+  /// settles at this rate; see `EvSession.appliedCustomerRatePerKwh`, which
+  /// is what a session actually bills, and `EvSession.stationRetailRatePerKwh`,
+  /// the frozen copy of *this* column at the moment that session settled. A
   /// later edit here (a station raising its posted price) never touches a
   /// past session's own snapshot — same immutability discipline as
   /// `PurchaseIntent.negotiatedRateBps`.
@@ -1474,14 +1474,14 @@ model EvConnector {
   status              EvConnectorStatus @default(AVAILABLE)
   powerKw             Decimal           @db.Decimal(8, 2)
   pricePerKwh         Decimal           @db.Decimal(10, 2)
-  /// FastCharge's own stable id for this connector/EVSE — the connector-level
-  /// half of `EvStation.externalStationId`. Null for every `INTERNAL`
-  /// connector. Deliberately separate from `ocpiEvseUid`: that column is the
-  /// *roaming OCPI* identity TuTak uses to command a remote CPO
-  /// (`OcpiAdapter.startRemoteSession`), which FastCharge sessions never go
-  /// through (requirement 1 — TuTak never starts/stops a FastCharge charger)
-  /// — conflating the two would wire a webhook-only integration into the
-  /// OCPI command path by accident.
+  /// The roaming-CPO partner's own stable id for this connector/EVSE — the
+  /// connector-level half of `EvStation.externalStationId`. Null for every
+  /// `INTERNAL` connector. Deliberately separate from `ocpiEvseUid`: that
+  /// column is the *roaming OCPI* identity TuTak uses to command a remote CPO
+  /// (`OcpiAdapter.startRemoteSession`), which a roaming-CPO session never
+  /// goes through (requirement 1 — TuTak never starts/stops one of its
+  /// chargers) — conflating the two would wire a webhook-only integration
+  /// into the OCPI command path by accident.
   externalConnectorId String?           @unique
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
@@ -1564,37 +1564,37 @@ model EvSession {
   referrer3PartnerId          String?
   referrer3Amount             Decimal?                @db.Decimal(18, 4)
   tutakAmount                 Decimal?                @db.Decimal(18, 4)
-  /// The FastCharge wholesale-resale integration's own snapshot columns
-  /// (docs/FASTCHARGE_INTEGRATION_2026-08-25.md). Null for every
+  /// The roaming-CPO wholesale-resale integration's own snapshot columns
+  /// (docs/ROAMING_CPO_INTEGRATION_2026-08-25.md). Null for every
   /// `INTERNAL`-provider session — populated only by
-  /// `FastChargeSettlementService.settle`, which writes every one of them in
+  /// `RoamingCpoSettlementService.settle`, which writes every one of them in
   /// the same transaction as the row's creation so a session is never left
   /// half-snapshotted.
   ///
-  /// `fastChargeExternalSessionId` is the idempotency backstop: FastCharge's
-  /// own session id, globally unique here, so a duplicate webhook delivery
+  /// `externalSessionId` is the idempotency backstop: the partner's own
+  /// session id, globally unique here, so a duplicate webhook delivery
   /// for the same session can never create a second row — see that
   /// service's docblock for why a unique index and not only
   /// `IdempotencyService` is the guarantee.
-  fastChargeExternalSessionId String?                 @unique
-  /// FastCharge's own customer id for this session — kept here too (in
-  /// addition to `FastChargeCustomerLink`, the durable mapping) purely as an
-  /// audit trail of exactly what FastCharge reported for *this* session,
-  /// which a later change to the link must not retroactively alter.
-  fastChargeCustomerId        String?
+  externalSessionId           String?                 @unique
+  /// The roaming-CPO partner's own customer id for this session — kept here
+  /// too (in addition to `RoamingCustomerLink`, the durable mapping) purely
+  /// as an audit trail of exactly what the partner reported for *this*
+  /// session, which a later change to the link must not retroactively alter.
+  externalCustomerId          String?
   /// `EvStation.standardRetailRatePerKwh` *as it was* when this session
   /// settled — display/audit only, never what this session was billed at.
   stationRetailRatePerKwh     Decimal?                @db.Decimal(10, 2)
-  /// The tariff this specific session actually settled at, exactly as
-  /// FastCharge reported it — never inferred, never a station default.
-  /// `cost` (already on this row) is `energyKwh * appliedCustomerRatePerKwh`,
-  /// FastCharge's own reported final amount, sanity-checked against that
-  /// product at settlement time.
+  /// The tariff this specific session actually settled at, exactly as the
+  /// roaming-CPO partner reported it — never inferred, never a station
+  /// default. `cost` (already on this row) is
+  /// `energyKwh * appliedCustomerRatePerKwh`, the partner's own reported
+  /// final amount, sanity-checked against that product at settlement time.
   appliedCustomerRatePerKwh   Decimal?                @db.Decimal(10, 2)
   /// `Partner.evWholesaleRatePerKwh` *as it was* when this session settled —
-  /// the contractual per-kWh rate TuTak owed FastCharge for this session,
-  /// frozen here so a later change to the partner's contract terms never
-  /// alters a historical session's own figures.
+  /// the contractual per-kWh rate TuTak owed the roaming-CPO partner for
+  /// this session, frozen here so a later change to the partner's contract
+  /// terms never alters a historical session's own figures.
   wholesaleRatePerKwh         Decimal?                @db.Decimal(10, 2)
   /// `Partner.evMarginReferralCapPerKwh` *as it was* when this session
   /// settled — same freezing reasoning as `wholesaleRatePerKwh`.
@@ -1610,7 +1610,7 @@ model EvSession {
   /// share of it. `poolAmount` (already on this row, reused unchanged from
   /// the internal-station program) holds the *capped* margin pool that does
   /// go through the ordinary six-leg split; this column is the separate,
-  /// simpler remainder — see `FastChargeSettlementService` for the worked
+  /// simpler remainder — see `RoamingCpoSettlementService` for the worked
   /// examples (5 / 30 / 45 AMD/kWh margin cases).
   uncappedMarginRevenueAmount Decimal?                @db.Decimal(18, 4)
   createdAt                   DateTime                @default(now())
@@ -1661,7 +1661,7 @@ model EvReservation {
 }
 
 /// Charge Detail Record — placeholder for OCPI CDR ingestion once a real
-/// CPO/eMSP roaming partner (e.g. FastCharge) is connected. `raw` retains
+/// CPO/eMSP roaming partner is connected. `raw` retains
 /// the untouched upstream payload for reconciliation/dispute handling.
 /// How a roaming session's own figures compare with the charge-point
 /// operator's settled ones.

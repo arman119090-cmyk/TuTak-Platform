@@ -7,58 +7,58 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertPartnerScope, assertPlatformAdmin } from '../../common/auth/partner-scope';
 import { RequestUser } from '../auth/types/request-user.type';
-import { FastChargePartner } from './decorators/fastcharge-partner.decorator';
-import { FastChargeApiKeyGuard } from './fastcharge-api-key.guard';
-import { FastChargeStationSyncDto } from './dto/fastcharge-station-sync.dto';
-import { FastChargeSessionSettleDto } from './dto/fastcharge-session-settle.dto';
-import { LinkFastChargeCustomerDto } from './dto/link-fastcharge-customer.dto';
+import { RoamingCpoPartner } from './decorators/roaming-cpo-partner.decorator';
+import { RoamingCpoApiKeyGuard } from './roaming-cpo-api-key.guard';
+import { RoamingCpoStationSyncDto } from './dto/roaming-cpo-station-sync.dto';
+import { RoamingCpoSessionSettleDto } from './dto/roaming-cpo-session-settle.dto';
+import { LinkRoamingCpoCustomerDto } from './dto/link-roaming-cpo-customer.dto';
 import { IssuePartnerApiKeyDto } from './dto/partner-api-key.dto';
 import { UpdateStationTariffDto } from './dto/update-station-tariff.dto';
-import { FastChargeStationsService } from './fastcharge-stations.service';
-import { FastChargeSettlementService } from './fastcharge-settlement.service';
-import { FastChargeCustomersService } from './fastcharge-customers.service';
+import { RoamingCpoStationsService } from './roaming-cpo-stations.service';
+import { RoamingCpoSettlementService } from './roaming-cpo-settlement.service';
+import { RoamingCpoCustomersService } from './roaming-cpo-customers.service';
 import { PartnerApiKeyService } from './partner-api-key.service';
 
 /**
- * The inbound half of the FastCharge adapter boundary — see
- * `fastcharge-provider.interface.ts`'s docblock. Every route FastCharge
+ * The inbound half of the roaming-CPO adapter boundary — see
+ * `roaming-cpo-provider.interface.ts`'s docblock. Every route the partner
  * itself calls is `@Public()` (no TuTak user session) and instead requires
- * `FastChargeApiKeyGuard`'s M2M credential. Every other route here is an
+ * `RoamingCpoApiKeyGuard`'s M2M credential. Every other route here is an
  * ordinary TuTak-session route (mobile customer, or partner/admin
  * dashboard) behind the global JWT guard.
  */
-@ApiTags('fastcharge')
-@Controller('fastcharge')
-export class FastChargeController {
+@ApiTags('roaming-cpo')
+@Controller('roaming-cpo')
+export class RoamingCpoController {
   constructor(
-    private readonly stations: FastChargeStationsService,
-    private readonly settlement: FastChargeSettlementService,
-    private readonly customers: FastChargeCustomersService,
+    private readonly stations: RoamingCpoStationsService,
+    private readonly settlement: RoamingCpoSettlementService,
+    private readonly customers: RoamingCpoCustomersService,
     private readonly apiKeys: PartnerApiKeyService,
   ) {}
 
-  // ── FastCharge → TuTak (M2M) ──────────────────────────────────────────
+  // ── Partner → TuTak (M2M) ──────────────────────────────────────────────
 
   @Post('stations/sync')
   @Public()
-  @UseGuards(FastChargeApiKeyGuard)
-  syncStation(@FastChargePartner() partnerId: string, @Body() dto: FastChargeStationSyncDto) {
+  @UseGuards(RoamingCpoApiKeyGuard)
+  syncStation(@RoamingCpoPartner() partnerId: string, @Body() dto: RoamingCpoStationSyncDto) {
     return this.stations.sync(partnerId, dto);
   }
 
   @Post('sessions/settle')
   @Public()
-  @UseGuards(FastChargeApiKeyGuard)
-  settleSession(@FastChargePartner() partnerId: string, @Body() dto: FastChargeSessionSettleDto) {
+  @UseGuards(RoamingCpoApiKeyGuard)
+  settleSession(@RoamingCpoPartner() partnerId: string, @Body() dto: RoamingCpoSessionSettleDto) {
     return this.settlement.settle(partnerId, dto);
   }
 
   // ── Mobile customer ─────────────────────────────────────────────────
 
-  /** A TuTak user linking their own FastCharge customer id to their account. */
+  /** A TuTak user linking their own roaming-CPO customer id to their account. */
   @Post('customers/link')
-  linkCustomer(@CurrentUser() user: RequestUser, @Body() dto: LinkFastChargeCustomerDto) {
-    return this.customers.link(user.id, dto.partnerId, dto.fastChargeCustomerId);
+  linkCustomer(@CurrentUser() user: RequestUser, @Body() dto: LinkRoamingCpoCustomerDto) {
+    return this.customers.link(user.id, dto.partnerId, dto.externalCustomerId);
   }
 
   @Get('customers/me')
@@ -95,7 +95,7 @@ export class FastChargeController {
   @Post('api-keys')
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
   issueApiKey(@CurrentUser() user: RequestUser, @Body() dto: IssuePartnerApiKeyDto) {
-    assertPlatformAdmin(user, 'Issuing a FastCharge M2M API key');
+    assertPlatformAdmin(user, 'Issuing a roaming-CPO M2M API key');
     return this.apiKeys.issue(dto);
   }
 

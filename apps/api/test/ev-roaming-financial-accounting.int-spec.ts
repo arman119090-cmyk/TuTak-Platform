@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { Currency, PrismaClient } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { EvCdrReconciliationService } from '../src/modules/ev-charging/ev-cdr-reconciliation.service';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { OCPI_ADAPTER, OcpiAdapter } from '../src/modules/ev-charging/ocpi/ocpi-adapter.interface';
+import { CustomerBalanceService } from '../src/modules/customer-balance/customer-balance.service';
+import { BANK_TOPUP_ADAPTER, BankTopUpAdapter } from '../src/modules/customer-balance/bank-topup-adapter.interface';
 import { createCustomer, createPartner, createRoamingCpoStation } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
@@ -25,6 +28,8 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
   let sessions: EvSessionsService;
   let reconciler: EvCdrReconciliationService;
   let adapter: OcpiAdapter;
+  let customerBalance: CustomerBalanceService;
+  let bankAdapter: BankTopUpAdapter;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -32,6 +37,8 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
     sessions = harness.app.get(EvSessionsService);
     reconciler = harness.app.get(EvCdrReconciliationService);
     adapter = harness.app.get<OcpiAdapter>(OCPI_ADAPTER);
+    customerBalance = harness.app.get(CustomerBalanceService);
+    bankAdapter = harness.app.get<BankTopUpAdapter>(BANK_TOPUP_ADAPTER);
   });
 
   afterAll(async () => {
@@ -63,6 +70,17 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       totalTimeSec: 3600,
       raw: { energyKwh },
     });
+
+  /** Funds a customer's prepaid balance through the real top-up flow, not a direct DB write. */
+  const fundBalance = async (userId: string, amount: string) => {
+    const providerReference = `PROVIDER-${randomUUID()}`;
+    jest.spyOn(bankAdapter, 'initiateTopUp').mockResolvedValueOnce({ outcome: 'INITIATED', providerReference });
+    await customerBalance.initiateTopUp(userId, amount);
+    jest
+      .spyOn(bankAdapter, 'verifyTopUpWebhook')
+      .mockResolvedValueOnce({ providerReference, outcome: 'COMPLETED' });
+    await customerBalance.confirmTopUpWebhook({ reference: providerReference }, {});
+  };
 
   /** Flips the flags `start()` requires before it will admit a ROAMING_CPO connector. */
   const enableAppCharging = async (stationId: string, connectorId: string) => {
@@ -328,6 +346,106 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
         await prisma.ledgerTransaction.count({
           where: { kind: 'ev.roaming.app_settlement', sourceType: 'Transaction', sourceId: session.transactionId! },
         }),
+      ).toBe(1);
+    });
+  });
+
+  describe('collecting from a topped-up customer prepaid balance', () => {
+    it('collects the full cost from the balance and pays the receivable down to zero when there is enough', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+        standardRetailRatePerKwh: '100',
+      });
+      await enableAppCharging(station.id, connector.id);
+      await fundBalance(user.id, '2000');
+      const { started } = await startAndStop(user.id, connector.id);
+
+      cpoReports(10); // cost = 100 * 10 = 1000
+      expect(await reconciler.reconcilePending()).toBe(1);
+
+      // 2000 funded, 1000 collected -> 1000 left on the customer's own balance.
+      expect(await customerBalance.getBalance(user.id)).toEqual({ balance: '1000.0000', currency: 'AMD' });
+
+      const receivableAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'EV_ROAMING_RECEIVABLE' },
+      });
+      // The main settlement debited it by the full cost (1000); collection
+      // credits it back down by the same amount it took from the balance.
+      expect(receivableAccount.balance.toFixed(4)).toBe('0.0000');
+
+      const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
+      const collection = await prisma.ledgerTransaction.findFirstOrThrow({
+        where: { kind: 'ev.roaming.balance_collection', sourceType: 'Transaction', sourceId: session.transactionId! },
+        include: { postings: true },
+      });
+      expect(collection.postings).toHaveLength(2);
+      const balanceAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'CUSTOMER_PREPAID_BALANCE', userId: user.id },
+      });
+      const balanceLeg = collection.postings.find((p) => p.accountId === balanceAccount.id);
+      const receivableLeg = collection.postings.find((p) => p.accountId === receivableAccount.id);
+      expect(balanceLeg?.direction).toBe('DEBIT');
+      expect(balanceLeg?.amount.toFixed(4)).toBe('1000.0000');
+      expect(receivableLeg?.direction).toBe('CREDIT');
+      expect(receivableLeg?.amount.toFixed(4)).toBe('1000.0000');
+    });
+
+    it('collects nothing and leaves the receivable standing when the balance cannot cover the full cost', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+        standardRetailRatePerKwh: '100',
+      });
+      await enableAppCharging(station.id, connector.id);
+      await fundBalance(user.id, '500'); // less than the 1000 the session will cost
+      const { started } = await startAndStop(user.id, connector.id);
+
+      cpoReports(10);
+      expect(await reconciler.reconcilePending()).toBe(1);
+
+      // Untouched — this method is all-or-nothing, not a partial draw.
+      expect(await customerBalance.getBalance(user.id)).toEqual({ balance: '500.0000', currency: 'AMD' });
+      const receivableAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'EV_ROAMING_RECEIVABLE' },
+      });
+      expect(receivableAccount.balance.toFixed(4)).toBe('1000.0000');
+
+      const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
+      expect(
+        await prisma.ledgerTransaction.count({
+          where: { kind: 'ev.roaming.balance_collection', sourceType: 'Transaction', sourceId: session.transactionId! },
+        }),
+      ).toBe(0);
+    });
+
+    it('is idempotent on the same transaction — calling it again collects nothing further', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+        standardRetailRatePerKwh: '100',
+      });
+      await enableAppCharging(station.id, connector.id);
+      await fundBalance(user.id, '2000');
+      const { started } = await startAndStop(user.id, connector.id);
+      cpoReports(10);
+      await reconciler.reconcilePending();
+      const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
+
+      const collectedAgain = await customerBalance.collectFromBalance(
+        user.id,
+        new Decimal('1000'),
+        Currency.AMD,
+        session.transactionId!,
+      );
+
+      expect(collectedAgain).toBe(false);
+      expect(await customerBalance.getBalance(user.id)).toEqual({ balance: '1000.0000', currency: 'AMD' });
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'ev.roaming.balance_collection' } }),
       ).toBe(1);
     });
   });

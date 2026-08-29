@@ -203,6 +203,7 @@ model User {
   passwordResets            PasswordResetToken[]
   phoneVerifications        PhoneVerificationToken[]
   payments                  Payment[]
+  balanceTopUps             BalanceTopUp[]
 
   avatarAsset         MediaAsset?  @relation("UserAvatarAsset", fields: [avatarAssetId], references: [id])
   mediaAssets         MediaAsset[] @relation("MediaAssetSubjectUser")
@@ -2029,15 +2030,43 @@ enum LedgerAccountType {
   /// TuTak — not the partner, not an external terminal — is the party the
   /// customer owes money to: TuTak buys the energy wholesale and resells it
   /// at retail, so the ledger has to record that receivable somewhere. This
-  /// account's balance will only ever grow until an actual collection
-  /// mechanism (prepaid wallet top-up, card capture) is built — same
-  /// "honestly incomplete, not hidden" posture PLATFORM_BANK's own docblock
-  /// takes for the other unmodelled half of the platform's cash cycle. A
-  /// single global account, not per-customer: nothing today reads an
-  /// individual customer's balance on it, and per-customer resolution can be
-  /// added exactly the way `PSP_RECEIVABLE`/`PARTNER_PAYABLE` already
-  /// support a `userId`/`partnerId` owner column if that need ever arrives.
+  /// account's balance grows for any customer with no funded
+  /// `CUSTOMER_PREPAID_BALANCE` — see that account type's own docblock for
+  /// the collection mechanism that now exists, and
+  /// docs/ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md for what still has to
+  /// happen (a real bank adapter) before a customer can fund one. A single
+  /// global account, not per-customer: nothing reads an individual
+  /// customer's *unpaid* share on it, only the aggregate outstanding
+  /// exposure.
   EV_ROAMING_RECEIVABLE
+  /// A customer's own stored-value balance — money TuTak has actually
+  /// received (via `CustomerBalanceService`/`BankTopUpAdapter`) and holds on
+  /// their behalf, to be spent automatically the moment an app-initiated
+  /// `ROAMING_CPO` session settles (`EvCdrReconciliationService
+  /// .completeAppInitiatedSession`), since that is the one purchase path in
+  /// this codebase where nothing else pays for the customer's share at the
+  /// moment it becomes known. Per-customer (`userId` set, `partnerId` null),
+  /// unlike every other account here — this is the first ledger account
+  /// that is fundamentally about one person's own money, not a partner's or
+  /// the platform's.
+  ///
+  /// Funded by `BalanceTopUp`: DEBIT `PSP_RECEIVABLE` / CREDIT this account,
+  /// the same shape `PaymentEngineService.capture` already posts for a
+  /// partner payment, reusing the existing acquirer-settlement pipeline
+  /// (`docs/FINANCIAL_CORE_DESIGN.md`) rather than inventing a second one —
+  /// which means its raw balance reads exactly like `PARTNER_PAYABLE`'s own
+  /// "credited, so negative, even though it's money owed out" (see that
+  /// account's own test comment): zero when empty, more negative the more
+  /// TuTak owes this customer back. `CustomerBalanceService.getBalance` and
+  /// `.collectFromBalance` negate it before a customer or a `gte`/`lte`
+  /// comparison ever sees it, precisely because this is the one account in
+  /// this ledger whose raw number is also meant to read as "how much money
+  /// do I have" to someone outside the ledger.
+  /// Spent by DEBITing this account (moves it back toward zero) / CREDITing
+  /// `EV_ROAMING_RECEIVABLE` (pays that down) for the full amount owed, only
+  /// when the balance can cover it in full — see `collectFromBalance`'s own
+  /// docblock for why a partial collection is deliberately not attempted.
+  CUSTOMER_PREPAID_BALANCE
 }
 
 enum PostingDirection {
@@ -2091,6 +2120,7 @@ model LedgerTransaction {
   payoutSettled        Payout?               @relation("PayoutSettled")
   acquirerSettlement   AcquirerSettlement?
   partnerCollection    PartnerCollection?
+  balanceTopUp         BalanceTopUp?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -2234,6 +2264,53 @@ model Payment {
   /// Status leads because the grouping is by status within a time window.
   @@index([status, createdAt])
   @@map("payments")
+}
+
+enum BalanceTopUpStatus {
+  PENDING
+  COMPLETED
+  DECLINED
+  /// The bank never answered (timeout, unreachable) rather than explicitly
+  /// declining — distinct from DECLINED because a caller might reasonably
+  /// retry a FAILED attempt with a fresh idempotency key, while a DECLINED
+  /// one (insufficient funds, card refused) will not succeed by retrying.
+  FAILED
+}
+
+/// One attempt to fund a customer's `CUSTOMER_PREPAID_BALANCE` ledger
+/// account — see that account type's own docblock and
+/// docs/ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md. Mirrors `Payment`'s own
+/// shape deliberately: same claim-then-confirm lifecycle, same reasoning for
+/// storing `idempotencyKey` on the row itself rather than trusting
+/// `IdempotencyRecord` alone to survive a crash between the two writes.
+///
+/// `providerReference` is how a bank's asynchronous webhook confirmation is
+/// matched back to the attempt that started it — unique, so a replayed or
+/// duplicated webhook call is a no-op rather than a second credit.
+model BalanceTopUp {
+  id                  String             @id @default(uuid())
+  userId              String
+  amount              Decimal            @db.Decimal(18, 4)
+  currency            Currency           @default(AMD)
+  status              BalanceTopUpStatus @default(PENDING)
+  providerReference   String?            @unique
+  declineReason       String?
+  /// Null until COMPLETED — nothing has moved yet before then.
+  ledgerTransactionId String?            @unique
+  idempotencyKey      String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  // Restrict, not Cascade — same landmine `Wallet.user` was fixed for
+  // (GitHub issue #28): a hard user delete must never silently wipe a
+  // financial record of what money moved.
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId])
+  @@index([status, createdAt])
+  @@map("balance_top_ups")
 }
 
 // ─────────────────────────────────────────────────────────────────────────

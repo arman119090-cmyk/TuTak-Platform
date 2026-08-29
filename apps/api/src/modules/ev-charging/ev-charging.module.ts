@@ -7,6 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PartnersModule } from '../partners/partners.module';
 import { ReferralModule } from '../referral/referral.module';
 import { MediaModule } from '../media/media.module';
+import { CustomerBalanceModule } from '../customer-balance/customer-balance.module';
 import { EvChargingController } from './ev-charging.controller';
 import { EvCdrReconciliationService } from './ev-cdr-reconciliation.service';
 import { EvReservationsService } from './ev-reservations.service';
@@ -29,6 +30,7 @@ import { AppConfig } from '../../config/configuration';
     PartnersModule,
     ReferralModule,
     MediaModule,
+    CustomerBalanceModule,
   ],
   controllers: [EvChargingController],
   providers: [

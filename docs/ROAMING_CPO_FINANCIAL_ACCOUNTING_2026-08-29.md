@@ -128,15 +128,22 @@ the commission model's shape.
   wholesale + margin = retail), which the accounting suite's ledger test
   checks directly.
 
-**What `EV_ROAMING_RECEIVABLE` is not**: a collection mechanism. Nothing in
-this pass drains it — no stored-value wallet top-up, no card-capture wiring
-into this flow. It exists so the ledger is honest about what has actually
-happened (TuTak now genuinely owes the partner, and is genuinely owed by
-the customer) rather than silently unbalanced or silently pretending the
-receivable doesn't exist. Collecting real money from the customer for an
-app-initiated roaming charge remains separate, deliberately unbuilt work —
-consistent with this codebase's "honestly incomplete, never hidden"
-convention (see `PLATFORM_BANK`'s own docblock for the precedent).
+**What `EV_ROAMING_RECEIVABLE` was not, as of this pass**: a collection
+mechanism. Nothing here drained it — no stored-value wallet top-up, no
+card-capture wiring into this flow. It existed so the ledger stayed honest
+about what had actually happened (TuTak genuinely owing the partner, and
+genuinely owed by the customer) rather than silently unbalanced or silently
+pretending the receivable didn't exist.
+
+**Update, 2026-08-29 (same day, following task)**: it now has one. See
+`docs/ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md` — a customer prepaid
+balance, funded through a `BankTopUpAdapter` (no real bank connected yet;
+the No-op adapter honestly refuses every top-up), spent automatically by
+`CustomerBalanceService.collectFromBalance` the moment a session settles.
+This account's balance still grows for any customer with no funded prepaid
+balance — collection is all-or-nothing and opt-in (the customer has to have
+topped up), never a guarantee — but it is no longer strictly one-directional
+the way it was when this section was first written.
 
 ## Tests
 

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BonusEntryType,
+  Currency,
   EvCdrReconciliation,
   EvSessionStatus,
   LedgerAccountType,
@@ -29,6 +30,7 @@ import { FraudDetectionService } from '../security/fraud-detection.service';
 import { PhoneVerificationService } from '../auth/phone-verification.service';
 import { PartnersService } from '../partners/partners.service';
 import { RoamingCpoSettlementService } from '../roaming-cpo/roaming-cpo-settlement.service';
+import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
@@ -112,6 +114,7 @@ export class EvCdrReconciliationService {
     private readonly fraudDetection: FraudDetectionService,
     private readonly phoneVerification: PhoneVerificationService,
     private readonly partners: PartnersService,
+    private readonly customerBalance: CustomerBalanceService,
   ) {}
 
   /**
@@ -387,6 +390,22 @@ export class EvCdrReconciliationService {
 
         await this.transactionsService.markCompleted(transaction.id, { bonusEarnedAmount: green }, tx);
       });
+
+      // Best-effort, deliberately outside the transaction above: the
+      // session is already correctly settled at this point (COMPLETED,
+      // billed, margin split, ledger posted) regardless of whether this
+      // step runs at all. Collecting from the customer's own prepaid
+      // balance (docs/ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md) is a
+      // separate financial event, not a precondition of settlement — the
+      // main transaction already carries the same "this session may never
+      // be fully paid for" honesty `EV_ROAMING_RECEIVABLE` was built to
+      // hold, and this is only ever a way to shrink that, never a way to
+      // avoid completing the session.
+      await this.customerBalance
+        .collectFromBalance(session.userId, cost, Currency.AMD, transaction.id)
+        .catch((e) =>
+          this.logger.error(`Balance collection failed for roaming session ${session.id} (receivable stands)`, e),
+        );
 
       return true;
     } catch (err) {

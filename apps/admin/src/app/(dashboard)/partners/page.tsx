@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
@@ -16,6 +16,7 @@ import {
   Tr,
 } from '@tutak/design/web';
 import { partnersApi } from '@/lib/api/partnersApi';
+import { PartnerBranchAudit } from './PartnerBranchAudit';
 
 const EMPTY = {
   legalName: '',
@@ -37,6 +38,7 @@ export default function PartnersPage() {
   // Which partner's Activate/Deactivate request is in flight, so a second
   // click can't fire a second toggle racing to invert the same field twice.
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,45 +168,63 @@ export default function PartnersPage() {
           </thead>
           <tbody>
             {partners.map((p) => (
-              <Tr key={p.id}>
-                <Td>
-                  <div className="font-medium text-ink">{p.displayName}</div>
-                  <div className="text-[12px] text-faint">{p.legalName}</div>
-                </Td>
-                <Td className="text-muted">{p.category}</Td>
-                <Td align="right" className="tabular">
-                  {(p.bonusAccrualRateBps / 100).toFixed(2)}%
-                </Td>
-                <Td>
-                  <Badge tone={p.isActive ? 'available' : 'neutral'}>
-                    {p.isActive ? 'Active' : 'Inactive'}
-                  </Badge>
-                </Td>
-                <Td align="right">
-                  <Button
-                    size="sm"
-                    variant={p.isActive ? 'destructive' : 'secondary'}
-                    disabled={togglingId === p.id}
-                    onClick={async () => {
-                      setTogglingId(p.id);
-                      try {
-                        await partnersApi.setActive(p.id, !p.isActive);
-                        queryClient.invalidateQueries({ queryKey: ['partners'] });
-                      } finally {
-                        setTogglingId(null);
-                      }
-                    }}
-                  >
-                    {togglingId === p.id
-                      ? p.isActive
-                        ? 'Deactivating…'
-                        : 'Activating…'
-                      : p.isActive
-                        ? 'Deactivate'
-                        : 'Activate'}
-                  </Button>
-                </Td>
-              </Tr>
+              <Fragment key={p.id}>
+                <Tr>
+                  <Td>
+                    <div className="font-medium text-ink">{p.displayName}</div>
+                    <div className="text-[12px] text-faint">{p.legalName}</div>
+                  </Td>
+                  <Td className="text-muted">{p.category}</Td>
+                  <Td align="right" className="tabular">
+                    {(p.bonusAccrualRateBps / 100).toFixed(2)}%
+                  </Td>
+                  <Td>
+                    <Badge tone={p.isActive ? 'available' : 'neutral'}>
+                      {p.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </Td>
+                  <Td align="right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="tertiary"
+                        onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                      >
+                        {expandedId === p.id ? 'Hide branches' : 'Branches'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={p.isActive ? 'destructive' : 'secondary'}
+                        disabled={togglingId === p.id}
+                        onClick={async () => {
+                          setTogglingId(p.id);
+                          try {
+                            await partnersApi.setActive(p.id, !p.isActive);
+                            queryClient.invalidateQueries({ queryKey: ['partners'] });
+                          } finally {
+                            setTogglingId(null);
+                          }
+                        }}
+                      >
+                        {togglingId === p.id
+                          ? p.isActive
+                            ? 'Deactivating…'
+                            : 'Activating…'
+                          : p.isActive
+                            ? 'Deactivate'
+                            : 'Activate'}
+                      </Button>
+                    </div>
+                  </Td>
+                </Tr>
+                {expandedId === p.id ? (
+                  <Tr>
+                    <Td colSpan={5}>
+                      <PartnerBranchAudit partnerId={p.id} />
+                    </Td>
+                  </Tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </Table>

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MediaAsset, PartnerOfferingItem, PartnerStatus, Prisma, RoleName } from '@prisma/client';
+import { BranchFuelType, MediaAsset, PartnerOfferingItem, PartnerStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MediaViewService } from '../media/media-view.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -310,6 +310,24 @@ export class PartnersService {
     const { count } = await this.prisma.partnerBranch.updateMany({
       where: { id: branchId, partnerId },
       data: { isActive },
+    });
+    if (count === 0) throw new NotFoundException('Branch not found');
+    return this.prisma.partnerBranch.findUniqueOrThrow({ where: { id: branchId } });
+  }
+
+  /**
+   * Fuel-station branches task: classifies one branch's real product —
+   * never inferred from `Partner.sellsGas`/`sellsPetrol`, see
+   * `PartnerBranch.fuelType`'s own docblock for why. Meaningful for any
+   * branch, but only ever read for a `fuel`-category partner's branches;
+   * left permissive here rather than throwing on a non-fuel partner, since
+   * a partner that later recategorizes should not lose a classification it
+   * already made.
+   */
+  async setBranchFuelType(partnerId: string, branchId: string, fuelType: BranchFuelType) {
+    const { count } = await this.prisma.partnerBranch.updateMany({
+      where: { id: branchId, partnerId },
+      data: { fuelType },
     });
     if (count === 0) throw new NotFoundException('Branch not found');
     return this.prisma.partnerBranch.findUniqueOrThrow({ where: { id: branchId } });

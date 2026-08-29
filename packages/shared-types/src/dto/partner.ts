@@ -1,4 +1,5 @@
 import type { MediaImageDto } from './media';
+import type { BranchFuelType } from '../enums/partner-branch';
 
 /**
  * One row of a partner's optional public product/service list — the
@@ -47,6 +48,8 @@ export interface PartnerBranchDto {
   latitude: number;
   longitude: number;
   isActive: boolean;
+  /** Meaningful only for a `fuel`-category partner — see `PartnerBranch.fuelType`. */
+  fuelType?: BranchFuelType | null;
   createdAt: string;
 }
 

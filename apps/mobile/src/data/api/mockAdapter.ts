@@ -554,6 +554,21 @@ function handle(
     return envelope(partner);
   }
 
+  // Fuel-station branches task: the preview has no real branch/QR state to
+  // resolve against, so a scan always "resolves" to the first demo partner —
+  // enough to exercise the screen transition without a second in-memory
+  // branch model just for the offline preview.
+  const resolveBranchQr = /^\/partner-branch-qr\/resolve\/([^/]+)$/.exec(path);
+  if (method === 'GET' && resolveBranchQr) {
+    const partner = state.partners[0];
+    return envelope({
+      partnerId: partner?.partnerId ?? 'demo-partner',
+      partnerBranchId: 'demo-branch',
+      partnerDisplayName: partner?.name ?? 'Demo Partner',
+      branchName: 'Main branch',
+    });
+  }
+
   return {
     body: {
       statusCode: 404,

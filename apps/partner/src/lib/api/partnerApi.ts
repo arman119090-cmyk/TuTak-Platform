@@ -1,8 +1,13 @@
 import type {
+  AssignBranchStaffRequestDto,
+  BranchFuelType,
   PartnerAnalyticsDto,
   PartnerBranchDto,
+  PartnerBranchQrCodeDto,
+  PartnerBranchStaffAssignmentDto,
   PartnerDto,
   PartnerOfferingDto,
+  SetAllBranchesRequestDto,
   TransactionDto,
   PaginatedResultDto,
 } from '@tutak/shared-types';
@@ -92,6 +97,79 @@ export const partnerApi = {
     const { data } = await httpClient.patch<ApiEnvelope<PartnerBranchDto>>(
       `/partners/${id}/branches/${branchId}/active`,
       { isActive },
+    );
+    return data.data;
+  },
+
+  /** Fuel-station branches task: classifies one branch's actual product — never guessed. */
+  async setBranchFuelType(id: string, branchId: string, fuelType: BranchFuelType) {
+    const { data } = await httpClient.patch<ApiEnvelope<PartnerBranchDto>>(
+      `/partners/${id}/branches/${branchId}/fuel-type`,
+      { fuelType },
+    );
+    return data.data;
+  },
+
+  async listBranchStaff(id: string, branchId: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerBranchStaffAssignmentDto[]>>(
+      `/partners/${id}/branches/${branchId}/staff`,
+    );
+    return data.data;
+  },
+
+  async assignBranchStaff(id: string, branchId: string, dto: AssignBranchStaffRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerBranchStaffAssignmentDto>>(
+      `/partners/${id}/branches/${branchId}/staff`,
+      dto,
+    );
+    return data.data;
+  },
+
+  async deactivateBranchStaff(id: string, branchId: string, assignmentId: string) {
+    const { data } = await httpClient.patch<ApiEnvelope<PartnerBranchStaffAssignmentDto>>(
+      `/partners/${id}/branches/${branchId}/staff/${assignmentId}/deactivate`,
+      {},
+    );
+    return data.data;
+  },
+
+  async listStaff(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerBranchStaffAssignmentDto[]>>(
+      `/partners/${id}/staff`,
+    );
+    return data.data;
+  },
+
+  /** Owner granting/revoking a trusted manager's all-branch reach. */
+  async setAllBranches(id: string, dto: SetAllBranchesRequestDto) {
+    const { data } = await httpClient.patch(`/partners/${id}/staff/all-branches`, dto);
+    return data.data;
+  },
+
+  async getBranchQr(id: string, branchId: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerBranchQrCodeDto | null>>(
+      `/partners/${id}/branches/${branchId}/qr`,
+    );
+    return data.data;
+  },
+
+  async issueBranchQr(id: string, branchId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerBranchQrCodeDto>>(
+      `/partners/${id}/branches/${branchId}/qr`,
+    );
+    return data.data;
+  },
+
+  async rotateBranchQr(id: string, branchId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerBranchQrCodeDto>>(
+      `/partners/${id}/branches/${branchId}/qr/rotate`,
+    );
+    return data.data;
+  },
+
+  async revokeBranchQr(id: string, branchId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerBranchQrCodeDto>>(
+      `/partners/${id}/branches/${branchId}/qr/revoke`,
     );
     return data.data;
   },

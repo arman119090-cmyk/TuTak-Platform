@@ -98,14 +98,25 @@ model RolePermission {
 /// A user's role, optionally scoped to a partner (e.g. PARTNER_STAFF at partner X).
 /// Global roles (CUSTOMER, ADMIN, SUPER_ADMIN) leave partnerId null.
 model UserRole {
-  id        String   @id @default(uuid())
-  userId    String
-  roleId    String
-  partnerId String?
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  partner   Partner? @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  userId      String
+  roleId      String
+  partnerId   String?
+  /// Fuel-station branches task: an explicit, owner/admin-granted exception
+  /// to branch scoping — this role holder may act at every branch of
+  /// `partnerId`, the same reach `PARTNER_OWNER` always has, without being
+  /// the owner. Meaningless (and always false) for a role with no
+  /// `partnerId`, and for `PARTNER_OWNER` itself, which already has this
+  /// reach unconditionally — see `hasBranchScope`. Defaults false so every
+  /// existing row — every role granted before branch scoping existed — is
+  /// *not* silently promoted to all-branch access; see the migration doc
+  /// for why an unassigned `PARTNER_STAFF`/`PARTNER_MANAGER` instead lands
+  /// in a restricted "no branch yet" state.
+  allBranches Boolean  @default(false)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  partner     Partner? @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
 
   @@unique([userId, roleId, partnerId])
   @@index([userId])
@@ -146,13 +157,13 @@ model User {
   /// The customer's current avatar, or null. Optional forever — spec §1.2:
   /// initials/the neutral mark remain the fallback everywhere, and every
   /// account that predates the media migration keeps working untouched.
-  avatarAssetId             String?
+  avatarAssetId                      String?
   /// Spec §1.4 / §3.3: whether this person agreed to their avatar being
   /// rendered in their *direct* referrer's Level-1 list. Default false, and
   /// it controls nothing else — no Level-2/3 surface, no partner-facing
   /// list, and no admin response ever reads it as permission to expose an
   /// avatar.
-  avatarConsentReferralList Boolean @default(false)
+  avatarConsentReferralList          Boolean @default(false)
   /// 2026-08-26: whether this customer opted in to seeing nearby partners
   /// ranked by their own purchase history (which categories they actually
   /// spend in, computed on demand from `Transaction` — nothing new is
@@ -180,6 +191,11 @@ model User {
   challengeParticipation    ReferralChallengeParticipant?  @relation("ChallengeReferee")
   purchaseIntentsAsCustomer PurchaseIntent[]               @relation("PurchaseIntentCustomer")
   purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
+  branchStaffAssignments    PartnerBranchStaffAssignment[]
+  branchStaffAssigned       PartnerBranchStaffAssignment[] @relation("BranchStaffAssignedBy")
+  branchStaffDeactivated    PartnerBranchStaffAssignment[] @relation("BranchStaffDeactivatedBy")
+  branchQrCodesIssued       PartnerBranchQrCode[]          @relation("BranchQrIssuedBy")
+  branchQrCodesRevoked      PartnerBranchQrCode[]          @relation("BranchQrRevokedBy")
   evSessions                EvSession[]
   evReservations            EvReservation[]
   roamingCustomerLinks      RoamingCustomerLink[]
@@ -925,25 +941,27 @@ model Partner {
   createdAt                 DateTime      @default(now())
   updatedAt                 DateTime      @updatedAt
 
-  memberships             PartnerMembership[]
-  branches                PartnerBranch[]
-  integrations            PartnerIntegration[]
-  transactions            Transaction[]
-  qrCodes                 QrCode[]
-  evStations              EvStation[]
-  userRoles               UserRole[]
-  payments                Payment[]
-  settlements             Settlement[]
-  payouts                 Payout[]
-  collections             PartnerCollection[]
-  purchaseIntents         PurchaseIntent[]
-  offerings               PartnerOfferingItem[]
-  apiKeys                 PartnerApiKey[]
-  roamingCustomerLinks    RoamingCustomerLink[]
+  memberships            PartnerMembership[]
+  branches               PartnerBranch[]
+  branchStaffAssignments PartnerBranchStaffAssignment[]
+  branchQrCodes          PartnerBranchQrCode[]
+  integrations           PartnerIntegration[]
+  transactions           Transaction[]
+  qrCodes                QrCode[]
+  evStations             EvStation[]
+  userRoles              UserRole[]
+  payments               Payment[]
+  settlements            Settlement[]
+  payouts                Payout[]
+  collections            PartnerCollection[]
+  purchaseIntents        PurchaseIntent[]
+  offerings              PartnerOfferingItem[]
+  apiKeys                PartnerApiKey[]
+  roamingCustomerLinks   RoamingCustomerLink[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
-  referralCode            ReferralCode?
-  referralInvitesMade     ReferralInvite[]         @relation("PartnerReferrer")
+  referralCode           ReferralCode?
+  referralInvitesMade    ReferralInvite[]               @relation("PartnerReferrer")
 
   logoAsset   MediaAsset?  @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
   coverAsset  MediaAsset?  @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
@@ -1076,8 +1094,21 @@ model PartnerMembership {
   @@map("partner_memberships")
 }
 
+/// The three products a `fuel`-category branch actually sells. Distinct from
+/// `Partner.sellsGas`/`sellsPetrol` — those are the *customer-facing map
+/// filter*'s umbrella ("Газ" = propane + methane, one bucket), kept exactly
+/// as they are; this is the real, per-branch classification a branch's own
+/// staff/QR/pricing needs, which the umbrella was never precise enough to
+/// answer. See the migration for how existing fuel branches were classified
+/// (never guessed) and `geo.ts#FUEL_TYPES` for the customer-facing mapping.
+enum BranchFuelType {
+  PETROL
+  METHANE_CNG
+  PROPANE_LPG
+}
+
 model PartnerBranch {
-  id        String   @id @default(uuid())
+  id        String          @id @default(uuid())
   partnerId String
   name      String
   address   String
@@ -1091,14 +1122,151 @@ model PartnerBranch {
   /// at even after that location closes. Defaults true — every branch that
   /// predates this column is, in fact, still open; there is no historical
   /// case where the true value is otherwise.
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  isActive  Boolean         @default(true)
+  /// Meaningful only when the owning `Partner.category` is `"fuel"` — which
+  /// single product this specific branch sells. Null for every non-fuel
+  /// branch. Also null for a fuel branch nobody has classified yet: this is
+  /// never inferred from `Partner.sellsGas`/`sellsPetrol` (those only say
+  /// the *partner* sells "gas" and/or "petrol" somewhere across its
+  /// network, not which branch sells which) — see the migration doc for how
+  /// the existing fuel partners' branches were left unclassified rather
+  /// than guessed at, and `PartnerBranchesService.setFuelType` for the
+  /// owner/admin action that fills this in.
+  fuelType  BranchFuelType?
+  createdAt DateTime        @default(now())
 
-  partner         Partner              @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  integrations    PartnerIntegration[]
-  purchaseIntents PurchaseIntent[]
+  partner          Partner                        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  integrations     PartnerIntegration[]
+  purchaseIntents  PurchaseIntent[]
+  staffAssignments PartnerBranchStaffAssignment[]
+  qrCodes          PartnerBranchQrCode[]
 
+  // Lets `PartnerBranchStaffAssignment`/`PartnerBranchQrCode` declare a
+  // composite FK on (partnerId, id) — the DB-level guarantee that an
+  // assignment or QR code can never point at a branch belonging to a
+  // *different* partner than the one it also names, without a trigger.
+  @@unique([partnerId, id])
   @@map("partner_branches")
+}
+
+enum BranchStaffRole {
+  /// Ordinary day-to-day access at the assigned branch(es) — confirm/
+  /// reject/refund, same as the platform-wide `PARTNER_STAFF` tier already
+  /// grants, just narrowed to the branches listed here.
+  STAFF
+  /// A trusted employee an owner has put in charge of a branch — same
+  /// operational reach as STAFF today (this table only ever narrows *which*
+  /// branches, never *what* a role may do there; that stays on
+  /// `RoleName`/`PermissionName`). Kept as its own value because the
+  /// partner portal's staff list needs to say who is "in charge" of a
+  /// branch, distinctly from an ordinary cashier, even though both resolve
+  /// to the same permission check today.
+  MANAGER
+}
+
+/// Which of a multi-branch partner's locations a given member of staff may
+/// actually act at. `UserRole` (PARTNER_STAFF/PARTNER_MANAGER, scoped to
+/// `partnerId`) already answers "can this person confirm a purchase intent
+/// for this partner at all" — nothing before this table answered "at which
+/// of the partner's branches", so a `PARTNER_STAFF` grant was, in effect,
+/// access to every branch a partner had. That is exactly the gap the
+/// fuel-station branches task exists to close: branch-A staff must never
+/// see branch-B's queue or history.
+///
+/// `PARTNER_OWNER` and platform admins need no row here — they already see
+/// every branch of their own partner (`hasBranchScope`). A `UserRole` with
+/// `allBranches: true` (an owner/admin-granted exception for a trusted
+/// manager) also needs none, for the same reason.
+///
+/// A user with zero *active* rows here, who is not covered by either
+/// exception above, and whose partner has at least one branch, is
+/// deliberately unassigned: every branch-scoped endpoint refuses them
+/// rather than defaulting to "every branch" — see the migration doc for how
+/// this is what every pre-existing `PARTNER_STAFF`/`PARTNER_MANAGER` role
+/// lands in the moment this ships, until an owner/admin explicitly assigns
+/// a branch.
+model PartnerBranchStaffAssignment {
+  id                  String          @id @default(uuid())
+  partnerId           String
+  partnerBranchId     String
+  userId              String
+  role                BranchStaffRole @default(STAFF)
+  /// Short, partner-unique, human-readable identity for receipts and audit
+  /// trails — e.g. "B-014" — so a confirm/reject/refund record stays
+  /// legible without exposing a raw user id. Assigned once at creation and
+  /// never reused, including after deactivation, so a historical record
+  /// naming this code always resolves to the one person who held it.
+  employeeDisplayCode String
+  /// False once an owner/admin takes this person off the branch. The row
+  /// itself is never deleted: every confirm/reject/refund this person made
+  /// while active still has to resolve to who they were and which branch
+  /// they were assigned to at the time.
+  isActive            Boolean         @default(true)
+  assignedByUserId    String
+  createdAt           DateTime        @default(now())
+  deactivatedAt       DateTime?
+  deactivatedByUserId String?
+
+  partner       Partner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  branch        PartnerBranch @relation(fields: [partnerId, partnerBranchId], references: [partnerId, id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy    User          @relation("BranchStaffAssignedBy", fields: [assignedByUserId], references: [id])
+  deactivatedBy User?         @relation("BranchStaffDeactivatedBy", fields: [deactivatedByUserId], references: [id])
+
+  // "At most one ACTIVE assignment per (user, branch)" is a partial unique
+  // index added by hand in the migration — Prisma has no `@@unique` syntax
+  // for a `WHERE` clause. A deactivated row is intentionally left in place
+  // (history), so a plain unique constraint here would block reassigning
+  // the same person to the same branch later.
+  @@unique([partnerId, employeeDisplayCode])
+  @@index([userId])
+  @@index([partnerBranchId, isActive])
+  @@map("partner_branch_staff_assignments")
+}
+
+enum PartnerBranchQrStatus {
+  ACTIVE
+  REVOKED
+}
+
+/// A branch's own scan-to-pay identity. Extends the existing QR
+/// infrastructure's own pattern — a random, unique, server-resolved
+/// `token`, exactly like `QrCode.token` — rather than building a second QR
+/// system next to it; this is a separate model only because `QrCode` itself
+/// is the *legacy* `POST /qr/redeem` flow (see the model's own docblock),
+/// permanently refuses `STATIC_MERCHANT` redemption
+/// (`QrPaymentsService.redeem`), and answers a different question (a
+/// reusable, fixed-amount invoice) than a branch code needs to (an identity
+/// that always lands on `PurchaseIntentsService.create()`, with no amount
+/// ever encoded in the code itself). See `partnerPayQr.ts` for the
+/// plaintext `TUTAK-PAY:<partnerId>:<branchId>` payload this replaces for
+/// fuel-category branches, and why that payload could never be revoked,
+/// rotated, or verified server-side — anyone who read it off a photo could
+/// reconstruct the exact same string forever.
+///
+/// At most one ACTIVE row per branch, enforced by a partial unique index in
+/// the migration. Rotating a branch's code is revoke-then-issue, wrapped in
+/// one transaction by `PartnerBranchQrService.rotate()` — never an update
+/// of an existing token, so a revoked token can never become valid again by
+/// accident.
+model PartnerBranchQrCode {
+  id              String                @id @default(uuid())
+  partnerId       String
+  partnerBranchId String
+  token           String                @unique
+  status          PartnerBranchQrStatus @default(ACTIVE)
+  issuedByUserId  String
+  createdAt       DateTime              @default(now())
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  partner   Partner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  branch    PartnerBranch @relation(fields: [partnerId, partnerBranchId], references: [partnerId, id], onDelete: Cascade)
+  issuedBy  User          @relation("BranchQrIssuedBy", fields: [issuedByUserId], references: [id])
+  revokedBy User?         @relation("BranchQrRevokedBy", fields: [revokedByUserId], references: [id])
+
+  @@index([partnerBranchId, status])
+  @@map("partner_branch_qr_codes")
 }
 
 /// One row of the partner's optional public product/service list — the
@@ -1444,23 +1612,23 @@ enum EvStationProvider {
 }
 
 model EvStation {
-  id                       String            @id @default(uuid())
-  partnerId                String
-  name                     String
-  address                  String
-  city                     String
-  latitude                 Float
-  longitude                Float
-  ocpiLocationId           String?           @unique
+  id                        String            @id @default(uuid())
+  partnerId                 String
+  name                      String
+  address                   String
+  city                      String
+  latitude                  Float
+  longitude                 Float
+  ocpiLocationId            String?           @unique
   /// See `EvStationProvider`. Default `INTERNAL` is a no-op backfill for
   /// every station that predates the roaming-CPO integration — this
   /// migration changes nothing about how any existing station behaves.
-  provider                 EvStationProvider @default(INTERNAL)
+  provider                  EvStationProvider @default(INTERNAL)
   /// The roaming-CPO partner's own stable id for this location, synced by
   /// `RoamingCpoStationsService.sync` — the "each station/EVSE/connector
   /// needs its own stable external ID from the partner" requirement. Null
   /// for every `INTERNAL` station.
-  externalStationId        String?           @unique
+  externalStationId         String?           @unique
   /// The roaming-CPO partner's current standard/walk-in tariff at this
   /// station — for display/audit only. A specific session almost never
   /// settles at this rate; see `EvSession.appliedCustomerRatePerKwh`, which
@@ -1469,7 +1637,7 @@ model EvStation {
   /// later edit here (a station raising its posted price) never touches a
   /// past session's own snapshot — same immutability discipline as
   /// `PurchaseIntent.negotiatedRateBps`.
-  standardRetailRatePerKwh Decimal?          @db.Decimal(10, 2)
+  standardRetailRatePerKwh  Decimal?          @db.Decimal(10, 2)
   /// Explicit safety gate — docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md.
   /// A station is discoverable by `EvStationsService.listNearby` and
   /// startable by `EvSessionsService.start` only when this is true. Never
@@ -1498,8 +1666,8 @@ model EvStation {
   /// a session on such a station must never be billed from
   /// `EvSessionsService.reportMeterValue`.
   trustedTelemetrySupported Boolean           @default(false)
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   partner    Partner       @relation(fields: [partnerId], references: [id])
   connectors EvConnector[]
@@ -2421,6 +2589,15 @@ enum AuditAction {
   /// A customer turned personalised nearby-partner recommendations on or
   /// off. Audited for the same reason as the avatar consent above.
   PERSONALIZATION_CONSENT_CHANGED
+  /// Fuel-station branches task: an owner/admin put a user in charge of one
+  /// of a partner's branches, or took them off it. Deactivation is audited
+  /// exactly like assignment — both are the moment access changed.
+  BRANCH_STAFF_ASSIGNED
+  BRANCH_STAFF_DEACTIVATED
+  /// A branch's own scan-to-pay QR was issued, revoked, or rotated
+  /// (revoke + issue, recorded as both). See `PartnerBranchQrCode`.
+  BRANCH_QR_ISSUED
+  BRANCH_QR_REVOKED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

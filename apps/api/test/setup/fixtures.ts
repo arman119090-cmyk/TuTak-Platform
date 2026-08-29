@@ -75,6 +75,7 @@ export async function createPartner(
     maxBonusPaymentPercent: number;
     evWholesaleRatePerKwh: string;
     evMarginReferralCapPerKwh: string;
+    category: string;
   }> = {},
 ): Promise<Partner> {
   return prisma.partner.create({
@@ -82,7 +83,7 @@ export async function createPartner(
       legalName: 'Test Partner LLC',
       displayName: overrides.displayName ?? 'Test Partner',
       taxId: randomUUID(),
-      category: 'retail',
+      category: overrides.category ?? 'retail',
       bonusAccrualRateBps: overrides.bonusAccrualRateBps ?? 500, // 5%
       ...(overrides.maxBonusPaymentPercent !== undefined
         ? { maxBonusPaymentPercent: overrides.maxBonusPaymentPercent }

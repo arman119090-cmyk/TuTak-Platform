@@ -354,6 +354,8 @@ async function main() {
     roles,
     permissions: [],
     partnerScopes: scopes,
+    branchIds: [],
+    allBranchPartnerIds: [],
     mustChangePassword: false,
   });
 

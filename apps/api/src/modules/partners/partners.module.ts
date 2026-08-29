@@ -6,11 +6,22 @@ import { PartnerIntegrationsController } from './partner-integrations.controller
 import { PartnerIntegrationsService } from './partner-integrations.service';
 import { PartnersController } from './partners.controller';
 import { PartnersService } from './partners.service';
+import { PartnerBranchStaffController, PartnerStaffController } from './partner-branch-staff.controller';
+import { PartnerBranchStaffService } from './partner-branch-staff.service';
+import { PartnerBranchQrController, PartnerBranchQrResolveController } from './partner-branch-qr.controller';
+import { PartnerBranchQrService } from './partner-branch-qr.service';
 
 @Module({
   imports: [AuditModule, MediaModule, TransactionsModule],
-  controllers: [PartnersController, PartnerIntegrationsController],
-  providers: [PartnersService, PartnerIntegrationsService],
+  controllers: [
+    PartnersController,
+    PartnerIntegrationsController,
+    PartnerBranchStaffController,
+    PartnerStaffController,
+    PartnerBranchQrController,
+    PartnerBranchQrResolveController,
+  ],
+  providers: [PartnersService, PartnerIntegrationsService, PartnerBranchStaffService, PartnerBranchQrService],
   exports: [PartnersService],
 })
 export class PartnersModule {}

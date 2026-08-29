@@ -91,9 +91,20 @@ export class PurchaseIntentsService {
     return intent;
   }
 
-  listForPartner(partnerId: string, status?: PurchaseIntentStatus) {
+  /**
+   * `branchIds`, when non-null, restricts the result to those specific
+   * branches — an empty array on purpose returns nothing, for the same
+   * "unassigned staff sees nothing" reasoning `branchFilterFor` documents.
+   * `null` (an owner/admin/all-branch caller) applies no branch filter at
+   * all, matching this method's pre-branch-scoping behavior exactly.
+   */
+  listForPartner(partnerId: string, status?: PurchaseIntentStatus, branchIds?: string[] | null) {
     return this.prisma.purchaseIntent.findMany({
-      where: { partnerId, ...(status ? { status } : {}) },
+      where: {
+        partnerId,
+        ...(status ? { status } : {}),
+        ...(branchIds ? { partnerBranchId: { in: branchIds } } : {}),
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -138,13 +149,14 @@ export class PurchaseIntentsService {
    * partner's confirmed-purchase volume is nowhere near the scale where a
    * bounded window of rows read into memory would be the wrong call.
    */
-  async dailyActivityForPartner(partnerId: string, days = 30) {
+  async dailyActivityForPartner(partnerId: string, days = 30, branchIds?: string[] | null) {
     const since = new Date(Date.now() - days * 24 * 60 * 60_000);
     const intents = await this.prisma.purchaseIntent.findMany({
       where: {
         partnerId,
         status: PurchaseIntentStatus.CONFIRMED,
         confirmedAt: { gte: since },
+        ...(branchIds ? { partnerBranchId: { in: branchIds } } : {}),
       },
       select: {
         confirmedAt: true,
@@ -260,12 +272,24 @@ export class PurchaseIntentsService {
       );
     }
 
+    // Fuel-station branches task: a `fuel`-category partner's branches sell
+    // different, non-interchangeable products (petrol vs. methane vs.
+    // propane) and have their own staff/queue — a purchase with no branch at
+    // all would have nobody scoped to confirm it. Every *other* category
+    // keeps `partnerBranchId` fully optional, exactly as before this task.
+    if (partner.category === 'fuel' && !dto.partnerBranchId) {
+      throw new BadRequestException('Select which branch this purchase is at');
+    }
+
     if (dto.partnerBranchId) {
       const branch = await this.prisma.partnerBranch.findUnique({
         where: { id: dto.partnerBranchId },
       });
       if (!branch || branch.partnerId !== partner.id) {
         throw new BadRequestException('This branch does not belong to the given partner');
+      }
+      if (!branch.isActive) {
+        throw new BadRequestException('This branch is not currently open');
       }
     }
 

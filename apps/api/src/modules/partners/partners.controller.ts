@@ -24,6 +24,7 @@ import { UpdatePartnerBranchDto } from './dto/update-partner-branch.dto';
 import { UpdateCommercialSettingsDto } from './dto/update-commercial-settings.dto';
 import { UpdatePartnerAboutDto } from './dto/update-partner-about.dto';
 import { UpdatePartnerFuelTypesDto } from './dto/update-partner-fuel-types.dto';
+import { SetBranchFuelTypeDto } from './dto/set-branch-fuel-type.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
 import { NearbyPartnersQueryDto } from './dto/nearby-partners.query.dto';
 import { PartnersService } from './partners.service';
@@ -375,6 +376,31 @@ export class PartnersController {
       entityType: 'Partner',
       entityId: id,
       metadata: { field: 'branches', op: dto.isActive ? 'activate' : 'deactivate', branchId },
+    });
+    return branch;
+  }
+
+  /**
+   * Fuel-station branches task: owner/admin classifies which product a
+   * branch actually sells — never inferred, see `PartnerBranch.fuelType`.
+   * Same tier as the other branch writes above.
+   */
+  @Patch(':id/branches/:branchId/fuel-type')
+  async setBranchFuelType(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @UuidParam('branchId') branchId: string,
+    @Body() dto: SetBranchFuelTypeDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, 'classify a branch');
+    const branch = await this.partnersService.setBranchFuelType(id, branchId, dto.fuelType);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: id,
+      metadata: { field: 'branches', op: 'set-fuel-type', branchId, fuelType: dto.fuelType },
     });
     return branch;
   }

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PartnerBranchDto } from '@tutak/shared-types';
 import { Badge, Button, Field, Input, PageHeader, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, isPartnerOwner, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
+import { BranchFuelTools } from './BranchFuelTools';
 
 /**
  * A partner's own physical locations — spec: partner self-service branches
@@ -30,6 +31,12 @@ export default function LocationsPage() {
     enabled: !!partnerId && isOwner,
   });
 
+  const { data: partner } = useQuery({
+    queryKey: ['partner', partnerId],
+    queryFn: () => partnerApi.get(partnerId!),
+    enabled: !!partnerId && isOwner,
+  });
+
   if (!isOwner) {
     return (
       <>
@@ -47,7 +54,12 @@ export default function LocationsPage() {
   return (
     <>
       <Header />
-      <BranchesCard partnerId={partnerId ?? ''} branches={branches ?? []} loading={isLoading} />
+      <BranchesCard
+        partnerId={partnerId ?? ''}
+        branches={branches ?? []}
+        loading={isLoading}
+        isFuelPartner={partner?.category === 'fuel'}
+      />
     </>
   );
 }
@@ -149,10 +161,12 @@ function BranchesCard({
   partnerId,
   branches,
   loading,
+  isFuelPartner,
 }: {
   partnerId: string;
   branches: PartnerBranchDto[];
   loading: boolean;
+  isFuelPartner: boolean;
 }) {
   const queryClient = useQueryClient();
   const invalidate = () =>
@@ -162,6 +176,7 @@ function BranchesCard({
   const [newForm, setNewForm] = useState<BranchForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<BranchForm>(EMPTY_FORM);
+  const [managingId, setManagingId] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: () => partnerApi.createBranch(partnerId, toBranchInput(newForm)),
@@ -281,35 +296,53 @@ function BranchesCard({
                     </Td>
                   </Tr>
                 ) : (
-                  <Tr key={branch.id}>
-                    <Td>{branch.name}</Td>
-                    <Td>{branch.address}</Td>
-                    <Td>{branch.city}</Td>
-                    <Td>
-                      <Badge tone={branch.isActive ? 'available' : 'neutral'}>
-                        {branch.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </Td>
-                    <Td align="right">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="tertiary" onClick={() => startEdit(branch)}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="tertiary"
-                          loading={
-                            toggleActive.isPending && toggleActive.variables?.branchId === branch.id
-                          }
-                          onClick={() =>
-                            toggleActive.mutate({ branchId: branch.id, isActive: !branch.isActive })
-                          }
-                        >
-                          {branch.isActive ? 'Deactivate' : 'Reactivate'}
-                        </Button>
-                      </div>
-                    </Td>
-                  </Tr>
+                  <Fragment key={branch.id}>
+                    <Tr>
+                      <Td>{branch.name}</Td>
+                      <Td>{branch.address}</Td>
+                      <Td>{branch.city}</Td>
+                      <Td>
+                        <Badge tone={branch.isActive ? 'available' : 'neutral'}>
+                          {branch.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </Td>
+                      <Td align="right">
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="tertiary" onClick={() => startEdit(branch)}>
+                            Edit
+                          </Button>
+                          {isFuelPartner ? (
+                            <Button
+                              size="sm"
+                              variant="tertiary"
+                              onClick={() => setManagingId(managingId === branch.id ? null : branch.id)}
+                            >
+                              {managingId === branch.id ? 'Close' : 'Manage'}
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="tertiary"
+                            loading={
+                              toggleActive.isPending && toggleActive.variables?.branchId === branch.id
+                            }
+                            onClick={() =>
+                              toggleActive.mutate({ branchId: branch.id, isActive: !branch.isActive })
+                            }
+                          >
+                            {branch.isActive ? 'Deactivate' : 'Reactivate'}
+                          </Button>
+                        </div>
+                      </Td>
+                    </Tr>
+                    {isFuelPartner && managingId === branch.id ? (
+                      <Tr key={`${branch.id}-manage`}>
+                        <Td colSpan={5}>
+                          <BranchFuelTools partnerId={partnerId} branchId={branch.id} />
+                        </Td>
+                      </Tr>
+                    ) : null}
+                  </Fragment>
                 ),
               )}
             </tbody>

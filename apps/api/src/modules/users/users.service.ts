@@ -127,6 +127,7 @@ export class UsersService {
     const roles = new Set<RoleName>();
     const permissions = new Set<string>();
     const partnerScopes: Record<string, string[]> = {};
+    const allBranchPartnerIds = new Set<string>();
 
     for (const userRole of user.roles) {
       roles.add(userRole.role.name);
@@ -136,8 +137,19 @@ export class UsersService {
       if (userRole.partnerId) {
         partnerScopes[userRole.role.name] ??= [];
         partnerScopes[userRole.role.name]!.push(userRole.partnerId);
+        if (userRole.allBranches) {
+          allBranchPartnerIds.add(userRole.partnerId);
+        }
       }
     }
+
+    // Fuel-station branches task: recomputed on every request, same as
+    // everything else in this method, so a branch deactivation takes effect
+    // immediately rather than at next login.
+    const branchAssignments = await this.prisma.partnerBranchStaffAssignment.findMany({
+      where: { userId, isActive: true },
+      select: { partnerBranchId: true },
+    });
 
     return {
       id: user.id,
@@ -145,6 +157,8 @@ export class UsersService {
       roles: Array.from(roles),
       permissions: Array.from(permissions) as RequestUser['permissions'],
       partnerScopes,
+      branchIds: branchAssignments.map((a) => a.partnerBranchId),
+      allBranchPartnerIds: Array.from(allBranchPartnerIds),
       mustChangePassword: user.mustChangePassword,
     };
   }

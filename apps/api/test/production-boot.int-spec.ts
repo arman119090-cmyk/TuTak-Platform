@@ -1,6 +1,88 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFactory as NestFactoryType } from '@nestjs/core';
 import { randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+
+/**
+ * Every test below sets `REDIS_URL` to what looks like a real Redis and
+ * boots the genuine `AppModule` — `RedisModule` and, via `QueueModule`,
+ * BullMQ's own internal `ioredis` client included. Most of these boots are
+ * *supposed* to fail (that's what's under test: a misconfigured guard must
+ * refuse to start), and `NestFactory.createApplicationContext`'s promise
+ * simply rejects on failure — it does not return a partial application
+ * reference. Both `RedisModule` and `QueueModule` are `@Global()` and
+ * resolve early in the DI graph, so by the time a *later* guard (the PSP
+ * check, the media-storage check) throws during its own provider
+ * construction, they had already each opened a real TCP connection — which
+ * can then never be closed through any Nest API, because nothing in this
+ * file ever gets a reference to what was partially built. Worse: killing
+ * such a connection from the Redis side (`CLIENT KILL`) does not help
+ * either — the orphaned `ioredis` client object nothing in this file holds a
+ * reference to just reconnects, because nothing ever told *it* to give up.
+ * Left alone, this leaked a live connection for every rejected boot in this
+ * file, and Jest never exited after the test run finished.
+ *
+ * No test in this file asserts anything about Redis actually working — it
+ * only needs `REDIS_URL` to be *present*, exactly like every other sibling
+ * guard `configureProductionExceptPsp` deliberately satisfies with a
+ * real-looking value so a failure is unambiguous about the one guard under
+ * test. So the fix is at the root: a fake `ioredis` that never opens a
+ * socket at all is a closer match to that intent than a real client with
+ * nowhere to be closed.
+ *
+ * `bullmq` needs more of that mocking than `RedisModule` alone would: its
+ * `Worker` calls `defineCommand` on the client to register its Lua scripts
+ * and, once constructed, actively polls — a plain `on`/`quit`-only fake
+ * satisfies `RedisModule` but throws ("defineCommand is not a function")
+ * and then keeps retrying forever inside `bullmq`'s own internals, which is
+ * the same unreachable-orphan problem in a different shape. `bullmq` itself
+ * is mocked too for exactly the reason `ioredis` is: nothing here asserts
+ * anything about queueing actually working, so a `Queue`/`Worker` that never
+ * does real work is a closer match to intent than a real one this file can
+ * never reach to close.
+ */
+jest.mock('ioredis', () => {
+  class FakeRedis extends EventEmitter {
+    status = 'ready';
+    call = jest.fn().mockResolvedValue(null);
+    set = jest.fn().mockResolvedValue('OK');
+    get = jest.fn().mockResolvedValue(null);
+    eval = jest.fn().mockResolvedValue(null);
+    keys = jest.fn().mockResolvedValue([]);
+    del = jest.fn().mockResolvedValue(0);
+    duplicate = jest.fn(() => new FakeRedis());
+    quit = jest.fn().mockResolvedValue('OK');
+    disconnect = jest.fn();
+  }
+  return { __esModule: true, default: FakeRedis };
+});
+
+jest.mock('bullmq', () => {
+  class FakeQueueLike extends EventEmitter {
+    close = jest.fn().mockResolvedValue(undefined);
+    disconnect = jest.fn().mockResolvedValue(undefined);
+    obliterate = jest.fn().mockResolvedValue(undefined);
+    add = jest.fn().mockResolvedValue({ id: 'fake' });
+    run = jest.fn().mockResolvedValue(undefined);
+    getRepeatableJobs = jest.fn().mockResolvedValue([]);
+    removeRepeatableByKey = jest.fn().mockResolvedValue(undefined);
+    waitUntilReady = jest.fn().mockResolvedValue(undefined);
+    // SweepsScheduler.onApplicationBootstrap calls these during a boot that
+    // succeeds far enough to reach lifecycle hooks (tests A and E's last
+    // case) — see that class's own docblock on why the schedule is
+    // registered idempotently on every boot.
+    getJobSchedulers = jest.fn().mockResolvedValue([]);
+    upsertJobScheduler = jest.fn().mockResolvedValue(undefined);
+    removeJobScheduler = jest.fn().mockResolvedValue(undefined);
+  }
+  return {
+    __esModule: true,
+    Queue: FakeQueueLike,
+    Worker: FakeQueueLike,
+    QueueEvents: FakeQueueLike,
+    FlowProducer: FakeQueueLike,
+  };
+});
 
 /**
  * The canonical TuTak model never charges the customer's card — the

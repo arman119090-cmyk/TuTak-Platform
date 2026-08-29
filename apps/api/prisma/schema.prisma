@@ -2066,6 +2066,18 @@ enum LedgerAccountType {
   /// `EV_ROAMING_RECEIVABLE` (pays that down) for the full amount owed, only
   /// when the balance can cover it in full — see `collectFromBalance`'s own
   /// docblock for why a partial collection is deliberately not attempted.
+  ///
+  /// Closed-loop by design (business decision, 2026-08-29): this money pays
+  /// for roaming-CPO charging and nothing else. `CustomerBalanceService
+  /// .collectFromBalance` is the *only* place anything ever debits this
+  /// account — there is deliberately no conversion into `BonusEntryType`
+  /// wallet points or any other spendable form. Bonus points are usable
+  /// anywhere a purchase accepts them (QR, PurchaseIntent, internal EV);
+  /// funding them from this account would launder money out of the
+  /// "charging only" restriction the same step it claimed to respect. If a
+  /// future change adds a second way to spend this balance, it must still
+  /// be charging-only, or this restriction needs a new, explicit decision —
+  /// not a quiet side effect of adding a generic "spend my balance" helper.
   CUSTOMER_PREPAID_BALANCE
 }
 

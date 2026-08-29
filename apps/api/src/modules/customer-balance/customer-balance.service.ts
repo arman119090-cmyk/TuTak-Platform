@@ -222,6 +222,14 @@ export class CustomerBalanceService {
    * Returns whether it collected. Idempotent on `sourceTransactionId`, and
    * safe to call from outside the settlement's own atomic transaction — see
    * the call site's own reasoning for why it deliberately is.
+   *
+   * This is the *only* place anything ever debits `CUSTOMER_PREPAID_BALANCE`
+   * — a closed-loop business decision (2026-08-29): this money pays for
+   * roaming-CPO charging and nothing else, deliberately with no conversion
+   * into bonus/wallet points, which are spendable anywhere a purchase
+   * accepts them. Do not add a second caller of this method, or any other
+   * way to spend this account, without revisiting that decision explicitly
+   * — see `CUSTOMER_PREPAID_BALANCE`'s own schema docblock.
    */
   async collectFromBalance(
     userId: string,

@@ -204,6 +204,20 @@ export class EvSessionsService {
       // simulate a real charging session with nothing behind it.
       throw new BadRequestException('This connector is not configured for remote charging');
     }
+    // docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md: the dual rate this
+    // session bills at is frozen right now, before any energy flows — see
+    // the `evSession.create` below. `standardRetailRatePerKwh` is nullable
+    // (it predates this requirement and is meaningless for an INTERNAL
+    // station, which bills from `EvConnector.pricePerKwh` instead), so a
+    // roaming station an owner enabled for in-app charging without first
+    // pricing it must fail closed here, not freeze a null rate that
+    // `completeAppInitiatedSession` would then have nothing to bill with.
+    if (
+      connector.station.provider === EvStationProvider.ROAMING_CPO &&
+      connector.station.standardRetailRatePerKwh === null
+    ) {
+      throw new BadRequestException('This station has no retail rate configured yet');
+    }
     // Business decision (2026-08-16, M7 revision): unlike QR, PurchaseIntent
     // and Payments capture, a partner's own owner/staff MAY charge at their
     // own affiliated station — the session itself is not blocked. What they
@@ -253,6 +267,20 @@ export class EvSessionsService {
           status: EvSessionStatus.CHARGING,
           startedAt: new Date(),
           energyKwh: 0,
+          // Frozen dual-rate accounting (docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md):
+          // null for an INTERNAL session, which bills from the connector's
+          // own `pricePerKwh` in `stopOnce` instead. For a ROAMING_CPO
+          // session these three are exactly what `completeAppInitiatedSession`
+          // needs once the CPO's CDR arrives — a later change to the
+          // station's rate or the partner's contract must never alter a
+          // session already in flight.
+          ...(connector.station.provider === EvStationProvider.ROAMING_CPO
+            ? {
+                stationRetailRatePerKwh: connector.station.standardRetailRatePerKwh,
+                wholesaleRatePerKwh: connector.station.partner.evWholesaleRatePerKwh,
+                marginReferralCapPerKwh: connector.station.partner.evMarginReferralCapPerKwh,
+              }
+            : {}),
         },
         // Joined so the response is a session a client can render on its own.
         // Without it the app opens its charging screen with no price and no
@@ -405,23 +433,26 @@ export class EvSessionsService {
     if (session.status !== EvSessionStatus.CHARGING) {
       throw new BadRequestException(`Session cannot be stopped (status: ${session.status})`);
     }
-    // Problem 2: `reportMeterValue` now refuses a reading for any
-    // `ROAMING_CPO` session (above), so this session's `energyKwh` is always
-    // zero — billing from it here, as the branch below does for every other
-    // session, would either invent a free charge or (once the frozen
-    // dual-rate accounting lands) bill a wrong amount from no real data.
-    // Failing closed rather than completing incorrectly: a customer-initiated
-    // roaming-CPO stop must not financially complete until it bills from the
-    // CPO's own trusted CDR, which this method does not yet do — that is the
-    // remaining piece of docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md's
-    // financial-accounting work. Nothing reaches this branch today: `start()`
-    // only ever puts a `ROAMING_CPO` connector into CHARGING when
-    // `customerChargingEnabled` is true, which no station has by default.
+    // docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md: `reportMeterValue`
+    // refuses a reading for any `ROAMING_CPO` session, so this session's
+    // `energyKwh` is always zero — billing from it here, as the branch below
+    // does for every other session, would invent a free charge. This session
+    // is not billed at Stop at all: the physical stop happens now (remote
+    // command sent, bay released), and the financial completion — bill the
+    // frozen retail rate, split the frozen wholesale margin, accrue bonus —
+    // happens once `EvCdrReconciliationService.completeAppInitiatedSession`
+    // gets the CPO's own trusted CDR. Applying bonus points is refused here
+    // rather than silently ignored: `bonusToApply <= cost` cannot be checked
+    // before `cost` is known, and honoring a parameter that quietly does
+    // nothing is worse than telling the caller why.
     if (session.connector.station.provider === EvStationProvider.ROAMING_CPO) {
-      throw new BadRequestException(
-        'This session cannot be stopped from the app yet — trusted CDR-based settlement for an ' +
-          'in-app roaming-CPO charge is not implemented',
-      );
+      if (dto.bonusAmountToApply) {
+        throw new BadRequestException(
+          'Bonus points cannot be applied to a roaming charge yet — its final cost is not known ' +
+            'until the network settles it',
+        );
+      }
+      return this.stopRoamingSession(session);
     }
 
     // Claim the stop before doing anything that costs money.
@@ -705,6 +736,7 @@ export class EvSessionsService {
       }
 
       return {
+        status: EvSessionStatus.COMPLETED,
         transactionId: completed.id,
         energyKwh: energyKwh.toString(),
         cost: cost.toString(),
@@ -742,6 +774,71 @@ export class EvSessionsService {
       );
       throw err;
     }
+  }
+
+  /**
+   * The physical half of stopping an app-initiated `ROAMING_CPO` session —
+   * see docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md. Sends the
+   * remote stop command, frees the bay, and parks the session at
+   * `AWAITING_SETTLEMENT`. Never bills anything: the customer's final cost
+   * is not knowable until `EvCdrReconciliationService.completeAppInitiatedSession`
+   * gets the CPO's own trusted CDR, which can be minutes to hours later.
+   *
+   * The caller has already claimed the stop via `stoppedAt` before this
+   * runs, so a concurrent second stop attempt never reaches here twice.
+   */
+  private async stopRoamingSession(
+    session: Prisma.EvSessionGetPayload<{ include: { connector: { include: { station: true } } } }>,
+  ) {
+    const claimed = await this.prisma.evSession.updateMany({
+      where: { id: session.id, status: EvSessionStatus.CHARGING, stoppedAt: null },
+      data: { stoppedAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      throw new BadRequestException('Session is already being stopped');
+    }
+
+    try {
+      if (session.connector.ocpiEvseUid) {
+        await this.ocpiAdapter.stopRemoteSession({ ocpiSessionId: session.ocpiCdrId ?? session.id });
+      }
+    } catch (err) {
+      // The remote command failing must not leave the bay CHARGING forever
+      // — same reasoning `releaseConnector` exists for the internal path.
+      // The session still moves to AWAITING_SETTLEMENT: the CPO may well
+      // have stopped delivering energy regardless of whether its API call
+      // succeeded, and `completeAppInitiatedSession` finding no CDR ever
+      // arrives is exactly what its own give-up-and-alert path is for.
+      this.logger.error(`Roaming stop command failed for session ${session.id}`, err as Error);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.evConnector.update({
+        where: { id: session.connectorId },
+        data: { status: EvConnectorStatus.AVAILABLE },
+      });
+      await tx.evSession.update({
+        where: { id: session.id },
+        data: { status: EvSessionStatus.AWAITING_SETTLEMENT },
+      });
+    });
+
+    // Same field names as the internal path's return shape below, values
+    // null — not a narrower object — so every existing caller's static type
+    // for `result.cost`/`.transactionId`/etc. stays `string | null` rather
+    // than "does not exist on this branch of the union", which would force
+    // every caller of `stop()` (dozens of existing internal-only tests
+    // included) to narrow on `status` before touching a field they already
+    // know is there for the branch they are actually exercising.
+    return {
+      status: EvSessionStatus.AWAITING_SETTLEMENT,
+      sessionId: session.id,
+      transactionId: null,
+      energyKwh: null,
+      cost: null,
+      bonusApplied: null,
+      bonusEarned: null,
+    };
   }
 
   /**

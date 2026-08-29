@@ -303,6 +303,7 @@
     "AUTHORIZED": "Авторизовано",
     "CHARGING": "Идёт зарядка",
     "SUSPENDED": "Приостановлено",
+    "AWAITING_SETTLEMENT": "Ожидает расчёта сети",
     "COMPLETED": "Завершено",
     "INVALID": "Недействительно",
     "CANCELLED": "Отменено"

@@ -2,12 +2,14 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BonusEntryType,
   EvCdrReconciliation,
+  EvSessionStatus,
   LedgerAccountType,
   PostingDirection,
   Prisma,
   ReferralProgramVersion,
   ReferrerType,
   TransactionStatus,
+  TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
@@ -15,8 +17,18 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { roundCharge, roundIssued } from '../../common/utils/money';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
-import { ReferralService, ResolvedReferrer } from '../referral/referral.service';
+import {
+  CURRENT_REFERRAL_PROGRAM_VERSION,
+  ReferralChainLevel,
+  ReferralService,
+  ResolvedReferrer,
+} from '../referral/referral.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { TransactionsService } from '../transactions/transactions.service';
+import { FraudDetectionService } from '../security/fraud-detection.service';
+import { PhoneVerificationService } from '../auth/phone-verification.service';
+import { PartnersService } from '../partners/partners.service';
+import { RoamingCpoSettlementService } from '../roaming-cpo/roaming-cpo-settlement.service';
 import { OCPI_ADAPTER, OcpiAdapter } from './ocpi/ocpi-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
@@ -96,9 +108,23 @@ export class EvCdrReconciliationService {
     private readonly ledger: LedgerService,
     private readonly alerts: AlertsService,
     @Inject(OCPI_ADAPTER) private readonly ocpiAdapter: OcpiAdapter,
+    private readonly transactionsService: TransactionsService,
+    private readonly fraudDetection: FraudDetectionService,
+    private readonly phoneVerification: PhoneVerificationService,
+    private readonly partners: PartnersService,
   ) {}
 
-  /** Polls every roaming CDR still waiting on its operator. */
+  /**
+   * Polls every roaming CDR still waiting on its operator, and — separately —
+   * every app-initiated `ROAMING_CPO` session still `AWAITING_SETTLEMENT`
+   * (docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md). The two are
+   * deliberately different queries: a `PENDING` `EvCdr` is a session already
+   * billed, here to be corrected against the operator's figure; an
+   * `AWAITING_SETTLEMENT` session has never been billed at all — it is
+   * billed for the first time the moment its CDR arrives. Sharing one sweep
+   * (`ev.reconcile-roaming-cdrs`) rather than adding a second job reuses the
+   * existing lock, heartbeat and alerting for free.
+   */
   async reconcilePending(): Promise<number> {
     const pending = await this.prisma.evCdr.findMany({
       where: { reconciliation: EvCdrReconciliation.PENDING },
@@ -120,8 +146,266 @@ export class EvCdrReconciliationService {
       }
     }
 
-    if (settled > 0) this.logger.log(`Reconciled ${settled} roaming CDR(s)`);
+    const awaitingSettlement = await this.prisma.evSession.findMany({
+      where: { status: EvSessionStatus.AWAITING_SETTLEMENT, settlementGivenUpAt: null },
+      orderBy: { stoppedAt: 'asc' },
+      take: 200,
+    });
+
+    for (const session of awaitingSettlement) {
+      try {
+        if (await this.completeAppInitiatedSession(session.id)) settled += 1;
+      } catch (err) {
+        this.logger.error(
+          `Could not complete roaming session ${session.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    if (settled > 0) this.logger.log(`Reconciled ${settled} roaming CDR(s)/session(s)`);
     return settled;
+  }
+
+  /**
+   * Bills an app-initiated `ROAMING_CPO` session for the first time, once
+   * the CPO's own trusted CDR finally answers — see
+   * docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md and the
+   * `AWAITING_SETTLEMENT` status docblock. Mirrors `reconcileOne`'s own
+   * claim/fetch/give-up shape exactly (same constants, same reasoning), but
+   * completes a bill rather than correcting one: there is no existing
+   * `Transaction`/`EvCdr` row to update, because none was ever created —
+   * this is the first and only place either is created for this session.
+   *
+   * Returns true when the session reached a terminal state on this pass
+   * (billed, or given up on after `MAX_FETCH_ATTEMPTS`); false when the CPO
+   * simply has not answered yet.
+   */
+  private async completeAppInitiatedSession(sessionId: string): Promise<boolean> {
+    const staleBefore = new Date(Date.now() - RECONCILE_CLAIM_STALE_AFTER_MS);
+    const claimed = await this.prisma.evSession.updateMany({
+      where: {
+        id: sessionId,
+        status: EvSessionStatus.AWAITING_SETTLEMENT,
+        OR: [{ settlingAt: null }, { settlingAt: { lt: staleBefore } }],
+      },
+      data: { settlingAt: new Date() },
+    });
+    if (claimed.count === 0) return false;
+
+    const session = await this.prisma.evSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { connector: { include: { station: { include: { partner: true } } } } },
+    });
+
+    const remoteId = session.ocpiCdrId ?? session.id;
+    const remote = await this.ocpiAdapter.fetchCdr(remoteId);
+
+    if (!remote) {
+      const attempts = session.settlementAttempts + 1;
+      await this.prisma.evSession.update({
+        where: { id: session.id },
+        data: { settlementAttempts: attempts, settlingAt: null },
+      });
+      if (attempts >= MAX_FETCH_ATTEMPTS) {
+        await this.prisma.evSession.update({
+          where: { id: session.id },
+          data: { settlementGivenUpAt: new Date() },
+        });
+        this.logger.error(
+          `Operator never produced a CDR for roaming session ${session.id} after ${attempts} attempts`,
+        );
+        await this.alerts.fire({
+          severity: 'critical',
+          key: `ev.roaming.settlement_unavailable:${session.id}`,
+          title: 'A roaming-CPO charge could not be billed',
+          body:
+            `We asked ${attempts} times and the operator has not produced a CDR for a session a ` +
+            'customer already drove away from. Real energy was very likely delivered and TuTak ' +
+            'has no trustworthy figure to bill it at — this needs a person, not another retry.',
+          context: { sessionId: session.id, attempts },
+        });
+        return true;
+      }
+      return false;
+    }
+
+    // Frozen at `start()` — never re-read from the live `EvStation`/`Partner`
+    // rows, so a later change to either never alters a session already in
+    // flight. `start()` refuses to open a `ROAMING_CPO` session at all when
+    // `standardRetailRatePerKwh` is null, so these are guaranteed non-null
+    // here.
+    const retailRate = session.stationRetailRatePerKwh!;
+    const wholesaleRate = session.wholesaleRatePerKwh!;
+    const marginCap = session.marginReferralCapPerKwh!;
+
+    const energyKwh = new Decimal(remote.totalEnergyKwh).toDecimalPlaces(3);
+    const cost = roundCharge(energyKwh.times(retailRate));
+    const wholesaleAmount = roundCharge(energyKwh.times(wholesaleRate));
+    const { pool, uncappedRevenue } = RoamingCpoSettlementService.computeMargin({
+      appliedCustomerRatePerKwh: retailRate,
+      wholesaleRatePerKwh: wholesaleRate,
+      marginReferralCapPerKwh: marginCap,
+      energyKwh,
+    });
+
+    const partnerId = session.connector.station.partnerId;
+    const transaction = await this.transactionsService.create({
+      userId: session.userId,
+      partnerId,
+      type: TransactionType.EV_CHARGING,
+      amount: cost,
+      bonusAppliedAmount: new Decimal(0),
+      description: `EV charging at ${session.connector.station.name}`,
+      metadata: { sessionId: session.id, energyKwh: energyKwh.toString(), roaming: true },
+    });
+
+    // Same velocity check every other EV/QR settlement path runs. Unlike
+    // the interactive `stopOnce`, there is no live request to hold for
+    // review here — the physical charge already happened minutes to hours
+    // ago — so an anomalous result is flagged for a human on the completed
+    // transaction rather than blocking completion of a session nothing can
+    // undo.
+    const anomalous = await this.fraudDetection
+      .checkVelocity(session.userId, transaction.id)
+      .catch((e) => {
+        this.logger.error('Fraud velocity check failed', e);
+        return false;
+      });
+    if (anomalous) {
+      await this.transactionsService.markFlagged(transaction.id, 'velocity_limit_exceeded');
+    }
+
+    try {
+      // Business decision (2026-08-16, M7 revision), applied here exactly as
+      // `EvSessionsService.stopOnce` applies it to the internal path: an
+      // affiliated partner owner/staff may charge at their own station —
+      // nothing earlier in this flow blocked the session — but the session
+      // must grant them no bonus benefit. Unlike the internal path (which
+      // skips its whole commission pool when ineligible), this mirrors the
+      // *walk-in* roaming settlement's own `eligible` fallback: TuTak's
+      // margin is never gated on the customer's eligibility, only the
+      // customer-facing bonus split is — an ineligible session still owes
+      // the partner the same wholesale amount and still earns TuTak the
+      // same margin, it simply keeps the whole pool as revenue instead of
+      // splitting it.
+      const canEarn = await this.phoneVerification
+        .assertCanEarn(session.userId)
+        .then(() => true)
+        .catch(() => false);
+      const affiliated = await this.partners.isAffiliated(partnerId, session.userId);
+      const eligible = canEarn && !affiliated && pool.greaterThan(0);
+
+      let chain: ReferralChainLevel[] = [];
+      let green = new Decimal(0);
+      let deferred = new Decimal(0);
+      let l1 = new Decimal(0);
+      let l2 = new Decimal(0);
+      let l3 = new Decimal(0);
+      let tutak = pool;
+      if (eligible) {
+        chain = await this.referralService.resolveReferralChain(session.userId);
+        const split = this.referralService.computePoolSplit(pool, chain);
+        green = split.green;
+        deferred = split.deferred;
+        l1 = split.l1;
+        l2 = split.l2;
+        l3 = split.l3;
+        tutak = split.tutak;
+      }
+      const l1Entry = chain.find((c) => c.level === 1) ?? null;
+      const l2Entry = chain.find((c) => c.level === 2) ?? null;
+      const l3Entry = chain.find((c) => c.level === 3) ?? null;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.evSession.update({
+          where: { id: session.id },
+          data: {
+            status: EvSessionStatus.COMPLETED,
+            energyKwh,
+            cost,
+            transactionId: transaction.id,
+            appliedCustomerRatePerKwh: retailRate,
+            marginPerKwh: Decimal.max(retailRate.minus(wholesaleRate), 0),
+            uncappedMarginRevenueAmount: uncappedRevenue,
+            poolAmount: pool,
+            greenAmount: green,
+            deferredAmount: deferred,
+            programVersion: eligible ? CURRENT_REFERRAL_PROGRAM_VERSION : null,
+            referrer1Type: l1Entry?.type ?? null,
+            referrer1UserId: l1Entry?.type === 'USER' ? l1Entry.userId : null,
+            referrer1PartnerId: l1Entry?.type === 'PARTNER' ? l1Entry.partnerId : null,
+            referrer1Amount: l1,
+            referrer2Type: l2Entry?.type ?? null,
+            referrer2UserId: l2Entry?.type === 'USER' ? l2Entry.userId : null,
+            referrer2PartnerId: l2Entry?.type === 'PARTNER' ? l2Entry.partnerId : null,
+            referrer2Amount: l2,
+            referrer3Type: l3Entry?.type ?? null,
+            referrer3UserId: l3Entry?.type === 'USER' ? l3Entry.userId : null,
+            referrer3PartnerId: l3Entry?.type === 'PARTNER' ? l3Entry.partnerId : null,
+            referrer3Amount: l3,
+            tutakAmount: tutak,
+          },
+        });
+
+        await tx.evCdr.create({
+          data: {
+            sessionId: session.id,
+            totalEnergy: energyKwh,
+            totalCost: cost,
+            totalTimeSec: remote.totalTimeSec,
+            reconciliation: EvCdrReconciliation.NOT_APPLICABLE,
+            ocpiCdrId: remote.ocpiCdrId,
+            raw: remote.raw as never,
+          },
+        });
+
+        if (green.greaterThan(0)) {
+          const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: session.userId } });
+          await this.bonusEngine.accrue(
+            {
+              walletId: wallet.id,
+              type: BonusEntryType.ACCRUAL_PURCHASE,
+              amount: green,
+              sourceTransactionId: transaction.id,
+            },
+            tx,
+          );
+        }
+
+        await this.deferredBonusLots.advanceExistingLots(session.userId, cost, transaction.id, tx);
+        if (deferred.greaterThan(0)) {
+          await this.deferredBonusLots.createLot(session.userId, deferred, transaction.id, tx);
+        }
+        await this.referralService.creditChainShares(chain, { l1, l2, l3 }, transaction.id, tx);
+
+        await this.postEvRoamingSettlementLedgerIdempotent(
+          tx,
+          partnerId,
+          { wholesaleAmount, green, deferred, l1, l2, l3, tutak, uncappedRevenue, chain },
+          transaction.id,
+        );
+
+        await this.transactionsService.markCompleted(transaction.id, { bonusEarnedAmount: green }, tx);
+      });
+
+      return true;
+    } catch (err) {
+      // Nothing was committed — the atomic transaction above rolled
+      // everything back together, including the session's own status
+      // change. Release the claim (without counting it as a failed fetch
+      // attempt — the CPO answered fine, this was an internal error) so the
+      // next pass retries with a fresh `fetchCdr` call.
+      this.logger.error(
+        `Failed to complete roaming session ${session.id}, will retry next pass: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      await this.transactionsService
+        .markFailed(transaction.id, err instanceof Error ? err.message : 'unknown_error')
+        .catch(() => undefined);
+      await this.prisma.evSession
+        .update({ where: { id: session.id }, data: { settlingAt: null } })
+        .catch(() => undefined);
+      throw err;
+    }
   }
 
   /** Returns true when the CDR reached a terminal state on this pass. */
@@ -234,6 +518,98 @@ export class EvCdrReconciliationService {
    * leaving `PENDING`, or none of them do and the CDR stays `PENDING` for a
    * genuine retry — nothing is ever half-applied or silently dropped.
    */
+  private async postEvRoamingSettlementLedgerIdempotent(
+    tx: Tx,
+    partnerId: string,
+    amounts: {
+      wholesaleAmount: Decimal;
+      green: Decimal;
+      deferred: Decimal;
+      l1: Decimal;
+      l2: Decimal;
+      l3: Decimal;
+      tutak: Decimal;
+      uncappedRevenue: Decimal;
+      chain: ReferralChainLevel[];
+    },
+    transactionId: string,
+  ): Promise<void> {
+    const existing = await tx.ledgerTransaction.findFirst({
+      where: { kind: 'ev.roaming.app_settlement', sourceType: 'Transaction', sourceId: transactionId },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const [partnerAccount, bonusLiabilityAccount, revenueAccount, receivableAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.EV_ROAMING_RECEIVABLE }, tx),
+    ]);
+
+    const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
+    const userLiability = amounts.chain
+      .filter((c) => c.type === 'USER')
+      .reduce((sum, c) => sum.plus(byLevel[c.level]), new Decimal(0));
+    const customerLiability = amounts.green.plus(amounts.deferred).plus(userLiability);
+
+    const partnerReferrerPostings = await Promise.all(
+      amounts.chain
+        .filter((c): c is ReferralChainLevel & { type: 'PARTNER' } => c.type === 'PARTNER')
+        .map(async (c) => {
+          const share = byLevel[c.level];
+          if (share.lessThanOrEqualTo(0)) return null;
+          const account = await this.ledger.accountFor(
+            { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: c.partnerId },
+            tx,
+          );
+          return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
+        }),
+    );
+
+    const revenueCredit = amounts.tutak.plus(amounts.uncappedRevenue);
+
+    // Unlike `postEvContributionLedgerIdempotent` (the internal/commission
+    // model, where the customer pays the partner directly and the partner's
+    // own contribution funds TuTak's economics — so the partner account is
+    // DEBITED), this is the one purchase path in the platform where TuTak
+    // itself is the party the customer owes money to: TuTak buys the energy
+    // wholesale and resells it at retail. So the partner account is
+    // CREDITED (TuTak now genuinely owes them the wholesale amount for
+    // energy delivered), and the debit lands on `EV_ROAMING_RECEIVABLE` —
+    // see that account type's own docblock for why collecting it is a
+    // separate, not-yet-built concern this posting does not try to solve.
+    // The debit is the sum of every credit below, by construction, so this
+    // balances regardless of whether it equals `cost` exactly (the same
+    // "residual, not independently rounded" discipline `computePoolSplit`'s
+    // own `tutak` leg already relies on).
+    const postings = [
+      { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: amounts.wholesaleAmount },
+      ...(customerLiability.greaterThan(0)
+        ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
+        : []),
+      ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
+      ...(revenueCredit.greaterThan(0)
+        ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: revenueCredit }]
+        : []),
+    ];
+    const totalCredit = postings.reduce((sum, p) => sum.plus(p.amount), new Decimal(0));
+    if (totalCredit.lessThanOrEqualTo(0)) return;
+
+    await this.ledger.post(
+      {
+        kind: 'ev.roaming.app_settlement',
+        sourceType: 'Transaction',
+        sourceId: transactionId,
+        postings: [
+          { accountId: receivableAccount.id, direction: PostingDirection.DEBIT, amount: totalCredit },
+          ...postings,
+        ],
+      },
+      tx,
+    );
+  }
+
   private async correctOvercharge(
     cdrId: string,
     sessionId: string,

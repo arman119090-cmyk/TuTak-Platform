@@ -163,7 +163,7 @@ describe('EV metering authorization (integration)', () => {
 
       const result = await sessions.stop(session.id, user.id, {});
       expect(result.energyKwh).toBe('30.125');
-      expect(new Decimal(result.cost).toFixed(4)).toBe('3012.5000');
+      expect(new Decimal(result.cost!).toFixed(4)).toBe('3012.5000');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 

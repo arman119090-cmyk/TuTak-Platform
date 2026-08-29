@@ -303,6 +303,7 @@
     "AUTHORIZED": "Հաստատված",
     "CHARGING": "Լիցքավորվում է",
     "SUSPENDED": "Դադարեցված",
+    "AWAITING_SETTLEMENT": "Սպասում է ցանցի հաշվարկին",
     "COMPLETED": "Ավարտված",
     "INVALID": "Անվավեր",
     "CANCELLED": "Չեղարկված"

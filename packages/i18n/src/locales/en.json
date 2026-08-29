@@ -303,6 +303,7 @@
     "AUTHORIZED": "Authorized",
     "CHARGING": "Charging",
     "SUSPENDED": "Suspended",
+    "AWAITING_SETTLEMENT": "Awaiting network settlement",
     "COMPLETED": "Completed",
     "INVALID": "Invalid",
     "CANCELLED": "Cancelled"

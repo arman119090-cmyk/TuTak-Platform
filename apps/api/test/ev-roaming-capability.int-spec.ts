@@ -125,8 +125,8 @@ describe('Roaming-CPO capability gating (integration)', () => {
     });
   });
 
-  describe('stop() — fails closed rather than completing a roaming-CPO session incorrectly', () => {
-    it('refuses to stop a roaming-CPO session (no trusted-CDR settlement path yet)', async () => {
+  describe('stop() — parks a roaming-CPO session pending trusted-CDR settlement, never bills it directly', () => {
+    it('stops a roaming-CPO session into AWAITING_SETTLEMENT rather than billing it from local state', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
       const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
@@ -134,12 +134,46 @@ describe('Roaming-CPO capability gating (integration)', () => {
         data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
       });
 
-      await expect(sessions.stop(session.id, user.id, {})).rejects.toThrow(BadRequestException);
+      const result = await sessions.stop(session.id, user.id, {});
+      expect(result.status).toBe('AWAITING_SETTLEMENT');
+      expect(result.cost).toBeNull();
+      expect(result.transactionId).toBeNull();
+
+      const updated = await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } });
+      expect(updated.status).toBe('AWAITING_SETTLEMENT');
+      expect(updated.stoppedAt).not.toBeNull();
+      expect(updated.transactionId).toBeNull();
+      const freedConnector = await prisma.evConnector.findUniqueOrThrow({ where: { id: connector.id } });
+      expect(freedConnector.status).toBe('AVAILABLE');
+    });
+
+    it('refuses to apply bonus points at stop — the final cost is not knowable yet', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
+      const session = await prisma.evSession.create({
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
+      });
+
+      await expect(sessions.stop(session.id, user.id, { bonusAmountToApply: '5' })).rejects.toThrow(
+        BadRequestException,
+      );
 
       const untouched = await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } });
       expect(untouched.status).toBe('CHARGING');
       expect(untouched.stoppedAt).toBeNull();
-      expect(untouched.transactionId).toBeNull();
+    });
+
+    it('refuses a second concurrent stop once the first has claimed it', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
+      const session = await prisma.evSession.create({
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
+      });
+
+      await sessions.stop(session.id, user.id, {});
+      await expect(sessions.stop(session.id, user.id, {})).rejects.toThrow(BadRequestException);
     });
   });
 });

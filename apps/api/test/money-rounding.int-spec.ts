@@ -135,7 +135,7 @@ describe('Money rounding (integration)', () => {
       // directly by the six-leg rule, no upfront TuTak cut — the
       // customer's immediate green share is 20% of 88.1503 = 17.63006,
       // truncated to 17.63.
-      const earned = new Decimal(result.bonusEarned);
+      const earned = new Decimal(result.bonusEarned!);
       assertStorable(earned, 'bonus earned');
       expect(earned.toString()).toBe('17.63');
 

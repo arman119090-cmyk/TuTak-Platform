@@ -305,7 +305,7 @@ describe('Roaming CDR reconciliation (integration)', () => {
       // Pool 100 → deferred 30 (20% green/30% deferred, unchanged), L1
       // (this referrer, the direct referrer) 10% of 100 = 10.
       const lotBefore = await prisma.deferredBonusLot.findFirstOrThrow({
-        where: { sourceTransactionId: result.transactionId },
+        where: { sourceTransactionId: result.transactionId! },
       });
       expect(lotBefore.amount.toFixed(4)).toBe('30.0000');
       const referrerBefore = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });

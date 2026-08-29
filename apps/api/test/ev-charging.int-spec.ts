@@ -168,7 +168,7 @@ describe('EV charging (integration)', () => {
     const result = await sessions.stop(session.id, user.id, {});
 
     const lot = await prisma.deferredBonusLot.findFirstOrThrow({
-      where: { userId: user.id, sourceTransactionId: result.transactionId },
+      where: { userId: user.id, sourceTransactionId: result.transactionId! },
     });
     // Pool 125 → deferred is 30% of that = 37.5, same split
     // PurchaseIntentsService.settlePurchase uses.

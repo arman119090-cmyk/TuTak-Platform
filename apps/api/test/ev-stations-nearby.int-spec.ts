@@ -161,7 +161,10 @@ describe('EV stations — hidden-inventory IDOR (integration)', () => {
     const partnerB = await createPartner(prisma);
     await createRoamingCpoStation(prisma, { partnerId: partnerB.id });
 
-    await expect(controller.listStations(partnerStaff(partnerA.id), partnerB.id)).rejects.toThrow(
+    // `listStations` throws synchronously (it is not `async`), so the
+    // rejection form of `expect` never gets a promise to catch — the throw
+    // happens while evaluating the argument, before `expect` runs at all.
+    expect(() => controller.listStations(partnerStaff(partnerA.id), partnerB.id)).toThrow(
       /not authorized/i,
     );
   });

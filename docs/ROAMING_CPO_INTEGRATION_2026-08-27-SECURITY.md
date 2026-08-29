@@ -47,7 +47,7 @@ generate`; full `tsc` build+spec typecheck; `nest build`; a live boot with
 `/health/ready` reporting `database: ok, redis: ok` against the freshly
 migrated, freshly seeded schema.
 
-## Problem 2 — fake charging sessions (capability model shipped; full financial saga is not)
+## Problem 2 — fake charging sessions (capability model and financial accounting both shipped)
 
 ### What was actually wrong
 
@@ -112,32 +112,29 @@ rather than inventing a parallel mechanism.
   trusted CDR is the only legitimate source, exactly as the final model
   requires.
 
-### What did not ship (and why)
+### What did not ship on 2026-08-27 (and shipped 2026-08-29 instead)
 
-Freezing the dual rate at Start, billing from a trusted CDR at Stop, the
-wallet+discount funding split, and the outbox/saga around remote Stop are
-**not implemented**. Investigating the honest path exposed that
-`EvSessionsService.stopOnce()` bills from `session.energyKwh` — which is
-now always zero for a `ROAMING_CPO` session, since `reportMeterValue`
-refuses to populate it — so completing that method unchanged would either
-bill a free session or, once the frozen-rate accounting existed, bill from
-no real data. Rather than ship a rushed money-moving saga in the same pass
-as the security fix, `stopOnce()` now fails closed for a `ROAMING_CPO`
-session with a clear error, instead of completing incorrectly. This is safe
-today because nothing reaches that branch: `start()` only ever admits a
-`ROAMING_CPO` connector to `CHARGING` when `customerChargingEnabled` is
-true, which no station has by default and none will until this next phase
-ships. The existing `EvCdrReconciliationService` (`ev.reconcile-roaming-
-cdrs`) is a mature, already-tested async true-up loop for the older
-`ocpiEvseUid`-on-an-otherwise-internal-station case; extending an
-equivalent pattern — bill provisionally never, wait for the CPO's CDR, only
-then complete — to this new capability-gated path, together with the
-prepaid wallet-plus-card top-up flow the business model calls for (no such
-stored-value wallet exists anywhere in this codebase today; the existing
-`Wallet` model is the bonus/discount ledger, and `Payment`/
-`PaymentEngineService` is a per-transaction PSP capture, not a top-up
-balance), is the concrete remaining work before a customer can actually
-complete a roaming-CPO charge through the app end to end.
+As originally written, this section said freezing the dual rate at Start,
+billing from a trusted CDR at Stop, and the saga around remote Stop were
+not implemented, and that `stopOnce()` failed closed for every
+`ROAMING_CPO` session rather than complete one incorrectly. That is no
+longer the case — see
+`docs/ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md` for the full design
+and what actually shipped: `start()` now freezes the dual rate, `stop()`
+parks the session at a new `AWAITING_SETTLEMENT` status instead of failing
+closed, and the existing `EvCdrReconciliationService` sweep completes and
+bills it the first time the CPO's own trusted CDR arrives — exactly the
+"extend the existing async true-up loop" approach this section originally
+proposed as the remaining work.
+
+One piece named here is still deliberately unbuilt: a real money-collection
+mechanism for what the customer now owes. The 2026-08-29 pass completes the
+*accounting* (frozen rates, margin split, referral crediting, a balanced
+ledger) but bills through the same "record a `Transaction`, no real payment
+capture" pattern every other purchase path in this codebase already uses —
+it does not invent a prepaid wallet top-up or wire in card capture. See
+that document's own `EV_ROAMING_RECEIVABLE` account section for exactly
+what this means and does not mean.
 
 ## Problem 3 — insecure external linking (fixed)
 

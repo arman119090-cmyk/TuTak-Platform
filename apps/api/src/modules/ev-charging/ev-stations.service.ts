@@ -1,4 +1,3 @@
-import { EvStationProvider } from '@prisma/client';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { haversineKm } from '../../common/utils/geo';
@@ -9,8 +8,26 @@ import { CreateStationDto } from './dto/create-station.dto';
 export class EvStationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * `CreateStationDto` has no `provider` field — this is the only path that
+   * creates a station outside `RoamingCpoStationsService.sync`, so every
+   * station it creates is `INTERNAL` (the schema default). TuTak's own
+   * hardware has never needed a remote adapter to be chargeable, so this is
+   * where that station's capability flags are explicitly turned on — the
+   * schema's own column default is `false` (safe for a synced `ROAMING_CPO`
+   * station, wrong for this one), so leaving it unset here would make every
+   * newly created internal station invisible to `listNearby` and unstartable.
+   */
   createStation(dto: CreateStationDto) {
-    return this.prisma.evStation.create({ data: dto });
+    return this.prisma.evStation.create({
+      data: {
+        ...dto,
+        customerChargingEnabled: true,
+        remoteStartSupported: true,
+        remoteStopSupported: true,
+        trustedTelemetrySupported: true,
+      },
+    });
   }
 
   createConnector(dto: CreateConnectorDto) {
@@ -36,6 +53,27 @@ export class EvStationsService {
   }
 
   /**
+   * The customer-facing single-station lookup (EV-02 station details) —
+   * distinct from `findStationOrThrow`, which every authorized management
+   * caller (partner/admin) still uses to look up a station regardless of
+   * whether it is customer-chargeable. Returning 404 for a station that
+   * exists but is not `customerChargingEnabled` is deliberate: it must not
+   * be distinguishable from a station that doesn't exist at all, or the
+   * hidden-inventory hole this closes (docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md,
+   * Problem 2) reopens as an existence oracle instead.
+   */
+  async findChargeableStationOrThrow(id: string) {
+    const station = await this.prisma.evStation.findUnique({
+      where: { id },
+      include: { connectors: true, partner: { select: { id: true, displayName: true } } },
+    });
+    if (!station || !station.customerChargingEnabled) {
+      throw new NotFoundException('Charging station not found');
+    }
+    return station;
+  }
+
+  /**
    * Simple bounding-box "nearby" search — swap for PostGIS ST_DWithin at
    * scale. The box only narrows what the database scans; `distanceKm` below
    * is the real, round-earth distance, computed the same way
@@ -43,13 +81,13 @@ export class EvStationsService {
    * merged map/list of stations and partners can sort the two together by
    * one consistent number.
    *
-   * `ROAMING_CPO`-provider stations are excluded (Arman, 2026-08-26: "все
-   * станции могли заряжаться только из нашего application исключительно" —
-   * every station must be chargeable only from our app). TuTak has no
-   * start/stop command for a roaming-CPO charger — see `EvStationProvider`'s
-   * own doc comment — so a customer who found one here could never actually
-   * charge through this app; `listAll` (the partner-facing inventory/
-   * reconciliation view) is unaffected.
+   * Filtered by `customerChargingEnabled`, not by `provider` — see that
+   * column's docblock. A `ROAMING_CPO` station is included exactly when its
+   * remote Start/Stop/trusted-CDR path has been proven and switched on; an
+   * `INTERNAL` station always qualifies. Arman, 2026-08-26: "все станции
+   * могли заряжаться только из нашего application исключительно" — every
+   * discoverable station must be genuinely chargeable through this app, not
+   * excluded-by-brand.
    */
   async listNearby(lat: number, lng: number, radiusKm = 10) {
     const latDelta = radiusKm / 111;
@@ -59,7 +97,7 @@ export class EvStationsService {
       where: {
         latitude: { gte: lat - latDelta, lte: lat + latDelta },
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
-        provider: EvStationProvider.INTERNAL,
+        customerChargingEnabled: true,
       },
       include: { connectors: true },
     });
@@ -70,7 +108,16 @@ export class EvStationsService {
       .sort((a, b) => a.distanceKm - b.distanceKm);
   }
 
-  listAll() {
-    return this.prisma.evStation.findMany({ include: { connectors: true } });
+  /**
+   * The full inventory, every provider and capability state included —
+   * partner/admin only (`EV_STATION_MANAGE`, scoped by `assertPartnerScope`
+   * in the controller). Never reachable by an ordinary customer — see
+   * `findChargeableStationOrThrow`/`listNearby` for that surface.
+   */
+  listAll(partnerId?: string) {
+    return this.prisma.evStation.findMany({
+      where: partnerId ? { partnerId } : undefined,
+      include: { connectors: true },
+    });
   }
 }

@@ -22,6 +22,29 @@
 > exactly what the new partner will use, just without hardcoding a brand name
 > into the code or schema. Every identifier below has been renamed
 > accordingly; the worked examples and requirements are otherwise unchanged.
+>
+> **Migration-history note, 2026-08-29:** the reinstatement above shipped as
+> two migrations — the original `..._fastcharge_integration` (never renamed,
+> so it still created `fastcharge_customer_links` and the `FASTCHARGE` enum
+> value under the old brand) plus a second `20260827000000_reinstate_roaming_cpo`
+> that tried to recreate the same structure under the generic name without
+> knowing the brand-named version already existed on a fresh database. That
+> collided on every column, table and index the first migration already
+> created (`ev_connectors.externalConnectorId`, `partner_api_keys`, and so
+> on) and failed CI. Both are consolidated here into one migration,
+> `20260825143028_roaming_cpo_integration`, which creates the final
+> `ROAMING_CPO`-named schema directly — no `FASTCHARGE` enum value or
+> `fastcharge_customer_links` table is ever created, not even transiently.
+> This is safe because no environment in this repository's CI/CD ever runs
+> `prisma migrate deploy` against anything but a disposable, freshly-created
+> service container (`ci.yml`'s Postgres service, or this session's own
+> sandbox) — there is no deploy workflow, no persisted staging/production
+> database, and this branch has never been merged — so repository evidence
+> shows neither of the two replaced migrations was ever applied to a real
+> environment. `docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md` covers
+> everything else that changed in the same pass (station capabilities,
+> the Start/Stop saga, frozen-rate accounting, and removing customer-facing
+> external-account linking).
 
 **Delivered:** 2026-08-25.
 **Branch:** `claude/tutak-loyalty-mvp-e485jm`.
@@ -89,7 +112,7 @@ deferred 60, no referrer in that scenario), **200 AMD credited** to
 ## Data model
 
 One additive, safe migration:
-`apps/api/prisma/migrations/20260825143028_fastcharge_integration/migration.sql`
+`apps/api/prisma/migrations/20260825143028_roaming_cpo_integration/migration.sql`
 — every new column is nullable or has a backfill-safe default, every new
 table is genuinely new. Nothing pre-existing was dropped, renamed, or made
 non-nullable.
@@ -394,7 +417,7 @@ history it references).
 - `npx tsc --noEmit -p tsconfig.spec.json` — clean, 0 errors.
 - `npx eslint .` — clean, 0 problems.
 - `npx prisma migrate status` — `Database schema is up to date!` (42
-  migrations, including this pass's `20260825143028_fastcharge_integration`).
+  migrations, including this pass's `20260825143028_roaming_cpo_integration`).
 - `npx jest` — **85 test suites passed (85 total), 1227 tests passed (1227
   total)**, 0 failures. Run clean, in isolation (a stray leftover process from
   an earlier concurrent run had been killed first, and Postgres/Redis
@@ -494,7 +517,7 @@ nothing else: `demo/src/data/api/mockData.ts`,
 ## File list
 
 **API (new):**
-`apps/api/prisma/migrations/20260825143028_fastcharge_integration/migration.sql`,
+`apps/api/prisma/migrations/20260825143028_roaming_cpo_integration/migration.sql`,
 `apps/api/src/modules/roaming-cpo/roaming-cpo-provider.interface.ts`,
 `apps/api/src/modules/roaming-cpo/noop-roaming-cpo-provider.service.ts`,
 `apps/api/src/modules/roaming-cpo/partner-api-key.service.ts`,

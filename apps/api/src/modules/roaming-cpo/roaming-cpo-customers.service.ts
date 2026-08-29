@@ -3,16 +3,21 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ROAMING_CPO_PROVIDER, RoamingCpoProvider } from './roaming-cpo-provider.interface';
 
 /**
- * The User ↔ roaming-CPO-customer-id mapping — "TuTak links its own User
- * accounts to the partner's customer IDs (a stored mapping, not inferred)".
+ * The User ↔ roaming-CPO-customer-id mapping.
  *
- * Deliberately customer-initiated (a logged-in TuTak user names their own
- * external customer id) rather than created implicitly by the settlement
- * webhook: a webhook that could silently create the mapping on first sight
- * would let anyone with a guessed/leaked external customer id attach a
- * stranger's charging history and bonus accrual to their own TuTak account.
- * `RoamingCpoSettlementService` requires the link to already exist and
- * rejects an unlinked customer id — see that service's docblock.
+ * `link()` is no longer reachable over HTTP by a customer —
+ * docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md, Problem 3: a
+ * customer typing in an arbitrary `externalCustomerId` and having it bound
+ * immediately had no proof the id was ever theirs, letting anyone with a
+ * guessed/leaked one attach a stranger's charging history and bonus
+ * accrual to their own TuTak account. The TuTak User ID is the identity;
+ * an external id is only ever attached via a trusted server-to-server
+ * handshake, which is what calling this method now represents — every link
+ * it creates is stamped `verifiedAt` immediately, and
+ * `RoamingCpoSettlementService` refuses to settle against any link that
+ * isn't (see that service and `RoamingCustomerLink`'s own docblock for the
+ * quarantine this replaced). There is deliberately no customer-facing route
+ * left that reaches this method with attacker-controlled input.
  */
 @Injectable()
 export class RoamingCpoCustomersService {
@@ -35,13 +40,13 @@ export class RoamingCpoCustomersService {
     const link =
       existing ??
       (await this.prisma.roamingCustomerLink.create({
-        data: { partnerId, externalCustomerId, userId },
+        data: { partnerId, externalCustomerId, userId, verifiedAt: new Date() },
       }));
 
     // Requirement 4: "what TuTak needs to send back — the linked TuTak user
-    // id, at minimum". Best-effort and outside the write above: the partner
-    // not yet having anywhere to receive this must never block the customer
-    // from linking their own account inside TuTak.
+    // id, at minimum". Best-effort and outside the write above: the
+    // provider not yet having anywhere to receive this must never block the
+    // handshake that created the mapping.
     await this.provider
       .notifyCustomerLinked({ partnerId, externalCustomerId, tutakUserId: userId })
       .catch(() => undefined);

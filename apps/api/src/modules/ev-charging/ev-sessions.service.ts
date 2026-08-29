@@ -13,6 +13,7 @@ import {
   EvConnectorStatus,
   EvReservationStatus,
   EvSessionStatus,
+  EvStationProvider,
   LedgerAccountType,
   PostingDirection,
   Prisma,
@@ -179,6 +180,30 @@ export class EvSessionsService {
     if (!connector.station.partner.isActive) {
       throw new BadRequestException('This charging network is not currently active');
     }
+    // Problem 2 (docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md): a
+    // connector id alone must never be enough to start a session. Without
+    // this check, a `ROAMING_CPO` station synced by a partner but never
+    // wired to a real remote Start/Stop adapter was claimed and billed
+    // through the exact same path as TuTak's own hardware — a session with
+    // no electricity ever verified to flow. `customerChargingEnabled` is the
+    // single explicit gate every customer-initiated start must pass, on top
+    // of (never instead of) the adapter's own real-time accept/reject below.
+    if (!connector.station.customerChargingEnabled) {
+      throw new BadRequestException('This station is not available for in-app charging');
+    }
+    if (
+      connector.station.provider === EvStationProvider.ROAMING_CPO &&
+      (!connector.station.remoteStartSupported ||
+        !connector.station.remoteStopSupported ||
+        !connector.ocpiEvseUid)
+    ) {
+      // Defense in depth against a station flipped to `customerChargingEnabled`
+      // without its per-connector adapter identity actually being wired —
+      // there is no remote party to command, so this must fail closed rather
+      // than fall through to the plain local-claim path below, which would
+      // simulate a real charging session with nothing behind it.
+      throw new BadRequestException('This connector is not configured for remote charging');
+    }
     // Business decision (2026-08-16, M7 revision): unlike QR, PurchaseIntent
     // and Payments capture, a partner's own owner/staff MAY charge at their
     // own affiliated station — the session itself is not blocked. What they
@@ -313,6 +338,17 @@ export class EvSessionsService {
     if (session.status !== EvSessionStatus.CHARGING) {
       throw new BadRequestException('Session is not currently charging');
     }
+    // Problem 2: a roaming-CPO session must never be billed from a reading
+    // the customer (or even the calling operator) reports. The CPO's own
+    // meter is the trusted source of truth for one of these — its CDR,
+    // pulled by `OcpiAdapter.fetchCdr` — never a value that arrived over
+    // this endpoint. Neither caller kind gets an exception: an operator
+    // credential does not make a self-reported figure trustworthy either.
+    if (session.connector.station.provider === EvStationProvider.ROAMING_CPO) {
+      throw new BadRequestException(
+        'This session is billed from the roaming-CPO partner’s own trusted meter data, not a reported reading',
+      );
+    }
 
     // A meter is monotonic: energy delivered can only increase within a
     // session. Accepting a lower reading would let a caller reduce the bill
@@ -368,6 +404,24 @@ export class EvSessionsService {
     }
     if (session.status !== EvSessionStatus.CHARGING) {
       throw new BadRequestException(`Session cannot be stopped (status: ${session.status})`);
+    }
+    // Problem 2: `reportMeterValue` now refuses a reading for any
+    // `ROAMING_CPO` session (above), so this session's `energyKwh` is always
+    // zero — billing from it here, as the branch below does for every other
+    // session, would either invent a free charge or (once the frozen
+    // dual-rate accounting lands) bill a wrong amount from no real data.
+    // Failing closed rather than completing incorrectly: a customer-initiated
+    // roaming-CPO stop must not financially complete until it bills from the
+    // CPO's own trusted CDR, which this method does not yet do — that is the
+    // remaining piece of docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md's
+    // financial-accounting work. Nothing reaches this branch today: `start()`
+    // only ever puts a `ROAMING_CPO` connector into CHARGING when
+    // `customerChargingEnabled` is true, which no station has by default.
+    if (session.connector.station.provider === EvStationProvider.ROAMING_CPO) {
+      throw new BadRequestException(
+        'This session cannot be stopped from the app yet — trusted CDR-based settlement for an ' +
+          'in-app roaming-CPO charge is not implemented',
+      );
     }
 
     // Claim the stop before doing anything that costs money.

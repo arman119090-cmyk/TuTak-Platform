@@ -11,7 +11,6 @@ import { RoamingCpoPartner } from './decorators/roaming-cpo-partner.decorator';
 import { RoamingCpoApiKeyGuard } from './roaming-cpo-api-key.guard';
 import { RoamingCpoStationSyncDto } from './dto/roaming-cpo-station-sync.dto';
 import { RoamingCpoSessionSettleDto } from './dto/roaming-cpo-session-settle.dto';
-import { LinkRoamingCpoCustomerDto } from './dto/link-roaming-cpo-customer.dto';
 import { IssuePartnerApiKeyDto } from './dto/partner-api-key.dto';
 import { UpdateStationTariffDto } from './dto/update-station-tariff.dto';
 import { RoamingCpoStationsService } from './roaming-cpo-stations.service';
@@ -54,12 +53,13 @@ export class RoamingCpoController {
   }
 
   // ── Mobile customer ─────────────────────────────────────────────────
-
-  /** A TuTak user linking their own roaming-CPO customer id to their account. */
-  @Post('customers/link')
-  linkCustomer(@CurrentUser() user: RequestUser, @Body() dto: LinkRoamingCpoCustomerDto) {
-    return this.customers.link(user.id, dto.partnerId, dto.externalCustomerId);
-  }
+  //
+  // There is deliberately no customer-facing "link my external account"
+  // route here anymore — docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md,
+  // Problem 3. A customer must never be required or invited to type in a
+  // roaming-CPO account id; `RoamingCpoCustomersService.link` still exists
+  // for a trusted server-to-server handshake to call, just not from this
+  // controller.
 
   @Get('customers/me')
   myLinks(@CurrentUser() user: RequestUser) {

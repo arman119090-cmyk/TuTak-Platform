@@ -40,9 +40,20 @@ export class EvChargingController {
     private readonly reservationsService: EvReservationsService,
   ) {}
 
+  /**
+   * The full inventory, partner/admin only —
+   * docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md, Problem 2: this used
+   * to have no guard at all, so any authenticated customer could enumerate
+   * every station (including hidden `ROAMING_CPO` ones not yet safe to
+   * charge at) and feed a connector id straight into `sessions/start`. A
+   * partner sees only their own network; a platform admin (no `partnerId`
+   * query) sees everything.
+   */
   @Get('stations')
-  listStations() {
-    return this.stationsService.listAll();
+  @RequirePermissions(PermissionName.EV_STATION_MANAGE)
+  listStations(@CurrentUser() user: RequestUser, @Query('partnerId') partnerId?: string) {
+    if (partnerId) assertPartnerScope(user, partnerId);
+    return this.stationsService.listAll(resolveOperatorPartner(user) ?? partnerId);
   }
 
   @Get('stations/nearby')
@@ -50,9 +61,10 @@ export class EvChargingController {
     return this.stationsService.listNearby(query.lat, query.lng, query.radiusKm);
   }
 
+  /** Customer-facing station detail (EV-02) — see `findChargeableStationOrThrow`. */
   @Get('stations/:id')
   getStation(@UuidParam('id') id: string) {
-    return this.stationsService.findStationOrThrow(id);
+    return this.stationsService.findChargeableStationOrThrow(id);
   }
 
   /**

@@ -234,7 +234,14 @@ async function main() {
     { name: 'ElectroGo — Dilijan', address: 'Կալինինի 3', city: 'Dilijan', latitude: 40.7408, longitude: 44.8631 },
   ]) {
     const created = await prisma.evStation.create({
-      data: { ...station, partnerId: electro.id },
+      data: {
+        ...station,
+        partnerId: electro.id,
+        customerChargingEnabled: true,
+        remoteStartSupported: true,
+        remoteStopSupported: true,
+        trustedTelemetrySupported: true,
+      },
     });
     await prisma.evConnector.createMany({
       data: [

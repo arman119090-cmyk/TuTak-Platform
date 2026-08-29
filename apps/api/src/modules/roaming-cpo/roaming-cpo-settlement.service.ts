@@ -201,10 +201,19 @@ export class RoamingCpoSettlementService {
       },
     });
     if (!link) {
-      // Never inferred — see `RoamingCpoCustomersService`'s docblock for why
-      // this is a hard rejection rather than an implicit create.
+      // Never inferred — see `RoamingCustomerLink`'s docblock for why this is
+      // a hard rejection rather than an implicit create.
       throw new BadRequestException(
         `Roaming-CPO customer ${dto.externalCustomerId} is not linked to a TuTak account`,
+      );
+    }
+    if (!link.verifiedAt) {
+      // Quarantined — created by the removed customer-entered linking flow
+      // (Problem 3) or otherwise not yet confirmed by a server-to-server
+      // handshake. Settling against it would let a self-reported, unproven
+      // id claim someone else's charging history and bonus accrual.
+      throw new BadRequestException(
+        `Roaming-CPO customer ${dto.externalCustomerId}'s TuTak account link is not yet verified`,
       );
     }
     const userId = link.userId;

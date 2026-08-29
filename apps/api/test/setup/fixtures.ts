@@ -124,6 +124,14 @@ export async function createEvConnector(
       city: 'Yerevan',
       latitude: 40.1772,
       longitude: 44.5035,
+      // INTERNAL (the default) has always been chargeable — see
+      // `EvStationsService.createStation`'s identical reasoning. Left unset,
+      // the schema's own safe-by-default `false` would make every fixture
+      // built on this invisible to `listNearby` and unstartable.
+      customerChargingEnabled: true,
+      remoteStartSupported: true,
+      remoteStopSupported: true,
+      trustedTelemetrySupported: true,
     },
   });
 
@@ -181,15 +189,24 @@ export async function createRoamingCpoStation(
   return { station, connector };
 }
 
+/**
+ * Verified by default: a fixture stands in for "this mapping was already
+ * established through a trusted server-to-server handshake," which is the
+ * only way `RoamingCpoSettlementService` will accept one post-quarantine
+ * (docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md, Problem 3). Pass
+ * `verified: false` to build the specific quarantined-link fixture a
+ * negative test needs instead.
+ */
 export async function linkRoamingCpoCustomer(
   prisma: PrismaClient,
-  params: { partnerId: string; userId: string; externalCustomerId?: string },
+  params: { partnerId: string; userId: string; externalCustomerId?: string; verified?: boolean },
 ) {
   return prisma.roamingCustomerLink.create({
     data: {
       partnerId: params.partnerId,
       userId: params.userId,
       externalCustomerId: params.externalCustomerId ?? `roaming-cust-${randomUUID()}`,
+      verifiedAt: params.verified === false ? null : new Date(),
     },
   });
 }

@@ -1029,20 +1029,28 @@ model PartnerApiKey {
   @@map("partner_api_keys")
 }
 
-/// TuTak `User` ↔ roaming-CPO customer-id mapping — "TuTak links its own
-/// User accounts to the partner's customer IDs (a stored mapping, not
-/// inferred)", per docs/ROAMING_CPO_INTEGRATION_2026-08-25.md. Created only
-/// by an authenticated TuTak user linking their own account
-/// (`RoamingCpoCustomersService.link`); a settlement webhook that names an
-/// unlinked external customer id is rejected rather than guessing — see
-/// that service's docblock.
+/// TuTak `User` ↔ roaming-CPO customer-id mapping.
+///
+/// Historically created by an authenticated TuTak user typing in their own
+/// external customer id (`RoamingCpoCustomersService.link`, now removed —
+/// see docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md, Problem 3). That
+/// flow let a customer bind an arbitrary self-entered id with no proof it
+/// was ever theirs, so every row it created is untrustworthy as an identity
+/// claim. `verifiedAt` is the quarantine: null means "created by the old
+/// customer-entered flow, or otherwise not yet proven" and
+/// `RoamingCpoSettlementService` must refuse to settle money against it;
+/// non-null means a TuTak/provider server-to-server handshake independently
+/// confirmed the mapping (the only way a mapping may be created going
+/// forward). Existing rows are migrated with `verifiedAt = null` — nothing
+/// is silently reassigned or promoted to verified.
 model RoamingCustomerLink {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   partnerId          String
   externalCustomerId String
   userId             String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  verifiedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1415,15 +1423,21 @@ enum EvConnectorStatus {
 }
 
 /// A station's control/tariff model. `INTERNAL` (the default, every station
-/// that predates this column) is a TuTak-owned or plain-roaming charger,
-/// billed at `EvConnector.pricePerKwh` and started/stopped by TuTak — the
-/// only behaviour that ever existed here. `ROAMING_CPO` marks a station that
-/// belongs to a roaming-CPO wholesale-resale integration
-/// (docs/ROAMING_CPO_INTEGRATION_2026-08-25.md): TuTak never sends a
-/// start/stop command to one of these, and customer discovery
-/// (`EvStationsService.listNearby`) excludes them outright — every session
-/// on one arrives already completed, settled server-to-server via
-/// `RoamingCpoSettlementService`, never through `EvSessionsService.start`.
+/// that predates this column) is a TuTak-owned charger, billed at
+/// `EvConnector.pricePerKwh` and started/stopped by TuTak directly.
+/// `ROAMING_CPO` marks a station that belongs to a roaming-CPO
+/// wholesale-resale integration (docs/ROAMING_CPO_INTEGRATION_2026-08-25.md,
+/// docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md): the customer still
+/// starts/monitors/stops entirely through the TuTak app, exactly like an
+/// `INTERNAL` station — TuTak sends the CPO an authenticated remote
+/// Start/Stop command via `OcpiAdapter` (keyed off `EvConnector.ocpiEvseUid`)
+/// and bills from the CPO's own trusted CDR, never a customer-reported
+/// meter value. Whether a given `ROAMING_CPO` station is actually reachable
+/// this way is `EvStation.customerChargingEnabled`, not this enum value —
+/// see that column's docblock. `RoamingCpoSettlementService` (the older
+/// walk-in-at-the-CPO settlement path) still exists for a partner that
+/// settles a session outside the app entirely, but that path is no longer
+/// how an ordinary TuTak customer charges.
 enum EvStationProvider {
   INTERNAL
   ROAMING_CPO
@@ -1456,6 +1470,34 @@ model EvStation {
   /// past session's own snapshot — same immutability discipline as
   /// `PurchaseIntent.negotiatedRateBps`.
   standardRetailRatePerKwh Decimal?          @db.Decimal(10, 2)
+  /// Explicit safety gate — docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md.
+  /// A station is discoverable by `EvStationsService.listNearby` and
+  /// startable by `EvSessionsService.start` only when this is true. Never
+  /// inferred from `provider` or from the mere presence of
+  /// `EvConnector.ocpiEvseUid` — a wired adapter can still be unhealthy, and
+  /// the governing rule is "missing/No-op adapter must reject, never
+  /// simulate success," so this is a second, independent, explicitly-set
+  /// gate on top of the adapter's own real-time answer, not a replacement
+  /// for it. `INTERNAL` stations are backfilled `true` (TuTak's own
+  /// hardware; this is a no-op for every station that predates the
+  /// capability model). Every `ROAMING_CPO` station starts `false` — it must
+  /// be turned on deliberately, per station, once its remote Start/Stop and
+  /// trusted-CDR path is proven working end to end.
+  customerChargingEnabled   Boolean           @default(false)
+  /// Whether this station's wired adapter has been confirmed to accept an
+  /// authenticated remote Start command. Distinct from
+  /// `customerChargingEnabled`: a partner may be synced and its remote-start
+  /// path verified before anyone flips the customer-facing switch.
+  remoteStartSupported      Boolean           @default(false)
+  /// Same for Stop.
+  remoteStopSupported       Boolean           @default(false)
+  /// Whether this station's completed sessions are billed from a CPO-issued,
+  /// server-to-server-trusted CDR (`OcpiAdapter.fetchCdr`) rather than a
+  /// customer-reported meter value. A station may have this false even with
+  /// remote start/stop wired — trusted billing is a separate capability, and
+  /// a session on such a station must never be billed from
+  /// `EvSessionsService.reportMeterValue`.
+  trustedTelemetrySupported Boolean           @default(false)
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
 
@@ -1463,6 +1505,7 @@ model EvStation {
   connectors EvConnector[]
 
   @@index([partnerId, provider])
+  @@index([customerChargingEnabled])
   @@map("ev_stations")
 }
 

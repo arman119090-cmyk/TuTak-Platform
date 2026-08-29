@@ -135,10 +135,20 @@ describe('Sweeps (integration)', () => {
   });
 
   afterAll(async () => {
-    // Leave no schedule behind in the shared Redis, then close both
-    // connections by hand: the raw ioredis client has no lifecycle hook, so
-    // without this jest hangs on an open handle after the last assertion.
+    // Leave no schedule behind in the shared Redis, then close every
+    // connection by hand. `redis` (the raw ioredis client) has no lifecycle
+    // hook of its own. `queue`'s own connection normally closes via
+    // `@nestjs/bullmq`'s `BullExplorer.onApplicationShutdown`, which wires
+    // itself up during `onModuleInit` — but `moduleRef.init()` is
+    // deliberately never called in this suite (see the comment above), so
+    // that wiring never happens and `moduleRef.close()` has nothing
+    // registered to close this connection. Without an explicit
+    // `queue.close()`, that left a live Redis TCP connection behind after
+    // every run of this file — the actual cause of Jest hanging on an open
+    // handle after all tests passed, not something `--forceExit` should
+    // paper over.
     await queue.obliterate({ force: true }).catch(() => undefined);
+    await queue.close();
     await redis.quit().catch(() => undefined);
     await moduleRef.close();
     await prisma.$disconnect();

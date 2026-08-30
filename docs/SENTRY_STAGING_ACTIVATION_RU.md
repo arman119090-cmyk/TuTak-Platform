@@ -1,252 +1,72 @@
-# Sentry: активация в staging — чеклист для оператора
+# Sentry: активация staging без source-map upload
 
-Код Sentry во всех четырёх приложениях готов и проверен (см.
-`docs/SENTRY_SETUP.md`). Этот документ — то, что осталось сделать человеку
-с доступом к Sentry и к средам развёртывания.
+Этот документ описывает только безопасную активацию Sentry для первого
+staging. Source-map upload для admin/partner в эту задачу **не входит**.
 
-**Активация НЕ выполнена.** Механизмы проверки готовы и протестированы
-локально, но локальный успех **не является** доказательством ни реальной
-доставки событий в Sentry, ни загрузки source maps — это подтверждается
-только скриншотами из живого проекта (раздел 4). В окружении, где готовился
-этот документ, нет ни учётных данных Sentry, ни доступа к развёртыванию — см. «Что было проверено
-фактически» в конце. Ни один DSN, токен и слаг организации в этом файле не
-придуман: везде, где нужно реальное значение, стоит пропуск, который
-заполняет оператор.
+## API
 
----
+Runtime:
 
-## 1. Какие проекты создать в Sentry
+- `NODE_ENV=staging`
+- `SENTRY_DSN=<dsn проекта tutak-api>`
+- `GIT_COMMIT_SHA` — если доступен; иначе entrypoint использует
+  `RENDER_GIT_COMMIT`, а при отсутствии обоих release будет `unknown`.
 
-Четыре отдельных проекта — по одному на приложение. Раздельные проекты, а не
-один общий, потому что у них разные владельцы дежурства, разный шум и разные
-релизы: падение мобильной сборки недельной давности не должно смешиваться в
-одном списке с 5xx на API.
-
-| Проект в Sentry | Платформа при создании | Приложение |
-|---|---|---|
-| `tutak-api` | Node.js | `apps/api` (NestJS) |
-| `tutak-mobile` | React Native | `apps/mobile` (Expo) |
-| `tutak-admin` | Next.js | `apps/admin` |
-| `tutak-partner` | Next.js | `apps/partner` |
-
-У каждого проекта — **свой DSN**. Один DSN на два приложения делает теги
-`service` бессмысленными.
-
-В настройках каждого проекта выключить (если включено по умолчанию):
-Session Replay, Performance/Tracing, Profiling, Logs, User Feedback. Код их
-не включает, но проект не должен предлагать их включить позже случайно.
-
----
-
-## 2. Секреты: имена и куда именно класть
-
-DSN — **не секрет** (он по назначению попадает в клиентские сборки).
-`SENTRY_AUTH_TOKEN` — **секрет**, он даёт право писать в проект.
-
-### apps/api — среда выполнения staging
-
-| Переменная | Где задать | Секрет? |
-|---|---|---|
-| `SENTRY_DSN` | переменные окружения staging-сервиса API | нет |
-| `NODE_ENV=staging` | там же | нет |
-| `GIT_COMMIT_SHA` | там же, при сборке/деплое образа | нет |
-
-`SENTRY_DSN` для API — серверная переменная, в браузер не попадает.
-Валидация окружения (`apps/api/src/config/env.validation.ts`) не отклоняет
-незнакомые переменные, поэтому добавление `SENTRY_DSN` не может помешать
-старту процесса.
-
-### apps/admin и apps/partner — переменные **времени сборки**
-
-Next.js подставляет `NEXT_PUBLIC_*` в бандл на этапе `next build`. Их надо
-задать в сборочном окружении, а не только в рантайме — иначе они не попадут
-в приложение.
-
-| Переменная | Где задать | Секрет? |
-|---|---|---|
-| `NEXT_PUBLIC_SENTRY_DSN` | сборка образа admin / partner (отдельный DSN каждому) | нет |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging` | там же | нет |
-| `GIT_COMMIT_SHA` | там же (становится `NEXT_PUBLIC_SENTRY_RELEASE`) | нет |
-| `SENTRY_ORG` | там же | нет |
-| `SENTRY_PROJECT` | там же (`tutak-admin` / `tutak-partner`) | нет |
-| `SENTRY_AUTH_TOKEN` | **только** в секретах CI / хостинга | **да** |
-
-`SENTRY_AUTH_TOKEN` читается исключительно внутри `next.config.ts` во время
-сборки (загрузка source maps) и в браузерный бандл не попадает.
-
-Если сборка идёт через `apps/{admin,partner}/Dockerfile`, эти значения нужно
-передать как build-args/ENV сборочной стадии — рантайм-переменные тут не
-помогут. В обоих Dockerfile объявлены `ARG` для `NEXT_PUBLIC_SENTRY_DSN`,
-`NEXT_PUBLIC_SENTRY_ENVIRONMENT` и `GIT_COMMIT_SHA`.
-
-`SENTRY_AUTH_TOKEN`, `SENTRY_ORG` и `SENTRY_PROJECT` в этих Dockerfile
-намеренно **отсутствуют**: на хостинге без переменных «только для сборки»
-(Render — такой) build-arg неизбежно оказывается и в окружении работающего
-контейнера. Пока загрузка source maps не переехала в CI с
-короткоживущим токеном, её нет вовсе — `docs/RENDER_STAGING_RU.md` §8. Для
-Render конкретные имена и порядок действий — в том же документе.
-
-### apps/mobile — сборка EAS
-
-| Переменная | Где задать | Секрет? |
-|---|---|---|
-| `SENTRY_DSN` | `eas.json`, блок `env` профиля `preview` | нет |
-| `SENTRY_ORG` | там же | нет |
-| `SENTRY_PROJECT` (`tutak-mobile`) | там же | нет |
-| `SENTRY_URL` | там же, только если Sentry self-hosted | нет |
-| `SENTRY_AUTH_TOKEN` | `eas secret:create --name SENTRY_AUTH_TOKEN` | **да** |
-
-`APP_ENV` в профиле `preview` уже равен `preview` — именно это значение
-станет `environment` в Sentry. Профиля `staging` в `eas.json` сейчас нет;
-если нужно именно слово «staging», профиль надо добавить отдельно.
-
-`app.config.js` намеренно нигде не упоминает `SENTRY_AUTH_TOKEN`: его читает
-`sentry-cli` внутри нативных build-фаз прямо из окружения сборки EAS, поэтому
-токен не попадает ни в манифест приложения, ни в JS-бандл.
-
-### Чего делать нельзя
-
-- Не коммитить реальные DSN и токены; не добавлять их в `.env.example`.
-- Не класть `SENTRY_AUTH_TOKEN` в `eas.json`, `render.yaml`, Dockerfile или
-  любой файл в репозитории — только в секретное хранилище.
-- Не запускать проверочную ошибку в production.
-
----
-
-## 3. Команды проверки в staging
-
-### API — работает, проверено
-
-Внутри контейнера staging (`NODE_ENV=staging`, `SENTRY_DSN` задан):
+Проверочная команда внутри staging-контейнера:
 
 ```bash
 node dist/scripts/sentry-verify.js
 ```
 
-Ожидаемо: `Sent (sent at <время>).` и код возврата `0`.
+Production-гард в скрипте должен запрещать запуск при
+`NODE_ENV=production`.
 
-Именно `node dist/...`, а не `pnpm sentry:verify`: в рантайм-образ попадает
-только `dist`, исходников и `ts-node` там нет.
+## Admin / Partner
 
-Скрипт сам отказывается работать при `NODE_ENV=production` — это проверено
-на собранном файле (см. ниже), отдельной осторожности не требует.
+Для первого staging нужны:
 
-В Sentry искать событие: проект `tutak-api`, класс ошибки
-`SentryVerificationProbe`, теги `service=api` и `kind=sentry-verify`.
+- `NEXT_PUBLIC_SENTRY_DSN` — отдельный DSN для каждого приложения;
+- `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`;
+- `APP_ENV=staging`;
+- `SENTRY_VERIFY_ENABLED=true` только на время проверки;
+- `SENTRY_VERIFY_TOKEN` как runtime secret.
 
-### admin и partner — работает (починено в задаче #3)
+Маршрут проверки:
 
-Маршрут: `POST /api/internal/sentry-verify`. Нужны **три переменные рантайма**
-(не сборки) на staging-сервисе:
-
-| Переменная | Значение | Секрет? |
-|---|---|---|
-| `APP_ENV` | `staging` (либо `development` / `preview`) | нет |
-| `SENTRY_VERIFY_ENABLED` | ровно `true` | нет |
-| `SENTRY_VERIFY_TOKEN` | длинная случайная строка, сгенерируйте сами | **да** |
-
-Токен генерируйте, например, так — значение не пишите ни в один файл
-репозитория, кладите только в секреты хостинга:
-
-```bash
-openssl rand -hex 32
+```text
+POST /api/internal/sentry-verify
+x-sentry-verify-token: <token>
 ```
 
-Вызов:
+`SENTRY_AUTH_TOKEN` в Render runtime для admin/partner **запрещён**.
+`SENTRY_ORG` и `SENTRY_PROJECT` для первого staging тоже не нужны, потому что
+source maps явно отключены в обоих `next.config.ts`:
 
-```bash
-curl -i -X POST \
-  -H "x-sentry-verify-token: <ваш токен>" \
-  https://<staging-домен-дашборда>/api/internal/sentry-verify
+```ts
+sourcemaps: { disable: true }
 ```
 
-Ожидаемо: `HTTP 200` и тело `{"sent":true}`. Любое `404` означает, что не
-сошлось одно из четырёх условий (среда, флаг, наличие токена на сервере,
-совпадение токена) — маршрут намеренно не подсказывает, какое именно.
+Не считать доказанным, что Render автоматически прокидывает runtime env в
+Docker `ARG`. Поэтому отсутствие build-time Sentry значений не должно ломать
+Docker build: Dockerfile содержит безопасные значения по умолчанию.
 
-В Sentry искать: проект `tutak-admin` / `tutak-partner`, класс ошибки
-`SentryVerificationProbe`, теги `service` и `kind=sentry-verify`.
+## Source maps
 
-Почему больше не ломается: раньше проверка читала `NODE_ENV`, который Next.js
-подставляет константой на этапе `next build` — сборка идёт с
-`NODE_ENV=production`, и ветка 404 становилась безусловной. Теперь в гейте
-`NODE_ENV` нет вообще, только рантайм-переменные. Это проверено на настоящей
-production-сборке скриптом `scripts/verify-sentry-verify-route.sh`.
+Source maps проверяются и включаются только отдельной будущей задачей:
+`docs/SENTRY_SOURCEMAPS_FUTURE_RU.md`.
 
-Загрузку source maps подтверждайте независимо от маршрута — по логам сборки
-(`sentry-cli` печатает, сколько артефактов загружено) и по релизу в Sentry:
-Releases → нужный commit SHA → Artifacts.
+До выполнения той задачи нельзя:
 
-### mobile — работает (починено в задаче #3)
+- добавлять `SENTRY_AUTH_TOKEN` в `render.yaml`;
+- хранить его как runtime env admin/partner;
+- коммитить токен в репозиторий;
+- утверждать, что source maps загружены.
 
-В diagnostic-сборке непроизводственной среды в диагностическом оверлее
-появляется кнопка `SENTRY`. Нажатие отправляет пробу и показывает результат
-(`SENT` / `FAILED`) рядом с кнопкой. Приложение при этом не падает и текущий
-экран не меняется.
+## Что можно считать подтверждением первого staging
 
-Кнопка существует только если **оба** условия выполнены в самой сборке:
-`extra.diagnostics === true` и `extra.appEnv` ∈ {`preview`, `staging`}. В
-production-сборке её нет физически. Ничего не отправляется при запуске —
-только по нажатию.
+Для каждого приложения достаточно подтвердить доставку тестового события с
+правильными `service`, `environment` и, когда доступен, `release`.
+Минифицированный stack trace на этом этапе допустим: source maps сознательно
+отложены.
 
-Сборка, которая это даёт, уже описана в `eas.json` — профиль `diagnostic`
-(он задаёт `APP_ENV=preview` и `DIAGNOSTICS=1`). Добавьте в его окружение
-`SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT` и соберите:
-
-```bash
-eas build --profile diagnostic --platform android
-```
-
-Проверка source maps для мобильного: Releases → нужный SHA → Artifacts, и в
-самом событии стек должен указывать на `.ts`/`.tsx`, а не на
-`index.android.bundle`.
-
----
-
-## 4. Что оператор должен предъявить как доказательство
-
-По каждому приложению, где активация выполнена:
-
-1. Скриншот события в Sentry, на котором видно:
-   - имя проекта (`tutak-api` / `tutak-mobile` / `tutak-admin` / `tutak-partner`);
-   - тег `service` с правильным значением;
-   - `environment` = `staging` (для mobile — `preview`, если профиль не менялся);
-   - `release` = тот же commit SHA, что задеплоен;
-   - Event ID.
-2. Скриншот стек-трейса: имена файлов проекта и номера строк, а не
-   минифицированный бандл.
-3. Скриншот вкладки Releases → Artifacts для этого релиза (доказательство
-   загрузки source maps).
-4. Скриншот того же события, подтверждающий, что **нет** секций Request,
-   Headers, Cookies, User, Message, Additional Data (extra), Contexts —
-   политика приватности удаляет их целиком.
-5. Подтверждение, что OpenTelemetry-коллектор продолжает получать трейсы от
-   API после включения Sentry, и что дублирующихся трейсов не появилось.
-
-Event ID можно и нужно приводить в отчёте: это не секрет.
-
----
-
-## 5. Что было проверено фактически в этой задаче
-
-Выполнено локально, без обращения к Sentry:
-
-- Учётных данных Sentry нет нигде: ни в переменных окружения, ни в `.env`,
-  ни в `.env.*.local`, ни в workflow'ах. Единственные секреты, на которые
-  ссылается CI, — `EXPO_TOKEN` и встроенный `GITHUB_TOKEN`.
-- Workflow развёртывания не существует: `docker-publish.yml` только собирает
-  и публикует образ API в GHCR. `render.yaml` — демонстрационный blueprint,
-  в его собственном комментарии сказано, что он не разворачивался, и он
-  задаёт `NODE_ENV=production`. `railway.json` описывает сборку из
-  Dockerfile, но признаков живого проекта Railway в репозитории нет.
-- `sentry-cli` и `eas` в окружении отсутствуют.
-- Скрипт API собирается в `dist/scripts/sentry-verify.js` и ведёт себя
-  корректно: без DSN — отказ и код 1; при `NODE_ENV=production` — отказ и
-  код 1, событие не отправляется.
-- Маршрут admin возвращает 404 под `next start` даже с включённым флагом и с
-  `NODE_ENV=staging`; в собранном `route.js` не осталось ни
-  `process.env.NODE_ENV`, ни `SENTRY_VERIFY_ENABLED` — обе подставлены при
-  сборке.
-
-Ни одно событие в Sentry за время этой задачи отправлено не было — ни в
-staging, ни тем более в production.
+Эта инструкция не выполняет deploy и не изменяет Sentry/Render аккаунты.

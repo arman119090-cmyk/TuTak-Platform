@@ -6,12 +6,6 @@ import { securityHeaders } from '@tutak/design/security-headers';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
-// Same deterministic release convention as apps/api and apps/mobile. Inlined
-// here rather than imported from @tutak/observability's resolveReleaseSha for
-// the same reason securityHeaders is plain JS above: next.config.ts is loaded
-// by Node before workspace TypeScript sources can be resolved. Exposed as
-// NEXT_PUBLIC_SENTRY_RELEASE so it reaches the client, server, and edge
-// Sentry configs identically (see src/lib/observability/sentryOptions.ts).
 const releaseSha = process.env.GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'unknown';
 
 const nextConfig: NextConfig = {
@@ -21,9 +15,6 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_SENTRY_RELEASE: releaseSha,
   },
 
-  // See the admin dashboard's config and the shared module for the reasoning.
-  // Both dashboards deliberately share one policy: they hold the same kind of
-  // session and differ only in who is signed in.
   async headers() {
     return [
       {
@@ -38,15 +29,13 @@ const nextConfig: NextConfig = {
 };
 
 export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
   silent: true,
-  // Source maps are uploaded to Sentry during the build and then removed from
-  // the output directory, so they are never served to the public — the SDK
-  // does not add a `//# sourceMappingURL` comment pointing at them either.
+  // Initial staging deliberately does not generate or upload source maps.
+  // Re-enable only through the separate CI task documented in
+  // docs/SENTRY_SOURCEMAPS_FUTURE_RU.md, where the upload credential is
+  // short-lived and never becomes a runtime environment variable.
   sourcemaps: {
-    deleteSourcemapsAfterUpload: true,
+    disable: true,
   },
   telemetry: false,
 });

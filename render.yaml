@@ -1,76 +1,23 @@
 # TuTak staging on Render.
 #
-# This is the Render Blueprint at the root of the repository, so this is the
-# file Render reads on New → Blueprint. It describes **staging**: a real
-# deployment, reachable over the internet, with no demonstration data, no
-# fake acquirer, and no invented customers. The demonstration blueprint this
-# file replaced is kept verbatim as `render.demo.yaml` — see the note at the
-# top of that file.
-#
-# ## Why staging is not "production with a different name"
-#
-# `NODE_ENV=staging` is a real value in `apps/api/src/config/env.validation.ts`,
-# and the API treats it deliberately: the network-facing guards stay on
-# (CORS must be configured or the process refuses to boot, Swagger is off),
-# while the *commercial* boot guards keyed to `production` alone —
-# SmsModule, PushModule, PaymentsModule, MediaModule's S3 requirement — stay
-# off, because a rehearsal environment legitimately has no carrier contract
-# and no acquirer. That is the whole reason the value exists.
-#
-# It is also why nothing here sets DEMO_MODE or DEMO_SEED. Those two flags
-# exist to let a *public demonstration* run on the sandbox acquirer and fill
-# itself with invented money; staging must have neither. What staging does
-# need is roles, permissions and one administrator to sign in as, which is
-# `SEED_BASELINE` below — a different flag for a different job, and the only
-# seed that writes no business data.
-#
-# ## What a human still has to type
-#
-# Everything marked `sync: false` is asked for by Render at Apply time and
-# entered in the dashboard. Nothing secret is in this file, and nothing
-# secret belongs in it. The variables, and which of them are build-time
-# rather than runtime, are listed in docs/RENDER_STAGING_RU.md.
-#
-# ## What the first deploy does not depend on
-#
-# The dashboards' Sentry values have to reach `next build`, and the only
-# channel a blueprint has into a Docker build is a build argument. Whether
-# Render actually forwards a service variable to a matching `ARG` has not
-# been verified against a real Render build from this repository, so nothing
-# here is allowed to need it: with no DSN reaching the build, the SDK is a
-# no-op, the image builds, and both dashboards serve. Sentry on the
-# dashboards is therefore something to confirm after the first successful
-# deploy, not a precondition for it. The API is unaffected either way — its
-# `SENTRY_DSN` is an ordinary runtime variable.
-#
-# ## Free plans
-#
-# Everything is on a free plan, so applying this cannot charge anyone. Two
-# consequences worth knowing before staging is used for a scheduled test:
-# free services sleep after ~15 minutes idle and take 30-50 seconds to wake,
-# and a free Postgres expires after 30 days. Both are fine for a rehearsal
-# environment and neither is fine for production.
+# This blueprint is staging only: no DEMO_MODE, no DEMO_SEED, no fake
+# acquirer and no invented business data. Source-map upload for the Next.js
+# dashboards is intentionally NOT part of the first staging deployment.
+# SENTRY_AUTH_TOKEN must not be configured on any Render runtime service.
 
 databases:
   - name: tutak-staging-db
     databaseName: tutak_staging
     user: tutak
     plan: free
-    # Omitting this allows connections from any IP holding valid credentials
-    # (Render's documented default). An empty list blocks every external
-    # connection; same-region Render services still reach it over the
-    # internal network.
     ipAllowList: []
 
 services:
-  # ── Redis ─────────────────────────────────────────────────────────────
-  # BullMQ schedule, advisory locks, rate-limit counters.
   - type: keyvalue
     name: tutak-staging-redis
     plan: free
     ipAllowList: []
 
-  # ── The platform ──────────────────────────────────────────────────────
   - type: web
     name: tutak-staging-api
     runtime: docker
@@ -79,8 +26,6 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
-      # The image's own Dockerfile sets NODE_ENV=production; this overrides
-      # it at container start, which is the whole point of the value.
       - key: NODE_ENV
         value: staging
       - key: PORT
@@ -94,49 +39,28 @@ services:
           type: keyvalue
           name: tutak-staging-redis
           property: connectionString
-      # Generated once by Render and never printed. Regenerating them logs
-      # everyone out, which is why they are not derived from anything.
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      # Roles, permissions and one super admin — nothing else. Read as
-      # `SEED_BASELINE` by apps/api/docker-entrypoint.sh, idempotent on
-      # every restart. Without it a fresh database has no roles and nobody
-      # can sign in to anything.
+      # Bootstrap only: permissions, roles and one temporary super admin.
+      # After the first successful login and password rotation, set this to
+      # false so the baseline seed no longer runs on container restarts.
       - key: SEED_BASELINE
         value: 'true'
-      # The super admin's first password. Render generates it; read it once
-      # from this service's Environment tab. The account is created with
-      # `mustChangePassword`, so it reaches the login screen and nothing
-      # else until a human rotates it.
       - key: SEED_ADMIN_PASSWORD
         generateValue: true
-      # Fails closed: with no origins the API refuses to boot outside
-      # development rather than accepting requests from anywhere. It cannot
-      # be filled in from this file — CORS needs full origins with a scheme,
-      # Render's `fromService` yields a bare hostname, and the dashboard
-      # URLs do not exist until the first deploy has run. Deploy, copy the
-      # two dashboard URLs, paste them here comma-separated, redeploy once.
       - key: CORS_ORIGINS
         sync: false
-      # Left blank, per-IP rate limits key on the direct TCP peer, which
-      # behind Render's router is the router — every client then shares one
-      # bucket. Set it only to an address you actually know (an IP, a CIDR,
-      # or one of Express's named subnets); a bare hop count is refused on
-      # purpose, because it trusts whoever is topologically closest.
       - key: TRUST_PROXY
         sync: false
       - key: SWEEPS_ENABLED
         value: 'true'
       - key: QUEUE_PREFIX
         value: tutak-staging
-      # Runtime, server-side only — never reaches a browser. Leave it empty
-      # and Sentry stays off; the process starts either way.
       - key: SENTRY_DSN
         sync: false
 
-  # ── Operator dashboard ────────────────────────────────────────────────
   - type: web
     name: tutak-staging-admin
     runtime: docker
@@ -144,49 +68,25 @@ services:
     dockerfilePath: ./apps/admin/Dockerfile
     dockerContext: .
     envVars:
-      # Next.js requires a production build and `next start` in production
-      # mode; this says how the framework runs, not which environment this
-      # is. APP_ENV below is what says "staging", and it is what the Sentry
-      # verification route reads.
       - key: NODE_ENV
         value: production
       - key: PORT
         value: '3000'
       - key: APP_ENV
         value: staging
-      # BUILD-TIME. Next.js inlines NEXT_PUBLIC_* into the client bundle at
-      # `next build`; the Dockerfile declares a matching ARG so Render's
-      # build passes it through. Changing it rebuilds the image — a runtime
-      # change alone would have no effect on code already in the browser.
-      # Set it to https://<api-url>/v1 after the first deploy.
       - key: NEXT_PUBLIC_API_BASE_URL
         sync: false
-      # BUILD-TIME, and best-effort. Not a secret: a DSN is meant to ship in
-      # client bundles. Leave it empty for the first deploy — an empty DSN is
-      # a no-op in the SDK, so the image builds and the dashboard runs with
-      # Sentry simply off, and nothing about the deploy depends on it.
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
         value: staging
-      # No SENTRY_AUTH_TOKEN, SENTRY_ORG or SENTRY_PROJECT here, on purpose.
-      # They exist only to upload source maps during a build, and Render has
-      # no build-only variables for Docker services: anything set here is
-      # also in the running container's environment. A write-scoped Sentry
-      # token has no business being reachable from a running web server, so
-      # source-map upload moves to a CI build with a short-lived token — see
-      # docs/RENDER_STAGING_RU.md §8. Until then stack traces in Sentry point
-      # at minified bundles, which is a legibility cost, not a failure.
-      # RUNTIME. The Sentry verification route answers 404 unless APP_ENV is
-      # non-production, this is exactly `true`, and the caller presents the
-      # token below in `x-sentry-verify-token`. Opt in deliberately.
+      # No SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT here. Source maps
+      # are explicitly disabled for the initial staging build.
       - key: SENTRY_VERIFY_ENABLED
         sync: false
-      # RUNTIME secret, generated by Render so no human ever types one.
       - key: SENTRY_VERIFY_TOKEN
         generateValue: true
 
-  # ── Merchant dashboard ────────────────────────────────────────────────
   - type: web
     name: tutak-staging-partner
     runtime: docker
@@ -196,23 +96,18 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # The partner image's `next start` binds 3001 (its Dockerfile CMD and
-      # EXPOSE both say so), so this must be 3001 — the previous blueprint
-      # said 3000 and Render would have health-checked a port nothing was
-      # listening on.
       - key: PORT
         value: '3001'
       - key: APP_ENV
         value: staging
       - key: NEXT_PUBLIC_API_BASE_URL
         sync: false
-      # Same as admin: build-time, best-effort, empty is a working state.
-      # No SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT — see the note on
-      # the admin service above.
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
         value: staging
+      # No SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT here. Source maps
+      # are explicitly disabled for the initial staging build.
       - key: SENTRY_VERIFY_ENABLED
         sync: false
       - key: SENTRY_VERIFY_TOKEN

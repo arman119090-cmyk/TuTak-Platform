@@ -1,216 +1,104 @@
-# Render staging: переменные и порядок применения
+# Render staging: безопасный первый деплой
 
-Корневой `render.yaml` описывает **staging** — настоящую непроизводственную
-среду: без `DEMO_MODE`, без `DEMO_SEED`, без выдуманных клиентов и платежей.
-Демонстрационный blueprint сохранён рядом как `render.demo.yaml`.
+Корневой `render.yaml` описывает staging без `DEMO_MODE` и `DEMO_SEED`.
+Никакого deploy этой задачей не выполняется.
 
-**Ничего не развёрнуто.** Этот документ описывает конфигурацию, которая лежит
-в репозитории, и ровно те действия, которые остаётся сделать человеку с
-доступом к Render.
+## 1. Sentry для первого staging
 
-**Секретов Sentry в Render нет вообще.** `SENTRY_AUTH_TOKEN` не задаётся ни
-одному сервису и не объявлен ни в одном Dockerfile — почему именно так и что
-из-за этого не работает, в §8.
+Первый staging должен собираться и запускаться **без `SENTRY_AUTH_TOKEN` и без
+загрузки source maps**.
 
----
+Для API используется runtime-переменная `SENTRY_DSN`. Для admin и partner
+оставлены `NEXT_PUBLIC_SENTRY_DSN` и `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`.
+DSN не является секретом. Если build-система не передаст `NEXT_PUBLIC_*` во
+время `docker build`, образ всё равно должен успешно собраться: DSN по
+умолчанию пустой, а environment в Dockerfile по умолчанию `staging`.
 
-## 1. Что создаётся
+Не считать подтверждённым механизмом предположение, что runtime env Render
+автоматически становится Docker `ARG`. Поэтому критические условия первого
+деплоя не зависят от такого поведения.
 
-| Объект Render | Имя | План |
-|---|---|---|
-| PostgreSQL | `tutak-staging-db` | free |
-| Key Value (Redis) | `tutak-staging-redis` | free |
-| Web (Docker) | `tutak-staging-api` | free |
-| Web (Docker) | `tutak-staging-admin` | free |
-| Web (Docker) | `tutak-staging-partner` | free |
+`GIT_COMMIT_SHA` остаётся build-time входом в Dockerfile и используется для
+Sentry release, когда сборочная система действительно передаёт его. При его
+отсутствии release будет `unknown`; это не должно ломать сборку или запуск.
+Для API `docker-entrypoint.sh` отдельно умеет взять runtime
+`RENDER_GIT_COMMIT`, если `GIT_COMMIT_SHA` не задан.
 
-База и Redis закрыты `ipAllowList: []` — снаружи недоступны, изнутри сети
-Render сервисы к ним ходят.
+`SENTRY_AUTH_TOKEN`, `SENTRY_ORG` и `SENTRY_PROJECT` отсутствуют в
+`render.yaml` для admin/partner. Source maps в `next.config.ts` явно отключены
+через `sourcemaps.disable: true`.
 
----
+Будущая безопасная реализация source maps вынесена в
+`docs/SENTRY_SOURCEMAPS_FUTURE_RU.md`.
 
-## 2. Три вида переменных
+## 2. Baseline seed
 
-- **runtime** — Render передаёт в запущенный контейнер. Меняется без пересборки.
-- **build-time** — нужна во время `docker build`. Единственный канал blueprint
-  внутрь сборки — build-arg для объявленного в Dockerfile `ARG`. **Этот
-  механизм не проверен** на реальной сборке Render из этого репозитория,
-  поэтому от него не зависит ни один шаг развёртывания: пустой DSN — это
-  штатное рабочее состояние (§4).
-- **generated** — Render генерирует случайное значение один раз при первом
-  Apply (`generateValue: true`). Человек не придумывает и не хранит его.
+`SEED_BASELINE=true` разрешён только как bootstrap свежей staging-базы.
+Он создаёт:
 
-`sync: false` означает «Render спросит значение при Apply и хранит его в
-своей панели». Ни одного реального значения нет и не должно быть в
-репозитории.
+- permissions;
+- roles и связи role-permission;
+- одного временного super admin;
+- связь этого admin с ролью SUPER_ADMIN.
 
----
+Он **не должен** создавать партнёров, wallet, referral code, покупки,
+скидки, рефералы, платежи, settlements или любые иные бизнес-данные.
+Это дополнительно покрыто unit-тестом `seed-baseline.spec.ts`.
 
-## 3. `tutak-staging-api`
+`SEED_ADMIN_PASSWORD` должен быть не короче 12 символов. Администратор
+создаётся с `mustChangePassword=true`.
 
-| Переменная | Тип | Значение | Комментарий |
-|---|---|---|---|
-| `NODE_ENV` | runtime | `staging` | перекрывает `production` из Dockerfile; включает CORS-гард и выключает Swagger, но не требует живого эквайера и SMS-оператора |
-| `PORT` | runtime | `4000` | |
-| `DATABASE_URL` | runtime | из `tutak-staging-db` | подставляет Render |
-| `REDIS_URL` | runtime | из `tutak-staging-redis` | подставляет Render |
-| `JWT_ACCESS_SECRET` | generated | — | |
-| `JWT_REFRESH_SECRET` | generated | — | |
-| `SEED_BASELINE` | runtime | `true` | права, роли и один временный администратор; бизнес-данных не создаёт (§7) |
-| `SEED_ADMIN_PASSWORD` | generated | — | первый пароль админа, аккаунт создаётся с `mustChangePassword` |
-| `CORS_ORIGINS` | runtime, `sync: false` | вписать после первого деплоя | `https://<admin>,https://<partner>`; без него API не стартует |
-| `TRUST_PROXY` | runtime, `sync: false` | необязательно | пусто — лимиты считаются по прямому TCP-адресу; см. §9 |
-| `SWEEPS_ENABLED` | runtime | `true` | |
-| `QUEUE_PREFIX` | runtime | `tutak-staging` | |
-| `SENTRY_DSN` | runtime, `sync: false` | DSN проекта `tutak-api` | обычная рантайм-переменная, работает наверняка; пусто — Sentry просто выключен |
-| `GIT_COMMIT_SHA` | runtime, автоматически | — | не задаётся: `docker-entrypoint.sh` берёт `RENDER_GIT_COMMIT`, если своё значение не задано |
+После первого успешного входа обязательно:
 
-У API вся Sentry-конфигурация — рантайм, поэтому здесь никаких оговорок про
-build-args нет.
+1. сменить пароль временного администратора;
+2. установить `SEED_BASELINE=false` в Render;
+3. только после этого считать bootstrap завершённым.
 
----
+Повторный запуск baseline не меняет пароль уже существующего администратора,
+но после bootstrap флаг всё равно должен быть выключен.
 
-## 4. `tutak-staging-admin` и `tutak-staging-partner`
+## 3. Переменные Render
 
-Одинаковый набор, разные DSN и разные порты.
+### API
 
-| Переменная | Тип | Значение | Комментарий |
-|---|---|---|---|
-| `NODE_ENV` | runtime | `production` | требование Next.js к `next start`, а не описание среды |
-| `PORT` | runtime | admin `3000`, partner `3001` | совпадает с портом в `CMD` соответствующего Dockerfile |
-| `APP_ENV` | runtime | `staging` | именно это значение делает среду непроизводственной для маршрута проверки Sentry |
-| `NEXT_PUBLIC_API_BASE_URL` | **build-time**, `sync: false` | `https://<api>/v1` | вшивается в браузерный бандл; менять только с пересборкой |
-| `NEXT_PUBLIC_SENTRY_DSN` | **build-time**, `sync: false` | DSN проекта `tutak-admin` / `tutak-partner` | не секрет; **на первый деплой оставьте пустым** |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | **build-time** | `staging` | |
-| `SENTRY_VERIFY_ENABLED` | runtime, `sync: false` | ровно `true`, когда нужна проверка | иначе маршрут проверки отвечает 404 |
-| `SENTRY_VERIFY_TOKEN` | generated | — | Render генерирует; передаётся в заголовке `x-sentry-verify-token` |
-| `GIT_COMMIT_SHA` | **build-time**, необязательно | — | если Render передаст в сборку `RENDER_GIT_COMMIT`, релиз подставится сам; иначе релиз будет `unknown` |
+- `NODE_ENV=staging`
+- `PORT=4000`
+- `DATABASE_URL` из staging Postgres
+- `REDIS_URL` из staging Redis
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` — generated
+- `SEED_BASELINE=true` только до завершения bootstrap
+- `SEED_ADMIN_PASSWORD` — generated
+- `CORS_ORIGINS` — `sync: false`
+- `TRUST_PROXY` — `sync: false`
+- `SWEEPS_ENABLED=true`
+- `QUEUE_PREFIX=tutak-staging`
+- `SENTRY_DSN` — `sync: false`
 
-`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` здесь **отсутствуют
-намеренно** — см. §8.
+### Admin / Partner
 
-**Первый деплой не зависит от Sentry.** Пустой DSN — задокументированный
-no-op в SDK: образ собирается, панель работает, ошибки просто никуда не
-уходят. Поэтому порядок такой: сначала добиться работающего деплоя, потом
-вписать DSN и посмотреть, дошёл ли он до бандла. Проверить это можно так —
-открыть панель, DevTools → Network: если запросов на `ingest.sentry.io` нет
-и в Sentry ничего не появляется после `POST /api/internal/sentry-verify`,
-значит Render не передал переменную в сборку, и клиентский Sentry на
-дашбордах останется выключенным до задачи из §8. На работу самих панелей и
-на API это не влияет.
+- `NODE_ENV=production` — режим `next start`, не название среды
+- `APP_ENV=staging`
+- `PORT=3000` / `3001`
+- `NEXT_PUBLIC_API_BASE_URL` — значение нужно при сборке для рабочего клиента
+- `NEXT_PUBLIC_SENTRY_DSN` — значение нужно при сборке для Sentry клиента
+- `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`
+- `SENTRY_VERIFY_ENABLED` — runtime opt-in
+- `SENTRY_VERIFY_TOKEN` — generated
 
----
+Запрещено добавлять в runtime Render для этих сервисов:
 
-## 5. Порядок применения
+- `SENTRY_AUTH_TOKEN`
+- любые будущие upload credentials для source maps
 
-1. Render → **New → Blueprint** → репозиторий и нужная ветка → Render
-   прочитает корневой `render.yaml`.
-2. Render спросит значения `sync: false`. Настоящих URL ещё нет, поэтому
-   `CORS_ORIGINS` и оба `NEXT_PUBLIC_API_BASE_URL` заполните заглушками,
-   а все Sentry-поля оставьте пустыми.
-3. **Apply**. Первая сборка — десятки минут (три Docker-образа).
-4. Выпишите три выданных адреса и подставьте настоящие значения:
-   - `tutak-staging-api` → `CORS_ORIGINS` = `https://<admin>,https://<partner>`;
-   - обе панели → `NEXT_PUBLIC_API_BASE_URL` = `https://<api>/v1` (пересборка).
-5. Войдите администратором (§7) и смените пароль.
-6. Выключите `SEED_BASELINE` (§7).
-7. Только после этого — Sentry: `SENTRY_DSN` у API работает сразу;
-   `NEXT_PUBLIC_SENTRY_DSN` у панелей — с оговоркой из §4.
+## 4. Перед Apply
 
----
+Проверить, что:
 
-## 6. Первый вход
+- в `render.yaml` нет `SENTRY_AUTH_TOKEN`;
+- в admin/partner `next.config.ts` стоит `sourcemaps.disable: true`;
+- Dockerfile не содержит `ARG SENTRY_AUTH_TOKEN`;
+- baseline seed не пишет в business tables;
+- после bootstrap есть операционная инструкция выключить `SEED_BASELINE` и
+  сменить пароль.
 
-- Логин: телефон `+37400000000` (создаётся сидом), пароль — сгенерированный
-  Render `SEED_ADMIN_PASSWORD` из вкладки Environment сервиса
-  `tutak-staging-api`.
-- Аккаунт создан с `mustChangePassword`, поэтому система сама потребует
-  сменить пароль при первом входе. Смените его — этот пароль виден всем, у
-  кого есть доступ к панели Render.
-
----
-
-## 7. `SEED_BASELINE`: что создаёт и когда выключить
-
-Флаг запускает `dist/scripts/seed-baseline.js` при каждом старте контейнера.
-Проверено на чистой базе (см. отчёт по задаче): создаётся ровно это —
-
-- 15 прав, 6 ролей, 40 связей роль↔право;
-- **один** пользователь: `+37400000000` / `admin@tutak.am`,
-  `mustChangePassword = true`, роль `SUPER_ADMIN` без привязки к партнёру;
-- его кошелёк и его реферальный код (без них API отдаёт 500 на своих же
-  ручках).
-
-Пусты остались все 50 остальных таблиц, в том числе `partners`,
-`purchase_intents`, `transactions`, `payments`, `settlements`, `payouts`,
-`refunds`, `bonus_lots`, `bonus_ledger_entries`, `deferred_bonus_lots`,
-`referral_invites`, `referral_challenge_participants`, `ledger_postings`,
-`ev_sessions`. Партнёров, покупок, скидок, рефералов и платежей сид не
-создаёт. Повторный запуск ничего не меняет — все записи через upsert.
-
-**Что сделать после первого успешного входа:**
-
-1. Сменить пароль администратора (система потребует сама).
-2. Выключить флаг: `tutak-staging-api` → Environment → `SEED_BASELINE`
-   поставить `false` (или удалить переменную) → Save. Сид перестанет
-   запускаться при каждом рестарте.
-3. Значение `SEED_ADMIN_PASSWORD` после смены пароля уже ничего не открывает,
-   но и хранить его в панели незачем — можно перегенерировать или удалить.
-
-Флаг оставлен включённым в blueprint, потому что при первом Apply база
-пустая и без него в систему не войти вообще. Дальше он не нужен.
-
----
-
-## 8. Source maps — отдельная будущая задача
-
-**Сейчас загрузки source maps нет ни у admin, ни у partner.** Стеки в Sentry
-будут указывать на минифицированный бандл. Это осознанный размен.
-
-Почему: `sentry-cli` загружает карты во время сборки и требует токен с правом
-записи в проект Sentry. У Render для Docker-сервисов **нет переменных только
-для сборки** — всё, что задано сервису, оказывается и в окружении
-работающего контейнера, на весь срок его жизни. Веб-сервер, доступный из
-интернета, не должен носить в окружении токен, которым можно писать в
-телеметрию. Читаемый стек этого не стоит.
-
-Поэтому `SENTRY_AUTH_TOKEN` удалён и из `render.yaml`, и из обоих
-Dockerfile.
-
-**Что нужно сделать в отдельной задаче** (ни один пункт не реализован):
-
-- собирать образы панелей в CI (GitHub Actions), а не на стороне хостинга;
-- токен хранить в секретах CI, передавать в сборку коротким способом
-  (`--build-arg` в стадию сборки или BuildKit `--mount=type=secret`), с
-  минимальным скоупом (`project:releases`) и коротким сроком жизни, с
-  ротацией;
-- готовый образ публиковать в реестр (в репозитории уже есть
-  `docker-publish.yml` для API — расширить на admin и partner) и разворачивать
-  на Render готовый образ вместо сборки из Dockerfile;
-- в токен-содержащий образ ничего не попадает: рантайм-стадия по-прежнему
-  копирует только результат сборки;
-- проверка: Sentry → Releases → нужный SHA → Artifacts, и стек события
-  указывает на `.ts`/`.tsx`.
-
-До этого момента `SENTRY_AUTH_TOKEN` не должен появляться ни в Render, ни в
-`eas.json`, ни в `render.yaml`, ни в каком-либо файле репозитория.
-
----
-
-## 9. Что знать заранее
-
-- **Free-план**: сервисы засыпают после ~15 минут простоя и просыпаются
-  30–50 секунд; бесплатная база живёт 30 дней. Для репетиционной среды это
-  приемлемо, для production — нет.
-- **`TRUST_PROXY`**: пока не задан, все запросы приходят с адреса роутера
-  Render, то есть все клиенты делят один лимит запросов. Задавайте только
-  тот адрес/подсеть, которые действительно знаете: голое число хопов код
-  отвергает намеренно.
-- **Медиа**: вне production драйвер хранения — локальная директория, а диск
-  контейнера эфемерный. Загруженные картинки исчезнут при передеплое. Для
-  постоянного хранения нужен S3-совместимый бакет (`MEDIA_STORAGE_*`).
-- **SMS, push, эквайер**: в staging их нет, и это сознательно — код держит
-  соответствующие boot-гарды только для `production`.
-- **Демонстрация**: если нужен именно демо-стенд с выдуманными данными,
-  копируйте `render.demo.yaml` в `render.yaml` на отдельной ветке и
-  разворачивайте её; в staging `DEMO_MODE`/`DEMO_SEED` не включаются.
+Эта задача не выполняет Apply/Deploy и не меняет настройки Render.

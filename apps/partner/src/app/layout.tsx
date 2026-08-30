@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { themeInitScript } from '@tutak/design/web';
-import { Providers } from '@/components/Providers';
+import { themeInitScript, Providers } from '@tutak/design/web';
 import './globals.css';
 
 export const metadata: Metadata = {

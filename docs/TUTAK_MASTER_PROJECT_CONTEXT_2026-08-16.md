@@ -1,6 +1,17 @@
 TuTak — MASTER PROJECT CONTEXT
 Дата: 16 августа 2026
 
+**SUPERSEDED, 2026-08-29 (codebase audit).** Этот документ описывает
+референс-модель ДО перестройки 2026-08-22 (см.
+`docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md` и
+`docs/CORE_ARCHITECTURE_COMPLETION_REPORT_2026-08.md`). В частности:
+"один direct referral level" и разбивку пула "20% GREEN / 30% DEFERRED /
+20% DIRECT REFERRER / 30% TUTAK" ниже заменила 3-уровневая реферальная
+цепочка (`ReferralService.computePoolSplit`, `apps/api/src/modules/referral/
+referral.service.ts`) — актуальные проценты и логику см. там же и в
+`docs/ARCHITECTURE.md`. Оставлено как исторический снимок решений Армана
+на момент 16 августа, а не как текущий source of truth.
+
 ВАЖНО: полный canonical context TuTak из текущего согласованного документа. Source of truth для бизнес-правил и независимого аудита.
 
 Актуальное дополнение после составления исходного документа:

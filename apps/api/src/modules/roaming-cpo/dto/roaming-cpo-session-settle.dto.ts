@@ -5,9 +5,7 @@ import { IsMoneyString } from '../../../common/validators/is-money-string.valida
  * One completed roaming-CPO session, exactly the fields requirement 4 lists:
  * "the partner's own customer ID, session ID, actual kWh delivered, the
  * actual tariff applied to that specific customer for that specific
- * session, and the final charging amount". Shaped to match
- * `RoamingCpoSessionReport` field for field — see that interface's docblock
- * for why this DTO is not itself the adapter boundary.
+ * session, and the final charging amount".
  */
 export class RoamingCpoSessionSettleDto {
   @IsString()

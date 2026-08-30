@@ -1,6 +1,5 @@
 import type {
   AuthResponseDto,
-  AuthTokensDto,
   ChangePasswordRequestDto,
   ConfirmPasswordResetRequestDto,
   ConfirmPhoneVerificationRequestDto,
@@ -66,14 +65,6 @@ export const authApi = {
 
   async logout(deviceId: string) {
     await httpClient.post('/auth/logout', { deviceId });
-  },
-
-  async refresh(refreshToken: string, deviceId: string) {
-    const { data } = await httpClient.post<ApiEnvelope<{ tokens: AuthTokensDto }>>(
-      '/auth/refresh',
-      { refreshToken, deviceId },
-    );
-    return data.data.tokens;
   },
 
   async changePassword(dto: ChangePasswordRequestDto) {

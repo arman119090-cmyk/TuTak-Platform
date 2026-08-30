@@ -170,8 +170,19 @@ several stacked cards on white still read as one calm surface.
 
 ## Jako
 
-Jako is a **brand element, not an illustration**. He appears at most once per
-screen, and only in these four places:
+**Update, 2026-08-23 (Arman's request):** Jako now renders as the actual
+logo photo everywhere, not hand-drawn vector art — the section below
+describes the superseded illustrated-mark approach and is kept only for the
+compositional rules (where he appears, at what opacity) that still hold.
+
+`<Jako />` (`packages/design/src/web/components/Jako.tsx` on web,
+the mobile equivalents in `presentation/components/UserAvatar.tsx` /
+`PartnerMark.tsx`) renders `/logo-mark.png` (`assets/logo-mark.png` on
+mobile) at a given `size`. There is no `brand/jako-paths.ts` vector geometry
+file anymore — do not re-add one; swapping in illustrated art later means
+changing what these components render, not adding a parallel system.
+
+He appears at most once per screen, in these places:
 
 | Treatment | Where | Why |
 |---|---|---|
@@ -179,17 +190,6 @@ screen, and only in these four places:
 | **Watermark** (`<JakoWatermark />`) | Behind the balance card and referral card, 7% opacity, large and cropped | Makes the card unmistakably TuTak without competing with the number |
 | **Empty states** | Any empty list | Warmth on an otherwise blank screen |
 | **Success moment** | Payment receipt, 35% opacity | A quiet signature on the one screen worth celebrating |
-
-The mark reduces the African Grey to the four features that actually identify
-the species: the heavy hooked beak, the high domed crown, the bare white eye
-patch, and the scalloped neck feathering. Body in neutral grey; **one**
-saturated shape — the brand-green tail — which is what makes it read as a logo
-rather than a drawing.
-
-Geometry is defined once in
-[`brand/jako-paths.ts`](../packages/design/src/brand/jako-paths.ts) and
-rendered by `react-native-svg` on mobile and inline SVG on web. Never re-trace
-or copy the paths, or the mark will drift between apps.
 
 ---
 
@@ -294,8 +294,10 @@ rather than truncate.
   packaging decision rather than a design one. The layout, sizing and quiet
   zone are built to true QR proportions, so swapping the encoder in is a
   one-component change with no visual impact.
-- The mark ships as vector paths tuned by hand. If brand commissions final
-  illustrated artwork, replace `jako-paths.ts`; the component API is stable.
+- The mark ships as the actual logo photo (see the "Jako" section's
+  2026-08-23 update above), not illustrated vector art. If brand later
+  commissions a fresh treatment, swap what `<Jako />`/`<JakoWatermark />`
+  render; the component API is stable.
 - Dark mode is deliberately not implemented — the bonus hues are tuned for
   white surfaces, and re-tuning them for dark is a real design exercise rather
   than an inversion.

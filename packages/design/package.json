@@ -17,6 +17,11 @@
     "build:css": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/build-css.ts",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@tutak/shared-types": "workspace:*",
+    "axios": "^1.19.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "ts-node": "^10.9.2",

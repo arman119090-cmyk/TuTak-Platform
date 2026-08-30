@@ -7,7 +7,7 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@tutak/shared-types', '@tutak/i18n', '@tutak/design'],
+  transpilePackages: ['@tutak/shared-types', '@tutak/design'],
 
   // The API sends a full set of these through helmet and this app sent none —
   // which is backwards, because the operator session and the access token in

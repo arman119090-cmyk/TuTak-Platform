@@ -1,8 +1,9 @@
 import { IsOptional, IsString, Matches } from 'class-validator';
+import { ARMENIAN_PHONE_MESSAGE, ARMENIAN_PHONE_REGEX } from '../../../common/validators/armenian-phone';
 
 export class LoginDto {
   @IsString()
-  @Matches(/^\+374\d{8}$/, { message: 'phone must be an Armenian number in +374XXXXXXXX format' })
+  @Matches(ARMENIAN_PHONE_REGEX, { message: ARMENIAN_PHONE_MESSAGE })
   phone: string;
 
   @IsString()

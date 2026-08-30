@@ -1,4 +1,4 @@
-import { BranchFuelType, BranchStaffRole, PartnerBranchQrStatus } from '../enums/partner-branch';
+import { BranchStaffRole, PartnerBranchQrStatus } from '../enums/partner-branch';
 
 /** What a branch QR scan resolves to — no amount, no commercial data. */
 export interface PartnerBranchQrResolveResponseDto {
@@ -41,8 +41,4 @@ export interface AssignBranchStaffRequestDto {
 export interface SetAllBranchesRequestDto {
   userId: string;
   allBranches: boolean;
-}
-
-export interface SetBranchFuelTypeRequestDto {
-  fuelType: BranchFuelType;
 }

@@ -7,7 +7,7 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@tutak/shared-types', '@tutak/i18n', '@tutak/design'],
+  transpilePackages: ['@tutak/shared-types', '@tutak/design'],
 
   // See the admin dashboard's config and the shared module for the reasoning.
   // Both dashboards deliberately share one policy: they hold the same kind of

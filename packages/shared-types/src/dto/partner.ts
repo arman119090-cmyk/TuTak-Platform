@@ -17,21 +17,6 @@ export interface PartnerOfferingDto {
   price: string;
 }
 
-/** One entry the partner submits when replacing their whole offerings list. */
-export interface PartnerOfferingInputDto {
-  name: string;
-  description?: string | null;
-  price: string;
-}
-
-export interface ReplacePartnerOfferingsRequestDto {
-  offerings: PartnerOfferingInputDto[];
-}
-
-export interface UpdatePartnerAboutRequestDto {
-  about: string | null;
-}
-
 /**
  * One of a partner's own physical locations — spec: partner self-service
  * branches (Arman, 2026-08-26). Unlike `PartnerOfferingDto`, this is not a
@@ -51,22 +36,6 @@ export interface PartnerBranchDto {
   /** Meaningful only for a `fuel`-category partner — see `PartnerBranch.fuelType`. */
   fuelType?: BranchFuelType | null;
   createdAt: string;
-}
-
-export interface CreatePartnerBranchRequestDto {
-  name: string;
-  address: string;
-  city: string;
-  latitude: number;
-  longitude: number;
-}
-
-export interface UpdatePartnerBranchRequestDto {
-  name?: string;
-  address?: string;
-  city?: string;
-  latitude?: number;
-  longitude?: number;
 }
 
 /**
@@ -141,16 +110,6 @@ export interface CreatePartnerRequestDto {
   category: string;
   bonusAccrualRateBps: number;
   ownerUserId: string;
-  sellsGas?: boolean;
-  sellsPetrol?: boolean;
-}
-
-/**
- * Partner self-service: declaring what a `fuel`-category station actually
- * sells — see `PartnerPublicDto.sellsGas`/`sellsPetrol`. Same OWNER-only
- * posture as `UpdatePartnerAboutRequestDto`.
- */
-export interface UpdatePartnerFuelTypesRequestDto {
   sellsGas?: boolean;
   sellsPetrol?: boolean;
 }

@@ -10,8 +10,6 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
  */
 const DEFAULT_LEASE_MS = 30_000;
 
-export const IDEMPOTENCY_LEASE_MS = DEFAULT_LEASE_MS;
-
 export interface IdempotencyParams {
   /** Actor-scoped namespace — never a bare key, or one account can replay another's. */
   scope: string;

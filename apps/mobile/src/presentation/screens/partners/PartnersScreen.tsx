@@ -37,7 +37,7 @@ import { partnersApi } from '../../../data/api/partnersApi';
 import { evApi } from '../../../data/api/evApi';
 import { evStatusTone } from '../../utils/transactionPresentation';
 import { formatAmd } from '../../utils/format';
-import { DEFAULT_CENTRE, useApproximateLocation } from './useApproximateLocation';
+import { useApproximateLocation } from './useApproximateLocation';
 import { CATEGORY_ICONS, CATEGORY_ORDER, formatDistance } from './categories';
 import { PartnerPin } from './PartnerPin';
 import { StationPin } from './StationPin';
@@ -751,8 +751,6 @@ function useDebounced(value: string, delayMs: number): string {
 
   return settled;
 }
-
-export { DEFAULT_CENTRE };
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

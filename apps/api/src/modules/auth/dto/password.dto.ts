@@ -1,4 +1,5 @@
 import { IsString, Length, Matches, MinLength } from 'class-validator';
+import { ARMENIAN_PHONE_MESSAGE, ARMENIAN_PHONE_REGEX } from '../../../common/validators/armenian-phone';
 
 /**
  * Password rules live here rather than being repeated at each call site.
@@ -20,13 +21,13 @@ export class ChangePasswordDto {
 
 export class RequestPasswordResetDto {
   @IsString()
-  @Matches(/^\+374\d{8}$/, { message: 'phone must be an Armenian number in +374XXXXXXXX format' })
+  @Matches(ARMENIAN_PHONE_REGEX, { message: ARMENIAN_PHONE_MESSAGE })
   phone: string;
 }
 
 export class ConfirmPasswordResetDto {
   @IsString()
-  @Matches(/^\+374\d{8}$/, { message: 'phone must be an Armenian number in +374XXXXXXXX format' })
+  @Matches(ARMENIAN_PHONE_REGEX, { message: ARMENIAN_PHONE_MESSAGE })
   phone: string;
 
   @IsString()

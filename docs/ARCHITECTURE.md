@@ -13,8 +13,10 @@
 - **Money is `Decimal`, never `Float`.** Prisma's `Decimal` type end-to-end
   for AMD amounts and bonus points.
 - **Modular by domain, not by layer.** `apps/api/src/modules/*` — auth,
-  wallet, referral, qr-payments, ev-charging, partners, admin, transactions,
-  notifications, analytics, security/fraud, audit — each own their
+  wallet, referral, qr-payments, purchase-intents, ev-charging, roaming-cpo,
+  customer-balance, partners, admin, transactions, notifications, analytics,
+  security/fraud, audit, ledger, payments (legacy, off by default),
+  settlement, payouts, reconciliation, sweeps — each own their
   controller/service/DTOs and are wired together through Nest DI and a small
   number of domain events, not by reaching into each other's internals.
 
@@ -57,6 +59,16 @@ Partner A is a distinct grant from `PARTNER_OWNER` at Partner B). JWT access
 tokens carry a flattened claim set (`roles`, `permissions`, `partnerScopes`)
 computed at login/refresh time — `RolesGuard`/`PermissionsGuard` check it
 without a DB round trip per request.
+
+### PurchaseIntent — the canonical purchase path
+
+`docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md` established `PurchaseIntent`
+as the model the spec actually asks for: the customer pays the partner
+directly (cash, their own card terminal, whatever they already use) and the
+app only ever records the resulting `Transaction`/bonus math — TuTak's card
+processing (`PaymentsModule`) is a legacy, off-by-default path
+(`CARD_PAYMENTS_ENABLED`), never the default. Same reservation → settle →
+accrue → `Transaction(COMPLETED)` saga shape as QR below.
 
 ### QR payments
 
@@ -136,12 +148,14 @@ queue by accident. Two properties worth naming:
 ## Brand
 
 Green/yellow/blue map directly to bonus states everywhere in the UI
-(available/pending/reserved) — see `packages/i18n` for copy and
-`apps/mobile/src/app/theme/colors.ts` / the Tailwind `@theme` blocks in
-`apps/admin` and `apps/partner` for the token source of truth. The mascot
-(Jako, an African Grey Parrot) currently ships as a minimal vector
-placeholder (`MascotBadge`) pending final illustrated artwork from brand —
-swap the SVG, keep the `size` prop contract.
+(available/pending/reserved) — see `packages/i18n` for copy and the
+`@tutak/design` token package (`packages/design/src/tokens/`) / the
+Tailwind `@theme` blocks in `apps/admin` and `apps/partner` for the token
+source of truth. The mascot (Jako, an African Grey Parrot) ships as the
+actual logo photo (`packages/design/src/web/components/Jako.tsx`,
+`logo-mark.png`) rather than illustrated vector art, per Arman's request on
+2026-08-23 — the same correction applied to the mobile app's
+`UserAvatar`/`PartnerMark`/`EmptyState`.
 
 ## Production-readiness roadmap
 
@@ -167,8 +181,14 @@ code.
    profiles; the app cannot reach a phone outside Expo Go without them.
 5. **An OCPI roaming partner.** The adapter interface and data model are
    ready; `NoopOcpiAdapter` becomes a real OCPI 2.2.1 client once
-   credentials exist.
-6. **Final brand assets.** The mascot is a placeholder SVG.
+   credentials exist. A separate, already-built webhook-style integration
+   (`modules/roaming-cpo/`) covers a wholesale-resale partner relationship
+   instead — see `docs/ROAMING_CPO_INTEGRATION_2026-08-25.md`.
+6. **A real bank/PSP for customer top-ups.** The prepaid-balance mechanism
+   that collects roaming-CPO charges (`modules/customer-balance/`) is fully
+   built behind a `BankTopUpAdapter` seam; its `NoopBankTopUpAdapter` honestly
+   refuses every top-up until a real bank (Idram or otherwise) is connected —
+   see `docs/ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md`.
 
 ### Engineering, in rough priority order
 
@@ -178,9 +198,10 @@ code.
    `connection_limit` is unset, so Prisma opens `num_cpus × 2 + 1` per
    instance, and read replicas for analytics and history are untouched. See
    `docs/LOAD_TEST.md` for where the ceiling actually sits.
-2. **Tracing and alerting.** Structured JSON logging with request
-   correlation is in place; OpenTelemetry spans, error tracking and metrics
-   are not.
+2. **Error tracking.** Structured JSON logging with request correlation,
+   OpenTelemetry distributed tracing (`common/observability/tracing.ts`),
+   and a Prometheus `/metrics` endpoint are all in place; a dedicated error
+   tracker (e.g. Sentry) for exception aggregation/alerting is not.
 3. **Geo queries.** `EvStationsService.listNearby` does bounding-box maths
    in application code; PostGIS `ST_DWithin` once station count justifies
    it.

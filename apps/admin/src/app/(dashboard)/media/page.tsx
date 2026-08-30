@@ -80,7 +80,7 @@ function PendingCard({ row }: { row: PendingMediaRow }) {
         <div
           className={`${
             row.kind === 'PARTNER_LOGO' ? 'h-32 w-32' : 'h-32 w-[228px]'
-          } flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-sunken`}
+          } flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-surface-sunken`}
         >
           {/* The signed preview URL, not the public one — this asset is
               deliberately not public yet, and the link is bound to this

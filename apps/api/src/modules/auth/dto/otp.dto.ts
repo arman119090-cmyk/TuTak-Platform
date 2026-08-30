@@ -1,7 +1,8 @@
 import { IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
-
-const PHONE_REGEX = /^\+374\d{8}$/;
-const PHONE_MESSAGE = 'phone must be an Armenian number in +374XXXXXXXX format';
+import {
+  ARMENIAN_PHONE_MESSAGE as PHONE_MESSAGE,
+  ARMENIAN_PHONE_REGEX as PHONE_REGEX,
+} from '../../../common/validators/armenian-phone';
 
 export class RequestRegistrationOtpDto {
   @IsString()

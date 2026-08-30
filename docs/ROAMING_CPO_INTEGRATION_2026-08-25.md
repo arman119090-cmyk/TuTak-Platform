@@ -552,7 +552,7 @@ nothing else: `demo/src/data/api/mockData.ts`,
 
 **Admin (new):**
 `apps/admin/src/app/(dashboard)/roaming-cpo-stations/page.tsx`,
-`apps/admin/src/lib/api/fastChargeApi.ts`.
+`apps/admin/src/lib/api/roamingCpoApi.ts`.
 **Admin (edited):** `apps/admin/src/components/Sidebar.tsx`.
 
 **Partner (edited):**

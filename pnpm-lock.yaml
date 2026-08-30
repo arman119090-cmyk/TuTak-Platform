@@ -62,9 +62,6 @@ importers:
       '@tutak/design':
         specifier: workspace:*
         version: link:../../packages/design
-      '@tutak/i18n':
-        specifier: workspace:*
-        version: link:../../packages/i18n
       '@tutak/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -416,9 +413,6 @@ importers:
       '@tutak/design':
         specifier: workspace:*
         version: link:../../packages/design
-      '@tutak/i18n':
-        specifier: workspace:*
-        version: link:../../packages/i18n
       '@tutak/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -473,6 +467,16 @@ importers:
         version: 5.9.3
 
   packages/design:
+    dependencies:
+      '@tanstack/react-query':
+        specifier: ^5.101.4
+        version: 5.101.4(react@19.2.8)
+      '@tutak/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      axios:
+        specifier: ^1.19.0
+        version: 1.19.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.2

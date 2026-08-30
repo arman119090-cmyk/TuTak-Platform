@@ -33,14 +33,6 @@ export enum EvSessionStatus {
   CANCELLED = 'CANCELLED',
 }
 
-export enum EvReservationStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  CANCELLED = 'CANCELLED',
-  EXPIRED = 'EXPIRED',
-  FULFILLED = 'FULFILLED',
-}
-
 /**
  * A station's control/tariff model — see docs/ROAMING_CPO_INTEGRATION_2026-08-25.md.
  * `ROAMING_CPO` stations are never started/stopped from TuTak (requirement 1)

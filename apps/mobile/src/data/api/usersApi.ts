@@ -1,4 +1,4 @@
-import type { AuthenticatedUserDto, MediaImageDto } from '@tutak/shared-types';
+import type { MediaImageDto } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export interface PickedImage {
@@ -23,11 +23,6 @@ function isReactNativeFormData(form: FormData): boolean {
 }
 
 export const usersApi = {
-  async me() {
-    const { data } = await httpClient.get<ApiEnvelope<AuthenticatedUserDto>>('/users/me');
-    return data.data;
-  },
-
   /**
    * Uploads or replaces the caller's avatar.
    *

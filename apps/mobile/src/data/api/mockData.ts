@@ -45,7 +45,6 @@ import {
  * Dates are computed relative to launch so nothing reads as stale.
  */
 
-const now = () => new Date();
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const daysAhead = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
@@ -794,5 +793,3 @@ export function freshMockState(): MockState {
     purchaseIntents: [],
   };
 }
-
-export { now };

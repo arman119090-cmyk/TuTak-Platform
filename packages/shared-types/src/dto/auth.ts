@@ -25,11 +25,6 @@ export interface AuthTokensDto {
   refreshTokenExpiresAt: string;
 }
 
-export interface RefreshRequestDto {
-  refreshToken: string;
-  deviceId: string;
-}
-
 export interface AuthenticatedUserDto {
   id: string;
   phone: string;
@@ -60,10 +55,6 @@ export interface AuthenticatedUserDto {
    * `showAvatarInReferralList` above. Returned so Settings can render the
    * truth rather than an optimistic guess.
    */
-  personalizedRecommendationsEnabled: boolean;
-}
-
-export interface UpdatePersonalizationConsentRequestDto {
   personalizedRecommendationsEnabled: boolean;
 }
 

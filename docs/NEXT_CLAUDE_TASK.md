@@ -1,5 +1,16 @@
 # TuTak — Current Claude Task
 
+**SUPERSEDED, 2026-08-29 (codebase audit).** This file's own "STATUS AS OF
+2026-08-22" section is frozen at that date and says "no engineering task is
+currently queued" — a full week of shipped work since then (fuel-station
+branches, the roaming-CPO wholesale-resale integration and its financial
+accounting/prepaid-balance follow-ups) is undocumented here. It is no
+longer maintained as a live pointer; for what actually shipped since, read
+`docs/FUEL_STATION_BRANCHES_2026-08-29.md`,
+`docs/ROAMING_CPO_INTEGRATION_2026-08-25.md` and its two follow-on docs, and
+`docs/ARCHITECTURE.md`'s module list. Kept below as a historical record of
+the 2026-08-22 referral rework.
+
 This file is the canonical current task for Claude. Before starting or continuing implementation, read this file together with `docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md`, `docs/design/TUTAK_UI_UX_MASTER_SPEC_V1.md` (when present), `docs/HARDENING_AUDIT_2026-08-16.md`, `docs/LAUNCH_READINESS_2026-08-16.md`, and GitHub Issue #28 `TuTak — Independent Audit Findings`.
 
 ## STATUS AS OF 2026-08-22

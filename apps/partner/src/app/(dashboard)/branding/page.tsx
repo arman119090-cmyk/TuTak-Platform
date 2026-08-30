@@ -233,7 +233,7 @@ function Preview({
     <div>
       <div className="mb-2 text-[12px] uppercase tracking-wide text-faint">{label}</div>
       <div
-        className={`${box} flex items-center justify-center overflow-hidden rounded-xl border border-line bg-sunken`}
+        className={`${box} flex items-center justify-center overflow-hidden rounded-xl border border-line bg-surface-sunken`}
       >
         {loading ? (
           <span className="text-[12px] text-faint">…</span>

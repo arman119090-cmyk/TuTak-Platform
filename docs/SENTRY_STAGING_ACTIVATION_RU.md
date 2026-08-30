@@ -76,8 +76,15 @@ Next.js подставляет `NEXT_PUBLIC_*` в бандл на этапе `ne
 
 Если сборка идёт через `apps/{admin,partner}/Dockerfile`, эти значения нужно
 передать как build-args/ENV сборочной стадии — рантайм-переменные тут не
-помогут. Соответствующие `ARG` в обоих Dockerfile уже объявлены; для Render
-конкретные имена и порядок действий — в `docs/RENDER_STAGING_RU.md`.
+помогут. В обоих Dockerfile объявлены `ARG` для `NEXT_PUBLIC_SENTRY_DSN`,
+`NEXT_PUBLIC_SENTRY_ENVIRONMENT` и `GIT_COMMIT_SHA`.
+
+`SENTRY_AUTH_TOKEN`, `SENTRY_ORG` и `SENTRY_PROJECT` в этих Dockerfile
+намеренно **отсутствуют**: на хостинге без переменных «только для сборки»
+(Render — такой) build-arg неизбежно оказывается и в окружении работающего
+контейнера. Пока загрузка source maps не переехала в CI с
+короткоживущим токеном, её нет вовсе — `docs/RENDER_STAGING_RU.md` §8. Для
+Render конкретные имена и порядок действий — в том же документе.
 
 ### apps/mobile — сборка EAS
 

@@ -22,14 +22,15 @@ COPY tsconfig.base.json ./tsconfig.base.json
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-# ── Sentry, all of it build-time ────────────────────────────────────────
+# ── Sentry: build-time, and deliberately optional ───────────────────────
 #
-# Every one of these has to be present during `next build` and none of them
-# can be supplied later: `NEXT_PUBLIC_*` values are inlined into the client
-# bundle by that build, and the source-map upload happens inside it too.
-# Render's only channel into a Docker build is a build argument, which is
-# why each one is an ARG here. All default to empty, and an empty DSN is a
-# documented no-op in the SDK — the image builds with none of them set.
+# `NEXT_PUBLIC_*` values are inlined into the client bundle by `next build`,
+# so they cannot be supplied later; a build argument is the only channel a
+# Docker build has. Whether a given platform forwards a service variable to
+# a matching ARG is that platform's behaviour, not something this image can
+# require — so all of these default to empty and an empty DSN is a
+# documented no-op in the SDK. The image builds, and the dashboard serves,
+# with none of them set; the only thing missing then is Sentry itself.
 ARG NEXT_PUBLIC_SENTRY_DSN=""
 ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=""
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
@@ -45,20 +46,14 @@ ARG GIT_COMMIT_SHA=""
 ARG RENDER_GIT_COMMIT=""
 ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA:-$RENDER_GIT_COMMIT}
 
-# Source-map upload only, read by next.config.ts. Without a token the upload
-# is skipped and the build still succeeds.
-ARG SENTRY_ORG=""
-ARG SENTRY_PROJECT=""
-# A secret, and the one value here that must not survive the build. It is
-# deliberately never promoted to ENV: it is passed to the build command
-# alone, on the line below. This whole stage is then discarded — the runtime
-# stage starts from `base` again and copies only built output — so the token
-# cannot appear in the published image, in its history, or in any layer of
-# it.
-ARG SENTRY_AUTH_TOKEN=""
-
-RUN SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN" \
-    pnpm --filter @tutak/admin build
+# There is deliberately no SENTRY_AUTH_TOKEN argument here. Uploading source
+# maps needs a token with write access to the Sentry project, and a hosting
+# platform that has no build-only variables would keep that token in the
+# running container's environment for the life of the service. That trade is
+# not worth readable stack traces. Source-map upload belongs in a CI build
+# with a short-lived token — see docs/RENDER_STAGING_RU.md §8. Without a
+# token `next.config.ts` skips the upload and the build succeeds.
+RUN pnpm --filter @tutak/admin build
 
 FROM base AS runtime
 ENV NODE_ENV=production

@@ -31,6 +31,18 @@
 # secret belongs in it. The variables, and which of them are build-time
 # rather than runtime, are listed in docs/RENDER_STAGING_RU.md.
 #
+# ## What the first deploy does not depend on
+#
+# The dashboards' Sentry values have to reach `next build`, and the only
+# channel a blueprint has into a Docker build is a build argument. Whether
+# Render actually forwards a service variable to a matching `ARG` has not
+# been verified against a real Render build from this repository, so nothing
+# here is allowed to need it: with no DSN reaching the build, the SDK is a
+# no-op, the image builds, and both dashboards serve. Sentry on the
+# dashboards is therefore something to confirm after the first successful
+# deploy, not a precondition for it. The API is unaffected either way — its
+# `SENTRY_DSN` is an ordinary runtime variable.
+#
 # ## Free plans
 #
 # Everything is on a free plan, so applying this cannot charge anyone. Two
@@ -149,26 +161,22 @@ services:
       # Set it to https://<api-url>/v1 after the first deploy.
       - key: NEXT_PUBLIC_API_BASE_URL
         sync: false
-      # BUILD-TIME. Not a secret: a DSN is meant to ship in client bundles.
+      # BUILD-TIME, and best-effort. Not a secret: a DSN is meant to ship in
+      # client bundles. Leave it empty for the first deploy — an empty DSN is
+      # a no-op in the SDK, so the image builds and the dashboard runs with
+      # Sentry simply off, and nothing about the deploy depends on it.
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
         value: staging
-      # BUILD-TIME, source-map upload only. SENTRY_ORG is your Sentry
-      # organisation slug; the project slug is fixed here because it names
-      # this app's own Sentry project and is not a credential.
-      - key: SENTRY_ORG
-        sync: false
-      - key: SENTRY_PROJECT
-        value: tutak-admin
-      # BUILD-TIME **secret**. Read only by next.config.ts during the build,
-      # to upload source maps. The Dockerfile consumes it as a build-stage
-      # ARG that is never promoted to ENV and never reaches the runtime
-      # stage, so it cannot end up in the published image. Render has no
-      # build-only variables, so it is also present in the running
-      # container's environment — no application code reads it there.
-      - key: SENTRY_AUTH_TOKEN
-        sync: false
+      # No SENTRY_AUTH_TOKEN, SENTRY_ORG or SENTRY_PROJECT here, on purpose.
+      # They exist only to upload source maps during a build, and Render has
+      # no build-only variables for Docker services: anything set here is
+      # also in the running container's environment. A write-scoped Sentry
+      # token has no business being reachable from a running web server, so
+      # source-map upload moves to a CI build with a short-lived token — see
+      # docs/RENDER_STAGING_RU.md §8. Until then stack traces in Sentry point
+      # at minified bundles, which is a legibility cost, not a failure.
       # RUNTIME. The Sentry verification route answers 404 unless APP_ENV is
       # non-production, this is exactly `true`, and the caller presents the
       # token below in `x-sentry-verify-token`. Opt in deliberately.
@@ -198,16 +206,13 @@ services:
         value: staging
       - key: NEXT_PUBLIC_API_BASE_URL
         sync: false
+      # Same as admin: build-time, best-effort, empty is a working state.
+      # No SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT — see the note on
+      # the admin service above.
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
         value: staging
-      - key: SENTRY_ORG
-        sync: false
-      - key: SENTRY_PROJECT
-        value: tutak-partner
-      - key: SENTRY_AUTH_TOKEN
-        sync: false
       - key: SENTRY_VERIFY_ENABLED
         sync: false
       - key: SENTRY_VERIFY_TOKEN

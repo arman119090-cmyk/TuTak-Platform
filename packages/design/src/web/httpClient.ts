@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
-import type { AuthTokensDto } from '@tutak/shared-types';
+import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 
 /** Every response from the TuTak API arrives wrapped in this envelope. */
 export interface ApiEnvelope<T> {
@@ -18,9 +18,58 @@ export interface HttpAuthStore {
   getState(): {
     accessToken: string | null;
     deviceId: string;
+    setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => void;
     setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>) => void;
     clear: () => void;
   };
+}
+
+/** What `POST /auth/refresh` answers with, unwrapped from the envelope. */
+interface RefreshResponse {
+  data: { tokens: AuthTokensDto; user?: AuthenticatedUserDto };
+}
+
+/**
+ * Rebuilds a session from the httpOnly refresh cookie alone.
+ *
+ * This is what replaced keeping the access token in `localStorage`. Nothing
+ * about the session survives a reload in storage any more, so on boot the app
+ * asks the API whether the browser still holds a valid refresh cookie; the
+ * answer carries both a fresh access token and the user it belongs to.
+ *
+ * Returns `false` rather than throwing on the ordinary case — no cookie, or an
+ * expired one — because "not signed in" is not an error, it is the answer.
+ *
+ * Note the deployment requirement this creates: the cookie must actually
+ * reach the API. With `SameSite=Strict` (the default) that means the
+ * dashboards and the API share a registrable domain. See
+ * `apps/api/src/modules/auth/refresh-cookie.ts` for the setting that covers
+ * the deployments where they cannot.
+ */
+export async function restoreSession(
+  authStore: HttpAuthStore,
+  apiBaseUrl: string,
+): Promise<boolean> {
+  const { deviceId, setSession, setTokens } = authStore.getState();
+  try {
+    const { data } = await axios.post<RefreshResponse>(
+      `${apiBaseUrl}/auth/refresh`,
+      { deviceId },
+      { withCredentials: true },
+    );
+    if (data.data.user) {
+      setSession(data.data.user, data.data.tokens);
+    } else {
+      // An older API that answers with tokens only. The token is usable, but
+      // without the user the gate cannot decide what may render, so this is
+      // reported as "no session" rather than half a one.
+      setTokens(data.data.tokens);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

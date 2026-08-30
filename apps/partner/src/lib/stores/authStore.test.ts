@@ -33,7 +33,7 @@ describe('partner authStore', () => {
     // module-load side effect, before any test's beforeEach runs — wiping it
     // here would just delete something the test can no longer regenerate.
     window.localStorage.removeItem('tutak-partner-auth');
-    useAuthStore.setState({ user: null, accessToken: null, hasHydrated: false });
+    useAuthStore.setState({ user: null, accessToken: null, hasRestored: false });
   });
 
   it('persists a device id namespaced separately from the admin app', () => {
@@ -45,16 +45,31 @@ describe('partner authStore', () => {
     expect(window.localStorage.getItem('tutak-admin-device-id')).toBeNull();
   });
 
-  it('never persists the refresh token to localStorage', () => {
-    const user = buildUser();
-    useAuthStore.getState().setSession(user, tokens);
+  /**
+   * It used to be the narrower "the refresh token is not persisted"; the
+   * access token was, and a bearer token in `localStorage` is the first thing
+   * an injected script reads. Nothing that authenticates anything is written
+   * to storage now, so the assertion covers all of it.
+   */
+  it('writes no credential of any kind to browser storage', () => {
+    useAuthStore.getState().setSession(buildUser(), tokens);
 
-    const raw = window.localStorage.getItem('tutak-partner-auth');
-    expect(raw).not.toBeNull();
-    expect(raw).not.toContain(tokens.refreshToken);
+    const keys = Object.keys(window.localStorage);
+    const values = keys.map((k) => window.localStorage.getItem(k) ?? '');
 
-    const persisted = JSON.parse(raw!) as { state: Record<string, unknown> };
-    expect(Object.keys(persisted.state).sort()).toEqual(['accessToken', 'user']);
+    expect(window.localStorage.getItem('tutak-partner-auth')).toBeNull();
+    expect(window.sessionStorage.length).toBe(0);
+    for (const value of values) {
+      expect(value).not.toContain(tokens.accessToken);
+      expect(value).not.toContain(tokens.refreshToken);
+    }
+    expect(keys).toEqual(['tutak-partner-device-id']);
+  });
+
+  it('marks the boot-time session restore as finished exactly once', () => {
+    expect(useAuthStore.getState().hasRestored).toBe(false);
+    useAuthStore.getState().markRestored();
+    expect(useAuthStore.getState().hasRestored).toBe(true);
   });
 
   it('clear wipes the session', () => {

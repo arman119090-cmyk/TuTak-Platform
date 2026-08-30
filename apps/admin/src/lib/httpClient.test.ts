@@ -48,7 +48,7 @@ describe('admin httpClient interceptor', () => {
 
   beforeEach(() => {
     window.localStorage.clear();
-    useAuthStore.setState({ user: null, accessToken: 'expired-token', hasHydrated: true });
+    useAuthStore.setState({ user: null, accessToken: 'expired-token', hasRestored: true });
     mockedPost.mockReset();
   });
 

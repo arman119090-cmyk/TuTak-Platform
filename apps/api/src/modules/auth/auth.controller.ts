@@ -1,10 +1,12 @@
-import { Body, Controller, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { AllowsPendingPasswordChange } from '../../common/decorators/allow-pending-password-change.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AppConfig } from '../../config/configuration';
 import { RequestUser } from './types/request-user.type';
 import { DemoSessionService } from './demo-session.service';
 import { DemoSessionDto } from './dto/demo-session.dto';
@@ -26,7 +28,12 @@ import {
 } from './dto/otp.dto';
 import { PasswordService } from './password.service';
 import { PhoneVerificationService } from './phone-verification.service';
-import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from './refresh-cookie';
+import {
+  clearRefreshCookie,
+  isTrustedCookieOrigin,
+  readRefreshToken,
+  setRefreshCookie,
+} from './refresh-cookie';
 
 function extractMeta(req: Request): RequestMeta {
   return {
@@ -43,7 +50,20 @@ export class AuthController {
     private readonly passwordService: PasswordService,
     private readonly phoneVerification: PhoneVerificationService,
     private readonly demoSessionService: DemoSessionService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
+
+  /**
+   * Refuses a cookie-authenticated request that arrives from an origin this
+   * deployment does not serve. See `isTrustedCookieOrigin` for why this is
+   * not redundant with `SameSite`, and why it cannot affect native clients.
+   */
+  private assertTrustedCookieOrigin(req: Request): void {
+    const allowed = this.config.get('cors.origins', { infer: true });
+    if (!isTrustedCookieOrigin(req, allowed)) {
+      throw new ForbiddenException('Request origin is not allowed to use the session cookie');
+    }
+  }
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -175,6 +195,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    this.assertTrustedCookieOrigin(req);
     const presented = readRefreshToken(req, dto.refreshToken);
     if (!presented) {
       throw new UnauthorizedException('Refresh token is invalid or expired');

@@ -1,16 +1,18 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 
 interface AuthState {
   user: AuthenticatedUserDto | null;
   accessToken: string | null;
   deviceId: string;
-  /** False until zustand has read persisted state back, so AuthGate can wait. */
-  hasHydrated: boolean;
-  markHydrated: () => void;
+  /**
+   * False until the boot-time session restore has finished, either way, so
+   * AuthGate can tell "signed out" from "not asked yet".
+   */
+  hasRestored: boolean;
+  markRestored: () => void;
   setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => void;
   setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>) => void;
   clear: () => void;
@@ -28,37 +30,33 @@ function getOrCreateDeviceId(): string {
 /**
  * Session state for the web clients.
  *
- * The refresh token is deliberately absent. Both tokens used to be persisted
- * here, so any XSS — including one arriving through a dependency — walked away
- * with a 30-day refresh token and full control of an operator account
- * (docs/AUDIT_2026-08-B.md §H2). It now lives in an httpOnly cookie the API
- * sets, which page script cannot read; only the short-lived access token is
- * kept here, and only so a reload does not force a re-login.
+ * Nothing that authenticates anything is written to storage. The refresh
+ * token lives in an httpOnly cookie the API sets, which page script cannot
+ * read; the access token now lives only in this store, in memory, and is gone
+ * the moment the tab closes.
+ *
+ * It used to be persisted here — a short-lived bearer token in
+ * `localStorage`, kept so a reload did not force a re-login. That is exactly
+ * the value an XSS reads first, and "short-lived" is fifteen minutes of full
+ * operator access plus whatever the refresh cookie renews after it. The
+ * reload case is now handled by asking the API to rebuild the session from
+ * the cookie (`restoreSession`), which page script cannot forge and an
+ * attacker cannot read.
+ *
+ * `deviceId` stays in `localStorage` on purpose: it is not a credential, it
+ * identifies this browser to the refresh-token rotation, and it has to
+ * survive a reload for that rotation to recognise the device at all.
  */
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      accessToken: null,
-      deviceId: getOrCreateDeviceId(),
-      hasHydrated: false,
-      markHydrated: () => set({ hasHydrated: true }),
-      setSession: (user, tokens) => set({ user, accessToken: tokens.accessToken }),
-      setTokens: (tokens) => set({ accessToken: tokens.accessToken }),
-      clear: () => set({ user: null, accessToken: null }),
-    }),
-    {
-      name: 'tutak-admin-auth',
-      // Hydration is deferred so the first client render matches the server's,
-      // and AuthGate can tell "not logged in" from "not read yet" — without
-      // this it redirected authenticated operators to /login on every reload
-      // and every deep link (§M19).
-      skipHydration: true,
-      partialize: (state) => ({ user: state.user, accessToken: state.accessToken }),
-      onRehydrateStorage: () => (state) => state?.markHydrated(),
-    },
-  ),
-);
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  accessToken: null,
+  deviceId: getOrCreateDeviceId(),
+  hasRestored: false,
+  markRestored: () => set({ hasRestored: true }),
+  setSession: (user, tokens) => set({ user, accessToken: tokens.accessToken }),
+  setTokens: (tokens) => set({ accessToken: tokens.accessToken }),
+  clear: () => set({ user: null, accessToken: null }),
+}));
 
 /** Roles allowed into the admin panel; anyone else is bounced back to /login. */
 export const ADMIN_ROLES = ['ADMIN', 'SUPER_ADMIN'] as const;

@@ -421,7 +421,7 @@ export class AuthService {
     // soft-deleted account could still mint fresh tokens (§M10).
     const user = await this.usersService.findById(stored.userId);
     if (!user) throw invalid;
-    await this.usersService.buildRequestUserClaims(user.id);
+    const claims = await this.usersService.buildRequestUserClaims(user.id);
 
     const tokens = await this.prisma.$transaction(async (tx) => {
       // Whoever flips revokedAt first owns the rotation; the loser gets
@@ -444,7 +444,14 @@ export class AuthService {
       userAgent: meta.userAgent,
     });
 
-    return { tokens };
+    // The same shape login answers with, and for a reason beyond symmetry:
+    // the web dashboards no longer keep the access token in `localStorage`,
+    // so a page reload has nothing to restore a session from but this call.
+    // Without the user here they would know they are authenticated and
+    // nothing about who they are — roles included, which is what decides
+    // whether the admin shell may render at all. Additive: existing callers
+    // that read only `tokens` are unaffected.
+    return { user: await this.toAuthenticatedUser(user, claims), tokens };
   }
 
   async logout(userId: string, deviceId: string, meta: RequestMeta) {

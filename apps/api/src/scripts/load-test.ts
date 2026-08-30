@@ -32,6 +32,7 @@ import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
 import { PayoutEngineService } from '../modules/payouts/payout-engine.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
+import { PurchaseIntentsService } from '../modules/purchase-intents/purchase-intents.service';
 import { LedgerService } from '../modules/ledger/ledger.service';
 
 /**
@@ -50,6 +51,17 @@ function say(line = ''): void {
 const CONCURRENCY = Number(process.env.LOAD_CONCURRENCY ?? 32);
 const SECONDS = Number(process.env.LOAD_SECONDS ?? 15);
 const CUSTOMERS = Number(process.env.LOAD_CUSTOMERS ?? 50);
+/**
+ * How many merchants the purchase-intent phase spreads its load across.
+ *
+ * One by default, and that is the interesting number: every confirmation
+ * against a merchant moves that merchant's ledger account, so a single
+ * partner is one busy fuel station on a Friday evening — the case that
+ * decides whether a queue forms. Raising it separates "this merchant is
+ * saturated" from "the platform is saturated", which are different
+ * problems with different answers.
+ */
+const PARTNERS = Number(process.env.LOAD_PARTNERS ?? 1);
 
 interface Sample {
   ms: number;
@@ -131,6 +143,7 @@ async function main() {
   const payments = app.get(PaymentEngineService);
   const payouts = app.get(PayoutEngineService);
   const outbox = app.get(OutboxService);
+  const intents = app.get(PurchaseIntentsService);
   const ledger = app.get(LedgerService);
 
   // Numbers without the machine they were measured on are not a result, they
@@ -144,11 +157,22 @@ async function main() {
   say(`  postgres      ${pgVersion}`);
   say(`  cpus          ${os.cpus().length} × ${os.cpus()[0]?.model ?? 'unknown'}`);
   say(`  memory        ${(os.totalmem() / 1024 ** 3).toFixed(1)} GiB`);
-  say(`  settings      concurrency=${CONCURRENCY} duration=${SECONDS}s customers=${CUSTOMERS}`);
+  say(
+    `  settings      concurrency=${CONCURRENCY} duration=${SECONDS}s customers=${CUSTOMERS} partners=${PARTNERS}`,
+  );
   say();
 
   // ── Fixtures ───────────────────────────────────────────────────────────
   const run = Date.now().toString(36);
+  // Fixture phones have to be unique per run, not merely per index. They were
+  // `+37490<index>`, which is stable across runs — so a second run against a
+  // database that still held the first one's fixtures died on the phone
+  // unique constraint before measuring anything. Re-running against a warm
+  // database is exactly what investigating a result requires, so the run's
+  // own clock goes into the number: `+374<run><index>`, twelve characters,
+  // which is what the column expects.
+  const runDigits = String(Date.now() % 10_000).padStart(4, '0');
+  const phoneFor = (index: number) => `+374${runDigits}${String(index).padStart(4, '0')}`;
   const passwordHash = await argon2.hash('LoadTestOnly-2026!');
   const customerRole = await prisma.role.findUniqueOrThrow({
     where: { name: RoleName.CUSTOMER },
@@ -170,7 +194,7 @@ async function main() {
   for (let i = 0; i < CUSTOMERS; i += 1) {
     const user = await prisma.user.create({
       data: {
-        phone: `+37490${String(i).padStart(6, '0')}`.slice(0, 12),
+        phone: phoneFor(i),
         firstName: 'Load',
         lastName: `Test${i}`,
         passwordHash,
@@ -279,6 +303,67 @@ async function main() {
   if (owedAfter.lessThan(0)) {
     throw new Error(`Partner was overpaid: balance is ${owedAfter.toFixed(4)}`);
   }
+
+  // ── 5. Purchase intent settlement ──────────────────────────────────────
+  //
+  // The path a till actually runs, and the one phases 1-4 do not touch.
+  // Those exercise `PaymentEngineService`, which sits behind
+  // `CARD_PAYMENTS_ENABLED` and is off in production — so a run that
+  // reported only them described a subsystem nobody's money goes through.
+  // Confirming an intent is the heaviest transaction this platform has:
+  // it claims the intent, settles the reservation, computes the pool
+  // against the rate snapshotted at creation, splits it six ways across
+  // the referral chain, writes the bonus lots and the deferred lots, and
+  // posts the partner's contribution to the ledger — all inside one
+  // transaction, all against the same partner's accounts.
+  //
+  // The contention is deliberate: one partner, many customers, which is a
+  // busy fuel station on a Friday evening rather than an even spread.
+
+  // Each merchant needs its own confirming staff member: affiliation is what
+  // `create` refuses, so a staff member not attached to the partner would
+  // measure a path production rejects rather than the settlement.
+  const tills: Array<{ partnerId: string; staffUserId: string }> = [];
+  for (let i = 0; i < PARTNERS; i += 1) {
+    const merchant =
+      i === 0
+        ? partner
+        : await prisma.partner.create({
+            data: {
+              legalName: `Load Test ${run}-${i}`,
+              displayName: `Load Test ${run}-${i}`,
+              taxId: `LOAD-${run}-${i}`,
+              category: 'load-test',
+            },
+          });
+    const staff = await prisma.user.create({
+      data: {
+        phone: phoneFor(CUSTOMERS + i),
+        firstName: 'Load',
+        lastName: `Staff${i}`,
+        passwordHash,
+        isPhoneVerified: true,
+      },
+    });
+    await prisma.partnerMembership.create({
+      data: { partnerId: merchant.id, userId: staff.id },
+    });
+    tills.push({ partnerId: merchant.id, staffUserId: staff.id });
+  }
+
+  const purchases = await saturate(CONCURRENCY, SECONDS, async (n) => {
+    const till = tills[n % tills.length]!;
+    const intent = await intents.create(
+      { partnerId: till.partnerId, grossAmount: '1000' },
+      customers[n % customers.length]!,
+    );
+    await intents.confirm(intent.id, till.staffUserId);
+  });
+  report(
+    `Purchase intent (create + confirm, ${PARTNERS} merchant${PARTNERS === 1 ? '' : 's'})`,
+    purchases.samples,
+    purchases.elapsedMs,
+  );
 
   // ── The number that decides whether the rest means anything ────────────
 

@@ -32,6 +32,11 @@ export SEED_ADMIN_PASSWORD="…"       # roles and permissions must exist first
 node dist/scripts/seed-baseline.js
 
 LOAD_CONCURRENCY=32 LOAD_SECONDS=15 LOAD_CUSTOMERS=50 node dist/scripts/load-test.js
+
+# LOAD_PARTNERS spreads the purchase phase across that many merchants. One
+# by default — the busy-fuel-station case. Raise it to tell "this merchant is
+# saturated" apart from "the platform is saturated".
+LOAD_PARTNERS=32 node dist/scripts/load-test.js
 ```
 
 It drives the engines directly rather than going over HTTP, on purpose:
@@ -78,6 +83,71 @@ shortfall.
 
 Ledger after the run: 14,084 postings, **sum 0.0000**, no drift. 1,107 payouts
 moved exactly 11,070 AMD.
+
+### The purchase path, and the cliff — 30 August 2026
+
+The four phases above all drive `PaymentEngineService`, which lives behind
+`CARD_PAYMENTS_ENABLED` and is off in production. A fifth phase now drives
+what a till actually runs: create a `PurchaseIntent`, then confirm it. That
+one transaction claims the intent, settles the bonus reservation, computes
+the pool against the rate snapshotted at creation, splits it across the
+referral chain, writes the bonus and deferred lots, and posts the partner's
+contribution to the ledger.
+
+Same box, same run, one merchant, 50 customers:
+
+| Concurrency | Pool | Throughput | p50 | Failed |
+|---|---|---|---|---|
+| 1 | 9 (default) | 23.3 /s | 43 ms | 0 / 141 |
+| 8 | 9 (default) | 75.6 /s | 104 ms | 0 / 765 |
+| 16 | 9 (default) | **0.7 /s** | **5094 ms** | **25 / 32** |
+| 32 | 9 (default) | **0.2 /s** | **13131 ms** | **82 / 87** |
+| 32 | 40 | 73.8 /s | 361 ms | 0 / 756 |
+
+This is not a queue. It is a cliff, and it sits at the size of the Prisma
+connection pool — nine on this box, because nothing sets one. Below it the
+path is healthy and fast; one step above it, 78% of confirmations fail, and
+at 32 in flight, 94% do. The p50 of 5094 ms at concurrency 16 is Prisma's
+own five-second interactive-transaction timeout, to the millisecond: the
+requests are not doing work, they are waiting for a connection and then
+being killed.
+
+Raising the pool to 40 removes it entirely — 73.8 confirmations a second at
+concurrency 32, zero failures — which is the proof that the settlement's
+design is not the problem. Nothing about the transaction is slow: one
+confirmation alone takes 43 ms.
+
+**Three things this rules out.** It is not lock contention on the merchant:
+spreading the same load across 32 separate merchants collapses identically
+(0.3 /s, 70 of 76 failed). It is not the database: sampling
+`pg_stat_activity` through the phase shows the backends waiting on
+`ClientRead` — Postgres idle, waiting for the application to send the next
+statement — not on `tuple` or `transactionid` locks. And it is not the
+settlement being heavy: it is that an interactive transaction holds its
+connection for its whole duration, and this one makes many sequential
+round-trips, so past the pool size every worker is waiting on every other.
+
+Why the card path never showed this: its transaction is one short burst of
+writes, so it holds a connection for a few milliseconds and 32 workers
+timeshare nine connections happily. The purchase confirmation holds one for
+two orders of magnitude longer.
+
+**What it means for a deployment.** The pool is not a throughput knob here —
+throughput is ~75/s either side of it — it is the maximum number of
+purchase confirmations that may be in flight per API instance. Size it above
+peak concurrent confirmations, then check the result against the
+`max_connections` budget in [DEPLOYMENT.md](DEPLOYMENT.md#database-connections),
+because that arithmetic pushes the same number down. If the two do not both
+fit, the answer is more instances or a connection pooler, not a smaller
+pool.
+
+**The failure is safe, at least.** Every failed confirmation rolled back
+whole: the ledger summed to zero after every run above, each account agreed
+with a replay of its own postings, and the intents were left
+`AWAITING_CONFIRMATION` with their reservations still active — retryable, no
+manual compensation. The customer sees an error and taps again. That is the
+atomic-claim design in `settlePurchase` doing exactly what its docblock
+promises, under a load that breaks everything around it.
 
 ## Reading them
 

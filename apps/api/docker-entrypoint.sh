@@ -75,4 +75,29 @@ if [ "${DEMO_SEED:-}" = "true" ]; then
   TUTAK_DEMO=1 node dist/scripts/seed-demo.js
 fi
 
+# ── One-time recovery: the bootstrap administrator's password ───────────
+#
+# Off unless an operator deliberately turns it on, and meant to be turned
+# back off the moment it has worked. It exists because a hosted staging
+# environment on a plan with no shell has no other way back in once the
+# bootstrap password is lost or has to be treated as compromised —
+# `seed-baseline` will not rewrite an existing admin's password, and that is
+# the correct behaviour to leave alone.
+#
+# The guard below duplicates the one inside the script on purpose. The
+# script's check is the one that actually protects the database; this one
+# means a wrong environment fails before a Node process, a Prisma client and
+# a database connection are even created, and it fails the boot rather than
+# quietly continuing — an operator who set this flag is waiting on a password
+# that must either work or say why not.
+if [ "${RESET_STAGING_ADMIN_PASSWORD:-}" = "true" ]; then
+  if [ "${NODE_ENV:-}" != "staging" ]; then
+    echo "RESET_STAGING_ADMIN_PASSWORD=true but NODE_ENV=${NODE_ENV:-<unset>}." >&2
+    echo "This recovery path is for staging only. Refusing to start." >&2
+    exit 1
+  fi
+  echo "RESET_STAGING_ADMIN_PASSWORD=true — recovering the bootstrap administrator"
+  node dist/scripts/reset-staging-admin-password.js
+fi
+
 exec node dist/main.js

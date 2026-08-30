@@ -224,6 +224,24 @@ run/build normally, confirming the "off unless configured" posture) — but
 live event ingestion and resolved production stack traces from uploaded
 source maps have **not** been confirmed against a real Sentry project.
 Before relying on this in production: set the DSNs, run each app's
-verification mechanism (`pnpm --filter @tutak/api sentry:verify`, or the
-`sentry-verify` route with `SENTRY_VERIFY_ENABLED=true` in a non-production
-deployment), and confirm the event arrives with a readable stack trace.
+verification mechanism, and confirm the event arrives with a readable stack
+trace. The operator-facing checklist for doing that — which Sentry projects
+to create, which secret goes where, and the exact commands — is
+`docs/SENTRY_STAGING_ACTIVATION_RU.md` (Russian).
+
+Two known gaps in the verification mechanisms, found while writing that
+checklist and not yet fixed:
+
+- **admin/partner**: `GET /api/internal/sentry-verify` returns 404 in any
+  *built* deployment, even with `SENTRY_VERIFY_ENABLED=true`. Next.js
+  const-folds `process.env.NODE_ENV` at `next build` time, and the Dockerfiles
+  build with `NODE_ENV=production`, so the guard collapses to an
+  unconditional 404. It fails closed (nothing leaks), but the route is
+  unreachable outside `next dev`. Fixing it means reading the gate at runtime
+  — a security-relevant change, left for a decision rather than made quietly.
+- **mobile**: there is no deliberate trigger at all. `ErrorBoundary` and
+  `Sentry.wrap` capture real errors, but nothing lets an operator produce one
+  on demand from a `preview` build.
+
+The API's script (`node dist/scripts/sentry-verify.js` inside the container)
+works and was exercised locally in both refusal paths.

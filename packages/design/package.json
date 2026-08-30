@@ -15,7 +15,8 @@
   },
   "scripts": {
     "build:css": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/build-css.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test security-headers.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

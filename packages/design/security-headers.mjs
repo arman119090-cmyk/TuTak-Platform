@@ -25,9 +25,10 @@
  * So this does **not** stop a script from being injected. What it does stop
  * is that script being useful:
  *
- *  - `connect-src` and `img-src` name the API and nothing else, so a payload
- *    cannot post a stolen token to an attacker's host, or smuggle it out in
- *    an image URL — which is how a stolen token is actually monetised.
+ *  - `connect-src` and `img-src` name the API, the error reporter and nothing
+ *    else, so a payload cannot post a stolen token to an attacker's host, or
+ *    smuggle it out in an image URL — which is how a stolen token is actually
+ *    monetised.
  *  - `script-src` has no host sources beyond `'self'`, so `<script src>`
  *    pointing at someone else's CDN is refused.
  *  - `form-action` stops a planted form posting credentials elsewhere, and
@@ -52,6 +53,14 @@
  *   omitted (it would pin `http://localhost` into every browser that ever
  *   loaded it, which is remarkably annoying to undo), and websockets are
  *   allowed so hot reload works.
+ * @property {string} [sentryDsn] The DSN this app was built with, if any.
+ *   Only its origin is used, and only to allow the browser SDK to reach it:
+ *   `connect-src` named the API and nothing else, so a configured DSN
+ *   produced a dashboard that collected errors and could not send one —
+ *   silently, because a blocked report is exactly the case where nothing is
+ *   left to report it. Naming one more host the app deliberately talks to is
+ *   not a weakening of the policy; leaving error reporting broken to keep
+ *   the directive shorter would be.
  */
 
 /**
@@ -73,7 +82,14 @@ function originOf(url) {
  */
 export function contentSecurityPolicy(options) {
   const api = originOf(options.apiBaseUrl);
-  const connect = ["'self'", ...(api ? [api] : [])];
+  const sentry = options.sentryDsn ? originOf(options.sentryDsn) : null;
+  const connect = [
+    "'self'",
+    ...(api ? [api] : []),
+    // Absent unless this build actually has a DSN, so a deployment with
+    // Sentry off does not advertise a host it never contacts.
+    ...(sentry && sentry !== api ? [sentry] : []),
+  ];
   if (options.isDevelopment) {
     // Next's hot reload runs over a websocket to the dev server.
     connect.push('ws:', 'wss:');

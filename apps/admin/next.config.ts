@@ -21,6 +21,11 @@ const nextConfig: NextConfig = {
         source: '/:path*',
         headers: securityHeaders({
           apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/v1',
+          // Without this the browser SDK is initialised, catches errors and
+          // is then blocked by our own `connect-src` when it tries to send
+          // one — the failure mode where the thing that would have told us
+          // is the thing that broke.
+          sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
           isDevelopment,
         }),
       },

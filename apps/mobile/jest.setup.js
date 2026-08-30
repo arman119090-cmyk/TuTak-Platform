@@ -13,3 +13,16 @@
 jest.mock('@react-native-community/netinfo', () =>
   require('@react-native-community/netinfo/jest/netinfo-mock.js'),
 );
+
+/**
+ * `expo-image` is a native view; under Jest it has no native side and its own
+ * module initialisation throws before a single component renders. Rendering
+ * React Native's `Image` in its place keeps these tests about the screens
+ * they are testing — what they assert (a logo is shown, a fallback replaces
+ * it on error) is identical in both, and the part that differs, the disk
+ * cache, is not something a JS test could observe anyway.
+ */
+jest.mock('expo-image', () => {
+  const { Image } = require('react-native');
+  return { __esModule: true, Image };
+});

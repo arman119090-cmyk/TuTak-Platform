@@ -71,25 +71,32 @@ export function initSentry(options: { transport?: Sentry.NodeOptions['transport'
   return true;
 }
 
+/** What an unrouted request reports instead of its path. See `normalizeRoute`. */
+export const UNMATCHED_ROUTE = '<unmatched>';
+
 /**
- * `apps/api` cannot import `express.Request` fields it must not read (the
+ * `apps/api` cannot pass `express.Request` fields it must not read (the
  * body, headers, cookies), so this only ever touches `method` and a
- * normalized path.
+ * normalized route.
  *
- * "Normalized" here means query-string-free, and parameterized where Nest's
- * router has already matched a route (`req.route.path`, joined with
- * `req.baseUrl` since Nest mounts each controller as its own sub-router —
- * `req.route.path` alone is only the pattern *within* that controller, e.g.
- * `/:id` rather than `/v1/users/:id`). A request that never reached routing
- * (a malformed URL, a 404) has no `req.route`, so this falls back to the
- * query-stripped pathname, which is always available and never carries a
- * query string either way.
+ * "Normalized" means the *route pattern*, never a concrete path:
+ * `req.route.path` is the pattern the controller declared (`/:id`), joined
+ * with `req.baseUrl`, the prefix Nest mounted that controller's sub-router
+ * at — both come from route decorators in this repository, not from the
+ * request. So the result is `/v1/users/:id`, with the id still a `:id`.
+ *
+ * A request that never reached routing (a malformed URL, a 404) has no
+ * `req.route`. It reports `UNMATCHED_ROUTE` rather than falling back to
+ * `req.path`: a concrete path carries whatever the caller put in it —
+ * `/v1/users/Арман`, `/v1/customers/123456789` — and that is a name and an
+ * account number, not diagnostic metadata. The status code already says it
+ * was a 404; the specific URL somebody typed is not worth the leak.
  */
-export function normalizeRoute(request: Pick<Request, 'baseUrl' | 'route' | 'path'>): string {
+export function normalizeRoute(request: Pick<Request, 'baseUrl' | 'route'>): string {
   const pattern = request.route?.path as string | undefined;
-  if (!pattern) return request.path;
+  if (!pattern) return UNMATCHED_ROUTE;
   const base = request.baseUrl ?? '';
-  return `${base}${pattern}` || request.path;
+  return `${base}${pattern}` || UNMATCHED_ROUTE;
 }
 
 /**

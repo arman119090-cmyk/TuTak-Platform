@@ -3,192 +3,84 @@
  * `apps/admin` and `apps/partner` share as `@tutak/observability`.
  *
  * apps/api cannot import that package: its `tsconfig.build.json` sets
- * `rootDir` to `apps/api/src` (see `docs/CODEBASE_AUDIT_2026-08-30.md`'s note
- * on the exact same constraint blocking `@tutak/shared-types`), so any
- * source file outside `apps/api/src` fails TS6059 the moment it is imported.
- * This file must stay byte-for-byte identical to
+ * `rootDir` to `apps/api/src` (the same constraint documented in
+ * `docs/CODEBASE_AUDIT_2026-08-30.md` for `@tutak/shared-types`), so any
+ * source file outside that directory fails TS6059 the moment it is imported.
+ * This file must stay behaviourally identical to
  * `packages/observability/src/sentrySanitize.ts`;
  * `scripts/verify-sentry-sanitizer-parity.js` runs both against the same
- * fixtures and fails if they ever diverge — if you change one, change both
- * and re-run that script.
+ * fixtures and fails the build if they ever diverge.
  *
- * ## Why this is allowlist-first, not key-blocklist-first
+ * ## Why there is no free text here at all
  *
- * An earlier version of this file redacted a value only when it sat behind a
- * key name that looked sensitive (`password`, `token`, …). That misses a
- * secret sitting inside a *value* that was never filed under such a key: an
- * exception message that echoes `Authorization: Bearer …` back at whoever
- * threw it, a breadcrumb that logs a raw `Cookie` header, a stack frame whose
- * source line happens to contain a hardcoded key. Object keys we do not
- * control (a third-party library's error shape, a header name a client
- * chose) are not a safe boundary to trust.
+ * Two earlier versions of this file tried to *find* secrets: first by object
+ * key name, then additionally by pattern-matching the string values that
+ * survived. Both reduce risk. Neither can prove anything. A regex that
+ * catches `Authorization: Bearer …` says nothing about an opaque token with
+ * no label, a customer's name, or a password that happens not to look like
+ * one — and "we did not spot a secret" is not the same claim as "there is no
+ * secret". For data that must never leave the process, the weaker claim is
+ * not good enough.
  *
- * So `sanitizeSentryEvent`/`sanitizeBreadcrumb` no longer take "the input,
- * scrubbed" as their model. They take "a fixed set of fields known to be
- * safe" — environment, release, the tags this codebase sets itself, the
- * error's type/message/stack, HTTP method/normalized route/status — and
- * rebuild the output from that allowlist. Everything not on it (the complete
- * `user` object, `extra`, `contexts`, request headers/cookies/body, breadcrumb
- * `data`) is dropped outright, not merely key-scrubbed, because their
- * presence at all — under any key, in any shape — is the problem.
+ * So this file no longer inspects free text. It drops it. Every field whose
+ * contents are decided by something other than this codebase — the whole
+ * `request` object (raw URL paths included), the root `message`, an
+ * exception's `value`, a breadcrumb's `message`, a stack frame's source
+ * lines, `fingerprint`, `user`, `extra`, `contexts`, breadcrumb `data`,
+ * frame-local `vars` — is absent from the output regardless of what it held.
  *
- * Every string that *does* survive (messages, exception values, stack
- * `context_line`s, breadcrumb messages, tag values) still goes through
- * `scrubString`, which redacts by pattern rather than by key: Authorization/
- * cookie/token-style "key: value" fragments in any casing or punctuation,
- * bearer tokens, JWTs, email addresses, and long digit runs (phone numbers,
- * card and bank/IBAN numbers). A secret cannot survive an allowlisted field
- * just because nobody filed it under a key this policy recognises.
+ * What is left is structural and provably bounded by inspection of this
+ * file alone:
+ *
+ *  - the tags this codebase sets itself, taken by *exact key* from
+ *    `ALLOWED_TAG_KEYS` (the loop iterates the allowlist, never the input,
+ *    so an unexpected key cannot be forgotten);
+ *  - an error type validated to look like a class name, replaced with
+ *    `Error` when it does not;
+ *  - stack frames reduced to filename / function / module / line / column /
+ *    in_app;
+ *  - environment, release, and the SDK's own plumbing.
+ *
+ * The cost is real: a Sentry issue no longer carries the error's message.
+ * What it does carry — service, environment, release, HTTP method, the
+ * normalized route, the status code, the error class, and a full structural
+ * stack — is enough to find the throw site and reproduce it from the code,
+ * which is what a stack trace is for.
  */
-
-export const REDACTED = '[Filtered]';
 
 /**
- * Substrings matched case-insensitively against every object key. Any key
- * containing one of these has its value replaced outright, however deep it
- * sits — this is the fast, cheap first line of defense; `scrubString` below
- * is what catches the same categories of secret when they show up in a
- * *value* instead of behind one of these keys.
+ * The only tag keys allowed onto an event. Matched exactly — no prefix, no
+ * substring, no casing variation. Every one of these is set by this
+ * codebase itself (`service` and `kind` in the init/verification scopes,
+ * the three `http.*` in `captureApiException`), so their values are ours
+ * rather than a caller's.
  */
-export const SENSITIVE_KEY_SUBSTRINGS = [
-  'authorization',
-  'token',
-  'cookie',
-  'password',
-  'otp',
-  'secret',
-  'api_key',
-  'apikey',
-  'session',
-  'refresh',
-  'access',
-  'payment',
-  'financial',
-  'card',
-  'bank',
-  'iban',
-  'phone',
-  'email',
+export const ALLOWED_TAG_KEYS = [
+  'service',
+  'kind',
+  'http.method',
+  'http.route',
+  'http.status_code',
 ] as const;
 
-export function isSensitiveKey(key: string): boolean {
-  const lower = key.toLowerCase();
-  return SENSITIVE_KEY_SUBSTRINGS.some((needle) => lower.includes(needle));
-}
-
-// --- Pattern-based scrubbing of string *values* -----------------------------
-//
-// Everything below runs against ordinary strings regardless of which key (if
-// any) they sit behind, which is the point: an object key is not a trust
-// boundary, and privacy wins over precision here, on purpose. A diagnostic
-// number swept up by the digit-run rule below is an acceptable cost; a card
-// number that survives because it appeared in a log message instead of a
-// `cardNumber` field is not.
-
-/** `Bearer <anything-up-to-whitespace>`, wherever it appears, with no key required. */
-const BEARER_PATTERN = /\bBearer\s+\S+/gi;
-
-/** Three dot-separated base64url segments — a JWT shape, with no key required. */
-const JWT_PATTERN = /\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
-
-/** An email address, wherever it appears. */
-const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+/** What an unrecognisable error type is reported as instead. */
+export const FALLBACK_ERROR_TYPE = 'Error';
 
 /**
- * `keyword` immediately followed by `:` or `=` and a value, e.g.
- * `Authorization: Bearer …`, `x-api-key: sk_live_…`, `refresh_token=abc`,
- * `Cookie: sid=abc; Path=/`. The value half is greedy to end-of-line (`.`
- * does not match `\n`) rather than a single token, because a leaked value is
- * not reliably whitespace-free (`Bearer abc.def.ghi`, a whole cookie jar).
- * The gap between the keyword and the separator is deliberately narrow and
- * space-free (`api-key`, `apiKey`, `x_api_key` — never a whole extra English
- * word), so an ordinary sentence like "Access denied: contact support" does
- * not get eaten just because it contains the word "access".
+ * A JavaScript class name and nothing else. This is a *shape* check on a
+ * value that should always be an identifier, not an attempt to find a secret
+ * inside free text — a `type` that fails it is replaced wholesale rather
+ * than edited, so nothing unrecognised is ever passed through in part.
  */
-const KEY_ALTERNATION = SENSITIVE_KEY_SUBSTRINGS.map((k) => k.replace(/[-_]/g, '[-_]?')).join('|');
-const KEY_VALUE_PATTERN = new RegExp(`\\b(${KEY_ALTERNATION})([a-z0-9_-]{0,12}?\\s*[:=]\\s*)([^\\n\\r]+)`, 'gi');
+const SAFE_ERROR_TYPE_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
 
-/**
- * A one-time password is often written as a bare number next to the word
- * "otp"/"code" with no `:`/`=` at all ("OTP 482913 expired", "482913 is your
- * verification code") — `KEY_VALUE_PATTERN` needs a separator and would miss
- * both. These two catch the digits in either order, within a short distance
- * of the keyword, without requiring one.
- */
-const OTP_AFTER_KEYWORD_PATTERN = /\b(otp|code)\b[^\d\n]{0,20}(\d{4,8})\b/gi;
-const OTP_BEFORE_KEYWORD_PATTERN = /\b(\d{4,8})[^\d\n]{0,20}\b(otp|code)\b/gi;
+/** SDK-generated mechanism identifiers: `generic`, `onunhandledrejection`, `auto.http.node`. */
+const SAFE_MECHANISM_TYPE_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
-/**
- * A candidate run of digits, tolerant of the punctuation phone numbers,
- * card numbers, and bank/IBAN-style account numbers are usually written
- * with. The actual digit *count* (not the run length, which spaces and
- * dashes also pad) is checked in the replacer before anything is redacted,
- * so a short, mostly-punctuation coincidence (a UUID segment, a line:column
- * pair) is not swept up along with a real 9+ digit phone or 13+ digit card
- * number.
- */
-const DIGIT_RUN_CANDIDATE = /\+?\(?\d[\d()\-\s]{4,}\d\b/g;
-const MIN_SENSITIVE_DIGIT_COUNT = 9;
-
-export function scrubString(value: string): string {
-  if (!value) return value;
-  let result = value;
-  result = result.replace(BEARER_PATTERN, `Bearer ${REDACTED}`);
-  result = result.replace(JWT_PATTERN, REDACTED);
-  result = result.replace(
-    KEY_VALUE_PATTERN,
-    (_match, keyword: string, sep: string) => `${keyword}${sep}${REDACTED}`,
-  );
-  result = result.replace(
-    OTP_AFTER_KEYWORD_PATTERN,
-    (_match, keyword: string) => `${keyword} ${REDACTED}`,
-  );
-  result = result.replace(
-    OTP_BEFORE_KEYWORD_PATTERN,
-    (_match, _digits: string, keyword: string) => `${REDACTED} ${keyword}`,
-  );
-  result = result.replace(EMAIL_PATTERN, REDACTED);
-  result = result.replace(DIGIT_RUN_CANDIDATE, (match) => {
-    const digitCount = (match.match(/\d/g) ?? []).length;
-    return digitCount >= MIN_SENSITIVE_DIGIT_COUNT ? REDACTED : match;
-  });
-  return result;
-}
-
-/**
- * Recursively walks an arbitrary value — object, array, or scalar. A key
- * matching `isSensitiveKey` has its whole value replaced regardless of type;
- * every other string leaf, wherever it sits, is run through `scrubString`.
- * A `seen` set guards against a circular reference turning this into an
- * infinite loop — Sentry's own SDK builds cyclic structures internally on
- * occasion (an `Error.cause` chain that loops back on itself), and a
- * sanitizer that hangs the process is worse than one that ships an
- * unredacted field.
- */
-export function scrubValue(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return scrubString(value);
-  if (typeof value !== 'object') return value;
-
-  if (seen.has(value as object)) return '[Circular]';
-  seen.add(value as object);
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => scrubValue(entry, seen));
-  }
-
-  const result: Record<string, unknown> = {};
-  for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
-    result[key] = isSensitiveKey(key) ? REDACTED : scrubValue(entryValue, seen);
-  }
-  return result;
-}
-
-/** Drops everything after the first `?`, so a captured URL never carries a query string. */
-export function stripQueryString(url: string | undefined | null): string | undefined {
-  if (!url) return url ?? undefined;
-  const index = url.indexOf('?');
-  return index === -1 ? url : url.slice(0, index);
+export function safeErrorType(type: unknown): string {
+  return typeof type === 'string' && SAFE_ERROR_TYPE_PATTERN.test(type)
+    ? type
+    : FALLBACK_ERROR_TYPE;
 }
 
 function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -196,6 +88,26 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
     if (value[key] === undefined) delete value[key];
   }
   return value;
+}
+
+/**
+ * Tags, taken by exact key from the allowlist. The loop walks
+ * `ALLOWED_TAG_KEYS` rather than the input's own keys on purpose: an event
+ * carrying a tag nobody anticipated cannot slip through by being unlisted,
+ * because unlisted is the default and listing is the only way in.
+ */
+function sanitizeTags(tags: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!tags) return undefined;
+  const result: Record<string, unknown> = {};
+  for (const key of ALLOWED_TAG_KEYS) {
+    const value = tags[key];
+    // Scalars only. A tag whose value is an object is not something this
+    // codebase sets, and its contents are unknown by definition.
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      result[key] = value;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 // --- The allowlisted shapes --------------------------------------------------
@@ -207,9 +119,6 @@ interface SentryLikeStackFrame {
   lineno?: number;
   colno?: number;
   in_app?: boolean;
-  context_line?: string;
-  pre_context?: string[];
-  post_context?: string[];
   [key: string]: unknown;
 }
 
@@ -231,111 +140,96 @@ export interface SentryLikeBreadcrumb {
   [key: string]: unknown;
 }
 
-interface SentryLikeRequest {
-  method?: string;
-  url?: string;
-  query_string?: unknown;
-  cookies?: unknown;
-  data?: unknown;
-  headers?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-type SentryLikeMessage = string | { message?: string; formatted?: string; params?: unknown[] };
-
 export interface SentryLikeEvent {
   event_id?: string;
   timestamp?: number;
   platform?: string;
   level?: string;
-  logger?: string;
   sdk?: unknown;
   environment?: string;
   release?: string;
   dist?: string;
   fingerprint?: string[];
   tags?: Record<string, unknown>;
-  message?: SentryLikeMessage;
+  message?: unknown;
   exception?: { values?: SentryLikeExceptionValue[] };
   breadcrumbs?: SentryLikeBreadcrumb[];
-  request?: SentryLikeRequest;
-  user?: { ip_address?: string; email?: string; [key: string]: unknown };
+  request?: unknown;
+  user?: unknown;
   extra?: Record<string, unknown>;
   contexts?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
+/**
+ * A stack frame stripped to the structure that locates code. `context_line`,
+ * `pre_context` and `post_context` — the actual source text around the
+ * throw — are dropped: a hardcoded credential on the failing line is
+ * exactly the kind of thing that ends up there, and there is no way to tell
+ * a safe source line from an unsafe one. `vars` (frame locals) goes for the
+ * same reason.
+ */
 function sanitizeFrame(frame: SentryLikeStackFrame): SentryLikeStackFrame {
   return withoutUndefined({
-    filename: frame.filename,
-    function: frame.function,
-    module: frame.module,
-    lineno: frame.lineno,
-    colno: frame.colno,
-    in_app: frame.in_app,
-    context_line: typeof frame.context_line === 'string' ? scrubString(frame.context_line) : frame.context_line,
-    pre_context: Array.isArray(frame.pre_context) ? frame.pre_context.map(scrubString) : frame.pre_context,
-    post_context: Array.isArray(frame.post_context) ? frame.post_context.map(scrubString) : frame.post_context,
-    // `vars` — local variables captured at the frame — is deliberately not
-    // in this list. It is not enabled by any integration this codebase
-    // turns on, but if something ever did, it is exactly the kind of
-    // arbitrary, caller-named data `extra`/`contexts` are excluded for.
+    filename: typeof frame.filename === 'string' ? frame.filename : undefined,
+    function: typeof frame.function === 'string' ? frame.function : undefined,
+    module: typeof frame.module === 'string' ? frame.module : undefined,
+    lineno: typeof frame.lineno === 'number' ? frame.lineno : undefined,
+    colno: typeof frame.colno === 'number' ? frame.colno : undefined,
+    in_app: typeof frame.in_app === 'boolean' ? frame.in_app : undefined,
   });
 }
 
 function sanitizeExceptionValue(entry: SentryLikeExceptionValue): SentryLikeExceptionValue {
+  const mechanismType =
+    typeof entry.mechanism?.type === 'string' && SAFE_MECHANISM_TYPE_PATTERN.test(entry.mechanism.type)
+      ? entry.mechanism.type
+      : undefined;
+
   return withoutUndefined({
-    type: entry.type,
-    value: typeof entry.value === 'string' ? scrubString(entry.value) : entry.value,
-    mechanism: entry.mechanism ? withoutUndefined({ type: entry.mechanism.type, handled: entry.mechanism.handled }) : undefined,
-    stacktrace: entry.stacktrace?.frames ? { frames: entry.stacktrace.frames.map(sanitizeFrame) } : entry.stacktrace,
+    // A validated class name. `value` — the error's message — is never
+    // carried: it is the single most common place for a token, an OTP, an
+    // account number or a customer's name to end up.
+    type: safeErrorType(entry.type),
+    mechanism: entry.mechanism
+      ? withoutUndefined({
+          type: mechanismType,
+          handled: typeof entry.mechanism.handled === 'boolean' ? entry.mechanism.handled : undefined,
+        })
+      : undefined,
+    stacktrace: entry.stacktrace?.frames
+      ? { frames: entry.stacktrace.frames.map(sanitizeFrame) }
+      : undefined,
   });
 }
 
-function sanitizeMessage(message: SentryLikeMessage | undefined): SentryLikeMessage | undefined {
-  if (message === undefined) return undefined;
-  if (typeof message === 'string') return scrubString(message);
-  return withoutUndefined({
-    message: typeof message.message === 'string' ? scrubString(message.message) : message.message,
-    formatted: typeof message.formatted === 'string' ? scrubString(message.formatted) : message.formatted,
-    // `params` is arbitrary interpolation data supplied by whoever called
-    // `captureMessage` — dropped rather than scrubbed, same reasoning as
-    // `extra`/`contexts` below.
-  });
-}
-
-/**
- * `beforeSend` — applied to every error/message event before Sentry ships
- * it. Rebuilds the event from the allowlisted fields only; `user`, `extra`,
- * and `contexts` are absent from the output regardless of what the input
- * carried, and `request` keeps only `method` and a query-free `url`.
- */
+/** `beforeSend` — applied to every error/message event before Sentry ships it. */
 export function sanitizeSentryEvent<T extends SentryLikeEvent>(event: T): T {
   const sanitized: SentryLikeEvent = withoutUndefined({
     event_id: event.event_id,
     timestamp: event.timestamp,
     platform: event.platform,
     level: event.level,
-    logger: event.logger,
     sdk: event.sdk,
     environment: event.environment,
     release: event.release,
     dist: event.dist,
-    fingerprint: Array.isArray(event.fingerprint) ? event.fingerprint.map(scrubString) : undefined,
-    tags: event.tags ? (scrubValue(event.tags) as Record<string, unknown>) : undefined,
-    message: sanitizeMessage(event.message),
-    exception: event.exception?.values ? { values: event.exception.values.map(sanitizeExceptionValue) } : undefined,
-    breadcrumbs: Array.isArray(event.breadcrumbs) ? event.breadcrumbs.map((crumb) => sanitizeBreadcrumb(crumb)) : undefined,
-    request: event.request
-      ? withoutUndefined({
-          method: event.request.method,
-          url: stripQueryString(event.request.url),
-          // headers, cookies, query_string, and the request body are never
-          // reattached here — see the module docblock.
-        })
+    tags: sanitizeTags(event.tags),
+    exception: event.exception?.values
+      ? { values: event.exception.values.map(sanitizeExceptionValue) }
       : undefined,
-    // `user`, `extra`, `contexts` are intentionally absent: see the module
-    // docblock for why they are removed wholesale rather than key-scrubbed.
+    breadcrumbs: Array.isArray(event.breadcrumbs)
+      ? event.breadcrumbs.map((crumb) => sanitizeBreadcrumb(crumb))
+      : undefined,
+    // Deliberately absent, whatever the input held:
+    //   request     — the whole object, raw URL path included. The safe
+    //                 half of it already reaches Sentry as the http.method /
+    //                 http.route / http.status_code tags, normalized at the
+    //                 call site rather than reconstructed here.
+    //   message     — arbitrary free text.
+    //   fingerprint — arbitrary free text, and grouping is derivable from
+    //                 the type + stack that do survive.
+    //   user, extra, contexts — arbitrary, caller-shaped, unbounded.
   });
 
   return sanitized as T;
@@ -343,21 +237,18 @@ export function sanitizeSentryEvent<T extends SentryLikeEvent>(event: T): T {
 
 /**
  * `beforeBreadcrumb` — applied to every breadcrumb (nav, console, HTTP,
- * click) before it is attached to the next event. Keeps only the fields a
- * breadcrumb needs to be useful as a timeline entry; `data` — an arbitrary,
- * caller-shaped object that can carry a request body, a cookie header, or a
- * credential-bearing URL — is dropped wholesale rather than key-scrubbed.
- * `message` is kept, since it is normally free text ("clicked Save"), but
- * still runs through `scrubString` in case it echoes something it should not.
+ * click) before it is attached to the next event. What survives is the
+ * timeline skeleton: what kind of thing happened, at what severity, when.
+ * `message` and `data` are both dropped — a console breadcrumb's message is
+ * whatever was logged, and `data` is where an HTTP breadcrumb keeps the URL,
+ * the headers and the body.
  */
 export function sanitizeBreadcrumb<T extends SentryLikeBreadcrumb>(breadcrumb: T): T {
   const sanitized: SentryLikeBreadcrumb = withoutUndefined({
-    category: breadcrumb.category,
-    level: breadcrumb.level,
-    timestamp: breadcrumb.timestamp,
-    type: breadcrumb.type,
-    message: typeof breadcrumb.message === 'string' ? scrubString(breadcrumb.message) : breadcrumb.message,
-    // `data` is intentionally absent — see the docstring above.
+    category: typeof breadcrumb.category === 'string' ? breadcrumb.category : undefined,
+    level: typeof breadcrumb.level === 'string' ? breadcrumb.level : undefined,
+    timestamp: typeof breadcrumb.timestamp === 'number' ? breadcrumb.timestamp : undefined,
+    type: typeof breadcrumb.type === 'string' ? breadcrumb.type : undefined,
   });
 
   return sanitized as T;

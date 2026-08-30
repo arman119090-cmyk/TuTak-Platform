@@ -13,10 +13,10 @@
  * drifting apart. This script is the substitute: it loads both source files
  * directly (via `typescript`'s `transpileModule`, already a root
  * devDependency, so no new tooling is needed for one comparison script) and
- * runs the exact same fixture matrix through both, byte-comparing the
- * output. Any behavioural difference — a forgotten edit to one copy, a typo
- * in a regex — fails loudly here instead of shipping silently to only one
- * of the four apps.
+ * runs the exact same fixture matrix through both, deep-comparing the
+ * output. Any behavioural difference — a forgotten edit to one copy, a
+ * mistyped allowlist entry — fails loudly here instead of shipping silently
+ * to only one of the four apps.
  *
  * Run with: node scripts/verify-sentry-sanitizer-parity.js
  */
@@ -50,16 +50,19 @@ const shared = loadTsModuleAsCjs(sharedPath);
 const api = loadTsModuleAsCjs(apiPath);
 
 const EXPORTED_NAMES = [
-  'SENSITIVE_KEY_SUBSTRINGS',
-  'REDACTED',
-  'isSensitiveKey',
-  'scrubString',
-  'scrubValue',
-  'stripQueryString',
+  'ALLOWED_TAG_KEYS',
+  'FALLBACK_ERROR_TYPE',
+  'safeErrorType',
   'sanitizeSentryEvent',
   'sanitizeBreadcrumb',
 ];
 
+/**
+ * Every category the policy must drop, in one event: raw paths carrying a
+ * name and an account number, a password, an unlabelled opaque token, a
+ * customer name, arbitrary tags, an arbitrary fingerprint, and a secret in
+ * stack-frame source text.
+ */
 const DIRTY_EVENT_FIXTURE = {
   event_id: 'abc123',
   timestamp: 1700000000,
@@ -67,28 +70,42 @@ const DIRTY_EVENT_FIXTURE = {
   level: 'error',
   environment: 'production',
   release: 'deadbeef',
-  tags: { service: 'api', 'http.method': 'GET', 'http.route': '/v1/users/:id', 'http.status_code': 500 },
-  message: 'Authorization: Bearer secret-token-abc123',
+  fingerprint: ['customer', 'Арман Петросян'],
+  message: 'password hunter2 rejected for Арман Петросян',
+  tags: {
+    service: 'api',
+    kind: 'sentry-verify',
+    'http.method': 'GET',
+    'http.route': '/v1/users/:id',
+    'http.status_code': 500,
+    customerName: 'Арман Петросян',
+    rawPath: '/v1/users/Арман',
+    opaque: 'Zx9QpLm2Vt7RhK4NsE1BgYcW',
+  },
   exception: {
     values: [
       {
         type: 'Error',
-        value: 'Login failed for x-api-key: sk_live_51ABCDEF and password: hunter2',
+        value: 'password hunter2 for /v1/customers/123456789',
         mechanism: { type: 'generic', handled: false, data: { framework: 'express' } },
         stacktrace: {
           frames: [
             {
-              filename: 'app.ts',
+              filename: 'auth.ts',
               function: 'login',
+              module: 'app.auth',
               lineno: 10,
               colno: 3,
               in_app: true,
-              context_line: 'const token = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc";',
+              context_line: 'const key = "Zx9QpLm2Vt7RhK4NsE1BgYcW";',
+              pre_context: ['// customer Арман Петросян'],
+              post_context: ['return key;'],
               vars: { password: 'hunter2' },
             },
           ],
         },
       },
+      { type: 'not a class name!', value: 'boom' },
     ],
   },
   breadcrumbs: [
@@ -96,21 +113,22 @@ const DIRTY_EVENT_FIXTURE = {
       category: 'console',
       level: 'log',
       timestamp: 1700000000,
-      message: 'refresh_token=abc.def.ghi issued for user a@b.com, otp 482913 accepted',
-      data: { headers: { cookie: 'sid=abc123; Path=/' }, body: '{"password":"hunter2"}' },
+      type: 'default',
+      message: 'GET /v1/customers/123456789 for Арман Петросян',
+      data: { headers: { cookie: 'sid=abc123' }, body: '{"password":"hunter2"}' },
     },
   ],
   request: {
     method: 'POST',
-    url: '/v1/auth/login?otp=482913',
+    url: '/v1/users/Арман?otp=482913',
     headers: { authorization: 'Bearer secret', 'x-api-key': 'sk_live_abc' },
     cookies: { sid: 'abc123' },
     query_string: 'otp=482913',
     data: { password: 'hunter2', cardNumber: '4111 1111 1111 1111' },
   },
-  user: { id: 'u1', ip_address: '1.2.3.4', email: 'a@b.com' },
-  extra: { env: { JWT_ACCESS_SECRET: 'x' }, note: 'kept?', phone: '+37455512345' },
-  contexts: { runtime: { name: 'node', version: '22.0.0' } },
+  user: { id: 'u1', ip_address: '1.2.3.4', email: 'a@b.com', username: 'Арман' },
+  extra: { env: { JWT_ACCESS_SECRET: 'x' }, phone: '+37455512345' },
+  contexts: { runtime: { name: 'node' }, custom: { ssn: '123-45-6789' } },
 };
 
 const DIRTY_BREADCRUMB_FIXTURE = {
@@ -118,9 +136,9 @@ const DIRTY_BREADCRUMB_FIXTURE = {
   level: 'info',
   timestamp: 1700000000,
   type: 'http',
-  message: 'GET /v1/wallet/me?token=abc123 -> 200, Authorization: Bearer secret-token',
+  message: 'GET /v1/users/Арман?token=abc123 -> 200',
   data: {
-    url: '/v1/wallet/me?token=abc123',
+    url: '/v1/users/Арман?token=abc123',
     body: '{"iban":"AM231234567890123456789012"}',
     headers: { cookie: 'sid=abc123' },
   },
@@ -143,49 +161,83 @@ for (const name of EXPORTED_NAMES) {
   check(`both modules export ${name}`, typeof api[name], typeof shared[name]);
 }
 
-// 2. isSensitiveKey and scrubString agree on every keyword.
-for (const key of shared.SENSITIVE_KEY_SUBSTRINGS) {
-  check(`isSensitiveKey('${key}') parity`, api.isSensitiveKey(key), shared.isSensitiveKey(key));
-}
+// 2. The tag allowlist itself is identical — a divergence here would let a
+// tag through in one app and not the other.
+check('ALLOWED_TAG_KEYS parity', [...api.ALLOWED_TAG_KEYS], [...shared.ALLOWED_TAG_KEYS]);
+check('FALLBACK_ERROR_TYPE parity', api.FALLBACK_ERROR_TYPE, shared.FALLBACK_ERROR_TYPE);
 
-const SAMPLE_STRINGS = [
-  'Authorization: Bearer secret-token-abc123',
-  'x-api-key: sk_live_51ABCDEF',
-  'refresh_token=abc.def.ghi',
-  'Cookie: sid=abc123; Path=/',
-  'password: hunter2',
-  'OTP 482913 expired',
-  '482913 is your otp',
-  'contact a@b.com',
-  'call +37455512345',
-  'card 4111 1111 1111 1111',
-  'Access denied: contact support',
-  'nothing sensitive here',
+// 3. Error-type validation agrees on identifiers and on everything that is
+// not one.
+const ERROR_TYPE_SAMPLES = [
+  'Error',
+  'TypeError',
+  'PrismaClientKnownRequestError',
+  'SentryVerificationProbe',
+  '_private$Thing',
+  'not a class name!',
+  'Error: password hunter2',
+  '/v1/users/Арман',
+  '',
+  'A'.repeat(200),
+  undefined,
+  null,
+  42,
+  { toString: () => 'Error' },
 ];
-for (const text of SAMPLE_STRINGS) {
-  check(`scrubString(${JSON.stringify(text)}) parity`, api.scrubString(text), shared.scrubString(text));
+for (const sample of ERROR_TYPE_SAMPLES) {
+  check(
+    `safeErrorType(${JSON.stringify(sample)}) parity`,
+    api.safeErrorType(sample),
+    shared.safeErrorType(sample),
+  );
 }
 
-// 3. scrubValue on a representative nested structure.
+// 4. The actual `beforeSend`/`beforeBreadcrumb` inputs every one of the four
+// apps runs through this policy.
 check(
-  'scrubValue(...) parity on the full dirty event',
-  api.scrubValue(structuredClone(DIRTY_EVENT_FIXTURE)),
-  shared.scrubValue(structuredClone(DIRTY_EVENT_FIXTURE)),
+  'sanitizeSentryEvent(...) parity on the dirty event fixture',
+  api.sanitizeSentryEvent(structuredClone(DIRTY_EVENT_FIXTURE)),
+  shared.sanitizeSentryEvent(structuredClone(DIRTY_EVENT_FIXTURE)),
+);
+check(
+  'sanitizeBreadcrumb(...) parity on the dirty breadcrumb fixture',
+  api.sanitizeBreadcrumb(structuredClone(DIRTY_BREADCRUMB_FIXTURE)),
+  shared.sanitizeBreadcrumb(structuredClone(DIRTY_BREADCRUMB_FIXTURE)),
 );
 
-// 4. sanitizeSentryEvent and sanitizeBreadcrumb on the dirty fixtures — the
-// actual `beforeSend`/`beforeBreadcrumb` inputs every one of the four apps
-// runs through this policy.
-const apiEventResult = api.sanitizeSentryEvent(structuredClone(DIRTY_EVENT_FIXTURE));
-const sharedEventResult = shared.sanitizeSentryEvent(structuredClone(DIRTY_EVENT_FIXTURE));
-check('sanitizeSentryEvent(...) parity on the dirty event fixture', apiEventResult, sharedEventResult);
-
-const apiBreadcrumbResult = api.sanitizeBreadcrumb(structuredClone(DIRTY_BREADCRUMB_FIXTURE));
-const sharedBreadcrumbResult = shared.sanitizeBreadcrumb(structuredClone(DIRTY_BREADCRUMB_FIXTURE));
-check('sanitizeBreadcrumb(...) parity on the dirty breadcrumb fixture', apiBreadcrumbResult, sharedBreadcrumbResult);
+// 5. Independently of parity: neither copy may emit any of the fixture's
+// secrets. This is the same assertion the unit suites make, repeated here so
+// the CI step that guards drift also guards the policy itself.
+const SECRETS = [
+  'Арман',
+  'hunter2',
+  '123456789',
+  'Zx9QpLm2Vt7RhK4NsE1BgYcW',
+  'customerName',
+  'sk_live_abc',
+  'Bearer secret',
+  '4111 1111 1111 1111',
+  'sid=abc123',
+  'not a class name!',
+];
+for (const [label, mod] of [
+  ['@tutak/observability', shared],
+  ['apps/api', api],
+]) {
+  const serialized = JSON.stringify([
+    mod.sanitizeSentryEvent(structuredClone(DIRTY_EVENT_FIXTURE)),
+    mod.sanitizeBreadcrumb(structuredClone(DIRTY_BREADCRUMB_FIXTURE)),
+  ]);
+  for (const secret of SECRETS) {
+    if (serialized.includes(secret)) {
+      failures += 1;
+      console.error(`✗ ${label} leaked ${JSON.stringify(secret)} through the sanitizer`);
+    }
+  }
+}
 
 if (failures > 0) {
-  console.error(`\n${failures} parity check(s) failed — apps/api's sanitizer and @tutak/observability disagree.`);
+  console.error(`\n${failures} check(s) failed — the Sentry privacy policy is not sound.`);
   process.exit(1);
 }
 

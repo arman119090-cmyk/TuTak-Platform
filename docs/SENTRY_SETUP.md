@@ -22,45 +22,69 @@ sanitizer, used directly by `apps/mobile`, `apps/admin`, and `apps/partner`.
 `apps/api/src` (the same constraint documented for `@tutak/shared-types` in
 `docs/CODEBASE_AUDIT_2026-08-30.md`) — change both together.
 
-The policy is allowlist-first, not key-blocklist-first (revised for task
-#1A — the original version only redacted a value sitting behind a
-sensitive-looking key, which missed a secret embedded in an exception
-message, a stack frame's source line, or a breadcrumb message with no
-sensitive key at all). `sanitizeSentryEvent`/`sanitizeBreadcrumb` rebuild the
-event from a fixed set of fields known to be safe — environment, release,
-the tags this codebase sets itself, the error's type/message/stack, HTTP
-method/normalized route/status — and drop everything else outright:
+The policy is a strict allowlist. It does not look for secrets — it drops
+every field that could contain one.
 
-- `sendDefaultPii: false` everywhere.
-- The complete `user` object, `extra`, and `contexts` are removed wholesale,
-  not key-scrubbed — their presence at all is the problem.
-- `request` keeps only `method` and a query-stripped `url`; headers, cookies,
-  the query string, and the body are never reattached, regardless of name.
-- A breadcrumb keeps `category`/`level`/`timestamp`/`type`/`message`; `data`
-  — arbitrary, caller-shaped, and able to carry a body or a cookie header —
-  is dropped wholesale.
-- Every string that *does* survive (messages, exception values, stack
-  `context_line`s, breadcrumb messages, tag values) is still run through
-  `scrubString`, which redacts by **pattern**, not by key: `key: value` /
-  `key=value` fragments for any of `authorization`, `token`, `cookie`,
-  `password`, `otp`, `secret`, `api_key`/`apikey`, `session`, `refresh`,
-  `access`, `payment`, `financial`, `card`, `bank`, `iban`, `phone`, `email`
-  (any casing/punctuation, `x-api-key` included); bearer tokens and JWTs with
-  no key at all; OTP codes next to the word "otp"/"code" in either order;
-  email addresses; and long digit runs (9+ actual digits — phone numbers,
-  card numbers, bank/IBAN account numbers) wherever they appear.
-- Local variables captured on a stack frame (`vars`) and `captureMessage`'s
-  `params` are dropped for the same reason as `extra`/`contexts`.
+That is the point of the final revision (task #1B). Two earlier versions
+tried to *find* sensitive data: first by object key name, then additionally
+by pattern-matching the strings that survived. Both reduce risk; neither
+proves anything. A regex that catches `Authorization: Bearer …` says nothing
+about an opaque token with no label, a customer's name, or a password that
+happens not to look like one — and "we did not spot a secret" is a weaker
+claim than "there is no secret". So free text is no longer inspected. It is
+dropped.
 
-Tests: `packages/observability` has no test runner of its own (it is scrubbed
-logic only, re-tested by every consumer) — the comprehensive privacy suite
-(70+ cases: every category above, nested in objects/arrays/messages/
-exceptions/breadcrumbs/contexts/extra, plus proof that allowed metadata and a
-letters-only verification marker survive) lives in
-`apps/api/src/common/observability/sentry-sanitize.spec.ts`. `apps/mobile`'s
-`sentry.test.ts` and `apps/{admin,partner}`'s `sentryOptions.test.ts` cover
-the wiring (the right functions are actually connected to `beforeSend`/
-`beforeBreadcrumb`) without repeating the full case matrix.
+Absent from every event, whatever it held:
+
+- the entire `request` object — **including the raw URL path**, since
+  `/v1/users/Арман` and `/v1/customers/123456789` are a name and an account
+  number. The safe half already arrives as tags (below);
+- the root `message`, an exception's `value` (the error message), and a
+  breadcrumb's `message`;
+- a stack frame's `context_line` / `pre_context` / `post_context` (source
+  text around the throw, where a hardcoded credential lands) and its `vars`
+  (frame locals);
+- `fingerprint` — free text, and grouping is derivable from the type and
+  stack that do survive;
+- the complete `user` object, `extra`, `contexts`, breadcrumb `data`, and
+  `captureMessage`'s `params`.
+
+Present, and nothing else:
+
+- `sendDefaultPii: false` everywhere;
+- tags, by **exact key** from `ALLOWED_TAG_KEYS` — `service`, `kind`,
+  `http.method`, `http.route`, `http.status_code`, all set by this codebase
+  itself, scalar values only. The loop walks the allowlist rather than the
+  input's keys, so an unanticipated tag cannot slip through by being
+  unlisted;
+- an error `type` validated to be identifier-shaped, replaced with `Error`
+  when it is not (so a class name survives, an error message pasted into the
+  type field does not);
+- stack frames reduced to `filename` / `function` / `module` / `lineno` /
+  `colno` / `in_app`, plus `mechanism.type` / `mechanism.handled`;
+- `environment`, `release`, `dist`, and the SDK's own plumbing
+  (`event_id`, `timestamp`, `platform`, `level`, `sdk`);
+- breadcrumbs reduced to `category` / `level` / `timestamp` / `type`.
+
+The cost is real: a Sentry issue no longer carries the error's message. What
+it does carry — service, environment, release, HTTP method, normalized route,
+status code, error class, and a full structural stack — locates the throw
+site, which is what a stack trace is for.
+
+`normalizeRoute` (apps/api) was tightened to match: a request that never
+reached routing now reports `<unmatched>` rather than falling back to
+`req.path`, so a 404 on `/v1/users/Арман` cannot put that name in the
+`http.route` tag.
+
+Tests: `packages/observability` has no test runner of its own (it is
+policy logic only, re-tested by every consumer) — the privacy suite lives in
+`apps/api/src/common/observability/sentry-sanitize.spec.ts` and covers every
+category above by asserting on the *serialized* output ("this string does not
+leave the process", not "this field I remembered to check is empty").
+`apps/mobile`'s `sentry.test.ts` and `apps/{admin,partner}`'s
+`sentryOptions.test.ts` prove the policy is actually wired into `beforeSend`/
+`beforeBreadcrumb`; `sentry-otel.spec.ts` proves it again end to end through
+the real, unmocked SDK pipeline.
 
 **Parity between the two copies**: since apps/api cannot import
 `@tutak/observability` (see above) and nothing at the type-checker level
@@ -98,9 +122,11 @@ of the other two.
   secret, but not printed anywhere either), `GIT_COMMIT_SHA`.
 - Verification: `pnpm --filter @tutak/api sentry:verify` (refuses to run
   when `NODE_ENV=production`; sends one synthetic error and confirms the
-  SDK flushed it). The embedded marker is letters-only on purpose — see
-  `randomMarkerSuffix`'s docstring — so the privacy sanitizer's digit-run
-  rule never redacts the very string meant to prove delivery.
+  SDK flushed it). Since the sanitizer drops free text, the probe is
+  identified by what survives rather than by a marker string: the error
+  class `SentryVerificationProbe` (an identifier, so it passes error-type
+  validation) plus the allowlisted `kind=sentry-verify` and `service` tags.
+  The script prints the send time locally to tell one run from the next.
 - **OpenTelemetry coexistence** (task #1A): `initSentry()` sets
   `skipOpenTelemetrySetup: true`, the option `@sentry/node` documents
   specifically for "an app that already runs its own OpenTelemetry SDK".

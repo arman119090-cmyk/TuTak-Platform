@@ -16,20 +16,21 @@ import * as Sentry from '@sentry/node';
 import { initSentry } from '../common/observability/sentry';
 
 /**
- * Letters only, deliberately: the marker is embedded in the `Error` message
- * sent to Sentry, which goes through the same privacy sanitizer as every
- * other event. A digit run of 9+ (an ISO timestamp, `Date.now()`) is exactly
- * what `scrubString` in `sentry-sanitize.ts` treats as a phone/card/account
- * number and redacts — so the marker itself would occasionally vanish. A
- * short run of random letters carries no such pattern and always survives.
+ * What the operator actually looks for in Sentry.
+ *
+ * The privacy sanitizer drops every free-text field, the error's own message
+ * included, so a per-run marker string embedded in one would never arrive.
+ * A class *name* does arrive: `sanitizeSentryEvent` keeps `exception.type`
+ * whenever it looks like an identifier, which this does. Combined with the
+ * allowlisted `kind: 'sentry-verify'` tag, that is the whole search — and
+ * the script prints the send time locally so a run can be told from the one
+ * before it.
  */
-function randomMarkerSuffix(length = 10): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz';
-  let out = '';
-  for (let i = 0; i < length; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+export class SentryVerificationProbe extends Error {
+  constructor() {
+    super('TuTak Sentry verification probe');
+    this.name = 'SentryVerificationProbe';
   }
-  return out;
 }
 
 export class SentryVerifyRefusedInProductionError extends Error {
@@ -54,11 +55,10 @@ export async function runSentryVerify(nodeEnv: string): Promise<{ sent: boolean;
     return { sent: false, reason: 'SENTRY_DSN is not set — Sentry was never initialized.' };
   }
 
-  const marker = `tutak-api-sentry-verify-${randomMarkerSuffix()}`;
   Sentry.withScope((scope) => {
     scope.setTag('service', 'api');
     scope.setTag('kind', 'sentry-verify');
-    Sentry.captureException(new Error(`TuTak Sentry verification: ${marker}`));
+    Sentry.captureException(new SentryVerificationProbe());
   });
 
   const flushed = await Sentry.flush(5000);
@@ -66,7 +66,7 @@ export async function runSentryVerify(nodeEnv: string): Promise<{ sent: boolean;
     return { sent: false, reason: 'Sentry did not confirm the event was flushed within 5s.' };
   }
 
-  return { sent: true, reason: `${marker} (sent at ${new Date().toISOString()})` };
+  return { sent: true, reason: `sent at ${new Date().toISOString()}` };
 }
 
 async function main() {
@@ -77,8 +77,11 @@ async function main() {
       console.error(result.reason);
       process.exit(1);
     }
-    console.log(`Sent. Marker: ${result.reason}`);
-    console.log('Look for that marker in the Sentry project configured by SENTRY_DSN.');
+    console.log(`Sent (${result.reason}).`);
+    console.log(
+      'In the Sentry project configured by SENTRY_DSN, look for a SentryVerificationProbe',
+    );
+    console.log('event tagged kind=sentry-verify, service=api, at that time.');
   } catch (err) {
     if (err instanceof SentryVerifyRefusedInProductionError) {
       console.error(err.message);

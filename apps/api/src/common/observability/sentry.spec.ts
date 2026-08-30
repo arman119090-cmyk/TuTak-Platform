@@ -11,7 +11,7 @@ jest.mock('@sentry/node', () => ({
   close: jest.fn().mockResolvedValue(true),
 }));
 
-import { captureApiException, initSentry, normalizeRoute } from './sentry';
+import { captureApiException, initSentry, normalizeRoute, UNMATCHED_ROUTE } from './sentry';
 
 describe('initSentry', () => {
   const originalDsn = process.env.SENTRY_DSN;
@@ -51,9 +51,17 @@ describe('normalizeRoute', () => {
     expect(normalizeRoute(request as never)).toBe('/v1/users/:id');
   });
 
-  it('falls back to the plain pathname when the router never matched (e.g. a 404)', () => {
-    const request = { baseUrl: '', route: undefined, path: '/v1/does-not-exist' };
-    expect(normalizeRoute(request as never)).toBe('/v1/does-not-exist');
+  it('reports an unmatched route rather than the raw path the caller asked for', () => {
+    const request = { baseUrl: '', route: undefined, path: '/v1/users/Арман' };
+    expect(normalizeRoute(request as never)).toBe(UNMATCHED_ROUTE);
+  });
+
+  it('never lets a concrete path segment reach the route tag', () => {
+    // A 404 on a URL carrying a customer's name or an account number is the
+    // realistic case; the status code is the diagnostic, the URL is not.
+    for (const path of ['/v1/users/Арман', '/v1/customers/123456789']) {
+      expect(normalizeRoute({ baseUrl: '', route: undefined, path } as never)).toBe(UNMATCHED_ROUTE);
+    }
   });
 });
 

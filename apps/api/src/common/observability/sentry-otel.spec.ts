@@ -12,6 +12,18 @@ import * as Sentry from '@sentry/node';
 import { activeTraceId, startTracing, stopTracing } from './tracing';
 import { initSentry } from './sentry';
 
+/**
+ * A distinctly-named probe. The sanitizer drops an error's message but keeps
+ * an identifier-shaped `type`, so a class name — not a message — is what
+ * these tests can assert actually reached the transport.
+ */
+class OtelCoexistenceProbe extends Error {
+  constructor(message = 'otel coexistence probe') {
+    super(message);
+    this.name = 'OtelCoexistenceProbe';
+  }
+}
+
 function fakeTransport(): NonNullable<Parameters<typeof Sentry.init>[0]>['transport'] {
   return () => ({
     send: () => Promise.resolve({}),
@@ -80,12 +92,40 @@ describe('Sentry + OpenTelemetry coexistence (real SDKs, no mocks)', () => {
 
     Sentry.withScope((scope) => {
       scope.setTag('service', 'api');
-      Sentry.captureException(new Error('otel-coexistence-smoke-test'));
+      Sentry.captureException(new OtelCoexistenceProbe());
     });
     await Sentry.flush(2000);
 
+    const envelopes = JSON.stringify(sent);
     expect(sent.length).toBeGreaterThan(0);
-    expect(JSON.stringify(sent)).toContain('otel-coexistence-smoke-test');
+    // The class name survives the sanitizer (it is identifier-shaped); the
+    // tag this scope set survives because it is on the tag allowlist.
+    expect(envelopes).toContain('OtelCoexistenceProbe');
+    expect(envelopes).toContain('"service":"api"');
+  });
+
+  it('applies the privacy policy to what it captures, through the real SDK pipeline', async () => {
+    process.env.SENTRY_DSN = 'https://public@o0.ingest.sentry.io/1';
+    const sent: unknown[] = [];
+    initSentry({ transport: capturingTransport(sent) });
+
+    Sentry.withScope((scope) => {
+      scope.setTag('service', 'api');
+      scope.setTag('customerName', 'Арман Петросян');
+      scope.setUser({ id: 'u1', email: 'a@b.com' });
+      scope.setExtra('opaque', 'Zx9QpLm2Vt7RhK4NsE1BgYcW');
+      Sentry.captureException(new OtelCoexistenceProbe('password hunter2 for /v1/users/Арман'));
+    });
+    await Sentry.flush(2000);
+
+    // Not a unit test of the sanitizer — a check that it is actually wired
+    // into `beforeSend` on the live client, with nothing mocked.
+    const envelopes = JSON.stringify(sent);
+    expect(envelopes).not.toContain('hunter2');
+    expect(envelopes).not.toContain('Арман');
+    expect(envelopes).not.toContain('customerName');
+    expect(envelopes).not.toContain('a@b.com');
+    expect(envelopes).not.toContain('Zx9QpLm2Vt7RhK4NsE1BgYcW');
   });
 
   it('leaves apps/api\'s own OpenTelemetry tracing fully functional once Sentry has initialized alongside it', async () => {

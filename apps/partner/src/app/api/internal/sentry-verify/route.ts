@@ -1,5 +1,19 @@
 import * as Sentry from '@sentry/nextjs';
-import { randomMarkerSuffix } from '@tutak/observability';
+
+/**
+ * What the operator actually looks for in Sentry. The privacy sanitizer
+ * drops every free-text field, the error's own message included, so a
+ * per-run marker string would never arrive — but a class *name* does:
+ * `sanitizeSentryEvent` keeps `exception.type` when it looks like an
+ * identifier. Combined with the allowlisted `kind: 'sentry-verify'` tag,
+ * that is the whole search.
+ */
+class SentryVerificationProbe extends Error {
+  constructor() {
+    super('TuTak Sentry verification probe');
+    this.name = 'SentryVerificationProbe';
+  }
+}
 
 /**
  * Non-production-only Sentry verification endpoint.
@@ -26,15 +40,10 @@ export async function GET(): Promise<Response> {
     return new Response(null, { status: 404 });
   }
 
-  // Letters only (see randomMarkerSuffix's docstring): the marker is
-  // embedded in the Error message sent to Sentry, which goes through the
-  // same privacy sanitizer as every other event, and that sanitizer treats
-  // a long digit run as a phone/card/account number and redacts it.
-  const marker = `tutak-partner-sentry-verify-${randomMarkerSuffix()}`;
   Sentry.withScope((scope) => {
     scope.setTag('service', 'partner');
     scope.setTag('kind', 'sentry-verify');
-    Sentry.captureException(new Error(`TuTak Sentry verification: ${marker}`));
+    Sentry.captureException(new SentryVerificationProbe());
   });
   const flushed = await Sentry.flush(5000);
 

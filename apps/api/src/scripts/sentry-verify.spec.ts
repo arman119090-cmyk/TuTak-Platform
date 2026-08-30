@@ -13,6 +13,7 @@ jest.mock('@sentry/node', () => ({
   flush: (...args: unknown[]) => flushMock(...args),
 }));
 
+import { safeErrorType } from '../common/observability/sentry-sanitize';
 import {
   assertNotProduction,
   runSentryVerify,
@@ -51,10 +52,20 @@ describe('sentry-verify — the non-production gate', () => {
     expect(flushMock).toHaveBeenCalledTimes(1);
   });
 
-  it('embeds a letters-only marker that the privacy sanitizer would never redact', async () => {
+  it('sends a probe whose class name survives the sanitizer, since its message will not', async () => {
     initSentryMock.mockReturnValue(true);
     await runSentryVerify('development');
     const sentError = captureExceptionMock.mock.calls[0]![0] as Error;
-    expect(sentError.message).toMatch(/^TuTak Sentry verification: tutak-api-sentry-verify-[a-z]{10}$/);
+    // The sanitizer drops every free-text field but keeps an
+    // identifier-shaped `exception.type`, which Sentry takes from `name`.
+    expect(sentError.name).toBe('SentryVerificationProbe');
+    expect(safeErrorType(sentError.name)).toBe('SentryVerificationProbe');
+  });
+
+  it('tags the probe with service and kind, both of which are on the tag allowlist', async () => {
+    initSentryMock.mockReturnValue(true);
+    await runSentryVerify('development');
+    expect(scopeMock.setTag).toHaveBeenCalledWith('service', 'api');
+    expect(scopeMock.setTag).toHaveBeenCalledWith('kind', 'sentry-verify');
   });
 });

@@ -40,25 +40,54 @@ describe('initSentry (mobile)', () => {
     expect((options.initialScope as { tags: Record<string, string> }).tags.service).toBe('mobile');
   });
 
-  it('drops extra entirely through the configured beforeSend, rather than merely scrubbing it', () => {
+  function configuredBeforeSend() {
     mockExtra = { sentryDsn: 'https://example@o0.ingest.sentry.io/1' };
     initSentry();
-    const options = mockInit.mock.calls[0]![0] as {
+    return (mockInit.mock.calls[0]![0] as {
       beforeSend: (event: Record<string, unknown>) => Record<string, unknown>;
-    };
-    const result = options.beforeSend({ extra: { refreshToken: 'xyz' } });
+    }).beforeSend;
+  }
+
+  it('has the strict allowlist policy wired into beforeSend', () => {
+    const beforeSend = configuredBeforeSend();
+
+    const result = beforeSend({
+      message: 'password hunter2 for Арман',
+      request: { url: '/v1/users/Арман' },
+      user: { email: 'a@b.com' },
+      extra: { opaque: 'Zx9QpLm2Vt7RhK4NsE1BgYcW' },
+      contexts: { custom: { ssn: '123-45-6789' } },
+      tags: { service: 'mobile', customerName: 'Арман Петросян' },
+      exception: { values: [{ type: 'Error', value: 'password hunter2' }] },
+    });
+
+    expect(result.message).toBeUndefined();
+    expect(result.request).toBeUndefined();
+    expect(result.user).toBeUndefined();
     expect(result.extra).toBeUndefined();
+    expect(result.contexts).toBeUndefined();
+    expect(result.tags).toEqual({ service: 'mobile' });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('Арман');
+    expect(serialized).not.toContain('a@b.com');
+    expect(serialized).not.toContain('Zx9QpLm2Vt7RhK4NsE1BgYcW');
+    expect(serialized).not.toContain('customerName');
   });
 
-  it('scrubs a secret embedded in an exception message, with no sensitive key involved', () => {
+  it('has the strict allowlist policy wired into beforeBreadcrumb', () => {
     mockExtra = { sentryDsn: 'https://example@o0.ingest.sentry.io/1' };
     initSentry();
     const options = mockInit.mock.calls[0]![0] as {
-      beforeSend: (event: Record<string, unknown>) => Record<string, unknown>;
+      beforeBreadcrumb: (crumb: Record<string, unknown>) => Record<string, unknown>;
     };
-    const result = options.beforeSend({
-      exception: { values: [{ type: 'Error', value: 'Authorization: Bearer secret-token-abc' }] },
+
+    const result = options.beforeBreadcrumb({
+      category: 'xhr',
+      message: 'GET /v1/users/Арман',
+      data: { body: 'password hunter2' },
     });
-    expect(JSON.stringify(result)).not.toContain('secret-token-abc');
+
+    expect(result).toEqual({ category: 'xhr' });
   });
 });

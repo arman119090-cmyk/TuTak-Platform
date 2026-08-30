@@ -115,14 +115,21 @@ jobs:
       # something this repo's own local sessions had been silently masking
       # for a long time by manually `kill -9`ing the leftover process after
       # every run. CI has nobody to do that, so it sat until the job timeout
-      # killed it. `--forceExit` (test:int/:verbose, apps/api/package.json)
-      # is the fix — every assertion has already run and passed by the time
-      # it fires, it only stops Jest idling on whatever handle (a Redis/DB
-      # connection, a timer) never closed. `--verbose` and `timeout-minutes`
-      # are kept as permanent CI hygiene: verbose output pinpoints a future
-      # hang's location instead of silence, and the 15-minute cap (baseline
-      # ~4min) turns any future stall into a fast, readable failure instead
-      # of a multi-hour bleed.
+      # killed it. `--forceExit` was the fix at the time.
+      #
+      # It is gone as of the 2026-08-30 hardening pass, because the handle it
+      # was papering over is gone: the shared harness now closes ioredis
+      # explicitly (`redis.quit()` — ioredis implements no Nest shutdown hook,
+      # so `moduleRef.close()` never reached it), then the Nest context, then
+      # Prisma, and all 76 files go through it. Verified rather than assumed:
+      # `jest --selectProjects integration --runInBand --detectOpenHandles`
+      # reports no open handle at all, and a plain run with no `--forceExit`
+      # exits by itself. Keeping the flag would have meant a future leak
+      # returning silently — the exact failure mode it was introduced for.
+      # `--verbose` and `timeout-minutes` stay as permanent CI hygiene:
+      # verbose output pinpoints a future hang's location instead of silence,
+      # and the 15-minute cap turns any future stall into a fast, readable
+      # failure instead of a multi-hour bleed.
       - name: Integration tests
         timeout-minutes: 15
         run: pnpm --filter @tutak/api test:int:verbose

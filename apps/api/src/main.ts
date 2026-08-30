@@ -63,7 +63,20 @@ async function bootstrap() {
   // Reflecting any origin while sending credentials is a misconfiguration, and
   // CORS_ORIGINS is not required by env validation — so a deployment that
   // forgot it used to become fully permissive in silence (§M5).
-  const origins = config.get('cors.origins', { infer: true });
+  const configuredOrigins = config.get('cors.origins', { infer: true });
+  // Render's first staging blueprint uses fixed public service names. Keep this
+  // fallback staging-only so a missing dashboard value cannot silently turn
+  // CORS permissive or make Admin unusable; production still requires an
+  // explicit allow-list.
+  const origins =
+    configuredOrigins.length > 0
+      ? configuredOrigins
+      : nodeEnv === 'staging'
+        ? [
+            'https://tutak-staging-admin.onrender.com',
+            'https://tutak-staging-partner.onrender.com',
+          ]
+        : configuredOrigins;
   if (isPublicFacing && origins.length === 0) {
     throw new Error('CORS_ORIGINS must list the allowed origins outside development');
   }

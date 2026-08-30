@@ -27,8 +27,19 @@ export default function LoginPage() {
       }
       setSession(result.user, result.tokens);
       router.push('/');
-    } catch {
-      setError('Incorrect phone number or password.');
+    } catch (error) {
+      const status =
+        typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : undefined;
+
+      if (status === 401) {
+        setError('Incorrect phone number or password.');
+      } else if (status === 429) {
+        setError('Too many attempts. Please wait a minute and try again.');
+      } else {
+        setError('Cannot reach the staging API. This is a deployment configuration issue, not a password error.');
+      }
     } finally {
       setLoading(false);
     }

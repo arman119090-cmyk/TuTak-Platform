@@ -4,6 +4,11 @@ import 'reflect-metadata';
 // starts is never traced — and half-traced is worse than untraced, because
 // the untraced half looks like it is never called.
 import { startTracing, stopTracing } from './common/observability/tracing';
+// Error monitoring, started right after tracing and before Nest itself so a
+// bootstrap-time throw is captured too. See sentry.ts's docblock for why
+// this cannot duplicate or interfere with the tracing line above.
+import * as Sentry from '@sentry/node';
+import { initSentry } from './common/observability/sentry';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
@@ -25,6 +30,8 @@ const tracingEnabled = startTracing({
   headers: process.env.OTEL_EXPORTER_OTLP_HEADERS ?? '',
   debug: process.env.OTEL_DEBUG === 'true',
 });
+
+initSentry();
 
 async function bootstrap() {
   // `bufferLogs` holds startup output until the real logger is installed, so
@@ -133,7 +140,9 @@ async function bootstrap() {
   app.enableShutdownHooks();
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
-      void stopTracing().finally(() => process.exit(0));
+      void Promise.allSettled([stopTracing(), Sentry.close(2000)]).finally(() =>
+        process.exit(0),
+      );
     });
   }
 
@@ -169,7 +178,15 @@ async function bootstrap() {
   }
 }
 
-// `void` is the explicit acknowledgement that nothing awaits the top-level
-// bootstrap; without it a rejection here would be an unhandled promise and
-// the process would exit with no diagnostic.
-void bootstrap();
+// A bootstrap failure (a bad Nest module, a Prisma connection that never
+// resolves, anything thrown before `app.listen`) used to become an unhandled
+// promise rejection — Node's default `--unhandled-rejections=throw` still
+// crashes the process on one, so the exit behaviour here is the same as
+// before this existed. The only change is that the error reaches Sentry
+// before the process goes down, and the exit code is explicit rather than
+// implicit in Node's default.
+bootstrap().catch((err: unknown) => {
+  Sentry.captureException(err);
+  console.error(err);
+  void Sentry.flush(2000).finally(() => process.exit(1));
+});

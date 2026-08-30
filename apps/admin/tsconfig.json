@@ -34,6 +34,9 @@
       ],
       "@tutak/design/web": [
         "../../packages/design/src/web/index.ts"
+      ],
+      "@tutak/observability": [
+        "../../packages/observability/src/index.ts"
       ]
     }
   },

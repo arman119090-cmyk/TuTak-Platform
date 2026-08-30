@@ -19,7 +19,8 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "test:unit": "jest --selectProjects unit",
     "test:int": "jest --selectProjects integration --forceExit",
-    "test:int:verbose": "jest --selectProjects integration --verbose --forceExit"
+    "test:int:verbose": "jest --selectProjects integration --verbose --forceExit",
+    "sentry:verify": "ts-node -r tsconfig-paths/register src/scripts/sentry-verify.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -42,6 +43,7 @@
     "@opentelemetry/sdk-node": "^0.221.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@prisma/client": "6.19.3",
+    "@sentry/node": "^10.72.0",
     "@tutak/i18n": "workspace:*",
     "@tutak/shared-types": "workspace:*",
     "argon2": "^0.45.1",

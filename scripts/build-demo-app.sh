@@ -61,7 +61,7 @@ find "$OUT/src" -name '*.test.tsx' -delete
 # Imports stay `@tutak/design` and so on; metro.config.js maps them to these
 # folders. Rewriting the imports instead would mean the copied source differs
 # from the original, which is the one thing this script must not do.
-for pkg in design i18n shared-types; do
+for pkg in design i18n shared-types observability; do
   cp -R "$ROOT/packages/$pkg/src" "$OUT/vendor/$pkg"
 done
 
@@ -81,8 +81,9 @@ const deps = Object.fromEntries(
 );
 
 // The vendored packages bring their own runtime dependencies. Only i18n has
-// any; design and shared-types are plain TypeScript with no imports.
-for (const pkg of ['design', 'i18n', 'shared-types']) {
+// any; design, shared-types and observability are plain TypeScript with no
+// imports.
+for (const pkg of ['design', 'i18n', 'shared-types', 'observability']) {
   const file = path.join(root, 'packages', pkg, 'package.json');
   const meta = JSON.parse(fs.readFileSync(file, 'utf8'));
   for (const [name, range] of Object.entries(meta.dependencies ?? {})) {
@@ -194,7 +195,7 @@ NODE
 
 # ── Metro: where `@tutak/*` lives now ──────────────────────────────────────
 cat > "$OUT/metro.config.js" <<'JS'
-// Ordinary single-project Metro config, plus the three aliases that let the
+// Ordinary single-project Metro config, plus the aliases that let the
 // copied source keep importing `@tutak/design` and friends without being
 // edited. See scripts/build-demo-app.sh.
 const { getDefaultConfig } = require('expo/metro-config');
@@ -206,6 +207,7 @@ config.resolver.extraNodeModules = {
   '@tutak/design': path.resolve(__dirname, 'vendor/design'),
   '@tutak/i18n': path.resolve(__dirname, 'vendor/i18n'),
   '@tutak/shared-types': path.resolve(__dirname, 'vendor/shared-types'),
+  '@tutak/observability': path.resolve(__dirname, 'vendor/observability'),
 };
 
 module.exports = config;
@@ -250,7 +252,8 @@ cat > "$OUT/tsconfig.json" <<'JSON'
     "paths": {
       "@tutak/design": ["vendor/design"],
       "@tutak/i18n": ["vendor/i18n"],
-      "@tutak/shared-types": ["vendor/shared-types"]
+      "@tutak/shared-types": ["vendor/shared-types"],
+      "@tutak/observability": ["vendor/observability"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
@@ -269,4 +272,4 @@ node_modules/
 dist/
 TXT
 
-echo "demo/ regenerated from apps/mobile + packages/{design,i18n,shared-types}"
+echo "demo/ regenerated from apps/mobile + packages/{design,i18n,shared-types,observability}"

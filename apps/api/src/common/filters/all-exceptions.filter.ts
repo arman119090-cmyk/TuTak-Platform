@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { Request, Response } from 'express';
 import { requestContext } from '../observability/request-context';
+import { captureApiException, normalizeRoute } from '../observability/sentry';
 
 interface HttpExceptionBody {
   message?: string | string[];
@@ -86,6 +87,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
         `[${incidentId}] ${request.method} ${request.url} -> ${status}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+      // Exactly once per unexpected error, and only >=500 — a deliberately
+      // raised 4xx (validation, auth, a business rule) never reaches here.
+      // Metadata is the allow-listed set only: method, a normalized
+      // query-free route, and the status; the exception object itself is
+      // all Sentry reads for name/message/stack.
+      captureApiException(exception, {
+        method: request.method,
+        route: normalizeRoute(request),
+        status,
+      });
     }
 
     response.status(status).json({

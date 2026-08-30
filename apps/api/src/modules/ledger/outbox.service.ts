@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as Sentry from '@sentry/node';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 
@@ -155,6 +156,17 @@ export class OutboxService {
           this.logger.error(
             `Outbox event ${event.id} (${event.eventType}) exhausted ${MAX_ATTEMPTS} attempts: ${message}`,
           );
+
+          // Alongside the alert below, not instead of it. This is the
+          // "worker/job failure that escapes existing handling" case — the
+          // handler threw, every retry was exhausted, and nothing above this
+          // point crashes the process or fails an HTTP request.
+          Sentry.withScope((scope) => {
+            scope.setTag('service', 'api');
+            scope.setTag('outbox.event_type', event.eventType);
+            scope.setTag('outbox.attempts', MAX_ATTEMPTS);
+            Sentry.captureException(err instanceof Error ? err : new Error(message));
+          });
 
           // A dead-lettered event is work the platform promised itself it
           // would do and then stopped trying to do — most often a settlement

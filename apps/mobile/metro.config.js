@@ -6,6 +6,7 @@
 // `expo start` and `expo export` behave identically to a standalone app
 // while still picking up changes in packages/shared-types and packages/i18n.
 const { getDefaultConfig } = require('expo/metro-config');
+const { withSentryConfig } = require('@sentry/react-native/metro');
 const path = require('path');
 
 const projectRoot = __dirname;
@@ -27,4 +28,11 @@ config.resolver.nodeModulesPaths = [
 // in pnpm's symlinked store resolve their own dependencies from a nested
 // node_modules alongside them (e.g. expo -> expo-modules-core), which is only
 // reachable via the upward directory walk that flag disables.
-module.exports = config;
+
+// Layered on top of the monorepo config above rather than built via
+// `getSentryExpoConfig` (which calls `getDefaultConfig` itself and would
+// duplicate/clash with the watchFolders and resolver overrides this file
+// already needs for pnpm). This only adds the Metro serializer that attaches
+// debug ids to the bundle so an uploaded source map can be matched back to
+// it — it does not change what gets bundled or how it resolves modules.
+module.exports = withSentryConfig(config);

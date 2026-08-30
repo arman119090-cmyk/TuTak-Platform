@@ -15,6 +15,9 @@
       ],
       "@tutak/design": [
         "../../packages/design/src/index.ts"
+      ],
+      "@tutak/observability": [
+        "../../packages/observability/src/index.ts"
       ]
     }
   },

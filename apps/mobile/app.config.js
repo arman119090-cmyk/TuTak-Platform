@@ -185,6 +185,22 @@ module.exports = ({ config }) => ({
         recordAudioAndroid: false,
       },
     ],
+    // Wires the native Sentry SDKs into the iOS/Android projects EAS builds
+    // and adds the build-phase scripts that upload debug symbols/source
+    // maps. `authToken` is deliberately not passed here: those native
+    // scripts invoke `sentry-cli`, which reads `SENTRY_AUTH_TOKEN` straight
+    // from the build environment on its own. Routing it through this file
+    // would mean a secret sitting in `extra` in the app manifest — see
+    // docs/SENTRY_SETUP.md. `organization`/`project`/`url` are not secrets;
+    // they only say which Sentry project the symbols belong to.
+    [
+      '@sentry/react-native/expo',
+      {
+        organization: process.env.SENTRY_ORG,
+        project: process.env.SENTRY_PROJECT,
+        url: process.env.SENTRY_URL,
+      },
+    ],
   ],
   extra: {
     apiBaseUrl: apiBaseUrl(),
@@ -200,16 +216,29 @@ module.exports = ({ config }) => ({
      */
     diagnostics: diagnosticsEnabled(),
     /**
-     * Shown by the overlay. The single most expensive question in this whole
+     * Shown by the overlay, and read by `app/sentry.ts` as the Sentry
+     * `release` — the same commit-SHA value `apps/api`, `apps/admin` and
+     * `apps/partner` tag their own events with (see `@tutak/observability`'s
+     * `resolveReleaseSha`). The single most expensive question in this whole
      * episode has been "which version is on the phone" — a build that states
-     * its own commit cannot be mistaken for the one before it. EAS sets the
-     * first variable on its own builders; the second covers a local run.
+     * its own commit cannot be mistaken for the one before it. `GIT_COMMIT_SHA`
+     * is the canonical override; EAS and GitHub Actions each set one of the
+     * other two on their own builders, and a local run has none of them.
      */
-    commit: process.env.EAS_BUILD_GIT_COMMIT_HASH ?? process.env.GITHUB_SHA ?? '',
+    commit:
+      process.env.GIT_COMMIT_SHA ??
+      process.env.EAS_BUILD_GIT_COMMIT_HASH ??
+      process.env.GITHUB_SHA ??
+      '',
     // Pinned, not omitted. An absent key and a false one behave identically
     // today; only one of them still says no if a future edit starts merging
     // `extra` from somewhere else.
     useMocks: false,
+    // A DSN identifies a Sentry *project*, not a secret — publishing it does
+    // not let anyone read events, only send new ones tagged as this app. Off
+    // (Sentry never initializes) when unset, same "off unless configured"
+    // posture the API's OTel/Sentry setup uses. See docs/SENTRY_SETUP.md.
+    sentryDsn: process.env.SENTRY_DSN ?? '',
     eas: {
       projectId: easProjectId(),
     },

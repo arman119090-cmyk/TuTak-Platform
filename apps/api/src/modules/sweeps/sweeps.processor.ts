@@ -1,6 +1,7 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { AppConfig } from '../../config/configuration';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
@@ -138,6 +139,17 @@ export class SweepsProcessor extends WorkerHost implements OnApplicationBootstra
     }
 
     this.logger.error(`${job.name} failed permanently after ${max} attempt(s): ${error.message}`);
+
+    // Alongside the alert below, not instead of it — a worker failure that
+    // has exhausted every retry is exactly the "escapes existing handling"
+    // case Sentry is meant to add visibility for, on top of (never
+    // replacing) the page this already sends.
+    Sentry.withScope((scope) => {
+      scope.setTag('service', 'api');
+      scope.setTag('job.name', job.name);
+      scope.setTag('job.attempts', max);
+      Sentry.captureException(error);
+    });
 
     await this.alerts.fire({
       severity: 'critical',

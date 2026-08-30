@@ -1,6 +1,20 @@
 #!/bin/sh
 set -e
 
+# ── The release every error report is tagged with ───────────────────────
+#
+# `GIT_COMMIT_SHA` is this repository's canonical name for it
+# (packages/observability/src/release.ts), read here by Sentry and by the
+# structured logs. No platform sets that name by itself; Render exports the
+# deployed commit as `RENDER_GIT_COMMIT`. Falling back to it means a staging
+# deployment tags its events with the commit it is actually running without
+# anyone pasting a SHA into the dashboard and forgetting to update it. An
+# explicit value still wins, and with neither set nothing changes: the
+# release stays `unknown`, exactly as before.
+if [ -z "${GIT_COMMIT_SHA:-}" ] && [ -n "${RENDER_GIT_COMMIT:-}" ]; then
+  export GIT_COMMIT_SHA="$RENDER_GIT_COMMIT"
+fi
+
 # Applies the migration history the image was built with before the process
 # starts serving traffic. `migrate deploy` only ever applies pending
 # migrations in order and refuses on drift — it does not diff or generate,
@@ -15,6 +29,27 @@ set -e
 # newest, and crashed on a Node version that pnpm no longer supports. The
 # binary is already in the image; use it.
 ./node_modules/.bin/prisma migrate deploy
+
+# ── Seeding the baseline ────────────────────────────────────────────────
+#
+# Permissions, roles and one super admin. No business data, no invented
+# customers, no money — `seed-baseline` is the seed that is safe to run
+# against any environment, and every write in it is an upsert, so a restart
+# costs nothing and an existing admin's password is left alone.
+#
+# A fresh database has none of this, and without roles nobody can sign in to
+# the admin or partner dashboard at all. That is why staging needs its own
+# flag: DEMO_SEED also invents partners, customers and payments, which a
+# staging environment must never have. Two different jobs, two different
+# variables.
+#
+# Requires SEED_ADMIN_PASSWORD (at least 12 characters); the script refuses
+# without one, and refusing loudly here is better than a container that
+# starts with no way in.
+if [ "${SEED_BASELINE:-}" = "true" ]; then
+  echo "SEED_BASELINE=true — seeding permissions, roles and the super admin"
+  node dist/scripts/seed-baseline.js
+fi
 
 # ── Seeding a demonstration ─────────────────────────────────────────────
 #

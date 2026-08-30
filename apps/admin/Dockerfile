@@ -22,7 +22,43 @@ COPY tsconfig.base.json ./tsconfig.base.json
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @tutak/admin build
+# ── Sentry, all of it build-time ────────────────────────────────────────
+#
+# Every one of these has to be present during `next build` and none of them
+# can be supplied later: `NEXT_PUBLIC_*` values are inlined into the client
+# bundle by that build, and the source-map upload happens inside it too.
+# Render's only channel into a Docker build is a build argument, which is
+# why each one is an ARG here. All default to empty, and an empty DSN is a
+# documented no-op in the SDK — the image builds with none of them set.
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=""
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+ENV NEXT_PUBLIC_SENTRY_ENVIRONMENT=$NEXT_PUBLIC_SENTRY_ENVIRONMENT
+
+# The release every Sentry event is tagged with. `GIT_COMMIT_SHA` is this
+# repository's canonical name (packages/observability/src/release.ts) and no
+# platform sets it by itself; `RENDER_GIT_COMMIT` is what Render exports for
+# the deployed commit. Preferring the explicit one and falling back keeps a
+# release accurate without anyone pasting a SHA by hand; with neither set the
+# release reads `unknown`, which is what it did before.
+ARG GIT_COMMIT_SHA=""
+ARG RENDER_GIT_COMMIT=""
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA:-$RENDER_GIT_COMMIT}
+
+# Source-map upload only, read by next.config.ts. Without a token the upload
+# is skipped and the build still succeeds.
+ARG SENTRY_ORG=""
+ARG SENTRY_PROJECT=""
+# A secret, and the one value here that must not survive the build. It is
+# deliberately never promoted to ENV: it is passed to the build command
+# alone, on the line below. This whole stage is then discarded — the runtime
+# stage starts from `base` again and copies only built output — so the token
+# cannot appear in the published image, in its history, or in any layer of
+# it.
+ARG SENTRY_AUTH_TOKEN=""
+
+RUN SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN" \
+    pnpm --filter @tutak/admin build
 
 FROM base AS runtime
 ENV NODE_ENV=production

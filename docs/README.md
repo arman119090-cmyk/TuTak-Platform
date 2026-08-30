@@ -31,7 +31,8 @@ got here.
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Module boundaries, data model, the shape of the system |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Environment, migrations, backups, point-in-time recovery, alerts, scaling past one instance |
-| [RAILWAY_RU.md](RAILWAY_RU.md) | Deploying the demonstration to Railway from a phone, in Russian. `render.yaml` is the same thing for Render |
+| [RAILWAY_RU.md](RAILWAY_RU.md) | Deploying the demonstration to Railway from a phone, in Russian. `render.demo.yaml` is the same thing for Render |
+| [RENDER_STAGING_RU.md](RENDER_STAGING_RU.md) | The root `render.yaml` staging blueprint: every Render variable, whether it is build-time, runtime or generated, and the order to apply them. In Russian |
 | [FINANCIAL_CORE_DESIGN.md](FINANCIAL_CORE_DESIGN.md) | Why the ledger is shaped the way it is; what settlement, refunds and payouts each guarantee |
 | [AUDIT_FINANCIAL_2026-08.md](AUDIT_FINANCIAL_2026-08.md) | The audit of the money paths. Defects found, fixes, what was attacked and held, what is still not proven |
 | [WEAK_SPOTS_RU.md](WEAK_SPOTS_RU.md) | Things that work but are poorly defended or will not scale — owner's decisions, cost against risk |

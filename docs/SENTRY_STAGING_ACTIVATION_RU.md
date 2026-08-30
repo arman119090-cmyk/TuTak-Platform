@@ -76,7 +76,8 @@ Next.js подставляет `NEXT_PUBLIC_*` в бандл на этапе `ne
 
 Если сборка идёт через `apps/{admin,partner}/Dockerfile`, эти значения нужно
 передать как build-args/ENV сборочной стадии — рантайм-переменные тут не
-помогут.
+помогут. Соответствующие `ARG` в обоих Dockerfile уже объявлены; для Render
+конкретные имена и порядок действий — в `docs/RENDER_STAGING_RU.md`.
 
 ### apps/mobile — сборка EAS
 

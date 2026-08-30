@@ -1,0 +1,193 @@
+# Deploying the TuTak demonstration from a browser.
+#
+# NOTE (staging blueprint, 2026-08-30): this file used to be `render.yaml`
+# — the blueprint Render reads automatically. That name now holds the
+# **staging** blueprint, which deliberately sets neither DEMO_MODE nor
+# DEMO_SEED. This demonstration blueprint is kept here unchanged and is
+# not applied by Render on its own: to deploy the demonstration, copy this
+# file over `render.yaml` on a branch of its own and point Render at that
+# branch. Everything below still describes the demonstration.
+#
+# This is a Render Blueprint. It exists because the people who need to show
+# this product have phones, not laptops — and a deployment that requires a
+# terminal is a deployment that does not happen. With this file committed,
+# the whole stack is: sign in at render.com, New → Blueprint, pick this
+# repository, press Apply.
+#
+# ## What it brings up
+#
+#   tutak-api        the platform, in demo mode
+#   tutak-admin      the operator dashboard
+#   tutak-partner    the merchant dashboard
+#   tutak-db         PostgreSQL
+#   tutak-redis      Redis, for the job queue and the locks
+#
+# The mobile app is not here. It is a phone app; its web build is a
+# development convenience with no camera, so it cannot demonstrate the QR
+# payment that is the point of the product. Show the phone app on the phone —
+# see docs/STORE_SUBMISSION.md for TestFlight.
+#
+# ## What DEMO_MODE means, and what it does not
+#
+# Payments run on the sandbox acquirer. Nothing reaches a bank, no card is
+# charged, and the API says so at `/health` and in its own startup log. Every
+# other protection is on exactly as in production: the CORS allowlist, the
+# security headers, the rate limits, the secret validation.
+#
+# **Nobody should be shown this and told it is processing real money.**
+#
+# ## Honest status
+#
+# This blueprint has NOT been deployed. It is written from Render's published
+# schema and from what the images actually need, and the images themselves
+# are built and run daily. If Render rejects something, the shape of the
+# answer is in docs/DEPLOYMENT.md — the same environment variables apply to
+# any host that can run three containers, a Postgres and a Redis.
+#
+# ## Cost
+#
+# Everything here is on a free tier, so applying this blueprint cannot
+# charge anybody and does not need a card. That is the right default for a
+# first attempt: the failure mode of a wrong guess should be a wasted
+# afternoon, not a bill.
+#
+# Two consequences to know before an investor opens the link:
+#
+#   - free services sleep after ~15 minutes idle and take 30-50 seconds to
+#     wake, which is a long silence on a shared screen;
+#   - the free database expires after 30 days.
+#
+# Before a meeting that is actually scheduled, open tutak-api in Render and
+# move it to the cheapest paid instance — one click, no redeploy needed, and
+# it stops sleeping. Leave the dashboards free; they wake with the first
+# request and nobody is watching them load.
+
+databases:
+  - name: tutak-db
+    databaseName: tutak
+    user: tutak
+    plan: free
+    # Security hardening (2026-08-23): omitting this field allows connections
+    # from any IP that has valid credentials — Render's own documented
+    # default for a Postgres instance with no ipAllowList, unlike the Redis
+    # `keyvalue` service below, which was already locked down this way. An
+    # empty list blocks every external connection while same-region Render
+    # services (tutak-api) keep reaching it over the internal network
+    # regardless of this setting — exactly the "private/internal-only"
+    # posture required here, matching the Redis line below.
+    ipAllowList: []          # reachable only from inside the Render network
+
+services:
+  # ── Redis ─────────────────────────────────────────────────────────────
+  # Holds the BullMQ schedule, the advisory locks that keep two workers off
+  # the same money, and the rate-limit counters. Losing it costs a moment of
+  # throughput and one skipped tick per job, not data.
+  - type: keyvalue
+    name: tutak-redis
+    plan: free
+    ipAllowList: []          # reachable only from inside the Render network
+
+  # ── The platform ──────────────────────────────────────────────────────
+  - type: web
+    name: tutak-api
+    runtime: docker
+    # Free so a first deploy cannot cost anything. See the note at the top
+    # about moving this one service up before a scheduled demonstration.
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # The two flags that make this a demonstration. Remove both before this
+      # ever becomes a real deployment — with NODE_ENV=production and no
+      # DEMO_MODE, the process refuses to start on a fake acquirer, which is
+      # the behaviour you want protecting you.
+      - key: DEMO_MODE
+        value: 'true'
+      - key: DEMO_SEED
+        value: 'true'
+      - key: PORT
+        value: '4000'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tutak-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: tutak-redis
+          property: connectionString
+      # Generated once by Render and never printed. Regenerating them logs
+      # everyone out, which is why they are not derived from anything.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # The password for the seeded administrator. Render generates it;
+      # read it from the service's Environment tab to sign in to the admin
+      # dashboard. It is not in this file and not in the repository.
+      - key: SEED_ADMIN_PASSWORD
+        generateValue: true
+      # The password every seeded demonstration account shares — the
+      # customers, the merchant owners and the administrator. Render
+      # generates it; read it once from the service's Environment tab and
+      # give it to whoever you are showing this to. `seed-demo` refuses to
+      # run without it and refuses anything under 12 characters.
+      - key: DEMO_PASSWORD
+        generateValue: true
+      # Fails closed: with no origins the API refuses to boot in production
+      # rather than accepting requests from anywhere.
+      #
+      # `sync: false` means Render asks you for this instead of taking it
+      # from here, and that is not laziness — it cannot be filled in from
+      # this file. Render's `fromService` yields a bare hostname, CORS needs
+      # a full origin with the scheme, and there is no string concatenation
+      # in a blueprint. The URLs also do not exist until the first deploy has
+      # run. So: deploy, copy the two dashboard URLs Render assigns, come
+      # back and paste them here as a comma-separated list. One redeploy and
+      # it is done. docs/INVESTOR_DEMO_RU.md walks through it with the
+      # screens named.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SWEEPS_ENABLED
+        value: 'true'
+      - key: QUEUE_PREFIX
+        value: tutak-demo
+
+  # ── Operator dashboard ────────────────────────────────────────────────
+  # The one worth showing an investor: the ledger, settlements, payouts and
+  # reconciliation. It is the evidence that the money is handled seriously,
+  # which is a different question from whether the app looks good.
+  - type: web
+    name: tutak-admin
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/admin/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '3000'
+      # Same reason as CORS_ORIGINS: this needs the full URL including the
+      # `/v1` path, which a blueprint cannot assemble. Set it to
+      # https://<your-api-url>/v1 after the first deploy.
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+
+  # ── Merchant dashboard ────────────────────────────────────────────────
+  - type: web
+    name: tutak-partner
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/partner/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '3000'
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false

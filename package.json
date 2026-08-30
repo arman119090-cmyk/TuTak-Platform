@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
+    "test:sentry-parity": "node scripts/verify-sentry-sanitizer-parity.js",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
     "prisma:generate": "pnpm --filter @tutak/api prisma:generate",
     "prisma:migrate": "pnpm --filter @tutak/api prisma:migrate",

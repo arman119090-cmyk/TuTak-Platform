@@ -50,4 +50,11 @@ describe('sentry-verify — the non-production gate', () => {
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
     expect(flushMock).toHaveBeenCalledTimes(1);
   });
+
+  it('embeds a letters-only marker that the privacy sanitizer would never redact', async () => {
+    initSentryMock.mockReturnValue(true);
+    await runSentryVerify('development');
+    const sentError = captureExceptionMock.mock.calls[0]![0] as Error;
+    expect(sentError.message).toMatch(/^TuTak Sentry verification: tutak-api-sentry-verify-[a-z]{10}$/);
+  });
 });

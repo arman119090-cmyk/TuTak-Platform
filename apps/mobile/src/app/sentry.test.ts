@@ -40,13 +40,25 @@ describe('initSentry (mobile)', () => {
     expect((options.initialScope as { tags: Record<string, string> }).tags.service).toBe('mobile');
   });
 
-  it('scrubs a sensitive field through the configured beforeSend', () => {
+  it('drops extra entirely through the configured beforeSend, rather than merely scrubbing it', () => {
     mockExtra = { sentryDsn: 'https://example@o0.ingest.sentry.io/1' };
     initSentry();
     const options = mockInit.mock.calls[0]![0] as {
       beforeSend: (event: Record<string, unknown>) => Record<string, unknown>;
     };
     const result = options.beforeSend({ extra: { refreshToken: 'xyz' } });
-    expect((result.extra as Record<string, unknown>).refreshToken).toBe('[Filtered]');
+    expect(result.extra).toBeUndefined();
+  });
+
+  it('scrubs a secret embedded in an exception message, with no sensitive key involved', () => {
+    mockExtra = { sentryDsn: 'https://example@o0.ingest.sentry.io/1' };
+    initSentry();
+    const options = mockInit.mock.calls[0]![0] as {
+      beforeSend: (event: Record<string, unknown>) => Record<string, unknown>;
+    };
+    const result = options.beforeSend({
+      exception: { values: [{ type: 'Error', value: 'Authorization: Bearer secret-token-abc' }] },
+    });
+    expect(JSON.stringify(result)).not.toContain('secret-token-abc');
   });
 });

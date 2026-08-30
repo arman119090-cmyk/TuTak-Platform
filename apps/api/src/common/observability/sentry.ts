@@ -11,13 +11,25 @@ import { sanitizeBreadcrumb, sanitizeSentryEvent } from './sentry-sanitize';
  * missing SMS/acquirer credential is in production.
  *
  * This is error monitoring only, deliberately layered next to — never on top
- * of — the tracing in `./tracing.ts`: `tracesSampleRate: 0` means Sentry
- * never starts a span or a transaction, so it cannot duplicate what
- * OpenTelemetry already exports. `AlertsService`/`WebhookAlertChannel` and
- * `StructuredLogger` are untouched by this file; nothing here calls them or
- * changes what they do.
+ * of — the tracing in `./tracing.ts`, in two independent ways:
+ *
+ *  - `tracesSampleRate: 0` means Sentry never samples a span or transaction
+ *    for export, so even if it created spans internally, none would reach
+ *    any backend.
+ *  - `skipOpenTelemetrySetup: true` (the option `@sentry/node` documents
+ *    specifically for "an app that already runs its own OpenTelemetry SDK")
+ *    stops the Sentry SDK from calling `initOpenTelemetry()` on its own,
+ *    which is what would otherwise register Sentry's own tracer provider,
+ *    context manager, propagator and sampler — the exact objects
+ *    `startTracing()` already installed. Skipping that call does not touch
+ *    error capture: `Sentry.captureException`/`withScope` do not depend on
+ *    Sentry owning the OpenTelemetry pipeline, only on the client existing.
+ *    Proved for real (unmocked SDKs) in `sentry-otel.spec.ts`.
+ *
+ * `AlertsService`/`WebhookAlertChannel` and `StructuredLogger` are untouched
+ * by this file; nothing here calls them or changes what they do.
  */
-export function initSentry(): boolean {
+export function initSentry(options: { transport?: Sentry.NodeOptions['transport'] } = {}): boolean {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) return false;
 
@@ -29,6 +41,10 @@ export function initSentry(): boolean {
     // profiling, no session replay (replay does not exist for Node), no
     // logs integration.
     tracesSampleRate: 0,
+    // See the module docblock: this is what actually prevents Sentry from
+    // standing up a second OpenTelemetry tracer provider/context
+    // manager/propagator/sampler alongside apps/api's own, from tracing.ts.
+    skipOpenTelemetrySetup: true,
     // The SDK must never infer IP/user data on its own; every field that
     // reaches Sentry is one this module attaches explicitly and then runs
     // through the sanitizer below.
@@ -47,6 +63,9 @@ export function initSentry(): boolean {
     beforeBreadcrumb(breadcrumb) {
       return sanitizeBreadcrumb(breadcrumb as never) as unknown as typeof breadcrumb;
     },
+    // Never set in production: only sentry-otel.spec.ts passes this, to
+    // capture envelopes in memory instead of making a real network call.
+    ...(options.transport ? { transport: options.transport } : {}),
   });
 
   return true;

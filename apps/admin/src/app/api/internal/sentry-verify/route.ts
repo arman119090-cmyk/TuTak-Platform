@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { randomMarkerSuffix } from '@tutak/observability';
 
 /**
  * Non-production-only Sentry verification endpoint.
@@ -25,7 +26,11 @@ export async function GET(): Promise<Response> {
     return new Response(null, { status: 404 });
   }
 
-  const marker = `tutak-admin-sentry-verify-${new Date().toISOString()}`;
+  // Letters only (see randomMarkerSuffix's docstring): the marker is
+  // embedded in the Error message sent to Sentry, which goes through the
+  // same privacy sanitizer as every other event, and that sanitizer treats
+  // a long digit run as a phone/card/account number and redacts it.
+  const marker = `tutak-admin-sentry-verify-${randomMarkerSuffix()}`;
   Sentry.withScope((scope) => {
     scope.setTag('service', 'admin');
     scope.setTag('kind', 'sentry-verify');

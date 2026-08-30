@@ -22,23 +22,52 @@ sanitizer, used directly by `apps/mobile`, `apps/admin`, and `apps/partner`.
 `apps/api/src` (the same constraint documented for `@tutak/shared-types` in
 `docs/CODEBASE_AUDIT_2026-08-30.md`) — change both together.
 
-The policy, wired through `beforeSend`/`beforeBreadcrumb` in every app:
+The policy is allowlist-first, not key-blocklist-first (revised for task
+#1A — the original version only redacted a value sitting behind a
+sensitive-looking key, which missed a secret embedded in an exception
+message, a stack frame's source line, or a breadcrumb message with no
+sensitive key at all). `sanitizeSentryEvent`/`sanitizeBreadcrumb` rebuild the
+event from a fixed set of fields known to be safe — environment, release,
+the tags this codebase sets itself, the error's type/message/stack, HTTP
+method/normalized route/status — and drop everything else outright:
 
 - `sendDefaultPii: false` everywhere.
-- Recursively scrubs any object/array key whose name (case-insensitive)
-  contains: `authorization`, `token`, `cookie`, `password`, `otp`, `secret`,
-  `api_key`, `apikey`, `session`, `refresh`, `access`, `payment`,
-  `financial`.
-- Strips query strings from every URL.
-- Never attaches a request/breadcrumb body.
-- Removes `user.ip_address`, `user.email`, and raw `extra.env` /
-  `extra.process` / `extra.config`.
+- The complete `user` object, `extra`, and `contexts` are removed wholesale,
+  not key-scrubbed — their presence at all is the problem.
+- `request` keeps only `method` and a query-stripped `url`; headers, cookies,
+  the query string, and the body are never reattached, regardless of name.
+- A breadcrumb keeps `category`/`level`/`timestamp`/`type`/`message`; `data`
+  — arbitrary, caller-shaped, and able to carry a body or a cookie header —
+  is dropped wholesale.
+- Every string that *does* survive (messages, exception values, stack
+  `context_line`s, breadcrumb messages, tag values) is still run through
+  `scrubString`, which redacts by **pattern**, not by key: `key: value` /
+  `key=value` fragments for any of `authorization`, `token`, `cookie`,
+  `password`, `otp`, `secret`, `api_key`/`apikey`, `session`, `refresh`,
+  `access`, `payment`, `financial`, `card`, `bank`, `iban`, `phone`, `email`
+  (any casing/punctuation, `x-api-key` included); bearer tokens and JWTs with
+  no key at all; OTP codes next to the word "otp"/"code" in either order;
+  email addresses; and long digit runs (9+ actual digits — phone numbers,
+  card numbers, bank/IBAN account numbers) wherever they appear.
+- Local variables captured on a stack frame (`vars`) and `captureMessage`'s
+  `params` are dropped for the same reason as `extra`/`contexts`.
 
 Tests: `packages/observability` has no test runner of its own (it is scrubbed
-logic only, re-tested by every consumer) — see
-`apps/api/src/common/observability/sentry-sanitize.spec.ts`,
-`apps/mobile/src/app/sentry.test.ts`, and
-`apps/{admin,partner}/src/lib/observability/sentryOptions.test.ts`.
+logic only, re-tested by every consumer) — the comprehensive privacy suite
+(70+ cases: every category above, nested in objects/arrays/messages/
+exceptions/breadcrumbs/contexts/extra, plus proof that allowed metadata and a
+letters-only verification marker survive) lives in
+`apps/api/src/common/observability/sentry-sanitize.spec.ts`. `apps/mobile`'s
+`sentry.test.ts` and `apps/{admin,partner}`'s `sentryOptions.test.ts` cover
+the wiring (the right functions are actually connected to `beforeSend`/
+`beforeBreadcrumb`) without repeating the full case matrix.
+
+**Parity between the two copies**: since apps/api cannot import
+`@tutak/observability` (see above) and nothing at the type-checker level
+would catch the two copies drifting apart, `scripts/verify-sentry-sanitizer-parity.js`
+(`pnpm test:sentry-parity`, also run in CI right after `pnpm typecheck`)
+loads both source files directly and runs the same fixture matrix through
+both, failing loudly on any behavioural difference.
 
 ## Release and environment tagging
 
@@ -69,7 +98,25 @@ of the other two.
   secret, but not printed anywhere either), `GIT_COMMIT_SHA`.
 - Verification: `pnpm --filter @tutak/api sentry:verify` (refuses to run
   when `NODE_ENV=production`; sends one synthetic error and confirms the
-  SDK flushed it).
+  SDK flushed it). The embedded marker is letters-only on purpose — see
+  `randomMarkerSuffix`'s docstring — so the privacy sanitizer's digit-run
+  rule never redacts the very string meant to prove delivery.
+- **OpenTelemetry coexistence** (task #1A): `initSentry()` sets
+  `skipOpenTelemetrySetup: true`, the option `@sentry/node` documents
+  specifically for "an app that already runs its own OpenTelemetry SDK".
+  Without it, Sentry calls its own `initOpenTelemetry()` on init, which
+  registers a second tracer provider, context manager, propagator, and
+  sampler on top of the ones `tracing.ts`'s `startTracing()` already
+  installed. `tracesSampleRate: 0` alone only stops Sentry's spans from being
+  *exported*; `skipOpenTelemetrySetup` stops it from building that pipeline
+  at all. `sentry-otel.spec.ts` proves this against the real SDKs (no
+  mocking of `@sentry/node`/`@opentelemetry/api`): the global tracer
+  provider `startTracing()` registered is untouched after `initSentry()`
+  runs, `Sentry.getClient().traceProvider` stays `undefined` (proof
+  `initOpenTelemetry()` was never called), `Sentry.captureException` still
+  delivers an event through a custom in-memory transport, and a real span
+  created via apps/api's own tracer after Sentry initializes still produces
+  a valid trace id.
 
 ### apps/mobile (Expo / React Native)
 

@@ -34,6 +34,10 @@ describe('initSentry', () => {
     expect(initMock).toHaveBeenCalledTimes(1);
     const options = initMock.mock.calls[0]![0] as Record<string, unknown>;
     expect(options.tracesSampleRate).toBe(0);
+    // The option that stops Sentry from installing its own OpenTelemetry
+    // tracer provider/context manager/propagator/sampler on top of
+    // tracing.ts's — see sentry-otel.spec.ts for proof against the real SDKs.
+    expect(options.skipOpenTelemetrySetup).toBe(true);
     expect(options.sendDefaultPii).toBe(false);
     expect((options.initialScope as { tags: Record<string, string> }).tags.service).toBe('api');
     expect(typeof options.beforeSend).toBe('function');

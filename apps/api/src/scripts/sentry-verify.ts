@@ -15,6 +15,23 @@
 import * as Sentry from '@sentry/node';
 import { initSentry } from '../common/observability/sentry';
 
+/**
+ * Letters only, deliberately: the marker is embedded in the `Error` message
+ * sent to Sentry, which goes through the same privacy sanitizer as every
+ * other event. A digit run of 9+ (an ISO timestamp, `Date.now()`) is exactly
+ * what `scrubString` in `sentry-sanitize.ts` treats as a phone/card/account
+ * number and redacts — so the marker itself would occasionally vanish. A
+ * short run of random letters carries no such pattern and always survives.
+ */
+function randomMarkerSuffix(length = 10): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
 export class SentryVerifyRefusedInProductionError extends Error {
   constructor() {
     super('sentry-verify refuses to run with NODE_ENV=production.');
@@ -37,7 +54,7 @@ export async function runSentryVerify(nodeEnv: string): Promise<{ sent: boolean;
     return { sent: false, reason: 'SENTRY_DSN is not set — Sentry was never initialized.' };
   }
 
-  const marker = `tutak-api-sentry-verify-${new Date().toISOString()}`;
+  const marker = `tutak-api-sentry-verify-${randomMarkerSuffix()}`;
   Sentry.withScope((scope) => {
     scope.setTag('service', 'api');
     scope.setTag('kind', 'sentry-verify');
@@ -49,7 +66,7 @@ export async function runSentryVerify(nodeEnv: string): Promise<{ sent: boolean;
     return { sent: false, reason: 'Sentry did not confirm the event was flushed within 5s.' };
   }
 
-  return { sent: true, reason: marker };
+  return { sent: true, reason: `${marker} (sent at ${new Date().toISOString()})` };
 }
 
 async function main() {

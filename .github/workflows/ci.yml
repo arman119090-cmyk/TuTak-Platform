@@ -73,6 +73,15 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # apps/api cannot import @tutak/observability (its rootDir build
+      # constraint forbids importing TS source outside apps/api/src), so it
+      # keeps its own copy of the Sentry privacy sanitizer. Nothing at the
+      # type-checker level would catch the two drifting apart — this is the
+      # substitute: it runs the same fixture matrix through both and fails
+      # the build the moment they disagree.
+      - name: Sentry sanitizer parity (apps/api vs @tutak/observability)
+        run: pnpm test:sentry-parity
+
       # Reported, not enforced — and that is a decision rather than laziness.
       # Every advisory the last review turned up was either a build-time
       # dependency of the mobile app (`image-size`, `uuid`, reached only by

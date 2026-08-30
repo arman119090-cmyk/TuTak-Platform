@@ -27,7 +27,7 @@ describe('buildSentryOptions (partner)', () => {
     expect(options.release).toBe('abc1234');
   });
 
-  it('scrubs a sensitive field through the configured beforeSend', () => {
+  it('drops extra entirely through the configured beforeSend, rather than merely scrubbing it', () => {
     const options = buildSentryOptions();
     const beforeSend = options.beforeSend as unknown as (
       event: Record<string, unknown>,
@@ -35,10 +35,23 @@ describe('buildSentryOptions (partner)', () => {
 
     const result = beforeSend({ extra: { authorization: 'Bearer xyz' } });
 
-    expect((result.extra as Record<string, unknown>).authorization).toBe('[Filtered]');
+    expect(result.extra).toBeUndefined();
   });
 
-  it('strips a request body through the configured beforeBreadcrumb', () => {
+  it('scrubs a secret embedded in an exception message, with no sensitive key involved', () => {
+    const options = buildSentryOptions();
+    const beforeSend = options.beforeSend as unknown as (
+      event: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    const result = beforeSend({
+      exception: { values: [{ type: 'Error', value: 'Authorization: Bearer secret-token-abc' }] },
+    });
+
+    expect(JSON.stringify(result)).not.toContain('secret-token-abc');
+  });
+
+  it('drops breadcrumb data entirely through the configured beforeBreadcrumb', () => {
     const options = buildSentryOptions();
     const beforeBreadcrumb = options.beforeBreadcrumb as unknown as (
       breadcrumb: Record<string, unknown>,
@@ -46,7 +59,6 @@ describe('buildSentryOptions (partner)', () => {
 
     const result = beforeBreadcrumb({ data: { url: 'https://x/y?token=abc', body: 'secret-payload' } });
 
-    expect((result.data as Record<string, unknown>).url).toBe('https://x/y');
-    expect((result.data as Record<string, unknown>).body).toBeUndefined();
+    expect(result.data).toBeUndefined();
   });
 });

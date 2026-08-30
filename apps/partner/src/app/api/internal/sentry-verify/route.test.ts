@@ -14,66 +14,147 @@ jest.mock('@sentry/nextjs', () => ({
   flush: (...args: unknown[]) => mockFlush(...args),
 }));
 
-import { GET } from './route';
+import { POST } from './route';
+import { VERIFY_TOKEN_HEADER } from '@/lib/observability/sentryVerifyGate';
 
-// `NODE_ENV` is typed readonly on `process.env`; these tests need to flip it
-// per-case, so route through a mutable view of the same object.
-const env = process.env as { NODE_ENV: string; SENTRY_VERIFY_ENABLED?: string };
+const TOKEN = 'staging-verify-token-for-tests';
 
-describe('GET /api/internal/sentry-verify', () => {
-  const originalNodeEnv = env.NODE_ENV;
-  const originalFlag = env.SENTRY_VERIFY_ENABLED;
+// `NODE_ENV` is typed readonly on `process.env`; the gate no longer reads it,
+// but these tests set it to `production` anyway — the point of the fix is
+// that a production-mode build with staging runtime values still works.
+const env = process.env as Record<string, string | undefined>;
 
-  afterEach(() => {
-    env.NODE_ENV = originalNodeEnv;
-    env.SENTRY_VERIFY_ENABLED = originalFlag;
+function post(headers: Record<string, string> = {}): Promise<Response> {
+  return POST(new Request('http://localhost/api/internal/sentry-verify', { method: 'POST', headers }));
+}
+
+function withToken(token = TOKEN) {
+  return { [VERIFY_TOKEN_HEADER]: token };
+}
+
+describe('POST /api/internal/sentry-verify (partner)', () => {
+  const original = { ...process.env };
+
+  beforeEach(() => {
+    // The shape a correctly configured staging box has: built in production
+    // mode, told at runtime that it is staging.
+    env.NODE_ENV = 'production';
+    env.APP_ENV = 'staging';
+    env.SENTRY_VERIFY_ENABLED = 'true';
+    env.SENTRY_VERIFY_TOKEN = TOKEN;
     mockWithScope.mockClear();
     mockCaptureException.mockClear();
     mockFlush.mockClear();
-  });
-
-  it('returns 404 in production even if the flag is enabled', async () => {
-    env.NODE_ENV = 'production';
-    env.SENTRY_VERIFY_ENABLED = 'true';
-
-    const response = await GET();
-
-    expect(response.status).toBe(404);
-    expect(mockCaptureException).not.toHaveBeenCalled();
-  });
-
-  it('returns 404 outside production when the flag is not set', async () => {
-    env.NODE_ENV = 'development';
-    delete env.SENTRY_VERIFY_ENABLED;
-
-    const response = await GET();
-
-    expect(response.status).toBe(404);
-    expect(mockCaptureException).not.toHaveBeenCalled();
-  });
-
-  it('sends exactly one synthetic error and reports success outside production with the flag on', async () => {
-    env.NODE_ENV = 'development';
-    env.SENTRY_VERIFY_ENABLED = 'true';
     mockFlush.mockResolvedValue(true);
+  });
 
-    const response = await GET();
-    const body = (await response.json()) as { sent: boolean };
+  afterEach(() => {
+    for (const key of Object.keys(process.env)) delete env[key];
+    Object.assign(process.env, original);
+  });
+
+  it('fires the probe when the environment is staging and the token matches — even though the build is production-mode', async () => {
+    const response = await post(withToken());
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ sent: true });
+    expect(await response.json()).toEqual({ sent: true });
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
-    expect(mockCaptureException.mock.calls[0]![0]).toBeInstanceOf(Error);
+    expect((mockCaptureException.mock.calls[0]![0] as Error).name).toBe('SentryVerificationProbe');
   });
 
-  it('never leaks a stack trace, config, or secret in the response body', async () => {
-    env.NODE_ENV = 'development';
-    env.SENTRY_VERIFY_ENABLED = 'true';
-    mockFlush.mockResolvedValue(true);
+  it.each(['development', 'preview', 'staging'])('allows the %s environment', async (appEnv) => {
+    env.APP_ENV = appEnv;
 
-    const response = await GET();
-    const text = await response.text();
+    expect((await post(withToken())).status).toBe(200);
+  });
 
-    expect(text).toBe(JSON.stringify({ sent: true }));
+  it('sends nothing but service and kind tags', async () => {
+    const setTag = jest.fn();
+    mockWithScope.mockImplementationOnce((cb) => cb({ setTag }));
+
+    await post(withToken());
+
+    expect(setTag.mock.calls).toEqual([
+      ['service', 'partner'],
+      ['kind', 'sentry-verify'],
+    ]);
+  });
+
+  describe('every denied case returns the same 404 and captures nothing', () => {
+    async function expectDenied() {
+      const response = await post(withToken());
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe('');
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockWithScope).not.toHaveBeenCalled();
+      expect(mockFlush).not.toHaveBeenCalled();
+    }
+
+    it('production APP_ENV', async () => {
+      env.APP_ENV = 'production';
+      await expectDenied();
+    });
+
+    it('unset APP_ENV', async () => {
+      delete env.APP_ENV;
+      await expectDenied();
+    });
+
+    it('an APP_ENV nobody allowlisted', async () => {
+      env.APP_ENV = 'prod-eu';
+      await expectDenied();
+    });
+
+    it('the enable flag is missing', async () => {
+      delete env.SENTRY_VERIFY_ENABLED;
+      await expectDenied();
+    });
+
+    it('the enable flag is not exactly "true"', async () => {
+      env.SENTRY_VERIFY_ENABLED = 'TRUE';
+      await expectDenied();
+    });
+
+    it('no token is configured on the server', async () => {
+      delete env.SENTRY_VERIFY_TOKEN;
+      await expectDenied();
+    });
+
+    it('the request supplies no token', async () => {
+      const response = await post();
+      expect(response.status).toBe(404);
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it('the request supplies the wrong token', async () => {
+      const response = await post(withToken('not-the-configured-token'));
+      expect(response.status).toBe(404);
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it('the request supplies a token that is a prefix of the real one', async () => {
+      const response = await post(withToken(TOKEN.slice(0, -1)));
+      expect(response.status).toBe(404);
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+  });
+
+  it('tells every layer not to cache either answer', async () => {
+    const allowed = await post(withToken());
+    env.APP_ENV = 'production';
+    const denied = await post(withToken());
+
+    for (const response of [allowed, denied]) {
+      expect(response.headers.get('cache-control')).toContain('no-store');
+    }
+  });
+
+  it('never echoes the supplied token back', async () => {
+    env.APP_ENV = 'production';
+    const response = await post(withToken());
+
+    const body = await response.text();
+    expect(body).not.toContain(TOKEN);
+    expect(JSON.stringify([...response.headers])).not.toContain(TOKEN);
   });
 });

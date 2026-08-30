@@ -1,12 +1,20 @@
 import * as Sentry from '@sentry/nextjs';
+import { isVerifyRequestAllowed, VERIFY_TOKEN_HEADER } from '@/lib/observability/sentryVerifyGate';
 
 /**
- * What the operator actually looks for in Sentry. The privacy sanitizer
- * drops every free-text field, the error's own message included, so a
- * per-run marker string would never arrive — but a class *name* does:
- * `sanitizeSentryEvent` keeps `exception.type` when it looks like an
- * identifier. Combined with the allowlisted `kind: 'sentry-verify'` tag,
- * that is the whole search.
+ * Non-production-only Sentry verification endpoint.
+ *
+ * Sends one synthetic error to whatever DSN this deployment is configured
+ * with, so a human can confirm events actually reach Sentry without waiting
+ * for a real bug. Every condition that has to hold — and why the gate reads
+ * no `NODE_ENV` — is in `sentryVerifyGate.ts`.
+ *
+ * POST rather than GET on purpose: a GET is something a crawler follows, a
+ * browser prefetches, and a link in a chat message unfurls. None of those
+ * should be able to put an event in Sentry.
+ *
+ * The response is a boolean and nothing else — no stack trace, no config, no
+ * request data, and never any hint about which part of the gate refused.
  */
 class SentryVerificationProbe extends Error {
   constructor() {
@@ -16,28 +24,27 @@ class SentryVerificationProbe extends Error {
 }
 
 /**
- * Non-production-only Sentry verification endpoint.
- *
- * Sends one synthetic error to whatever DSN this deployment is configured
- * with, so a human can confirm events actually reach Sentry without relying
- * on a real bug. Gated twice on purpose: `NODE_ENV !== 'production'` alone
- * would still let it run in a staging box that happens to share prod's env
- * shape, so a separate opt-in flag is required as well. Neither check is
- * skippable by request data — both come only from server-side env vars.
- *
- * Never returns anything beyond a boolean: no stack trace, no config, no
- * request data, no secret.
+ * Route-level opt out of every caching layer Next.js has. The gate is a
+ * runtime decision; a cached 200 from a staging deploy that later became
+ * something else would be a decision made once and replayed forever.
  */
-function jsonResponse(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
+export const dynamic = 'force-dynamic';
+
+const NO_STORE = {
+  'cache-control': 'no-store, no-cache, must-revalidate, max-age=0',
+  pragma: 'no-cache',
+} as const;
+
+function notFound(): Response {
+  return new Response(null, { status: 404, headers: { ...NO_STORE } });
 }
 
-export async function GET(): Promise<Response> {
-  if (process.env.NODE_ENV === 'production' || process.env.SENTRY_VERIFY_ENABLED !== 'true') {
-    return new Response(null, { status: 404 });
+export async function POST(request: Request): Promise<Response> {
+  // Read at request time, from the live environment. The supplied token is
+  // never logged and never attached to the event.
+  const supplied = request.headers.get(VERIFY_TOKEN_HEADER);
+  if (!isVerifyRequestAllowed(process.env, supplied)) {
+    return notFound();
   }
 
   Sentry.withScope((scope) => {
@@ -47,5 +54,8 @@ export async function GET(): Promise<Response> {
   });
   const flushed = await Sentry.flush(5000);
 
-  return jsonResponse({ sent: flushed }, 200);
+  return new Response(JSON.stringify({ sent: flushed }), {
+    status: 200,
+    headers: { ...NO_STORE, 'content-type': 'application/json' },
+  });
 }

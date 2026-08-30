@@ -203,17 +203,33 @@ of the other two.
 - Env vars, both apps: `NEXT_PUBLIC_SENTRY_DSN` (public — DSNs are meant to
   be client-embedded), `NEXT_PUBLIC_SENTRY_ENVIRONMENT` (optional, falls
   back to `NODE_ENV`), `GIT_COMMIT_SHA` (build-time only, becomes
-  `NEXT_PUBLIC_SENTRY_RELEASE`). Build/CI-only secrets: `SENTRY_ORG`,
+  `NEXT_PUBLIC_SENTRY_RELEASE`). Runtime-only, for the verification route:
+  `APP_ENV`, `SENTRY_VERIFY_ENABLED`, and `SENTRY_VERIFY_TOKEN` — the last
+  of which **is a secret**: anyone holding it can put events in your Sentry
+  project from any box where the other two are also set. It belongs in the
+  deployment's secret storage, never in a repository file, and never in a
+  build argument (the route reads it at request time, so it does not need to
+  exist during `next build`). Build/CI-only secrets: `SENTRY_ORG`,
   `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` (source-map upload; never reaches
   the browser bundle since it is only read inside `next.config.ts` at build
   time).
-- Verification: `GET /api/internal/sentry-verify` — returns 404 unless both
-  `NODE_ENV !== 'production'` **and** `SENTRY_VERIFY_ENABLED=true` are set;
-  never returns anything beyond `{ "sent": boolean }`. Covered by
-  `src/app/api/internal/sentry-verify/route.test.ts` in each app (404 in
-  production even with the flag on, 404 outside production with the flag
-  off, success path, and a check that the response body never grows beyond
-  the boolean).
+- Verification: `POST /api/internal/sentry-verify`. Four runtime conditions,
+  all required, none of them `NODE_ENV` (see `sentryVerifyGate.ts` for why):
+  `APP_ENV` ∈ {`development`, `staging`, `preview`};
+  `SENTRY_VERIFY_ENABLED=true`; `SENTRY_VERIFY_TOKEN` configured; and the
+  request carrying that token in the `x-sentry-verify-token` header, compared
+  in constant time after hashing both sides. POST rather than GET so a
+  crawler, a prefetch or an unfurled link cannot fire it. Every refusal is
+  the same empty 404, captures nothing, and reveals nothing about which
+  condition failed; both answers carry `cache-control: no-store`. Success
+  returns `{ "sent": boolean }` and nothing else.
+  Covered by `src/app/api/internal/sentry-verify/route.test.ts` (16 cases per
+  app, including production `APP_ENV`, unset/unlisted `APP_ENV`, missing and
+  non-exact flag, missing/absent/wrong/prefix token, and a check that the
+  token is never echoed back), and — because a unit test cannot see
+  const-folding — by `scripts/verify-sentry-verify-route.sh`, which does a
+  real `NODE_ENV=production` build and then supplies the runtime values only
+  when the server starts.
 
 ## What's still unverified
 
@@ -229,19 +245,21 @@ trace. The operator-facing checklist for doing that — which Sentry projects
 to create, which secret goes where, and the exact commands — is
 `docs/SENTRY_STAGING_ACTIVATION_RU.md` (Russian).
 
-Two known gaps in the verification mechanisms, found while writing that
-checklist and not yet fixed:
+Both verification gaps recorded there have since been closed (task #3):
 
-- **admin/partner**: `GET /api/internal/sentry-verify` returns 404 in any
-  *built* deployment, even with `SENTRY_VERIFY_ENABLED=true`. Next.js
-  const-folds `process.env.NODE_ENV` at `next build` time, and the Dockerfiles
-  build with `NODE_ENV=production`, so the guard collapses to an
-  unconditional 404. It fails closed (nothing leaks), but the route is
-  unreachable outside `next dev`. Fixing it means reading the gate at runtime
-  — a security-relevant change, left for a decision rather than made quietly.
-- **mobile**: there is no deliberate trigger at all. `ErrorBoundary` and
-  `Sentry.wrap` capture real errors, but nothing lets an operator produce one
-  on demand from a `preview` build.
+- **admin/partner**: `POST /api/internal/sentry-verify`, gated at runtime on
+  `APP_ENV` ∈ {development, staging, preview} **and**
+  `SENTRY_VERIFY_ENABLED=true` **and** a `SENTRY_VERIFY_TOKEN` matching the
+  `x-sentry-verify-token` request header, compared in constant time. No
+  `NODE_ENV` anywhere in the gate — that is what made the old route a
+  build-time constant. Every refusal is the same bodiless 404 with no-store
+  headers, and captures nothing. Proven against a real production-mode build
+  by `scripts/verify-sentry-verify-route.sh`.
+- **mobile**: `src/diagnostics/sentryProbe.ts`, reachable only from the
+  diagnostic overlay's `SENTRY` button, and only in a build where
+  `extra.diagnostics === true` **and** `extra.appEnv` ∈ {preview, staging}.
+  Nothing fires on startup; the probe captures and flushes without crashing
+  the app or interrupting a flow.
 
 The API's script (`node dist/scripts/sentry-verify.js` inside the container)
 works and was exercised locally in both refusal paths.

@@ -16,7 +16,8 @@ const stagingFallback =
     ? 'https://tutak-staging-api.onrender.com/v1'
     : 'http://localhost:4000/v1';
 
-export const API_BASE_URL = runtimeApiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || stagingFallback;
+export const API_BASE_URL =
+  runtimeApiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || stagingFallback;
 
 export const httpClient = createHttpClient(useAuthStore, API_BASE_URL);
 

@@ -45,7 +45,7 @@ got here.
 | [ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md](ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md) | Completes the above: frozen dual-rate billing, margin split, the double-entry ledger for an app-initiated session |
 | [ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md](ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md) | The customer prepaid-balance mechanism that actually collects what the financial-accounting doc above left as a growing receivable |
 | [FUEL_STATION_BRANCHES_2026-08-29.md](FUEL_STATION_BRANCHES_2026-08-29.md) | Branch-scoped fuel types, staff assignment, and branch-specific QR codes |
-| [CODEBASE_AUDIT_2026-08-30.md](CODEBASE_AUDIT_2026-08-30.md) | The bloat/duplication/dead-code sweep across the whole monorepo — what was deleted, what looked dead but wasn't, what was flagged instead of touched |
+| [CODEBASE_AUDIT_2026-08-30.md](CODEBASE_AUDIT_2026-08-30.md) · [...RU.md](CODEBASE_AUDIT_2026-08-30_RU.md) | The bloat/duplication/dead-code sweep across the whole monorepo — what was deleted, what looked dead but wasn't, what was flagged instead of touched |
 | [PARTNER_PROFILE_2026-08-24.md](PARTNER_PROFILE_2026-08-24.md) · [PARTNER_SETTLEMENT_CYCLE_2026-08-24.md](PARTNER_SETTLEMENT_CYCLE_2026-08-24.md) · [PARTNER_COLLECTIONS_HARDENING_2026-08-24.md](PARTNER_COLLECTIONS_HARDENING_2026-08-24.md) | Partner-facing public profile, the biweekly settlement cycle, and dual-control hardening on cash collections |
 | [MEDIA_SYSTEM_2026-08-23.md](MEDIA_SYSTEM_2026-08-23.md) | Upload/moderation/delivery for partner and profile images |
 | [MAP_REDESIGN_2026-08-23.md](MAP_REDESIGN_2026-08-23.md) | The unified partners+EV-stations map screen |

@@ -8,6 +8,57 @@ most of it.
 
 ---
 
+## Database connections
+
+Prisma sizes its own pool when nothing says otherwise: `num_physical_cpus * 2
++ 1` per client process, with a 10-second checkout timeout. That is a
+reasonable default and a poor one to scale on, because it is per process and
+derived from whatever machine the process landed on. Four API instances on
+2-vCPU containers ask PostgreSQL for 20 connections; the same four on 8-vCPU
+containers ask for 68, with no change to any configuration. Past
+`max_connections` PostgreSQL answers `FATAL: sorry, too many clients already`
+— to every instance, for every request, including the health check that would
+otherwise have pulled the failing instance out of rotation.
+
+`DATABASE_CONNECTION_LIMIT` states the answer instead of inheriting it.
+Unset, nothing changes. Set, it is written into the connection string Prisma
+opens with — and it never overrides a `connection_limit` already present in
+`DATABASE_URL`, because whoever put it there has already decided.
+
+The arithmetic, which only the deployment can do:
+
+```
+per_instance = (max_connections - reserved) / api_instances
+```
+
+- `max_connections` — ask the database, not the documentation:
+  `SHOW max_connections;`
+- `reserved` — everything that is not an API instance and still needs to
+  connect: `superuser_reserved_connections` (usually 3), a migration running
+  during a deploy, a backup job, `psql` in someone's terminal, the platform's
+  own monitoring. Ten is a defensible floor on a small deployment.
+- `api_instances` — the *maximum* the platform may run, not today's count.
+  During a rolling deploy both the old and the new set are connected at once,
+  so a deploy is when this budget is actually spent.
+
+Worked example, small Render deployment: `max_connections = 97`, reserve 10,
+2 API instances that briefly become 4 mid-deploy → `(97 - 10) / 4 ≈ 21`. Set
+`DATABASE_CONNECTION_LIMIT=20` and a rolling deploy still fits.
+
+`DATABASE_POOL_TIMEOUT` (seconds) is the companion setting: how long a query
+waits for a free connection before failing. Raising it hides pool exhaustion
+as latency; lowering it turns it into fast, visible errors. Leave it alone
+unless there is a reason.
+
+Two related facts worth knowing:
+
+- an interactive transaction holds its connection for its whole duration, so
+  the money paths — which are transactional by design — are what actually
+  consumes the pool under load;
+- `prisma migrate deploy` opens its own connection and takes an advisory
+  lock. It is part of `reserved`, not of the API's share.
+
+
 ## 1. What production refuses to run without
 
 `NODE_ENV` has three real values: `development` (a laptop), `staging` (a real

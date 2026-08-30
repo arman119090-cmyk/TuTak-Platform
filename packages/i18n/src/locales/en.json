@@ -17,7 +17,9 @@
     "amd": "AMD",
     "points": "points",
     "somethingWentWrong": "Something went wrong. Please try again.",
-    "clear": "Clear"
+    "clear": "Clear",
+    "offlineTitle": "No internet connection",
+    "offlineBody": "Check your connection — data will refresh by itself."
   },
   "auth": {
     "welcomeBack": "Welcome back",

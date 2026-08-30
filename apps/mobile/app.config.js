@@ -95,6 +95,63 @@ function diagnosticsEnabled() {
   return on;
 }
 
+/**
+ * Transport security, decided at build time rather than hoped for at runtime.
+ *
+ * The check above already refuses `localhost` outside development, which
+ * catches the build that can reach nothing. It says nothing about the build
+ * that reaches a real server over plain HTTP — where every request carries a
+ * bearer token, a phone number and a purchase amount across whatever network
+ * the customer happens to be on, readable and rewritable by anyone between.
+ * A loyalty app whose QR purchase can be modified in flight has a worse
+ * problem than an app that does not work.
+ *
+ * So:
+ *
+ *  - `production` must be HTTPS. There is no override, because there is no
+ *    good reason: a shipped build is on other people's phones and other
+ *    people's networks.
+ *  - `preview`/`staging` should be HTTPS too, and may be told otherwise once,
+ *    explicitly, by `ALLOW_INSECURE_API_BASE_URL=1` — for a rehearsal against
+ *    a server that has no certificate yet. It is a deliberate act with a name,
+ *    not a default, and it prints what it allowed so a build log says so.
+ *  - `development` is untouched: Metro serves over HTTP on a LAN and the
+ *    address is rewritten at runtime anyway (`src/data/api/apiBaseUrl.ts`).
+ *
+ * Note what this does *not* claim: HTTPS says the connection is encrypted to
+ * whoever presented a certificate the device trusts. It is not certificate
+ * pinning, and this app has none — see docs/MOBILE_NETWORK_SECURITY_RU.md for
+ * why, and for what implementing it would actually require.
+ */
+function assertTransportSecurity(appEnv, url) {
+  if (url.startsWith('https://')) return;
+
+  const insecure =
+    `API_BASE_URL is "${url}" and APP_ENV is "${appEnv}". That is an unencrypted connection, ` +
+    'and every request this app makes carries an access token, a phone number and purchase ' +
+    'amounts over it.';
+
+  if (appEnv === 'production') {
+    throw new Error(
+      `${insecure}\n\nA production build must use https://. There is no override for this.`,
+    );
+  }
+
+  if (process.env.ALLOW_INSECURE_API_BASE_URL !== '1') {
+    throw new Error(
+      `${insecure}\n\nIf this is deliberate — a rehearsal against a server with no ` +
+        'certificate yet — say so explicitly:\n' +
+        '  ALLOW_INSECURE_API_BASE_URL=1 eas build --profile preview ...\n\n' +
+        'Do not use that for anything anyone else installs.',
+    );
+  }
+
+  console.warn(
+    `[app.config] ALLOW_INSECURE_API_BASE_URL=1: building ${appEnv} against plain HTTP ` +
+      `(${url}). Traffic from this build is readable and modifiable in transit.`,
+  );
+}
+
 function apiBaseUrl() {
   const appEnv = process.env.APP_ENV ?? 'development';
   refuseDemoEnv(appEnv);
@@ -123,6 +180,8 @@ function apiBaseUrl() {
         'phone — this build could only ever talk to itself. Point it at a reachable address.',
     );
   }
+
+  assertTransportSecurity(appEnv, configured);
 
   return configured;
 }
@@ -244,3 +303,9 @@ module.exports = ({ config }) => ({
     },
   },
 });
+
+// Exported for `src/appConfigGuards.test.ts`: these are build-time refusals,
+// and a refusal that is never exercised is a comment. Requiring this file
+// from a test evaluates the module, not the config factory below it.
+module.exports.assertTransportSecurity = assertTransportSecurity;
+module.exports.apiBaseUrl = apiBaseUrl;

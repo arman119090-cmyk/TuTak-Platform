@@ -49,22 +49,44 @@ That arithmetic gives an upper bound. There is also a floor, and it is
 sharper than the ceiling.
 
 A purchase confirmation holds its connection for the whole of a
-multi-round-trip transaction, so the pool size is the number of
-confirmations an instance may have in flight at once. Measured on the
+multi-round-trip transaction, so the pool size governs how many
+confirmations an instance can have in flight at once. Measured on the
 development container: at concurrency 8 against a pool of 9, the path runs
 at 75.6 confirmations a second with no failures; at concurrency 16 against
 that same pool, it manages 0.7 a second and fails 25 of 32 requests. One
 step past the pool size takes the platform's main money path from healthy to
-94% errors — there is no gradual degradation in between. Raising the pool to
-40 restores it completely at concurrency 32. The numbers and the method are
-in [LOAD_TEST.md](LOAD_TEST.md#the-purchase-path-and-the-cliff--30-august-2026).
+94% errors — there is no gradual degradation in between.
 
-So `DATABASE_CONNECTION_LIMIT` has to satisfy both: above the peak
-concurrent confirmations one instance will see, and below its share of
-`max_connections`. When those two cannot both hold, the answer is more
-instances or a connection pooler in front of PostgreSQL — never the smaller
-pool, because that failure mode is an outage on the busiest path rather than
-a slow one.
+**The pool must exceed peak concurrency, not merely equal it.** A
+confirmation needs connections outside its transaction as well as inside —
+it reads the intent, resolves the referral chain, and writes an audit record
+— so a pool sized exactly to the worker count starves: measured at pool 40
+with 40 concurrent confirmations, 119 of 120 failed, while the same
+concurrency against a pool of 64 ran clean at 65.7/s. The same starvation
+reappeared at pool 64 with 64 workers. Whatever headroom you choose, verify
+it at your own peak rather than assuming it.
+
+The ratio that worked here — a pool about 1.5× peak concurrency — is an
+**observation from one benchmark on one machine, not an invariant**. It has
+no theoretical backing, it was not tuned, and it will move with the shape of
+your traffic and the number of round-trips a settlement makes. Treat it as a
+starting point to measure from.
+
+`DATABASE_CONNECTION_LIMIT=40` is likewise **a staging configuration, not a
+universal production value**. It was chosen for the staging deployment and
+verified healthy there at concurrency 8, 16 and 32; it is not a
+recommendation for any other deployment, and it is not a ceiling the
+platform grows into safely on its own.
+
+So `DATABASE_CONNECTION_LIMIT` has to satisfy both constraints at once: high
+enough to clear the peak concurrent confirmations one instance will see with
+headroom, and low enough that every instance's pool together — counting the
+old and new sets during a rolling deploy — fits inside `max_connections`.
+When those two cannot both hold, the answer is more instances or a
+connection pooler in front of PostgreSQL, never the smaller pool: that
+failure mode is an outage on the busiest path rather than a slow one. The
+numbers and the method are in
+[LOAD_TEST.md](LOAD_TEST.md#the-purchase-path-and-the-cliff--30-august-2026).
 
 `DATABASE_POOL_TIMEOUT` (seconds) is the companion setting: how long a query
 waits for a free connection before failing. Raising it hides pool exhaustion

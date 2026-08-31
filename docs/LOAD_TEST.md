@@ -37,6 +37,14 @@ LOAD_CONCURRENCY=32 LOAD_SECONDS=15 LOAD_CUSTOMERS=50 node dist/scripts/load-tes
 # by default — the busy-fuel-station case. Raise it to tell "this merchant is
 # saturated" apart from "the platform is saturated".
 LOAD_PARTNERS=32 node dist/scripts/load-test.js
+
+# The money-path phases: LOAD_MONEY_CUSTOMERS customers spread over
+# LOAD_REFERRAL_TREES three-deep referral trees, each warmed up with one
+# purchase of LOAD_WARMUP_GROSS so they have bonus to spend, then spending
+# LOAD_BONUS_SPEND of it per purchase. Raising the customer count against a
+# fixed concurrency is what separates same-customer contention from a
+# platform-wide limit.
+LOAD_MONEY_CUSTOMERS=100 LOAD_REFERRAL_TREES=10 node dist/scripts/load-test.js
 ```
 
 It drives the engines directly rather than going over HTTP, on purpose:
@@ -148,6 +156,102 @@ with a replay of its own postings, and the intents were left
 manual compensation. The customer sees an error and taps again. That is the
 atomic-claim design in `settlePurchase` doing exactly what its docblock
 promises, under a load that breaks everything around it.
+
+### The money paths, and the one conflict nobody was catching — 31 August 2026
+
+Every phase up to here priced a purchase but never moved a customer's own
+money: nothing requested bonus, so no hold was ever taken, and nobody had a
+referrer, so the whole pool collapsed onto TuTak's residual leg. Three
+phases now cover that. Customers earn a real balance from a warm-up purchase
+rather than having one injected, and referral trees are built from the same
+`ReferralInvite` rows the program itself walks — three referrers deep, with
+several customers sharing each tree's level-1 referrer and several
+independent trees settling at once.
+
+Run at `DATABASE_CONNECTION_LIMIT=40`, one merchant, 20 money-path
+customers, 4 trees, 15 s per phase.
+
+**Before** — `BonusEngineService.reserve` on Serializable with nothing
+retrying it:
+
+| Concurrency | Bonus (reservation) | 3-level chain | Bonus + referral |
+|---|---|---|---|
+| 8 | 38.4/s, **306 of 888 failed** | 41.9/s, 0 of 634 | 22.0/s, **77 of 412** |
+| 16 | 36.4/s, **443 of 997** | 42.9/s, 0 of 657 | 21.9/s, **387 of 722** |
+| 32 | 32.1/s, **718 of 1208** | 41.8/s, 0 of 656 | 19.3/s, **771 of 1069** |
+
+**After** the retry (see below):
+
+| Concurrency | Bonus (reservation) | 3-level chain | Bonus + referral |
+|---|---|---|---|
+| 8 | 39.4/s, 2 of 599 | 41.5/s, 0 of 629 | 23.1/s, 0 of 353 |
+| 16 | 38.8/s, 46 of 638 | 43.3/s, 0 of 660 | 25.0/s, 3 of 387 |
+| 32 | 33.3/s, 40 of 564 | 40.4/s, 2 of 632 | 23.0/s, 9 of 380 |
+
+**The referral side never failed once.** Concurrent purchases through
+shared and independent chains, at every concurrency, before and after: zero
+failures, and every split matched the program's own `computePoolSplit` on
+all six legs across ~2,500 confirmed purchases per run.
+
+**The bonus side was failing a third to three-quarters of the time,** and
+the reason was one missing retry. `reserve` runs Serializable — it reads a
+customer's available lots and writes them, and Serializable aborts the loser
+of a conflict rather than queueing it. `ReferralService`,
+`PurchaseIntentRefundService`, `EvSessionsService` and `LedgerService` all
+wrap their Serializable transactions in a retry for exactly this reason;
+`reserve` was the one that did not, so the abort reached the customer as a
+failed payment.
+
+It is same-customer contention, not a global limit: two purchases by one
+customer both touch that customer's lots. Holding concurrency at 16 and
+raising the customer count from 20 to 100 dropped the failure rate from 44%
+to 2% on its own, which is the same collision measured from the other end.
+
+Nothing was ever left half-applied. Across every run above, before and
+after, all twelve money-path invariants held: wallet balances equal their
+own lots and holds, every lot's consumption equals its allocations, no
+reservation outlives or contradicts its intent, no wallet or deferred lot is
+credited twice for one transaction, no failed confirmation left a financial
+effect behind, and every failed purchase left its intent
+`AWAITING_CONFIRMATION` with the customer's bonus untouched — retry-safe,
+with no manual compensation. The ledger summed to zero and every account
+matched a replay of its postings in all of them.
+
+### Why payouts time out, and why that one is not a bug
+
+A handful of payouts — 6 to 9 per thousand, from concurrency 16 upward —
+fail with Prisma's 5-second interactive-transaction timeout. The
+investigation:
+
+- **Where the time goes.** Not in the work. A payout transaction runs in
+  about 18 ms uncontended (concurrency 1, phase 4). Sampling
+  `pg_stat_activity` through the phase finds backends parked on `Lock:
+  tuple` against `SELECT balance FROM "ledger_accounts" WHERE id = $1 FOR
+  UPDATE` — queueing for one partner's payable row. The 5-second clock
+  starts when the transaction opens, before the lock is acquired, so a
+  request that arrives when the queue is deep can burn its whole budget
+  waiting its turn.
+- **Is the serialization expected?** Yes, and it is the point. That
+  `FOR UPDATE` is what stops two concurrent payouts from both reading the
+  same pre-payout balance and both paying the partner. Removing it
+  reintroduces double payment.
+- **Can work move out of the transaction?** The obvious candidates already
+  did: the idempotency lookup and both `accountFor` calls run before it
+  opens. What remains — the balance check, the payout row, the ledger
+  posting, and the update that links them — is the atomic unit itself. The
+  one reducible round-trip is that final link, and removing it means
+  letting callers supply a ledger-transaction id, which changes the shared
+  `LedgerService` API used by every engine to shave a fraction off a hold
+  time that is not the bottleneck. Not worth it.
+- **Correctness or operations?** Operations. The transaction rolls back
+  whole: 957 payouts across the runs above, **zero** left without their
+  ledger transaction. The idempotency key survives the failure, and the
+  code already treats a repeat of the same key as the same payout, so a
+  retry produces exactly one. It is a retry case, on an admin action, at
+  under 1%.
+
+No code was changed for this. Raising the transaction timeout would hide
+the queue rather than shorten it, and the queue is doing its job.
 
 ## Reading them
 

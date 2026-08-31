@@ -12,6 +12,7 @@ import {
   hasPartnerScope,
   isPlatformAdmin,
 } from '../../common/auth/partner-scope';
+import { branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -116,7 +117,11 @@ export class PartnersController {
     if (!hasPartnerScope(user, id) && !(await this.partnersService.isMember(id, user.id))) {
       throw new ForbiddenException('You are not a member of this partner');
     }
-    return this.transactionsService.history({ ...query, partnerId: id });
+    // Branch-scoped staff see only their own branches' operations. The
+    // filter is applied in the query, not over the returned page — a
+    // post-filter would silently shrink pages and leak total volume through
+    // the cursor.
+    return this.transactionsService.history({ ...query, partnerId: id }, branchFilterFor(user, id));
   }
 
   /**

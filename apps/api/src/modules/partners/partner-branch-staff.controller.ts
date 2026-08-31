@@ -4,7 +4,7 @@ import { AuditAction } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertPartnerOwner, assertPartnerScope } from '../../common/auth/partner-scope';
-import { assertBranchScope } from '../../common/auth/branch-scope';
+import { assertBranchScope, branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AuditService } from '../audit/audit.service';
 import { AssignBranchStaffDto } from './dto/assign-branch-staff.dto';
@@ -105,7 +105,11 @@ export class PartnerStaffController {
     @Query('includeInactive') includeInactive?: string,
   ) {
     assertPartnerScope(user, partnerId);
-    return this.staffService.listForPartner(partnerId, includeInactive === 'true');
+    return this.staffService.listForPartner(
+      partnerId,
+      includeInactive === 'true',
+      branchFilterFor(user, partnerId),
+    );
   }
 
   /** Owner/admin granting or revoking a trusted manager's all-branch reach. */

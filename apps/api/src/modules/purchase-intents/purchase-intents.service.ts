@@ -314,6 +314,11 @@ export class PurchaseIntentsService {
     const transaction = await this.transactionsService.create({
       userId: customerId,
       partnerId: partner.id,
+      // The one place a branch is known at the moment a transaction is
+      // written. Carried onto the transaction itself so branch-scoped reads
+      // (history, analytics) can filter in SQL rather than by walking back
+      // through the intent — see `Transaction.partnerBranchId`.
+      partnerBranchId: dto.partnerBranchId,
       type: TransactionType.PARTNER_PURCHASE,
       amount: grossAmount,
       bonusAppliedAmount: bonusAmountRequested,

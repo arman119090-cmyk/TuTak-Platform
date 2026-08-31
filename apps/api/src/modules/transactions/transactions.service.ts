@@ -14,6 +14,15 @@ type Tx = Prisma.TransactionClient;
 export interface CreateTransactionParams {
   userId: string;
   partnerId?: string | null;
+  /**
+   * Which branch of `partnerId` this happened at, where that is known.
+   *
+   * Passed by the purchase-intent flow, which is the only writer that has a
+   * branch to record. Every other caller — legacy partner-wide QR, EV
+   * sessions, CDR reconciliation, roaming — leaves it undefined, and those
+   * rows stay branch-less exactly as they are today.
+   */
+  partnerBranchId?: string | null;
   type: TransactionType;
   amount: Decimal | number | string;
   currency?: Currency;
@@ -57,6 +66,7 @@ export class TransactionsService {
       data: {
         userId: params.userId,
         partnerId: params.partnerId ?? undefined,
+        partnerBranchId: params.partnerBranchId ?? undefined,
         brandDisplayName: brand?.displayName ?? null,
         brandLogoAssetId: brand?.logoAssetId ?? null,
         type: params.type,
@@ -179,10 +189,25 @@ export class TransactionsService {
     });
   }
 
-  async history(query: TransactionHistoryQueryDto) {
+  /**
+   * `branchIds` is `branchFilterFor`'s answer for the caller, and is
+   * deliberately a separate argument rather than a field on
+   * `TransactionHistoryQueryDto`: the DTO is bound from client-supplied
+   * query parameters, so an authorization filter living there could be
+   * widened by the very caller it restricts. `null` means unrestricted (a
+   * customer reading their own history, an owner, an admin, an all-branch
+   * manager).
+   *
+   * A restricted caller does not see branch-less rows. Legacy partner-wide
+   * QR, EV sessions, CDR reconciliation and roaming record no branch, and
+   * `{ in: [...] }` excludes null — which is the safe direction, and the
+   * same one `PurchaseIntent` scoping already takes.
+   */
+  async history(query: TransactionHistoryQueryDto, branchIds: string[] | null = null) {
     const where: Prisma.TransactionWhereInput = {
       userId: query.userId,
       partnerId: query.partnerId,
+      ...(branchIds === null ? {} : { partnerBranchId: { in: branchIds } }),
       type: query.type,
       status: query.status,
       createdAt:

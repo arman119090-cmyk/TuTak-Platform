@@ -15,11 +15,20 @@ const releaseSha = process.env.GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'unkn
 // which `connect-src`/`img-src` would then also lock the app out of the real
 // API for (see apps/partner/src/lib/httpClient.ts for the client-side half of
 // this fallback).
+//
+// The Dockerfile's own `ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1`
+// means that when Render never forwards its dashboard value as a build arg,
+// `process.env.NEXT_PUBLIC_API_BASE_URL` is still that exact literal here —
+// never empty — so a plain `?? fallback` never reaches the staging fallback
+// below. Checked against the literal instead of mere presence for the same
+// reason httpClient.ts does.
+const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.APP_ENV === 'staging'
-    ? 'https://tutak-staging-api.onrender.com/v1'
-    : 'http://localhost:4000/v1');
+  configuredApiBaseUrl && configuredApiBaseUrl !== 'http://localhost:4000/v1'
+    ? configuredApiBaseUrl
+    : process.env.APP_ENV === 'staging'
+      ? 'https://tutak-staging-api.onrender.com/v1'
+      : 'http://localhost:4000/v1';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

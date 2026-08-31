@@ -23,7 +23,7 @@
  */
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { RoleName } from '@prisma/client';
+import { ReferrerType, RoleName } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import * as argon2 from 'argon2';
 import * as os from 'os';
@@ -33,6 +33,7 @@ import { PaymentEngineService } from '../modules/payments/payment-engine.service
 import { PayoutEngineService } from '../modules/payouts/payout-engine.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
 import { PurchaseIntentsService } from '../modules/purchase-intents/purchase-intents.service';
+import { ReferralService } from '../modules/referral/referral.service';
 import { LedgerService } from '../modules/ledger/ledger.service';
 
 /**
@@ -62,6 +63,33 @@ const CUSTOMERS = Number(process.env.LOAD_CUSTOMERS ?? 50);
  * problems with different answers.
  */
 const PARTNERS = Number(process.env.LOAD_PARTNERS ?? 1);
+
+/**
+ * The money-path phases (6-8) get their own customers, separate from the
+ * ones phases 1-5 hammer, because they need a state those phases would
+ * disturb: a bonus balance to spend, and a referral chain above them.
+ */
+const MONEY_CUSTOMERS = Number(process.env.LOAD_MONEY_CUSTOMERS ?? 20);
+/**
+ * Independent referral trees. Each is three referrers deep, and the tree's
+ * customers all hang off the same level-1 referrer — so the run covers both
+ * "several customers share one referrer" and "several unrelated trees settle
+ * at once", which are the two ways a chain can be contaminated by another.
+ */
+const TREES = Number(process.env.LOAD_REFERRAL_TREES ?? 4);
+/**
+ * One warm-up purchase this size gives a customer bonus to spend for the
+ * rest of the run: green is a fifth of a pool that is itself the partner's
+ * negotiated rate on the gross, so 200,000 at the default 300 bps leaves
+ * 1,200 available — hundreds of the 5-unit redemptions below.
+ *
+ * Earned, not injected. `BonusEngineService.accrue` could hand a wallet a
+ * balance in one call, but then the lots being reserved would not be the
+ * lots a purchase actually produces, and the reservation path is exactly
+ * what these phases exist to exercise.
+ */
+const WARMUP_GROSS = process.env.LOAD_WARMUP_GROSS ?? '200000';
+const BONUS_SPEND = process.env.LOAD_BONUS_SPEND ?? '5';
 
 interface Sample {
   ms: number;
@@ -144,6 +172,7 @@ async function main() {
   const payouts = app.get(PayoutEngineService);
   const outbox = app.get(OutboxService);
   const intents = app.get(PurchaseIntentsService);
+  const referrals = app.get(ReferralService);
   const ledger = app.get(LedgerService);
 
   // Numbers without the machine they were measured on are not a result, they
@@ -365,6 +394,141 @@ async function main() {
     purchases.elapsedMs,
   );
 
+  // ── Money-path fixtures ────────────────────────────────────────────────
+  //
+  // Phases 1-5 measure throughput. Phases 6-8 measure whether the parts of
+  // a purchase that move a customer's own money stay correct while they do
+  // — the bonus a customer spends, and the chain of referrers a purchase
+  // pays. Both were invisible to every phase above: nothing there requests
+  // bonus, so no reservation was ever taken, and nobody there has a
+  // referrer, so the whole pool collapsed onto TuTak's residual leg.
+
+  let phoneCursor = CUSTOMERS + PARTNERS;
+  const newUser = async (label: string) => {
+    const user = await prisma.user.create({
+      data: {
+        phone: phoneFor(phoneCursor++),
+        firstName: 'Load',
+        lastName: label,
+        passwordHash,
+        isPhoneVerified: true,
+        wallet: { create: {} },
+      },
+    });
+    await prisma.userRole.create({ data: { userId: user.id, roleId: customerRole.id } });
+    return user.id;
+  };
+
+  // Three referrers per tree, chained upward: the customer's invite names
+  // level 1, level 1's own invite names level 2, and level 2's names level
+  // 3. That is the shape `ReferralService.resolveReferralChain` walks, so
+  // building it with invite rows is building the real thing rather than a
+  // stand-in — attribution is immutable once written, and these are written
+  // once, before any purchase runs.
+  const trees: Array<{ l1: string; l2: string; l3: string }> = [];
+  for (let t = 0; t < TREES; t += 1) {
+    const l3 = await newUser(`L3T${t}`);
+    const l2 = await newUser(`L2T${t}`);
+    const l1 = await newUser(`L1T${t}`);
+    await prisma.referralInvite.create({
+      data: { referrerType: ReferrerType.USER, referrerUserId: l3, refereeUserId: l2 },
+    });
+    await prisma.referralInvite.create({
+      data: { referrerType: ReferrerType.USER, referrerUserId: l2, refereeUserId: l1 },
+    });
+    trees.push({ l1, l2, l3 });
+  }
+
+  // Two populations, so phase 6 can isolate the reservation path from the
+  // referral one: `bonusOnly` customers have no referrer at all, `chained`
+  // customers hang off a tree's level-1 referrer.
+  const bonusOnly: string[] = [];
+  const chained: string[] = [];
+  for (let i = 0; i < MONEY_CUSTOMERS; i += 1) {
+    bonusOnly.push(await newUser(`Bonus${i}`));
+    const customerId = await newUser(`Chain${i}`);
+    await prisma.referralInvite.create({
+      data: {
+        referrerType: ReferrerType.USER,
+        referrerUserId: trees[i % trees.length]!.l1,
+        refereeUserId: customerId,
+      },
+    });
+    chained.push(customerId);
+  }
+  say(`created ${trees.length} referral trees and ${bonusOnly.length + chained.length} money-path customers`);
+
+  // Earn the balance the next phases spend. Sequential on purpose: this is
+  // setup, not a measurement, and running it flat out would only add noise
+  // to the phase that follows it.
+  const till = tills[0]!;
+  for (const customerId of [...bonusOnly, ...chained]) {
+    const warmup = await intents.create(
+      { partnerId: till.partnerId, grossAmount: WARMUP_GROSS },
+      customerId,
+    );
+    await intents.confirm(warmup.id, till.staffUserId);
+  }
+  const warmed = await prisma.wallet.findFirstOrThrow({ where: { userId: bonusOnly[0] } });
+  say(`warm-up left ${warmed.availableBonus.toFixed(4)} available bonus per customer`);
+
+  // ── 6. Purchase with bonus (reservation path) ──────────────────────────
+  //
+  // The half of `settlePurchase` phase 5 never reached. Creating the intent
+  // holds the bonus against the customer's oldest lots; confirming settles
+  // that hold and consumes them. Under concurrency the hazards are a hold
+  // that outlives its intent, a lot consumed twice, and a wallet whose
+  // cached balances stop matching its own lots — all three are asserted at
+  // the end of the run.
+
+  const withBonus = await saturate(CONCURRENCY, SECONDS, async (n) => {
+    const intent = await intents.create(
+      {
+        partnerId: till.partnerId,
+        grossAmount: '1000',
+        bonusAmountRequested: BONUS_SPEND,
+      },
+      bonusOnly[n % bonusOnly.length]!,
+    );
+    await intents.confirm(intent.id, till.staffUserId);
+  });
+  report('Purchase with bonus (reservation path)', withBonus.samples, withBonus.elapsedMs);
+
+  // ── 7. Purchase through a three-level referral chain ───────────────────
+  //
+  // Now the pool actually splits. Every confirmation here pays three
+  // referrers as well as the customer, and the customers deliberately share
+  // referrers, so the same referrer wallet is credited by many concurrent
+  // settlements at once — which is where a lost update would show.
+
+  const throughChain = await saturate(CONCURRENCY, SECONDS, async (n) => {
+    const intent = await intents.create(
+      { partnerId: till.partnerId, grossAmount: '1000' },
+      chained[n % chained.length]!,
+    );
+    await intents.confirm(intent.id, till.staffUserId);
+  });
+  report('Purchase through a 3-level chain', throughChain.samples, throughChain.elapsedMs);
+
+  // ── 8. Bonus and referral together ─────────────────────────────────────
+  //
+  // The real shape of a purchase, and the one worth trusting: the customer
+  // spends bonus, earns new green and deferred bonus on the gross, and pays
+  // three referrers, all inside the one transaction.
+
+  const combined = await saturate(CONCURRENCY, SECONDS, async (n) => {
+    const intent = await intents.create(
+      {
+        partnerId: till.partnerId,
+        grossAmount: '1000',
+        bonusAmountRequested: BONUS_SPEND,
+      },
+      chained[n % chained.length]!,
+    );
+    await intents.confirm(intent.id, till.staffUserId);
+  });
+  report('Bonus + referral combined', combined.samples, combined.elapsedMs);
+
   // ── The number that decides whether the rest means anything ────────────
 
   say('── Ledger integrity ─────────────────────────────');
@@ -388,12 +552,203 @@ async function main() {
   const dead = (await outbox.deadLettered()).length;
   say(`  dead-lettered ${dead}`);
 
+  // ── Money-path integrity ───────────────────────────────────────────────
+  //
+  // The ledger check above proves the double-entry side balanced. It says
+  // nothing about the customer-facing side: a bonus lot consumed twice, a
+  // hold left behind by a settlement that rolled back, or a referrer paid
+  // for somebody else's purchase all leave the ledger summing to zero.
+  // These are the invariants that would catch them, and every one of them
+  // is checked over the whole database, not a sample.
+
+  say();
+  say('── Money-path integrity ─────────────────────────');
+  let broken = 0;
+  const check = async (label: string, sql: Promise<Array<{ n: bigint | number }>>) => {
+    const offenders = Number((await sql)[0]?.n ?? 0);
+    if (offenders > 0) broken += 1;
+    say(`  ${offenders === 0 ? '✓' : '✗'} ${label}${offenders === 0 ? '' : ` — ${offenders} row(s)`}`);
+  };
+
+  // A wallet's cached balances are a denormalisation of its lots and holds.
+  // Concurrency is exactly what pulls them apart.
+  await check(
+    'wallet available balance equals the sum of its available lots',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM wallets w
+      LEFT JOIN (
+        SELECT "walletId", SUM("remainingAmount") AS s FROM bonus_lots
+        WHERE status = 'AVAILABLE' GROUP BY "walletId"
+      ) l ON l."walletId" = w.id
+      WHERE w."availableBonus" <> COALESCE(l.s, 0)`,
+  );
+  await check(
+    'wallet reserved balance equals the sum of its active holds',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM wallets w
+      LEFT JOIN (
+        SELECT "walletId", SUM(amount) AS s FROM bonus_reservations
+        WHERE status = 'ACTIVE' GROUP BY "walletId"
+      ) r ON r."walletId" = w.id
+      WHERE w."reservedBonus" <> COALESCE(r.s, 0)`,
+  );
+
+  // Every unit taken out of a lot must be accounted for by an allocation
+  // naming that lot. Consume a lot twice and this is what disagrees.
+  await check(
+    'every lot consumed exactly as much as its allocations claim',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM bonus_lots bl
+      LEFT JOIN (
+        SELECT "lotId", SUM(amount) AS s FROM bonus_reservation_allocations GROUP BY "lotId"
+      ) a ON a."lotId" = bl.id
+      WHERE bl."originalAmount" - bl."remainingAmount" <> COALESCE(a.s, 0)`,
+  );
+  await check(
+    'no lot is over-consumed or negative',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM bonus_lots
+      WHERE "remainingAmount" < 0 OR "remainingAmount" > "originalAmount"`,
+  );
+
+  // A hold and the intent that owns it are written in one transaction and
+  // must move together. Either mismatch is a stuck customer: a settled
+  // hold under an unconfirmed intent has taken money for nothing, and an
+  // active hold under a confirmed one never released it.
+  await check(
+    'reservation status agrees with the intent that owns it',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM purchase_intents pi
+      JOIN bonus_reservations br ON br.id = pi."bonusReservationId"
+      WHERE (pi.status = 'CONFIRMED' AND br.status <> 'SETTLED')
+         OR (pi.status = 'AWAITING_CONFIRMATION' AND br.status <> 'ACTIVE')`,
+  );
+  await check(
+    'no active hold is left without an intent still waiting on it',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM bonus_reservations br
+      WHERE br.status = 'ACTIVE'
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_intents pi
+          WHERE pi."bonusReservationId" = br.id AND pi.status = 'AWAITING_CONFIRMATION')`,
+  );
+
+  // One settlement, one credit. A retried or double-run settlement would
+  // put a second lot on the same wallet for the same transaction.
+  await check(
+    'no wallet was credited twice for one transaction',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM (
+        SELECT "sourceTransactionId", "walletId" FROM bonus_lots
+        WHERE "sourceTransactionId" IS NOT NULL
+        GROUP BY "sourceTransactionId", "walletId" HAVING count(*) > 1
+      ) dupes`,
+  );
+  await check(
+    'no deferred lot was written twice for one transaction',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM (
+        SELECT "sourceTransactionId", "userId" FROM deferred_bonus_lots
+        GROUP BY "sourceTransactionId", "userId" HAVING count(*) > 1
+      ) dupes`,
+  );
+
+  // A settlement that failed must leave nothing behind — no green lot, no
+  // deferred lot, no referrer credit — or the customer was charged for a
+  // purchase the till never completed.
+  await check(
+    'no unconfirmed intent left financial effects behind',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM purchase_intents pi
+      WHERE pi.status = 'AWAITING_CONFIRMATION'
+        AND pi."sourceTransactionId" IS NOT NULL
+        AND (EXISTS (SELECT 1 FROM bonus_lots bl WHERE bl."sourceTransactionId" = pi."sourceTransactionId")
+          OR EXISTS (SELECT 1 FROM deferred_bonus_lots dl WHERE dl."sourceTransactionId" = pi."sourceTransactionId"))`,
+  );
+
+  // Every confirmed purchase must have priced itself the way the program
+  // says. `computePoolSplit` is the program — the same function the
+  // settlement used — so re-running it against what was actually stored
+  // asks whether concurrency changed the answer, not whether the formula
+  // is right. That is what the unit tests are for.
+  const confirmed = await prisma.purchaseIntent.findMany({
+    where: { status: 'CONFIRMED', poolAmount: { not: null } },
+    select: {
+      id: true,
+      customerId: true,
+      poolAmount: true,
+      greenAmount: true,
+      deferredAmount: true,
+      referrer1Type: true,
+      referrer1UserId: true,
+      referrer1Amount: true,
+      referrer2Type: true,
+      referrer2UserId: true,
+      referrer2Amount: true,
+      referrer3Type: true,
+      referrer3UserId: true,
+      referrer3Amount: true,
+      tutakAmount: true,
+    },
+  });
+  let mispriced = 0;
+  let contaminated = 0;
+  const chainCache = new Map<string, string[]>();
+  for (const intent of confirmed) {
+    const stored: Array<{ level: 1 | 2 | 3; type: 'USER'; userId: string }> = [];
+    if (intent.referrer1Type === ReferrerType.USER && intent.referrer1UserId)
+      stored.push({ level: 1, type: 'USER', userId: intent.referrer1UserId });
+    if (intent.referrer2Type === ReferrerType.USER && intent.referrer2UserId)
+      stored.push({ level: 2, type: 'USER', userId: intent.referrer2UserId });
+    if (intent.referrer3Type === ReferrerType.USER && intent.referrer3UserId)
+      stored.push({ level: 3, type: 'USER', userId: intent.referrer3UserId });
+
+    const split = referrals.computePoolSplit(intent.poolAmount!, stored);
+    const legs: Array<[Decimal, Decimal | null]> = [
+      [split.green, intent.greenAmount],
+      [split.deferred, intent.deferredAmount],
+      [split.l1, intent.referrer1Amount ?? new Decimal(0)],
+      [split.l2, intent.referrer2Amount ?? new Decimal(0)],
+      [split.l3, intent.referrer3Amount ?? new Decimal(0)],
+      [split.tutak, intent.tutakAmount],
+    ];
+    if (legs.some(([expected, actual]) => actual === null || !expected.equals(actual))) mispriced += 1;
+
+    // The chain stored on the purchase must be the chain the customer
+    // actually has. A referrer from another tree here would be one
+    // customer's purchase paying another customer's upline.
+    let live = chainCache.get(intent.customerId);
+    if (!live) {
+      const resolved = await referrals.resolveReferralChain(intent.customerId);
+      live = resolved.map((entry) => (entry.type === 'USER' ? entry.userId! : `partner:${entry.partnerId!}`));
+      chainCache.set(intent.customerId, live);
+    }
+    const storedIds = stored.map((entry) => entry.userId);
+    if (storedIds.length !== live.length || storedIds.some((id, i) => id !== live![i])) contaminated += 1;
+  }
+  say(
+    `  ${mispriced === 0 ? '✓' : '✗'} all six legs match the program's own split on ${confirmed.length} confirmed purchase(s)${mispriced === 0 ? '' : ` — ${mispriced} mispriced`}`,
+  );
+  say(
+    `  ${contaminated === 0 ? '✓' : '✗'} every purchase paid its own customer's chain${contaminated === 0 ? '' : ` — ${contaminated} contaminated`}`,
+  );
+  if (mispriced > 0) broken += 1;
+  if (contaminated > 0) broken += 1;
+
+  const held = await prisma.bonusReservation.groupBy({ by: ['status'], _count: { _all: true } });
+  say(`  holds         ${held.map((h) => `${h.status}=${h._count._all}`).join(' ') || 'none'}`);
+  const intentStates = await prisma.purchaseIntent.groupBy({ by: ['status'], _count: { _all: true } });
+  say(`  intents       ${intentStates.map((i) => `${i.status}=${i._count._all}`).join(' ')}`);
+
   await app.close();
 
   if (!total.isZero() || drift > 0) {
     throw new Error(
       `Ledger broke under load: sum ${total.toFixed(4)}, ${drift} account(s) disagreeing with their postings.`,
     );
+  }
+  if (broken > 0) {
+    throw new Error(`Money-path integrity broke under load: ${broken} invariant(s) violated.`);
   }
   say('  ✓ balanced, and every account agrees with a replay of its postings');
 }

@@ -27,6 +27,7 @@ import { UsersService } from '../users/users.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
 import { ReferralService } from '../referral/referral.service';
 import { AuthOtpService } from './auth-otp.service';
+import { OtpIpRateLimitService } from './otp-ip-rate-limit.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RequestLoginOtpDto, RequestRegistrationOtpDto, VerifyLoginOtpDto, VerifyRegistrationOtpDto } from './dto/otp.dto';
@@ -57,6 +58,7 @@ export class AuthService {
     private readonly fraudDetection: FraudDetectionService,
     private readonly referralService: ReferralService,
     private readonly authOtpService: AuthOtpService,
+    private readonly otpIpRateLimit: OtpIpRateLimitService,
     private readonly mediaView: MediaViewService,
   ) {}
 
@@ -237,16 +239,44 @@ export class AuthService {
    * password is set. `firstName`/`lastName`/`email` are all optional here
    * and completable later via the profile-update endpoint.
    */
-  async requestRegistrationOtp(dto: RequestRegistrationOtpDto) {
+  /**
+   * Always reports success, and issues a code only when the number is
+   * actually free — the same anti-enumeration contract `requestLoginOtp` and
+   * password-reset/request already follow.
+   *
+   * This used to answer 403 "An account with this phone number already
+   * exists" on an unauthenticated endpoint, which turned it into a
+   * membership oracle: anyone could walk a range of Armenian mobile numbers
+   * and learn, one request each, exactly which ones hold a TuTak account.
+   * That is a customer list, and for a loyalty wallet it is also a target
+   * list.
+   *
+   * Someone who has genuinely forgotten they already registered now gets no
+   * SMS rather than an explanation. That is the accepted cost, and the login
+   * path is where they recover: `verifyRegistrationOtp` still refuses a
+   * taken number, so nothing downstream depends on this check being loud.
+   */
+  async requestRegistrationOtp(dto: RequestRegistrationOtpDto, meta: RequestMeta = {}) {
+    // Charged before the existence check, and allowed to throw. Spending the
+    // budget on every request regardless of outcome is what keeps this
+    // endpoint uniform: a limit that only applied when a code was actually
+    // issued would answer differently for a free number than a taken one,
+    // reintroducing through timing and status the oracle removed above. The
+    // rejection itself reveals nothing about any account — it is a property
+    // of the caller's address.
+    await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
+
     const existing = await this.usersService.findByPhone(dto.phone);
-    if (existing) {
-      throw new ForbiddenException('An account with this phone number already exists');
+    if (!existing) {
+      await this.authOtpService.requestCode(dto.phone, AuthOtpPurpose.REGISTER).catch((err: Error) => {
+        this.logger.warn(`Registration OTP request suppressed: ${err.message}`);
+      });
     }
-    return this.authOtpService.requestCode(dto.phone, AuthOtpPurpose.REGISTER);
+    return { success: true as const };
   }
 
   async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto, meta: RequestMeta) {
-    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.REGISTER, dto.code);
+    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.REGISTER, dto.code, meta.ipAddress);
 
     // Re-checked after the code is spent: nothing stops someone else
     // registering the same number via the password path in between.
@@ -328,7 +358,11 @@ export class AuthService {
    * a rate-limit rejection on a real account never leaks that the number is
    * registered.
    */
-  async requestLoginOtp(dto: RequestLoginOtpDto) {
+  async requestLoginOtp(dto: RequestLoginOtpDto, meta: RequestMeta = {}) {
+    // Same reasoning as `requestRegistrationOtp`: charged unconditionally, so
+    // the per-IP ceiling cannot be read as a signal about the number.
+    await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
+
     const user = await this.usersService.findByPhone(dto.phone);
     if (user && user.isActive && !user.deletedAt) {
       await this.authOtpService.requestCode(dto.phone, AuthOtpPurpose.LOGIN).catch((err: Error) => {
@@ -341,7 +375,7 @@ export class AuthService {
   async verifyLoginOtp(dto: VerifyLoginOtpDto, meta: RequestMeta) {
     const invalid = new UnauthorizedException('Code is invalid or has expired');
 
-    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.LOGIN, dto.code);
+    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.LOGIN, dto.code, meta.ipAddress);
 
     const user = await this.usersService.findByPhone(dto.phone);
     if (!user || !user.isActive || user.deletedAt) {

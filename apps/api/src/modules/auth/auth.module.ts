@@ -9,6 +9,8 @@ import { AuthController } from './auth.controller';
 import { DemoSessionService } from './demo-session.service';
 import { AuthService } from './auth.service';
 import { AuthOtpService } from './auth-otp.service';
+import { OtpIpRateLimitService } from './otp-ip-rate-limit.service';
+import { RedisModule } from '../../infrastructure/redis/redis.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PasswordService } from './password.service';
 import { PhoneVerificationService } from './phone-verification.service';
@@ -20,6 +22,7 @@ import { MediaModule } from '../media/media.module';
 @Module({
   imports: [
     PassportModule,
+    RedisModule,
     UsersModule,
     AuditModule,
     NotificationsModule,
@@ -39,6 +42,7 @@ import { MediaModule } from '../media/media.module';
     DemoSessionService,
     AuthService,
     AuthOtpService,
+    OtpIpRateLimitService,
     JwtStrategy,
     PasswordService,
     PhoneVerificationService,

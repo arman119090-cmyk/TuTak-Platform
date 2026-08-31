@@ -1,9 +1,9 @@
 import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { AuthOtpPurpose, NotificationChannel } from '@prisma/client';
+import { AuthOtpPurpose } from '@prisma/client';
 import { generateNumericCode, sha256Hex } from '../../common/utils/crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { SMS_PROVIDER, SmsProvider } from '../../infrastructure/sms/sms-provider.interface';
-import { NotificationsService } from '../notifications/notifications.service';
+import { OtpIpRateLimitService } from './otp-ip-rate-limit.service';
 
 const CODE_TTL_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 5;
@@ -30,7 +30,7 @@ export class AuthOtpService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService,
+    private readonly ipRateLimit: OtpIpRateLimitService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
 
@@ -60,27 +60,32 @@ export class AuthOtpService {
       .send({ to: phone, body: `TuTak: your verification code is ${code}` })
       .catch((err: Error) => this.logger.error(`Could not deliver OTP to ${phone}: ${err.message}`));
 
-    // Best-effort in-app trail. There is no user yet on REGISTER, so this can
-    // only ever record something for LOGIN, where the account already exists.
-    if (purpose === AuthOtpPurpose.LOGIN) {
-      const user = await this.prisma.user.findUnique({ where: { phone }, select: { id: true } });
-      if (user) {
-        await this.notifications.send({
-          userId: user.id,
-          channel: NotificationChannel.SMS,
-          titleKey: 'notifications.loginOtpTitle',
-          bodyKey: 'notifications.loginOtpBody',
-          params: { code },
-        });
-      }
-    }
-
+    // SMS is the only channel a live code travels on.
+    //
+    // A LOGIN code used to be copied into a `Notification` as well, with the
+    // code itself in `params`. `NotificationsService.send` persists that
+    // column, so every issued code was written to the database in plaintext
+    // and served back, still live, by `GET /notifications/me` — to anyone
+    // holding an access token for the account, and to anyone with read
+    // access to the table. A second factor readable through the first factor
+    // is not a second factor. The notification is gone rather than redacted:
+    // its i18n keys were never added, so it rendered as a raw key, and the
+    // code it existed to carry is exactly what must not be stored.
     return { success: true };
   }
 
   /** Validates and consumes a code. Throws if wrong, expired, or already used. */
-  async consumeCode(phone: string, purpose: AuthOtpPurpose, code: string): Promise<void> {
+  async consumeCode(
+    phone: string,
+    purpose: AuthOtpPurpose,
+    code: string,
+    ipAddress?: string,
+  ): Promise<void> {
     const invalid = new UnauthorizedException('Code is invalid or has expired');
+
+    // Guessing spread thinly across many numbers costs the attacker nothing
+    // under the phone-keyed ceiling below; it costs them this budget.
+    await this.ipRateLimit.consume(ipAddress, 'verify');
 
     const spent = await this.prisma.authOtpToken.aggregate({
       where: { phone, purpose, createdAt: { gte: new Date(Date.now() - WINDOW_MS) } },

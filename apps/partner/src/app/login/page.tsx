@@ -30,8 +30,21 @@ export default function LoginPage() {
       }
       setSession(result.user, result.tokens);
       router.push('/');
-    } catch {
-      setError('Incorrect phone number or password.');
+    } catch (error) {
+      // A wrong password and an unreachable API produce the same blank
+      // screen to whoever is typing — but they call for a completely
+      // different next step, and collapsing them into one message sent a
+      // real CORS misconfiguration through several rounds of "are you sure
+      // you typed the password right" before anyone thought to check the
+      // network response. Mirrors apps/admin's login page, which already
+      // makes this distinction.
+      const status =
+        typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : undefined;
+      if (status === 401) setError('Incorrect phone number or password.');
+      else if (status === 429) setError('Too many attempts. Please wait a minute and try again.');
+      else setError('Cannot reach the staging API. This is a deployment configuration issue, not a password error.');
     } finally {
       setLoading(false);
     }

@@ -268,7 +268,7 @@ export class BonusEngineService {
   ): Promise<ReserveResult> {
     const target = parsePositiveMoney(amount, 'reservation amount');
 
-    return this.prisma.$transaction(
+    return this.runSerializable(
       async (tx) => {
         const lots = await tx.bonusLot.findMany({
           where: { walletId, status: BonusLotStatus.AVAILABLE, remainingAmount: { gt: 0 } },
@@ -332,8 +332,55 @@ export class BonusEngineService {
 
         return { reservationId: reservation.id, amount: target, expiresAt };
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+  }
+
+  /**
+   * Serializable `$transaction`, retried on a serialization failure or
+   * deadlock — the same helper `ReferralService`, `PurchaseIntentRefundService`
+   * and `EvSessionsService` already use, and for the same reason:
+   * Serializable aborts the loser of a conflict rather than queueing it, and
+   * the caller is expected to try again with arguments that are still valid.
+   *
+   * `reserve` was the one Serializable path in this codebase without it, and
+   * a load run found what that costs. Two purchases by the same customer
+   * both read that customer's available lots and both write them, so under
+   * Serializable one of them aborts — and with nothing catching it, the
+   * abort reached the customer as a failed payment. Measured on the
+   * development container at 16 concurrent confirmations: 443 of 997
+   * bonus-spending purchases failed across 20 customers, and 14 of 717
+   * across 100, which is the same collision rate seen from the other end.
+   * Nothing was ever left half-applied — every one of those rolled back
+   * whole — so this changes no outcome, only whether a customer sees a
+   * transient conflict or the retry that resolves it.
+   *
+   * Retrying is safe because a losing attempt leaves nothing behind: the
+   * reservation row, its allocations, the lot decrements and the ledger
+   * entry are all written inside this transaction, so an abort takes all of
+   * them with it and the next attempt starts from the same state the first
+   * one saw.
+   */
+  private async runSerializable<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(fn, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        const message = err instanceof Error ? err.message : '';
+        const retryable =
+          code === '40001' ||
+          code === '40P01' ||
+          /write conflict|deadlock|could not serialize/i.test(message);
+        if (!retryable || attempt === maxAttempts) throw err;
+        const delay = Math.floor(2 ** attempt * 5 * (0.5 + Math.random()));
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    // Unreachable — the loop above always returns or throws.
+    throw new Error('runSerializable exhausted retries without a result');
   }
 
   /**

@@ -186,9 +186,25 @@ function apiBaseUrl() {
   return configured;
 }
 
+// Read once, at module scope, purely to name the installed app — kept
+// separate from `apiBaseUrl()`'s own identically-computed local `appEnv` so
+// that function's exported behaviour (covered by `appConfigGuards.test.ts`)
+// is untouched by this.
+const APP_NAME_ENV = process.env.APP_ENV ?? 'development';
+
+/**
+ * The label under the home-screen icon, and the only reliably visible signal
+ * of which server a given install talks to — there is no in-app "about"
+ * screen showing the build's environment today. A staging or preview build
+ * must never present as plain "TuTak": that is the name a customer's real
+ * install carries, and a tester holding two identically-named icons has no
+ * way to tell them apart before opening one and typing a password into it.
+ */
+const APP_NAME = APP_NAME_ENV === 'production' ? 'TuTak' : `TuTak (${APP_NAME_ENV})`;
+
 module.exports = ({ config }) => ({
   ...config,
-  name: 'TuTak',
+  name: APP_NAME,
   slug: 'tutak',
   version: '0.1.0',
   orientation: 'portrait',

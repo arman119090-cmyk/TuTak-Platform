@@ -29,11 +29,11 @@ on:
         required: true
         type: string
       profile:
-        description: 'preview = standalone. diagnostic = preview plus the on-screen event log. development = needs a Metro server on a computer.'
+        description: 'preview = standalone. staging = standalone, app name visibly marked "TuTak (staging)". diagnostic = preview plus the on-screen event log. development = needs a Metro server on a computer.'
         required: true
         default: preview
         type: choice
-        options: [preview, diagnostic, development]
+        options: [preview, staging, diagnostic, development]
 
 # Two builds of the same app at once would race for the same version code and
 # waste build minutes on a result nobody wants.

@@ -24,6 +24,16 @@
         "APP_ENV": "preview"
       }
     },
+    "staging": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "staging",
+        "API_BASE_URL": "https://tutak-staging-api.onrender.com/v1"
+      }
+    },
     "diagnostic": {
       "distribution": "internal",
       "android": {

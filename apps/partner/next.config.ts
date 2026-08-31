@@ -22,13 +22,29 @@ const releaseSha = process.env.GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'unkn
 // never empty — so a plain `?? fallback` never reaches the staging fallback
 // below. Checked against the literal instead of mere presence for the same
 // reason httpClient.ts does.
+//
+// Can't branch on `APP_ENV` the way httpClient.ts branches on
+// `window.location.hostname`: this whole module — and the `headers()` value
+// it feeds — is evaluated once during `pnpm build` inside the Dockerfile's
+// `build` stage (verified directly: `next start` afterwards, with `APP_ENV`
+// set, still serves the header this module computed at build time), and
+// `APP_ENV` is a Render *runtime* env var only — never declared as a Docker
+// `ARG`, so it does not exist at that point. `NODE_ENV`, unlike `APP_ENV`, is
+// a build-time-safe signal here: `next build` forces it to `'production'`
+// internally regardless of the ambient shell, so `isDevelopment` is exactly
+// "was this produced by `next build`" — true for a real `next dev` session
+// (where the Dockerfile default is the genuinely correct answer), false for
+// this Dockerfile's `build` stage. `render.yaml`'s own header comment scopes
+// this whole blueprint to staging ("This blueprint is staging only"), so a
+// production build landing here on the real staging API is exactly this
+// deployment's one and only intended target.
 const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 const apiBaseUrl =
   configuredApiBaseUrl && configuredApiBaseUrl !== 'http://localhost:4000/v1'
     ? configuredApiBaseUrl
-    : process.env.APP_ENV === 'staging'
-      ? 'https://tutak-staging-api.onrender.com/v1'
-      : 'http://localhost:4000/v1';
+    : isDevelopment
+      ? 'http://localhost:4000/v1'
+      : 'https://tutak-staging-api.onrender.com/v1';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

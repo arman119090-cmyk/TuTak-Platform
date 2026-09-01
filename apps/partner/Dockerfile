@@ -45,6 +45,19 @@ RUN pnpm --filter @tutak/partner build
 FROM base AS runtime
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# The same value the build was given, carried into the running container.
+#
+# `next start` re-reads `next.config.ts` — that is where the response headers
+# come from — so the runtime needs the answer the build used, and needs it to
+# be the *same* answer. Leaving it out made the container exit on boot once
+# the config stopped guessing, which CI caught as `curl: (52) Empty reply from
+# server` against a dashboard that had already built cleanly.
+#
+# Declaring the ARG again here is how a value passed to `docker build` reaches
+# a second stage; it is not a second source of truth.
+ARG NEXT_PUBLIC_API_BASE_URL=""
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 WORKDIR /repo
 COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/packages ./packages

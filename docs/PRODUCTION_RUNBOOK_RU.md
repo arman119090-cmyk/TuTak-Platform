@@ -180,6 +180,14 @@ $ curl -sSD- -o /dev/null localhost:3011/login | grep -i connect-src
 connect-src 'self' https://api.tutak.am
 ```
 
+**Значение нужно и сборке, и рантайму.** `next start` перечитывает
+`next.config.ts` — именно оттуда берутся заголовки ответа, — поэтому
+контейнер должен получить тот же ответ, что и сборка. Dockerfile переносит
+build-arg в рантайм-стадию (`ARG` объявлен второй раз + `ENV`); без этого
+контейнер падал при старте, что CI поймал как
+`curl: (52) Empty reply from server` на дашборде, который до этого собрался
+без ошибок.
+
 **Как доставить значение в сборку на Render.** Dockerfile объявляет
 `ARG NEXT_PUBLIC_API_BASE_URL=""`, поэтому:
 

@@ -202,6 +202,31 @@ const APP_NAME_ENV = process.env.APP_ENV ?? 'development';
  */
 const APP_NAME = APP_NAME_ENV === 'production' ? 'TuTak' : `TuTak (${APP_NAME_ENV})`;
 
+/**
+ * Whether this build takes part in Sentry's *build-time* integration: the
+ * config plugin that links the native SDKs and adds the Gradle/Xcode phase
+ * which uploads debug symbols and source maps.
+ *
+ * Gated on the token that authorises that upload, and for the same reason
+ * `metro.config.js` gates its serializer on it — with neither set, both
+ * pieces do nothing except break the build:
+ *
+ *   Execution failed for task ':app:createBundleReleaseJsAndAssets_SentryUpload_…'
+ *   > A problem occurred starting process 'command '…/@sentry/cli/bin/sentry-cli''
+ *
+ * That is 16 minutes of Gradle — 458 tasks, all of them executed and
+ * successful — thrown away in the last phase, uploading symbols nobody asked
+ * for to a project no DSN names. The staging APK has no DSN at all, so the
+ * SDK never initialises in it; the upload phase was the only part of Sentry
+ * that ran, and the only part that failed.
+ *
+ * Same honesty as metro.config.js: this defers the problem rather than
+ * solving it. Set `SENTRY_AUTH_TOKEN` and both the plugin and the upload
+ * phase come back, and whatever is wrong with the `sentry-cli` binary under
+ * pnpm's layout will still be wrong.
+ */
+const SENTRY_BUILD_INTEGRATION = Boolean(process.env.SENTRY_AUTH_TOKEN);
+
 module.exports = ({ config }) => ({
   ...config,
   name: APP_NAME,
@@ -268,14 +293,21 @@ module.exports = ({ config }) => ({
     // would mean a secret sitting in `extra` in the app manifest — see
     // docs/SENTRY_SETUP.md. `organization`/`project`/`url` are not secrets;
     // they only say which Sentry project the symbols belong to.
-    [
-      '@sentry/react-native/expo',
-      {
-        organization: process.env.SENTRY_ORG,
-        project: process.env.SENTRY_PROJECT,
-        url: process.env.SENTRY_URL,
-      },
-    ],
+    //
+    // Included only when that upload is actually authorised — see
+    // SENTRY_BUILD_INTEGRATION above for what happens otherwise.
+    ...(SENTRY_BUILD_INTEGRATION
+      ? [
+          [
+            '@sentry/react-native/expo',
+            {
+              organization: process.env.SENTRY_ORG,
+              project: process.env.SENTRY_PROJECT,
+              url: process.env.SENTRY_URL,
+            },
+          ],
+        ]
+      : []),
   ],
   extra: {
     apiBaseUrl: apiBaseUrl(),

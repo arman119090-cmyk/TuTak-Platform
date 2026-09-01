@@ -32,7 +32,7 @@ export function PurchaseIntentStatusScreen() {
   const queryClient = useQueryClient();
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
-  const { data: intent } = useQuery({
+  const { data: intent, isError: pollError } = useQuery({
     queryKey: ['purchase-intent', route.params.intent.id],
     queryFn: () => purchaseIntentApi.get(route.params.intent.id),
     initialData: route.params.intent,
@@ -263,6 +263,21 @@ export function PurchaseIntentStatusScreen() {
                 {t('qr.expiresIn', { time: formatCountdown(secondsLeft) })}
               </Text>
             </View>
+          ) : null}
+          {pollError ? (
+            // `initialData` means this screen always has an intent to draw, so
+            // a poll that stops answering leaves the spinner turning over a
+            // status that may already have changed — at a till, with a cashier
+            // waiting. The countdown keeps running either way; what it cannot
+            // do on its own is say that the last few answers never arrived.
+            <Text
+              style={[
+                text.caption,
+                { color: color.pendingText, marginTop: space[3], textAlign: 'center' },
+              ]}
+            >
+              {t('common.somethingWentWrong')}
+            </Text>
           ) : null}
         </View>
       </Surface>

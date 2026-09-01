@@ -17,10 +17,23 @@ export class AnalyticsService {
    * partner saw drifted from the revenue they earned
    * (docs/AUDIT_2026-08-B.md §H9).
    */
-  async partnerAnalytics(partnerId: string, from?: Date, to?: Date) {
+  /**
+   * `branchIds` is `branchFilterFor`'s answer for the caller: `null` for an
+   * owner, admin or all-branch manager, who keeps seeing the partner's whole
+   * network; otherwise the branches they are actually assigned to.
+   *
+   * Aggregates need this more than list endpoints do, not less. A total is
+   * not a redacted list — a branch-scoped manager reading network-wide
+   * revenue, bonus issuance and unique-customer counts learns their
+   * colleagues' figures just as surely as by reading the rows, and there is
+   * nothing in the response to redact after the fact. Hence the filter is in
+   * the `where` both the aggregate and the groupBy share.
+   */
+  async partnerAnalytics(partnerId: string, from?: Date, to?: Date, branchIds: string[] | null = null) {
     const where = {
       partnerId,
       status: TransactionStatus.COMPLETED,
+      ...(branchIds === null ? {} : { partnerBranchId: { in: branchIds } }),
       ...(from || to ? { createdAt: { gte: from, lte: to } } : {}),
     };
 

@@ -107,8 +107,8 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 300_000 } })
   @Post('register/request-otp')
-  requestRegistrationOtp(@Body() dto: RequestRegistrationOtpDto) {
-    return this.authService.requestRegistrationOtp(dto);
+  requestRegistrationOtp(@Body() dto: RequestRegistrationOtpDto, @Req() req: Request) {
+    return this.authService.requestRegistrationOtp(dto, extractMeta(req));
   }
 
   @Public()
@@ -135,8 +135,8 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 300_000 } })
   @Post('login/request-otp')
-  requestLoginOtp(@Body() dto: RequestLoginOtpDto) {
-    return this.authService.requestLoginOtp(dto);
+  requestLoginOtp(@Body() dto: RequestLoginOtpDto, @Req() req: Request) {
+    return this.authService.requestLoginOtp(dto, extractMeta(req));
   }
 
   @Public()

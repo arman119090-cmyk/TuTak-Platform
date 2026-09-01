@@ -15,8 +15,20 @@ export class ConsoleSmsProvider implements SmsProvider {
   readonly name = 'console';
   private readonly logger = new Logger('SMS');
 
+  /**
+   * `redactBody` exists for the one deployment that reaches this provider
+   * with real users in front of it: a public demonstration, where SmsModule
+   * allows the console fallback in production because there is no carrier
+   * contract. Printing the message there would write live verification codes
+   * into a hosted log — readable by anyone who can see the logs, for every
+   * number that asks. On a developer's own machine the body is the entire
+   * point of this provider, so it stays.
+   */
+  constructor(private readonly redactBody = false) {}
+
   send(params: { to: string; body: string }): Promise<{ providerMessageId: string | null }> {
-    this.logger.warn(`[not actually sent] to=${params.to} body=${params.body}`);
+    const body = this.redactBody ? `[redacted ${params.body.length} chars]` : params.body;
+    this.logger.warn(`[not actually sent] to=${params.to} body=${body}`);
     return Promise.resolve({ providerMessageId: null });
   }
 }

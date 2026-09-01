@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { hasPartnerScope, isPlatformAdmin } from '../../common/auth/partner-scope';
+import { branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsRangeDto } from './dto/analytics-range.dto';
@@ -29,6 +30,7 @@ export class AnalyticsController {
       partnerId,
       query.from ? new Date(query.from) : undefined,
       query.to ? new Date(query.to) : undefined,
+      branchFilterFor(user, partnerId),
     );
   }
 

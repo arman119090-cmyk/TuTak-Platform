@@ -31,7 +31,10 @@ import { SMS_PROVIDER } from './sms-provider.interface';
                 'reset codes cannot be delivered without a carrier.',
             );
           }
-          return new ConsoleSmsProvider();
+          // Reached in production only under `demoMode`, which is hosted and
+          // has real people typing real numbers into it — so the code itself
+          // must not reach the log there.
+          return new ConsoleSmsProvider(isProduction);
         }
 
         return new HttpSmsProvider({

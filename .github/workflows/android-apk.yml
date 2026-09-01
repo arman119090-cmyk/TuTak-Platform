@@ -1,19 +1,39 @@
-# Builds the Android APK on EAS and hands it back as a downloadable file.
+# Builds the Android APK and hands it back as a downloadable file.
 #
-# The reason this exists rather than a line in a README: an EAS build needs
-# the Expo account that owns the project, and `eas build` is a CLI. The people
-# who need this APK have phones. GitHub's "Run workflow" button is not a CLI —
-# it is a button on a web page, and it works on a phone.
+# The reason this exists rather than a line in a README: a build needs the
+# Expo account that owns the project, and `eas build` is a CLI. The people who
+# need this APK have phones. GitHub's "Run workflow" button is not a CLI — it
+# is a button on a web page, and it works on a phone.
 #
-# The APK is attached to the run as an artifact *and* linked on EAS, because
-# those fail in different ways: an artifact expires after 30 days and needs a
-# GitHub login to download, an EAS link needs the build not to have been
-# pruned. Whichever is still there is the one you use.
+# ## Where the build actually runs — the `builder` input
+#
+# `local` (the default) runs the Android build on this GitHub runner, via
+# `eas build --local`. `cloud` sends it to EAS's build farm, which is what
+# this workflow originally did.
+#
+# The difference that matters: a cloud build consumes one of the Expo
+# account's build credits, and those run out. A local build does not — the
+# compute is GitHub's, which is free for public repositories and metered
+# against Actions minutes for private ones (an Android build is roughly 20-30
+# of them). When the Expo quota is exhausted, `local` is the one that still
+# produces an APK today rather than after the quota resets.
+#
+# What `local` costs you: the EAS-hosted download link. A cloud build leaves
+# the APK on EAS *and* on this run, deliberately, because those two fail in
+# different ways — an artifact expires after 30 days and needs a GitHub login,
+# an EAS link needs the build not to have been pruned. A local build only ever
+# produces the GitHub artifact, so that second copy is not there to fall back
+# on.
+#
+# `local` still signs the APK with the same EAS-managed keystore, fetched with
+# EXPO_TOKEN — the signing identity does not change with the builder, so an
+# app built either way installs as an update over the other.
 #
 # ## What you need once
 #
 #   EXPO_TOKEN        repository secret. expo.dev → Account settings →
-#                     Access tokens → Create.
+#                     Access tokens → Create. Needed for both builders: even a
+#                     local build fetches the signing keystore from EAS.
 #
 # The API address is a run-time input rather than stored, because it changes:
 # a demonstration deployed today has a different URL than one deployed next
@@ -34,6 +54,12 @@ on:
         default: preview
         type: choice
         options: [preview, staging, diagnostic, development]
+      builder:
+        description: 'local = build here on the GitHub runner, spends no EAS build credit. cloud = build on EAS, spends one credit and also leaves a download link on expo.dev.'
+        required: true
+        default: local
+        type: choice
+        options: [local, cloud]
 
 # Two builds of the same app at once would race for the same version code and
 # waste build minutes on a result nobody wants.
@@ -43,7 +69,7 @@ concurrency:
 
 jobs:
   build:
-    name: EAS build (Android APK)
+    name: Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -91,6 +117,19 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Java for the local Gradle build
+        # Only the local builder compiles anything here; a cloud build ships
+        # the source to EAS and never runs Gradle on this machine. The runner
+        # image already carries a JDK and the Android SDK, but which JDK is
+        # default moves between image releases, and Gradle failing on a JDK
+        # it does not support is a twenty-minute build that dies in the last
+        # phase. Pinned rather than inherited for that reason.
+        if: inputs.builder == 'local'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
       - name: Set up EAS
         uses: expo/expo-github-action@v8
@@ -192,8 +231,36 @@ jobs:
           npx expo config --type public --json > /dev/null
           echo "app config reads cleanly with only the profile's environment"
 
+      - name: Build the APK here
+        id: build_local
+        if: inputs.builder == 'local'
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          API_BASE_URL: ${{ inputs.api_base_url }}
+          APP_ENV: ${{ inputs.profile }}
+        # `--local` runs the same build EAS would run, on this runner, and
+        # spends no build credit. `--output` names the file directly, which is
+        # why the cloud path's download step has no local equivalent: there is
+        # nothing to fetch, the APK is already on disk where the upload step
+        # expects it.
+        #
+        # No `--json` here: that flag describes a *build record* on EAS, and a
+        # local build does not create one. A failure prints Gradle's own
+        # output into this job's log, which is more use than a record id
+        # anyway.
+        run: |
+          set -o pipefail
+          npx eas-cli@latest build \
+            --platform android \
+            --profile "${{ inputs.profile }}" \
+            --local \
+            --non-interactive \
+            --output "$PWD/tutak.apk"
+
       - name: Build the APK on EAS
         id: build
+        if: inputs.builder == 'cloud'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -227,7 +294,7 @@ jobs:
         # no use at all if the link is unreachable from where they are. The
         # record holds the phase that failed and the message; print it here so
         # the run explains itself.
-        if: failure() && steps.build.outcome == 'failure'
+        if: failure() && inputs.builder == 'cloud' && steps.build.outcome == 'failure'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -258,6 +325,9 @@ jobs:
           cat build.json 2>/dev/null || echo "(no build.json — the CLI exited before writing one)"
 
       - name: Download the APK
+        # Cloud only: a local build already wrote apps/mobile/tutak.apk, which
+        # is the same path the upload step below takes either way.
+        if: inputs.builder == 'cloud'
         working-directory: apps/mobile
         env:
           APK_URL: ${{ steps.build.outputs.apk_url }}
@@ -294,7 +364,11 @@ jobs:
           {
             echo "## The APK"
             echo ""
-            if [ -n "$APK_URL" ]; then
+            if [ "${{ steps.build_local.outcome }}" = "success" ]; then
+              echo "Built on this runner — no EAS build credit was spent, and there is no copy on expo.dev."
+              echo ""
+              echo "**On this page:** scroll to **Artifacts** and download **tutak-android-${{ inputs.profile }}**."
+            elif [ -n "$APK_URL" ]; then
               echo "**On this page:** scroll to **Artifacts** and download **tutak-android-${{ inputs.profile }}**."
               echo ""
               echo "**Direct from EAS:** [$APK_URL]($APK_URL)"

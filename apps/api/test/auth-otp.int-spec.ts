@@ -1,8 +1,9 @@
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient } from '@prisma/client';
+import { AuthOtpPurpose, PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { AuthService } from '../src/modules/auth/auth.service';
+import { AuthOtpService } from '../src/modules/auth/auth-otp.service';
 import { SMS_PROVIDER, SmsProvider } from '../src/infrastructure/sms/sms-provider.interface';
 import { sha256Hex } from '../src/common/utils/crypto';
 import { createCustomer } from './setup/fixtures';
@@ -21,6 +22,7 @@ describe('OTP-first auth (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
   let authService: AuthService;
+  let otpService: AuthOtpService;
   let sms: SmsProvider;
   let config: ConfigService;
 
@@ -28,6 +30,7 @@ describe('OTP-first auth (integration)', () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     authService = harness.app.get(AuthService);
+    otpService = harness.app.get(AuthOtpService);
     sms = harness.app.get<SmsProvider>(SMS_PROVIDER);
     config = harness.app.get(ConfigService);
   });
@@ -145,11 +148,43 @@ describe('OTP-first auth (integration)', () => {
       expect(await prisma.referralInvite.count({ where: { refereeUserId: result.user.id } })).toBe(1);
     });
 
-    it('refuses to register an already-registered number', async () => {
+    it('reports success for an already-registered number, but issues no code for it', async () => {
+      // Was a 403 naming the reason, which made this unauthenticated endpoint
+      // an account-existence oracle for any number an attacker cared to try.
+      // The refusal now happens at verify time instead, where a code the
+      // caller never received is what stops them.
       const { user } = await createCustomer(prisma);
-      await expect(authService.requestRegistrationOtp({ phone: user.phone })).rejects.toThrow(
-        ForbiddenException,
-      );
+      const sendSpy = jest.spyOn(sms, 'send');
+
+      await expect(authService.requestRegistrationOtp({ phone: user.phone })).resolves.toEqual({
+        success: true,
+      });
+
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(await prisma.authOtpToken.count({ where: { phone: user.phone } })).toBe(0);
+    });
+
+    it('answers a taken number and a free number identically', async () => {
+      const { user } = await createCustomer(prisma);
+      const free = randomPhone();
+
+      const taken = await authService.requestRegistrationOtp({ phone: user.phone });
+      const untaken = await authService.requestRegistrationOtp({ phone: free });
+
+      expect(taken).toEqual(untaken);
+    });
+
+    it('still refuses at verify time when the number was taken in the meantime', async () => {
+      const phone = randomPhone();
+      const lastCode = captureCode();
+      await authService.requestRegistrationOtp({ phone });
+      const code = lastCode();
+
+      await createCustomer(prisma, { phone });
+
+      await expect(
+        authService.verifyRegistrationOtp({ phone, code, deviceId: 'device-1' }, {}),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('refuses a wrong code and burns the challenge after five tries', async () => {
@@ -196,10 +231,30 @@ describe('OTP-first auth (integration)', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('refuses to issue more than five codes an hour', async () => {
+    it('issues no more than five codes an hour for one number', async () => {
+      // Asserted as an effect rather than as a thrown error. The endpoint
+      // reports success either way now, because a "too many codes" rejection
+      // is itself an oracle: it only ever fires for a number that has been
+      // sent codes, i.e. a registered-adjacent one. The ceiling still holds —
+      // the sixth request simply produces no challenge and no SMS.
       const phone = randomPhone();
       for (let i = 0; i < 5; i += 1) await authService.requestRegistrationOtp({ phone });
-      await expect(authService.requestRegistrationOtp({ phone })).rejects.toThrow(
+
+      const sendSpy = jest.spyOn(sms, 'send');
+      await expect(authService.requestRegistrationOtp({ phone })).resolves.toEqual({ success: true });
+
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(await prisma.authOtpToken.count({ where: { phone } })).toBe(5);
+    });
+
+    it('still enforces the per-phone ceiling as an error on the service itself', async () => {
+      // The rule the endpoint now hides is unchanged underneath, where
+      // nothing about enumeration applies.
+      const phone = randomPhone();
+      for (let i = 0; i < 5; i += 1) {
+        await otpService.requestCode(phone, AuthOtpPurpose.REGISTER);
+      }
+      await expect(otpService.requestCode(phone, AuthOtpPurpose.REGISTER)).rejects.toThrow(
         BadRequestException,
       );
     });

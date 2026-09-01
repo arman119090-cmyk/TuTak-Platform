@@ -557,6 +557,16 @@ model Transaction {
   id                 String            @id @default(uuid())
   userId             String
   partnerId          String?
+  /// Which branch of `partnerId` this operation happened at, so that
+  /// branch-scoped staff can be filtered in the database rather than
+  /// after the fact. Written only where a branch is actually known — a
+  /// `PurchaseIntent` settlement carries the intent's branch forward.
+  ///
+  /// Null for every row written before this column, and for every path
+  /// that has no branch to record: legacy partner-wide QR, EV charging
+  /// sessions, CDR reconciliation and roaming. A caller restricted to
+  /// specific branches does not see null rows — see `branchFilterFor`.
+  partnerBranchId    String?
   type               TransactionType
   status             TransactionStatus @default(INITIATED)
   amount             Decimal           @db.Decimal(18, 4)
@@ -585,15 +595,17 @@ model Transaction {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  user           User        @relation(fields: [userId], references: [id])
-  partner        Partner?    @relation(fields: [partnerId], references: [id])
-  brandLogoAsset MediaAsset? @relation("TransactionBrandLogo", fields: [brandLogoAssetId], references: [id])
+  user           User           @relation(fields: [userId], references: [id])
+  partner        Partner?       @relation(fields: [partnerId], references: [id])
+  branch         PartnerBranch? @relation(fields: [partnerBranchId], references: [id], onDelete: SetNull)
+  brandLogoAsset MediaAsset?    @relation("TransactionBrandLogo", fields: [brandLogoAssetId], references: [id])
   qrCode         QrCode?
   evSession      EvSession?
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([partnerId, createdAt])
+  @@index([partnerBranchId, createdAt])
   @@index([type, status])
   @@map("transactions")
 }
@@ -1141,6 +1153,7 @@ model PartnerBranch {
   purchaseIntents  PurchaseIntent[]
   staffAssignments PartnerBranchStaffAssignment[]
   qrCodes          PartnerBranchQrCode[]
+  transactions     Transaction[]
 
   // Lets `PartnerBranchStaffAssignment`/`PartnerBranchQrCode` declare a
   // composite FK on (partnerId, id) — the DB-level guarantee that an

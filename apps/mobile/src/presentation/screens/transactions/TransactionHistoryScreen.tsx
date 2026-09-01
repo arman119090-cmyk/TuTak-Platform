@@ -18,7 +18,7 @@ import { transactionIcon, transactionTone } from '../../utils/transactionPresent
 export function TransactionHistoryScreen() {
   const { t } = useTranslation();
   const { color, space, text, radius } = useTheme();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['transactions'],
     queryFn: () => transactionsApi.myHistory(),
   });
@@ -46,6 +46,21 @@ export function TransactionHistoryScreen() {
               <Skeleton key={i} width="100%" height={44} />
             ))}
           </View>
+        </Surface>
+      ) : isError ? (
+        // Not the empty state. A failed request leaves `data` undefined, which
+        // reaches the same branch as "this customer has no purchases yet" and
+        // tells a tester their history is empty when it is unreachable — the
+        // two need opposite next steps.
+        <Surface>
+          <EmptyState
+            title={t('common.error')}
+            message={t('common.somethingWentWrong')}
+            actionLabel={t('common.retry')}
+            onAction={() => {
+              void refetch();
+            }}
+          />
         </Surface>
       ) : groups.length === 0 ? (
         <Surface>

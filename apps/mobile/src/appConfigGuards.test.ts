@@ -101,3 +101,40 @@ describe('apiBaseUrl', () => {
     expect(guards.apiBaseUrl()).toBe('https://api.tutak.am/v1');
   });
 });
+
+/**
+ * The guards above are exercised with values a test invents. This one uses the
+ * value a build actually gets: `eas.json`'s own `staging` profile, which is
+ * what the closed pilot installs from.
+ *
+ * Everything above would still pass if somebody pointed that profile at
+ * localhost, dropped its address, or moved it to plain http — the guards would
+ * be correct and unreached, because nothing joins them to the file the builder
+ * reads. A pilot APK that installs and reaches nothing is exactly the failure
+ * `apiBaseUrl` exists to prevent, so the profile is checked here rather than
+ * trusted.
+ */
+describe('the staging build profile in eas.json', () => {
+  const env = process.env;
+  const profile = (require('../eas.json') as { build: Record<string, { env?: Record<string, string> }> })
+    .build.staging;
+
+  beforeEach(() => {
+    process.env = { ...env };
+    delete process.env.API_BASE_URL;
+    delete process.env.ALLOW_INSECURE_API_BASE_URL;
+    for (const [key, value] of Object.entries(profile.env ?? {})) process.env[key] = value;
+  });
+
+  afterAll(() => {
+    process.env = env;
+  });
+
+  it('carries an address, over https, that is not the phone itself', () => {
+    expect(guards.apiBaseUrl()).toBe('https://tutak-staging-api.onrender.com/v1');
+  });
+
+  it('names itself staging, so the app it builds cannot be mistaken for a real install', () => {
+    expect(profile.env?.APP_ENV).toBe('staging');
+  });
+});

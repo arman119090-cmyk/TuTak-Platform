@@ -28,10 +28,29 @@ export class PartnerBranchStaffService {
     });
   }
 
-  /** A partner's full staff roster across every branch — the portal's "employees" page. */
-  listForPartner(partnerId: string, includeInactive = false) {
+  /**
+   * A partner's staff roster — the portal's "employees" page.
+   *
+   * `branchIds` is `branchFilterFor`'s answer for the caller: `null` for an
+   * owner, admin or all-branch manager, who sees the whole network exactly
+   * as before; otherwise the caller's own assignment list, and the roster is
+   * narrowed to those branches in the query itself.
+   *
+   * Without that narrowing this endpoint was the one hole left in branch
+   * scoping: `assertPartnerScope` passes for any of the partner's staff, so
+   * a cashier assigned to branch A could read branch B's roster — names,
+   * phone numbers and employee codes — from the sibling of an endpoint
+   * (`listForBranch`) that refuses exactly that. An empty array is a real
+   * answer, not a missing filter: staff with no active assignment see
+   * nobody.
+   */
+  listForPartner(partnerId: string, includeInactive = false, branchIds: string[] | null = null) {
     return this.prisma.partnerBranchStaffAssignment.findMany({
-      where: { partnerId, ...(includeInactive ? {} : { isActive: true }) },
+      where: {
+        partnerId,
+        ...(branchIds === null ? {} : { partnerBranchId: { in: branchIds } }),
+        ...(includeInactive ? {} : { isActive: true }),
+      },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, phone: true } },
         branch: { select: { id: true, name: true } },

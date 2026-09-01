@@ -98,8 +98,14 @@ services:
         value: '3000'
       - key: APP_ENV
         value: staging
+      # Must reach the *build*, not just the running container: it fixes the
+      # `connect-src` of the Content-Security-Policy, which no runtime variable
+      # can change afterwards. The build now refuses rather than guessing, so a
+      # failed build with `ApiBaseUrlNotConfiguredError` means Render did not
+      # forward this into the Docker build — see docs/PRODUCTION_RUNBOOK_RU.md
+      # §3 for the two ways to supply it. Not a secret; a public API address.
       - key: NEXT_PUBLIC_API_BASE_URL
-        sync: false
+        value: https://tutak-staging-api.onrender.com/v1
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
@@ -124,8 +130,14 @@ services:
         value: '3001'
       - key: APP_ENV
         value: staging
+      # Must reach the *build*, not just the running container: it fixes the
+      # `connect-src` of the Content-Security-Policy, which no runtime variable
+      # can change afterwards. The build now refuses rather than guessing, so a
+      # failed build with `ApiBaseUrlNotConfiguredError` means Render did not
+      # forward this into the Docker build — see docs/PRODUCTION_RUNBOOK_RU.md
+      # §3 for the two ways to supply it. Not a secret; a public API address.
       - key: NEXT_PUBLIC_API_BASE_URL
-        sync: false
+        value: https://tutak-staging-api.onrender.com/v1
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT

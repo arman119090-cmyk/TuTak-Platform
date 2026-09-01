@@ -190,7 +190,13 @@ jobs:
         run: pnpm --filter @tutak/partner test
 
       - name: Build all applications
+        # The dashboards refuse to build without being told which API they are
+        # for: the value is baked into their Content-Security-Policy and no
+        # runtime variable can change it afterwards. This build is for the
+        # local stack, so it says so.
         run: pnpm build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/v1
 
   # The demo stack is only a real deliverable if the images actually build.
   # This job is the proof: it builds all three Dockerfiles the same way

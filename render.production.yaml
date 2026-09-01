@@ -1,0 +1,212 @@
+# TuTak production on Render — template.
+#
+# NOT APPLIED. This file is a reviewed starting point for the production
+# blueprint; `docs/PRODUCTION_RUNBOOK_RU.md` is the procedure that uses it.
+# Nothing here is deployed by CI, and Render does not read it unless someone
+# points a Blueprint at it deliberately.
+#
+# Rules this file keeps:
+#
+#  - **no secret has a value here.** `sync: false` means "an operator types it
+#    in the dashboard"; `generateValue: true` means "Render mints it and nobody
+#    ever sees it in git". A value appears in this file only when it is public
+#    (a hostname, a mode, a ceiling).
+#  - **no demo, no seed data, no fake acquirer.** `DEMO_MODE` and
+#    `CARD_PAYMENTS_ENABLED` are absent, which is what leaves them off.
+#  - **`SEED_BASELINE` starts `false`.** The first-run procedure in the runbook
+#    (§9) turns it on for one boot and then off again; a blueprint that shipped
+#    it on would re-create the bootstrap super admin on every deploy.
+#  - **paid plans where a free one changes behaviour.** A free web service
+#    sleeps, and a sleeping API runs no settlement, no reconciliation and no
+#    bonus expiry — see the runbook §5 for the incident this is drawn from.
+#
+# Every `sync: false` below is a deliberate handover: the runbook's owner
+# checklist lists exactly who supplies it.
+
+databases:
+  - name: tutak-prod-db
+    databaseName: tutak
+    user: tutak
+    # Not free: a free database expires, has no backups worth the name, and is
+    # not something a ledger should live on. Pick the plan from the sizing in
+    # runbook §4 — `starter` is the floor, not a recommendation.
+    plan: starter
+    ipAllowList: []
+
+services:
+  - type: keyvalue
+    name: tutak-prod-redis
+    # Redis is not a cache here. It carries the job queue the sweeps run on,
+    # the rate limiters, and the global SMS budget — which fails *closed*, so
+    # an evicted Redis stops code delivery rather than silently unbounding it.
+    # A plan with no persistence and an eviction policy is the wrong shape.
+    plan: starter
+    ipAllowList: []
+
+  - type: web
+    name: tutak-prod-api
+    runtime: docker
+    # Must not sleep. This is the process that holds the scheduler.
+    plan: starter
+    numInstances: 1
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: '4000'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tutak-prod-db
+          property: connectionString
+      # Measured, not guessed — runbook §4. Left unset until the arithmetic is
+      # done, which leaves Prisma's own per-process default in place.
+      - key: DATABASE_CONNECTION_LIMIT
+        sync: false
+      - key: DATABASE_POOL_TIMEOUT
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: tutak-prod-redis
+          property: connectionString
+      - key: QUEUE_PREFIX
+        value: tutak-prod
+      - key: SWEEPS_ENABLED
+        value: 'true'
+      # Minted by Render, never seen by a human, never equal to each other.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # The dashboards' real origins, comma-separated. Boot fails without it.
+      - key: CORS_ORIGINS
+        sync: false
+      # `none` only if the dashboards and the API are on different registrable
+      # domains (which is the case on `onrender.com`, and normally not the case
+      # on a real domain). Unset means `strict`, which is the safer default.
+      - key: AUTH_COOKIE_SAMESITE
+        sync: false
+      # Measured against the live service — runbook §8. Setting these wrong is
+      # worse than leaving them unset: an over-count trusts an address the
+      # caller wrote.
+      - key: CLIENT_IP_STRATEGY
+        sync: false
+      - key: CLIENT_IP_TRUSTED_HOPS
+        sync: false
+      # Carrier. Without SMS_ENDPOINT every code send returns a generic
+      # "temporarily unavailable" and no code is ever written to a log.
+      - key: SMS_ENDPOINT
+        sync: false
+      - key: SMS_USERNAME
+        sync: false
+      - key: SMS_TOKEN
+        sync: false
+      - key: SMS_SENDER
+        sync: false
+      # The only ceiling that bounds the carrier bill rather than one
+      # attacker's reach. Sized from the contract, not from these numbers.
+      - key: SMS_GLOBAL_MAX_PER_HOUR
+        sync: false
+      - key: SMS_GLOBAL_MAX_PER_DAY
+        sync: false
+      # Where an operator is told that money is at risk. Unset means the alert
+      # exists only in a log nobody is reading at 03:00 — runbook §6.
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      # Durable object storage. Production refuses to boot on anything else.
+      - key: MEDIA_STORAGE_DRIVER
+        value: s3
+      - key: MEDIA_STORAGE_S3_ENDPOINT
+        sync: false
+      - key: MEDIA_STORAGE_S3_REGION
+        sync: false
+      - key: MEDIA_STORAGE_S3_BUCKET
+        sync: false
+      - key: MEDIA_STORAGE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: MEDIA_STORAGE_S3_SECRET_ACCESS_KEY
+        sync: false
+      # Absolute origin every media URL is built on, e.g. https://api.tutak.am
+      - key: MEDIA_PUBLIC_BASE_URL
+        sync: false
+      # Push credentials. Production refuses to boot without them.
+      - key: PUSH_ENABLED
+        value: 'true'
+      - key: PUSH_ACCESS_TOKEN
+        sync: false
+      # Tracing. Unset leaves it off, which is a valid state.
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+      - key: OTEL_SERVICE_NAME
+        value: tutak-api
+      # Prometheus scrape token. Unset disables /metrics rather than opening
+      # it — these are the operating figures of the business.
+      - key: METRICS_TOKEN
+        sync: false
+      # Off, and turned on for exactly one boot by the runbook's §9 procedure.
+      - key: SEED_BASELINE
+        value: 'false'
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+
+  - type: web
+    name: tutak-prod-admin
+    runtime: docker
+    plan: starter
+    numInstances: 1
+    dockerfilePath: ./apps/admin/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: '3000'
+      # BUILD-TIME. This is baked into the dashboard's Content-Security-Policy
+      # and no runtime variable can change it afterwards; the build now fails
+      # rather than guessing. It must reach `docker build` as a build
+      # argument — runbook §3 has the two ways to make that true and the
+      # one-command check that proves which host actually got baked in.
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
+        value: production
+      # Deliberately absent: SENTRY_VERIFY_ENABLED / SENTRY_VERIFY_TOKEN. The
+      # gate refuses production by name anyway; not configuring them is the
+      # second lock.
+      # Also absent: SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT. Source
+      # maps are uploaded by a separate CI task, never from a runtime service.
+
+  - type: web
+    name: tutak-prod-partner
+    runtime: docker
+    plan: starter
+    numInstances: 1
+    dockerfilePath: ./apps/partner/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: '3001'
+      # BUILD-TIME — see the admin service above.
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
+        value: production

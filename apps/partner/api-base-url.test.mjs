@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  ApiBaseUrlNotConfiguredError,
   LOCAL_API_BASE_URL,
   STAGING_API_BASE_URL,
   resolveApiBaseUrl,
@@ -26,12 +27,27 @@ test('an explicitly configured URL is honoured, localhost included', () => {
   );
 });
 
-test('a production build with nothing configured targets the staging API', () => {
-  // Render's case: `NEXT_PUBLIC_API_BASE_URL` is a runtime variable there and
-  // never reaches the image as a build argument.
-  assert.equal(resolveApiBaseUrl({ configured: '', isDevelopment: false }), STAGING_API_BASE_URL);
+test('a deployed build with nothing configured refuses to build', () => {
+  // The whole point. This used to fall back to the staging API, which was the
+  // right answer for one deployment and a silent wrong one for every other —
+  // a production image would have shipped a policy allowing only staging, and
+  // the first symptom would have been customers unable to sign in.
+  assert.throws(
+    () => resolveApiBaseUrl({ configured: '', isDevelopment: false }),
+    ApiBaseUrlNotConfiguredError,
+  );
+  assert.throws(
+    () => resolveApiBaseUrl({ configured: undefined, isDevelopment: false }),
+    ApiBaseUrlNotConfiguredError,
+  );
+});
+
+test('the staging API is still a named constant, for the client-side hostname check', () => {
+  // Exported for httpClient.ts, never as a default: nothing resolves to it
+  // without being told to.
+  assert.match(STAGING_API_BASE_URL, /^https:\/\/tutak-staging-api\./);
   assert.equal(
-    resolveApiBaseUrl({ configured: undefined, isDevelopment: false }),
+    resolveApiBaseUrl({ configured: STAGING_API_BASE_URL, isDevelopment: false }),
     STAGING_API_BASE_URL,
   );
 });

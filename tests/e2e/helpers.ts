@@ -126,20 +126,122 @@ export async function api<T>(
   return json<T>(response, `${init.method ?? 'GET'} ${path}`);
 }
 
+/** A login that the API refused, carrying the status the caller must branch on. */
+export class LoginFailed extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'LoginFailed';
+  }
+}
+
 /**
- * Logs in through the real form rather than seeding a token into storage.
+ * Logs in through the real form rather than seeding a token into storage, and
+ * returns the access token that login produced.
  *
  * The login page is itself part of what these tests cover, and a session
- * assembled by hand would not exercise the cookie the refresh flow depends
- * on.
+ * assembled by hand would not exercise the cookie the refresh flow depends on.
+ *
+ * The token is read from the login response rather than out of the browser's
+ * storage. It used to be lifted from `localStorage` via `storageState`, which
+ * worked only for as long as the dashboards persisted it there — and they
+ * deliberately stopped: the access token now lives in memory alone and the
+ * refresh token in an httpOnly cookie, precisely so that page script cannot
+ * read either. A test that went looking for it in storage was asserting the
+ * old, weaker model. `storageState` is still what carries the session to the
+ * other specs; it carries the cookie, which is where the session actually is.
+ *
+ * On failure this throws with what someone reading CI needs and nothing more:
+ * the response status, the message the form showed, and the page's URL. Never
+ * the password, the cookie or the token. The screenshot and trace Playwright
+ * attaches on failure are configured in playwright.config.ts.
  */
-export async function login(page: Page, baseUrl: string, phone: string): Promise<void> {
+export async function login(page: Page, baseUrl: string, phone: string): Promise<string> {
   await page.goto(`${baseUrl}/login`);
   const inputs = page.locator('form input');
   await inputs.nth(0).fill(phone);
   await inputs.nth(1).fill(PASSWORD);
+
+  // Armed before the click: the response can arrive before the next statement
+  // runs, and waiting for it afterwards would race.
+  const pending = page.waitForResponse(
+    (r) => r.url().endsWith('/auth/login') && r.request().method() === 'POST',
+    { timeout: 20_000 },
+  );
+
+  // Whether the request left the browser at all is its own failure mode — a
+  // Content-Security-Policy that forbids the API blocks it before the network
+  // sees it, and the form then shows the same "cannot reach the API" as a
+  // genuinely absent server. Recorded here so the two can be told apart.
+  const blocked: string[] = [];
+  const noteBlocked = (message: string) => {
+    if (/Content Security Policy|Refused to connect/i.test(message)) blocked.push(message);
+  };
+  page.on('console', (m) => noteBlocked(m.text()));
+  page.on('requestfailed', (r) => {
+    if (r.url().includes('/auth/login')) noteBlocked(`${r.method()} ${r.url()} — ${r.failure()?.errorText}`);
+  });
+
   await page.click('button[type="submit"]');
-  await expect(page).not.toHaveURL(/\/login$/, { timeout: 20_000 });
+
+  let response;
+  try {
+    response = await pending;
+  } catch {
+    throw new LoginFailed(
+      0,
+      [
+        `No response to POST /auth/login from ${baseUrl} within 20s.`,
+        blocked.length
+          ? `The browser refused to send it: ${blocked.join(' | ')}`
+          : 'The request never reached the API.',
+        `form said: ${await visibleError(page)}`,
+        `url: ${page.url()}`,
+      ].join('\n'),
+    );
+  }
+
+  if (!response.ok()) {
+    throw new LoginFailed(
+      response.status(),
+      [
+        `POST /auth/login returned ${response.status()} for ${baseUrl}.`,
+        `form said: ${await visibleError(page)}`,
+        `url: ${page.url()}`,
+      ].join('\n'),
+    );
+  }
+
+  const body = (await response.json()) as { data?: { tokens?: { accessToken?: string } } };
+  const accessToken = body.data?.tokens?.accessToken;
+  if (!accessToken) {
+    throw new LoginFailed(response.status(), 'The login response carried no access token.');
+  }
+
+  // The API accepted the credentials; the dashboard still has to act on that.
+  // Kept as a separate assertion so a client-side rejection — a role the app
+  // does not admit, a session guard that bounces back — reads as itself rather
+  // than as a login failure.
+  await expect(page, `signed in but never left ${baseUrl}/login`).not.toHaveURL(/\/login$/, {
+    timeout: 20_000,
+  });
+
+  return accessToken;
+}
+
+/** Whatever the form is telling the operator, or a note that it says nothing. */
+async function visibleError(page: Page): Promise<string> {
+  const text = await page
+    .locator('form')
+    .innerText()
+    .catch(() => '');
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !/^(phone|password|sign in)$/i.test(l));
+  return lines.length ? lines.join(' / ') : '<no message>';
 }
 
 export interface LedgerAccount {

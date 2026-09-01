@@ -2,19 +2,23 @@
 
 import { createHttpClient } from '@tutak/design/web';
 import { useAuthStore } from './stores/authStore';
+// @ts-expect-error — plain ESM with JSDoc types; see that file's header.
+import { LOCAL_API_BASE_URL, STAGING_API_BASE_URL } from '../../api-base-url.mjs';
 
 type RuntimeConfig = { apiBaseUrl?: string };
 
-// The Dockerfile declares `ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1`,
-// so when Render never forwards its dashboard value as a build arg, the image
-// still bakes in this exact, non-empty string — never undefined. A plain
-// `value || fallback` check can't tell "genuinely configured" apart from
-// "silently defaulted", so both reads below are checked against this literal
-// instead of mere truthiness.
-const UNCONFIGURED_DEFAULT = 'http://localhost:4000/v1';
+// "Configured" means somebody actually set a value — nothing more.
+//
+// This used to also reject the exact string `http://localhost:4000/v1`, on the
+// theory that it could only be the Dockerfile's ARG default leaking in. It
+// could equally be a deployment that genuinely wants localhost, and treating
+// that as unset is what put the CSP computed in next.config.ts on a different
+// API from the one this client calls. The Dockerfile's ARG now defaults to
+// empty, so "unset" says so; see ../../api-base-url.mjs, which the config half
+// of this decision uses.
+const UNCONFIGURED_DEFAULT = LOCAL_API_BASE_URL;
 
-const isConfigured = (value: string | undefined | null): value is string =>
-  Boolean(value) && value !== UNCONFIGURED_DEFAULT;
+const isConfigured = (value: string | undefined | null): value is string => Boolean(value);
 
 const runtimeApiBaseUrl =
   typeof window === 'undefined'
@@ -24,7 +28,7 @@ const runtimeApiBaseUrl =
 
 const stagingFallback =
   typeof window !== 'undefined' && window.location.hostname === 'tutak-staging-partner.onrender.com'
-    ? 'https://tutak-staging-api.onrender.com/v1'
+    ? STAGING_API_BASE_URL
     : UNCONFIGURED_DEFAULT;
 
 export const API_BASE_URL = isConfigured(runtimeApiBaseUrl)

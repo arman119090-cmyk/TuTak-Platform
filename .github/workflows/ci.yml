@@ -231,6 +231,14 @@ jobs:
           context: .
           file: apps/admin/Dockerfile
           push: false
+          # The API this image is built to talk to, stated rather than left to
+          # a default. It decides the `connect-src` of the dashboard's
+          # Content-Security-Policy, which is fixed at build time — so an image
+          # built without it and then booted against the stack below serves a
+          # policy that forbids that stack's own API, and every login in the
+          # end-to-end suite is refused by the browser.
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
           # Loaded into the daemon under the name Compose derives for
           # this service, so the boot step below runs these exact
           # images instead of building them a second time.
@@ -245,6 +253,14 @@ jobs:
           context: .
           file: apps/partner/Dockerfile
           push: false
+          # The API this image is built to talk to, stated rather than left to
+          # a default. It decides the `connect-src` of the dashboard's
+          # Content-Security-Policy, which is fixed at build time — so an image
+          # built without it and then booted against the stack below serves a
+          # policy that forbids that stack's own API, and every login in the
+          # end-to-end suite is refused by the browser.
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
           # Loaded into the daemon under the name Compose derives for
           # this service, so the boot step below runs these exact
           # images instead of building them a second time.

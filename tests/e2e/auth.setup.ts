@@ -1,9 +1,10 @@
-import { readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { expect, test as setup } from '@playwright/test';
 import {
   ADMIN,
   ADMIN_STATE,
+  LoginFailed,
   PARTNER,
   PARTNER_STATE,
   PASSWORD,
@@ -23,39 +24,40 @@ import {
  * failures that were all the same 429.
  *
  * So the form login happens here, twice, and every later test reuses the
- * resulting browser state. The access token the app persisted is lifted out
- * of that state for the API-side assertions, which means the admin and
- * partner never authenticate a second time by any route.
+ * resulting browser state. The token each form login produced is returned by
+ * the helper and written straight to TOKENS_FILE for the API-side assertions,
+ * which means the admin and partner never authenticate a second time by any
+ * route.
+ *
+ * That token is not read back out of the browser. The dashboards keep the
+ * access token in memory and the refresh token in an httpOnly cookie, so there
+ * is nothing in `localStorage` to read — and the earlier version of this file,
+ * which went looking for `tutak-admin-auth` there, was asserting a storage
+ * model the apps had deliberately abandoned. `storageState` still carries the
+ * session onward, through the cookie.
  */
-
-function tokenFrom(statePath: string, storageKey: string): string {
-  const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
-    origins: Array<{ localStorage: Array<{ name: string; value: string }> }>;
-  };
-  for (const origin of state.origins) {
-    const entry = origin.localStorage.find((item) => item.name === storageKey);
-    if (!entry) continue;
-    const parsed = JSON.parse(entry.value) as { state?: { accessToken?: string } };
-    if (parsed.state?.accessToken) return parsed.state.accessToken;
-  }
-  throw new Error(`No access token in ${statePath} under ${storageKey}`);
-}
 
 // Long, because a collision with the login rate limit is waited out here
 // rather than failing every spec behind it.
 setup.setTimeout(180_000);
 
 /**
- * Retries a form login through the rate limit, the same way apiLogin does.
- * A run started less than a minute after the last one lands here.
+ * Waits out the login rate limit, the same way apiLogin does. A run started
+ * less than a minute after the last one lands here.
+ *
+ * Only a 429 is waited on. Anything else — a wrong password, an API that
+ * refuses, a dashboard that will not leave its login page — is not going to
+ * become true by being asked four more times; retrying it only spent another
+ * three minutes and three of the five attempts the limit allows, and then
+ * reported the last failure instead of the first.
  */
-async function loginWaiting(open: () => Promise<void>): Promise<void> {
+async function loginWaiting(open: () => Promise<string>): Promise<string> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await open();
-      return;
+      return await open();
     } catch (err) {
-      if (attempt >= 3) throw err;
+      const throttled = err instanceof LoginFailed && err.status === 429;
+      if (!throttled || attempt >= 3) throw err;
       await new Promise((r) => setTimeout(r, 20_000));
     }
   }
@@ -68,7 +70,7 @@ setup('sign in to both dashboards', async ({ browser }) => {
   rmSync(TOKENS_FILE, { force: true });
 
   const adminPage = await browser.newPage();
-  await loginWaiting(() => login(adminPage, ADMIN, PHONES.admin));
+  const adminToken = await loginWaiting(() => login(adminPage, ADMIN, PHONES.admin));
   // Proof the session is real and not merely a redirect: a permission-gated
   // screen renders.
   await adminPage.goto(`${ADMIN}/ledger`);
@@ -77,7 +79,9 @@ setup('sign in to both dashboards', async ({ browser }) => {
   await adminPage.close();
 
   const partnerPage = await browser.newPage();
-  await loginWaiting(() => login(partnerPage, PARTNER, PHONES.partnerOwner));
+  const partnerToken = await loginWaiting(() =>
+    login(partnerPage, PARTNER, PHONES.partnerOwner),
+  );
   await partnerPage.goto(`${PARTNER}/earnings`);
   await expect(partnerPage.getByText(/available to pay out/i)).toBeVisible({ timeout: 20_000 });
   await partnerPage.context().storageState({ path: PARTNER_STATE });
@@ -104,10 +108,10 @@ setup('sign in to both dashboards', async ({ browser }) => {
   writeFileSync(
     TOKENS_FILE,
     JSON.stringify({
-      // Lifted out of the browser session rather than fetched again: the form
-      // login already produced a token for each of these.
-      [PHONES.admin]: tokenFrom(ADMIN_STATE, 'tutak-admin-auth'),
-      [PHONES.partnerOwner]: tokenFrom(PARTNER_STATE, 'tutak-partner-auth'),
+      // Returned by the form login rather than fetched again: that login
+      // already produced a token for each of these.
+      [PHONES.admin]: adminToken,
+      [PHONES.partnerOwner]: partnerToken,
       [PHONES.approver]: approverToken,
       ...customers,
     }),

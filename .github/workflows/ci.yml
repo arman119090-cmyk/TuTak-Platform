@@ -331,12 +331,20 @@ jobs:
           # the first try, the browser opened a file listing, and the failure
           # was reported as "the demo entry never appeared". Every run of this
           # step since it was added had been driving that listing.
-          for i in $(seq 1 60); do
+          #
+          # Fifteen minutes, because the Expo web export is what is being
+          # waited for and it takes about five on a cold runner — the budget
+          # used to be exactly five, and the first run that got this far after
+          # the end-to-end step was fixed lost to it by seconds, with the
+          # export finishing and the server starting just as the loop gave up.
+          # A ceiling that close to the measured time reports a slow bundler as
+          # a broken one.
+          for i in $(seq 1 180); do
             if curl -fsS http://localhost:8099/ | grep -q '<title>TuTak</title>'; then break; fi
             # Bundling is the slow half and the half that fails. Its log is
             # the only place that says why, so print it rather than reporting
             # a timeout with no cause.
-            if [ "$i" = 60 ]; then
+            if [ "$i" = 180 ]; then
               echo "the mobile bundle never came up, or what came up was not the app:"
               curl -fsS http://localhost:8099/ | head -20 || true
               cat mobile-web.log

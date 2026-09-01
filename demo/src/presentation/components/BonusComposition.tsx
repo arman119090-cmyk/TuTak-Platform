@@ -10,6 +10,14 @@ interface Props {
   reserved: string | number;
   /** Hides the legend when the bar is used inline in a dense list. */
   compact?: boolean;
+  /**
+   * `'onBrand'` restyles the bar for the dark brand-green hero card
+   * (`BalanceCard`): the track goes translucent-white and the labels are
+   * fixed to a light shade instead of following the theme's text colors,
+   * so the three state hues stay vivid against the dark surface. Also
+   * scales the track/dot down slightly to match that card's density.
+   */
+  tone?: 'default' | 'onBrand';
 }
 
 /**
@@ -25,9 +33,16 @@ interface Props {
  * what makes the colour coding learnable: see it once here, and the green
  * dot on a transaction row three screens away is already understood.
  */
-export function BonusComposition({ available, pending, reserved, compact = false }: Props) {
+export function BonusComposition({
+  available,
+  pending,
+  reserved,
+  compact = false,
+  tone = 'default',
+}: Props) {
   const { color, space, radius, text, motion } = useTheme();
   const { t } = useTranslation();
+  const onBrand = tone === 'onBrand';
 
   const a = Number(available) || 0;
   const p = Number(pending) || 0;
@@ -51,12 +66,18 @@ export function BonusComposition({ available, pending, reserved, compact = false
     }).start();
   }, [total, a, p, r, progress, motion.duration.deliberate]);
 
+  const labelColor = onBrand ? 'rgba(255,255,255,0.72)' : color.textSecondary;
+  const valueColor = onBrand ? color.textInverse : color.textPrimary;
+
   return (
     <View accessible accessibilityLabel={buildA11yLabel(segments, total)}>
       <View
         style={[
-          styles.track,
-          { borderRadius: radius.full, backgroundColor: color.surfaceSunken },
+          onBrand ? styles.trackOnBrand : styles.track,
+          {
+            borderRadius: radius.full,
+            backgroundColor: onBrand ? 'rgba(255,255,255,0.18)' : color.surfaceSunken,
+          },
         ]}
       >
         {total === 0 ? null : (
@@ -78,17 +99,24 @@ export function BonusComposition({ available, pending, reserved, compact = false
       </View>
 
       {compact ? null : (
-        <View style={[styles.legend, { marginTop: space[4], gap: space[5] }]}>
+        <View style={[styles.legend, { marginTop: space[4], gap: onBrand ? undefined : space[5] }]}>
           {segments.map((s) => (
             <View key={s.key} style={styles.legendItem}>
-              <View style={[styles.legendHeader, { gap: space[2] }]}>
-                <View style={[styles.dot, { backgroundColor: s.fill }]} />
-                <Text style={[text.caption, { color: color.textSecondary }]}>{s.label}</Text>
+              <View
+                style={[styles.legendHeader, { gap: onBrand ? space[2] - 2 : space[2] }]}
+              >
+                <View
+                  style={[
+                    onBrand ? styles.dotOnBrand : styles.dot,
+                    { backgroundColor: s.fill },
+                  ]}
+                />
+                <Text style={[text.caption, { color: labelColor }]}>{s.label}</Text>
               </View>
               <Text
                 style={[
-                  text.headline,
-                  { color: color.textPrimary, marginTop: space[1] },
+                  onBrand ? text.label : text.headline,
+                  { color: valueColor, marginTop: space[1] },
                 ]}
               >
                 {formatPoints(s.value)}
@@ -114,9 +142,11 @@ function buildA11yLabel(
 
 const styles = StyleSheet.create({
   track: { height: 10, overflow: 'hidden', width: '100%' },
+  trackOnBrand: { height: 8, overflow: 'hidden', width: '100%' },
   trackInner: { flexDirection: 'row', height: '100%', width: '100%' },
   legend: { flexDirection: 'row' },
   legendItem: { flex: 1 },
   legendHeader: { flexDirection: 'row', alignItems: 'center' },
   dot: { width: 8, height: 8, borderRadius: 4 },
+  dotOnBrand: { width: 6, height: 6, borderRadius: 3 },
 });

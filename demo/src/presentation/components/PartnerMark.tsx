@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useTheme } from '../../app/theme/ThemeProvider';
 
 /**
@@ -74,8 +75,16 @@ export function PartnerMark({
     return (
       <Image
         source={{ uri: logoUrl }}
+        // Same contract as before: a logo that fails to load falls through to
+        // the initial-letter mark below rather than leaving a hole.
         onError={() => setFailed(true)}
         accessibilityLabel={name}
+        // A partner logo appears in the nearby list, on the map pin and on
+        // the detail screen — the same handful of URLs, over and over. Held
+        // on disk they are fetched once per device rather than once per
+        // screen.
+        cachePolicy="memory-disk"
+        contentFit="cover"
         style={[styles.mark, { width: size, height: size, borderRadius: cornerRadius }]}
       />
     );

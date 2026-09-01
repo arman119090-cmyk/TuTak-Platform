@@ -1,4 +1,4 @@
-import type { AuthenticatedUserDto, MediaImageDto } from '@tutak/shared-types';
+import type { MediaImageDto } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export interface PickedImage {
@@ -23,11 +23,6 @@ function isReactNativeFormData(form: FormData): boolean {
 }
 
 export const usersApi = {
-  async me() {
-    const { data } = await httpClient.get<ApiEnvelope<AuthenticatedUserDto>>('/users/me');
-    return data.data;
-  },
-
   /**
    * Uploads or replaces the caller's avatar.
    *
@@ -90,6 +85,18 @@ export const usersApi = {
       '/users/me/avatar-consent',
       { showAvatarInReferralList },
     );
+    return data.data;
+  },
+
+  /**
+   * Turn nearby-partner personalisation on or off — off by default, its own
+   * route for the same reason `setAvatarConsent` has one: this is a consent
+   * decision, not a profile edit.
+   */
+  async setPersonalizationConsent(personalizedRecommendationsEnabled: boolean) {
+    const { data } = await httpClient.patch<
+      ApiEnvelope<{ personalizedRecommendationsEnabled: boolean }>
+    >('/users/me/personalization-consent', { personalizedRecommendationsEnabled });
     return data.data;
   },
 };

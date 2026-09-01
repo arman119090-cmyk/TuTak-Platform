@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 
 interface Props {
   children: React.ReactNode;
@@ -38,6 +39,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
     this.setState({ info: info.componentStack ?? null });
     // Still logged, for the cases where somebody does have a cable.
     console.error('Unhandled error in the app tree', error);
+    // A no-op when no DSN is configured (see app/sentry.ts) — this UI and
+    // the console line above are unchanged either way.
+    Sentry.withScope((scope) => {
+      scope.setTag('service', 'mobile');
+      scope.setTag('boundary', 'root');
+      if (info.componentStack) scope.setExtra('componentStack', info.componentStack);
+      Sentry.captureException(error);
+    });
   }
 
   render() {

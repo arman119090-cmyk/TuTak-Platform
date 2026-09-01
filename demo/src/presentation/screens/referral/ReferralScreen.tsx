@@ -44,7 +44,11 @@ export function ReferralScreen() {
   const { color, space, text, radius, gradients, glow } = useTheme();
 
   const { data: code } = useQuery({ queryKey: ['referral-code'], queryFn: referralApi.getMyCode });
-  const { data: invites } = useQuery({
+  const {
+    data: invites,
+    isError: invitesError,
+    refetch: refetchInvites,
+  } = useQuery({
     queryKey: ['referral-invites'],
     queryFn: referralApi.listMyInvites,
   });
@@ -151,7 +155,20 @@ export function ReferralScreen() {
       <SectionHeader title={t('referral.level1Title')} />
       <Surface padded={false}>
         <View style={{ paddingHorizontal: space[5] }}>
-          {list.length === 0 ? (
+          {invitesError ? (
+            // "You have not invited anyone yet" and "we could not ask the
+            // server" are opposite facts, and this list reached the same
+            // branch for both — which during a pilot reads as the referral
+            // programme having lost someone's invitees.
+            <EmptyState
+              title={t('common.error')}
+              message={t('common.somethingWentWrong')}
+              actionLabel={t('common.retry')}
+              onAction={() => {
+                void refetchInvites();
+              }}
+            />
+          ) : list.length === 0 ? (
             <EmptyState title={t('referral.noInvitesTitle')} message={t('referral.level1EmptyMessage')} />
           ) : (
             list.map((invite, i) => (

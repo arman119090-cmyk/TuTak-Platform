@@ -17,7 +17,9 @@
     "amd": "AMD",
     "points": "points",
     "somethingWentWrong": "Something went wrong. Please try again.",
-    "clear": "Clear"
+    "clear": "Clear",
+    "offlineTitle": "No internet connection",
+    "offlineBody": "Check your connection — data will refresh by itself."
   },
   "auth": {
     "welcomeBack": "Welcome back",
@@ -223,6 +225,9 @@
     "title": "Settings",
     "language": "Language",
     "notifications": "Notifications",
+    "privacy": "Privacy",
+    "personalizationTitle": "Personalized recommendations",
+    "personalizationExplain": "Rank nearby partners by what you actually buy. Off by default; nothing is shared with anyone.",
     "security": "Security",
     "logout": "Log out",
     "deleteAccount": "Delete account",
@@ -300,6 +305,7 @@
     "AUTHORIZED": "Authorized",
     "CHARGING": "Charging",
     "SUSPENDED": "Suspended",
+    "AWAITING_SETTLEMENT": "Awaiting network settlement",
     "COMPLETED": "Completed",
     "INVALID": "Invalid",
     "CANCELLED": "Cancelled"
@@ -311,6 +317,8 @@
     "searchPlaceholder": "Shop, café, street…",
     "all": "All",
     "stations": "Stations",
+    "gas": "Gas",
+    "petrol": "Petrol",
     "emptyTitle": "Nothing here yet",
     "emptyNearby": "No partners nearby yet. We add new ones every week.",
     "emptyFiltered": "Nothing matched that. Try a different filter.",

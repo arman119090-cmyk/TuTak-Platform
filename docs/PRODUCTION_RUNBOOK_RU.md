@@ -1,6 +1,8 @@
 # TuTak — Production Infrastructure Runbook
 
-Дата: 2026-09-01. База: `7b85f76`.
+Дата: 2026-09-01. База: `7b85f76`. Итог: **`28cbd6c`**,
+CI run [33552417299](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/33552417299) — зелёный
+(оба job'а: `Lint, test and build`, `Build the container images`).
 Шаблон блюпринта: `render.production.yaml` (**не применён**).
 
 Этот документ — процедура создания production-окружения с нуля.

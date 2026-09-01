@@ -19,7 +19,14 @@ COPY tsconfig.base.json ./tsconfig.base.json
 
 # These build arguments are optional. The image must build successfully when
 # the hosting platform does not provide any build-time values.
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
+#
+# `NEXT_PUBLIC_API_BASE_URL` defaults to empty rather than to a localhost URL:
+# this value decides the `connect-src` of the Content-Security-Policy, and a
+# default that looks like a real answer cannot be told apart from one. Empty
+# means "nobody configured this", which is Render's case, and api-base-url.mjs
+# turns it into the staging API. Anyone who wants localhost — docker-compose,
+# and CI, which boots that stack and drives it in a browser — passes it.
+ARG NEXT_PUBLIC_API_BASE_URL=""
 ARG NEXT_PUBLIC_SENTRY_DSN=""
 # Staging is the safe default for this staging Dockerfile path; do not depend
 # on a runtime Render variable being forwarded into Docker ARG.

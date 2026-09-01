@@ -8,11 +8,22 @@
  * standing up a new environment, never something a running production
  * instance should be able to trigger on request.
  *
+ * Which environment that is comes from `APP_ENV`, not `NODE_ENV`. Every
+ * deployed environment sets `NODE_ENV=production` — that is what makes
+ * frameworks and guards take their production path, and staging is a real
+ * network-reachable deployment that needs them (see `config/app-environment.ts`).
+ * Keying the refusal on `NODE_ENV` therefore refused on staging too, which is
+ * precisely where an operator standing up the environment needs to prove that
+ * events arrive. `apps/admin`'s verification route already made this move; the
+ * list below is the same one it allows, and for the same reason: it names what
+ * is permitted, so an unset or misspelled value refuses rather than passes.
+ *
  * Usage: `pnpm --filter @tutak/api sentry:verify` (needs `SENTRY_DSN` set;
  * without it this prints why and exits non-zero rather than pretending to
  * have sent anything).
  */
 import * as Sentry from '@sentry/node';
+import { resolveAppEnvironment } from '../config/app-environment';
 import { initSentry } from '../common/observability/sentry';
 
 /**
@@ -34,21 +45,31 @@ export class SentryVerificationProbe extends Error {
 }
 
 export class SentryVerifyRefusedInProductionError extends Error {
-  constructor() {
-    super('sentry-verify refuses to run with NODE_ENV=production.');
+  constructor(appEnv: string) {
+    super(
+      `sentry-verify refuses to run in APP_ENV=${appEnv || '<unset>'}. ` +
+        `Allowed: ${ALLOWED_VERIFY_APP_ENVS.join(', ')}.`,
+    );
     this.name = 'SentryVerifyRefusedInProductionError';
   }
 }
 
+/**
+ * The environments the probe may fire in. `production` is absent, and so is
+ * every name nobody thought of — an unset or misspelled `APP_ENV` refuses.
+ * Deliberately the same list as `apps/admin/src/lib/observability/sentryVerifyGate.ts`.
+ */
+export const ALLOWED_VERIFY_APP_ENVS: readonly string[] = ['development', 'staging', 'test'];
+
 /** The whole non-production gate, isolated so a test can assert it without touching `process.exit`. */
-export function assertNotProduction(nodeEnv: string): void {
-  if (nodeEnv === 'production') {
-    throw new SentryVerifyRefusedInProductionError();
+export function assertNotProduction(appEnv: string): void {
+  if (!ALLOWED_VERIFY_APP_ENVS.includes(appEnv)) {
+    throw new SentryVerifyRefusedInProductionError(appEnv);
   }
 }
 
-export async function runSentryVerify(nodeEnv: string): Promise<{ sent: boolean; reason?: string }> {
-  assertNotProduction(nodeEnv);
+export async function runSentryVerify(appEnv: string): Promise<{ sent: boolean; reason?: string }> {
+  assertNotProduction(appEnv);
 
   const started = initSentry();
   if (!started) {
@@ -70,9 +91,9 @@ export async function runSentryVerify(nodeEnv: string): Promise<{ sent: boolean;
 }
 
 async function main() {
-  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const appEnv = resolveAppEnvironment(process.env);
   try {
-    const result = await runSentryVerify(nodeEnv);
+    const result = await runSentryVerify(appEnv);
     if (!result.sent) {
       console.error(result.reason);
       process.exit(1);

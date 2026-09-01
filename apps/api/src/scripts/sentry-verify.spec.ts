@@ -21,15 +21,24 @@ import {
 } from './sentry-verify';
 
 describe('sentry-verify — the non-production gate', () => {
-  it('throws when NODE_ENV is production', () => {
+  it('throws in production', () => {
     expect(() => assertNotProduction('production')).toThrow(SentryVerifyRefusedInProductionError);
   });
 
-  it.each(['development', 'staging', 'test', ''])('allows %s through', (env) => {
+  it.each(['development', 'staging', 'test'])('allows %s through', (env) => {
     expect(() => assertNotProduction(env)).not.toThrow();
   });
 
-  it('runSentryVerify refuses before touching Sentry at all when NODE_ENV is production', async () => {
+  // The gate names what is permitted rather than what is forbidden, so a box
+  // that never declared what it is cannot fire the probe. Staging is the case
+  // this exists for: every deployed environment runs NODE_ENV=production, so a
+  // gate reading that variable refused on the one environment an operator
+  // actually needs to prove Sentry from.
+  it.each(['', 'prod', 'Staging', 'preview'])('refuses the unrecognised %p', (env) => {
+    expect(() => assertNotProduction(env)).toThrow(SentryVerifyRefusedInProductionError);
+  });
+
+  it('runSentryVerify refuses before touching Sentry at all in production', async () => {
     await expect(runSentryVerify('production')).rejects.toBeInstanceOf(
       SentryVerifyRefusedInProductionError,
     );

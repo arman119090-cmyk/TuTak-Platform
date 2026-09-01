@@ -2,6 +2,8 @@
 
 import { createHttpClient } from '@tutak/design/web';
 import { useAuthStore } from './stores/authStore';
+// @ts-expect-error — plain ESM with JSDoc types; see that file's header.
+import { LOCAL_API_BASE_URL, STAGING_API_BASE_URL } from '../../api-base-url.mjs';
 
 type RuntimeConfig = { apiBaseUrl?: string };
 
@@ -13,8 +15,8 @@ const runtimeApiBaseUrl =
 
 const stagingFallback =
   typeof window !== 'undefined' && window.location.hostname === 'tutak-staging-admin.onrender.com'
-    ? 'https://tutak-staging-api.onrender.com/v1'
-    : 'http://localhost:4000/v1';
+    ? STAGING_API_BASE_URL
+    : LOCAL_API_BASE_URL;
 
 export const API_BASE_URL =
   runtimeApiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || stagingFallback;

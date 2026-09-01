@@ -43,7 +43,11 @@ describe('OTP-first auth (integration)', () => {
    */
   const withProductionMode = (demoMode = false) =>
     jest.spyOn(config, 'get').mockImplementation(((key: string, ...rest: unknown[]) => {
+      // Both, now that the two have been split: `nodeEnv` is Node's runtime
+      // mode and `appEnv` is which deployment this is. The guards under test
+      // read the second.
       if (key === 'nodeEnv') return 'production';
+      if (key === 'appEnv') return 'production';
       if (key === 'demoMode') return demoMode;
       return (ConfigService.prototype.get as any).call(config, key, ...rest);
     }) as never);

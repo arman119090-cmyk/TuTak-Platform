@@ -1,3 +1,4 @@
+import { isPublicDeployment } from '../../config/app-environment';
 import {
   ForbiddenException,
   Injectable,
@@ -81,7 +82,7 @@ export class AuthService {
    * screen.
    */
   async register(dto: RegisterDto, meta: RequestMeta) {
-    const isProduction = this.config.get('nodeEnv', { infer: true }) === 'production';
+    const isProduction = isPublicDeployment(this.config.get('appEnv', { infer: true }));
     if (isProduction && !this.config.get('demoMode', { infer: true })) {
       throw new ForbiddenException(
         'Password registration is not available. Verify your phone number to create an account.',

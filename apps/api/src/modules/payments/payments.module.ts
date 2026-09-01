@@ -1,3 +1,4 @@
+import { isProductionDeployment } from '../../config/app-environment';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
@@ -39,7 +40,7 @@ import { SandboxPspAdapter } from './sandbox-psp.adapter';
         // saying so to anyone who asks. A demonstration has to charge
         // something; what it must never do is let anyone believe the charge
         // was real.
-        const isProduction = config.get('nodeEnv', { infer: true }) === 'production';
+        const isProduction = isProductionDeployment(config.get('appEnv', { infer: true }));
         if (isProduction && !config.get('demoMode', { infer: true })) {
           throw new Error(
             'PaymentsModule: no production PSP adapter is configured. Refusing to boot ' +

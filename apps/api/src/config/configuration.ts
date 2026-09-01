@@ -1,5 +1,12 @@
+import { AppEnvironment, resolveAppEnvironment } from './app-environment';
+import { ClientIpConfig, resolveClientIpConfig } from './client-ip';
 export interface AppConfig {
+  /** Node's own runtime mode. `production` for anything deployed, always. */
   nodeEnv: string;
+  /** Which deployment this is — see `config/app-environment.ts`. */
+  appEnv: AppEnvironment;
+  /** Where `req.ip` comes from — see `config/client-ip.ts`. */
+  clientIp: ClientIpConfig;
   /**
    * A public demonstration, running every production protection, on a fake
    * acquirer.
@@ -69,6 +76,9 @@ export interface AppConfig {
     token: string;
     sender: string;
     encoding: 'form' | 'json';
+    /** Platform-wide ceilings, counted across every flow — see `SmsBudgetService`. */
+    globalMaxPerHour: number;
+    globalMaxPerDay: number;
   };
   push: {
     enabled: boolean;
@@ -284,6 +294,8 @@ export default (): AppConfig => {
 
 const buildConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
+  appEnv: resolveAppEnvironment(process.env),
+  clientIp: resolveClientIpConfig(process.env),
   // Compared against the exact string, so an unset variable, an empty one,
   // `1`, or `yes` all leave it off. Something this consequential should
   // require someone to have typed the word.
@@ -385,6 +397,13 @@ const buildConfig = (): AppConfig => ({
     token: process.env.SMS_TOKEN ?? '',
     sender: process.env.SMS_SENDER ?? 'TuTak',
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
+    // Deliberately configuration, not a constant: the right ceiling depends
+    // on the carrier contract and the size of the user base, and an operator
+    // who has to edit code to raise it during an incident will instead turn
+    // the protection off. The defaults are sized for a pre-launch
+    // deployment, not for a live customer base.
+    globalMaxPerHour: parseInt(process.env.SMS_GLOBAL_MAX_PER_HOUR ?? '500', 10),
+    globalMaxPerDay: parseInt(process.env.SMS_GLOBAL_MAX_PER_DAY ?? '5000', 10),
   },
   push: {
     // Off by default so local development needs no Expo project. Production

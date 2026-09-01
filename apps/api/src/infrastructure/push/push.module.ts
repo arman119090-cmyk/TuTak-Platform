@@ -1,3 +1,4 @@
+import { isProductionDeployment } from '../../config/app-environment';
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
@@ -13,7 +14,7 @@ import { PUSH_PROVIDER } from './push-provider.interface';
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) => {
         const push = config.get('push', { infer: true });
-        const isProduction = config.get('nodeEnv', { infer: true }) === 'production';
+        const isProduction = isProductionDeployment(config.get('appEnv', { infer: true }));
 
         if (!push.enabled) {
           // Same discipline as SMS. A deployment that quietly logged

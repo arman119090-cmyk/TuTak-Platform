@@ -20,6 +20,8 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 import { resolveTrustProxySetting } from './config/trust-proxy';
+import { isPublicDeployment } from './config/app-environment';
+import { expressTrustProxySetting } from './config/client-ip';
 import { StructuredLogger } from './common/observability/structured-logger';
 
 const tracingEnabled = startTracing({
@@ -52,7 +54,8 @@ async function bootstrap() {
   // boot guards (SmsModule/PushModule/PaymentsModule/RedisModule), which
   // stay keyed to `production` alone since staging legitimately has no
   // live carrier or acquirer.
-  const isPublicFacing = isProduction || nodeEnv === 'staging';
+  const appEnv = config.get('appEnv', { infer: true });
+  const isPublicFacing = isPublicDeployment(appEnv);
   app.useLogger(new StructuredLogger(isProduction));
 
   app.use(helmet());
@@ -71,7 +74,7 @@ async function bootstrap() {
   const origins =
     configuredOrigins.length > 0
       ? configuredOrigins
-      : nodeEnv === 'staging'
+      : appEnv === 'staging'
         ? [
             'https://tutak-staging-admin.onrender.com',
             'https://tutak-staging-partner.onrender.com',
@@ -107,21 +110,45 @@ async function bootstrap() {
   // `req.ip` is the real TCP peer address, which a client cannot spoof via a
   // header, and every rate limit keys on the address that actually made the
   // request.
+  // Two ways to answer "who is the client", and the deployment says which.
+  //
+  // `TRUST_PROXY` names a specific proxy address to believe — correct when
+  // there is one known proxy that strips inbound `X-Forwarded-For` before
+  // appending its own. Render's edge does not strip it, so that form does
+  // not apply there; `CLIENT_IP_STRATEGY=xff-depth` counts trusted hops from
+  // the right instead. See `config/client-ip.ts` for why the leftmost entry
+  // is never the answer.
+  const clientIp = config.get('clientIp', { infer: true });
   const trustProxyConfig = resolveTrustProxySetting(config.get('trustProxy', { infer: true }));
-  if (trustProxyConfig) {
+  const hopCount = expressTrustProxySetting(clientIp);
+
+  if (trustProxyConfig && hopCount !== undefined) {
+    throw new Error(
+      'TRUST_PROXY and CLIENT_IP_STRATEGY=xff-depth both configure where req.ip comes from. ' +
+        'Set exactly one: TRUST_PROXY for a named proxy that sanitises X-Forwarded-For, ' +
+        'CLIENT_IP_STRATEGY for a proxy chain that only appends to it.',
+    );
+  }
+
+  if (hopCount !== undefined) {
+    app.set('trust proxy', hopCount);
+    new Logger('Bootstrap').log(
+      `Client IP resolved from X-Forwarded-For, trusting ${hopCount} hop(s) from the right.`,
+    );
+  } else if (trustProxyConfig) {
     app.set('trust proxy', trustProxyConfig);
   } else if (isPublicFacing) {
     // Not a boot failure — a deployment with no reverse proxy at all is a
     // valid topology, and `req.ip` is still correct and unspoofable there.
-    // But a deployment that *does* have a proxy and forgot to set this would
-    // otherwise silently rate-limit every client behind it as one address,
-    // which is worth a loud line on a public-facing boot either way.
+    // But behind a balancer this makes every caller look like one address,
+    // so per-caller limits stand down (see `clientIpIsPerCaller`) and the
+    // global SMS budget is what remains between a botnet and the bill.
     new Logger('Bootstrap').warn(
-      'TRUST_PROXY is not set. Per-IP rate limiting and audit logging will use the direct ' +
-        'TCP peer address for every request. If this deployment sits behind a real reverse ' +
-        'proxy or load balancer, set TRUST_PROXY to its IP/CIDR so client IPs resolve ' +
-        'correctly — leaving it unset there under-counts abuse from behind that proxy rather ' +
-        'than over-trusting a spoofable header, which is the safe direction to be wrong in.',
+      'Neither CLIENT_IP_STRATEGY nor TRUST_PROXY is set. req.ip will be the direct TCP peer ' +
+        'for every request, which behind a load balancer is the balancer itself. Per-IP OTP ' +
+        'limits are disabled in that state rather than collapsing into one shared bucket; the ' +
+        'global SMS budget still applies. Set CLIENT_IP_STRATEGY=xff-depth with a measured ' +
+        'CLIENT_IP_TRUSTED_HOPS to enable them — see docs/RENDER_STAGING_RU.md.',
     );
   }
 

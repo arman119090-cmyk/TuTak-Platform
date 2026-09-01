@@ -26,7 +26,12 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
+      # `production`, not `staging`: this is a network-reachable deployment,
+      # and every framework and guard that keys on NODE_ENV must take its
+      # production path here. Which deployment it is lives in APP_ENV.
       - key: NODE_ENV
+        value: production
+      - key: APP_ENV
         value: staging
       - key: PORT
         value: '4000'
@@ -52,7 +57,26 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
-      - key: TRUST_PROXY
+      # Where req.ip comes from. Render appends to X-Forwarded-For without
+      # stripping what the client sent, so the leftmost entry is forgeable and
+      # TRUST_PROXY (which names a proxy address) does not apply. Measure the
+      # hop count against the live service before setting these — an
+      # over-count selects an attacker-supplied address. Left unset, per-IP
+      # OTP limits stand down and the global SMS budget carries the load.
+      # See docs/RENDER_STAGING_RU.md.
+      - key: CLIENT_IP_STRATEGY
+        sync: false
+      - key: CLIENT_IP_TRUSTED_HOPS
+        sync: false
+      # Total messages this service may send, across every flow. The only
+      # limit that bounds the carrier bill rather than one attacker's reach.
+      - key: SMS_GLOBAL_MAX_PER_HOUR
+        sync: false
+      - key: SMS_GLOBAL_MAX_PER_DAY
+        sync: false
+      # Without a carrier every code send fails with a generic
+      # "temporarily unavailable" — never a code written to the log.
+      - key: SMS_ENDPOINT
         sync: false
       - key: SWEEPS_ENABLED
         value: 'true'

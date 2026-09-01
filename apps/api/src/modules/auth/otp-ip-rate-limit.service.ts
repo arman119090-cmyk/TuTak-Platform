@@ -1,5 +1,8 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { AppConfig } from '../../config/configuration';
+import { clientIpIsPerCaller } from '../../config/client-ip';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis-client.token';
 
 /**
@@ -36,7 +39,14 @@ export type OtpIpAction = 'issue' | 'verify';
 export class OtpIpRateLimitService {
   private readonly logger = new Logger(OtpIpRateLimitService.name);
 
-  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+  private readonly perCallerIp: boolean;
+
+  constructor(
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    config: ConfigService<AppConfig, true>,
+  ) {
+    this.perCallerIp = clientIpIsPerCaller(config.get('clientIp', { infer: true }));
+  }
 
   private limitFor(action: OtpIpAction): number {
     return action === 'issue'
@@ -58,6 +68,18 @@ export class OtpIpRateLimitService {
    */
   async consume(ipAddress: string | undefined, action: OtpIpAction): Promise<void> {
     if (!ipAddress) return;
+
+    // Stand down when `req.ip` does not identify a caller.
+    //
+    // Under `CLIENT_IP_STRATEGY=socket` behind a load balancer every request
+    // carries the balancer's address, so this budget would be one bucket for
+    // the entire service — 60 codes an hour for everybody combined, and the
+    // first burst of legitimate signups locks the platform out. Refusing to
+    // enforce a limit that cannot mean what it says is better than enforcing
+    // a denial-of-service against our own users; the global SMS budget,
+    // which never depends on knowing the caller, is what holds in that
+    // configuration.
+    if (!this.perCallerIp) return;
 
     const bucket = Math.floor(Date.now() / (WINDOW_SECONDS * 1000));
     const key = `otp:ip:${action}:${ipAddress}:${bucket}`;

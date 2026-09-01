@@ -1,3 +1,4 @@
+import { isProductionDeployment } from '../../config/app-environment';
 import * as path from 'node:path';
 import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -42,8 +43,7 @@ import { S3MediaStorage } from './s3-media-storage';
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>): MediaStorage => {
         const media = config.get('media', { infer: true });
-        const nodeEnv = config.get('nodeEnv', { infer: true });
-        const isProduction = nodeEnv === 'production';
+        const isProduction = isProductionDeployment(config.get('appEnv', { infer: true }));
         const logger = new Logger('MediaStorage');
 
         if (isProduction && media.driver !== 's3') {

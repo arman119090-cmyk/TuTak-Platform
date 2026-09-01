@@ -14,7 +14,7 @@ import { WebhookAlertChannel } from './webhook-alert.channel';
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) => {
         const alerts = config.get('alerts', { infer: true });
-        const environment = config.get('nodeEnv', { infer: true });
+        const environment = config.get('appEnv', { infer: true });
         const logger = new Logger('AlertsModule');
 
         if (!alerts.webhookUrl) {

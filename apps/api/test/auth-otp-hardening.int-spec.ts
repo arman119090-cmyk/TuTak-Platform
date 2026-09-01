@@ -9,7 +9,7 @@ import {
 } from '../src/modules/auth/otp-ip-rate-limit.service';
 import { NotificationsService } from '../src/modules/notifications/notifications.service';
 import { REDIS_CLIENT } from '../src/infrastructure/redis/redis-client.token';
-import { ConsoleSmsProvider } from '../src/infrastructure/sms/console-sms.provider';
+import { selectSmsTransport } from '../src/infrastructure/sms/sms-transport';
 import { SMS_PROVIDER, SmsProvider } from '../src/infrastructure/sms/sms-provider.interface';
 import { createCustomer } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
@@ -165,22 +165,31 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
       expect(logged).not.toContain(code!);
     });
 
-    it('redacts the message body when the console transport runs in production demo mode', async () => {
-      // The one deployment that reaches the console provider with real users
-      // in front of it. Un-redacted, it would write live codes into a hosted
-      // log for every number that asked.
-      const logSpy = jest
-        .spyOn(Logger.prototype, 'warn')
-        .mockImplementation(() => undefined);
+    it('never selects a code-logging transport for a public deployment', () => {
+      // The console transport is what used to put live codes in a hosted
+      // log, and DEMO_MODE was the configuration that reached it in
+      // production. Asserted against the factory rather than a running app
+      // so every combination can be checked, including the one that used to
+      // be the hole.
+      const build = (appEnv: 'development' | 'staging' | 'production', demoMode: boolean) =>
+        selectSmsTransport({
+          appEnv,
+          demoMode,
+          endpoint: '',
+          authScheme: 'basic',
+          username: '',
+          token: '',
+          sender: 'TuTak',
+          encoding: 'form',
+        });
 
-      await new ConsoleSmsProvider(true).send({
-        to: '+37411111111',
-        body: 'TuTak: your verification code is 123456',
-      });
+      expect(build('staging', false).name).toContain('unavailable');
+      expect(build('staging', true).name).toContain('unavailable');
+      expect(build('production', true).name).toContain('unavailable');
+      expect(() => build('production', false)).toThrow(/SMS_ENDPOINT must be configured/);
 
-      const logged = logSpy.mock.calls.map(String).join(' | ');
-      expect(logged).not.toContain('123456');
-      expect(logged).toContain('redacted');
+      // Only a developer's machine gets the transport that prints the body.
+      expect(build('development', false).name).toContain('console');
     });
   });
 

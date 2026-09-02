@@ -9,9 +9,9 @@
 
 | Поле | Значение | Источник | Статус |
 |---|---|---|---|
-| City / Country | Yerevan, Armenia | Владелец | **NEEDS OWNER** — подтвердить |
+| City / Country | — | — | **NEEDS VIVA / NEEDS CONTABO LOCATION** — см. ниже |
 | VPN Device Description | strongSwan 5.9.x, Ubuntu 24.04, Contabo Cloud VPS 4 (Hub Europe) | Наша сторона | **CONFIRMED** (версия — после live-проверки) |
-| Tunnel Source (наш peer) | `217.76.49.94` | Письмо Contabo | **NEEDS LIVE CHECK** — см. ниже |
+| Tunnel Source (наш peer) | — | Письмо Contabo (значение не переносим до проверки) | **NEEDS LIVE CHECK** — см. ниже |
 | Encryption Domain (наш) | — | — | **NEEDS VIVA** |
 | Encryption Domain (Viva) | — | — | **NEEDS VIVA** |
 | Backup VPN | — | — | **NEEDS VIVA** |
@@ -32,6 +32,27 @@
 | Technical contact | — | — | **NEEDS OWNER** |
 | Notes | Трафик только к `businesshubapi.viva.am`, только 4 endpoint'а API | Наша сторона | **CONFIRMED** |
 
+## City / Country — почему «NEEDS VIVA / NEEDS CONTABO LOCATION»
+
+Раньше здесь стояло «Yerevan, Armenia». Это было неверно: Yerevan — место
+ведения бизнеса владельца, а поле формы относится к VPN-устройству. VPN
+gateway физически находится **не в Армении**, а в дата-центре Contabo
+(тариф Cloud VPS 4, регион **Hub Europe**).
+
+Заполнять поле нельзя, пока не подтверждены обе вещи:
+
+1. **NEEDS VIVA** — что именно Viva хочет видеть в этом поле: физическую
+   локацию VPN-устройства, юридический адрес компании или адрес технического
+   контакта. От ответа зависит, идёт ли туда город дата-центра или Ереван.
+2. **NEEDS CONTABO LOCATION** — точная физическая локация VPS. «Hub Europe» —
+   это регион, а не город. Точный дата-центр смотрим в Contabo Customer
+   Control Panel (карточка сервера → Region / Datacenter) либо в письме о
+   создании сервера.
+
+До получения обоих ответов поле остаётся пустым. Подставлять «Yerevan,
+Armenia» в форму, которую Viva использует для настройки своей стороны
+туннеля, нельзя.
+
 ## Tunnel Source — почему «NEEDS LIVE CHECK»
 
 `217.76.49.94` взят из письма Contabo, приведённого в задании. Я **не смог
@@ -48,6 +69,14 @@ as-seen:      ...   ← это и есть Tunnel Source
 
 В форму пишем `as-seen`. Если он не совпадает с `217.76.49.94` — в форму идёт
 фактический, а не тот, что в письме.
+
+**Адрес для формы и адрес для strongSwan — это не одно и то же.** Public IP —
+это наш IKE identity и Tunnel Source (`__LOCAL_IKE_ID__`). В `local_addrs`
+strongSwan он попадает только если реально назначен интерфейсу VPS. Если VPS
+за NAT (`as-seen` не совпадает ни с одним `on-interface`), в `local_addrs`
+идёт локальный адрес интерфейса или `%any`, а туннель работает через NAT-T.
+Подставлять public NAT IP в `local_addrs` автоматически нельзя — сокет не
+забиндится. Подробнее — `infra/viva-gateway/strongswan/PLACEHOLDERS.md`.
 
 ## PSK
 
@@ -73,6 +102,17 @@ root-доступом, invoice. В загрузках сессии есть то
 4. Phase 2: ESP encryption, ESP integrity, PFS group.
 5. Как передаём PSK.
 6. Нужен ли backup VPN и его параметры.
-7. Плюс два вопроса по HTTP API, которые всё ещё открыты:
-   формат номера получателя (`93600600` / `37493600600` / `+37493600600`)
-   и как предъявлять access token на `transact/*`.
+7. Плюс три вопроса по HTTP API, которые всё ещё открыты:
+   формат номера получателя (`93600600` / `37493600600` / `+37493600600`);
+   как предъявлять access token на `transact/*`;
+   и какой именно `client_id` использовать для API.
+
+## Partner ID ≠ API client_id
+
+`10064` — это **Partner ID** в личном кабинете Viva, а не подтверждённый
+API `client_id`. Пока Viva явно не подтвердит обратное, это значение
+**нельзя** записывать в `SMS_VIVA_CLIENT_ID`.
+
+В коде оно не захардкожено нигде: `SMS_VIVA_CLIENT_ID` читается из окружения
+без значения по умолчанию, в `.env.example` переменная пустая, а поиск по
+всему репозиторию по строке `10064` не даёт совпадений.

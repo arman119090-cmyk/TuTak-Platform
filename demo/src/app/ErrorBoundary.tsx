@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 
 interface Props {
@@ -91,7 +91,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0F' },
-  content: { padding: 20, paddingTop: 64 },
+  content: {
+    padding: 20,
+    // This boundary sits *outside* `SafeAreaProvider` on purpose — it has to
+    // render even when the provider is what failed — so it cannot read the
+    // insets. `StatusBar.currentHeight` needs no provider and is the real
+    // number on Android; the 64 is the floor that covers iOS and any device
+    // that reports nothing. Without it the heading on the one screen someone
+    // reads when the app has already broken is drawn under the clock.
+    paddingTop: Math.max(64, (StatusBar.currentHeight ?? 0) + 24),
+    // Edge-to-edge draws behind the gesture bar, so the end of a long stack
+    // trace would otherwise sit underneath it.
+    paddingBottom: 48,
+  },
   title: { color: '#FFFFFF', fontSize: 20, fontWeight: '600' },
   hint: { color: '#9CA3AF', fontSize: 14, marginTop: 8, marginBottom: 20 },
   label: { color: '#6B7280', fontSize: 12, marginTop: 20, marginBottom: 6 },

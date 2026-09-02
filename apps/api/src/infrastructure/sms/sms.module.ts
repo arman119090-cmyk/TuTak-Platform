@@ -21,12 +21,14 @@ import { SMS_PROVIDER } from './sms-provider.interface';
         const transport = selectSmsTransport({
           appEnv: config.get('appEnv', { infer: true }),
           demoMode: config.get('demoMode', { infer: true }),
+          driver: sms.driver,
           endpoint: sms.endpoint,
           authScheme: sms.authScheme,
           username: sms.username,
           token: sms.token,
           sender: sms.sender,
           encoding: sms.encoding,
+          viva: sms.viva,
         });
 
         // Every send, on every transport, draws on the same global ceiling —

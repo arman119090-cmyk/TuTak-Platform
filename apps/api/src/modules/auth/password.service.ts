@@ -114,7 +114,7 @@ export class PasswordService {
       // to send is logged rather than surfaced, because telling the caller
       // that delivery failed would say the number exists.
       await this.sms
-        .send({ to: user.phone, body: `TuTak: your password reset code is ${code}` })
+        .send({ to: user.phone, body: `TuTak: your password reset code is ${code}`, templateParams: [code] })
         .catch((err: Error) =>
           this.logger.error(`Could not deliver reset code to ${user.id}: ${err.message}`),
         );

@@ -70,12 +70,25 @@ export interface AppConfig {
     baseUrl: string;
   };
   sms: {
+    /**
+     * Which carrier integration to use. `viva` is the Armenian Business Hub
+     * (template-based); `http` is the generic text-posting client.
+     */
+    driver: 'http' | 'viva';
     endpoint: string;
     authScheme: 'basic' | 'bearer';
     username: string;
     token: string;
     sender: string;
     encoding: 'form' | 'json';
+    viva: {
+      clientId: string;
+      clientSecret: string;
+      /** Name registered under Templates/Text in the Viva profile. */
+      templateName: string;
+      /** Ask Viva for Unicode where it can — required for Armenian text. */
+      sendUtf: boolean;
+    };
     /** Platform-wide ceilings, counted across every flow — see `SmsBudgetService`. */
     globalMaxPerHour: number;
     globalMaxPerDay: number;
@@ -391,12 +404,23 @@ const buildConfig = (): AppConfig => ({
     baseUrl: process.env.OCPI_BASE_URL ?? '',
   },
   sms: {
+    // `http` stays the default so an existing deployment's behaviour does not
+    // change by upgrading; Viva is opted into by name.
+    driver: (process.env.SMS_DRIVER as 'http' | 'viva') ?? 'http',
     endpoint: process.env.SMS_ENDPOINT ?? '',
     authScheme: (process.env.SMS_AUTH_SCHEME as 'basic' | 'bearer') ?? 'basic',
     username: process.env.SMS_USERNAME ?? '',
     token: process.env.SMS_TOKEN ?? '',
     sender: process.env.SMS_SENDER ?? 'TuTak',
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
+    viva: {
+      clientId: process.env.SMS_VIVA_CLIENT_ID ?? '',
+      clientSecret: process.env.SMS_VIVA_CLIENT_SECRET ?? '',
+      templateName: process.env.SMS_VIVA_TEMPLATE_NAME ?? '',
+      // Armenian does not fit GSM-7, and the code is useless inside a
+      // message the customer cannot read. On unless explicitly turned off.
+      sendUtf: process.env.SMS_VIVA_SEND_UTF !== '0',
+    },
     // Deliberately configuration, not a constant: the right ceiling depends
     // on the carrier contract and the size of the user base, and an operator
     // who has to edit code to raise it during an incident will instead turn

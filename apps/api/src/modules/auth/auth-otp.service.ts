@@ -57,7 +57,7 @@ export class AuthOtpService {
     });
 
     await this.sms
-      .send({ to: phone, body: `TuTak: your verification code is ${code}` })
+      .send({ to: phone, body: `TuTak: your verification code is ${code}`, templateParams: [code] })
       .catch((err: Error) => this.logger.error(`Could not deliver OTP to ${phone}: ${err.message}`));
 
     // SMS is the only channel a live code travels on.

@@ -175,12 +175,14 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
         selectSmsTransport({
           appEnv,
           demoMode,
+          driver: 'http',
           endpoint: '',
           authScheme: 'basic',
           username: '',
           token: '',
           sender: 'TuTak',
           encoding: 'form',
+          viva: { clientId: '', clientSecret: '', templateName: '', sendUtf: true },
         });
 
       expect(build('staging', false).name).toContain('unavailable');

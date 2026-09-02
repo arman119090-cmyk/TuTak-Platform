@@ -28,6 +28,8 @@ export interface SmsTransportOptions {
     numberFormat: string;
     /** Where the access token goes; `bearer` is an inference, not a fact. */
     tokenPlacement: string;
+    /** HMAC secret for the Contabo gateway. Empty = no gateway in front. */
+    gatewaySecret: string;
   };
 }
 
@@ -101,6 +103,7 @@ export function selectSmsTransport(opts: SmsTransportOptions): SmsProvider {
       sendUtf: opts.viva.sendUtf,
       numberFormat: opts.viva.numberFormat as VivaNumberFormat,
       tokenPlacement: opts.viva.tokenPlacement,
+      gatewaySecret: opts.viva.gatewaySecret,
     });
   }
 

@@ -1,0 +1,39 @@
+[Unit]
+Description=TuTak Viva gateway
+Documentation=https://github.com/arman119090-cmyk/TuTak-Platform/blob/main/infra/viva-gateway/README.md
+After=network-online.target strongswan.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=viva-gw
+Group=viva-gw
+# The secret lives here, mode 0600, owned by root and readable by the unit.
+# Never in the unit file itself: `systemctl cat` is not privileged.
+EnvironmentFile=/etc/viva-gateway/gateway.env
+ExecStart=/usr/bin/node /opt/viva-gateway/viva-gateway.mjs
+Restart=always
+RestartSec=2
+
+# It answers HTTP, signs nothing to disk, and talks to one host. Nothing
+# below is needed for that, so nothing below is allowed.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# The only writable path, and only because the health timer publishes there.
+ReadOnlyPaths=/opt/viva-gateway
+ReadWritePaths=/run/viva-tunnel
+
+[Install]
+WantedBy=multi-user.target

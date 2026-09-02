@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish IPsec tunnel state for the Viva gateway
+After=strongswan.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/viva-gateway/tunnel-health.sh

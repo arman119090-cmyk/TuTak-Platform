@@ -1,0 +1,92 @@
+# strongSwan swanctl connection to Viva Business Hub — TEMPLATE.
+#
+# Every __PLACEHOLDER__ below is a value only Viva can supply. This file is
+# deliberately NOT valid until they are filled in: a tunnel built on guessed
+# crypto either fails to establish (the good case) or establishes against
+# something that is not Viva (the bad one). Nothing here is a default.
+#
+# Install as /etc/swanctl/conf.d/viva.conf once complete, then:
+#   swanctl --load-all && swanctl --initiate --child viva
+#
+# CONFIRMED from the Viva VPN form (do not change these):
+#   IKEv2, Main Mode, symmetric PSK, IKE SA lifetime 86400s
+#   ESP, PFS enabled, IPsec SA lifetime 3600s
+
+connections {
+    viva {
+        # __VIVA_PEER__  Viva's public IP or FQDN. NEEDS VIVA.
+        remote_addrs = __VIVA_PEER__
+
+        # Our public IPv4 as the internet sees it — confirm with
+        # bootstrap/00-audit.sh before writing it here and on the Viva form.
+        local_addrs  = __CONTABO_PUBLIC_IP__
+
+        version = 2          # CONFIRMED: IKEv2
+        mobike  = no         # a fixed site-to-site peer; address agility is
+                             # not wanted and confuses some peers
+
+        # Phase 1. CONFIRMED: lifetime 86400s. The proposal itself NEEDS VIVA:
+        #   __IKE_ENC__   e.g. aes256
+        #   __IKE_INTEG__ e.g. sha256
+        #   __IKE_PRF__   e.g. prfsha256
+        #   __IKE_DH__    e.g. modp2048 / ecp256
+        proposals   = __IKE_ENC__-__IKE_INTEG__-__IKE_PRF__-__IKE_DH__
+        rekey_time  = 86400s
+        over_time   = 3600s
+        dpd_delay   = 30s
+        dpd_timeout = 120s
+
+        local {
+            auth = psk
+            id   = __CONTABO_PUBLIC_IP__
+        }
+        remote {
+            auth = psk
+            id   = __VIVA_PEER_ID__      # usually the peer IP. NEEDS VIVA.
+        }
+
+        children {
+            viva {
+                # The encryption domains: which addresses may cross the
+                # tunnel. Both NEED VIVA — and they are the two values most
+                # likely to be wrong, because a mismatch here brings the
+                # CHILD SA up and then silently drops traffic.
+                #
+                # local_ts is the address Viva expects our traffic to come
+                # from. If Viva assigns us one, it goes here and on the
+                # gateway's source route; if they expect our public IP, this
+                # is __CONTABO_PUBLIC_IP__/32.
+                local_ts  = __LOCAL_ENCRYPTION_DOMAIN__
+                remote_ts = __VIVA_ENCRYPTION_DOMAIN__
+
+                # Phase 2. CONFIRMED: ESP, PFS on, lifetime 3600s.
+                # The proposal NEEDS VIVA:
+                #   __ESP_ENC__   e.g. aes256
+                #   __ESP_INTEG__ e.g. sha256
+                #   __PFS_GROUP__ e.g. modp2048 — PFS is confirmed ON, so a
+                #                 DH group MUST appear here; esp proposals
+                #                 without one mean no PFS.
+                esp_proposals = __ESP_ENC__-__ESP_INTEG__-__PFS_GROUP__
+                rekey_time    = 3600s
+                life_time     = 3900s
+
+                # `start` so the tunnel comes up on boot and is re-established
+                # by strongSwan rather than by the first SMS someone sends.
+                start_action = start
+                close_action = start
+                dpd_action   = restart
+            }
+        }
+    }
+}
+
+secrets {
+    ike-viva {
+        id-1   = __CONTABO_PUBLIC_IP__
+        id-2   = __VIVA_PEER__
+        # NEVER commit this file with a real value. The PSK belongs in
+        # /etc/swanctl/conf.d/viva-secret.conf, mode 0600, which is
+        # .gitignored. See the runbook.
+        secret = __PSK__
+    }
+}

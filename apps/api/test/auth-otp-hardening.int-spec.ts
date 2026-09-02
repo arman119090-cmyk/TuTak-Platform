@@ -189,6 +189,7 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
             sendUtf: true,
             numberFormat: '',
             tokenPlacement: 'bearer',
+            gatewaySecret: '',
           },
         });
 

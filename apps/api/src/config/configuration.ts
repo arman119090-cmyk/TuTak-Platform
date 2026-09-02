@@ -92,6 +92,8 @@ export interface AppConfig {
       numberFormat: string;
       /** `bearer` | `header:<Name>` | `body:<field>` | `query:<param>`. */
       tokenPlacement: string;
+      /** HMAC secret for the Contabo gateway. Empty = no gateway in front. */
+      gatewaySecret: string;
     };
     /** Platform-wide ceilings, counted across every flow — see `SmsBudgetService`. */
     globalMaxPerHour: number;
@@ -430,6 +432,10 @@ const buildConfig = (): AppConfig => ({
       // `bearer` is the shape an OAuth-style token pair implies, and is not
       // stated anywhere by Viva. Changing it is an environment edit.
       tokenPlacement: process.env.SMS_VIVA_TOKEN_PLACEMENT ?? 'bearer',
+      // Set when SMS_ENDPOINT points at the Contabo gateway rather than at
+      // Viva. Railway has no static outbound IP, so an allow-list cannot be
+      // the authentication — the request signs itself instead.
+      gatewaySecret: process.env.SMS_VIVA_GATEWAY_SECRET ?? '',
     },
     // Deliberately configuration, not a constant: the right ceiling depends
     // on the carrier contract and the size of the user base, and an operator

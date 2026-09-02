@@ -1,3 +1,4 @@
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { SmsMessage, SmsProvider } from './sms-provider.interface';
 
@@ -52,6 +53,58 @@ export interface VivaSmsConfig {
   sendUtf: boolean;
   numberFormat: VivaNumberFormat;
   tokenPlacement: VivaTokenPlacement;
+  /**
+   * Shared secret for the Contabo gateway, when `baseUrl` points at it rather
+   * than at Viva directly. Empty means "talking to Viva without a gateway",
+   * which is the shape used in development and in every test that is not
+   * about signing.
+   */
+  gatewaySecret: string;
+}
+
+/**
+ * The string the gateway and this client both sign.
+ *
+ * Must stay byte-identical to `signingString` in
+ * `infra/viva-gateway/gateway/viva-gateway.mjs`; the tests on both sides pin
+ * the same example so a change to one fails the other.
+ *
+ * It covers the body, so a signature cannot be lifted onto a different
+ * message; the path, so a signature for `show/progress` cannot be replayed as
+ * one that sends an SMS; and a timestamp and nonce, so a captured request
+ * cannot be sent twice. The secret itself never travels — which is the reason
+ * for an HMAC here rather than a bearer token. On a platform with no static
+ * outbound IP there is no network-level identity to lean on, so the request
+ * has to prove its own authenticity, and a bearer token proves only that
+ * whoever holds it once holds it forever.
+ */
+export function gatewaySigningString(parts: {
+  timestamp: string;
+  nonce: string;
+  method: string;
+  path: string;
+  body: string;
+}): string {
+  const digest = createHash('sha256').update(parts.body).digest('hex');
+  return [parts.timestamp, parts.nonce, parts.method.toUpperCase(), parts.path, digest].join('\n');
+}
+
+/** The three headers the gateway checks. Never logged, by anyone. */
+export function gatewayAuthHeaders(
+  secret: string,
+  path: string,
+  body: string,
+  now: number = Date.now(),
+  nonce: string = randomBytes(16).toString('hex'),
+): Record<string, string> {
+  const timestamp = String(Math.floor(now / 1000));
+  return {
+    'X-TuTak-Timestamp': timestamp,
+    'X-TuTak-Nonce': nonce,
+    'X-TuTak-Signature': createHmac('sha256', secret)
+      .update(gatewaySigningString({ timestamp, nonce, method: 'POST', path, body }))
+      .digest('hex'),
+  };
 }
 
 const ARMENIAN_COUNTRY_CODE = '+374';
@@ -401,12 +454,23 @@ export class VivaSmsProvider implements SmsProvider {
     const timeout = setTimeout(() => controller.abort(), 10_000);
     const search = new URLSearchParams(query).toString();
     const url = `${this.config.baseUrl}${path}${search ? `?${search}` : ''}`;
+    const payload = JSON.stringify(body);
 
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...extraHeaders },
-        body: JSON.stringify(body),
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...extraHeaders,
+          // Signed over the path the gateway sees, which is what follows the
+          // base URL — not the full URL, and never the query string, which
+          // carries no part of the request the gateway acts on.
+          ...(this.config.gatewaySecret
+            ? gatewayAuthHeaders(this.config.gatewaySecret, path, payload)
+            : {}),
+        },
+        body: payload,
         signal: controller.signal,
       });
 

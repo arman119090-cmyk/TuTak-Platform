@@ -73,3 +73,8 @@ backups/
 # does not belong in the repository, and a directory production is refused
 # permission to use at all.
 apps/api/.media-storage/
+
+# Viva gateway: anything holding the IPsec PSK or the gateway secret.
+infra/viva-gateway/**/*.secret
+infra/viva-gateway/**/viva-secret.conf
+infra/viva-gateway/**/gateway.env

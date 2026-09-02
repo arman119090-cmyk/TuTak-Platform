@@ -3,6 +3,8 @@ import {
   VivaSmsProvider,
   applyAccessToken,
   formatVivaRecipient,
+  gatewayAuthHeaders,
+  gatewaySigningString,
   readTransactionId,
   safeProviderErrorCode,
 } from './viva-sms.provider';
@@ -30,6 +32,7 @@ const CONFIG = {
   sendUtf: true,
   numberFormat: 'national' as const,
   tokenPlacement: 'bearer',
+  gatewaySecret: '',
 };
 
 type Call = { url: string; init: RequestInit };
@@ -495,6 +498,7 @@ describe('selecting the Viva transport', () => {
       sendUtf: true,
       numberFormat: 'national',
       tokenPlacement: 'bearer',
+      gatewaySecret: '',
     },
   };
 
@@ -553,5 +557,118 @@ describe('selecting the Viva transport', () => {
 
   it('leaves the generic HTTP transport untouched', () => {
     expect(selectSmsTransport({ ...base, driver: 'http' }).name).toBe('http');
+  });
+});
+
+/**
+ * The contract with `infra/viva-gateway/gateway/viva-gateway.mjs`.
+ *
+ * These two implementations live in different languages, different packages
+ * and different machines, and they must agree byte for byte or every request
+ * from Railway is a 401 that looks like a broken secret. The example below is
+ * duplicated verbatim in the gateway's own test file; if either side changes
+ * its signing string, one of the two fails.
+ */
+describe('gateway request signing', () => {
+  const SECRET = 'test-secret-of-sufficient-length-000000';
+
+  it('produces the agreed signing string', () => {
+    expect(
+      gatewaySigningString({
+        timestamp: '1700000000',
+        nonce: 'abc123',
+        method: 'post',
+        path: '/v1/transact/send/batch',
+        body: '{"a":1}',
+      }),
+    ).toBe(
+      [
+        '1700000000',
+        'abc123',
+        'POST',
+        '/v1/transact/send/batch',
+        // sha256('{"a":1}')
+        '015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862',
+      ].join('\n'),
+    );
+  });
+
+  it('never puts the body itself in the signing string', () => {
+    // A signing string is exactly the sort of value that ends up in a debug
+    // log. The body is hashed so the code cannot travel inside it.
+    const signed = gatewaySigningString({
+      timestamp: '1',
+      nonce: 'n',
+      method: 'POST',
+      path: '/v1/transact/send/batch',
+      body: '{"params_data":"{\\"93600600\\":[\\"123456\\"]}"}',
+    });
+    expect(signed).not.toContain('123456');
+    expect(signed).not.toContain('93600600');
+  });
+
+  it('signs every field, so nothing can be lifted onto another request', () => {
+    const base = {
+      timestamp: '1700000000',
+      nonce: 'n',
+      method: 'POST',
+      path: '/v1/token/get',
+      body: '{}',
+    };
+    const variants = [
+      base,
+      { ...base, timestamp: '1700000001' },
+      { ...base, nonce: 'm' },
+      { ...base, path: '/v1/transact/send/batch' },
+      { ...base, body: '{"a":1}' },
+    ].map(gatewaySigningString);
+    expect(new Set(variants).size).toBe(5);
+  });
+
+  it('emits the three headers the gateway checks, and no secret', () => {
+    const headers = gatewayAuthHeaders(SECRET, '/v1/token/get', '{}', 1_700_000_000_000, 'nonce1');
+    expect(Object.keys(headers).sort()).toEqual([
+      'X-TuTak-Nonce',
+      'X-TuTak-Signature',
+      'X-TuTak-Timestamp',
+    ]);
+    expect(headers['X-TuTak-Timestamp']).toBe('1700000000');
+    expect(headers['X-TuTak-Signature']).toMatch(/^[0-9a-f]{64}$/);
+    expect(Object.values(headers).join(' ')).not.toContain(SECRET);
+  });
+
+  it('sends the headers only when a gateway secret is configured', async () => {
+    const withGateway = stubFetch([
+      { status: 200, body: { access_token: 'a' } },
+      { status: 200, body: {} },
+    ]);
+    await new VivaSmsProvider({ ...CONFIG, gatewaySecret: SECRET }).send({
+      to: '+37493600600',
+      body: 'x',
+      templateParams: ['1'],
+    });
+    expect(headersOf(withGateway[0]!)['X-TuTak-Signature']).toMatch(/^[0-9a-f]{64}$/);
+
+    const direct = stubFetch([
+      { status: 200, body: { access_token: 'a' } },
+      { status: 200, body: {} },
+    ]);
+    await new VivaSmsProvider(CONFIG).send({ to: '+37493600600', body: 'x', templateParams: ['1'] });
+    expect(headersOf(direct[0]!)['X-TuTak-Signature']).toBeUndefined();
+  });
+
+  it('signs each request with a fresh nonce', async () => {
+    const calls = stubFetch([
+      { status: 200, body: { access_token: 'a' } },
+      { status: 200, body: {} },
+      { status: 200, body: {} },
+    ]);
+    const provider = new VivaSmsProvider({ ...CONFIG, gatewaySecret: SECRET });
+    const message = { to: '+37493600600', body: 'x', templateParams: ['1'] };
+    await provider.send(message);
+    await provider.send(message);
+
+    const nonces = calls.map((c) => headersOf(c)['X-TuTak-Nonce']);
+    expect(new Set(nonces).size).toBe(nonces.length);
   });
 });

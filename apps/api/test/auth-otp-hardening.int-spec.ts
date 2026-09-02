@@ -182,7 +182,14 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
           token: '',
           sender: 'TuTak',
           encoding: 'form',
-          viva: { clientId: '', clientSecret: '', templateName: '', sendUtf: true },
+          viva: {
+            clientId: '',
+            clientSecret: '',
+            templateName: '',
+            sendUtf: true,
+            numberFormat: '',
+            tokenPlacement: 'bearer',
+          },
         });
 
       expect(build('staging', false).name).toContain('unavailable');

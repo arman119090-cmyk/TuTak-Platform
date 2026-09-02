@@ -88,6 +88,10 @@ export interface AppConfig {
       templateName: string;
       /** Ask Viva for Unicode where it can — required for Armenian text. */
       sendUtf: boolean;
+      /** `national` | `msisdn` | `e164`. Required — see `missingVivaSettings`. */
+      numberFormat: string;
+      /** `bearer` | `header:<Name>` | `body:<field>` | `query:<param>`. */
+      tokenPlacement: string;
     };
     /** Platform-wide ceilings, counted across every flow — see `SmsBudgetService`. */
     globalMaxPerHour: number;
@@ -420,6 +424,12 @@ const buildConfig = (): AppConfig => ({
       // Armenian does not fit GSM-7, and the code is useless inside a
       // message the customer cannot read. On unless explicitly turned off.
       sendUtf: process.env.SMS_VIVA_SEND_UTF !== '0',
+      // No fallback. An unset value fails the boot with the variable named,
+      // which is the only outcome better than delivering nothing silently.
+      numberFormat: process.env.SMS_VIVA_NUMBER_FORMAT ?? '',
+      // `bearer` is the shape an OAuth-style token pair implies, and is not
+      // stated anywhere by Viva. Changing it is an environment edit.
+      tokenPlacement: process.env.SMS_VIVA_TOKEN_PLACEMENT ?? 'bearer',
     },
     // Deliberately configuration, not a constant: the right ceiling depends
     // on the carrier contract and the size of the user base, and an operator

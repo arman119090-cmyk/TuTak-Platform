@@ -2,7 +2,11 @@ import { AppEnvironment, isProductionDeployment, isPublicDeployment } from '../.
 import { ConsoleSmsProvider } from './console-sms.provider';
 import { HttpSmsProvider } from './http-sms.provider';
 import { UnavailableSmsProvider } from './unavailable-sms.provider';
-import { VivaSmsProvider } from './viva-sms.provider';
+import {
+  VIVA_NUMBER_FORMATS,
+  VivaNumberFormat,
+  VivaSmsProvider,
+} from './viva-sms.provider';
 import { SmsProvider } from './sms-provider.interface';
 
 export interface SmsTransportOptions {
@@ -20,6 +24,10 @@ export interface SmsTransportOptions {
     clientSecret: string;
     templateName: string;
     sendUtf: boolean;
+    /** Required: the document settles this only by example. */
+    numberFormat: string;
+    /** Where the access token goes; `bearer` is an inference, not a fact. */
+    tokenPlacement: string;
   };
 }
 
@@ -42,6 +50,12 @@ export function missingVivaSettings(opts: SmsTransportOptions): string[] {
       ['SMS_TOKEN', opts.token],
       ['SMS_SENDER', opts.sender],
       ['SMS_VIVA_TEMPLATE_NAME', opts.viva.templateName],
+      // No default on purpose. The integration document shows one example
+      // number and states no rule, and a number in a shape Viva does not
+      // recognise is accepted into the batch and never delivered — a failure
+      // with no symptom except a customer saying no code arrived. Ask Viva,
+      // then say the answer out loud here.
+      ['SMS_VIVA_NUMBER_FORMAT', opts.viva.numberFormat],
     ] as const
   )
     .filter(([, value]) => !value)
@@ -69,6 +83,13 @@ export function selectSmsTransport(opts: SmsTransportOptions): SmsProvider {
       );
     }
 
+    if (!(VIVA_NUMBER_FORMATS as readonly string[]).includes(opts.viva.numberFormat)) {
+      throw new Error(
+        `SMS_VIVA_NUMBER_FORMAT must be one of ${VIVA_NUMBER_FORMATS.join(', ')} — ` +
+          `got "${opts.viva.numberFormat}".`,
+      );
+    }
+
     return new VivaSmsProvider({
       baseUrl: opts.endpoint.replace(/\/+$/, ''),
       clientId: opts.viva.clientId,
@@ -78,6 +99,8 @@ export function selectSmsTransport(opts: SmsTransportOptions): SmsProvider {
       senderName: opts.sender,
       templateName: opts.viva.templateName,
       sendUtf: opts.viva.sendUtf,
+      numberFormat: opts.viva.numberFormat as VivaNumberFormat,
+      tokenPlacement: opts.viva.tokenPlacement,
     });
   }
 

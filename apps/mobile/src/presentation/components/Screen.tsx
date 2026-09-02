@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { KeyboardAwareScroll } from './KeyboardAwareScroll';
+import { useTabBarSpace } from './useTabBarSpace';
 
 interface Props {
   children: React.ReactNode;
@@ -45,6 +46,10 @@ export function Screen({
 }: Props) {
   const { color, space, text, layout } = useTheme();
   const navigation = useNavigation();
+  // Not `layout.tabBarHeight`: on Android the tab bar is that plus the system
+  // navigation inset, so the bare constant left the last rows of every
+  // scrolling screen underneath it. See `useTabBarSpace`.
+  const tabBarSpace = useTabBarSpace();
 
   /**
    * Every pushed screen in this app sets `headerShown: false`, so React
@@ -123,7 +128,7 @@ export function Screen({
   return (
     <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]} edges={['top']}>
       {scroll ? (
-        <KeyboardAwareScroll contentContainerStyle={{ paddingBottom: layout.tabBarHeight }}>
+        <KeyboardAwareScroll contentContainerStyle={{ paddingBottom: tabBarSpace }}>
           {body}
         </KeyboardAwareScroll>
       ) : (

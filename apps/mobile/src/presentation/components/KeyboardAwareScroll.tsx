@@ -1,27 +1,29 @@
-import React, { createContext, useCallback, useContext } from 'react';
-import { ScrollView, ScrollViewProps, StyleSheet, View } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
  *
- * ## Why `behavior="padding"` on Android too
+ * ## What the keyboard actually does to this app
  *
- * The screens used to pass `Platform.OS === 'ios' ? 'padding' : undefined`,
- * which is the advice from the years when Android windows were resized by the
- * system for the keyboard: with `adjustResize` doing that work, adding padding
- * as well would push the content twice as far as it needed to go.
+ * Expo enforces edge-to-edge on Android from SDK 54, and an edge-to-edge
+ * window is **not** resized for the IME: the keyboard is drawn over the app
+ * rather than shrinking it. So a form gets no help from the system at all —
+ * whatever was at the bottom of the screen is now underneath the keyboard,
+ * and on a sign-in form that is the sign-in button.
  *
- * That stopped being true. Expo enforces edge-to-edge on Android from SDK 54,
- * and an edge-to-edge window is not resized for the IME — so `undefined`
- * means nothing happens at all, and the keyboard covers whatever was at the
- * bottom of the screen, which on a login form is the login button.
+ * Scrolling alone does not rescue it. `flexGrow: 1` on a form shorter than
+ * the window makes the content exactly one window tall, so there is nothing
+ * to scroll: the button is under the keyboard and stays there, unreachable,
+ * however hard anyone swipes. That is the state this app shipped in — the
+ * cost the previous revision of this file recorded as acceptable ("the form
+ * scrolls, so the button is reachable") and which is only true of forms
+ * taller than the window.
  *
- * `padding` is correct on both platforms *and* safe if a window does still
- * resize, because React Native measures the keyboard's overlap against this
- * view's own on-screen frame (`_relativeKeyboardHeight` in
- * `KeyboardAvoidingView.js`). On a window that resized, the frame already
- * ends above the keyboard, the overlap computes as zero, and no padding is
- * added. There is nothing to double up.
+ * The fix is to make the content taller by exactly what the keyboard took, so
+ * there is something to scroll and the button can be brought above the fold.
+ * See `useKeyboardInset` for why doing it this way cannot restart the layout
+ * loop that `KeyboardAvoidingView` caused here.
  *
  * ## Why the scrolling is not optional
  *
@@ -61,6 +63,42 @@ const NO_SCROLLING: FormScrollValue = { ensureVisible: () => undefined };
 export function useEnsureVisibleOnFocus(): (node: View | null) => void {
   const context = useContext(FormScrollContext);
   return useCallback((node: View | null) => context?.ensureVisible(node), [context]);
+}
+
+/**
+ * How much of the screen the keyboard is currently covering, in points.
+ *
+ * Read from the system's own keyboard event, never from measuring this
+ * component. That distinction is the whole reason this is safe where
+ * `KeyboardAvoidingView` was not: that view measured its own on-screen frame,
+ * added padding to match, and thereby changed the frame it had just
+ * measured — a layout that re-entered itself every frame, which is what made
+ * these forms flicker and refuse to hold a keyboard. A number the IME
+ * reports is an input to layout and never an output of it, so there is no
+ * loop to enter.
+ *
+ * Android reports the height more than once per appearance — an approximate
+ * value, a corrected one, then another when the suggestion strip opens — so
+ * an unchanged value is returned as the same object and re-renders nothing.
+ */
+export function useKeyboardInset(): number {
+  const [inset, setInset] = useState(0);
+
+  useEffect(() => {
+    // `Did`, not `Will`: Android only ever emits the `Did` pair, and using
+    // the same events on both platforms keeps one behaviour to reason about.
+    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
+      const height = event.endCoordinates?.height ?? 0;
+      setInset((previous) => (Math.abs(previous - height) < 1 ? previous : height));
+    });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setInset(0));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
+  return inset;
 }
 
 export interface KeyboardAwareScrollProps extends ScrollViewProps {
@@ -163,52 +201,65 @@ export function KeyboardAwareScroll({
   style,
   ...rest
 }: KeyboardAwareScrollProps) {
+  const keyboardInset = useKeyboardInset();
+
+  // Flattened so the keyboard's height *adds to* whatever bottom padding the
+  // screen asked for rather than overwriting it. Every auth screen passes one
+  // (`paddingBottom: 40`), and replacing it would take clearance away at the
+  // exact moment more is needed. A non-numeric value — a percentage — is left
+  // alone and the inset stands on its own.
+  const content: ViewStyle = StyleSheet.flatten<ViewStyle>([styles.content, contentContainerStyle]);
+  const requested = typeof content.paddingBottom === 'number' ? content.paddingBottom : 0;
   /*
-   * Stripped to a plain scrolling list, on purpose, and this is a measurement
-   * rather than a fix.
+   * A plain scrolling list plus one number, and no cleverness beyond that.
    *
-   * ## Why
+   * ## What was removed, and why it stays removed
    *
-   * Six attempts have now failed to make these forms typeable on Android:
-   * `keyboardDismissMode`, a debounce on `keyboardDidShow`, an epsilon on the
-   * scroll target, a lock during the scroll animation, a retry after that
-   * lock, and switching autofill off. Each was reasoned from the source, each
-   * was consistent with the evidence, and the fault survived all six on three
-   * different handsets — including in the demonstration build, which has no
-   * network, no server and no autofill service to blame.
+   * Seven attempts failed to make these forms typeable on Android:
+   * `keyboardDismissMode`, a debounce on `keyboardDidShow`, an epsilon on a
+   * computed scroll target, a lock during the scroll animation, a retry after
+   * that lock, switching autofill off — and finally stripping the lot to find
+   * out which of them was the culprit.
    *
-   * That last one is the fact that matters: it is this component, and nothing
-   * outside it.
-   *
-   * Everything removed here was added in `9ad672a` or later. What was NOT
-   * removed by any of the six attempts, and what `git log -S` confirms has
-   * been touched exactly once — in `9ad672a` itself — is
+   * That last step answered it. What none of the first six touched, and what
+   * `git log -S` shows had been changed exactly once, was
    * `KeyboardAvoidingView behavior="padding"`. On Android that view measures
-   * the keyboard's overlap against its own frame and adds padding to match. If
-   * the window is also resized for the keyboard, the frame shrinks, the
-   * overlap recomputes, the padding changes, and the frame changes again: a
-   * layout that cannot settle. A field inside a view re-laying-out every frame
-   * is a field that flickers and cannot hold a keyboard.
+   * the keyboard's overlap against its *own frame* and adds padding to match —
+   * which moves the frame it just measured, which changes the overlap, which
+   * changes the padding. A layout that cannot settle, and a field inside it
+   * that flickers and cannot hold a keyboard.
    *
-   * So the whole apparatus goes, at once, and what remains is the simplest
-   * thing that can possibly work. If the forms are usable now, the fault is in
-   * what was removed and it can be reintroduced one piece at a time. If they
-   * are still not, then it is not this component at all and six rounds have
-   * been spent in the wrong file — which is worth knowing after one build
-   * rather than after a seventh guess.
+   * So it does not come back, and neither do `scrollTargetFor` and
+   * `shouldIssueScroll` below — both still exported and tested, both currently
+   * called by nothing, kept because the next person to want auto-scrolling
+   * should start from arithmetic that has been checked rather than from a
+   * fresh guess.
    *
-   * ## The cost, stated plainly
+   * ## What replaced it
    *
-   * The keyboard can now cover the submit button on a short screen. The form
-   * scrolls, so the button is reachable; it is simply not moved out of the way
-   * for you. That was the problem `9ad672a` set out to fix, and it is a much
-   * smaller problem than a form nobody can type into.
+   * `useKeyboardInset` reads the height the IME *reports* and adds it to the
+   * content's bottom padding. That is not the same shape of thing at all: a
+   * reported height is an input to layout, so nothing this component does can
+   * change it, and there is no loop to enter. The scroll view's own frame is
+   * never consulted and never moves.
+   *
+   * The effect is that the content becomes taller than the window by exactly
+   * what the keyboard covers, so the list has somewhere to scroll to and the
+   * submit button can be brought above the fold. Without it a form shorter
+   * than the window has content exactly one window tall, nothing to scroll,
+   * and a button that is under the keyboard permanently — which is the state
+   * this shipped in.
    */
   return (
     <FormScrollContext.Provider value={NO_SCROLLING}>
       <ScrollView
         style={[styles.flex, style]}
-        contentContainerStyle={[styles.content, contentContainerStyle]}
+        // The only thing standing between a short form and a submit button
+        // nobody can reach.
+        contentContainerStyle={[
+          content,
+          keyboardInset > 0 ? { paddingBottom: requested + keyboardInset } : null,
+        ]}
         // The only prop kept from the original. Without it the first tap on a
         // button while the keyboard is open merely closes the keyboard, and
         // has to be repeated — which reads as the button being broken. It

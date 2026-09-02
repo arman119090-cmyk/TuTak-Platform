@@ -48,7 +48,12 @@ export function Button({
       ...motion.springConfig.snappy,
     }).start();
 
-  const height = size === 'lg' ? 54 : size === 'md' ? 46 : 38;
+  // `minHeight`, never `height` — the same fix `TextField` already carries.
+  // Android's display settings offer a font scale well above 1, and this view
+  // sets `overflow: 'hidden'`, so a fixed box kept its size while the label
+  // grew and the characters were simply cut off. A button whose text reads
+  // "Log i" is not a smaller button, it is a broken one.
+  const minHeight = size === 'lg' ? 54 : size === 'md' ? 46 : 38;
 
   const surface: Record<Variant, string> = {
     primary: 'transparent', // painted by the gradient below
@@ -78,16 +83,28 @@ export function Button({
       ) : (
         <View style={[styles.content, { gap: space[2] }]}>
           {icon}
-          <Text style={[text.headline, { color: foreground[variant] }]}>{label}</Text>
+          <Text
+            // Grows with the system setting, but not without limit: past
+            // roughly a third larger, a two-word label wraps to a third line
+            // and the button becomes a paragraph. Capping the scale keeps the
+            // control recognisable while still honouring the preference.
+            maxFontSizeMultiplier={1.3}
+            style={[text.headline, styles.label, { color: foreground[variant] }]}
+          >
+            {label}
+          </Text>
         </View>
       )}
     </>
   );
 
   const shape: ViewStyle = {
-    height,
+    minHeight,
     borderRadius: radius.md,
     paddingHorizontal: space[5],
+    // So a label that has grown has somewhere to grow into rather than
+    // pressing against the edge of the box.
+    paddingVertical: space[2],
   };
 
   return (
@@ -135,6 +152,10 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: { alignItems: 'center', justifyContent: 'center' },
-  content: { flexDirection: 'row', alignItems: 'center' },
+  // `flexShrink` so a long label in Armenian or Russian — both of which run
+  // noticeably longer than the English these widths were chosen against —
+  // wraps inside the button instead of pushing an icon off its edge.
+  content: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  label: { flexShrink: 1, textAlign: 'center' },
   full: { width: '100%' },
 });

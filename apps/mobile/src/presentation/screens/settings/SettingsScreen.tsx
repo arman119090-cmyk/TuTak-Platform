@@ -15,6 +15,7 @@ import { Button } from '../../components/Button';
 import { UserAvatar } from '../../components/UserAvatar';
 import { AvatarControl } from '../../components/AvatarControl';
 import { JakoWingMark } from '../../components/V2NavIcon';
+import { BuildInfo } from '../../components/BuildInfo';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
 import { usersApi } from '../../../data/api/usersApi';
@@ -200,14 +201,7 @@ export function SettingsScreen() {
         />
       </View>
 
-      <Text
-        style={[
-          text.caption,
-          { color: color.textTertiary, textAlign: 'center', marginTop: space[6] },
-        ]}
-      >
-        TuTak · v0.1.0
-      </Text>
+      <BuildInfo />
     </Screen>
   );
 }

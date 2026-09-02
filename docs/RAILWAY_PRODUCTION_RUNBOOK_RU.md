@@ -793,8 +793,31 @@ done; echo
 ## H. Git и CI
 
 * **Ветка:** `claude/tutak-loyalty-mvp-e485jm`
-* **Коммит:** `__SHA__`
-* **CI:** `__CI__`
+* **Коммиты:**
+  * `d93f90e` — подготовка репозитория под Railway
+  * `6705f84` — уточнение healthcheck дашбордов (текущий HEAD)
+* **CI:** прогон **#379**, `6705f84`, **success** —
+  https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/33594609087
+
+Оба job'а зелёные, все шаги `success`:
+
+| Job | Ключевые шаги |
+|---|---|
+| Lint, test and build | Lint, Typecheck, Sentry sanitizer parity, Dependency audit, Unit tests, Integration tests, Migration drift check, Mobile tests, Admin/Partner dashboard tests, Build all applications |
+| Build the container images | API image, Admin image, Partner image, Boot the whole stack and seed it, End-to-end tests, мобильное приложение против стека, Backup and restore rehearsal |
+
+Именно шаги «Admin image» / «Partner image» → «Boot the whole stack» →
+«End-to-end tests» и являются проверкой нового `CMD` с `${PORT:-…}`:
+образы собрались, контейнеры поднялись, браузер прошёл сквозной сценарий.
+Локально это проверить было нельзя — в среде разработки нет Docker.
+
+Прогон **#378** (`d93f90e`) в списке помечен `cancelled`: его отменила
+concurrency-группа CI, когда следом ушёл коммит `6705f84`. Это вытеснение,
+а не падение.
+
+Зелёный CI не получен ни одним из запрещённых способов: ни один тест не
+отключён, ни один assertion не ослаблен, ни один шаг не удалён, `|| true`
+и `continue-on-error` не добавлялись, таймауты не поднимались.
 
 Ни одного production-деплоя в рамках этой задачи не выполнено. Секретные
 значения в репозиторий не добавлялись. Бизнес-логика не изменялась.

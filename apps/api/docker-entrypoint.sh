@@ -9,10 +9,17 @@ set -e
 # deployed commit as `RENDER_GIT_COMMIT`. Falling back to it means a staging
 # deployment tags its events with the commit it is actually running without
 # anyone pasting a SHA into the dashboard and forgetting to update it. An
-# explicit value still wins, and with neither set nothing changes: the
+# explicit value still wins, and with none of them set nothing changes: the
 # release stays `unknown`, exactly as before.
+#
+# Railway exports the same fact under its own name, so the same reasoning
+# applies there: without this, every production error report would be tagged
+# `unknown` and there would be no way to tell which commit produced it.
 if [ -z "${GIT_COMMIT_SHA:-}" ] && [ -n "${RENDER_GIT_COMMIT:-}" ]; then
   export GIT_COMMIT_SHA="$RENDER_GIT_COMMIT"
+fi
+if [ -z "${GIT_COMMIT_SHA:-}" ] && [ -n "${RAILWAY_GIT_COMMIT_SHA:-}" ]; then
+  export GIT_COMMIT_SHA="$RAILWAY_GIT_COMMIT_SHA"
 fi
 
 # Applies the migration history the image was built with before the process

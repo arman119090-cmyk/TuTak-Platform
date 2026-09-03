@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
+import { logEvent } from '../../diagnostics/eventLog';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -89,9 +90,18 @@ export function useKeyboardInset(): number {
     // the same events on both platforms keeps one behaviour to reason about.
     const shown = Keyboard.addListener('keyboardDidShow', (event) => {
       const height = event.endCoordinates?.height ?? 0;
+      // Recorded because the order of these against `focus`/`blur` is the
+      // whole diagnosis. A keyboard that shows and hides with no `blur`
+      // between them was closed by the system; one preceded by `blur` was
+      // closed because the app dropped the focus, and those have nothing in
+      // common but the symptom.
+      logEvent(`kbShow h=${Math.round(height)}`);
       setInset((previous) => (Math.abs(previous - height) < 1 ? previous : height));
     });
-    const hidden = Keyboard.addListener('keyboardDidHide', () => setInset(0));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      logEvent('kbHide');
+      setInset(0);
+    });
     return () => {
       shown.remove();
       hidden.remove();

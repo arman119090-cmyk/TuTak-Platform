@@ -10,6 +10,7 @@ import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
+import { logEvent } from '../../../diagnostics/eventLog';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 
@@ -31,6 +32,21 @@ export function LoginScreen({ navigation }: Props) {
    * shortcut, so there is nothing to disable before release.
    */
   const [demoAvailable, setDemoAvailable] = useState(false);
+
+  /*
+   * A mount marker, and the reason it earns a line in the log.
+   *
+   * If Android recreates the activity when the IME opens — which it does when
+   * a configuration change the manifest does not claim to handle arrives, and
+   * which a foldable in compatibility mode is a good way to provoke — then
+   * React Native's whole surface restarts. From outside that is exactly the
+   * reported symptom: the keyboard appears for half a second and goes. From
+   * in here it is a second `mount Login`, arriving after `focus`, which no
+   * other explanation produces.
+   */
+  useEffect(() => {
+    logEvent('mount Login');
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

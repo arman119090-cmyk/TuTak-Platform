@@ -26,69 +26,66 @@
 
 ---
 
-## Шаг 1. Одно письмо в Viva
+## Шаг 1. PSK — решение принято
 
-Адресат: **Narek Arakelian**, Leading Network Engineer, Information Systems
-Department, «Viva Armenia» CJSC — `narakelian@viva.am`. Он ведёт туннель с их
-стороны. Копию можно на `syseng@viva.am` из формы.
+Viva выдала ключ, владелец решил использовать его как есть. Перевыпуск не
+запрашиваем.
 
-Письмо закрывает **все** оставшиеся вопросы разом — и по туннелю, и по API.
-Пять из них блокируют запуск, и каждый стоит отдельного круга переписки, если
-спрашивать по одному.
+Зафиксировано, потому что об этом спросят позже: ключ проходил через
+переписку. Риск принят осознанно. Ротация — обычная операция, её можно
+сделать в любой момент без простоя, если появится повод.
+
+**Ключ в репозиторий не попадает ни при каких обстоятельствах.** Он вводится
+на сервере, в файл с правами 0600 — шаг 3.
+
+## Шаг 1a. Что у Viva всё ещё нужно спросить
+
+Туннель поднимется без этого. **Отправка SMS — нет.**
+
+Адресат: **Narek Arakelian**, `narakelian@viva.am`.
 
 ```
-Subject: SaNHay LLC IPsec tunnel + Business Hub API — remaining items
+Subject: SaNHay LLC — Business Hub API access
 
 Dear Narek,
 
-Our side of the tunnel is configured per the application form of
-03/09/2026 and ready to bring up. Five items remain.
+The IPsec tunnel is configured on our side per the form of 03/09/2026
+and we are bringing it up now. Three items remain, all on the API side.
 
-1. PSK reissue.
-   Please reissue the pre-shared key. The previously issued key must be
-   considered compromised and we would rather not bring the tunnel up on
-   it. Our peer 217.76.49.94, encryption domain 217.76.49.94/32 —
-   unchanged.
-
-2. Your IKE identity.
-   The form states your peer address (217.76.0.20) but not a separate
-   peer ID. Our configuration assumes you identify by that same address.
-   Please confirm, or tell us the identity you actually present — it is
-   the one remaining assumption in our config and the likeliest cause of
-   an authentication failure on a correct key.
-
-3. API credentials.
+1. API credentials.
    We need client_id and client_secret for the Business Hub API. We have
    Partner ID 10064, which we understand is not the same thing.
 
-4. Recipient number format.
+2. Recipient number format.
    For transact/send/batch, which form do you expect:
    93600600, 37493600600, or +37493600600? The integration document
    shows one example and states no rule. A number in a shape you do not
    recognise is accepted into the batch and never delivered, so we would
    rather confirm than guess.
 
-5. Access token presentation.
+3. Access token presentation.
    How should the token from token/get be presented on the transact/*
    calls — Authorization: Bearer, a custom header, or a body field?
-
-Once 1 and 2 are answered we can establish the tunnel; 3 to 5 are needed
-before the first live message.
 
 Thank you.
 ```
 
-## Шаг 1a. После ответа
+Плюс один вопрос **только если туннель не поднимется** с ошибкой
+аутентификации: форма даёт ваш адрес `217.76.0.20`, но не отдельный peer ID,
+и конфиг исходит из того, что они совпадают. Это единственное предположение,
+оставшееся в файле. Спрашивать заранее не нужно — скорее всего совпадает.
 
-* **PSK** — вписывается на сервере, шаг 3. В переписку не возвращается.
-* **Peer ID** — если отличается от `217.76.0.20`, поправить `remote { id }`
-  в `/etc/swanctl/conf.d/viva.conf` и в `id-2` в файле секрета.
-* **client_id / client_secret** — вводятся в переменные Render/Railway,
-  не в репозиторий.
-* **Формат номера** — задать `SMS_VIVA_NUMBER_FORMAT`
-  (`national` / `msisdn` / `e164`). Без него API не стартует — намеренно.
-* **Способ передачи токена** — задать `SMS_VIVA_TOKEN_PLACEMENT`. По
-  умолчанию `bearer`; если ответ другой, это правка переменной, не кода.
+Куда идут ответы:
+
+| Ответ | Куда |
+|---|---|
+| `client_id`, `client_secret` | переменные Render/Railway, **не в чат** |
+| формат номера | `SMS_VIVA_NUMBER_FORMAT` = `national` / `msisdn` / `e164` |
+| способ передачи токена | `SMS_VIVA_TOKEN_PLACEMENT`, по умолчанию `bearer` |
+
+Формат номера обязателен: без него API не стартует. Это намеренно — номер в
+непонятной Viva форме принимается в батч и молча никогда не доставляется,
+и единственный симптом такой ошибки в том, что клиент говорит «код не пришёл».
 
 ## Шаг 2. На сервере
 

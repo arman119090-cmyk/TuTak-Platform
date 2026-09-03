@@ -21,6 +21,7 @@ import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 import { resolveTrustProxySetting } from './config/trust-proxy';
 import { isPublicDeployment } from './config/app-environment';
+import { assertProductionCorsOrigins } from './config/cors-origins';
 import { expressTrustProxySetting } from './config/client-ip';
 import { StructuredLogger } from './common/observability/structured-logger';
 
@@ -83,6 +84,11 @@ async function bootstrap() {
   if (isPublicFacing && origins.length === 0) {
     throw new Error('CORS_ORIGINS must list the allowed origins outside development');
   }
+  // Non-empty is not the same as correct. A development list carried into
+  // production boots happily, refuses every credentialed request from the
+  // real dashboards, and trusts the operator's own machine — see
+  // `config/cors-origins.ts` for why that is refused rather than warned about.
+  assertProductionCorsOrigins(origins, appEnv);
   app.enableCors({
     origin: origins.length ? origins : true,
     credentials: true,

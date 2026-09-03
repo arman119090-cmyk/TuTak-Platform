@@ -232,10 +232,6 @@ export function createGateway(deps = {}) {
     const path = (req.url ?? '').split('?')[0];
     if (!ALLOWED_PATHS.includes(path)) return send(404, 'unknown_endpoint');
 
-    if (!limiter.allow(now(), settings.rateLimitPerMinute)) {
-      return send(429, 'rate_limited');
-    }
-
     if (!settings.secret) return send(500, 'gateway_not_configured');
 
     let body;
@@ -263,6 +259,19 @@ export function createGateway(deps = {}) {
       body,
     });
     if (!signatureMatches(expected, String(signature))) return send(401, 'bad_signature');
+
+    // Rate limiting comes AFTER the signature is proven, on purpose. The
+    // gateway port is reachable from the open internet (Railway's egress
+    // address is not fixed, so the firewall cannot name a single source), and
+    // the budget is a shared 60/min. Consuming it before authentication let
+    // any stranger spend the whole budget with unsigned POSTs to a valid path
+    // and starve the real, signed SMS/OTP traffic into 429s — a login-path
+    // denial of service needing no credential. Charged here, only a caller
+    // that already proved the shared secret can spend the budget; an unsigned
+    // flood is turned away at `bad_signature` for free and never counts.
+    if (!limiter.allow(now(), settings.rateLimitPerMinute)) {
+      return send(429, 'rate_limited');
+    }
 
     if (!nonces.remember(String(nonce), now(), settings.clockSkewSeconds * 2)) {
       return send(401, 'replayed_nonce');

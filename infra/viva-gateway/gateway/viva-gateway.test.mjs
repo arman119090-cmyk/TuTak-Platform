@@ -226,6 +226,26 @@ test('rate limits before reaching Viva', async () => {
   });
 });
 
+test('an unsigned flood cannot spend the rate-limit budget', async () => {
+  // The gateway port is open to the internet. If the limiter were charged
+  // before the signature check, a stranger could exhaust the shared 60/min
+  // budget with unsigned POSTs and starve real, signed SMS/OTP traffic — a
+  // login-path DoS needing no credential. So an unsigned request must be
+  // refused for free: many of them, then a signed one still gets through.
+  const now = 1_000_000;
+  await withGateway({ now: () => now, settings: { rateLimitPerMinute: 2 } }, async (base, calls) => {
+    const path = '/v1/token/get';
+    for (let i = 0; i < 10; i += 1) {
+      const res = await post(base, path, '{}', { 'x-tutak-signature': 'garbage' });
+      assert.equal(res.status, 401, `unsigned attempt ${i} should be 401, got ${res.status}`);
+    }
+    // Budget untouched: a genuine signed request is still served.
+    const ok = await post(base, path, '{}', signed(path, '{}', { timestamp: now, nonce: 'real' }));
+    assert.equal(ok.status, 200);
+    assert.equal(calls.length, 1);
+  });
+});
+
 /* ── fail-closed ───────────────────────────────────────────────────────── */
 
 test('refuses to reach Viva at all when the tunnel is required and down', async () => {

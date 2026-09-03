@@ -379,10 +379,13 @@ describe('OTP-first auth (integration)', () => {
      * a fully functional, spend-capable account with zero proof of phone
      * ownership at any point. The mobile app stopped linking to it
      * (commit c3156a8), but that only closed the UI path — the HTTP route
-     * itself stayed reachable by any client that called it directly. Same
-     * guard idiom as `PaymentsModule`'s PSP requirement
-     * (`production-boot.int-spec.ts`): refuse in production unless
-     * `demoMode` explicitly allows it.
+     * itself stayed reachable by any client that called it directly.
+     *
+     * The guard is now unconditional on any public deployment (F-2,
+     * docs/AUDIT_2026-09-03.md): unlike the carrier and the acquirer, this
+     * route has NO `demoMode` escape hatch. Demo mode exists to let money
+     * and SMS be simulated safely, never to re-open an account-creation path
+     * that skips phone ownership — so it must not, even when explicitly on.
      */
     it('refuses password registration in production', async () => {
       withProductionMode();
@@ -400,20 +403,24 @@ describe('OTP-first auth (integration)', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('still allows password registration in production when demo mode explicitly permits it', async () => {
+    it('still refuses password registration in production even when demo mode is on', async () => {
+      // F-2: demo mode simulates the carrier and the acquirer; it must never
+      // re-open a signup path that creates a spend-capable account with no
+      // proof of phone ownership. The escape hatch that once made this
+      // succeed was removed, and this asserts it stays removed.
       withProductionMode(true);
-      const phone = randomPhone();
-      const registered = await authService.register(
-        {
-          phone,
-          password: 'a-real-password-123',
-          firstName: 'Test',
-          lastName: 'User',
-          deviceId: 'device-1',
-        },
-        {},
-      );
-      expect(registered.user.phone).toBe(phone);
+      await expect(
+        authService.register(
+          {
+            phone: randomPhone(),
+            password: 'a-real-password-123',
+            firstName: 'Test',
+            lastName: 'User',
+            deviceId: 'device-1',
+          },
+          {},
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('leaves OTP registration itself untouched in production — the canonical path never needed the guard', async () => {

@@ -26,24 +26,69 @@
 
 ---
 
-## Шаг 1. Письмо в Viva
+## Шаг 1. Одно письмо в Viva
+
+Адресат: **Narek Arakelian**, Leading Network Engineer, Information Systems
+Department, «Viva Armenia» CJSC — `narakelian@viva.am`. Он ведёт туннель с их
+стороны. Копию можно на `syseng@viva.am` из формы.
+
+Письмо закрывает **все** оставшиеся вопросы разом — и по туннелю, и по API.
+Пять из них блокируют запуск, и каждый стоит отдельного круга переписки, если
+спрашивать по одному.
 
 ```
-Subject: PSK reissue request — SaNHay LLC IPsec tunnel
+Subject: SaNHay LLC IPsec tunnel + Business Hub API — remaining items
 
-Hello,
+Dear Narek,
 
-Please reissue the pre-shared key for our IPsec tunnel
-(peer 217.76.49.94, encryption domain 217.76.49.94/32).
-The previously issued key must be considered compromised.
+Our side of the tunnel is configured per the application form of
+03/09/2026 and ready to bring up. Five items remain.
 
-The rest of the configuration from the application form of 03/09/2026
-is unchanged and already in place on our side.
+1. PSK reissue.
+   Please reissue the pre-shared key. The previously issued key must be
+   considered compromised and we would rather not bring the tunnel up on
+   it. Our peer 217.76.49.94, encryption domain 217.76.49.94/32 —
+   unchanged.
+
+2. Your IKE identity.
+   The form states your peer address (217.76.0.20) but not a separate
+   peer ID. Our configuration assumes you identify by that same address.
+   Please confirm, or tell us the identity you actually present — it is
+   the one remaining assumption in our config and the likeliest cause of
+   an authentication failure on a correct key.
+
+3. API credentials.
+   We need client_id and client_secret for the Business Hub API. We have
+   Partner ID 10064, which we understand is not the same thing.
+
+4. Recipient number format.
+   For transact/send/batch, which form do you expect:
+   93600600, 37493600600, or +37493600600? The integration document
+   shows one example and states no rule. A number in a shape you do not
+   recognise is accepted into the batch and never delivered, so we would
+   rather confirm than guess.
+
+5. Access token presentation.
+   How should the token from token/get be presented on the transact/*
+   calls — Authorization: Bearer, a custom header, or a body field?
+
+Once 1 and 2 are answered we can establish the tunnel; 3 to 5 are needed
+before the first live message.
 
 Thank you.
 ```
 
-На `syseng@viva.am`.
+## Шаг 1a. После ответа
+
+* **PSK** — вписывается на сервере, шаг 3. В переписку не возвращается.
+* **Peer ID** — если отличается от `217.76.0.20`, поправить `remote { id }`
+  в `/etc/swanctl/conf.d/viva.conf` и в `id-2` в файле секрета.
+* **client_id / client_secret** — вводятся в переменные Render/Railway,
+  не в репозиторий.
+* **Формат номера** — задать `SMS_VIVA_NUMBER_FORMAT`
+  (`national` / `msisdn` / `e164`). Без него API не стартует — намеренно.
+* **Способ передачи токена** — задать `SMS_VIVA_TOKEN_PLACEMENT`. По
+  умолчанию `bearer`; если ответ другой, это правка переменной, не кода.
 
 ## Шаг 2. На сервере
 

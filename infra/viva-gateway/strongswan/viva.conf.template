@@ -1,62 +1,66 @@
-# strongSwan swanctl connection to Viva Business Hub — TEMPLATE.
+# strongSwan swanctl connection to Viva Business Hub.
 #
-# Every __PLACEHOLDER__ below is a value only Viva can supply, or one that must
-# be read off our own machine by a live audit. This file is deliberately NOT
-# valid until they are filled in: a tunnel built on guessed crypto either fails
-# to establish (the good case) or establishes against something that is not
-# Viva (the bad one). Nothing here is a default.
+# Every crypto parameter below is CONFIRMED from the signed Viva application
+# form ("VPN Site2Site details (IPSEC tunnel)", 03/09/2026), which states both
+# sides of the tunnel. Nothing here is a guess any more.
 #
-# Install as /etc/swanctl/conf.d/viva.conf once complete, then:
+# Two things are still not in this file, and both are deliberate:
+#
+#   __CONTABO_LOCAL_ADDRS__  the address strongSwan binds to. Decided by
+#                            bootstrap/00-audit.sh, not by the form — see the
+#                            note at the field.
+#   __PSK__                  never in git. See the runbook.
+#
+# Install as /etc/swanctl/conf.d/viva.conf once the PSK is exchanged, then:
 #   swanctl --load-all && swanctl --initiate --child viva
 #
-# CONFIRMED from the Viva VPN form (do not change these):
-#   IKEv2, Main Mode, symmetric PSK, IKE SA lifetime 86400s
-#   ESP, PFS enabled, IPsec SA lifetime 3600s
+# From the form, for reference:
+#   Viva site   peer 217.76.0.20    encryption domain 217.76.1.50
+#   Our site    peer 217.76.49.94   encryption domain 217.76.49.94
+#   Technical contact on Viva's side: syseng@viva.am
 
 connections {
     viva {
-        # __VIVA_PEER__  Viva's public IP or FQDN. NEEDS VIVA.
-        remote_addrs = __VIVA_PEER__
+        # CONFIRMED — "Tunnel Source (peer)", Viva site.
+        remote_addrs = 217.76.0.20
 
         # __CONTABO_LOCAL_ADDRS__  The address strongSwan BINDS to locally.
         #
-        # This is NOT automatically our public IP. Fill it from the live audit
-        # (bootstrap/00-audit.sh prints both values):
+        # NOT confirmed by the form, and not the same question the form asks.
+        # The form states our *identity* (below); this is a socket bind, and
+        # it has to be an address that exists on an interface of this VPS.
+        # Run bootstrap/00-audit.sh, which prints both:
         #
-        #   * public IP is configured on an interface (`as-seen` == one of the
-        #     `on-interface` addresses) → use that public IP here;
-        #   * VPS is behind NAT (`as-seen` != any `on-interface` address) →
-        #     use the private/interface address, or `%any` to let strongSwan
-        #     pick, and let NAT-T carry the tunnel. Writing the public NAT
-        #     address here makes the socket unbindable and the daemon refuses
-        #     the connection.
-        #
-        # The public IP still matters — but as the IKE identity and as the
-        # Tunnel Source on the Viva form (see __LOCAL_IKE_ID__), not here.
+        #   * `as-seen` appears in `on-interface` — the public IP is on the
+        #     interface. Put 217.76.49.94 here.
+        #   * it does not — the VPS is behind NAT. Put the interface address,
+        #     or `%any`, and let NAT-T carry the tunnel. The public address
+        #     stays the identity below and does not belong here: strongSwan
+        #     cannot bind a socket to an address the machine does not hold.
         local_addrs  = __CONTABO_LOCAL_ADDRS__
 
-        version = 2          # CONFIRMED: IKEv2
+        version = 2          # CONFIRMED: "Encryption Scheme — IKE v2"
         mobike  = no         # a fixed site-to-site peer; address agility is
                              # not wanted and confuses some peers
 
-        # Phase 1. CONFIRMED: lifetime 86400s. The proposal itself NEEDS VIVA:
-        #   __IKE_ENC__   e.g. aes256
-        #   __IKE_INTEG__ e.g. sha256
-        #   __IKE_PRF__   e.g. prfsha256
-        #   __IKE_DH__    e.g. modp2048 / ecp256
-        proposals   = __IKE_ENC__-__IKE_INTEG__-__IKE_PRF__-__IKE_DH__
+        # Phase 1 (IKE Policy), all four CONFIRMED from the form:
+        #   Diffie-Hellman Group          Group 14   -> modp2048
+        #   Encryption Algorithm          AES_256    -> aes256
+        #   Hashing Algorithm/Integrity   SHA-256    -> sha256
+        #   PRF                           SHA-256    -> prfsha256
+        proposals   = aes256-sha256-prfsha256-modp2048
 
         # Lifetime arithmetic — read before touching these two lines.
         #
         # In swanctl the IKE SA *hard* lifetime is rekey_time + over_time:
         # strongSwan starts rekeying at rekey_time and deletes the SA once
-        # over_time more has passed without a rekey. Viva's 86400s is the
+        # over_time more has passed without a rekey. The form's 86400s is the
         # hard lifetime, so:
         #
-        #   rekey_time 82800s (23h) + over_time 3600s (1h) = 86400s  ← exact
+        #   rekey_time 82800s (23h) + over_time 3600s (1h) = 86400s  <- exact
         #
-        # (86400 + 3600 would give a 90000s hard lifetime — 1h longer than
-        # Viva's — which is why rekey_time is 82800s and not 86400s.)
+        # (86400 + 3600 would give a 90000s hard lifetime — an hour longer
+        # than the form — which is why rekey_time is 82800s and not 86400s.)
         #
         # rand_time defaults to over_time here, so the rekey is jittered into
         # [79200s, 82800s]. That only moves the rekey earlier; the 86400s hard
@@ -68,51 +72,50 @@ connections {
 
         local {
             auth = psk
-            # __LOCAL_IKE_ID__  our IKE identity, i.e. what Viva matches us by
-            # and what goes on the form as Tunnel Source. Normally our public
-            # IPv4 (`as-seen` from the audit) even when the VPS is behind NAT
-            # — it is an identity, not a bind address. NEEDS VIVA to confirm
-            # they expect an IP and not an FQDN/e-mail ID.
-            id   = __LOCAL_IKE_ID__
+            # CONFIRMED — "Tunnel Source (peer)", Remote site. This is an
+            # identity, not a bind address: it stays our public IPv4 even if
+            # the VPS turns out to be behind NAT.
+            id   = 217.76.49.94
         }
         remote {
             auth = psk
-            id   = __VIVA_PEER_ID__      # usually the peer IP. NEEDS VIVA.
+            # The form gives Viva's peer address and no separate peer ID.
+            # An IKEv2 peer that is reached by IP normally identifies by the
+            # same IP, which is what this assumes. If authentication fails
+            # with a correct PSK, this is the first line to question — ask
+            # syseng@viva.am what their IKE ID actually is.
+            id   = 217.76.0.20
         }
 
         children {
             viva {
-                # The encryption domains: which addresses may cross the
-                # tunnel. Both NEED VIVA — and they are the two values most
-                # likely to be wrong, because a mismatch here brings the
-                # CHILD SA up and then silently drops traffic.
-                #
-                # local_ts is the address Viva expects our traffic to come
-                # from. If Viva assigns us one, it goes here and on the
-                # gateway's source route; if they expect our public IP, this
-                # is that public IP /32.
-                local_ts  = __LOCAL_ENCRYPTION_DOMAIN__
-                remote_ts = __VIVA_ENCRYPTION_DOMAIN__
+                # CONFIRMED — "Encryption Domain (VPN Access Permission)".
+                # Both sides are single hosts, hence /32 on each: our gateway
+                # talking to one Viva address, and nothing else crossing.
+                local_ts  = 217.76.49.94/32
+                remote_ts = 217.76.1.50/32
 
-                # Phase 2. CONFIRMED: ESP, PFS on, lifetime 3600s.
-                # The proposal NEEDS VIVA:
-                #   __ESP_ENC__   e.g. aes256
-                #   __ESP_INTEG__ e.g. sha256
-                #   __PFS_GROUP__ e.g. modp2048 — PFS is confirmed ON, so a
-                #                 DH group MUST appear here; esp proposals
-                #                 without one mean no PFS.
-                esp_proposals = __ESP_ENC__-__ESP_INTEG__-__PFS_GROUP__
+                # Phase 2 (IPSEC Policy), all CONFIRMED from the form:
+                #   SA Negotiation        ESP
+                #   Encryption Algorithm  AES_256  -> aes256
+                #   Data Integrity        SHA-256  -> sha256
+                #   PFS                   enabled
+                #   PFS type              Group 14 -> modp2048
+                #
+                # The DH group is what makes PFS actual rather than declared:
+                # an esp proposal without one negotiates no PFS at all.
+                esp_proposals = aes256-sha256-modp2048
 
                 # CHILD SA lifetime works differently from the IKE SA above:
                 # life_time IS the hard lifetime (over_time does not apply to
-                # children). Viva's 3600s therefore goes into life_time, and
-                # rekey_time must be strictly smaller so the rekey happens
+                # children). The form's 3600s therefore goes into life_time,
+                # and rekey_time must be strictly smaller so the rekey happens
                 # before the SA dies:
                 #
-                #   rekey_time 3240s (90%) < life_time 3600s  ← Viva's value
+                #   rekey_time 3240s (90%) < life_time 3600s  <- the form
                 #
                 # (life_time 3900s would be a 3900s hard lifetime — 300s
-                # longer than Viva's.) rand_time defaults to
+                # longer than the form.) rand_time defaults to
                 # life_time - rekey_time = 360s, jittering the rekey into
                 # [2880s, 3240s]; the 3600s hard limit is unaffected.
                 rekey_time    = 3240s
@@ -131,11 +134,11 @@ connections {
 secrets {
     ike-viva {
         # These two ids must match the IKE identities configured above —
-        # local.id and remote.id — not the addresses. strongSwan selects the
-        # PSK by identity, so a mismatch here fails authentication even when
-        # the PSK itself is correct.
-        id-1   = __LOCAL_IKE_ID__
-        id-2   = __VIVA_PEER_ID__
+        # local.id and remote.id — not the addresses strongSwan binds to.
+        # strongSwan selects the PSK by identity, so a mismatch here fails
+        # authentication even when the PSK itself is correct.
+        id-1   = 217.76.49.94
+        id-2   = 217.76.0.20
         # NEVER commit this file with a real value. The PSK belongs in
         # /etc/swanctl/conf.d/viva-secret.conf, mode 0600, which is
         # .gitignored. See the runbook.

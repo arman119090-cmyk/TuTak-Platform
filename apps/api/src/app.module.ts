@@ -2,7 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import configuration, { AppConfig } from './config/configuration';
 import { validate } from './config/env.validation';
@@ -15,6 +15,7 @@ import { AlertsModule } from './infrastructure/alerts/alerts.module';
 import { MediaStorageModule } from './infrastructure/media/media-storage.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { ClientIpThrottlerGuard } from './common/guards/client-ip-throttler.guard';
 import { RequestContextMiddleware } from './common/observability/request-context.middleware';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -114,7 +115,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     MetricsModule,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },

@@ -73,17 +73,25 @@ export class AuthService {
    * directly, still standing up a normal production financial account
    * with nothing to show it was ever a real, reachable phone number.
    *
-   * Same guard idiom as `PaymentsModule`'s PSP requirement: refuse in
-   * production unless `demoMode` explicitly allows it (a public demo
-   * deployment moves no real money and needs a signup path with no SMS
-   * carrier configured). Nothing internal calls `register()` — grepped;
-   * the only caller is `AuthController`'s `/auth/register` route — so
-   * gating here closes the gap for every client, not just the app's own
-   * screen.
+   * Refused on every public deployment, with no escape hatch.
+   *
+   * `demoMode` used to lift this, on the reasoning that a demonstration
+   * moves no real money and needs a signup path without an SMS carrier.
+   * Both halves have since stopped being true. A demonstration does not
+   * need to *create* accounts: `DEMO_SEED` makes them, and
+   * `/auth/demo-session` signs into one without typing anything. And the
+   * flag is set on staging, which is reachable from the open internet — so
+   * the hatch was not opening a sandbox, it was opening this route to
+   * everyone who found the address. Found by the 2026-09-03 audit, hours
+   * after `DEMO_MODE` was turned on for exactly the harmless-looking
+   * reason above.
+   *
+   * Nothing internal calls `register()` — grepped; the only caller is
+   * `AuthController`'s `/auth/register` route — so gating here closes the
+   * gap for every client, not just the app's own screen.
    */
   async register(dto: RegisterDto, meta: RequestMeta) {
-    const isProduction = isPublicDeployment(this.config.get('appEnv', { infer: true }));
-    if (isProduction && !this.config.get('demoMode', { infer: true })) {
+    if (isPublicDeployment(this.config.get('appEnv', { infer: true }))) {
       throw new ForbiddenException(
         'Password registration is not available. Verify your phone number to create an account.',
       );

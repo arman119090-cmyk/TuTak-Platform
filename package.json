@@ -2,7 +2,7 @@
   "name": "tutak-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "TuTak \u2014 loyalty ecosystem for Armenia (QR payments, bonuses, EV charging, partner network).",
+  "description": "TuTak — loyalty ecosystem for Armenia (QR payments, bonuses, EV charging, partner network).",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20.0.0",
@@ -47,7 +47,8 @@
       "nanoid@>=3.0.0 <3.3.18": "^3.3.18",
       "js-yaml@>=5.0.0 <5.2.2": "^5.2.2",
       "deepmerge-ts@<8.0.0": "^8.0.0",
-      "uuid@<11.1.1": "^11.1.1"
+      "uuid@<11.1.1": "^11.1.1",
+      "fast-uri": ">=3.1.6"
     }
   }
 }

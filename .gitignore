@@ -78,3 +78,8 @@ apps/api/.media-storage/
 infra/viva-gateway/**/*.secret
 infra/viva-gateway/**/viva-secret.conf
 infra/viva-gateway/**/gateway.env
+
+# Agent worktrees. Untracked, and 2.1 GB of them by the 2026-09-03 audit —
+# one `git add -A` from entering the history. Ignored rather than trusted to
+# be noticed.
+.claude/worktrees/

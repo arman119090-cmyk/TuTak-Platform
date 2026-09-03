@@ -11,6 +11,7 @@ import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { logEvent } from '../../../diagnostics/eventLog';
+import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 
@@ -47,6 +48,10 @@ export function LoginScreen({ navigation }: Props) {
   useEffect(() => {
     logEvent('mount Login');
   }, []);
+
+  // Window against screen, on every change. The pair is what separates the
+  // two surviving explanations — see the hook.
+  useDimensionsTrace();
 
   useEffect(() => {
     let cancelled = false;

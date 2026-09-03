@@ -19,6 +19,35 @@ section "public IPv4 as the host sees it"
 printf '  on-interface: %s\n' "$(ip -4 -o addr show scope global | awk '{print $2" "$4}' | paste -sd', ')"
 printf '  as-seen:      %s\n' "$(curl -4 --max-time 10 -fsS https://api.ipify.org 2>/dev/null || echo '(could not determine)')"
 
+# ── The decision this audit exists to make ──────────────────────────────
+#
+# The Viva form states our identity as 217.76.49.94. It does not state what
+# strongSwan should bind a socket to, and those are different questions: an
+# identity is a claim, a bind address has to exist on this machine. Rather
+# than leave that as a judgement call in a runbook, decide it here and print
+# the exact line to use.
+section "local_addrs — the line for viva.conf"
+CONFIRMED_IDENTITY="217.76.49.94"
+ON_IFACE="$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1)"
+AS_SEEN="$(curl -4 --max-time 10 -fsS https://api.ipify.org 2>/dev/null || echo '')"
+
+if [ -z "$AS_SEEN" ]; then
+  printf '  could not reach the internet to check; decide manually\n'
+elif ! printf '%s\n' "$ON_IFACE" | grep -qx "$AS_SEEN"; then
+  printf '  This VPS is behind NAT: %s is not on any interface.\n' "$AS_SEEN"
+  printf '  Use:  local_addrs = %%any\n'
+  printf '  NAT-T (UDP 4500) will carry the tunnel. The identity stays %s.\n' "$CONFIRMED_IDENTITY"
+else
+  printf '  Public IP is on the interface.\n'
+  printf '  Use:  local_addrs = %s\n' "$AS_SEEN"
+fi
+
+if [ -n "$AS_SEEN" ] && [ "$AS_SEEN" != "$CONFIRMED_IDENTITY" ]; then
+  printf '\n  !! This machine is %s, but the Viva form promises %s.\n' "$AS_SEEN" "$CONFIRMED_IDENTITY"
+  printf '  !! Viva will not accept a tunnel from a different address.\n'
+  printf '  !! Either this is the wrong server, or the form must be corrected.\n'
+fi
+
 section "interfaces"; ip -brief addr | sed 's/^/  /'
 section "routes";     ip route | sed 's/^/  /'
 section "DNS";        resolvectl status 2>/dev/null | grep -E 'DNS Server|Current DNS' | sed 's/^/  /'

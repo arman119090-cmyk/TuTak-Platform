@@ -67,20 +67,20 @@ async function bootstrap() {
   // Reflecting any origin while sending credentials is a misconfiguration, and
   // CORS_ORIGINS is not required by env validation — so a deployment that
   // forgot it used to become fully permissive in silence (§M5).
-  const configuredOrigins = config.get('cors.origins', { infer: true });
-  // Render's first staging blueprint uses fixed public service names. Keep this
-  // fallback staging-only so a missing dashboard value cannot silently turn
-  // CORS permissive or make Admin unusable; production still requires an
-  // explicit allow-list.
-  const origins =
-    configuredOrigins.length > 0
-      ? configuredOrigins
-      : appEnv === 'staging'
-        ? [
-            'https://tutak-staging-admin.onrender.com',
-            'https://tutak-staging-partner.onrender.com',
-          ]
-        : configuredOrigins;
+  // Every deployment names its own dashboards; nothing is assumed here.
+  //
+  // A staging-only fallback used to fill this with two fixed
+  // `*.onrender.com` names, from the first Render blueprint. That was a
+  // convenience when Render staging was the only staging there was, and it
+  // became wrong once Railway was the primary platform: a Railway service
+  // running as `staging` with this unset would have quietly allowed
+  // credentialed calls from the *previous* provider's hostnames, which is
+  // both useless to it and infrastructure being retired. A guess that names
+  // someone else's platform is worse than no guess.
+  //
+  // With it gone, staging obeys the same rule production already did — say
+  // which origins are allowed — and the refusal below names the variable.
+  const origins = config.get('cors.origins', { infer: true });
   if (isPublicFacing && origins.length === 0) {
     throw new Error('CORS_ORIGINS must list the allowed origins outside development');
   }

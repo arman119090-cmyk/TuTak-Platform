@@ -42,6 +42,7 @@ import {
 import { Decimal } from '@prisma/client/runtime/library';
 import * as argon2 from 'argon2';
 import { AppModule } from '../app.module';
+import { isProductionDeployment, resolveAppEnvironment } from '../config/app-environment';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { QrPaymentsService } from '../modules/qr-payments/qr-payments.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
@@ -119,7 +120,39 @@ const E2E_CUSTOMERS = [
   { phone: '+37477190005', firstName: 'E2E', lastName: 'Five', locale: 'en' },
 ] as const;
 
+/**
+ * Production is not a stack this seeder may touch, whatever else is set.
+ *
+ * `TUTAK_DEMO=1` was the only confirmation, and it does not survive contact
+ * with the container: `docker-entrypoint.sh` supplies that variable itself
+ * when `DEMO_SEED=true`, so inside an image the check can never fail. The
+ * single remaining barrier in front of a production database was one env var
+ * not being the string "true" — and `DEMO_SEED` sits directly alongside
+ * `SEED_BASELINE`, which a production deployment legitimately *does* set.
+ *
+ * What one typo would have written: partners, customers and payments invented
+ * through the real money engines, so real ledger rows; logins sharing one
+ * password; and `mustChangePassword` deliberately cleared on every one of
+ * them. None of it distinguishable afterwards from data a customer created.
+ *
+ * So the environment decides, not a flag the caller can set. Staging and a
+ * hosted demonstration stay allowed — that is what `DEMO_SEED` is for.
+ */
+export function assertDemoSeedNotProduction(env: NodeJS.ProcessEnv = process.env): void {
+  if (!isProductionDeployment(resolveAppEnvironment(env))) return;
+  throw new Error(
+    'Refusing to run the demonstration seeder against a production deployment. ' +
+      'It invents partners, customers and payments through the real money engines, ' +
+      'and creates logins that share one password with the must-change-password flag ' +
+      'cleared — none of which can be told apart from real data afterwards. ' +
+      'Unset DEMO_SEED (it is not SEED_BASELINE, which is the safe one), or run this ' +
+      'against a throwaway stack.',
+  );
+}
+
 async function main() {
+  assertDemoSeedNotProduction();
+
   if (process.env.TUTAK_DEMO !== '1') {
     throw new Error(
       'Refusing to run: set TUTAK_DEMO=1 to confirm this is a throwaway local stack. ' +
@@ -575,18 +608,26 @@ async function main() {
   await app.close();
 }
 
-main()
-  .then(() => {
-    // `app.close()` shuts the modules down but does not drain the Redis
-    // connection pool or the scheduler's timers, so the event loop stays
-    // alive and the process never exits on its own. A seeder that hangs
-    // after succeeding looks exactly like a seeder that failed.
-    process.exit(0);
-  })
-  .catch((err) => {
-    log.error(
-      err instanceof Error ? err.message : String(err),
-      err instanceof Error ? err.stack : undefined,
-    );
-    process.exit(1);
-  });
+/**
+ * Only when run directly — `node dist/scripts/seed-demo.js` — the same shape
+ * `seed-baseline.ts` uses. Without this, merely importing the module to reach
+ * one exported guard boots Nest, connects to whatever `DATABASE_URL` names and
+ * seeds it, which is a surprising amount of behaviour for an `import`.
+ */
+if (require.main === module) {
+  main()
+    .then(() => {
+      // `app.close()` shuts the modules down but does not drain the Redis
+      // connection pool or the scheduler's timers, so the event loop stays
+      // alive and the process never exits on its own. A seeder that hangs
+      // after succeeding looks exactly like a seeder that failed.
+      process.exit(0);
+    })
+    .catch((err) => {
+      log.error(
+        err instanceof Error ? err.message : String(err),
+        err instanceof Error ? err.stack : undefined,
+      );
+      process.exit(1);
+    });
+}

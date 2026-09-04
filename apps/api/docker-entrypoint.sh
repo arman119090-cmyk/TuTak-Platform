@@ -77,6 +77,23 @@ fi
 # real engines, so if an invariant is broken this fails loudly instead of
 # fabricating rows that look plausible.
 if [ "${DEMO_SEED:-}" = "true" ]; then
+  # Refused in production before a Node process, a Prisma client or a database
+  # connection exists. The guard inside the script is the one that actually
+  # protects the database; this one means the mistake costs a failed boot
+  # rather than a connection to the real one — the same two-layer shape
+  # RESET_STAGING_ADMIN_PASSWORD below already uses.
+  #
+  # Note this branch supplies TUTAK_DEMO=1 itself, so that confirmation can
+  # never fail inside an image. Without the environment check, one env var set
+  # to "true" — next to SEED_BASELINE, which production legitimately sets —
+  # would write invented partners, customers and payments into production
+  # through the real money engines.
+  if [ "${APP_ENV:-}" = "production" ] || { [ -z "${APP_ENV:-}" ] && [ "${NODE_ENV:-}" = "production" ]; }; then
+    echo "DEMO_SEED=true on a production deployment. Refusing to start." >&2
+    echo "This seeder invents partners, customers and payments through the real" >&2
+    echo "money engines. Did you mean SEED_BASELINE, which is the safe one?" >&2
+    exit 1
+  fi
   echo "DEMO_SEED=true — seeding baseline roles and demonstration data"
   node dist/scripts/seed-baseline.js
   TUTAK_DEMO=1 node dist/scripts/seed-demo.js

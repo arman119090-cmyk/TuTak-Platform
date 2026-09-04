@@ -36,9 +36,21 @@ COPY tsconfig.base.json ./tsconfig.base.json
 # The remaining build arguments are optional and the image builds without them.
 ARG NEXT_PUBLIC_API_BASE_URL=""
 ARG NEXT_PUBLIC_SENTRY_DSN=""
-# Staging is the safe default for this staging Dockerfile path; do not depend
-# on a runtime Render variable being forwarded into Docker ARG.
-ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+# `unknown`, not a guess at which deployment this is.
+#
+# This defaulted to `staging`, which was true while Render staging was the only
+# thing built from this Dockerfile and became an active lie the moment Railway
+# production used it too: every production error from this dashboard would be
+# filed under the staging environment, where a production alert rule does not
+# look for it. A misfiled error is worse than an unlabelled one, because the
+# label makes it look handled.
+#
+# `production` would be the mirror-image lie for a staging build, so neither
+# environment is a safe guess. `unknown` is the same answer this repository
+# already gives for an unstated release (`GIT_COMMIT_SHA`), and it is visibly
+# wrong in Sentry, which is how it gets fixed. Pass the real value as a build
+# argument — on Railway, a service variable of this name reaches the ARG.
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=unknown
 ARG GIT_COMMIT_SHA=""
 
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL

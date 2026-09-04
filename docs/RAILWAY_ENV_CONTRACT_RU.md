@@ -23,7 +23,7 @@ IPsec-шлюзом. Render — переходная инфраструктура
 | `CORS_ORIGINS` | непустой **и без localhost** | `main.ts` + `config/cors-origins.ts` |
 | `MEDIA_STORAGE_DRIVER` | обязан быть `s3` | `media-storage.module.ts` |
 | `MEDIA_STORAGE_S3_ENDPOINT` / `_BUCKET` / `_REGION` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | все пять | `media-storage.module.ts` |
-| `MEDIA_PUBLIC_BASE_URL` | обязателен | `media-storage.module.ts` |
+| `MEDIA_PUBLIC_BASE_URL` | обязателен **и не localhost** | `media-storage.module.ts` + `config/public-base-url.ts` |
 | SMS-транспорт | см. §2 — **иначе `throw`** | `sms-transport.ts:124` |
 | `SEED_ADMIN_PASSWORD` | ≥ 12 символов, если `SEED_BASELINE=true` | `seed-baseline.ts` |
 | `PUSH_ENABLED=true` | иначе `throw` в production | `push.module.ts` |
@@ -112,6 +112,17 @@ API на `<a>.up.railway.app` и админка на `<b>.up.railway.app` — **
   `admin.tutak.am`) → можно оставить `strict` и сохранить защиту от CSRF.
 
 ---
+
+## 4a. Sentry: окружение задаётся явно
+
+`NEXT_PUBLIC_SENTRY_ENVIRONMENT` у admin и partner — **build-time** аргумент.
+Умолчание в Dockerfile теперь `unknown`, а не `staging`: тот же файл собирает и
+staging, и production, поэтому любая догадка была бы ложью в одну из сторон, а
+ошибка, помеченная чужим окружением, не попадает в правило алертинга.
+
+На Railway задайте переменную сервиса `NEXT_PUBLIC_SENTRY_ENVIRONMENT=production`
+для обоих кабинетов — Railway пробрасывает переменные сервиса в объявленные
+`ARG`. Если увидите в Sentry окружение `unknown` — значит её не передали.
 
 ## 5. Порядок первого запуска (домена ещё нет)
 

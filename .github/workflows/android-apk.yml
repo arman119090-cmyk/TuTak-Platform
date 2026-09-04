@@ -45,7 +45,7 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: 'API address the app will talk to, ending in /v1 (e.g. https://tutak-api-xxxx.onrender.com/v1)'
+        description: 'API address the app will talk to, ending in /v1 (e.g. https://your-api-host/v1). Railway is the primary platform; take the value from the API service domain.'
         required: true
         type: string
       profile:

@@ -35,7 +35,11 @@ COPY tsconfig.base.json ./tsconfig.base.json
 # The remaining build arguments are optional and the image builds without them.
 ARG NEXT_PUBLIC_API_BASE_URL=""
 ARG NEXT_PUBLIC_SENTRY_DSN=""
-ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+# `unknown`, not a guess at which deployment this is — see the admin
+# Dockerfile's note. `staging` was true only while Render staging was the only
+# thing built here, and became a lie once Railway production used the same
+# file: production errors would be filed where no production alert looks.
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=unknown
 ARG GIT_COMMIT_SHA=""
 
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL

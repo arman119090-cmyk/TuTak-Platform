@@ -18,10 +18,34 @@ export interface HttpAuthStore {
   getState(): {
     accessToken: string | null;
     deviceId: string;
+    /**
+     * Which session the state belongs to; bumped on every sign-in, sign-out
+     * and account switch. See `SessionChangedError` below for what it guards.
+     */
+    sessionEpoch: number;
     setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => void;
-    setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>) => void;
+    /**
+     * Refuses the write and answers `false` when `expectedEpoch` is given and
+     * no longer matches — i.e. the session these tokens belong to is gone.
+     */
+    setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>, expectedEpoch?: number) => boolean;
     clear: () => void;
   };
+}
+
+/**
+ * Raised when a refresh outlives the session that started it.
+ *
+ * Not an authentication failure: the access token that came back is valid, it
+ * just belongs to a session this browser has already closed. On a shared
+ * workstation the next operator is already signed in by then, and replaying
+ * the original request would make it as the previous one.
+ */
+export class SessionChangedError extends Error {
+  constructor() {
+    super('The session changed while the token refresh was in flight');
+    this.name = 'SessionChangedError';
+  }
 }
 
 /** What `POST /auth/refresh` answers with, unwrapped from the envelope. */
@@ -96,26 +120,36 @@ export function createHttpClient(authStore: HttpAuthStore, apiBaseUrl: string): 
     return config;
   });
 
-  let refreshPromise: Promise<AuthTokensDto> | null = null;
+  /**
+   * The in-flight refresh, tagged with the session that started it, so a 401
+   * raised by a *new* session can never adopt the previous session's refresh.
+   */
+  let refreshInFlight: { epoch: number; promise: Promise<AuthTokensDto> } | null = null;
 
   /**
    * The refresh token is never in JavaScript's hands — the browser attaches it
    * as an httpOnly cookie, so this request carries only the device id.
    */
-  async function refreshTokens(): Promise<AuthTokensDto> {
+  async function refreshTokens(epoch: number): Promise<AuthTokensDto> {
     const { deviceId, setTokens, clear } = authStore.getState();
+    let data: { data: { tokens: AuthTokensDto } };
     try {
-      const { data } = await axios.post<{ data: { tokens: AuthTokensDto } }>(
+      ({ data } = await axios.post<{ data: { tokens: AuthTokensDto } }>(
         `${apiBaseUrl}/auth/refresh`,
         { deviceId },
         { withCredentials: true },
-      );
-      setTokens(data.data.tokens);
-      return data.data.tokens;
+      ));
     } catch (err) {
-      clear();
+      // Only the session that owns this refresh may be closed by its failure.
+      if (authStore.getState().sessionEpoch === epoch) {
+        clear();
+      }
       throw err;
     }
+    if (!setTokens(data.data.tokens, epoch)) {
+      throw new SessionChangedError();
+    }
+    return data.data.tokens;
   }
 
   httpClient.interceptors.response.use(
@@ -124,15 +158,27 @@ export function createHttpClient(authStore: HttpAuthStore, apiBaseUrl: string): 
       const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
       if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
         originalRequest._retry = true;
+        const epoch = authStore.getState().sessionEpoch;
         try {
-          refreshPromise ??= refreshTokens();
-          const tokens = await refreshPromise;
-          refreshPromise = null;
+          if (!refreshInFlight || refreshInFlight.epoch !== epoch) {
+            refreshInFlight = { epoch, promise: refreshTokens(epoch) };
+          }
+          const tokens = await refreshInFlight.promise;
+          if (refreshInFlight?.epoch === epoch) {
+            refreshInFlight = null;
+          }
+          // The await above is the window this guard exists for: a sign-out
+          // during it makes these tokens somebody else's.
+          if (authStore.getState().sessionEpoch !== epoch) {
+            return Promise.reject(new SessionChangedError());
+          }
           originalRequest.headers = originalRequest.headers ?? {};
           originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
           return httpClient.request(originalRequest);
         } catch (refreshError) {
-          refreshPromise = null;
+          if (refreshInFlight?.epoch === epoch) {
+            refreshInFlight = null;
+          }
           return Promise.reject(refreshError);
         }
       }

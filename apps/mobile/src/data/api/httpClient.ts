@@ -54,24 +54,57 @@ httpClient.interceptors.request.use((config) => {
   return config;
 });
 
-let refreshPromise: Promise<AuthTokensDto> | null = null;
+/**
+ * Raised when a refresh outlives the session that started it.
+ *
+ * Not an authentication failure: the tokens the server sent back are valid.
+ * They are simply no longer ours to use, because the customer signed out (or
+ * signed in as somebody else) while the request was in the air. The original
+ * request must not be replayed with them, and the current session — which may
+ * belong to a different person — must not be touched.
+ */
+export class SessionChangedError extends Error {
+  constructor() {
+    super('The session changed while the token refresh was in flight');
+    this.name = 'SessionChangedError';
+  }
+}
 
-async function refreshTokens(): Promise<AuthTokensDto> {
+/**
+ * The in-flight refresh, tagged with the session that started it.
+ *
+ * Tagged rather than bare, because a single-flight promise shared across a
+ * session boundary is itself a leak: a 401 raised by the *new* session would
+ * otherwise await the old session's refresh and replay itself with the
+ * previous account's access token.
+ */
+let refreshInFlight: { epoch: number; promise: Promise<AuthTokensDto> } | null = null;
+
+async function refreshTokens(epoch: number): Promise<AuthTokensDto> {
   const { refreshToken, deviceId, setTokens, clear } = useAuthStore.getState();
   if (!refreshToken) {
     throw new Error('No refresh token available');
   }
+  let data: { data: { tokens: AuthTokensDto } };
   try {
-    const { data } = await axios.post<{ data: { tokens: AuthTokensDto } }>(
+    ({ data } = await axios.post<{ data: { tokens: AuthTokensDto } }>(
       `${API_BASE_URL}/auth/refresh`,
       { refreshToken, deviceId },
-    );
-    await setTokens(data.data.tokens);
-    return data.data.tokens;
+    ));
   } catch (err) {
-    await clear();
+    // Only the session that owns this refresh may be closed by its failure.
+    // Clearing unconditionally would sign out whoever is signed in now — the
+    // failure says nothing about their session.
+    if (useAuthStore.getState().sessionEpoch === epoch) {
+      await clear();
+    }
     throw err;
   }
+  const written = await setTokens(data.data.tokens, epoch);
+  if (!written) {
+    throw new SessionChangedError();
+  }
+  return data.data.tokens;
 }
 
 httpClient.interceptors.response.use(
@@ -81,15 +114,27 @@ httpClient.interceptors.response.use(
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
+      const epoch = useAuthStore.getState().sessionEpoch;
       try {
-        refreshPromise ??= refreshTokens();
-        const tokens = await refreshPromise;
-        refreshPromise = null;
+        if (!refreshInFlight || refreshInFlight.epoch !== epoch) {
+          refreshInFlight = { epoch, promise: refreshTokens(epoch) };
+        }
+        const tokens = await refreshInFlight.promise;
+        if (refreshInFlight?.epoch === epoch) {
+          refreshInFlight = null;
+        }
+        // The await above is the window this whole guard exists for: a logout
+        // during it makes the tokens we are holding somebody else's problem.
+        if (useAuthStore.getState().sessionEpoch !== epoch) {
+          return Promise.reject(new SessionChangedError());
+        }
         originalRequest.headers = originalRequest.headers ?? {};
         originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
         return httpClient.request(originalRequest);
       } catch (refreshError) {
-        refreshPromise = null;
+        if (refreshInFlight?.epoch === epoch) {
+          refreshInFlight = null;
+        }
         return Promise.reject(refreshError);
       }
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { resetSessionCaches } from '@tutak/design/web';
 import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 
 interface AuthState {
@@ -12,9 +13,24 @@ interface AuthState {
    * AuthGate can tell "signed out" from "not asked yet".
    */
   hasRestored: boolean;
+  /**
+   * Which session the state above belongs to. Bumped by `setSession` and
+   * `clear` — every sign-in, sign-out and account switch.
+   *
+   * A refresh that left before a sign-out answers after it, carrying an access
+   * token the API issued while the session was still open. Nothing in that
+   * reply says it is stale; only this counter does. Sharper here than in the
+   * admin panel: partner staff hand one browser around a counter.
+   */
+  sessionEpoch: number;
   markRestored: () => void;
   setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => void;
-  setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>) => void;
+  /**
+   * Writes a refreshed access token into the session it belongs to. With
+   * `expectedEpoch` given and no longer current, the write is refused and
+   * `false` returned — the token is real, but its session is gone.
+   */
+  setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>, expectedEpoch?: number) => boolean;
   clear: () => void;
 }
 
@@ -47,15 +63,31 @@ function getOrCreateDeviceId(): string {
  * identifies this browser to the refresh-token rotation, and it has to
  * survive a reload for that rotation to recognise the device at all.
  */
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   accessToken: null,
   deviceId: getOrCreateDeviceId(),
   hasRestored: false,
+  sessionEpoch: 0,
   markRestored: () => set({ hasRestored: true }),
-  setSession: (user, tokens) => set({ user, accessToken: tokens.accessToken }),
-  setTokens: (tokens) => set({ accessToken: tokens.accessToken }),
-  clear: () => set({ user: null, accessToken: null }),
+  setSession: (user, tokens) => {
+    // Before the new session is visible, not after: a query that renders
+    // between the two would be the previous user's data under the new one's
+    // name.
+    resetSessionCaches();
+    set({ user, accessToken: tokens.accessToken, sessionEpoch: get().sessionEpoch + 1 });
+  },
+  setTokens: (tokens, expectedEpoch) => {
+    if (expectedEpoch !== undefined && expectedEpoch !== get().sessionEpoch) {
+      return false;
+    }
+    set({ accessToken: tokens.accessToken });
+    return true;
+  },
+  clear: () => {
+    set({ user: null, accessToken: null, sessionEpoch: get().sessionEpoch + 1 });
+    resetSessionCaches();
+  },
 }));
 
 export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_STAFF'] as const;

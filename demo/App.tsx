@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 import React, { useEffect, useMemo, useState } from 'react';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider } from 'react-i18next';
 
@@ -18,23 +18,11 @@ import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
 import { OfflineBanner } from './src/presentation/components/OfflineBanner';
 import { startNetworkStateTracking } from './src/data/network/networkState';
 
-/**
- * `mutations.retry: 0` is the library default and is stated here anyway.
- *
- * A retried mutation is a second purchase, a second bonus accrual and a
- * second settlement obligation — a timeout means the request may well have
- * been received and only the answer lost. That must stay a person's decision,
- * so the value is written down where anyone changing retry policy will see it
- * rather than left to a default that could move in a future major version.
- * `src/data/network/networkFailure.ts` holds the same rule for anything that
- * retries outside Query.
- */
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, staleTime: 30_000 },
-    mutations: { retry: 0 },
-  },
-});
+// The client and its retry policy live in `src/data/queryClient.ts`, together
+// with the subscription that empties the cache when the session changes —
+// that subscription has to be established once, at module scope, not by a
+// component the sign-out it watches for could unmount.
+import { queryClient } from './src/data/queryClient';
 
 function Root() {
   const theme = useTheme();

@@ -13,6 +13,18 @@ interface AuthState {
   refreshToken: string | null;
   deviceId: string;
   isHydrated: boolean;
+  /**
+   * Which session the state below belongs to. Bumped by `setSession` and
+   * `clear`, i.e. by every sign-in, sign-out and account switch.
+   *
+   * Anything that leaves this process and comes back holding credentials has
+   * to say which session it started under, because the answer may arrive
+   * after that session ended — a refresh in flight during a logout is the
+   * ordinary case, not a rare one. Without this, the reply is indistinguishable
+   * from a legitimate one and writes a closed session's tokens back into a
+   * store that may already belong to somebody else.
+   */
+  sessionEpoch: number;
   hydrate: () => Promise<void>;
   setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => Promise<void>;
   /**
@@ -26,7 +38,20 @@ interface AuthState {
    * reasonably conclude the upload had not worked.
    */
   setUser: (user: AuthenticatedUserDto) => void;
-  setTokens: (tokens: Pick<AuthTokensDto, 'accessToken' | 'refreshToken'>) => Promise<void>;
+  /**
+   * Writes a refreshed token pair into the session it belongs to.
+   *
+   * `expectedEpoch` is how a caller that started before an `await` proves the
+   * session it refreshed is still the current one. When it does not match, the
+   * write is refused and `false` is returned — the tokens are real, but they
+   * authenticate a session this device has already closed. Omitting the
+   * argument keeps the old unconditional behaviour for callers that hold no
+   * such expectation.
+   */
+  setTokens: (
+    tokens: Pick<AuthTokensDto, 'accessToken' | 'refreshToken'>,
+    expectedEpoch?: number,
+  ) => Promise<boolean>;
   clear: () => Promise<void>;
 }
 
@@ -50,12 +75,13 @@ function parseUser(raw: string | null): AuthenticatedUserDto | null {
   }
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   accessToken: null,
   refreshToken: null,
   deviceId: '',
   isHydrated: false,
+  sessionEpoch: 0,
 
   /**
    * Hydration cannot be allowed to reject.
@@ -103,7 +129,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       setItem(REFRESH_TOKEN_KEY, tokens.refreshToken),
       setItem(USER_KEY, JSON.stringify(user)),
     ]);
-    set({ user, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+    set({
+      user,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      sessionEpoch: get().sessionEpoch + 1,
+    });
   },
 
   setUser: (user) => {
@@ -114,21 +145,44 @@ export const useAuthStore = create<AuthState>((set) => ({
     void setItem(USER_KEY, JSON.stringify(user));
   },
 
-  setTokens: async (tokens) => {
+  setTokens: async (tokens, expectedEpoch) => {
+    // Checked before the write and again after it, because the write itself
+    // awaits: a logout landing between the two would otherwise delete the
+    // stored tokens and then have them put straight back.
+    if (expectedEpoch !== undefined && expectedEpoch !== get().sessionEpoch) {
+      return false;
+    }
     await Promise.all([
       setItem(ACCESS_TOKEN_KEY, tokens.accessToken),
       setItem(REFRESH_TOKEN_KEY, tokens.refreshToken),
     ]);
+    if (expectedEpoch !== undefined && expectedEpoch !== get().sessionEpoch) {
+      // Repair rather than delete. The session that replaced ours may have
+      // written its own tokens while we were awaiting, and deleting the keys
+      // would sign *that* person out on their next cold start. Memory is
+      // authoritative here — it is what the current session set — so storage
+      // is put back into agreement with it.
+      const { accessToken, refreshToken } = get();
+      await Promise.all([
+        accessToken ? setItem(ACCESS_TOKEN_KEY, accessToken) : deleteItem(ACCESS_TOKEN_KEY),
+        refreshToken ? setItem(REFRESH_TOKEN_KEY, refreshToken) : deleteItem(REFRESH_TOKEN_KEY),
+      ]);
+      return false;
+    }
     set({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+    return true;
   },
 
   clear: async () => {
+    // The epoch moves first, before the awaited deletes: anything in flight is
+    // invalidated the instant the logout is asked for, not once storage has
+    // caught up with it.
+    set({ user: null, accessToken: null, refreshToken: null, sessionEpoch: get().sessionEpoch + 1 });
     await Promise.all([
       deleteItem(ACCESS_TOKEN_KEY),
       deleteItem(REFRESH_TOKEN_KEY),
       deleteItem(USER_KEY),
     ]);
-    set({ user: null, accessToken: null, refreshToken: null });
   },
 }));
 

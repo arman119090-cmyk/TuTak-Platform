@@ -1,6 +1,7 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
+import { isSupportedLocale } from '@tutak/i18n';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
 /**
@@ -171,6 +172,21 @@ function handle(
     // ── Profile and avatar ──────────────────────────────────────────────
     case 'GET /users/me':
       return envelope(state.user);
+
+    /**
+     * The profile edit the app actually makes: the interface language.
+     *
+     * Only `locale` is honoured, and only against the three languages the
+     * app ships. The real endpoint validates the same set server-side and
+     * refuses anything else, so accepting a fourth here would let the demo
+     * reach a state the product cannot.
+     */
+    case 'PATCH /users/me': {
+      const dto = body<{ locale?: string }>(config);
+      const locale = dto.locale && isSupportedLocale(dto.locale) ? dto.locale : state.user.locale;
+      state.user = { ...state.user, locale };
+      return envelope(state.user);
+    }
 
     /**
      * The offline avatar upload.

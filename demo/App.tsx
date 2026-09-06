@@ -8,6 +8,10 @@ import { I18nextProvider } from 'react-i18next';
 
 import { ErrorBoundary } from './src/app/ErrorBoundary';
 import i18n from './src/app/i18n/i18n';
+// Side-effect import: subscribes the interface language to the session, so it
+// follows the account rather than staying wherever the last person on this
+// handset left it. Module scope for the same reason as the query cache below.
+import './src/app/i18n/sessionLocale';
 import { ThemeProvider, useTheme } from './src/app/theme/ThemeProvider';
 import { AuthNavigator } from './src/app/navigation/AuthNavigator';
 import { RootNavigator } from './src/app/navigation/RootNavigator';

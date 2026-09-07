@@ -46,8 +46,24 @@ export const httpClient = axios.create({
   ...(USE_MOCKS ? { adapter: mockAdapter } : {}),
 });
 
+/**
+ * A request carries the session it was sent under.
+ *
+ * Reading the session when the *answer* arrives is too late: a 401 for a
+ * request A made can land after A signed out and B signed in, and a client
+ * that reads the epoch at that moment sees B's. It then refreshes B's session
+ * and replays A's request with B's token — work one person asked for, made as
+ * another. The only moment that identifies a request's session is the moment
+ * it left.
+ */
+interface SessionScopedRequest {
+  _sessionEpoch?: number;
+  _retry?: boolean;
+}
+
 httpClient.interceptors.request.use((config) => {
-  const { accessToken } = useAuthStore.getState();
+  const { accessToken, sessionEpoch } = useAuthStore.getState();
+  (config as typeof config & SessionScopedRequest)._sessionEpoch = sessionEpoch;
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
@@ -110,11 +126,21 @@ async function refreshTokens(epoch: number): Promise<AuthTokensDto> {
 httpClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
+    const originalRequest = error.config as
+      | (typeof error.config & SessionScopedRequest)
+      | undefined;
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
-      const epoch = useAuthStore.getState().sessionEpoch;
+      // The session this request was sent under — not the one signed in now.
+      // A request made outside the interceptor carries no stamp; treating it
+      // as the current session preserves the previous behaviour for it.
+      const epoch = originalRequest._sessionEpoch ?? useAuthStore.getState().sessionEpoch;
+      if (useAuthStore.getState().sessionEpoch !== epoch) {
+        // Nothing to refresh and nothing to replay: this 401 answers a
+        // question the previous session asked.
+        return Promise.reject(new SessionChangedError());
+      }
       try {
         if (!refreshInFlight || refreshInFlight.epoch !== epoch) {
           refreshInFlight = { epoch, promise: refreshTokens(epoch) };

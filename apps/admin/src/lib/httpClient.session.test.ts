@@ -155,6 +155,33 @@ describe('admin httpClient — session lifetime across refresh', () => {
     expect(useAuthStore.getState().accessToken).toBeNull();
   });
 
+  it('6. a 401 for a request A sent is not refreshed or replayed under B’s session', async () => {
+    // The request left under A. Its answer arrives after A signed out and B
+    // signed in, so both the refresh and the replay would be made as B.
+    let release401: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release401 = resolve;
+    });
+    const adapter = respondWith(async (config) => {
+      await held;
+      return unauthorized(config);
+    });
+
+    const request = httpClient.get('/admin/users').catch((err: Error) => err.name);
+    await settle();
+
+    useAuthStore.getState().clear();
+    useAuthStore.getState().setSession(userB, tokens('b'));
+
+    release401();
+    await expect(request).resolves.toBe('SessionChangedError');
+    await settle();
+
+    expect(mockedPost).not.toHaveBeenCalled();
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().accessToken).toBe('b-access');
+  });
+
   it('5. a failed refresh belonging to the old session does not sign the new one out', async () => {
     const refresh = pendingRefresh('a');
     respondWith(unauthorized);

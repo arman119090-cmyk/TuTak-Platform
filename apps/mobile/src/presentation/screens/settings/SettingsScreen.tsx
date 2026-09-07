@@ -30,13 +30,20 @@ const LOCALE_LABELS: Record<string, string> = {
 export function SettingsScreen() {
   const { t, i18n } = useTranslation();
   const { color, space, text } = useTheme();
-  const { user, deviceId, clear, setUser } = useAuthStore();
+  const { user, deviceId, clear, patchUser } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const personalization = useMutation({
-    mutationFn: (next: boolean) => usersApi.setPersonalizationConsent(next),
-    onSuccess: (result) => {
-      if (user) setUser({ ...user, personalizedRecommendationsEnabled: result.personalizedRecommendationsEnabled });
+    mutationFn: async (next: boolean) => {
+      // The session this consent belongs to, taken before the request leaves.
+      const sessionEpoch = useAuthStore.getState().sessionEpoch;
+      return { result: await usersApi.setPersonalizationConsent(next), sessionEpoch };
+    },
+    onSuccess: ({ result, sessionEpoch }) => {
+      patchUser(
+        { personalizedRecommendationsEnabled: result.personalizedRecommendationsEnabled },
+        sessionEpoch,
+      );
     },
   });
 
@@ -55,9 +62,13 @@ export function SettingsScreen() {
   const selectLocale = (locale: string) => {
     void i18n.changeLanguage(locale);
     if (!user) return;
+    // Taken before the request leaves. The reply carries one field, and
+    // merging it into the profile captured here would write this person's
+    // whole profile back — under whichever session exists when it lands.
+    const sessionEpoch = useAuthStore.getState().sessionEpoch;
     void usersApi
       .setLocale(locale)
-      .then((result) => setUser({ ...user, locale: result.locale }))
+      .then((result) => patchUser({ locale: result.locale }, sessionEpoch))
       .catch(() => undefined);
   };
 

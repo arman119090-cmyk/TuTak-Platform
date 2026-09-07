@@ -224,6 +224,37 @@ describe('mobile httpClient — session lifetime across refresh', () => {
     }
   });
 
+  it('6. a 401 for a request A sent is not refreshed or replayed under B’s session', async () => {
+    // The request leaves under A. The answer comes back after A signed out and
+    // B signed in — so the 401 belongs to a session that no longer exists, and
+    // both the refresh and the replay would be made as B for work A asked for.
+    let release401: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release401 = resolve;
+    });
+    const adapter = respondWith(async (config) => {
+      await held;
+      return unauthorized(config);
+    });
+
+    const request = httpClient.get('/wallet/me').catch((err: Error) => err.name);
+    await settle();
+
+    await useAuthStore.getState().clear();
+    await useAuthStore.getState().setSession(userB, tokensFor('b'));
+
+    release401();
+    await expect(request).resolves.toBe('SessionChangedError');
+    await settle();
+
+    // No refresh may be attempted at all: the session that owned the request
+    // is gone, and refreshing would spend B's credentials on A's work.
+    expect(mockedPost).not.toHaveBeenCalled();
+    // One call only — the request was never replayed.
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().accessToken).toBe('b-access');
+  });
+
   it('refreshes normally when the session has not changed', async () => {
     mockedPost.mockResolvedValue({ data: { data: { tokens: tokensFor('a2') } } } as never);
     let seen = 0;

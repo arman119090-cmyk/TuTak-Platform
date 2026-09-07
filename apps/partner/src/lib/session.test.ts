@@ -87,6 +87,38 @@ describe('partner session boundary', () => {
     expect(useAuthStore.getState().accessToken).toBe('b-access');
   });
 
+  it('a 401 for a request the previous employee sent is not replayed as the next one', async () => {
+    useAuthStore.getState().setSession(staffA, tokens('a'));
+
+    let release401: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release401 = resolve;
+    });
+    const adapter = jest.fn(async (config: AxiosRequestConfig) => {
+      await held;
+      return Promise.reject(
+        Object.assign(new Error('Request failed with status code 401'), {
+          isAxiosError: true,
+          config,
+          response: { status: 401, data: {}, statusText: 'Unauthorized', headers: {}, config },
+        }),
+      );
+    });
+    httpClient.defaults.adapter = adapter as unknown as AxiosAdapter;
+
+    const request = httpClient.get('/partners/me/transactions').catch((err: Error) => err.name);
+    await settle();
+
+    useAuthStore.getState().clear();
+    useAuthStore.getState().setSession(staffB, tokens('b'));
+    release401();
+
+    await expect(request).resolves.toBe('SessionChangedError');
+    expect(mockedPost).not.toHaveBeenCalled();
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().accessToken).toBe('b-access');
+  });
+
   it('signing out empties the cached partner data', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const unregister = registerSessionCacheReset(() => client.clear());

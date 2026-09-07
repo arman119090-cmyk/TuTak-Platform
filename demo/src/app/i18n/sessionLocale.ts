@@ -28,18 +28,19 @@ export function applySessionLocale(locale: string | null | undefined): void {
   void i18n.changeLanguage(locale);
 }
 
-let lastSessionEpoch = useAuthStore.getState().sessionEpoch;
-let lastHydrated = useAuthStore.getState().isHydrated;
+let lastUserId: string | null = useAuthStore.getState().user?.id ?? null;
 
 useAuthStore.subscribe((state) => {
-  const sessionChanged = state.sessionEpoch !== lastSessionEpoch;
-  // Hydration is not a session change — the epoch deliberately does not move
-  // for it — but it is the moment a restored session's user first exists, so
-  // a cold start has to be handled too, and only once.
-  const justHydrated = state.isHydrated && !lastHydrated;
-  if (!sessionChanged && !justHydrated) return;
-
-  lastSessionEpoch = state.sessionEpoch;
-  lastHydrated = state.isHydrated;
+  const userId = state.user?.id ?? null;
+  if (userId === lastUserId) return;
+  lastUserId = userId;
+  // Keyed on *who* is signed in rather than on the session counter, for two
+  // reasons. The counter moves the moment a sign-in claims the store, which is
+  // before the user it signs in exists — reading the profile then would read
+  // the previous one. And a language chosen from Settings changes the stored
+  // profile without changing who it belongs to, so keying on identity leaves
+  // that choice alone where a counter-based check would have to special-case
+  // it. Covers sign-in, account switch and the cold-start restore alike.
+  if (userId === null) return;
   applySessionLocale(state.user?.locale);
 });

@@ -54,6 +54,20 @@ interface RefreshResponse {
 }
 
 /**
+ * A request carries the session it was sent under.
+ *
+ * Reading the session when the *answer* arrives is too late: a 401 for a
+ * request one operator made can land after they signed out and a colleague
+ * signed in, and a client that reads the epoch at that moment sees the
+ * colleague's. It would then refresh their session and replay the first
+ * operator's request as them.
+ */
+interface SessionScopedRequest {
+  _sessionEpoch?: number;
+  _retry?: boolean;
+}
+
+/**
  * Rebuilds a session from the httpOnly refresh cookie alone.
  *
  * This is what replaced keeping the access token in `localStorage`. Nothing
@@ -74,20 +88,29 @@ export async function restoreSession(
   authStore: HttpAuthStore,
   apiBaseUrl: string,
 ): Promise<boolean> {
-  const { deviceId, setSession, setTokens } = authStore.getState();
+  const { deviceId, setSession, setTokens, sessionEpoch } = authStore.getState();
   try {
     const { data } = await axios.post<RefreshResponse>(
       `${apiBaseUrl}/auth/refresh`,
       { deviceId },
       { withCredentials: true },
     );
+    // The restore is a request like any other and can outlive its session: a
+    // reload starts rebuilding the previous operator's session, a colleague
+    // signs in while it is in flight, and this answer would then overwrite a
+    // session somebody is already using — with the wrong identity attached.
+    // Whoever signed in during the restore asked for that more recently than
+    // the page asked for this, so they win.
+    if (authStore.getState().sessionEpoch !== sessionEpoch) return false;
     if (data.data.user) {
       setSession(data.data.user, data.data.tokens);
     } else {
       // An older API that answers with tokens only. The token is usable, but
       // without the user the gate cannot decide what may render, so this is
-      // reported as "no session" rather than half a one.
-      setTokens(data.data.tokens);
+      // reported as "no session" rather than half a one. Guarded all the same:
+      // a bare token written over a live session is the same defect with less
+      // of it visible.
+      setTokens(data.data.tokens, sessionEpoch);
       return false;
     }
     return true;
@@ -113,7 +136,8 @@ export function createHttpClient(authStore: HttpAuthStore, apiBaseUrl: string): 
   });
 
   httpClient.interceptors.request.use((config) => {
-    const { accessToken } = authStore.getState();
+    const { accessToken, sessionEpoch } = authStore.getState();
+    (config as typeof config & SessionScopedRequest)._sessionEpoch = sessionEpoch;
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
@@ -155,10 +179,19 @@ export function createHttpClient(authStore: HttpAuthStore, apiBaseUrl: string): 
   httpClient.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
-      const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
+      const originalRequest = error.config as
+        | (typeof error.config & SessionScopedRequest)
+        | undefined;
       if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
         originalRequest._retry = true;
-        const epoch = authStore.getState().sessionEpoch;
+        // The session the request was sent under, not the one signed in now.
+        const epoch = originalRequest._sessionEpoch ?? authStore.getState().sessionEpoch;
+        if (authStore.getState().sessionEpoch !== epoch) {
+          // This 401 answers a question the previous operator asked. Refreshing
+          // would spend the current operator's session on it, and replaying
+          // would make their request as somebody else.
+          return Promise.reject(new SessionChangedError());
+        }
         try {
           if (!refreshInFlight || refreshInFlight.epoch !== epoch) {
             refreshInFlight = { epoch, promise: refreshTokens(epoch) };

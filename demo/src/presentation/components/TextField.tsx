@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native'
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
 import { logEvent } from '../../diagnostics/eventLog';
+import { useMountTrace } from '../../diagnostics/instanceTrace';
 
 interface Props extends TextInputProps {
   label: string;
@@ -10,6 +11,20 @@ interface Props extends TextInputProps {
   hint?: string;
   /** Rendered inside the field, before the input (e.g. a "+374" prefix). */
   prefix?: string;
+  /**
+   * What this field is called in the diagnostic log.
+   *
+   * The label was doing this job and is the wrong thing for it twice over: it
+   * is translated, so a log from a phone in Armenian cannot be read against a
+   * log from one in English, and two fields whose labels happen to be similar
+   * are indistinguishable at a glance in a photograph. A short ASCII id
+   * (`phone`, `referral`) is stable across languages and short enough to stay
+   * on one row.
+   *
+   * Optional: a screen that has not been given one keeps logging its label,
+   * exactly as before.
+   */
+  traceId?: string;
 }
 
 /**
@@ -22,9 +37,32 @@ interface Props extends TextInputProps {
  * what a greyed control looks like everywhere else; a barely-lit well reads
  * as empty and waiting, which is what it is.
  */
-export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, ...rest }: Props) {
+export function TextField({
+  label,
+  error,
+  hint,
+  prefix,
+  traceId,
+  style,
+  onFocus,
+  onBlur,
+  ...rest
+}: Props) {
   const { color, space, radius, text, glass, premium } = useTheme();
   const [focused, setFocused] = useState(false);
+  // What this field is called in the log, and what the mount trace names.
+  const traced = traceId ?? label;
+  /*
+   * Whether this particular input was replaced rather than re-rendered.
+   *
+   * The registration screen has two fields, and the reported sequence there
+   * involves the keyboard changing type — which a *different* input taking
+   * focus would produce, and which a re-render of the same input would not.
+   * Those two are indistinguishable from focus and blur alone, so each
+   * instance says when it arrives and when it goes, with an id that does not
+   * repeat within a run.
+   */
+  useMountTrace(`field:${traced}`);
   const wrapper = useRef<View>(null);
   // Scrolls this field clear of the keyboard when it is tapped. A no-op on a
   // screen that does not scroll.
@@ -86,13 +124,13 @@ export function TextField({ label, error, hint, prefix, style, onFocus, onBlur, 
           onFocus={(event) => {
             // The label, never the value. A password in a screenshot would be
             // a far worse bug than the one being chased.
-            logEvent(`focus ${label}`);
+            logEvent(`focus ${traced}`);
             setFocused(true);
             ensureVisible(wrapper.current);
             onFocus?.(event);
           }}
           onBlur={(event) => {
-            logEvent(`blur  ${label}`);
+            logEvent(`blur  ${traced}`);
             setFocused(false);
             onBlur?.(event);
           }}

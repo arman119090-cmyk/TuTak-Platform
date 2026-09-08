@@ -14,6 +14,8 @@ import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { useMountTrace } from '../../../diagnostics/instanceTrace';
+import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
@@ -38,6 +40,31 @@ export function OtpRegisterScreen({ navigation }: Props) {
   const { color, space, text, layout } = useTheme();
   const compact = useCompactLayout();
   const { deviceId, setSession } = useAuthStore();
+
+  /*
+   * The instrumentation, and what it is for.
+   *
+   * The sign-in screen was instrumented in September and the fault is now
+   * reported here instead, on a screen the earlier investigation never
+   * touched. Two things make this screen genuinely different rather than
+   * another instance of the same page: it has two inputs rather than one
+   * interesting one, and they ask for *different keyboards* — `number-pad`
+   * for the phone, the default alphabetic one for the referral code.
+   *
+   * That matters because the reported sequence includes the keyboard
+   * changing type before it closes. A keyboard that changes type is a
+   * keyboard that was asked for by a different input, or by the same input
+   * with different props — and neither of those is something `focus`, `blur`
+   * and a keyboard height can distinguish. Hence the mount trace here and on
+   * each field: the log has to be able to say *which* input the keyboard was
+   * serving, and whether that input is the same object it was a moment ago.
+   *
+   * `useDimensionsTrace` comes across unchanged from the sign-in screen —
+   * window against screen is still what separates a window that is being
+   * resized under the IME from one that is not.
+   */
+  useMountTrace('OtpRegister');
+  useDimensionsTrace();
 
   const [phone, setPhone] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -112,6 +139,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
           <>
             <TextField
               label={t('auth.phoneNumber')}
+              traceId="phone"
               prefix="+374"
               value={phone}
               onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
@@ -121,6 +149,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
             />
             <TextField
               label={t('auth.referralCodeOptional')}
+              traceId="referral"
               value={referralCode}
               onChangeText={(v) => setReferralCode(v.toUpperCase())}
               autoCapitalize="characters"
@@ -141,6 +170,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
           <>
             <TextField
               label={t('auth.resetCode')}
+              traceId="otp"
               value={code}
               onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
               keyboardType="number-pad"

@@ -15,6 +15,8 @@ import { SplashScreen } from './src/presentation/screens/SplashScreen';
 import { useAuthStore } from './src/data/stores/authStore';
 import { usePushRegistration } from './src/app/usePushRegistration';
 import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
+import { useMountTrace } from './src/diagnostics/instanceTrace';
+import { useAppStateTrace } from './src/diagnostics/useAppStateTrace';
 import { OfflineBanner } from './src/presentation/components/OfflineBanner';
 import { startNetworkStateTracking } from './src/data/network/networkState';
 
@@ -40,6 +42,25 @@ function Root() {
   const theme = useTheme();
   const { user, hydrate } = useAuthStore();
   const [ready, setReady] = useState(false);
+
+  /*
+   * The reference mark every other mount line is read against.
+   *
+   * A screen mounting twice can mean the screen was rebuilt or that
+   * everything was — and the difference decides whether the answer is in this
+   * codebase or in the Android configuration. This is the root of the React
+   * tree, so a second `mount App` in one run means the whole surface
+   * restarted; a second `mount OtpRegister` with `mount App #1` still
+   * standing above it means only the screen did. Neither reading is available
+   * from a screen's own log line, which is why the previous round could not
+   * make it and inferred an activity restart it had no evidence for.
+   *
+   * `useAppStateTrace` is the third signal: an activity that is being
+   * recreated does not stay `active` throughout, and a keyboard appearing on
+   * an app that keeps running does.
+   */
+  useMountTrace('App');
+  useAppStateTrace();
 
   /**
    * Navigation's own chrome recoloured to the active TuTak palette.

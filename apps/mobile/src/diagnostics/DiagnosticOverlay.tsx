@@ -1,7 +1,9 @@
 import React, { useEffect, useReducer, useState } from 'react';
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import { getEvents, resetEvents, subscribe } from './eventLog';
+import { Dimensions, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
+import { getEvents, resetEvents, runId, serializeEvents, subscribe } from './eventLog';
 import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
+import { traceSummary } from './instanceTrace';
 import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
 
 /**
@@ -29,7 +31,46 @@ import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
  *   three.
  * - `render #N` climbing while nothing is touched is a render loop, and none
  *   of the above.
+ * - `mount X #n @id` is read with the run id in the header: see
+ *   `instanceTrace.ts`. A repeated mount line on its own says nothing about
+ *   the activity being recreated.
+ *
+ * ## Why there is an export button
+ *
+ * The panel shows the last fourteen rows because that is what fits, and a
+ * photograph of it has been the transport so far. The registration screen's
+ * reported sequence is longer than that and spans two fields, so EXPORT hands
+ * the whole retained log — with the build, the run id and the row count — to
+ * whatever the phone can send text with. `Share` rather than a clipboard or a
+ * file: it is in React Native itself, so this adds no dependency to an app
+ * that has to keep building for a person who is waiting.
  */
+/**
+ * Hands the log to the phone's own share sheet.
+ *
+ * Deliberately not routed through the event log: an export is the operator
+ * acting on the log, and a log that records being read is a log that changed
+ * while being read.
+ */
+async function exportLog(): Promise<void> {
+  const { width, height } = Dimensions.get('window');
+  const screen = Dimensions.get('screen');
+  try {
+    await Share.share({
+      message: serializeEvents({
+        commit: buildCommit(),
+        profile: String(Constants.expoConfig?.extra?.appEnv ?? 'unknown'),
+        trace: traceSummary(),
+        window: `${Math.round(width)}x${Math.round(height)}`,
+        screen: `${Math.round(screen.width)}x${Math.round(screen.height)}`,
+      }),
+    });
+  } catch {
+    // A share sheet the user dismissed, or a device with nothing to share
+    // to. Neither is worth an alert on top of the screen being diagnosed.
+  }
+}
+
 export function DiagnosticOverlay() {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   // The probe's own result, shown beside the button. Deliberately not routed
@@ -48,8 +89,12 @@ export function DiagnosticOverlay() {
     <View pointerEvents="box-none" style={styles.root}>
       <View style={styles.panel}>
         <View style={styles.headerRow}>
+          {/* The run id is here as well as in the export, because a
+              photograph of this panel is still the fastest way to send it and
+              a mount count means nothing without knowing whether the runtime
+              underneath it was replaced. */}
           <Text style={styles.header}>
-            {buildCommit()} · win {Math.round(width)}×{Math.round(height)}
+            {buildCommit()} · {runId()} · win {Math.round(width)}×{Math.round(height)}
           </Text>
           <View style={styles.actions}>
             {/* Absent unless this is a diagnostic build of a non-production
@@ -73,6 +118,9 @@ export function DiagnosticOverlay() {
                 </Text>
               </Pressable>
             ) : null}
+            <Pressable onPress={() => void exportLog()} hitSlop={12}>
+              <Text style={styles.clear}>EXPORT</Text>
+            </Pressable>
             <Pressable onPress={resetEvents} hitSlop={12}>
               <Text style={styles.clear}>CLEAR</Text>
             </Pressable>

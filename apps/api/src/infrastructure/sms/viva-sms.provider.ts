@@ -123,10 +123,69 @@ export function formatVivaRecipient(phone: string, format: VivaNumberFormat): st
   if (format === 'e164') return trimmed;
   if (format === 'msisdn') return trimmed.startsWith('+') ? trimmed.slice(1) : trimmed;
 
-  if (trimmed.startsWith(ARMENIAN_COUNTRY_CODE)) {
-    return trimmed.slice(ARMENIAN_COUNTRY_CODE.length);
+  return toVivaNationalNumber(trimmed);
+}
+
+/**
+ * The eight-digit local number Viva accepts, from whatever shape came in.
+ *
+ * Confirmed by a delivered message rather than inferred: `96040790` reaches
+ * the handset. Everything else is a prefix to remove, and the shapes that
+ * reach this function are not hypothetical — `+37496040790` is what the
+ * platform stores, `096040790` is how an Armenian writes their own number,
+ * and `37496040790` is what a form strips a `+` from.
+ *
+ * The leading `0` matters most, because it is the one that used to survive:
+ * a nine-digit `096040790` is accepted into the batch and never delivered,
+ * and the only symptom is a customer saying no code arrived.
+ *
+ * Deliberately separate from the platform's own phone normalisation, which
+ * produces and validates `+374XXXXXXXX` and is relied on by the whole domain.
+ * This shape exists for one carrier's wire format and must not leak back into
+ * how a number is stored or compared.
+ *
+ * A number that is not Armenian is returned with only a `+` removed: guessing
+ * a country code sends a stranger somebody's verification code.
+ */
+export function toVivaNationalNumber(phone: string): string {
+  const digits = phone.trim().replace(/[\s()-]/g, '');
+
+  // `+374…`, `00374…`, `374…` — the same country code written three ways.
+  for (const prefix of [ARMENIAN_COUNTRY_CODE, `00${ARMENIAN_COUNTRY_CODE.slice(1)}`, '374']) {
+    if (digits.startsWith(prefix) && digits.length - prefix.length === 8) {
+      return digits.slice(prefix.length);
+    }
   }
-  return trimmed.startsWith('+') ? trimmed.slice(1) : trimmed;
+
+  // `0XX XXXXXX` — the national trunk prefix, which Viva does not want.
+  if (/^0\d{8}$/.test(digits)) return digits.slice(1);
+
+  // Already the eight digits Viva asked for.
+  if (/^\d{8}$/.test(digits)) return digits;
+
+  return digits.startsWith('+') ? digits.slice(1) : digits;
+}
+
+/**
+ * A template tag value on the wire.
+ *
+ * The approved template's tag is `<n>` and the verified payload sends
+ * `[123456]` — a JSON *number*. This sends a number wherever that is
+ * lossless, and a string in the one case where it is not: a verification
+ * code may begin with a zero (`generateNumericCode` pads to six with `'0'`),
+ * and `012345` as a JSON number is `12345` — a five-digit code the customer
+ * would type and be told is wrong. That failure would hit roughly one sign-in
+ * in ten and look like a customer mistyping.
+ *
+ * So the shape follows the value: no leading zero, a number, exactly as
+ * tested; a leading zero, the digits as a string, which is the only encoding
+ * that can carry them at all.
+ */
+export function vivaTemplateParam(value: string): string | number {
+  if (/^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value))) {
+    return Number(value);
+  }
+  return value;
 }
 
 export interface TokenCarrier {
@@ -213,18 +272,49 @@ export function safeProviderErrorCode(payload: unknown): string | null {
  * and a miss is `null` rather than an error. A send the carrier accepted
  * must never be reported as failed because a field was named differently.
  */
+const TRANSACTION_ID_FIELDS = ['transact_unique_id', 'trx_unique_id', 'trxUniqueId'] as const;
+
 export function readTransactionId(payload: unknown): string | null {
   if (!isPlainObject(payload)) return null;
 
-  const direct = firstString(payload, ['trx_unique_id', 'trxUniqueId']);
+  const direct = firstString(payload, TRANSACTION_ID_FIELDS);
   if (direct) return direct;
 
-  // One level of the common `{ data: { ... } }` envelope, and no deeper:
-  // walking an undocumented structure is how a log ends up with a phone
-  // number in it.
-  const data = payload.data;
-  if (isPlainObject(data)) return firstString(data, ['trx_unique_id', 'trxUniqueId']);
+  // One level of the envelope, and no deeper: walking an undocumented
+  // structure is how a log ends up with a phone number in it. `result` is
+  // where a confirmed live response puts it; `data` stays because it cost
+  // nothing and this shape was never specified in writing.
+  for (const key of ['result', 'data'] as const) {
+    const nested = payload[key];
+    if (isPlainObject(nested)) {
+      const found = firstString(nested, TRANSACTION_ID_FIELDS);
+      if (found) return found;
+    }
+  }
 
+  return null;
+}
+
+/**
+ * Viva's own verdict, which is not the HTTP status.
+ *
+ * A confirmed successful send answers `{"RC":0,"msg":"Success","result":{…}}`,
+ * so `RC` is the field that says whether the carrier accepted the message.
+ * An HTTP 200 carrying a non-zero `RC` is a refusal wearing a success code,
+ * and treating it as delivery would report a code as sent that never left.
+ *
+ * Absent means absent: no `RC` is not a failure, because the shape was never
+ * specified in writing and inventing a rejection would break sends that work.
+ */
+export function readResultCode(payload: unknown): number | null {
+  if (!isPlainObject(payload)) return null;
+
+  for (const key of ['RC', 'rc'] as const) {
+    const value = payload[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    // Some gateways stringify it. Only a plain integer is accepted.
+    if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value);
+  }
   return null;
 }
 
@@ -307,9 +397,12 @@ export class VivaSmsProvider implements SmsProvider {
     const body = {
       sender_name: this.config.senderName,
       template_name: this.config.templateName,
-      // A JSON-encoded *string*, per the document — not a nested object.
+      // A JSON-encoded *string* whose values are arrays of tag values —
+      // `{"96040790":[123456]}` — which is the payload a delivered message
+      // was sent with, not a shape read off a document.
       params_data: JSON.stringify({
-        [formatVivaRecipient(message.to, this.config.numberFormat)]: params,
+        [formatVivaRecipient(message.to, this.config.numberFormat)]:
+          params.map(vivaTemplateParam),
       }),
       send_utf: this.config.sendUtf ? 1 : 0,
     };
@@ -320,14 +413,19 @@ export class VivaSmsProvider implements SmsProvider {
       // Documented refresh first, a full re-authentication only if that
       // fails, then exactly one more attempt at the send. There is no loop:
       // a second 401 is a credentials or placement problem, not a stale
-      // token, and retrying it would only double the failures.
+      // token, and retrying it would only double the failures. A 422 or any
+      // other refusal never comes back here at all — retrying a rejected
+      // template or sender name would fail identically, forever.
       const renewed = await this.renew();
       result = await this.transact(body, renewed.access);
     }
 
-    if (!result.ok) {
+    const resultCode = readResultCode(result.payload);
+
+    if (!result.ok || (resultCode !== null && resultCode !== 0)) {
       this.logger.error(
         `Viva rejected the message (HTTP ${result.status}` +
+          `${resultCode !== null ? `, RC=${resultCode}` : ''}` +
           `${formatCode(safeProviderErrorCode(result.payload))})`,
       );
       throw new ServiceUnavailableException('Could not send the SMS message');
@@ -366,9 +464,11 @@ export class VivaSmsProvider implements SmsProvider {
       refresh_token: refreshToken,
     });
 
-    if (!result.ok) {
+    const refreshCode = readResultCode(result.payload);
+    if (!result.ok || (refreshCode !== null && refreshCode !== 0)) {
       this.logger.warn(
         `Viva refused the refresh token (HTTP ${result.status}` +
+          `${refreshCode !== null ? `, RC=${refreshCode}` : ''}` +
           `${formatCode(safeProviderErrorCode(result.payload))}); re-authenticating`,
       );
       return null;
@@ -419,9 +519,11 @@ export class VivaSmsProvider implements SmsProvider {
       scopes: ['transact'],
     });
 
-    if (!result.ok) {
+    const authCode = readResultCode(result.payload);
+    if (!result.ok || (authCode !== null && authCode !== 0)) {
       this.logger.error(
         `Viva refused the credentials (HTTP ${result.status}` +
+          `${authCode !== null ? `, RC=${authCode}` : ''}` +
           `${formatCode(safeProviderErrorCode(result.payload))})`,
       );
       throw new ServiceUnavailableException('Could not send the SMS message');
@@ -496,14 +598,21 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function readToken(payload: unknown): { access: string; refresh: string | null } | null {
+export function readToken(payload: unknown): { access: string; refresh: string | null } | null {
   if (!isPlainObject(payload)) return null;
 
-  const source = isPlainObject(payload.data) ? payload.data : payload;
-  const access = firstString(source, ['access_token', 'accessToken', 'token']);
-  if (!access) return null;
+  // `result` first, because that is where a confirmed live `/token/get`
+  // response puts both tokens. `data` and the root stay as fallbacks: they
+  // cost one lookup each and this envelope was never specified in writing.
+  const candidates = [payload.result, payload.data, payload].filter(isPlainObject);
 
-  return { access, refresh: firstString(source, ['refresh_token', 'refreshToken']) };
+  for (const source of candidates) {
+    const access = firstString(source, ['access_token', 'accessToken', 'token']);
+    if (access) {
+      return { access, refresh: firstString(source, ['refresh_token', 'refreshToken']) };
+    }
+  }
+  return null;
 }
 
 /** `, code=X` or nothing — never a bare comma with an empty value. */

@@ -45,18 +45,21 @@ export interface SmsTransportOptions {
 export function missingVivaSettings(opts: SmsTransportOptions): string[] {
   return (
     [
-      ['SMS_ENDPOINT', opts.endpoint],
-      ['SMS_VIVA_CLIENT_ID', opts.viva.clientId],
-      ['SMS_VIVA_CLIENT_SECRET', opts.viva.clientSecret],
-      ['SMS_USERNAME', opts.username],
-      ['SMS_TOKEN', opts.token],
-      ['SMS_SENDER', opts.sender],
-      ['SMS_VIVA_TEMPLATE_NAME', opts.viva.templateName],
-      // No default on purpose. The integration document shows one example
-      // number and states no rule, and a number in a shape Viva does not
-      // recognise is accepted into the batch and never delivered — a failure
-      // with no symptom except a customer saying no code arrived. Ask Viva,
-      // then say the answer out loud here.
+      // Named as the operator sets them. The `SMS_*` spellings still work as
+      // fallbacks (see `configuration.ts`), but an error message has to name
+      // the variable somebody will actually go and add.
+      ['VIVA_API_BASE_URL', opts.endpoint],
+      ['VIVA_CLIENT_ID', opts.viva.clientId],
+      ['VIVA_CLIENT_SECRET', opts.viva.clientSecret],
+      ['VIVA_USERNAME', opts.username],
+      ['VIVA_PASSWORD', opts.token],
+      ['VIVA_SENDER_NAME', opts.sender],
+      ['VIVA_OTP_TEMPLATE_NAME', opts.viva.templateName],
+      // Kept in the list even though it now defaults to `national`: an
+      // operator who blanks it deliberately should be told, and the failure
+      // it guards against is still the invisible one — a number in a shape
+      // Viva does not recognise is accepted into the batch and never
+      // delivered, with no symptom but a customer saying no code arrived.
       ['SMS_VIVA_NUMBER_FORMAT', opts.viva.numberFormat],
     ] as const
   )

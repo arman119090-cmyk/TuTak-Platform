@@ -413,22 +413,35 @@ const buildConfig = (): AppConfig => ({
     // `http` stays the default so an existing deployment's behaviour does not
     // change by upgrading; Viva is opted into by name.
     driver: (process.env.SMS_DRIVER as 'http' | 'viva') ?? 'http',
-    endpoint: process.env.SMS_ENDPOINT ?? '',
+    // `VIVA_*` is the name set the owner configures in Railway, and it wins.
+    // The `SMS_*` names stay as fallbacks rather than being renamed away:
+    // they are what `docs/RAILWAY_ENV_CONTRACT_RU.md` and the Render staging
+    // service already carry, and a rename that silently un-configures a live
+    // deployment is the sort of change that is only noticed by a customer who
+    // cannot sign in.
+    endpoint: process.env.VIVA_API_BASE_URL ?? process.env.SMS_ENDPOINT ?? '',
     authScheme: (process.env.SMS_AUTH_SCHEME as 'basic' | 'bearer') ?? 'basic',
-    username: process.env.SMS_USERNAME ?? '',
-    token: process.env.SMS_TOKEN ?? '',
-    sender: process.env.SMS_SENDER ?? 'TuTak',
+    username: process.env.VIVA_USERNAME ?? process.env.SMS_USERNAME ?? '',
+    token: process.env.VIVA_PASSWORD ?? process.env.SMS_TOKEN ?? '',
+    sender: process.env.VIVA_SENDER_NAME ?? process.env.SMS_SENDER ?? 'TuTak',
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
     viva: {
-      clientId: process.env.SMS_VIVA_CLIENT_ID ?? '',
-      clientSecret: process.env.SMS_VIVA_CLIENT_SECRET ?? '',
-      templateName: process.env.SMS_VIVA_TEMPLATE_NAME ?? '',
-      // Armenian does not fit GSM-7, and the code is useless inside a
-      // message the customer cannot read. On unless explicitly turned off.
-      sendUtf: process.env.SMS_VIVA_SEND_UTF !== '0',
-      // No fallback. An unset value fails the boot with the variable named,
-      // which is the only outcome better than delivering nothing silently.
-      numberFormat: process.env.SMS_VIVA_NUMBER_FORMAT ?? '',
+      clientId: process.env.VIVA_CLIENT_ID ?? process.env.SMS_VIVA_CLIENT_ID ?? '',
+      clientSecret: process.env.VIVA_CLIENT_SECRET ?? process.env.SMS_VIVA_CLIENT_SECRET ?? '',
+      templateName:
+        process.env.VIVA_OTP_TEMPLATE_NAME ?? process.env.SMS_VIVA_TEMPLATE_NAME ?? '',
+      // Off by default now, because that is the setting a delivered message
+      // was sent with (`send_utf: 0`). The earlier default of "on" was
+      // reasoning about Armenian not fitting GSM-7; the approved template
+      // renders correctly without it, and a verified value beats a sound
+      // argument. Still an override, for a template that needs it.
+      sendUtf: process.env.SMS_VIVA_SEND_UTF === '1',
+      // `national` — the eight-digit local form — is what actually reached a
+      // handset, so it is the default rather than a required answer the
+      // operator has to supply. It used to have none on purpose: an unknown
+      // format is delivered to nobody and looks like nothing at all. That
+      // question is now answered by a delivered SMS.
+      numberFormat: process.env.SMS_VIVA_NUMBER_FORMAT ?? 'national',
       // `bearer` is the shape an OAuth-style token pair implies, and is not
       // stated anywhere by Viva. Changing it is an environment edit.
       tokenPlacement: process.env.SMS_VIVA_TOKEN_PLACEMENT ?? 'bearer',

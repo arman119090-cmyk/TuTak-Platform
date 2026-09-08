@@ -210,7 +210,10 @@ describe('VivaSmsProvider', () => {
       sender_name: 'TuTak',
       template_name: 'VerificationCode',
       // A JSON-encoded *string*, per the document — not a nested object.
-      params_data: '{"93600600":["123456"]}',
+      // Updated 2026-09-08: a delivered message settled this. The tag is
+      // numeric, so the value goes unquoted — see the verified-contract
+      // suite below, and `vivaTemplateParam` for the leading-zero case.
+      params_data: '{"93600600":[123456]}',
       send_utf: 1,
     });
 
@@ -514,9 +517,9 @@ describe('selecting the Viva transport', () => {
       viva: { ...base.viva, templateName: '', numberFormat: '' },
     });
     expect(missing).toEqual([
-      'SMS_ENDPOINT',
-      'SMS_USERNAME',
-      'SMS_VIVA_TEMPLATE_NAME',
+      'VIVA_API_BASE_URL',
+      'VIVA_USERNAME',
+      'VIVA_OTP_TEMPLATE_NAME',
       'SMS_VIVA_NUMBER_FORMAT',
     ]);
   });
@@ -545,7 +548,7 @@ describe('selecting the Viva transport', () => {
     for (const appEnv of ['development', 'staging', 'production'] as const) {
       expect(() =>
         selectSmsTransport({ ...base, appEnv, viva: { ...base.viva, clientId: '' } }),
-      ).toThrow(/SMS_VIVA_CLIENT_ID/);
+      ).toThrow(/VIVA_CLIENT_ID/);
     }
   });
 
@@ -672,3 +675,348 @@ describe('gateway request signing', () => {
     expect(new Set(nonces).size).toBe(nonces.length);
   });
 });
+
+/**
+ * The contract as a live end-to-end test established it, on 2026-09-08.
+ *
+ * Everything above this point was written against a four-page integration
+ * document and is therefore a reading. Everything below was confirmed by a
+ * message that actually arrived on a handset: the token envelope, the send
+ * payload, the sender and template names, the recipient shape and the
+ * success verdict. Where the two disagree, these win — and the reason each
+ * assertion exists is that getting it wrong fails silently, at somebody
+ * else's server, with no symptom but a customer saying no code came.
+ */
+describe('Viva — the verified live contract', () => {
+  /** Exactly the configuration the owner runs, minus the secrets. */
+  const LIVE = {
+    ...CONFIG,
+    senderName: 'Tu-Tak',
+    templateName: 'Tu-Tak2',
+    sendUtf: false,
+    numberFormat: 'national' as const,
+  };
+
+  const TOKEN_OK = {
+    status: 200,
+    body: { RC: 0, msg: 'Success', result: { access_token: 'access-1', refresh_token: 'refresh-1' } },
+  };
+  const SEND_OK = {
+    status: 200,
+    body: { RC: 0, msg: 'Success', result: { transact_unique_id: 'trx-1' } },
+  };
+
+  const send = (provider: VivaSmsProvider, code = '123456', to = '+37496040790') =>
+    provider.send({ to, body: `TuTak: ${code}`, templateParams: [code] });
+
+  // ── Token lifecycle ─────────────────────────────────────────────────
+
+  it('reads both tokens out of `result`, where the live response puts them', async () => {
+    const calls = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider(LIVE));
+
+    expect(calls[0]!.url).toBe('https://businesshubapi.viva.am/api/v1/token/get');
+    expect(headersOf(calls[1]!).Authorization).toBe('Bearer access-1');
+  });
+
+  it('asks for the transact scope with the client credentials and the partner login', async () => {
+    const calls = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider(LIVE));
+
+    expect(bodyOf(calls[0]!)).toEqual({
+      client_id: '1',
+      client_secret: 'secret',
+      username: 'user@viva.am',
+      password: 'password',
+      scopes: ['transact'],
+    });
+  });
+
+  it('does not authenticate again for the next message', async () => {
+    const calls = stubFetch([TOKEN_OK, SEND_OK, SEND_OK]);
+    const provider = new VivaSmsProvider(LIVE);
+    await send(provider);
+    await send(provider);
+
+    expect(calls.filter((c) => c.url.endsWith('/token/get'))).toHaveLength(1);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('on 401 refreshes once, retries once, and stops', async () => {
+    const calls = stubFetch([
+      TOKEN_OK,
+      { status: 401, body: { RC: 401, msg: 'Unauthorized' } },
+      { status: 200, body: { RC: 0, result: { access_token: 'access-2', refresh_token: 'refresh-2' } } },
+      SEND_OK,
+    ]);
+    await send(new VivaSmsProvider(LIVE));
+
+    const paths = calls.map((c) => c.url.replace('https://businesshubapi.viva.am/api/v1', ''));
+    expect(paths).toEqual([
+      '/token/get',
+      '/transact/send/batch',
+      '/token/refresh',
+      '/transact/send/batch',
+    ]);
+    // The replay carries the refreshed token, not the one that was refused.
+    expect(headersOf(calls[3]!).Authorization).toBe('Bearer access-2');
+  });
+
+  it('refreshes with the refresh token and the client credentials, and no password', async () => {
+    const calls = stubFetch([
+      TOKEN_OK,
+      { status: 401, body: {} },
+      { status: 200, body: { RC: 0, result: { access_token: 'access-2' } } },
+      SEND_OK,
+    ]);
+    await send(new VivaSmsProvider(LIVE));
+
+    expect(bodyOf(calls[2]!)).toEqual({
+      client_id: '1',
+      client_secret: 'secret',
+      refresh_token: 'refresh-1',
+    });
+  });
+
+  it('does not loop when the retry is refused again', async () => {
+    const calls = stubFetch([
+      TOKEN_OK,
+      { status: 401, body: {} },
+      { status: 200, body: { RC: 0, result: { access_token: 'access-2' } } },
+      { status: 401, body: {} },
+    ]);
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+
+    // Four calls and no more: a second 401 is a credentials problem, and
+    // retrying it would only double the failures.
+    expect(calls).toHaveLength(4);
+  });
+
+  it('re-authenticates in full when the refresh itself is refused', async () => {
+    const calls = stubFetch([
+      TOKEN_OK,
+      { status: 401, body: {} },
+      { status: 400, body: { RC: 1, msg: 'refresh expired' } },
+      TOKEN_OK,
+      SEND_OK,
+    ]);
+    await send(new VivaSmsProvider(LIVE));
+
+    const paths = calls.map((c) => c.url.split('/api/v1')[1]);
+    expect(paths).toEqual([
+      '/token/get',
+      '/transact/send/batch',
+      '/token/refresh',
+      '/token/get',
+      '/transact/send/batch',
+    ]);
+  });
+
+  // ── The send payload ────────────────────────────────────────────────
+
+  it('sends exactly the payload that delivered a message', async () => {
+    const calls = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider(LIVE), '123456', '+37496040790');
+
+    expect(calls[1]!.url).toBe('https://businesshubapi.viva.am/api/v1/transact/send/batch');
+    expect(bodyOf(calls[1]!)).toEqual({
+      sender_name: 'Tu-Tak',
+      template_name: 'Tu-Tak2',
+      params_data: '{"96040790":[123456]}',
+      send_utf: 0,
+    });
+  });
+
+  it('puts the code in as a number, because the approved tag is <n>', async () => {
+    const calls = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider(LIVE), '654321');
+
+    const params = JSON.parse(String(bodyOf(calls[1]!).params_data)) as Record<string, unknown[]>;
+    expect(params['96040790']).toEqual([654321]);
+    expect(typeof params['96040790']![0]).toBe('number');
+  });
+
+  /**
+   * The one case where the verified shape cannot be used.
+   *
+   * `generateNumericCode` pads to six digits with `'0'`, so `012345` is a
+   * code this platform really issues. There is no JSON number for it —
+   * `012345` parses as `12345` — so a code that lost its leading zero would
+   * be five digits, and the customer typing what they were sent would be
+   * told it is wrong. Roughly one sign-in in ten, indistinguishable from a
+   * typo. The digits go as a string instead, which is the only encoding that
+   * can carry them.
+   */
+  it('keeps a leading zero by sending the code as digits rather than a number', async () => {
+    const calls = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider(LIVE), '012345');
+
+    const params = JSON.parse(String(bodyOf(calls[1]!).params_data)) as Record<string, unknown[]>;
+    expect(params['96040790']).toEqual(['012345']);
+  });
+
+  it('sends send_utf 0 by default and 1 only when asked', async () => {
+    const off = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider(LIVE));
+    expect(bodyOf(off[1]!).send_utf).toBe(0);
+
+    const on = stubFetch([TOKEN_OK, SEND_OK]);
+    await send(new VivaSmsProvider({ ...LIVE, sendUtf: true }));
+    expect(bodyOf(on[1]!).send_utf).toBe(1);
+  });
+
+  it('reports the transaction id from `result`', async () => {
+    stubFetch([TOKEN_OK, SEND_OK]);
+    await expect(send(new VivaSmsProvider(LIVE))).resolves.toEqual({
+      providerMessageId: 'trx-1',
+    });
+  });
+
+  // ── Recipient shape ─────────────────────────────────────────────────
+
+  it('normalises every shape an Armenian number arrives in', () => {
+    expect(formatVivaRecipient('096040790', 'national')).toBe('96040790');
+    expect(formatVivaRecipient('+37496040790', 'national')).toBe('96040790');
+    expect(formatVivaRecipient('37496040790', 'national')).toBe('96040790');
+    expect(formatVivaRecipient('0037496040790', 'national')).toBe('96040790');
+    expect(formatVivaRecipient('96040790', 'national')).toBe('96040790');
+    expect(formatVivaRecipient('096 040 790', 'national')).toBe('96040790');
+  });
+
+  it('still refuses to guess a country code for a foreign number', () => {
+    expect(formatVivaRecipient('+995322000000', 'national')).toBe('995322000000');
+  });
+
+  // ── Failure handling ────────────────────────────────────────────────
+
+  /**
+   * The failure this catches is the dangerous one: HTTP says 200, so every
+   * naive client reports the code as sent, and nothing ever left Viva.
+   */
+  it('treats a non-zero RC as a failure even on HTTP 200', async () => {
+    stubFetch([TOKEN_OK, { status: 200, body: { RC: 12, msg: 'template not found' } }]);
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('fails on a 422 without retrying it', async () => {
+    const calls = stubFetch([
+      TOKEN_OK,
+      { status: 422, body: { RC: 4, msg: 'invalid template_name' } },
+    ]);
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+
+    // A rejected template or sender name fails identically on every attempt.
+    expect(calls).toHaveLength(2);
+  });
+
+  it('fails when the credentials are refused', async () => {
+    stubFetch([{ status: 401, body: { RC: 401, msg: 'Unauthorized' } }]);
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('fails when an otherwise successful token response carries no token', async () => {
+    stubFetch([{ status: 200, body: { RC: 0, msg: 'Success', result: {} } }]);
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('fails on a token response whose RC says no, whatever the HTTP status', async () => {
+    stubFetch([{ status: 200, body: { RC: 7, result: { access_token: 'a' } } }]);
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('fails on a body that is not JSON at all', async () => {
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.reject(new Error('Unexpected token < in JSON')),
+      } as unknown as Response),
+    );
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('fails on a network error rather than hanging', async () => {
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(() =>
+      Promise.reject(new Error('getaddrinfo ENOTFOUND businesshubapi.viva.am')),
+    );
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('fails on a timeout rather than hanging', async () => {
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(() =>
+      Promise.reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })),
+    );
+    await expect(send(new VivaSmsProvider(LIVE))).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  // ── What must never reach a log ─────────────────────────────────────
+
+  it('never logs a secret, a token, a code or a number', async () => {
+    const written: string[] = [];
+    jest.spyOn(Logger.prototype, 'error').mockImplementation((m) => void written.push(String(m)));
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation((m) => void written.push(String(m)));
+
+    stubFetch([
+      TOKEN_OK,
+      { status: 422, body: { RC: 4, msg: 'invalid', code: 'BAD_TEMPLATE', echo: '96040790' } },
+    ]);
+    await expect(send(new VivaSmsProvider(LIVE), '654321')).rejects.toThrow();
+
+    const log = written.join('\n');
+    expect(log).toContain('BAD_TEMPLATE');
+    for (const secret of ['secret', 'password', 'access-1', 'refresh-1', '654321', '96040790']) {
+      expect(log).not.toContain(secret);
+    }
+    jest.restoreAllMocks();
+  });
+});
+
+/**
+ * The guarantee that a test run cannot spend real money or wake a real
+ * person: Viva is reached only when a deployment asks for it by name.
+ */
+describe('Viva is opt-in, so no test or dev run sends a real SMS', () => {
+  const base: SmsTransportOptions = {
+    appEnv: 'development',
+    demoMode: false,
+    driver: 'http',
+    endpoint: '',
+    authScheme: 'basic',
+    username: '',
+    token: '',
+    sender: 'TuTak',
+    encoding: 'form',
+    viva: {
+      clientId: 'id',
+      clientSecret: 'secret',
+      templateName: 'Tu-Tak2',
+      sendUtf: false,
+      numberFormat: 'national',
+      tokenPlacement: 'bearer',
+      gatewaySecret: '',
+    },
+  };
+
+  it('picks the console transport in development even with Viva fully configured', () => {
+    // Every Viva credential is present here. What is absent is the request:
+    // `SMS_DRIVER` is not `viva`, so nothing reaches the carrier.
+    expect(selectSmsTransport(base).name).toBe('console');
+  });
+
+  it('picks the console transport when the whole configuration is empty', () => {
+    expect(selectSmsTransport({ ...base, viva: { ...base.viva, clientId: '', clientSecret: '' } }).name)
+      .toBe('console');
+  });
+
+  it('reaches Viva only when the deployment names it', () => {
+    const viva = selectSmsTransport({
+      ...base,
+      driver: 'viva',
+      endpoint: 'https://businesshubapi.viva.am/api/v1',
+      username: 'user@viva.am',
+      token: 'password',
+    });
+    expect(viva.name).toBe('viva');
+  });
+});
+

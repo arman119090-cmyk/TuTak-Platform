@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { AuthOtpPurpose } from '@prisma/client';
 import { generateNumericCode, sha256Hex } from '../../common/utils/crypto';
+import { maskPhone } from '../../common/utils/phone-mask';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { SMS_PROVIDER, SmsProvider } from '../../infrastructure/sms/sms-provider.interface';
 import { OtpIpRateLimitService } from './otp-ip-rate-limit.service';
@@ -58,7 +59,14 @@ export class AuthOtpService {
 
     await this.sms
       .send({ to: phone, body: `TuTak: your verification code is ${code}`, templateParams: [code] })
-      .catch((err: Error) => this.logger.error(`Could not deliver OTP to ${phone}: ${err.message}`));
+      // The number is masked on purpose: this line exists so a failing SMS
+      // route can be diagnosed, and it used to publish the customer's phone
+      // number — the account identifier on this platform — into every log
+      // sink. `err.message` is provider text; the SMS providers are written
+      // to keep the code and the credentials out of it.
+      .catch((err: Error) =>
+        this.logger.error(`Could not deliver OTP to ${maskPhone(phone)}: ${err.message}`),
+      );
 
     // SMS is the only channel a live code travels on.
     //

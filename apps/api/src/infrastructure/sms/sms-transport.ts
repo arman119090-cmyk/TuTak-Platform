@@ -95,6 +95,19 @@ export function selectSmsTransport(opts: SmsTransportOptions): SmsProvider {
       );
     }
 
+    // Every check above still runs under the test runner — a configuration
+    // mistake must fail in CI, which is the whole point of asserting boot
+    // behaviour there. What must not happen is the provider that can reach a
+    // carrier being handed back: an automated run must not be able to send a
+    // real message, and "the credentials probably are not there" is not a
+    // guarantee. A developer copying a staging env file, or a CI job
+    // inheriting one, is how a test suite ends up texting real customers.
+    // The test runner sets NODE_ENV=test and nothing else does, so the
+    // guarantee is structural here rather than circumstantial.
+    if (process.env.NODE_ENV === 'test') {
+      return new ConsoleSmsProvider();
+    }
+
     return new VivaSmsProvider({
       baseUrl: opts.endpoint.replace(/\/+$/, ''),
       clientId: opts.viva.clientId,

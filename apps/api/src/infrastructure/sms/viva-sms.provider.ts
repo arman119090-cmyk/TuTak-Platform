@@ -333,6 +333,17 @@ function firstString(payload: Record<string, unknown>, keys: readonly string[]):
 interface CachedToken {
   access: string;
   refresh: string | null;
+  /**
+   * Which token pair this is, counted from the first authentication.
+   *
+   * A send remembers the generation it used, so a 401 that arrives after
+   * somebody else has already replaced the pair can be told apart from a 401
+   * about the *current* pair. The first needs no network call at all — the
+   * token it complains about is already gone — and treating it as a reason to
+   * refresh again is how one expired token turns into a burst of refreshes,
+   * each invalidating the last, on exactly the endpoint a carrier rate-limits.
+   */
+  generation: number;
 }
 
 /** What a Viva call returned, reduced to what is safe to keep. */
@@ -381,6 +392,17 @@ export class VivaSmsProvider implements SmsProvider {
   private token: CachedToken | null = null;
   /** One in-flight authentication, so a burst of sends does not stampede. */
   private pending: Promise<CachedToken> | null = null;
+  /**
+   * One in-flight renewal, and which generation asked for it.
+   *
+   * Without this, N concurrent sends meeting a single expired token produce N
+   * refreshes. Whether that is merely wasteful or actively harmful depends on
+   * whether Viva rotates the refresh token — which is not documented and not
+   * confirmed by any live test — so the safe assumption is that it does, and
+   * that the last refresh wins while the others invalidate each other.
+   */
+  private renewal: { generation: number; promise: Promise<CachedToken> } | null = null;
+  private generations = 0;
 
   constructor(private readonly config: VivaSmsConfig) {}
 
@@ -407,7 +429,8 @@ export class VivaSmsProvider implements SmsProvider {
       send_utf: this.config.sendUtf ? 1 : 0,
     };
 
-    let result = await this.transact(body, (await this.accessToken()).access);
+    const used = await this.accessToken();
+    let result = await this.transact(body, used.access);
 
     if (result.status === 401) {
       // Documented refresh first, a full re-authentication only if that
@@ -416,7 +439,11 @@ export class VivaSmsProvider implements SmsProvider {
       // token, and retrying it would only double the failures. A 422 or any
       // other refusal never comes back here at all — retrying a rejected
       // template or sender name would fail identically, forever.
-      const renewed = await this.renew();
+      //
+      // `used.generation` is what stops a late 401 from refreshing a pair
+      // that has already been replaced: this send is told which token it
+      // complained about, not merely that something was unauthorised.
+      const renewed = await this.renew(used.generation);
       result = await this.transact(body, renewed.access);
     }
 
@@ -442,18 +469,53 @@ export class VivaSmsProvider implements SmsProvider {
    * means the refresh token expired too, and the answer to that is the full
    * `token/get` the next line performs.
    */
-  private async renew(): Promise<CachedToken> {
-    const previous = this.token;
-    this.token = null;
+  private async renew(staleGeneration: number): Promise<CachedToken> {
+    // Somebody already replaced the pair this send was using. Its 401 is
+    // about a token that no longer exists, so there is nothing to renew —
+    // handing back the current pair is both correct and one fewer call to an
+    // endpoint that is rate-limited precisely against this pattern.
+    if (this.token && this.token.generation !== staleGeneration) {
+      return this.token;
+    }
 
+    // A renewal for this same generation is already running: join it rather
+    // than start a second one. Two refreshes racing would, if Viva rotates
+    // refresh tokens, leave one of them holding an invalidated pair.
+    if (this.renewal && this.renewal.generation === staleGeneration) {
+      return this.renewal.promise;
+    }
+
+    const promise = this.performRenewal(staleGeneration).finally(() => {
+      if (this.renewal?.generation === staleGeneration) this.renewal = null;
+    });
+    this.renewal = { generation: staleGeneration, promise };
+    return promise;
+  }
+
+  private async performRenewal(staleGeneration: number): Promise<CachedToken> {
+    const previous = this.token;
+
+    // The stale pair is deliberately left in place while the refresh runs.
+    // Clearing it first would send any send that arrives meanwhile down the
+    // full `token/get` path — a second authentication for a token that is
+    // about to be replaced anyway.
     if (previous?.refresh) {
       const refreshed = await this.refresh(previous.refresh);
       if (refreshed) {
+        // Re-checked after the await: a concurrent renewal may have installed
+        // a newer pair while this refresh was in flight, and overwriting it
+        // would put back the older of the two.
+        if (this.token && this.token.generation > staleGeneration) return this.token;
         this.token = refreshed;
         return refreshed;
       }
     }
 
+    // Either there was nothing to refresh with, or the refresh was refused —
+    // which means the refresh token expired too. Drop the pair so the
+    // authentication below starts from credentials, but only if nobody has
+    // replaced it in the meantime.
+    if (this.token === previous) this.token = null;
     return this.accessToken();
   }
 
@@ -482,7 +544,17 @@ export class VivaSmsProvider implements SmsProvider {
     // A refresh that returns no new refresh token leaves the old one in
     // place: it is the only one there is, and dropping it would force a full
     // re-authentication on the next 401 for no reason.
-    return { access: token.access, refresh: token.refresh ?? refreshToken };
+    //
+    // Whether Viva rotates the refresh token, and how long either token
+    // lives, is not stated in the integration document and was not covered by
+    // the live test. Nothing here depends on knowing: no lifetime is
+    // invented, no expiry is scheduled, and a 401 is the only thing that ever
+    // triggers renewal.
+    return {
+      access: token.access,
+      refresh: token.refresh ?? refreshToken,
+      generation: ++this.generations,
+    };
   }
 
   /**
@@ -534,7 +606,7 @@ export class VivaSmsProvider implements SmsProvider {
       this.logger.error('Viva returned no access token in an otherwise successful response');
       throw new ServiceUnavailableException('Could not send the SMS message');
     }
-    return { access: token.access, refresh: token.refresh };
+    return { access: token.access, refresh: token.refresh, generation: ++this.generations };
   }
 
   private transact(body: Record<string, unknown>, accessToken: string): Promise<VivaResult> {

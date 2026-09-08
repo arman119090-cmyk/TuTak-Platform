@@ -70,12 +70,27 @@ export function useMountTrace(name: string): void {
     instance.current = instances;
   }
 
+  /*
+   * The name is read through a ref and the effect has no dependencies, so
+   * these lines mean mount and unmount and nothing else.
+   *
+   * With `[name]` in the dependency list, a field whose trace id falls back
+   * to its translated label would log an unmount and a mount when the
+   * interface language changed — a component that never went anywhere,
+   * appearing in the log as one that was replaced. That is precisely the
+   * distinction this file exists to make, so it must not be the first thing
+   * the file gets wrong.
+   */
+  const traced = useRef(name);
+  traced.current = name;
+
   useEffect(() => {
-    const count = (mounts.get(name) ?? 0) + 1;
-    mounts.set(name, count);
-    logEvent(`mount ${name} #${count} @${instance.current}`);
-    return () => logEvent(`unmount ${name} @${instance.current}`);
-  }, [name]);
+    const label = traced.current;
+    const count = (mounts.get(label) ?? 0) + 1;
+    mounts.set(label, count);
+    logEvent(`mount ${label} #${count} @${instance.current}`);
+    return () => logEvent(`unmount ${label} @${instance.current}`);
+  }, []);
 }
 
 /** The header the export carries, so a log states what produced it. */

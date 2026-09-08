@@ -115,3 +115,23 @@ describe('the exported log', () => {
     expect(texts()).toEqual([]);
   });
 });
+
+/**
+ * The one way this instrument could lie about the very thing it measures.
+ */
+describe('a renamed trace is not a remount', () => {
+  beforeEach(() => {
+    resetEvents();
+    resetInstanceTrace();
+  });
+
+  it('says nothing when only the name changes under a component that stayed put', () => {
+    // What a language switch does to a field whose trace id falls back to its
+    // translated label. The component did not go anywhere, and the log must
+    // not claim it did.
+    const view = render(<Traced name="field:Phone number" />);
+    view.rerender(<Traced name="field:Հեռախոսահամար" />);
+
+    expect(texts()).toEqual(['mount field:Phone number #1 @1']);
+  });
+});

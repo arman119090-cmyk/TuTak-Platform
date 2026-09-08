@@ -161,6 +161,32 @@ remount React-компонента, перезапуск RN surface при со�
 
 `Share` из самого React Native, без новой зависимости.
 
+### Как проверено, что диагностика в сборке включена
+
+Не «профиль называется diagnostic», а прочитанный конфиг — тем же способом,
+которым его читает сборщик:
+
+```
+$ DIAGNOSTICS=1 APP_ENV=preview API_BASE_URL=… npx expo config --type public --json
+name         TuTak (preview)
+diagnostics  True          ← это и включает оверлей (isDiagnosticBuild)
+appEnv       preview
+package      am.tutak.app
+orientation  portrait
+softKbdMode  None          ← не задан; этой задачей не трогался
+```
+
+Ворота проверены в обе стороны:
+
+* обычный `preview` **без** `DIAGNOSTICS` → `diagnostics: False` (оверлея нет
+  ни в одной обычной сборке);
+* `DIAGNOSTICS=1` вместе с `APP_ENV=production` → сборка **падает** с
+  «DIAGNOSTICS=1 with APP_ENV=production» и APK не производит.
+
+На устройстве APK не проверялся: он собран, но ни на телефоне, ни на
+эмуляторе здесь не запускался. Первое, что подтвердит корректность сборки, —
+чёрная панель с коротким SHA и run id внизу экрана.
+
 ## 5. Воспроизведение — NOT VERIFIED
 
 **Foldable emulator: воспроизвести не удалось — нечем.** В этой среде нет
@@ -178,7 +204,7 @@ web-сборки нет IME. Тесты покрывают инструмент,
 
 | Проверка | Результат |
 |---|---|
-| `apps/mobile` tests | **341 / 341**, 41 сюита (было 330 / 39; +11 новых) |
+| `apps/mobile` tests | **342 / 342**, 41 сюита (было 330 / 39; +12 новых) |
 | `apps/mobile` typecheck (`tsc --noEmit`) | exit 0 |
 | `apps/mobile` lint (`eslint`) | exit 0 |
 | `scripts/build-demo-app.sh` | exit 0, `demo/` перегенерирован и закоммичен |

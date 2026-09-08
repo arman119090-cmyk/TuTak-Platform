@@ -50,6 +50,8 @@ export function TextField({
   style,
   onFocus,
   onBlur,
+  onPress,
+  onPressIn,
   ...rest
 }: Props) {
   const { color, space, radius, text, glass, premium } = useTheme();
@@ -162,6 +164,29 @@ export function TextField({
           selectionColor={premium.brand.light}
           ref={input}
           keyboardType={keyboardType}
+          /*
+           * The press that React Native turns into a focus call.
+           *
+           * `TextInput` builds an unconditional `usePressability` config whose
+           * `onPress` runs `onPress?.(event)` and then `inputRef.current
+           * .focus()` — so a tap on a field does go through JavaScript, and
+           * the `REQ focus …` line it produces is React Native behaving
+           * normally rather than something to chase.
+           *
+           * Passing these two changes nothing: the config forwards them and
+           * focuses either way. What they buy is the ability to tell those
+           * two cases apart in the log — a `REQ focus password` preceded by
+           * `press password` came through this path, and one that is not
+           * preceded by it came from somewhere else entirely.
+           */
+          onPressIn={(event) => {
+            logEvent(`pressIn ${traced}`);
+            onPressIn?.(event);
+          }}
+          onPress={(event) => {
+            logEvent(`press ${traced}`);
+            onPress?.(event);
+          }}
           onFocus={(event) => {
             // The label, the keyboard it asks for and the native view tag —
             // never the value. A password in a screenshot would be a far

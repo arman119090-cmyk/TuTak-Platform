@@ -166,3 +166,45 @@ describe('OtpRegisterScreen focus reporting', () => {
     expect(describeFocus()).toBe('on=none of=0');
   });
 });
+
+/**
+ * The chain a normal tap produces, and why every link is needed.
+ *
+ * React Native's `TextInput` builds an unconditional `usePressability`
+ * config whose `onPress` calls `inputRef.current.focus()`. So a tap really
+ * does go through JavaScript, and `REQ focus phone` on a tap is React Native
+ * working correctly — a fact worth pinning down, because the first device log
+ * from the instrumented build showed exactly that line and it would otherwise
+ * read as the culprit.
+ *
+ * What that makes diagnostic is the *shape* of the chain rather than any one
+ * line in it: `touch → pressIn → press → REQ focus → focus` is a finger. A
+ * `focus` with none of those in front of it is not.
+ */
+describe('OtpRegisterScreen press chain', () => {
+  beforeEach(() => {
+    resetEvents();
+    resetInstanceTrace();
+    resetFocusRegistry();
+  });
+
+  it('records the press that React Native turns into a focus call', () => {
+    const { getByPlaceholderText } = renderScreen();
+
+    fireEvent(getByPlaceholderText('00 000 000'), 'pressIn');
+    fireEvent(getByPlaceholderText('00 000 000'), 'press');
+
+    expect(texts().filter((t) => t.startsWith('press'))).toEqual([
+      'pressIn phone',
+      'press phone',
+    ]);
+  });
+
+  it('keeps the two fields apart in the press chain as well as the focus one', () => {
+    const { getByPlaceholderText } = renderScreen();
+
+    fireEvent(getByPlaceholderText('TT-XXXXXXXX'), 'press');
+
+    expect(texts().filter((t) => t.startsWith('press'))).toEqual(['press referral']);
+  });
+});

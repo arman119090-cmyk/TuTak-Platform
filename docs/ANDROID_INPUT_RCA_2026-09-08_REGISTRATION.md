@@ -188,6 +188,73 @@ REQ focus password src=…   потом  focus password   → вариант A, 
 диагностической сборке и обёрнут так, что отсутствие внутреннего модуля RN
 оставляет приложение прежним.
 
+## 1b. Сборка 30 на устройстве: `REQ focus phone src=anonymous` — что это на самом деле
+
+С устройства пришло наблюдение: в журнале сборки 30 видна строка
+
+```
+REQ focus phone src=anonymous
+```
+
+и сбой воспроизводится по-прежнему.
+
+### Эту строку нельзя читать как «нашлась причина»
+
+Проверено по исходникам React Native 0.86.2:
+
+* `TextInputState.focusTextInput` вызывается ровно из одного места —
+  `ReactNativeElement.focus()` (`src/private/webapis/dom/nodes/`), то есть из
+  `ref.focus()` в JavaScript;
+* **но сам `TextInput` его и вызывает при нажатии.** В нём безусловно
+  создаётся `usePressability(config)`
+  (`Libraries/Components/TextInput/TextInput.js:629`), и в этом config:
+
+```js
+onPress: (event) => {
+  onPress?.(event);
+  if (editable !== false) {
+    if (inputRef.current != null) {
+      inputRef.current.focus();   // TextInput.js:603
+    }
+  }
+},
+```
+
+Значит **обычное касание поля проходит через JS-фокус**, и `REQ focus phone`
+при тапе — это нормальная работа React Native, а не аномалия. Если бы этот
+вывод не был сделан, следующим шагом стал бы поиск несуществующего вызова
+`.focus()` в нашем коде.
+
+Дополнительно проверено: `.focus()` не вызывает ни один пакет, который
+попадает в этот бандл — `@react-navigation/*`, `react-native-screens`,
+`react-native-gesture-handler`, `react-native-safe-area-context`. Единственное
+совпадение во всём дереве — `HeaderSearchBar` в `@react-navigation/elements`,
+который здесь не используется (`headerShown: false`, поиска в шапке нет).
+
+### Поэтому в сборку 31 добавлена ещё одна пара строк
+
+Чтобы `REQ focus …` перестал быть двусмысленным, теперь пишется и сам press:
+
+```
+touch phone      ← палец коснулся обёртки поля (пассивно, ничего не перехватывает)
+pressIn phone    ← Pressability приняла нажатие
+press phone      ← Pressability его подтвердила и сейчас позовёт focus()
+REQ focus phone  ← вызов focus() из JS
+focus phone      ← native сообщил, что фокус получен
+```
+
+Читается так:
+
+| Что в журнале | Вывод |
+|---|---|
+| вся цепочка целиком | обычный тап пальцем, React Native работает штатно |
+| `REQ focus password` **без** `press password` | `.focus()` позвал кто-то другой, не путь нажатия — искать вызывающего |
+| `press password` **без** `touch password` | нажатие пришло в поле, которого палец не касался — вопрос к доставке касаний / hit-testing |
+| `focus password` **без** `REQ` и без `touch` | ни JS, ни палец. Фокус перевёл native Android / автозаполнение / IME |
+
+Передача `onPress`/`onPressIn` в `TextInput` ничего не меняет: config
+пробрасывает их и вызывает `focus()` в любом случае — это видно в коде выше.
+
 ## 2. Видео
 
 **Видео в этой сессии мне недоступно — файл не приложен.** Проверить
@@ -395,7 +462,7 @@ web-сборки нет IME. Тесты покрывают инструмент,
 
 | Проверка | Результат |
 |---|---|
-| `apps/mobile` tests | **359 / 359**, 43 сюиты (было 330 / 39; +29 новых) |
+| `apps/mobile` tests | **361 / 361**, 43 сюиты (было 330 / 39; +31 новый) |
 | `apps/mobile` typecheck (`tsc --noEmit`) | exit 0 |
 | `apps/mobile` lint (`eslint`) | exit 0 |
 | `scripts/build-demo-app.sh` | exit 0, `demo/` перегенерирован и закоммичен |

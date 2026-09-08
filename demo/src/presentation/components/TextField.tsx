@@ -1,9 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
 import { logEvent } from '../../diagnostics/eventLog';
 import { useMountTrace } from '../../diagnostics/instanceTrace';
+import { registerInput } from '../../diagnostics/focusRegistry';
 
 interface Props extends TextInputProps {
   label: string;
@@ -43,6 +44,9 @@ export function TextField({
   hint,
   prefix,
   traceId,
+  // Pulled out of the spread only so the diagnostic log can name it, and
+  // handed straight back to the input below unchanged.
+  keyboardType,
   style,
   onFocus,
   onBlur,
@@ -64,6 +68,25 @@ export function TextField({
    */
   useMountTrace(`field:${traced}`);
   const wrapper = useRef<View>(null);
+  const input = useRef<TextInput>(null);
+
+  /*
+   * Registers this input so a keyboard event can name what is focused.
+   *
+   * `isFocused()` is React Native's own answer rather than the `focused`
+   * state above, and deliberately so: the state is what draws the ring, and
+   * the ring is what must not be used as evidence of focus. See
+   * `focusRegistry.ts` for what that answer is and is not worth.
+   */
+  useEffect(
+    () =>
+      registerInput({
+        traceId: traced,
+        keyboardType: keyboardType ?? 'default',
+        isFocused: () => input.current?.isFocused() ?? false,
+      }),
+    [traced, keyboardType],
+  );
   // Scrolls this field clear of the keyboard when it is tapped. A no-op on a
   // screen that does not scroll.
   const ensureVisible = useEnsureVisibleOnFocus();
@@ -121,10 +144,15 @@ export function TextField({
           // Without this the OS paints a black caret on a black field, and
           // the user cannot see where they are typing.
           selectionColor={premium.brand.light}
+          ref={input}
+          keyboardType={keyboardType}
           onFocus={(event) => {
-            // The label, never the value. A password in a screenshot would be
-            // a far worse bug than the one being chased.
-            logEvent(`focus ${traced}`);
+            // The label and the keyboard it asks for, never the value. A
+            // password in a screenshot would be a far worse bug than the one
+            // being chased — and the keyboard type is here because the
+            // reported fault is a keyboard changing type, which cannot be
+            // read from a line that does not carry it.
+            logEvent(`focus ${traced} kbd=${keyboardType ?? 'default'}`);
             setFocused(true);
             ensureVisible(wrapper.current);
             onFocus?.(event);

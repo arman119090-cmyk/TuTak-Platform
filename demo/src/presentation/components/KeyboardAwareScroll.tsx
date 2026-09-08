@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
-import { logEvent } from '../../diagnostics/eventLog';
+import { logWithFocus } from '../../diagnostics/focusRegistry';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -95,11 +95,20 @@ export function useKeyboardInset(): number {
       // between them was closed by the system; one preceded by `blur` was
       // closed because the app dropped the focus, and those have nothing in
       // common but the symptom.
-      logEvent(`kbShow h=${Math.round(height)}`);
+      //
+      // The focus summary is appended here rather than inferred later: the
+      // reported fault is a keyboard that *changes type*, and the only thing
+      // that answers which input it is serving is asking, at the moment it
+      // appears, which input React Native says is focused and what keyboard
+      // that input asked for. `on=none` while a keyboard is on screen is a
+      // finding in its own right.
+      logWithFocus(`kbShow h=${Math.round(height)}`);
       setInset((previous) => (Math.abs(previous - height) < 1 ? previous : height));
     });
     const hidden = Keyboard.addListener('keyboardDidHide', () => {
-      logEvent('kbHide');
+      // Same question at the other end: a keyboard that goes while an input
+      // still reports focus was not closed by this app losing it.
+      logWithFocus('kbHide');
       setInset(0);
     });
     return () => {

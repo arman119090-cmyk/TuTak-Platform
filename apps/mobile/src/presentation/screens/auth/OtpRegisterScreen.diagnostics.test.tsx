@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { OtpRegisterScreen } from './OtpRegisterScreen';
 import { getAllEvents, resetEvents } from '../../../diagnostics/eventLog';
 import { resetInstanceTrace } from '../../../diagnostics/instanceTrace';
+import { describeFocus, resetFocusRegistry } from '../../../diagnostics/focusRegistry';
 
 jest.mock('../../../data/api/authApi', () => ({
   authApi: {
@@ -48,6 +49,7 @@ describe('OtpRegisterScreen diagnostics', () => {
   beforeEach(() => {
     resetEvents();
     resetInstanceTrace();
+    resetFocusRegistry();
   });
 
   it('announces the screen and both fields, each as its own instance', () => {
@@ -76,11 +78,11 @@ describe('OtpRegisterScreen diagnostics', () => {
     fireEvent(referral, 'focus');
 
     expect(texts().filter((t) => t.startsWith('focus') || t.startsWith('blur'))).toEqual([
-      'focus phone',
+      'focus phone kbd=number-pad',
       // Two spaces after `blur` so the two line up in a photograph of the
       // panel — the alignment is what makes an alternating pattern legible.
       'blur  phone',
-      'focus referral',
+      'focus referral kbd=default',
     ]);
   });
 
@@ -106,5 +108,58 @@ describe('OtpRegisterScreen diagnostics', () => {
     fireEvent.changeText(getByPlaceholderText('TT-XXXXXXXX'), 'TT');
 
     expect(texts().filter((t) => t.includes('mount'))).toEqual([]);
+  });
+});
+
+/**
+ * The half of the log that answers "which input was the keyboard serving".
+ *
+ * Simon's two React tests establish that neither field's instance nor its
+ * `keyboardType` changes across focus, blur, typing, clearing and a keyboard
+ * height change — on the base commit, with the app code untouched. That is
+ * worth having and it settles the JS side of the question. It says nothing
+ * about native focus, and it does not touch scenario E or F, so what is
+ * needed from the device is a log that names the focused input at the moment
+ * the keyboard appears and goes.
+ *
+ * These assertions cover the wiring that produces that line. They cannot
+ * reproduce the fault: Jest has no IME.
+ */
+describe('OtpRegisterScreen focus reporting', () => {
+  beforeEach(() => {
+    resetEvents();
+    resetInstanceTrace();
+    resetFocusRegistry();
+  });
+
+  it('registers both fields with the keyboard each one asks for', () => {
+    renderScreen();
+
+    // Neither is focused under Jest, and the count is what proves both
+    // registered — `on=none of=2` rather than `on=none of=0`.
+    expect(describeFocus()).toBe('on=none of=2');
+  });
+
+  it('puts the keyboard type on the focus line, since the fault is a keyboard changing type', () => {
+    const { getByPlaceholderText } = renderScreen();
+
+    fireEvent(getByPlaceholderText('00 000 000'), 'focus');
+    fireEvent(getByPlaceholderText('TT-XXXXXXXX'), 'focus');
+
+    expect(texts().filter((t) => t.startsWith('focus'))).toEqual([
+      'focus phone kbd=number-pad',
+      'focus referral kbd=default',
+    ]);
+  });
+
+  it('drops a field from the registry when the form swaps to the code stage', () => {
+    // The one place this screen replaces its fields. If it ever happened
+    // mid-interaction it would look exactly like the reported fault, so the
+    // log has to be able to show it.
+    const { getByPlaceholderText, unmount } = renderScreen();
+    expect(getByPlaceholderText('00 000 000')).toBeTruthy();
+
+    unmount();
+    expect(describeFocus()).toBe('on=none of=0');
   });
 });

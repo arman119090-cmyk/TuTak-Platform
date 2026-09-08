@@ -261,39 +261,23 @@ const styles = StyleSheet.create({
   field: { flexDirection: 'row', alignItems: 'center', minHeight: 54, borderWidth: 1 },
   input: { flex: 1, paddingVertical: 14 },
   /*
-   * The focus glow — and the reason it carries no `elevation` on Android.
+   * The focus glow.
    *
-   * `elevation` is the only thing this component changed on focus that is not
-   * paint. On Android it is the view's Z, and a child whose Z changes makes
-   * its parent `ViewGroup` rebuild its ordered child list; the focused view is
-   * re-evaluated as part of that. Everything else the ring does — border
-   * colour, background wash — is drawn and nothing more.
+   * `elevation` was removed from here on 2026-09-08 as a candidate fix — it
+   * was the only thing this component changed on focus that is not paint, and
+   * on Android it is the view's Z, which makes the parent rebuild its ordered
+   * child list. The device log from that build (`run OZPR8P`, commit
+   * `1c9c823`) shows the focus churn completely unchanged, so it is put back:
+   * a visual regression that fixes nothing is worse than the shadow.
    *
-   * That matters because of what the device log showed. Focus does not stay
-   * where a tap put it: it alternates between the two fields four times and
-   * settles on the *first* one, whichever field was tapped, and no JavaScript
-   * asks for any of it. Android's own `ScrollView.onRequestFocusInDescendants`
-   * does exactly that — with `previouslyFocusedRect == null` it calls
-   * `FocusFinder.findNextFocus(this, null, FOCUS_DOWN)`, which returns the
-   * topmost focusable child. React Native knows the pattern: the comment in
-   * `ReactEditText.clearFocusAndMaybeRefocus` is about "preventing
-   * `requestFocus()` on the rootView from moving focus to any child", and its
-   * guard only runs on Android 9 and below.
-   *
-   * So the shape of the fault is Android re-choosing a focus target, and the
-   * one thing this app did on every focus that could ask it to was this line.
-   * Dropping it costs the drop shadow behind a focused field on Android; the
-   * border and the fill still change, so the field still reads as focused. The
-   * shadow properties stay for iOS, where they render without elevation and
-   * where the fault has never been reported.
-   *
-   * Not proven — stated plainly in docs/ANDROID_FOCUS_LOG_ANALYSIS. This is
-   * the smallest change that could produce the observed behaviour, and it is
-   * verified on the two handsets that reproduce it, not here.
+   * Recorded rather than quietly reverted, because "elevation is excluded" is
+   * itself a finding, and the next person to notice this line should not have
+   * to spend a build discovering it again.
    */
   ring: {
     shadowOpacity: 0.25,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
 });

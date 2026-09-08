@@ -279,12 +279,35 @@ export function KeyboardAwareScroll({
           content,
           keyboardInset > 0 ? { paddingBottom: requested + keyboardInset } : null,
         ]}
-        // The only prop kept from the original. Without it the first tap on a
-        // button while the keyboard is open merely closes the keyboard, and
-        // has to be repeated — which reads as the button being broken. It
-        // cannot cause a loop: it changes what a tap does, not what the layout
-        // does.
-        keyboardShouldPersistTaps="handled"
+        /*
+         * `always`, not `handled`, and the difference is a bug the device log
+         * caught red-handed.
+         *
+         * Both values keep the first tap on a button working — that is what
+         * this prop was here for. What `handled` does not do is stop React
+         * Native's own ScrollView from blurring the focused input by hand:
+         *
+         *   if (currentlyFocusedTextInput != null &&
+         *       this.props.keyboardShouldPersistTaps !== true &&
+         *       this.props.keyboardShouldPersistTaps !== 'always' &&
+         *       this._keyboardIsDismissible() &&
+         *       e.target !== currentlyFocusedTextInput && …) {
+         *     TextInputState.blurTextInput(currentlyFocusedTextInput);
+         *   }
+         *
+         * `'handled'` passes every one of those guards, so the path was live
+         * here, and the log names it: `REQ blur phone`, twice, each followed
+         * immediately by `blur phone` and `kbHide on=none of=2`. That is this
+         * app closing its own keyboard through a React Native code path that
+         * no search of this repository would ever have shown — the call is in
+         * ScrollView.js, not here.
+         *
+         * `'always'` excludes it explicitly. The cost is that tapping the
+         * background no longer dismisses the keyboard; on a form whose fields
+         * are the point, that is not a loss worth having a keyboard close
+         * itself for.
+         */
+        keyboardShouldPersistTaps="always"
         {...rest}
       >
         {children}

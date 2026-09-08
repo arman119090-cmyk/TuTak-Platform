@@ -254,3 +254,106 @@ None**. Затем повторить сбой и снять EXPORT.
 * Regression-теста — писать его не под что: тест под недоказанную причину
   закрепил бы догадку.
 * iOS — **NOT VERIFIED**.
+
+
+---
+
+# Раунд 2: журнал со сборки 32 (`run OZPR8P`, commit `1c9c823`)
+
+## Р2.1. `elevation` ИСКЛЮЧЁН
+
+Сборка 32 не содержала `elevation` в фокусной рамке. Журнал показывает
+**ровно тот же рисунок**:
+
+```
+4167ms  focus phone kbd=number-pad t=36
+4188ms  blur  phone t=36 / focus password t=46
+4213ms  blur  password t=46 / focus phone t=36
+4239ms  blur  phone / focus password
+4239ms  blur  password / focus phone
+4293ms  kbShow h=303 on=phone
+```
+
+Четыре перехода, окончание на `phone` — без изменений. **`elevation`
+причиной не является.** Правка откачена: визуальная потеря без выигрыша хуже
+тени. Оставлен комментарий в коде, чтобы это не пришлось выяснять заново
+ещё одной сборкой.
+
+## Р2.2. НОВОЕ И ДОКАЗАННОЕ: приложение само закрывает себе клавиатуру
+
+В журнале дважды:
+
+```
+ 9342ms  pressIn password
+ 9342ms  touch password
+12835ms  REQ blur phone src=anonymous     ← программный blur из JS
+12857ms  blur  phone t=36
+12861ms  kbHide on=none of=2
+```
+
+```
+598724ms  REQ blur phone src=anonymous
+598762ms  blur  phone t=36
+598774ms  kbHide on=none of=2
+```
+
+`REQ blur` — это **команда**, а не отчёт. И это не `Keyboard.dismiss()`:
+для него инструмент пишет отдельную строку `REQ dismiss`, её в журнале нет.
+
+Остаётся ровно один источник — `ScrollView` самого React Native:
+
+```js
+if (currentlyFocusedTextInput != null &&
+    this.props.keyboardShouldPersistTaps !== true &&
+    this.props.keyboardShouldPersistTaps !== 'always' &&
+    this._keyboardIsDismissible() &&
+    e.target !== currentlyFocusedTextInput && …) {
+  TextInputState.blurTextInput(currentlyFocusedTextInput);
+}
+```
+
+Приложение передавало `keyboardShouldPersistTaps="handled"` — значение,
+которое проходит **все** эти условия. То есть касание мимо
+сфокусированного поля снимало с него фокус и закрывало клавиатуру, и делал
+это код React Native, которого не видно ни в одном поиске по нашему
+репозиторию.
+
+**Исправление:** `keyboardShouldPersistTaps="always"`. Оно исключает этот
+путь явно, а первое нажатие по кнопке под клавиатурой продолжает работать —
+ради чего `handled` и ставилось. Цена: касание по фону больше не закрывает
+клавиатуру. На форме, где поля и есть смысл экрана, это не та потеря, ради
+которой стоит терпеть самозакрывающуюся клавиатуру.
+
+Regression-тест в `KeyboardAwareScroll.test.tsx` закрепляет значение и
+отдельно проверяет, что оно **не** `handled`.
+
+## Р2.3. Что осталось: миграция фокуса
+
+Четыре перехода `phone → password → phone → password → phone` по-прежнему
+без единой команды из JS. Это по-прежнему native.
+
+Ведущая гипотеза после этого раунда — конкретная и проверяемая. В
+`ReactEditText.setInputType` (RN 0.86.2) последней строкой идёт
+`super.setKeyListener(keyListener)`, а `TextView.setKeyListener` в Android
+вызывает `fixFocusableAndClickableSettings()`, которая трогает
+`setFocusable(...)`. У `View.setFlags` при изменении флага фокусируемости
+есть ветка `if (!focusable && hasFocus()) clearFocus()`. Снятый фокус
+возвращается `ViewRootImpl`-ом первому фокусируемому потомку — это `phone`,
+что и наблюдается.
+
+Запускается это из `onAfterUpdateTransaction` → `commitStagedInputType()`,
+то есть **на обновлении пропсов самого EditText**, и одинаково на Xiaomi и
+на Samsung.
+
+Следующий эксперимент, если понадобится: задать `autoCapitalize` явно на
+обоих полях, чтобы `reconcileAutoCapitalize` в
+`onAfterUpdateTransaction` было нечего перестраивать. Это одна строка на
+поле и оно либо снимает миграцию, либо окончательно закрывает эту версию.
+
+## Р2.4. Проверки этого раунда
+
+| Проверка | Результат |
+|---|---|
+| `apps/mobile` tests | **362 / 362**, 44 сюиты |
+| typecheck / lint | pass / pass |
+| `scripts/build-demo-app.sh` + drift | pass, чисто |

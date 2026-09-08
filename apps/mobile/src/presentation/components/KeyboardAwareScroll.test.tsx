@@ -126,14 +126,26 @@ describe('KeyboardAwareScroll', () => {
     });
   });
 
-  it('lets the first tap reach the button under the keyboard', () => {
+  it('lets the first tap reach the button under the keyboard, and never blurs the field itself', () => {
     renderScroll();
     const scroll = screen.UNSAFE_getByType(ScrollView);
 
-    // Without this, tapping "Log in" while the keyboard is open only closes
-    // the keyboard, and the person has to tap again — which reads as the
-    // button being broken.
-    expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
+    /*
+     * Two things ride on this one value, and only `always` gives both.
+     *
+     * Without any of it, tapping "Log in" while the keyboard is open only
+     * closes the keyboard and the person has to tap again — which reads as
+     * the button being broken. `handled` fixed that and left the second
+     * problem in place: React Native's own ScrollView blurs the focused input
+     * when a touch lands anywhere else, and its guard excludes `true` and
+     * `'always'` only. The device log caught it doing exactly that —
+     * `REQ blur phone`, then `blur phone`, then `kbHide on=none of=2`.
+     *
+     * So this asserts the value that excludes that path, and asserts it is
+     * not the one that silently permits it.
+     */
+    expect(scroll.props.keyboardShouldPersistTaps).toBe('always');
+    expect(scroll.props.keyboardShouldPersistTaps).not.toBe('handled');
   });
 
   it('lets content taller than the window scroll rather than compressing it', () => {

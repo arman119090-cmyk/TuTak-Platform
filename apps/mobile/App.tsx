@@ -17,6 +17,7 @@ import { usePushRegistration } from './src/app/usePushRegistration';
 import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
 import { useMountTrace } from './src/diagnostics/instanceTrace';
 import { useAppStateTrace } from './src/diagnostics/useAppStateTrace';
+import { installFocusCommandTrace } from './src/diagnostics/focusCommandTrace';
 import { OfflineBanner } from './src/presentation/components/OfflineBanner';
 import { startNetworkStateTracking } from './src/data/network/networkState';
 
@@ -61,6 +62,17 @@ function Root() {
    */
   useMountTrace('App');
   useAppStateTrace();
+
+  /*
+   * Armed before anything can be focused, and only in a diagnostic build.
+   *
+   * The device log shows focus moving between two fields in twenty
+   * milliseconds, several times, which nobody's thumb did. What it cannot
+   * show is whether some JavaScript asked for that or whether Android moved
+   * it and React Native merely reported it — the two have different fixes,
+   * and `onFocus` looks identical either way. See `focusCommandTrace.ts`.
+   */
+  installFocusCommandTrace();
 
   /**
    * Navigation's own chrome recoloured to the active TuTak palette.

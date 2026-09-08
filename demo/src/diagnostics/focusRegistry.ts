@@ -37,6 +37,12 @@ interface RegisteredInput {
   keyboardType: string;
   /** React Native's own answer, not this app's `focused` state. */
   isFocused(): boolean;
+  /**
+   * The native handle this field sits on, for matching a focus *command*
+   * back to a field name — see `focusCommandTrace.ts`. Optional so a caller
+   * that only wants the focus summary need not provide one.
+   */
+  node?(): unknown;
 }
 
 const inputs = new Set<RegisteredInput>();
@@ -80,6 +86,31 @@ export function describeFocus(): string {
     return `on=${focused[0].traceId} kbd=${focused[0].keyboardType}`;
   }
   return `on=${focused.map((input) => input.traceId).join('+')} kbd=multiple`;
+}
+
+/**
+ * Which field a focus command was aimed at, or a description of why not.
+ *
+ * React Native hands these commands the *inner* host instance, while a `ref`
+ * on `TextInput` gives the outer one, so both are compared — `getNativeRef()`
+ * is the documented way across. A command aimed at something this app did not
+ * register is still worth a line: it means focus is being moved somewhere
+ * other than these two fields.
+ */
+export function nameForNode(node: unknown): string {
+  if (node == null) return 'nothing';
+  for (const input of inputs) {
+    try {
+      const own = input.node?.();
+      if (own == null) continue;
+      if (own === node) return input.traceId;
+      const inner: unknown = (own as { getNativeRef?: () => unknown }).getNativeRef?.();
+      if (inner != null && inner === node) return input.traceId;
+    } catch {
+      // A handle mid-teardown. Keep looking at the others.
+    }
+  }
+  return 'other-input';
 }
 
 /** `logEvent` with the focus summary appended — used by the keyboard events. */

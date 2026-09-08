@@ -77,13 +77,15 @@ describe('OtpRegisterScreen diagnostics', () => {
     fireEvent(phone, 'blur');
     fireEvent(referral, 'focus');
 
-    expect(texts().filter((t) => t.startsWith('focus') || t.startsWith('blur'))).toEqual([
-      'focus phone kbd=number-pad',
-      // Two spaces after `blur` so the two line up in a photograph of the
-      // panel — the alignment is what makes an alternating pattern legible.
-      'blur  phone',
-      'focus referral kbd=default',
-    ]);
+    // The native view tag is appended to each line and is whatever the
+    // runtime assigns, so the assertion is on the part that carries meaning.
+    // Two spaces after `blur` so the two line up in a photograph of the
+    // panel — the alignment is what makes an alternating pattern legible.
+    expect(
+      texts()
+        .filter((t) => t.startsWith('focus') || t.startsWith('blur'))
+        .map((t) => t.replace(/ t=\S+$/, '')),
+    ).toEqual(['focus phone kbd=number-pad', 'blur  phone', 'focus referral kbd=default']);
   });
 
   it('records nothing a person typed', () => {
@@ -146,10 +148,11 @@ describe('OtpRegisterScreen focus reporting', () => {
     fireEvent(getByPlaceholderText('00 000 000'), 'focus');
     fireEvent(getByPlaceholderText('TT-XXXXXXXX'), 'focus');
 
-    expect(texts().filter((t) => t.startsWith('focus'))).toEqual([
-      'focus phone kbd=number-pad',
-      'focus referral kbd=default',
-    ]);
+    expect(
+      texts()
+        .filter((t) => t.startsWith('focus'))
+        .map((t) => t.replace(/ t=\S+$/, '')),
+    ).toEqual(['focus phone kbd=number-pad', 'focus referral kbd=default']);
   });
 
   it('drops a field from the registry when the form swaps to the code stage', () => {

@@ -84,6 +84,9 @@ export function TextField({
         traceId: traced,
         keyboardType: keyboardType ?? 'default',
         isFocused: () => input.current?.isFocused() ?? false,
+        // Lets a focus *command* be named for this field rather than logged
+        // as a pointer — see `focusCommandTrace.ts`.
+        node: () => input.current,
       }),
     [traced, keyboardType],
   );
@@ -94,7 +97,20 @@ export function TextField({
   const borderColor = error ? color.dangerFill : focused ? color.borderFocus : glass.border;
 
   return (
-    <View ref={wrapper} style={{ marginBottom: space[4] }}>
+    <View
+      ref={wrapper}
+      /*
+       * A finger landing on this field, recorded and not otherwise acted on.
+       *
+       * `onTouchStart` observes; it does not become the responder and does
+       * not consume anything, so the field behaves exactly as before. It is
+       * here for the one question the focus lines cannot answer on their own:
+       * whether a person touched the field that took focus. A `focus
+       * password` with no `touch password` before it was not a tap.
+       */
+      onTouchStart={() => logEvent(`touch ${traced}`)}
+      style={{ marginBottom: space[4] }}
+    >
       <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2] }]}>
         {label}
       </Text>
@@ -147,18 +163,29 @@ export function TextField({
           ref={input}
           keyboardType={keyboardType}
           onFocus={(event) => {
-            // The label and the keyboard it asks for, never the value. A
-            // password in a screenshot would be a far worse bug than the one
-            // being chased — and the keyboard type is here because the
-            // reported fault is a keyboard changing type, which cannot be
-            // read from a line that does not carry it.
-            logEvent(`focus ${traced} kbd=${keyboardType ?? 'default'}`);
+            // The label, the keyboard it asks for and the native view tag —
+            // never the value. A password in a screenshot would be a far
+            // worse bug than the one being chased.
+            //
+            // The keyboard type is here because the reported fault is a
+            // keyboard changing type. The tag is here because a native view
+            // can be replaced without React remounting anything: if the same
+            // field reports two different tags across one interaction, the
+            // view underneath it was rebuilt, and no mount counter would ever
+            // have shown that.
+            logEvent(
+              // Optional access on purpose: a throw inside `onFocus` would take
+              // down the very interaction being recorded, and a caller that
+              // passes no event (a test, a future React Native) must not be
+              // able to cause that.
+              `focus ${traced} kbd=${keyboardType ?? 'default'} t=${event?.nativeEvent?.target ?? '?'}`,
+            );
             setFocused(true);
             ensureVisible(wrapper.current);
             onFocus?.(event);
           }}
           onBlur={(event) => {
-            logEvent(`blur  ${traced}`);
+            logEvent(`blur  ${traced} t=${event?.nativeEvent?.target ?? '?'}`);
             setFocused(false);
             onBlur?.(event);
           }}

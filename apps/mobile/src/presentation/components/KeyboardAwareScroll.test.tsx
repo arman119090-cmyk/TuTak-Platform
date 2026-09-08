@@ -148,6 +148,26 @@ describe('KeyboardAwareScroll', () => {
     expect(scroll.props.keyboardShouldPersistTaps).not.toBe('handled');
   });
 
+  it('never scrolls itself to a field that just took focus', () => {
+    renderScroll();
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+
+    /*
+     * `NO_SCROLLING` makes `ensureVisible` a no-op on purpose — this
+     * component decided not to scroll to a focused field. Android's
+     * ReactScrollView does it anyway unless told otherwise:
+     * `requestChildFocus` calls `scrollToChild(focused)` whenever
+     * `scrollsChildToFocus` is true, which is its default, and React Native's
+     * own comment says that path deliberately skips the layout-dirty guard
+     * stock Android uses to avoid scrolling mid-layout.
+     *
+     * Asserted rather than assumed because the decision lives in two places
+     * now, and a JS no-op that a native default quietly overrides is exactly
+     * the kind of gap that costs a week.
+     */
+    expect(scroll.props.scrollsChildToFocus).toBe(false);
+  });
+
   it('lets content taller than the window scroll rather than compressing it', () => {
     renderScroll();
     const scroll = screen.UNSAFE_getByType(ScrollView);

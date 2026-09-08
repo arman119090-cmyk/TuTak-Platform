@@ -308,6 +308,42 @@ export function KeyboardAwareScroll({
          * itself for.
          */
         keyboardShouldPersistTaps="always"
+        /*
+         * Android's ScrollView must stop scrolling to the focused child —
+         * because this component already decided it should not, and the
+         * native side never got the message.
+         *
+         * `NO_SCROLLING` above is that decision: `ensureVisible` is a
+         * deliberate no-op, and the comment on it records why auto-scrolling
+         * to a focused field was taken out. What it could not switch off is
+         * `ReactScrollView`, which does the same thing underneath in Java,
+         * with `scrollsChildToFocus` defaulting to true:
+         *
+         *   public void requestChildFocus(View child, View focused) {
+         *     if (focused != null && mScrollsChildToFocus) {
+         *       scrollToChild(focused);
+         *     }
+         *     requestChildFocusWithoutScroll(child, focused);
+         *   }
+         *
+         * So every focus change scrolled the list — and React Native's own
+         * comment above that method says it deliberately skips the
+         * `mIsLayoutDirty` guard that stock Android uses precisely to avoid
+         * scrolling in the middle of a layout pass.
+         *
+         * That lands on the device log's remaining fault: focus alternates
+         * between the two fields, roughly a frame and a half apart, and
+         * settles on the topmost one — which is what Android's
+         * `ScrollView.onRequestFocusInDescendants` returns when it is asked
+         * with a null rect. A scroll issued from inside focus handling is a
+         * plausible way to provoke that arbitration, and it is not the app's
+         * behaviour either way.
+         *
+         * So this is both a fix candidate and a correction on its own merits:
+         * the form scrolls when the person scrolls it, and not because a
+         * field took focus. Android-only; ignored on iOS.
+         */
+        scrollsChildToFocus={false}
         {...rest}
       >
         {children}

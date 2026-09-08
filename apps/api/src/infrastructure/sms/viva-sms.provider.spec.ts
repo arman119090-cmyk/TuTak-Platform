@@ -484,6 +484,18 @@ describe('VivaSmsProvider', () => {
 });
 
 describe('selecting the Viva transport', () => {
+  // These assert the decision a *deployment* makes. Under the test runner
+  // the answer is always the console transport — see the last describe in
+  // this file, which is where that guarantee is asserted — so the runtime is
+  // named explicitly here rather than letting the guard hide every case.
+  const nodeEnv = process.env.NODE_ENV;
+  beforeEach(() => {
+    process.env.NODE_ENV = 'production';
+  });
+  afterEach(() => {
+    process.env.NODE_ENV = nodeEnv;
+  });
+
   const base: SmsTransportOptions = {
     appEnv: 'production',
     demoMode: false,
@@ -972,6 +984,216 @@ describe('Viva — the verified live contract', () => {
 });
 
 /**
+ * Two sign-ins landing in the same second is the ordinary case for this
+ * platform, not an edge one — an OTP burst is what a marketing message
+ * produces. Everything below is about what several sends do to one shared
+ * token pair.
+ *
+ * These tests route by path instead of by call order, because the whole
+ * point is that the order is not known in advance.
+ */
+describe('Viva under concurrent sends', () => {
+  const LIVE = {
+    baseUrl: 'https://businesshubapi.viva.am/api/v1',
+    clientId: '1',
+    clientSecret: 'secret',
+    username: 'user@viva.am',
+    password: 'password',
+    senderName: 'Tu-Tak',
+    templateName: 'Tu-Tak2',
+    sendUtf: false,
+    numberFormat: 'national' as const,
+    tokenPlacement: 'bearer',
+    gatewaySecret: '',
+  };
+
+  type Reply = { status: number; body?: unknown };
+  type Route = (call: Call, index: number) => Reply | Promise<Reply>;
+
+  /** A fetch stub that answers by endpoint, so call order is free to vary. */
+  function routeFetch(routes: Record<string, Route>) {
+    const calls: Call[] = [];
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(
+      async (url: string, init: RequestInit) => {
+        const call = { url, init };
+        const index = calls.push(call) - 1;
+        const path = url.split('/api/v1')[1] ?? url;
+        const route = routes[path];
+        if (!route) throw new Error(`no route for ${path}`);
+        const reply = await route(call, index);
+        return {
+          ok: reply.status >= 200 && reply.status < 300,
+          status: reply.status,
+          json: () => Promise.resolve(reply.body ?? {}),
+          text: () => Promise.resolve(JSON.stringify(reply.body ?? {})),
+        } as unknown as Response;
+      },
+    );
+    return calls;
+  }
+
+  const pathsOf = (calls: Call[]) => calls.map((c) => c.url.split('/api/v1')[1]);
+  const countOf = (calls: Call[], path: string) => pathsOf(calls).filter((p) => p === path).length;
+  const bearerOf = (call: Call) => (call.init.headers as Record<string, string>).Authorization;
+
+  const tokenBody = (n: number) => ({
+    RC: 0,
+    msg: 'Success',
+    result: { access_token: `access-${n}`, refresh_token: `refresh-${n}` },
+  });
+  const SEND_OK: Reply = {
+    status: 200,
+    body: { RC: 0, msg: 'Success', result: { transact_unique_id: 'trx' } },
+  };
+
+  const send = (provider: VivaSmsProvider, to: string) =>
+    provider.send({ to, body: 'TuTak: 123456', templateParams: ['123456'] });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it('authenticates once for a burst, however many sends start together', async () => {
+    const calls = routeFetch({
+      '/token/get': () => ({ status: 200, body: tokenBody(1) }),
+      '/transact/send/batch': () => SEND_OK,
+    });
+
+    const provider = new VivaSmsProvider(LIVE);
+    await Promise.all([
+      send(provider, '+37496040790'),
+      send(provider, '+37493600600'),
+      send(provider, '+37477123456'),
+    ]);
+
+    expect(countOf(calls, '/token/get')).toBe(1);
+    expect(countOf(calls, '/transact/send/batch')).toBe(3);
+  });
+
+  it('refreshes once when several sends are rejected on the same token', async () => {
+    // Both sends hold `access-1`, both are refused, and both need a new one.
+    // Two refreshes here is not merely wasteful: if Viva rotates the refresh
+    // token, the second call presents one the first has already spent, and
+    // whichever send loses that race is left holding an invalidated pair.
+    const calls = routeFetch({
+      '/token/get': () => ({ status: 200, body: tokenBody(1) }),
+      '/token/refresh': () => ({ status: 200, body: tokenBody(2) }),
+      '/transact/send/batch': (call) =>
+        bearerOf(call) === 'Bearer access-2' ? SEND_OK : { status: 401, body: { RC: 1 } },
+    });
+
+    const provider = new VivaSmsProvider(LIVE);
+    await Promise.all([send(provider, '+37496040790'), send(provider, '+37493600600')]);
+
+    expect(countOf(calls, '/token/refresh')).toBe(1);
+    expect(countOf(calls, '/token/get')).toBe(1);
+    // Two refused, two retried with the pair the single refresh produced.
+    expect(countOf(calls, '/transact/send/batch')).toBe(4);
+  });
+
+  it('does not renew again for a 401 that arrives about an already-replaced token', async () => {
+    // The late 401. A send that left before the refresh comes back after it,
+    // complaining about `access-1` — a token that no longer exists. Renewing
+    // for it would throw away the pair everybody else is now using, and the
+    // sends that follow would be refused for real.
+    const refreshed = deferred<void>();
+    let firstSendSeen = false;
+
+    const calls = routeFetch({
+      '/token/get': () => ({ status: 200, body: tokenBody(1) }),
+      '/token/refresh': () => {
+        const reply = { status: 200, body: tokenBody(2) };
+        // Let the second send's 401 come back only once this has landed.
+        setImmediate(() => refreshed.resolve());
+        return reply;
+      },
+      '/transact/send/batch': async (call) => {
+        if (bearerOf(call) === 'Bearer access-2') return SEND_OK;
+        if (firstSendSeen) {
+          // The straggler: refused, but reported after the renewal is done.
+          await refreshed.promise;
+          return { status: 401, body: { RC: 1 } };
+        }
+        firstSendSeen = true;
+        return { status: 401, body: { RC: 1 } };
+      },
+    });
+
+    const provider = new VivaSmsProvider(LIVE);
+    await Promise.all([send(provider, '+37496040790'), send(provider, '+37493600600')]);
+
+    // One renewal in total, and no full re-authentication behind it.
+    expect(countOf(calls, '/token/refresh')).toBe(1);
+    expect(countOf(calls, '/token/get')).toBe(1);
+    // The straggler retried straight away on the pair that already existed.
+    const retries = calls.filter(
+      (c) => c.url.endsWith('/transact/send/batch') && bearerOf(c) === 'Bearer access-2',
+    );
+    expect(retries).toHaveLength(2);
+  });
+
+  it('shares one full re-authentication when the refresh token is dead too', async () => {
+    const calls = routeFetch({
+      '/token/get': (_call, index) => ({ status: 200, body: tokenBody(index === 0 ? 1 : 3) }),
+      '/token/refresh': () => ({ status: 401, body: { RC: 1 } }),
+      '/transact/send/batch': (call) =>
+        bearerOf(call) === 'Bearer access-3' ? SEND_OK : { status: 401, body: { RC: 1 } },
+    });
+
+    const provider = new VivaSmsProvider(LIVE);
+    await Promise.all([send(provider, '+37496040790'), send(provider, '+37493600600')]);
+
+    expect(countOf(calls, '/token/refresh')).toBe(1);
+    // One initial authentication, one after the refresh was refused.
+    expect(countOf(calls, '/token/get')).toBe(2);
+  });
+
+  it('does not resend a message whose result is unknown', async () => {
+    // A timeout after the request left is an *indeterminate* outcome: Viva
+    // may have accepted the batch and sent the SMS. There is no idempotency
+    // key in this API, so a retry can only produce a second SMS on the
+    // customer's handset and a second line on the invoice. The send fails
+    // instead, and the customer asks for a new code — which is the one path
+    // that cannot double-charge.
+    const calls = routeFetch({
+      '/token/get': () => ({ status: 200, body: tokenBody(1) }),
+      '/transact/send/batch': () => {
+        throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+      },
+    });
+
+    const provider = new VivaSmsProvider(LIVE);
+    await expect(send(provider, '+37496040790')).rejects.toThrow(ServiceUnavailableException);
+
+    expect(countOf(calls, '/transact/send/batch')).toBe(1);
+    expect(countOf(calls, '/token/refresh')).toBe(0);
+  });
+
+  it('keeps a token that a send only found expired, rather than dropping it for everyone', async () => {
+    // After a renewal the next send must use the new pair without asking for
+    // one of its own.
+    const calls = routeFetch({
+      '/token/get': () => ({ status: 200, body: tokenBody(1) }),
+      '/token/refresh': () => ({ status: 200, body: tokenBody(2) }),
+      '/transact/send/batch': (call) =>
+        bearerOf(call) === 'Bearer access-2' ? SEND_OK : { status: 401, body: { RC: 1 } },
+    });
+
+    const provider = new VivaSmsProvider(LIVE);
+    await send(provider, '+37496040790');
+    await send(provider, '+37493600600');
+
+    expect(countOf(calls, '/token/refresh')).toBe(1);
+    expect(countOf(calls, '/token/get')).toBe(1);
+    expect(bearerOf(calls[calls.length - 1]!)).toBe('Bearer access-2');
+  });
+});
+
+/**
  * The guarantee that a test run cannot spend real money or wake a real
  * person: Viva is reached only when a deployment asks for it by name.
  */
@@ -1009,14 +1231,56 @@ describe('Viva is opt-in, so no test or dev run sends a real SMS', () => {
   });
 
   it('reaches Viva only when the deployment names it', () => {
-    const viva = selectSmsTransport({
-      ...base,
-      driver: 'viva',
-      endpoint: 'https://businesshubapi.viva.am/api/v1',
-      username: 'user@viva.am',
-      token: 'password',
-    });
-    expect(viva.name).toBe('viva');
+    const nodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const viva = selectSmsTransport({
+        ...base,
+        driver: 'viva',
+        endpoint: 'https://businesshubapi.viva.am/api/v1',
+        username: 'user@viva.am',
+        token: 'password',
+      });
+      expect(viva.name).toBe('viva');
+    } finally {
+      process.env.NODE_ENV = nodeEnv;
+    }
+  });
+
+  // ── The guard that makes the rest of this suite safe ─────────────────
+  //
+  // Everything above is about configuration. This is about the case where
+  // the configuration is right and complete and the run is still a test:
+  // a developer with a staging `.env` sourced in their shell, or a CI job
+  // that inherits one. Nothing in a test run may reach a carrier, and that
+  // has to hold without depending on credentials being absent.
+
+  const configured: SmsTransportOptions = {
+    ...base,
+    appEnv: 'production',
+    driver: 'viva',
+    endpoint: 'https://businesshubapi.viva.am/api/v1',
+    username: 'user@viva.am',
+    token: 'password',
+    sender: 'Tu-Tak',
+    viva: { ...base.viva, templateName: 'Tu-Tak2', numberFormat: 'national' },
+  };
+
+  it('hands back the console transport under the test runner, credentials and all', () => {
+    // This is the run that would otherwise have texted a real customer.
+    expect(process.env.NODE_ENV).toBe('test');
+    expect(selectSmsTransport(configured).name).toBe('console');
+  });
+
+  it('still refuses a broken Viva configuration under the test runner', () => {
+    // The guard replaces the transport, not the validation: a missing
+    // variable has to fail in CI, which is where boot behaviour is asserted.
+    expect(() =>
+      selectSmsTransport({ ...configured, viva: { ...configured.viva, clientSecret: '' } }),
+    ).toThrow(/VIVA_CLIENT_SECRET/);
+    expect(() =>
+      selectSmsTransport({ ...configured, viva: { ...configured.viva, numberFormat: 'local' } }),
+    ).toThrow(/must be one of/);
   });
 });
 

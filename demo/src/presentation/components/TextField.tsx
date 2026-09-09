@@ -5,6 +5,7 @@ import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
 import { logEvent } from '../../diagnostics/eventLog';
 import { useMountTrace } from '../../diagnostics/instanceTrace';
 import { registerInput } from '../../diagnostics/focusRegistry';
+import { useFocusRerender } from '../../diagnostics/experiment';
 
 interface Props extends TextInputProps {
   label: string;
@@ -56,6 +57,18 @@ export function TextField({
 }: Props) {
   const { color, space, radius, text, glass, premium } = useTheme();
   const [focused, setFocused] = useState(false);
+  /*
+   * Whether focus changes re-render this field at all — the second
+   * experiment arm, `true` in every build except a diagnostic one where the
+   * RR button turns it off.
+   *
+   * The build-34 log points here rather than at the ScrollView. A tap whose
+   * `REQ focus` produced no focus event, because the field already held it,
+   * kept its keyboard; every tap that produced a focus event lost the focus
+   * 25–33 ms later. The only thing this component does on a focus event is
+   * `setFocused`, and its only effect is a re-render.
+   */
+  const focusRerender = useFocusRerender();
   // What this field is called in the log, and what the mount trace names.
   const traced = traceId ?? label;
   /*
@@ -221,13 +234,13 @@ export function TextField({
               // able to cause that.
               `focus ${traced} kbd=${keyboardType ?? 'default'} t=${event?.nativeEvent?.target ?? '?'}`,
             );
-            setFocused(true);
+            if (focusRerender) setFocused(true);
             ensureVisible(wrapper.current);
             onFocus?.(event);
           }}
           onBlur={(event) => {
             logEvent(`blur  ${traced} t=${event?.nativeEvent?.target ?? '?'}`);
-            setFocused(false);
+            if (focusRerender) setFocused(false);
             onBlur?.(event);
           }}
           style={[styles.input, text.body, { color: color.textPrimary }, style]}

@@ -4,7 +4,13 @@ import Constants from 'expo-constants';
 import { getEvents, resetEvents, runId, serializeEvents, subscribe } from './eventLog';
 import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
 import { traceSummary } from './instanceTrace';
-import { experimentLabel, toggleScrollsChildToFocus, useScrollsChildToFocus } from './experiment';
+import {
+  experimentLabel,
+  toggleFocusRerender,
+  toggleScrollsChildToFocus,
+  useFocusRerender,
+  useScrollsChildToFocus,
+} from './experiment';
 import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
 
 /**
@@ -83,6 +89,7 @@ export function DiagnosticOverlay() {
   useEffect(() => subscribe(bump), []);
   // Re-renders the header when the arm is flipped.
   useScrollsChildToFocus();
+  useFocusRerender();
 
   if (!isDiagnosticBuild()) return null;
 
@@ -128,6 +135,11 @@ export function DiagnosticOverlay() {
                 which is what separates a cause from a coincidence. */}
             <Pressable onPress={toggleScrollsChildToFocus} hitSlop={12}>
               <Text style={styles.clear}>SCF</Text>
+            </Pressable>
+            {/* The second arm. Flip one at a time — the header shows both, so
+                a trial with two changed at once is visible as such. */}
+            <Pressable onPress={toggleFocusRerender} hitSlop={12}>
+              <Text style={styles.clear}>RR</Text>
             </Pressable>
             <Pressable onPress={() => void exportLog()} hitSlop={12}>
               <Text style={styles.clear}>EXPORT</Text>

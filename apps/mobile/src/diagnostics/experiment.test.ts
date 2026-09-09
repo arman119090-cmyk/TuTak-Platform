@@ -2,8 +2,10 @@ import Constants from 'expo-constants';
 import { getAllEvents, resetEvents } from './eventLog';
 import {
   experimentLabel,
+  getFocusRerender,
   getScrollsChildToFocus,
   resetExperiment,
+  toggleFocusRerender,
   toggleScrollsChildToFocus,
 } from './experiment';
 
@@ -40,13 +42,14 @@ describe('the single-parameter experiment switch', () => {
     // `false` is what is committed; the trial exists to compare against it,
     // not to change what a build does by default.
     expect(getScrollsChildToFocus()).toBe(false);
-    expect(experimentLabel()).toBe('SCF=off');
+    expect(getFocusRerender()).toBe(true);
+    expect(experimentLabel()).toBe('SCF=off RR=on');
   });
 
   it('records every change of arm, so a trial cannot be attributed wrongly', () => {
     toggleScrollsChildToFocus();
     expect(getScrollsChildToFocus()).toBe(true);
-    expect(experimentLabel()).toBe('SCF=on');
+    expect(experimentLabel()).toBe('SCF=on RR=on');
 
     toggleScrollsChildToFocus();
     expect(getScrollsChildToFocus()).toBe(false);
@@ -57,8 +60,24 @@ describe('the single-parameter experiment switch', () => {
     ]);
   });
 
-  it('puts the arm where a reader of the export will see it', () => {
+  it('shows both arms at once, so a trial that changed two is visible as such', () => {
+    // A trial is only worth reading if exactly one arm moved. The label
+    // carries both, so two flips cannot be mistaken for one.
     toggleScrollsChildToFocus();
-    expect(experimentLabel()).toBe('SCF=on');
+    toggleFocusRerender();
+
+    expect(experimentLabel()).toBe('SCF=on RR=off');
+    expect(texts()).toEqual([
+      'exp scrollsChildToFocus=on',
+      'exp focusRerender=off',
+    ]);
+  });
+
+  it('records the re-render arm separately from the scroll one', () => {
+    toggleFocusRerender();
+
+    expect(getFocusRerender()).toBe(false);
+    expect(getScrollsChildToFocus()).toBe(false);
+    expect(experimentLabel()).toBe('SCF=off RR=off');
   });
 });

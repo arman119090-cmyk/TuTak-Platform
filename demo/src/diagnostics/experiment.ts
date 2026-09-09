@@ -34,6 +34,23 @@ import { isDiagnosticBuild } from './isDiagnosticBuild';
 
 /** `false` is what the app ships; `true` restores React Native's default. */
 let scrollsChildToFocus = false;
+
+/**
+ * Whether a field re-renders when it gains or loses focus — the second arm,
+ * and after the build-34 log the better-aimed one.
+ *
+ * That log separates two cases cleanly. A tap whose `REQ focus` produced **no
+ * focus event** — the field already held focus — opened the keyboard and kept
+ * it. Every tap that did produce a focus event lost the focus again 25–33 ms
+ * later. So the trigger is the focus event itself, and the only thing this
+ * app runs on one is `setFocused`, whose whole effect is a re-render.
+ *
+ * `true` is what ships. `false` skips the state change entirely: no
+ * re-render, and therefore no focus ring in that arm — a visible cost that is
+ * acceptable for a trial and would not be shipped.
+ */
+let focusRerender = true;
+
 let listeners: Array<() => void> = [];
 
 export function getScrollsChildToFocus(): boolean {
@@ -47,14 +64,32 @@ export function toggleScrollsChildToFocus(): void {
   listeners.forEach((notify) => notify());
 }
 
-/** Short label for the panel header and the export. */
+export function getFocusRerender(): boolean {
+  return focusRerender;
+}
+
+/** Flips the second arm and records it. Called only by the overlay. */
+export function toggleFocusRerender(): void {
+  focusRerender = !focusRerender;
+  logEvent(`exp focusRerender=${focusRerender ? 'on' : 'off'}`);
+  listeners.forEach((notify) => notify());
+}
+
+/**
+ * Short label for the panel header and the export.
+ *
+ * Both arms, always, so a trial can never be read against the wrong pair —
+ * and so it is obvious at a glance if two were changed at once, which would
+ * make the trial worthless.
+ */
 export function experimentLabel(): string {
-  return `SCF=${scrollsChildToFocus ? 'on' : 'off'}`;
+  return `SCF=${scrollsChildToFocus ? 'on' : 'off'} RR=${focusRerender ? 'on' : 'off'}`;
 }
 
 /** Cleared between tests. Never called by the app. */
 export function resetExperiment(): void {
   scrollsChildToFocus = false;
+  focusRerender = true;
   listeners = [];
 }
 
@@ -65,15 +100,25 @@ export function resetExperiment(): void {
  * even taken out.
  */
 export function useScrollsChildToFocus(): boolean {
-  const [value, setValue] = useState(scrollsChildToFocus);
+  return useArm(() => scrollsChildToFocus);
+}
+
+/** The re-render arm, re-rendering the caller when it is flipped. */
+export function useFocusRerender(): boolean {
+  return useArm(() => focusRerender);
+}
+
+function useArm(read: () => boolean): boolean {
+  const [value, setValue] = useState(read);
 
   useEffect(() => {
     if (!isDiagnosticBuild()) return;
-    const notify = () => setValue(scrollsChildToFocus);
+    const notify = () => setValue(read());
     listeners = [...listeners, notify];
     return () => {
       listeners = listeners.filter((l) => l !== notify);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return value;

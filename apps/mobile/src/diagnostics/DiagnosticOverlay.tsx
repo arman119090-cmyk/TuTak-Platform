@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { getEvents, resetEvents, runId, serializeEvents, subscribe } from './eventLog';
 import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
 import { traceSummary } from './instanceTrace';
+import { experimentLabel, toggleScrollsChildToFocus, useScrollsChildToFocus } from './experiment';
 import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
 
 /**
@@ -61,6 +62,7 @@ async function exportLog(): Promise<void> {
         commit: buildCommit(),
         profile: String(Constants.expoConfig?.extra?.appEnv ?? 'unknown'),
         trace: traceSummary(),
+        experiment: experimentLabel(),
         window: `${Math.round(width)}x${Math.round(height)}`,
         screen: `${Math.round(screen.width)}x${Math.round(screen.height)}`,
       }),
@@ -79,6 +81,8 @@ export function DiagnosticOverlay() {
   const [probe, setProbe] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
   useEffect(() => subscribe(bump), []);
+  // Re-renders the header when the arm is flipped.
+  useScrollsChildToFocus();
 
   if (!isDiagnosticBuild()) return null;
 
@@ -94,7 +98,8 @@ export function DiagnosticOverlay() {
               a mount count means nothing without knowing whether the runtime
               underneath it was replaced. */}
           <Text style={styles.header}>
-            {buildCommit()} · {runId()} · win {Math.round(width)}×{Math.round(height)}
+            {buildCommit()} · {runId()} · {experimentLabel()} · win {Math.round(width)}×
+            {Math.round(height)}
           </Text>
           <View style={styles.actions}>
             {/* Absent unless this is a diagnostic build of a non-production
@@ -118,6 +123,12 @@ export function DiagnosticOverlay() {
                 </Text>
               </Pressable>
             ) : null}
+            {/* Flips the one parameter under comparison. Both arms then run
+                in the same build, the same launch and the same handset,
+                which is what separates a cause from a coincidence. */}
+            <Pressable onPress={toggleScrollsChildToFocus} hitSlop={12}>
+              <Text style={styles.clear}>SCF</Text>
+            </Pressable>
             <Pressable onPress={() => void exportLog()} hitSlop={12}>
               <Text style={styles.clear}>EXPORT</Text>
             </Pressable>

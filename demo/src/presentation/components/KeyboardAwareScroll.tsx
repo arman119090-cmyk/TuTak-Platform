@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
 import { logEvent } from '../../diagnostics/eventLog';
 import { logWithFocus } from '../../diagnostics/focusRegistry';
+import { useScrollsChildToFocus } from '../../diagnostics/experiment';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -222,6 +223,9 @@ export function KeyboardAwareScroll({
   ...rest
 }: KeyboardAwareScrollProps) {
   const keyboardInset = useKeyboardInset();
+  // The one parameter the comparison varies — see `experiment.ts`. Constant
+  // `false` in every build except the diagnostic one, where a button flips it.
+  const scrollsChildToFocus = useScrollsChildToFocus();
 
   // Flattened so the keyboard's height *adds to* whatever bottom padding the
   // screen asked for rather than overwriting it. Every auth screen passes one
@@ -372,7 +376,7 @@ export function KeyboardAwareScroll({
          * the form scrolls when the person scrolls it, and not because a
          * field took focus. Android-only; ignored on iOS.
          */
-        scrollsChildToFocus={false}
+        scrollsChildToFocus={scrollsChildToFocus}
         {...rest}
       >
         {children}

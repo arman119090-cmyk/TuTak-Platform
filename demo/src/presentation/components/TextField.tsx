@@ -111,6 +111,22 @@ export function TextField({
        * password` with no `touch password` before it was not a tap.
        */
       onTouchStart={() => logEvent(`touch ${traced}`)}
+      /*
+       * Every layout of this field, recorded.
+       *
+       * A view that is detached and re-attached keeps its native tag, so
+       * stable tags in the log never excluded that — the objection is fair
+       * and this is the nearest signal available from JavaScript. A `layout`
+       * line landing between `focus` and `blur` says the field was laid out
+       * again in that window, which a detach and re-attach would produce.
+       *
+       * It is not proof of one: an ordinary re-layout produces it too. It is
+       * a signal to correlate, and it is labelled that way rather than
+       * treated as a verdict.
+       */
+      onLayout={(event) =>
+        logEvent(`layout ${traced} h=${Math.round(event.nativeEvent.layout.height)}`)
+      }
       style={{ marginBottom: space[4] }}
     >
       <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2] }]}>

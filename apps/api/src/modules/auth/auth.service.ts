@@ -265,6 +265,32 @@ export class AuthService {
    * path is where they recover: `verifyRegistrationOtp` still refuses a
    * taken number, so nothing downstream depends on this check being loud.
    */
+  /**
+   * One line per OTP request, saying what the server actually did.
+   *
+   * The gap this closes: from outside, a request that never arrived, a number
+   * with no account, and a carrier that refused all look identical — the
+   * client is told `success: true` in every case, which is the
+   * anti-enumeration contract and is not going to change. So the answer has
+   * to be in the log, and it was not: two of those three outcomes wrote
+   * nothing at all, and a whole evening of testing left no record of whether
+   * the requests had even been received.
+   *
+   * What goes in it: the flow, and a technical outcome. The structured logger
+   * adds the request id, the method and the path, so a photograph of a screen
+   * at 19:29 can be matched to the request that produced it — or shown to
+   * have produced none.
+   *
+   * What never goes in it: the number, the code, credentials. The outcome
+   * names are deliberately about *this server's* processing rather than about
+   * the person — and note that this is the server's own log, read by whoever
+   * operates it. The client's answer stays uniform, so nothing here is an
+   * account oracle for anyone who is not already inside the logs.
+   */
+  private logOtpOutcome(flow: 'register' | 'login', outcome: string): void {
+    this.logger.log(`otp ${flow}: ${outcome}`);
+  }
+
   async requestRegistrationOtp(dto: RequestRegistrationOtpDto, meta: RequestMeta = {}) {
     // Charged before the existence check, and allowed to throw. Spending the
     // budget on every request regardless of outcome is what keeps this
@@ -276,10 +302,16 @@ export class AuthService {
     await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
 
     const existing = await this.usersService.findByPhone(dto.phone);
-    if (!existing) {
-      await this.authOtpService.requestCode(dto.phone, AuthOtpPurpose.REGISTER).catch((err: Error) => {
-        this.logger.warn(`Registration OTP request suppressed: ${err.message}`);
-      });
+    if (existing) {
+      this.logOtpOutcome('register', 'skipped-number-already-registered');
+    } else {
+      const issued = await this.authOtpService
+        .requestCode(dto.phone, AuthOtpPurpose.REGISTER)
+        .catch((err: Error) => {
+          this.logger.warn(`Registration OTP request suppressed: ${err.message}`);
+          return { delivered: false };
+        });
+      this.logOtpOutcome('register', issued.delivered ? 'code-handed-to-carrier' : 'carrier-refused');
     }
     return { success: true as const };
   }
@@ -373,10 +405,16 @@ export class AuthService {
     await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
 
     const user = await this.usersService.findByPhone(dto.phone);
-    if (user && user.isActive && !user.deletedAt) {
-      await this.authOtpService.requestCode(dto.phone, AuthOtpPurpose.LOGIN).catch((err: Error) => {
-        this.logger.warn(`Login OTP request suppressed: ${err.message}`);
-      });
+    if (!user || !user.isActive || user.deletedAt) {
+      this.logOtpOutcome('login', 'skipped-no-eligible-account');
+    } else {
+      const issued = await this.authOtpService
+        .requestCode(dto.phone, AuthOtpPurpose.LOGIN)
+        .catch((err: Error) => {
+          this.logger.warn(`Login OTP request suppressed: ${err.message}`);
+          return { delivered: false };
+        });
+      this.logOtpOutcome('login', issued.delivered ? 'code-handed-to-carrier' : 'carrier-refused');
     }
     return { success: true };
   }

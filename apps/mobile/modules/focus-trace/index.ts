@@ -4,8 +4,9 @@ import { NativeModule, requireOptionalNativeModule } from 'expo';
  * One record of the focus moving, taken on the Android side.
  *
  * `uptime` is `SystemClock.uptimeMillis()` — monotonic, so it cannot jump if
- * the wall clock is adjusted, and it is what the records are ordered by.
- * `wall` is there only to line these up against the JavaScript log.
+ * the wall clock is adjusted, and it is what orders these records against
+ * each other. `wall` is the only thing that lines one of these up against a
+ * JavaScript line. Both are carried: neither can be derived from the other.
  */
 export interface FocusTraceRecord {
   uptime: number;
@@ -19,10 +20,52 @@ export interface FocusTraceRecord {
   stack: string;
 }
 
+/**
+ * What `start` actually managed to install.
+ *
+ * Every field is a measurement rather than an intention — a `false` means
+ * that observer is genuinely not running. The point is that "no native lines"
+ * must never be readable as "no focus changes happened".
+ */
+export interface FocusTraceStart {
+  /** The global focus observer is running. Without it there is no trace. */
+  ok: boolean;
+  focus: boolean;
+  /** Needs API 28; `false` below that, and the reason says so. */
+  window: boolean;
+  /** How many views are being watched for attach/detach right now. */
+  attach: number;
+  /** Whether the ViewTreeObserver accepted listeners at all. */
+  alive: boolean;
+  sdk: number;
+  /** Empty when everything installed. */
+  reason: string;
+}
+
+/** A drain, plus what the bounded buffer had to throw away to fit. */
+export interface FocusTraceDrain {
+  records: FocusTraceRecord[];
+  dropped: number;
+}
+
+/** Where a view sits in the native tree — see `inspect` in the Kotlin side. */
+export interface FocusTraceShape {
+  found: boolean;
+  tag: number;
+  cls?: string;
+  /** `Class#tag` of the native parent, or `none`. */
+  parent?: string;
+  /** Child count. `0` on a field box is the signature of a flattened node. */
+  kids?: number;
+  kidsDescribed?: string[];
+  error?: string;
+}
+
 interface FocusTraceNativeModule extends NativeModule {
-  start(): void;
+  start(): FocusTraceStart;
   stop(): void;
-  drain(): FocusTraceRecord[];
+  drain(): FocusTraceDrain;
+  inspect(tag: number): Promise<FocusTraceShape>;
 }
 
 /**

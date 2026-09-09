@@ -91,6 +91,20 @@ export function runId(): string {
   return RUN_ID;
 }
 
+/**
+ * Wall-clock epoch of the log's zero point, so a timestamp taken somewhere
+ * else can be expressed in this log's own milliseconds.
+ *
+ * Every row's `at` counts from here. Android's focus observers stamp their
+ * records with `System.currentTimeMillis()` at the moment the event happened,
+ * and subtracting this from that is what puts a native event on the same
+ * timeline as a JavaScript one — which matters because the row's own `at` is
+ * when JavaScript *collected* the record, up to a drain interval later.
+ */
+export function startedAtMs(): number {
+  return started;
+}
+
 let started = Date.now();
 let startedAt = new Date();
 let events: DiagnosticEvent[] = [];

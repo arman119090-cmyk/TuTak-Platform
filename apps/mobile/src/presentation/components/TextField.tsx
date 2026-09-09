@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TextInputProps, View, findNodeHandle } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
 import { logEvent } from '../../diagnostics/eventLog';
 import { useMountTrace } from '../../diagnostics/instanceTrace';
 import { registerInput } from '../../diagnostics/focusRegistry';
-import { useFocusRerender } from '../../diagnostics/experiment';
+import { logNativeShape } from '../../diagnostics/nativeFocusTrace';
+import { useCollapsableField, useFocusRerender } from '../../diagnostics/experiment';
 
 interface Props extends TextInputProps {
   label: string;
@@ -83,7 +84,21 @@ export function TextField({
    */
   useMountTrace(`field:${traced}`);
   const wrapper = useRef<View>(null);
+  /*
+   * The box that draws the border and the ring, and the node the third
+   * experiment arm acts on. It needs a ref of its own for one reason: its
+   * native tag is what `logNativeShape` asks about, and where its children
+   * are mounted is the thing under test.
+   */
+  const field = useRef<View>(null);
   const input = useRef<TextInput>(null);
+  /*
+   * `collapsable={false}` on the box, or nothing at all — the `CF` arm.
+   * `false` is what ships, so a build with nobody pressing the button behaves
+   * exactly as committed. See `experiment.ts` for what the prop does and why
+   * it is the discriminating change rather than `RR`.
+   */
+  const collapsableField = useCollapsableField();
 
   /*
    * Registers this input so a keyboard event can name what is focused.
@@ -105,6 +120,42 @@ export function TextField({
       }),
     [traced, keyboardType],
   );
+  /*
+   * The three tags this field owns, and where the box's children actually
+   * live — written once on arrival and again whenever the `CF` arm moves.
+   *
+   * Both halves exist because of what a negative result would otherwise be
+   * worth. `#2988` was read off the log and matched against `focus phone
+   * t=2988`; `#2990` and `#2992` were *derived* from Fabric's tag allocation
+   * order and never measured, so an argument about which View is which had
+   * nothing under it. `tags` measures them.
+   *
+   * The `shape` line goes further and is the one that matters: `kids=0` on
+   * the box means its children are mounted somewhere else — flattened — and
+   * `kids=2` means they are inside it. That is precisely what
+   * `collapsable={false}` is supposed to change, so it says whether the prop
+   * reached the native view instead of leaving that to be inferred from
+   * whether the fault happened. Without it, "CF changed nothing" could mean
+   * the hypothesis is wrong or could mean the prop never arrived, and those
+   * are not the same finding.
+   *
+   * Delayed by a frame's worth of milliseconds because the commit that
+   * carries the new arm has to reach the UI thread before there is anything
+   * true to read.
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const fieldTag = findNodeHandle(field.current);
+      logEvent(
+        `tags ${traced} w=${findNodeHandle(wrapper.current) ?? '?'}` +
+          ` f=${fieldTag ?? '?'} i=${findNodeHandle(input.current) ?? '?'}` +
+          ` CF=${collapsableField ? 'on' : 'off'}`,
+      );
+      void logNativeShape(traced, fieldTag);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [traced, collapsableField]);
+
   // Scrolls this field clear of the keyboard when it is tapped. A no-op on a
   // screen that does not scroll.
   const ensureVisible = useEnsureVisibleOnFocus();
@@ -147,6 +198,15 @@ export function TextField({
       </Text>
 
       <View
+        ref={field}
+        /*
+         * The `CF` arm, and nothing else about this component changes with
+         * it. `undefined` rather than `true` when the arm is off, so the
+         * committed build sends no prop at all and Fabric keeps its own
+         * default — the two arms differ by the presence of one prop, which is
+         * what makes the comparison worth anything.
+         */
+        collapsable={collapsableField ? false : undefined}
         style={[
           styles.field,
           {

@@ -52,6 +52,18 @@ cp -R "$ROOT/apps/mobile/assets" "$OUT/assets"
 cp "$ROOT/apps/mobile/App.tsx" "$OUT/App.tsx"
 cp "$ROOT/apps/mobile/index.ts" "$OUT/index.ts"
 
+# Local native modules, copied for their TypeScript side only.
+#
+# `modules/focus-trace` is Android observers for the diagnostic build, and the
+# demo has no native build at all — but `src/` imports its `index.ts`, so the
+# path has to resolve or Metro cannot start. It resolves to
+# `requireOptionalNativeModule`, which answers `null` when the native half is
+# absent, which in the demo it always is. So the demo gets the same code and
+# the same "no native trace" outcome, rather than a copy edited to differ.
+if [ -d "$ROOT/apps/mobile/modules" ]; then
+  cp -R "$ROOT/apps/mobile/modules" "$OUT/modules"
+fi
+
 # Tests are not part of a demonstration and they would drag in jest-expo, which
 # is a large install for something nobody runs from here.
 find "$OUT/src" -name '*.test.ts' -delete

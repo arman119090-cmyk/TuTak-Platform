@@ -18,6 +18,7 @@ import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
 import { useMountTrace } from './src/diagnostics/instanceTrace';
 import { useAppStateTrace } from './src/diagnostics/useAppStateTrace';
 import { installFocusCommandTrace } from './src/diagnostics/focusCommandTrace';
+import { useNativeFocusTrace } from './src/diagnostics/nativeFocusTrace';
 import { OfflineBanner } from './src/presentation/components/OfflineBanner';
 import { startNetworkStateTracking } from './src/data/network/networkState';
 
@@ -94,6 +95,18 @@ function Root() {
    * and `onFocus` looks identical either way. See `focusCommandTrace.ts`.
    */
   installFocusCommandTrace();
+
+  /*
+   * The Android-side observers, drained into the same log.
+   *
+   * Everything reachable from JavaScript has been spent: the focus commands
+   * are wrapped and stay silent, the mount counters hold, the window never
+   * moves, and `scrollsChildToFocus` changed nothing across eight attempts.
+   * What is left is the Java stack at the moment the focus moves, and it
+   * exists only on the native side. See `modules/focus-trace` for what the
+   * three observers do and do not cover.
+   */
+  useNativeFocusTrace();
 
   /**
    * Navigation's own chrome recoloured to the active TuTak palette.

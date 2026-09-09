@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
+import { logEvent } from '../../diagnostics/eventLog';
 import { logWithFocus } from '../../diagnostics/focusRegistry';
 
 /**
@@ -307,6 +308,34 @@ export function KeyboardAwareScroll({
          * are the point, that is not a loss worth having a keyboard close
          * itself for.
          */
+        /*
+         * Every scroll, recorded — because this is the one thing that would
+         * either confirm or kill the current candidate outright.
+         *
+         * A capture from the single-field OTP screen showed a focused input
+         * dropped roughly thirty milliseconds after being granted focus, with
+         * no `REQ blur` and no second field to migrate to (`of=1`). So the
+         * question is no longer "what moves focus between two fields" but
+         * "what drops focus from one". `scrollsChildToFocus` was disabled on
+         * exactly that suspicion: `ReactScrollView.requestChildFocus` calls
+         * `scrollToChild(focused)`, deliberately skipping the layout-dirty
+         * guard stock Android uses to avoid scrolling mid-layout.
+         *
+         * If a `scroll y=` line lands between `focus` and `blur`, that is the
+         * scroll happening inside focus handling and the candidate is
+         * confirmed. If focus is dropped with no scroll anywhere near it, the
+         * candidate is dead and nothing else needs building to find out.
+         *
+         * Passive: `onScroll` observes, and anything a caller passes is
+         * called after. Throttled to 16ms so a fling cannot flood the log —
+         * the question is whether a scroll happened at all, not how smooth it
+         * was.
+         */
+        onScroll={(event) => {
+          logEvent(`scroll y=${Math.round(event.nativeEvent.contentOffset.y)}`);
+          rest.onScroll?.(event);
+        }}
+        scrollEventThrottle={16}
         keyboardShouldPersistTaps="always"
         /*
          * Android's ScrollView must stop scrolling to the focused child —

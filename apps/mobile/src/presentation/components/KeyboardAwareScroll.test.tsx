@@ -1,9 +1,10 @@
 import React from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
-import { act, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { KeyboardAwareScroll, scrollTargetFor, shouldIssueScroll } from './KeyboardAwareScroll';
 import { TextField } from './TextField';
 import { ThemeProvider } from '../../app/theme/ThemeProvider';
+import { getAllEvents, resetEvents } from '../../diagnostics/eventLog';
 
 /**
  * The properties that decide whether a form is usable with the keyboard open.
@@ -146,6 +147,24 @@ describe('KeyboardAwareScroll', () => {
      */
     expect(scroll.props.keyboardShouldPersistTaps).toBe('always');
     expect(scroll.props.keyboardShouldPersistTaps).not.toBe('handled');
+  });
+
+  it('records every scroll, which is what decides the current candidate', () => {
+    resetEvents();
+    renderScroll();
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+
+    /*
+     * The single-field OTP screen showed a focused input dropped ~30ms after
+     * being granted focus, with `of=1` and no `REQ blur` — so the question
+     * became "what drops focus from one field", and `scrollsChildToFocus` was
+     * disabled on the suspicion that ReactScrollView scrolls inside focus
+     * handling. A `scroll y=` line landing between `focus` and `blur` proves
+     * it; its absence kills the candidate without another build.
+     */
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { y: 42 } } });
+
+    expect(getAllEvents().map((e) => e.text)).toContain('scroll y=42');
   });
 
   it('never scrolls itself to a field that just took focus', () => {

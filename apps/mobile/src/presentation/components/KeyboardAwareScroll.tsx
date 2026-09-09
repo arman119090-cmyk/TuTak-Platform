@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
-import { logEvent } from '../../diagnostics/eventLog';
+import { logEventCoalesced } from '../../diagnostics/eventLog';
 import { logWithFocus } from '../../diagnostics/focusRegistry';
 import { useScrollsChildToFocus } from '../../diagnostics/experiment';
 
@@ -336,7 +336,10 @@ export function KeyboardAwareScroll({
          * was.
          */
         onScroll={(event) => {
-          logEvent(`scroll y=${Math.round(event.nativeEvent.contentOffset.y)}`);
+          // Folded into one line per burst — see `logEventCoalesced`. A drag
+          // across the screen used to write ninety lines and push the focus
+          // events out of the buffer entirely, which cost a capture.
+          logEventCoalesced('scroll y=', `scroll y=${Math.round(event.nativeEvent.contentOffset.y)}`);
           rest.onScroll?.(event);
         }}
         scrollEventThrottle={16}

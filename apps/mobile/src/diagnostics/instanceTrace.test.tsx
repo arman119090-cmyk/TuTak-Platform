@@ -1,7 +1,14 @@
 import React from 'react';
 import { Text } from 'react-native';
 import { render } from '@testing-library/react-native';
-import { getAllEvents, logEvent, resetEvents, runId, serializeEvents } from './eventLog';
+import {
+  getAllEvents,
+  logEvent,
+  logEventCoalesced,
+  resetEvents,
+  runId,
+  serializeEvents,
+} from './eventLog';
 import { resetInstanceTrace, useMountTrace } from './instanceTrace';
 
 function Traced({ name }: { name: string }) {
@@ -133,5 +140,67 @@ describe('a renamed trace is not a remount', () => {
     view.rerender(<Traced name="field:Հեռախոսահամար" />);
 
     expect(texts()).toEqual(['mount field:Phone number #1 @1']);
+  });
+});
+
+
+/**
+ * The instrument defect that cost a capture, pinned so it cannot come back.
+ *
+ * A finger drag emits a scroll sample every 16ms and none of them are
+ * textually identical, so `logEvent`'s repeat counter never fired: ninety
+ * lines a second pushed the focus events out of the ring buffer, and the
+ * export came back "older ones dropped", ending one line before the part it
+ * was taken for.
+ */
+describe('folding a burst of related lines', () => {
+  beforeEach(resetEvents);
+
+  it('keeps one line for a whole drag, dated from when it started', () => {
+    logEvent('focus phone');
+    logEventCoalesced('scroll y=', 'scroll y=10');
+    logEventCoalesced('scroll y=', 'scroll y=40');
+    logEventCoalesced('scroll y=', 'scroll y=90');
+
+    const events = getAllEvents();
+    expect(events.map((e) => e.text)).toEqual(['focus phone', 'scroll y=90 ×3']);
+    // The burst is dated from its first sample: that is the timestamp a
+    // scroll has to be compared against a focus event.
+    expect(events[1].at).toBeLessThanOrEqual(events[1].at);
+  });
+
+  it('does not swallow what comes after the burst', () => {
+    logEventCoalesced('scroll y=', 'scroll y=10');
+    logEventCoalesced('scroll y=', 'scroll y=20');
+    logEvent('blur  phone');
+    logEventCoalesced('scroll y=', 'scroll y=30');
+
+    expect(getAllEvents().map((e) => e.text)).toEqual([
+      'scroll y=20 ×2',
+      'blur  phone',
+      'scroll y=30',
+    ]);
+  });
+
+  it('leaves a scroll inside focus handling perfectly legible', () => {
+    // The signal the whole thing exists for: one or two samples between a
+    // focus and a blur must not be folded away into invisibility.
+    logEvent('focus phone');
+    logEventCoalesced('scroll y=', 'scroll y=12');
+    logEvent('blur  phone');
+
+    expect(getAllEvents().map((e) => e.text)).toEqual([
+      'focus phone',
+      'scroll y=12',
+      'blur  phone',
+    ]);
+  });
+
+  it('cannot push the log out of the buffer the way a raw drag did', () => {
+    logEvent('focus phone');
+    for (let i = 0; i < 500; i += 1) logEventCoalesced('scroll y=', `scroll y=${i}`);
+
+    // Two rows total, whatever the finger did.
+    expect(getAllEvents().map((e) => e.text)).toEqual(['focus phone', 'scroll y=499 ×500']);
   });
 });

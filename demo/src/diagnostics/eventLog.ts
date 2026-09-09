@@ -103,6 +103,34 @@ export function logEvent(text: string): void {
 }
 
 /** What the panel draws: the newest rows, as many as fit on a phone. */
+/**
+ * Like `logEvent`, but folds a run of related lines into one.
+ *
+ * Written for scrolling, and written because a capture was lost to it: a
+ * finger drag emits a sample every 16 ms, none of them textually identical,
+ * so `logEvent`'s repeat counter never fired and sixty lines a second pushed
+ * the focus events — the entire reason the log exists — off the end of the
+ * buffer. The export came back saying "older ones dropped" and ended one line
+ * before the interesting part.
+ *
+ * Folding keeps what the burst is worth: the timestamp of its **start**,
+ * which is what a scroll has to be compared against a `focus` for, the value
+ * it ended on, and how many samples it took. A scroll that happens inside
+ * focus handling is one or two samples and stays perfectly legible; a drag
+ * across the screen is one line instead of ninety.
+ */
+export function logEventCoalesced(prefix: string, text: string): void {
+  const last = events[events.length - 1];
+  if (last && last.text.startsWith(prefix)) {
+    const count = Number(/ ×(\d+)$/.exec(last.text)?.[1] ?? '1') + 1;
+    // `last.at` on purpose: the burst is dated from when it began.
+    events = [...events.slice(0, -1), { at: last.at, text: `${text} ×${count}` }];
+    listeners.forEach((notify) => notify());
+    return;
+  }
+  logEvent(text);
+}
+
 export function getEvents(): DiagnosticEvent[] {
   return events.slice(-DISPLAY_CAPACITY);
 }

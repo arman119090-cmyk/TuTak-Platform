@@ -4,7 +4,16 @@ import { shareLogFile, shareLogTail, shareLogText } from './logExport';
 
 jest.mock('expo-constants', () => ({
   __esModule: true,
-  default: { expoConfig: { extra: { diagnostics: true, commit: 'abc1234def', appEnv: 'staging' } } },
+  default: {
+    expoConfig: {
+      extra: {
+        diagnostics: true,
+        commit: 'abc1234def',
+        appEnv: 'staging',
+        apiBaseUrl: 'https://tutak-staging-api.onrender.com/v1',
+      },
+    },
+  },
 }));
 
 /**
@@ -86,6 +95,10 @@ describe('the log export', () => {
     // Provenance, so two exports can be told apart without asking.
     expect(file.content).toContain('commit abc1234');
     expect(file.content).toContain('profile staging');
+    // Which server this build talks to. Working it out used to mean unzipping
+    // the APK, and with two environments in play the answer decided whether a
+    // finding applied at all.
+    expect(file.content).toContain('api tutak-staging-api.onrender.com');
     expect(file.content).toContain('experiment SCF=off RR=on');
 
     expect(Sharing.shareAsync).toHaveBeenCalledWith(
@@ -133,5 +146,52 @@ describe('the log export', () => {
     const { message } = (Share.share as jest.Mock).mock.calls[0][0] as { message: string };
     expect(message).toContain('events 120');
     expect(message.split('\n').pop()).toBe('END records=120');
+  });
+});
+
+/**
+ * The API host in the export header.
+ *
+ * The address is baked in at build time and shown nowhere else, so a log that
+ * does not name it cannot be attributed to an environment — and a finding
+ * about one environment says nothing about another, because each chooses its
+ * own SMS transport from its own variables.
+ */
+describe('which server the header names', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const Constants = require('expo-constants').default as { expoConfig: { extra: Record<string, unknown> } };
+  const { exportHeader } = require('./logExport') as { exportHeader: () => Record<string, string> };
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  const withApi = (apiBaseUrl: unknown) => {
+    Constants.expoConfig.extra = { commit: 'abc1234def', appEnv: 'staging', apiBaseUrl };
+    return exportHeader().api;
+  };
+
+  afterEach(() => {
+    Constants.expoConfig.extra = {
+      diagnostics: true,
+      commit: 'abc1234def',
+      appEnv: 'staging',
+      apiBaseUrl: 'https://tutak-staging-api.onrender.com/v1',
+    };
+  });
+
+  it('names the host, without the path', () => {
+    expect(withApi('https://tutak-staging-api.onrender.com/v1')).toBe('tutak-staging-api.onrender.com');
+  });
+
+  it('keeps the port, which is what tells two local servers apart', () => {
+    expect(withApi('http://192.168.1.42:4000/v1')).toBe('192.168.1.42:4000');
+  });
+
+  /** A credential in a URL must not ride into the log on the back of this. */
+  it('drops a query string rather than carrying whatever is in it', () => {
+    expect(withApi('https://api.example.com/v1?token=secret')).toBe('api.example.com');
+  });
+
+  it('says unknown rather than guessing when the build carries no address', () => {
+    expect(withApi(undefined)).toBe('unknown');
+    expect(withApi('')).toBe('unknown');
   });
 });

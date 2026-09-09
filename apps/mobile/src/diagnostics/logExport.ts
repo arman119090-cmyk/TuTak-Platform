@@ -56,11 +56,32 @@ export function exportHeader(): Record<string, string> {
   return {
     commit: buildCommit(),
     profile: String(Constants.expoConfig?.extra?.appEnv ?? 'unknown'),
+    api: apiHost(),
     trace: traceSummary(),
     experiment: experimentLabel(),
     window: `${Math.round(width)}x${Math.round(height)}`,
     screen: `${Math.round(screen.width)}x${Math.round(screen.height)}`,
   };
+}
+
+/**
+ * Which server this build talks to, as a bare hostname.
+ *
+ * Added because working it out cost a round trip: the API address is baked in
+ * at build time and shown nowhere, so the only way to answer "which
+ * environment was this log taken against" was to unzip the APK and read
+ * `assets/app.config`. Two environments were in play at the time and the
+ * answer mattered — a finding about one of them says nothing about the other,
+ * because each picks its own SMS transport from its own variables.
+ *
+ * Host only: the path and any query are dropped. There is nothing secret in a
+ * hostname, and dropping the rest keeps a credential out of the log if one is
+ * ever put in a URL by mistake.
+ */
+function apiHost(): string {
+  const configured = Constants.expoConfig?.extra?.apiBaseUrl;
+  if (typeof configured !== 'string' || configured === '') return 'unknown';
+  return /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(configured)?.[1] ?? configured;
 }
 
 /**

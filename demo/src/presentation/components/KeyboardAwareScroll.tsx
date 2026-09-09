@@ -336,10 +336,25 @@ export function KeyboardAwareScroll({
          * was.
          */
         onScroll={(event) => {
-          // Folded into one line per burst — see `logEventCoalesced`. A drag
-          // across the screen used to write ninety lines and push the focus
-          // events out of the buffer entirely, which cost a capture.
-          logEventCoalesced('scroll y=', `scroll y=${Math.round(event.nativeEvent.contentOffset.y)}`);
+          /*
+           * One line per burst, carrying when it started and how far it went.
+           *
+           * A drag used to write ninety lines and push the focus events out
+           * of the buffer, which cost a capture. Folding fixes the volume;
+           * what the fold has to keep is the two things a scroll is worth
+           * against a `focus` line — **when** it began, and **how far** it
+           * moved. So the line reads `scroll y=120→938 ×57`: the burst's own
+           * start timestamp, the offset it started from, the offset it ended
+           * on, and how many samples that took.
+           *
+           * A scroll inside focus handling is one sample and prints as a
+           * plain `scroll y=120`, which is exactly the case this exists for.
+           */
+          const y = Math.round(event.nativeEvent.contentOffset.y);
+          logEventCoalesced('scroll y=', (previous) => {
+            const from = /^scroll y=(-?\d+)/.exec(previous ?? '')?.[1];
+            return from === undefined ? `scroll y=${y}` : `scroll y=${from}→${y}`;
+          });
           rest.onScroll?.(event);
         }}
         scrollEventThrottle={16}

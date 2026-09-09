@@ -28,7 +28,14 @@ import { logEvent, runId } from './eventLog';
  *   case 3.
  * * The counter here is module scope, so it survives a component being
  *   unmounted and mounted again but not a new JS context. `mount App #2`
- *   means the root component mounted twice in one runtime, which is case 2.
+ *   means the root component mounted twice in one runtime.
+ *
+ *   Read that narrowly. It says the React tree below `Root` was torn down and
+ *   rebuilt while the JS context survived. A surface restart produces it; so
+ *   does anything above `Root` that changes identity. Distinguishing those
+ *   needs a native trace of the activity lifecycle, which JavaScript cannot
+ *   see — so `mount App #2` is **consistent with** case 2 and is not proof of
+ *   it, and an activity recreation must not be declared on this line alone.
  * * `mount OtpRegister #2` with `mount App #1` still standing above it is
  *   case 1: only the screen was rebuilt.
  *

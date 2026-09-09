@@ -61,6 +61,27 @@ function Root() {
    * an app that keeps running does.
    */
   useMountTrace('App');
+  /*
+   * What this line does and does not mean — stated here because it has
+   * already been over-read once.
+   *
+   * `useMountTrace` sits in `Root`, which is a React component nested inside
+   * `ErrorBoundary → SafeAreaProvider → I18nextProvider → QueryClientProvider
+   * → ThemeProvider`. So `mount App #n` records that **this React component**
+   * mounted, and nothing more.
+   *
+   * `unmount App @1` followed by `mount App #2 @2` under the *same* run id
+   * therefore means exactly this: the React tree below here was torn down and
+   * rebuilt while the JavaScript context survived. That is **consistent
+   * with** the activity being recreated and the React Native surface
+   * restarting — and it is not proof of it. Anything above `Root` that
+   * changed its identity would produce the same two lines, and so would a
+   * surface restart with no activity involved.
+   *
+   * What would distinguish them is not available from JavaScript. It needs a
+   * native trace — `adb logcat` showing the activity lifecycle — and until
+   * that exists these lines say "the React root was replaced", full stop.
+   */
   useAppStateTrace();
 
   /*

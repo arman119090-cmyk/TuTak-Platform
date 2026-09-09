@@ -156,37 +156,55 @@ describe('a renamed trace is not a remount', () => {
 describe('folding a burst of related lines', () => {
   beforeEach(resetEvents);
 
-  it('keeps one line for a whole drag, dated from when it started', () => {
-    logEvent('focus phone');
-    logEventCoalesced('scroll y=', 'scroll y=10');
-    logEventCoalesced('scroll y=', 'scroll y=40');
-    logEventCoalesced('scroll y=', 'scroll y=90');
+  /** What `KeyboardAwareScroll` does: keep the start, rewrite the end. */
+  const scroll = (y: number) =>
+    logEventCoalesced('scroll y=', (previous) => {
+      const from = /^scroll y=(-?\d+)/.exec(previous ?? '')?.[1];
+      return from === undefined ? `scroll y=${y}` : `scroll y=${from}→${y}`;
+    });
 
-    const events = getAllEvents();
-    expect(events.map((e) => e.text)).toEqual(['focus phone', 'scroll y=90 ×3']);
-    // The burst is dated from its first sample: that is the timestamp a
-    // scroll has to be compared against a focus event.
-    expect(events[1].at).toBeLessThanOrEqual(events[1].at);
+  it('keeps one line for a whole drag, with where it started and where it ended', () => {
+    logEvent('focus phone');
+    scroll(10);
+    scroll(40);
+    scroll(90);
+
+    expect(getAllEvents().map((e) => e.text)).toEqual([
+      'focus phone',
+      'scroll y=10→90 ×3',
+    ]);
+  });
+
+  it('dates the burst from its first sample, not its last', () => {
+    // That timestamp is the whole point: a scroll is only worth anything
+    // against a `focus` if you can see which came first.
+    logEvent('focus phone');
+    scroll(10);
+    const started = getAllEvents()[1].at;
+    scroll(40);
+    scroll(90);
+
+    expect(getAllEvents()[1].at).toBe(started);
   });
 
   it('does not swallow what comes after the burst', () => {
-    logEventCoalesced('scroll y=', 'scroll y=10');
-    logEventCoalesced('scroll y=', 'scroll y=20');
+    scroll(10);
+    scroll(20);
     logEvent('blur  phone');
-    logEventCoalesced('scroll y=', 'scroll y=30');
+    scroll(30);
 
     expect(getAllEvents().map((e) => e.text)).toEqual([
-      'scroll y=20 ×2',
+      'scroll y=10→20 ×2',
       'blur  phone',
       'scroll y=30',
     ]);
   });
 
   it('leaves a scroll inside focus handling perfectly legible', () => {
-    // The signal the whole thing exists for: one or two samples between a
-    // focus and a blur must not be folded away into invisibility.
+    // One sample between a focus and a blur is the signal the whole thing
+    // exists for, and it must not be folded into invisibility.
     logEvent('focus phone');
-    logEventCoalesced('scroll y=', 'scroll y=12');
+    scroll(12);
     logEvent('blur  phone');
 
     expect(getAllEvents().map((e) => e.text)).toEqual([
@@ -195,12 +213,43 @@ describe('folding a burst of related lines', () => {
       'blur  phone',
     ]);
   });
+});
 
-  it('cannot push the log out of the buffer the way a raw drag did', () => {
+/**
+ * The guarantee that a fault which scrolls cannot hide itself.
+ *
+ * Folding made eviction rare. This makes it impossible: when the buffer is
+ * full, a scroll line is spent before any focus, blur, REQ, mount, keyboard,
+ * experiment or app-state line — and only when there is no scroll left does
+ * anything else go.
+ */
+describe('what the buffer sacrifices when it is full', () => {
+  beforeEach(resetEvents);
+
+  it('spends scroll lines before anything the log was taken for', () => {
     logEvent('focus phone');
-    for (let i = 0; i < 500; i += 1) logEventCoalesced('scroll y=', `scroll y=${i}`);
+    logEvent('REQ focus phone');
+    for (let i = 0; i < 500; i += 1) logEvent(`scroll y=${i}`);
 
-    // Two rows total, whatever the finger did.
-    expect(getAllEvents().map((e) => e.text)).toEqual(['focus phone', 'scroll y=499 ×500']);
+    const texts = getAllEvents().map((e) => e.text);
+    expect(texts).toContain('focus phone');
+    expect(texts).toContain('REQ focus phone');
+  });
+
+  it('keeps the order it recorded, rather than moving survivors around', () => {
+    logEvent('focus phone');
+    for (let i = 0; i < 500; i += 1) logEvent(`scroll y=${i}`);
+    logEvent('blur  phone');
+
+    const texts = getAllEvents().map((e) => e.text);
+    expect(texts.indexOf('focus phone')).toBeLessThan(texts.indexOf('blur  phone'));
+  });
+
+  it('falls back to dropping the oldest once no scroll is left to spend', () => {
+    for (let i = 0; i < 500; i += 1) logEvent(`focus field-${i}`);
+
+    const texts = getAllEvents().map((e) => e.text);
+    expect(texts).not.toContain('focus field-0');
+    expect(texts[texts.length - 1]).toBe('focus field-499');
   });
 });

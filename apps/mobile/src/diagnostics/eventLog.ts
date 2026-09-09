@@ -56,6 +56,21 @@ export interface DiagnosticEvent {
 }
 
 /**
+ * Lines that may be sacrificed when the buffer is full, and the only ones.
+ *
+ * A capture was lost to this: scrolling wrote hundreds of samples and pushed
+ * the focus events — the whole reason the log is taken — out of the ring. So
+ * eviction is no longer "oldest first". It is "oldest *scroll* first", and a
+ * focus, blur, REQ, mount, keyboard, experiment or app-state line is dropped
+ * only once there is no scroll left to drop.
+ *
+ * Folding a burst into one line (see `logEventCoalesced`) already made that
+ * rare. This makes it impossible, which is a different guarantee: a fault
+ * that scrolls a lot must not be able to hide itself.
+ */
+const EVICTABLE = /^scroll /;
+
+/**
  * Identifies this JavaScript runtime, and nothing else.
  *
  * Generated once when the module is first evaluated, which happens exactly
@@ -96,13 +111,33 @@ export function logEvent(text: string): void {
     const count = Number(/ ×(\d+)$/.exec(last.text)?.[1] ?? '1') + 1;
     events = [...events.slice(0, -1), { at: last.at, text: `${text} ×${count}` }];
   } else {
-    events = [...events, { at: Date.now() - started, text }].slice(-RETAINED_CAPACITY);
+    events = trim([...events, { at: Date.now() - started, text }]);
   }
 
   listeners.forEach((notify) => notify());
 }
 
 /** What the panel draws: the newest rows, as many as fit on a phone. */
+/**
+ * Brings the log back within capacity, spending scroll lines first.
+ *
+ * Ordering is preserved — a scroll is removed from wherever it sits, not
+ * moved — because the sequence is the entire evidence and a reordered log
+ * would be worse than a truncated one.
+ */
+function trim(next: DiagnosticEvent[]): DiagnosticEvent[] {
+  if (next.length <= RETAINED_CAPACITY) return next;
+
+  const kept = [...next];
+  while (kept.length > RETAINED_CAPACITY) {
+    const victim = kept.findIndex((event) => EVICTABLE.test(event.text));
+    // No scroll left to spend: fall back to dropping the oldest line, which
+    // is the behaviour this replaced and still the only option at that point.
+    kept.splice(victim === -1 ? 0 : victim, 1);
+  }
+  return kept;
+}
+
 /**
  * Like `logEvent`, but folds a run of related lines into one.
  *
@@ -119,16 +154,28 @@ export function logEvent(text: string): void {
  * focus handling is one or two samples and stays perfectly legible; a drag
  * across the screen is one line instead of ninety.
  */
-export function logEventCoalesced(prefix: string, text: string): void {
+export function logEventCoalesced(
+  prefix: string,
+  /**
+   * Given the line already standing (without its `×N` suffix) when this
+   * continues a burst, or `undefined` when it starts one. Letting the caller
+   * see what it is extending is what allows a range to be carried: the first
+   * sample writes where it began, and every one after rewrites the end while
+   * keeping that beginning.
+   */
+  build: (previous: string | undefined) => string,
+): void {
   const last = events[events.length - 1];
   if (last && last.text.startsWith(prefix)) {
+    const base = last.text.replace(/ ×\d+$/, '');
     const count = Number(/ ×(\d+)$/.exec(last.text)?.[1] ?? '1') + 1;
-    // `last.at` on purpose: the burst is dated from when it began.
-    events = [...events.slice(0, -1), { at: last.at, text: `${text} ×${count}` }];
+    // `last.at` on purpose: the burst is dated from when it began, which is
+    // the timestamp a scroll has to be compared against a `focus` for.
+    events = [...events.slice(0, -1), { at: last.at, text: `${build(base)} ×${count}` }];
     listeners.forEach((notify) => notify());
     return;
   }
-  logEvent(text);
+  logEvent(build(undefined));
 }
 
 export function getEvents(): DiagnosticEvent[] {

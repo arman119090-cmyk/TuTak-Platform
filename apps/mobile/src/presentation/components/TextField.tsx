@@ -6,7 +6,7 @@ import { logEvent } from '../../diagnostics/eventLog';
 import { useMountTrace } from '../../diagnostics/instanceTrace';
 import { registerInput } from '../../diagnostics/focusRegistry';
 import { logNativeShape } from '../../diagnostics/nativeFocusTrace';
-import { useCollapsableField, useFocusRerender } from '../../diagnostics/experiment';
+import { useFocusRerender } from '../../diagnostics/experiment';
 
 interface Props extends TextInputProps {
   label: string;
@@ -92,13 +92,6 @@ export function TextField({
    */
   const field = useRef<View>(null);
   const input = useRef<TextInput>(null);
-  /*
-   * `collapsable={false}` on the box, or nothing at all — the `CF` arm.
-   * `false` is what ships, so a build with nobody pressing the button behaves
-   * exactly as committed. See `experiment.ts` for what the prop does and why
-   * it is the discriminating change rather than `RR`.
-   */
-  const collapsableField = useCollapsableField();
 
   /*
    * Registers this input so a keyboard event can name what is focused.
@@ -122,39 +115,34 @@ export function TextField({
   );
   /*
    * The three tags this field owns, and where the box's children actually
-   * live — written once on arrival and again whenever the `CF` arm moves.
+   * live, written once on arrival.
    *
-   * Both halves exist because of what a negative result would otherwise be
-   * worth. `#2988` was read off the log and matched against `focus phone
-   * t=2988`; `#2990` and `#2992` were *derived* from Fabric's tag allocation
-   * order and never measured, so an argument about which View is which had
-   * nothing under it. `tags` measures them.
+   * `tags` measures what used to be argued about: `#2988` was read off the
+   * log and matched against `focus phone t=2988`, but `#2990` and `#2992`
+   * were *derived* from Fabric's tag allocation order and never measured.
    *
-   * The `shape` line goes further and is the one that matters: `kids=0` on
-   * the box means its children are mounted somewhere else — flattened — and
-   * `kids=2` means they are inside it. That is precisely what
-   * `collapsable={false}` is supposed to change, so it says whether the prop
-   * reached the native view instead of leaving that to be inferred from
-   * whether the fault happened. Without it, "CF changed nothing" could mean
-   * the hypothesis is wrong or could mean the prop never arrived, and those
-   * are not the same finding.
+   * The `shape` line is the one that matters, and it is why this survives the
+   * experiment that produced it. `kids=0` on the box means its children are
+   * mounted somewhere else — flattened, the state the fault lived in — and
+   * `kids=2` means they are inside it. So it reads the fix back off the
+   * native tree rather than inferring it from the fault not happening, which
+   * is exactly what is needed to confirm the permanent
+   * `collapsable={false}` on each handset it has to be checked on.
    *
-   * Delayed by a frame's worth of milliseconds because the commit that
-   * carries the new arm has to reach the UI thread before there is anything
-   * true to read.
+   * Delayed by a frame's worth of milliseconds because the first commit has
+   * to reach the UI thread before there is anything true to read.
    */
   useEffect(() => {
     const timer = setTimeout(() => {
       const fieldTag = findNodeHandle(field.current);
       logEvent(
         `tags ${traced} w=${findNodeHandle(wrapper.current) ?? '?'}` +
-          ` f=${fieldTag ?? '?'} i=${findNodeHandle(input.current) ?? '?'}` +
-          ` CF=${collapsableField ? 'on' : 'off'}`,
+          ` f=${fieldTag ?? '?'} i=${findNodeHandle(input.current) ?? '?'}`,
       );
       void logNativeShape(traced, fieldTag);
     }, 100);
     return () => clearTimeout(timer);
-  }, [traced, collapsableField]);
+  }, [traced]);
 
   // Scrolls this field clear of the keyboard when it is tapped. A no-op on a
   // screen that does not scroll.
@@ -200,13 +188,35 @@ export function TextField({
       <View
         ref={field}
         /*
-         * The `CF` arm, and nothing else about this component changes with
-         * it. `undefined` rather than `true` when the arm is off, so the
-         * committed build sends no prop at all and Fabric keeps its own
-         * default — the two arms differ by the presence of one prop, which is
-         * what makes the comparison worth anything.
+         * The fix, and it is not conditional on anything.
+         *
+         * Without it this box is a Fabric "layout only" node while at rest:
+         * it has a background and a border so it gets a native view, but no
+         * `shadowColor` and no `elevation`, so it is not a stacking context
+         * and its children are mounted into the wrapper above instead of into
+         * it. Taking focus adds the ring's `shadowColor`, the node becomes a
+         * stacking context, and the differ reparents its children — removing
+         * the focused `ReactEditText` from one parent and inserting it into
+         * another. Android then drops the focus off a view it no longer owns,
+         * and the keyboard goes with it.
+         *
+         * `collapsable={false}` is the first term of that same predicate, so
+         * the box is a stacking context in both states and there is nothing
+         * left to flip. Confirmed on a handset across CF=off → on → off in
+         * build 41 (runs SS06VF and 0HX8CM): the focus-time detaches vanish
+         * with it on and come back with it off, and the `shape` lines show
+         * the children moving between the two parents exactly as predicted.
+         *
+         * What that does **not** establish is that `shadowColor` is the
+         * culprit. This prop pins the whole `FormsStackingContext` trait, and
+         * `elevation`, `opacity`, `transform`, `zIndex` and the event flags
+         * are all in the same predicate. The mechanism is proven; which
+         * property was tripping it is not, and separating them would take one
+         * more experiment that nothing currently depends on.
+         *
+         * Android-only in effect; inert on iOS and web.
          */
-        collapsable={collapsableField ? false : undefined}
+        collapsable={false}
         style={[
           styles.field,
           {

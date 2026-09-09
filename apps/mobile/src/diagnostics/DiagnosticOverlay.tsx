@@ -4,10 +4,8 @@ import { TAIL_CAPACITY, getEvents, resetEvents, runId, subscribe } from './event
 import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
 import {
   experimentLabel,
-  toggleCollapsableField,
   toggleFocusRerender,
   toggleScrollsChildToFocus,
-  useCollapsableField,
   useFocusRerender,
   useScrollsChildToFocus,
 } from './experiment';
@@ -73,7 +71,6 @@ export function DiagnosticOverlay() {
   // Re-renders the header when the arm is flipped.
   useScrollsChildToFocus();
   useFocusRerender();
-  useCollapsableField();
 
   if (!isDiagnosticBuild()) return null;
 
@@ -133,13 +130,6 @@ export function DiagnosticOverlay() {
               a trial with two changed at once is visible as such. */}
           <Pressable onPress={toggleFocusRerender} hitSlop={12}>
             <Text style={styles.action}>RR</Text>
-          </Pressable>
-          {/* The third arm — `collapsable={false}` on the field box. Flipping
-              it makes every field write a fresh `shape` line, which is the
-              only way to see that the prop reached the native view rather
-              than trusting that it did. */}
-          <Pressable onPress={toggleCollapsableField} hitSlop={12}>
-            <Text style={styles.action}>CF</Text>
           </Pressable>
           {/* The whole log as a file. First choice: nothing between here and
               the receiving app can re-flow or clip it. */}

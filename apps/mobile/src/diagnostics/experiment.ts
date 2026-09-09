@@ -51,36 +51,6 @@ let scrollsChildToFocus = false;
  */
 let focusRerender = true;
 
-/**
- * Whether the field box carries `collapsable={false}` — the third arm, and
- * the one aimed at a named mechanism rather than at a symptom.
- *
- * Build 40's native trace showed `SurfaceMountingManager.removeViewAt`
- * detaching the focused `ReactEditText`, through `ReactViewManager`, with
- * `removeClippedSubviews` provably off. Reading the renderer against
- * `TextField` gives a candidate for why: Fabric decides separately whether a
- * node gets a native view (`FormsView`) and whether its children are mounted
- * *inside* it (`FormsStackingContext`), and `shadowColor` is in the second
- * predicate. The field box carries a background and a border, so it always
- * has a view — but no `shadowColor` at rest, so its children are hoisted into
- * the wrapper above. On focus the ring adds `shadowColor`, the node becomes a
- * stacking context, and the differ reparents its children: remove the
- * `TextInput` from the wrapper, insert it into the box. Same tag, detached
- * and re-attached, and Android drops the focus off a view it no longer owns.
- *
- * `collapsable={false}` sets `!viewProps.collapsable`, which is the first
- * term of that same predicate, so the node is a stacking context in **both**
- * states and there is nothing to flip. That is the whole change: the ring,
- * the colours, the re-render and the layout are identical in both arms, which
- * is what `RR` — which removes the re-render entirely, and three property
- * changes with it — could not have told us.
- *
- * `false` is what ships. Success in this arm does **not** make `shadowColor`
- * the proven first cause: `collapsable` pins the trait against every other
- * term in that predicate too.
- */
-let collapsableField = false;
-
 let listeners: Array<() => void> = [];
 
 export function getScrollsChildToFocus(): boolean {
@@ -108,34 +78,23 @@ export function toggleFocusRerender(): void {
 /**
  * Short label for the panel header and the export.
  *
- * All three arms, always, so a trial can never be read against the wrong set —
+ * Both arms, always, so a trial can never be read against the wrong pair —
  * and so it is obvious at a glance if two were changed at once, which would
  * make the trial worthless.
+ *
+ * `CF` was here and is gone: it settled what it was built to settle, and
+ * `collapsable={false}` is now unconditional in `TextField`. A switch that no
+ * longer switches anything is worse than no switch, because the next person
+ * to press it would read "nothing changed" as a result.
  */
-export function getCollapsableField(): boolean {
-  return collapsableField;
-}
-
-/** Flips the third arm and records it. Called only by the overlay. */
-export function toggleCollapsableField(): void {
-  collapsableField = !collapsableField;
-  logEvent(`exp collapsableField=${collapsableField ? 'on' : 'off'}`);
-  listeners.forEach((notify) => notify());
-}
-
 export function experimentLabel(): string {
-  return (
-    `SCF=${scrollsChildToFocus ? 'on' : 'off'}` +
-    ` RR=${focusRerender ? 'on' : 'off'}` +
-    ` CF=${collapsableField ? 'on' : 'off'}`
-  );
+  return `SCF=${scrollsChildToFocus ? 'on' : 'off'} RR=${focusRerender ? 'on' : 'off'}`;
 }
 
 /** Cleared between tests. Never called by the app. */
 export function resetExperiment(): void {
   scrollsChildToFocus = false;
   focusRerender = true;
-  collapsableField = false;
   listeners = [];
 }
 
@@ -152,11 +111,6 @@ export function useScrollsChildToFocus(): boolean {
 /** The re-render arm, re-rendering the caller when it is flipped. */
 export function useFocusRerender(): boolean {
   return useArm(() => focusRerender);
-}
-
-/** The flattening arm, re-rendering the caller when it is flipped. */
-export function useCollapsableField(): boolean {
-  return useArm(() => collapsableField);
 }
 
 function useArm(read: () => boolean): boolean {

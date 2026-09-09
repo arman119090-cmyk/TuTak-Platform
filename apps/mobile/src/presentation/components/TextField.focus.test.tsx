@@ -2,11 +2,12 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { TextField } from './TextField';
-import { resetExperiment, toggleCollapsableField } from '../../diagnostics/experiment';
 
+// Deliberately NOT a diagnostic build for most of this file: the fix below
+// must hold in the app people install, not only in the build that measures it.
 jest.mock('expo-constants', () => ({
   __esModule: true,
-  default: { expoConfig: { extra: { diagnostics: true } } },
+  default: { expoConfig: { extra: {} } },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -48,38 +49,46 @@ describe('what a TextField changes when it is focused', () => {
 });
 
 /**
- * The `CF` arm, and the two things that make it a controlled comparison.
+ * The fix, and the two ways it could be lost again.
  *
- * The prop has to actually appear when the arm is on and actually be absent
- * when it is off — a prop that is always sent, or never sent, turns the trial
- * into two runs of the same configuration. And the focus affordance has to
- * survive the flip: an arm that also removes the ring is not one parameter,
- * it is two, and the test above would no longer be protecting anything.
+ * The field box is a Fabric "layout only" node at rest: a background and a
+ * border give it a native view, but with no `shadowColor` and no `elevation`
+ * it is not a stacking context, so its children are mounted into the wrapper
+ * above rather than into it. Taking focus adds the ring's `shadowColor`, the
+ * node becomes a stacking context, and the differ reparents its children —
+ * detaching the focused `ReactEditText` and re-inserting it under a different
+ * parent. Android drops the focus off a view it no longer owns, and the
+ * keyboard goes with it.
+ *
+ * `collapsable={false}` pins that trait true in both states. Confirmed on a
+ * handset in build 41 across off → on → off (runs SS06VF and 0HX8CM). It is
+ * unconditional here on purpose, so the two ways to lose it are: making it
+ * conditional again (on a flag, an arm, or a diagnostic build), or letting a
+ * refactor take the ring or the handlers with it.
  */
-describe('the collapsable arm on the field box', () => {
-  afterEach(resetExperiment);
-
+describe('the field box never collapses', () => {
   const boxOf = (utils: ReturnType<typeof renderField>) => {
-    // The field box is the View that draws the border — the only one with a
-    // borderWidth, and the node the arm acts on.
+    // The box is the View that draws the border — the only one with a
+    // borderWidth, and the node the prop belongs to.
     const views = utils.UNSAFE_getAllByType(View);
     return views.find(
       (view) => (StyleSheet.flatten(view.props.style) as { borderWidth?: number })?.borderWidth === 1,
     );
   };
 
-  it('sends no collapsable prop at all while the arm is off', () => {
-    expect(boxOf(renderField())?.props.collapsable).toBeUndefined();
-  });
-
-  it('sends collapsable={false} once the arm is on', () => {
-    toggleCollapsableField();
-
+  it('carries collapsable={false} in an ordinary build, with no diagnostics anywhere', () => {
+    // The mock above says `extra: {}` — not a diagnostic build. A fix that
+    // only applies where the instrument is watching is not a fix.
     expect(boxOf(renderField())?.props.collapsable).toBe(false);
   });
 
-  it('keeps the focus ring and the typing in both arms', () => {
-    toggleCollapsableField();
+  it('carries it on every field, prefixed or not, with an error or without', () => {
+    expect(boxOf(renderField({ prefix: '+374' }))?.props.collapsable).toBe(false);
+    expect(boxOf(renderField({ error: 'nope' }))?.props.collapsable).toBe(false);
+    expect(boxOf(renderField({ secureTextEntry: true }))?.props.collapsable).toBe(false);
+  });
+
+  it('still marks the focused field and still accepts typing', () => {
     const onChangeText = jest.fn();
     const utils = renderField({ onChangeText });
     const input = utils.getByPlaceholderText('00 000 000');
@@ -91,5 +100,50 @@ describe('the collapsable arm on the field box', () => {
 
     expect(after.borderColor).not.toBe(before.borderColor);
     expect(onChangeText).toHaveBeenCalledWith('12345678');
+  });
+
+  it("still calls the screen's own focus and blur handlers", () => {
+    const onFocus = jest.fn();
+    const onBlur = jest.fn();
+    const input = renderField({ onFocus, onBlur }).getByPlaceholderText('00 000 000');
+
+    fireEvent(input, 'focus');
+    fireEvent(input, 'blur');
+
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onBlur).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The forbidden repairs, pinned as absences.
+   *
+   * Every one of these was ruled out before the cause was known — a re-focus
+   * on blur, a timer that re-opens the keyboard, a forced `focus()` on mount.
+   * They paper over a symptom and make the next fault unreadable, and the fix
+   * above needs none of them. This fails if one is ever added.
+   */
+  it('never re-focuses the input itself and starts no timers', () => {
+    jest.useFakeTimers();
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+    try {
+      const utils = renderField();
+      const input = utils.getByPlaceholderText('00 000 000');
+      const focus = jest.fn();
+      // Whatever the component holds a ref to, calling focus on it is what a
+      // re-focus repair would have to do.
+      Object.defineProperty(input, 'focus', { value: focus, configurable: true });
+
+      fireEvent(input, 'focus');
+      fireEvent(input, 'blur');
+      jest.advanceTimersByTime(5000);
+
+      expect(focus).not.toHaveBeenCalled();
+      // One timer only: the diagnostic `tags`/`shape` probe, which reads and
+      // never writes. Anything beyond it is a repair that should not be here.
+      expect(setTimeoutSpy.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      setTimeoutSpy.mockRestore();
+      jest.useRealTimers();
+    }
   });
 });

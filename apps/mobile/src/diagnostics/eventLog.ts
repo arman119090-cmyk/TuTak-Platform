@@ -188,7 +188,19 @@ export function getAllEvents(): DiagnosticEvent[] {
 }
 
 /**
- * The whole log as text, with the header that makes it worth reading.
+ * How many rows the short export carries.
+ *
+ * Added because the long one did not arrive. Successive exports of run
+ * `7FEV1Y` reported 319 and then 338 events, and the text that reached the
+ * other end stopped at the same place both times, mid-word — so the cut is
+ * somewhere in the transport, not in the buffer, and a shorter message is the
+ * one thing that gets under it. Fifty rows is roughly one interaction with a
+ * field, which is the unit a question is usually asked about.
+ */
+export const TAIL_CAPACITY = 50;
+
+/**
+ * The log as text, with the header that makes it worth reading.
  *
  * A photograph of fourteen rows has been the transport so far, and it drops
  * exactly the things a second reader needs: which build this is, which JS
@@ -198,17 +210,42 @@ export function getAllEvents(): DiagnosticEvent[] {
  *
  * Nothing here can contain anything anybody typed: the events are labels,
  * ids, sizes and counts, and every call site is written that way.
+ *
+ * ## Why it ends with END
+ *
+ * An export is only evidence if the reader can tell it arrived whole. Text
+ * handed to a share sheet passes through whichever app the operator picks,
+ * and at least one of them silently truncated a 338-row log at the same
+ * character twice, mid-word, with nothing to mark that it had. A trailing
+ * `END records=N` makes that visible from the received text alone: the line
+ * is missing, or the count on it disagrees with the rows below the header.
+ * Neither can be mistaken for a log that simply had little to say.
  */
-export function serializeEvents(header: Record<string, string>): string {
+export function serializeEvents(
+  header: Record<string, string>,
+  options: { limit?: number } = {},
+): string {
+  const selected = options.limit === undefined ? events : events.slice(-options.limit);
+  const evicted = events.length >= RETAINED_CAPACITY ? ' (older ones dropped)' : '';
   const lines = [
     `TuTak diagnostic log`,
     `run ${RUN_ID} started ${startedAt.toISOString()}`,
     ...Object.entries(header).map(([key, value]) => `${key} ${value}`),
-    `events ${events.length}${events.length >= RETAINED_CAPACITY ? ' (older ones dropped)' : ''}`,
+    selected.length === events.length
+      ? `events ${events.length}${evicted}`
+      : `events ${selected.length} of ${events.length}${evicted} (last ${selected.length} only)`,
     '',
-    ...events.map((event) => `${String(event.at).padStart(6, ' ')}ms  ${event.text}`),
+    ...selected.map((event) => `${String(event.at).padStart(6, ' ')}ms  ${event.text}`),
+    '',
+    // Deliberately the last line and deliberately carrying the count: see above.
+    `END records=${selected.length}`,
   ];
   return lines.join('\n');
+}
+
+/** A file name that says which run and which build a saved log belongs to. */
+export function exportFileName(commit: string): string {
+  return `tutak-diag-${commit}-${RUN_ID}.txt`;
 }
 
 export function subscribe(listener: () => void): () => void {

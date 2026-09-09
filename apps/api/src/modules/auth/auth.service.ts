@@ -1,5 +1,6 @@
 import { isPublicDeployment } from '../../config/app-environment';
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -291,6 +292,43 @@ export class AuthService {
     this.logger.log(`otp ${flow}: ${outcome}`);
   }
 
+  /**
+   * Charges the per-address ceiling, and records it when it refuses.
+   *
+   * Without this the refusal is the one outcome that leaves no trace at all:
+   * `consume` throws before anything else runs, the request ends as a 429, and
+   * the log shows nothing — which is exactly the state that made an evening of
+   * testing unreadable. Rethrown unchanged, so the caller's answer does not
+   * move.
+   */
+  private async chargeOtpAddressLimit(
+    flow: 'register' | 'login',
+    meta: RequestMeta,
+  ): Promise<void> {
+    try {
+      await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
+    } catch (err) {
+      this.logOtpOutcome(flow, 'refused-address-rate-limit');
+      throw err;
+    }
+  }
+
+  /**
+   * What went wrong between issuing a code and handing it to a carrier.
+   *
+   * `requestCode` swallows a carrier failure itself and answers
+   * `delivered: false`, so anything that escapes it happened *before* the
+   * send: the per-number ceiling, or the database. Those are three different
+   * findings and used to arrive as one — a rate-limited request was being
+   * written down as a carrier that refused, which points the next reader at
+   * the wrong system entirely.
+   */
+  private classifyOtpFailure(err: unknown): string {
+    return err instanceof BadRequestException
+      ? 'refused-number-rate-limit'
+      : 'failed-before-send';
+  }
+
   async requestRegistrationOtp(dto: RequestRegistrationOtpDto, meta: RequestMeta = {}) {
     // Charged before the existence check, and allowed to throw. Spending the
     // budget on every request regardless of outcome is what keeps this
@@ -299,7 +337,7 @@ export class AuthService {
     // reintroducing through timing and status the oracle removed above. The
     // rejection itself reveals nothing about any account — it is a property
     // of the caller's address.
-    await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
+    await this.chargeOtpAddressLimit('register', meta);
 
     const existing = await this.usersService.findByPhone(dto.phone);
     if (existing) {
@@ -309,9 +347,12 @@ export class AuthService {
         .requestCode(dto.phone, AuthOtpPurpose.REGISTER)
         .catch((err: Error) => {
           this.logger.warn(`Registration OTP request suppressed: ${err.message}`);
-          return { delivered: false };
+          return { delivered: false, failure: this.classifyOtpFailure(err) };
         });
-      this.logOtpOutcome('register', issued.delivered ? 'code-handed-to-carrier' : 'carrier-refused');
+      this.logOtpOutcome(
+        'register',
+        issued.delivered ? 'code-handed-to-carrier' : ('failure' in issued ? issued.failure : 'carrier-refused'),
+      );
     }
     return { success: true as const };
   }
@@ -402,7 +443,7 @@ export class AuthService {
   async requestLoginOtp(dto: RequestLoginOtpDto, meta: RequestMeta = {}) {
     // Same reasoning as `requestRegistrationOtp`: charged unconditionally, so
     // the per-IP ceiling cannot be read as a signal about the number.
-    await this.otpIpRateLimit.consume(meta.ipAddress, 'issue');
+    await this.chargeOtpAddressLimit('login', meta);
 
     const user = await this.usersService.findByPhone(dto.phone);
     if (!user || !user.isActive || user.deletedAt) {
@@ -412,9 +453,12 @@ export class AuthService {
         .requestCode(dto.phone, AuthOtpPurpose.LOGIN)
         .catch((err: Error) => {
           this.logger.warn(`Login OTP request suppressed: ${err.message}`);
-          return { delivered: false };
+          return { delivered: false, failure: this.classifyOtpFailure(err) };
         });
-      this.logOtpOutcome('login', issued.delivered ? 'code-handed-to-carrier' : 'carrier-refused');
+      this.logOtpOutcome(
+        'login',
+        issued.delivered ? 'code-handed-to-carrier' : ('failure' in issued ? issued.failure : 'carrier-refused'),
+      );
     }
     return { success: true };
   }

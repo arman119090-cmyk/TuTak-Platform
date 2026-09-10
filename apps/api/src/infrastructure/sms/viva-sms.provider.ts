@@ -629,6 +629,12 @@ export class VivaSmsProvider implements SmsProvider {
     const search = new URLSearchParams(query).toString();
     const url = `${this.config.baseUrl}${path}${search ? `?${search}` : ''}`;
     const payload = JSON.stringify(body);
+    // What the gateway's own `req.url` actually is — computed from the built
+    // URL, not reused from the short `path` argument above. `baseUrl` can
+    // itself carry a prefix (the gateway's `/v1`, absent from Viva's own
+    // `/api/v1`), so the two are not the same string, and signing the wrong
+    // one fails the gateway's check with every secret, correct ones included.
+    const signedPath = new URL(url).pathname;
 
     try {
       const response = await fetch(url, {
@@ -637,11 +643,10 @@ export class VivaSmsProvider implements SmsProvider {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           ...extraHeaders,
-          // Signed over the path the gateway sees, which is what follows the
-          // base URL — not the full URL, and never the query string, which
-          // carries no part of the request the gateway acts on.
+          // Never the query string, which carries no part of the request the
+          // gateway acts on.
           ...(this.config.gatewaySecret
-            ? gatewayAuthHeaders(this.config.gatewaySecret, path, payload)
+            ? gatewayAuthHeaders(this.config.gatewaySecret, signedPath, payload)
             : {}),
         },
         body: payload,

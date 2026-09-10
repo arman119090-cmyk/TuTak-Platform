@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
   VivaSmsProvider,
@@ -670,6 +671,43 @@ describe('gateway request signing', () => {
     ]);
     await new VivaSmsProvider(CONFIG).send({ to: '+37493600600', body: 'x', templateParams: ['1'] });
     expect(headersOf(direct[0]!)['X-TuTak-Signature']).toBeUndefined();
+  });
+
+  /**
+   * The bug this pins: the gateway's `baseUrl` is `https://<gateway
+   * host>/v1`, so the wire path is `/v1/token/get` — not the short
+   * `/token/get` this class passes internally to build it. Signing the short
+   * form produces a signature the gateway's own check (which hashes its real
+   * `req.url`) never accepts, with any secret, correct ones included. This
+   * builds the provider exactly as the gateway deployment does and
+   * recomputes the gateway's half of the check independently, so a
+   * regression here fails for the same reason production did on 2026-09-10.
+   */
+  it('signs the path the gateway actually receives, not the short internal one', async () => {
+    const calls = stubFetch([
+      { status: 200, body: { access_token: 'a' } },
+      { status: 200, body: {} },
+    ]);
+    const provider = new VivaSmsProvider({
+      ...CONFIG,
+      baseUrl: 'https://gateway.internal/v1',
+      gatewaySecret: SECRET,
+    });
+    await provider.send({ to: '+37493600600', body: 'x', templateParams: ['1'] });
+
+    const headers = headersOf(calls[0]!);
+    const expected = createHmac('sha256', SECRET)
+      .update(
+        gatewaySigningString({
+          timestamp: headers['X-TuTak-Timestamp']!,
+          nonce: headers['X-TuTak-Nonce']!,
+          method: 'POST',
+          path: '/v1/token/get',
+          body: String(calls[0]!.init.body),
+        }),
+      )
+      .digest('hex');
+    expect(headers['X-TuTak-Signature']).toBe(expected);
   });
 
   it('signs each request with a fresh nonce', async () => {

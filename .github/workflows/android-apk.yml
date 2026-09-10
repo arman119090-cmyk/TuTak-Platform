@@ -207,6 +207,24 @@ jobs:
               '.build[$p].env.EAS_PROJECT_ID = $id' eas.json > "$tmp"
             mv "$tmp" eas.json
           fi
+          # The commit the app states as its own — and the reason it has to be
+          # set here rather than left to be inferred.
+          #
+          # `app.config.js` takes GIT_COMMIT_SHA, then EAS_BUILD_GIT_COMMIT_HASH,
+          # then GITHUB_SHA. The step below commits `eas.json` locally so the
+          # builder sees this run's inputs, and the builder then reports *that*
+          # commit as EAS_BUILD_GIT_COMMIT_HASH — a SHA that exists only inside
+          # this job and is pushed nowhere. A diagnostic build whose on-screen
+          # identity cannot be looked up is the "which version is on the phone"
+          # problem in a new costume: it was found by unzipping a finished APK
+          # and reading `extra.commit`, which named a commit nobody could find.
+          #
+          # GIT_COMMIT_SHA wins over both, so naming the repository SHA here is
+          # what makes the panel say something the repository can confirm.
+          tmp=$(mktemp)
+          jq --arg p "$PROFILE" --arg sha "$GITHUB_SHA" \
+            '.build[$p].env.GIT_COMMIT_SHA = $sha' eas.json > "$tmp"
+          mv "$tmp" eas.json
           echo "Profile that will be built:"
           jq --arg p "$PROFILE" '.build[$p]' eas.json
           # EAS takes the project from git, so a change left only in the
@@ -244,6 +262,9 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           API_BASE_URL: ${{ inputs.api_base_url }}
           APP_ENV: ${{ inputs.profile }}
+          # See the note in "Put the address where the build can see it": this
+          # is what stops the app naming a throwaway CI commit as its own.
+          GIT_COMMIT_SHA: ${{ github.sha }}
         # `--local` runs the same build EAS would run, on this runner, and
         # spends no build credit. `--output` names the file directly, which is
         # why the cloud path's download step has no local equivalent: there is
@@ -271,6 +292,9 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           API_BASE_URL: ${{ inputs.api_base_url }}
           APP_ENV: ${{ inputs.profile }}
+          # See the note in "Put the address where the build can see it": this
+          # is what stops the app naming a throwaway CI commit as its own.
+          GIT_COMMIT_SHA: ${{ github.sha }}
         # --json puts the build record on stdout and the progress on stderr,
         # so the artifact URL can be read without scraping a progress bar.
         # --wait so the job does not report success while the build is queued.

@@ -10,7 +10,7 @@ import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
-import { logEvent } from '../../../diagnostics/eventLog';
+import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
@@ -35,19 +35,17 @@ export function LoginScreen({ navigation }: Props) {
   const [demoAvailable, setDemoAvailable] = useState(false);
 
   /*
-   * A mount marker, and the reason it earns a line in the log.
+   * A mount marker, now numbered and stamped with an instance id.
    *
-   * If Android recreates the activity when the IME opens — which it does when
-   * a configuration change the manifest does not claim to handle arrives, and
-   * which a foldable in compatibility mode is a good way to provoke — then
-   * React Native's whole surface restarts. From outside that is exactly the
-   * reported symptom: the keyboard appears for half a second and goes. From
-   * in here it is a second `mount Login`, arriving after `focus`, which no
-   * other explanation produces.
+   * It used to be a bare `mount Login`, to be read as Android recreating the
+   * activity if it ever appeared twice. That reading was never safe — a React
+   * remount, a surface restart and a fresh JS context all produce a second
+   * line, and only the counters in `instanceTrace` separate them. The device
+   * log has since settled it for this screen anyway: through the whole fault
+   * there is one `mount App`, one `mount Login` and no field unmount at all,
+   * so nothing here is being rebuilt while the focus moves.
    */
-  useEffect(() => {
-    logEvent('mount Login');
-  }, []);
+  useMountTrace('Login');
 
   // Window against screen, on every change. The pair is what separates the
   // two surviving explanations — see the hook.
@@ -120,6 +118,7 @@ export function LoginScreen({ navigation }: Props) {
 
           <TextField
             label={t('auth.phoneNumber')}
+            traceId="phone"
             prefix="+374"
             value={phone}
             onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
@@ -129,6 +128,7 @@ export function LoginScreen({ navigation }: Props) {
           />
           <TextField
             label={t('auth.password')}
+            traceId="password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry

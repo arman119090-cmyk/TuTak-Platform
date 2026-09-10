@@ -11,9 +11,11 @@ import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
-import { describeApiError } from '../../../data/api/errors';
+import { apiErrorCode, describeApiError, isTransportFailure } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { useMountTrace } from '../../../diagnostics/instanceTrace';
+import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
@@ -39,31 +41,86 @@ export function OtpRegisterScreen({ navigation }: Props) {
   const compact = useCompactLayout();
   const { deviceId, setSession } = useAuthStore();
 
+  /*
+   * The instrumentation, and what it is for.
+   *
+   * The sign-in screen was instrumented in September and the fault is now
+   * reported here instead, on a screen the earlier investigation never
+   * touched. Two things make this screen genuinely different rather than
+   * another instance of the same page: it has two inputs rather than one
+   * interesting one, and they ask for *different keyboards* — `number-pad`
+   * for the phone, the default alphabetic one for the referral code.
+   *
+   * That matters because the reported sequence includes the keyboard
+   * changing type before it closes. A keyboard that changes type is a
+   * keyboard that was asked for by a different input, or by the same input
+   * with different props — and neither of those is something `focus`, `blur`
+   * and a keyboard height can distinguish. Hence the mount trace here and on
+   * each field: the log has to be able to say *which* input the keyboard was
+   * serving, and whether that input is the same object it was a moment ago.
+   *
+   * `useDimensionsTrace` comes across unchanged from the sign-in screen —
+   * window against screen is still what separates a window that is being
+   * resized under the IME from one that is not.
+   */
+  useMountTrace('OtpRegister');
+  useDimensionsTrace();
+
   const [phone, setPhone] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /*
+   * Three slots, because one error state was being shown in the wrong place.
+   *
+   * `error` used to be a single string handed to whichever field happened to
+   * be last on the step — which on step one is the **referral code**. So
+   * "could not send the verification code" was drawn under the referral
+   * field, in the field's own error colour, and read as "your referral code
+   * is wrong". Two things make that not a near-miss but always wrong:
+   * `handleSendCode` does not send the referral code at all, and the API
+   * treats an unknown referral code as a silent no-op rather than an error
+   * (`ReferralService.createAttribution`: `if (!code) return`). So no failure
+   * of this flow has ever been the referral field's fault.
+   *
+   * `formError` is for anything that is not one field's doing. `codeError`
+   * marks the OTP field, which is the one input a verify call can actually
+   * reject. `referralError` marks the referral field and is set only when the
+   * API names a referral problem in its own error code — nothing does today,
+   * which is the point: the rule is executable rather than a comment, and
+   * whoever adds such a response gets the field marking for free.
+   */
+  const [formError, setFormError] = useState<string | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [referralError, setReferralError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
   const fullPhone = `+374${phone}`;
 
+  const clearErrors = () => {
+    setFormError(null);
+    setCodeError(null);
+    setReferralError(null);
+  };
+
   const handleSendCode = async () => {
-    setError(null);
+    clearErrors();
     setSending(true);
     try {
       await authApi.requestRegistrationOtp({ phone: fullPhone });
       setCodeSent(true);
     } catch (err) {
-      setError(describeApiError(err) ?? t('auth.sendCodeFailed'));
+      // Never a field: this request carries the phone number and nothing
+      // else, and the referral code it is drawn next to is not in it.
+      setFormError(describeApiError(err) ?? t('auth.sendCodeFailed'));
     } finally {
       setSending(false);
     }
   };
 
   const handleVerify = async () => {
-    setError(null);
+    clearErrors();
     setVerifying(true);
     try {
       const result = await authApi.verifyRegistrationOtp({
@@ -75,7 +132,16 @@ export function OtpRegisterScreen({ navigation }: Props) {
       });
       await setSession(result.user, result.tokens);
     } catch (err) {
-      setError(describeApiError(err) ?? t('auth.confirmCodeFailed'));
+      const message = describeApiError(err) ?? t('auth.confirmCodeFailed');
+      if (isTransportFailure(err)) {
+        // The request never reached the API, so nothing the user typed was
+        // judged. Marking a field here would blame them for the network.
+        setFormError(message);
+      } else if (apiErrorCode(err)?.startsWith('REFERRAL')) {
+        setReferralError(message);
+      } else {
+        setCodeError(message);
+      }
     } finally {
       setVerifying(false);
     }
@@ -112,6 +178,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
           <>
             <TextField
               label={t('auth.phoneNumber')}
+              traceId="phone"
               prefix="+374"
               value={phone}
               onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
@@ -121,12 +188,23 @@ export function OtpRegisterScreen({ navigation }: Props) {
             />
             <TextField
               label={t('auth.referralCodeOptional')}
+              traceId="referral"
               value={referralCode}
               onChangeText={(v) => setReferralCode(v.toUpperCase())}
               autoCapitalize="characters"
               placeholder="TT-XXXXXXXX"
-              error={error ?? undefined}
+              error={referralError ?? undefined}
             />
+            {/* Form-level, and deliberately not attached to any field: see
+                the error-state comment above for what happens when it is. */}
+            {formError ? (
+              <Text
+                accessibilityRole="alert"
+                style={[text.caption, { color: color.dangerText, marginTop: space[2] }]}
+              >
+                {formError}
+              </Text>
+            ) : null}
             <View style={{ marginTop: space[3] }}>
               <Button
                 label={t('auth.sendVerificationCode')}
@@ -141,13 +219,24 @@ export function OtpRegisterScreen({ navigation }: Props) {
           <>
             <TextField
               label={t('auth.resetCode')}
+              traceId="otp"
               value={code}
               onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
               keyboardType="number-pad"
               placeholder="000000"
               maxLength={6}
-              error={error ?? undefined}
+              error={codeError ?? undefined}
             />
+            {/* Form-level, and deliberately not attached to any field: see
+                the error-state comment above for what happens when it is. */}
+            {formError ? (
+              <Text
+                accessibilityRole="alert"
+                style={[text.caption, { color: color.dangerText, marginTop: space[2] }]}
+              >
+                {formError}
+              </Text>
+            ) : null}
             <View style={{ marginTop: space[3] }}>
               <Button
                 label={t('auth.otpRegisterButton')}

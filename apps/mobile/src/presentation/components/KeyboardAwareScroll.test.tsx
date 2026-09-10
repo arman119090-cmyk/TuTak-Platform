@@ -1,9 +1,10 @@
 import React from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
-import { act, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { KeyboardAwareScroll, scrollTargetFor, shouldIssueScroll } from './KeyboardAwareScroll';
 import { TextField } from './TextField';
 import { ThemeProvider } from '../../app/theme/ThemeProvider';
+import { getAllEvents, resetEvents } from '../../diagnostics/eventLog';
 
 /**
  * The properties that decide whether a form is usable with the keyboard open.
@@ -126,14 +127,64 @@ describe('KeyboardAwareScroll', () => {
     });
   });
 
-  it('lets the first tap reach the button under the keyboard', () => {
+  it('lets the first tap reach the button under the keyboard, and never blurs the field itself', () => {
     renderScroll();
     const scroll = screen.UNSAFE_getByType(ScrollView);
 
-    // Without this, tapping "Log in" while the keyboard is open only closes
-    // the keyboard, and the person has to tap again — which reads as the
-    // button being broken.
-    expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
+    /*
+     * Two things ride on this one value, and only `always` gives both.
+     *
+     * Without any of it, tapping "Log in" while the keyboard is open only
+     * closes the keyboard and the person has to tap again — which reads as
+     * the button being broken. `handled` fixed that and left the second
+     * problem in place: React Native's own ScrollView blurs the focused input
+     * when a touch lands anywhere else, and its guard excludes `true` and
+     * `'always'` only. The device log caught it doing exactly that —
+     * `REQ blur phone`, then `blur phone`, then `kbHide on=none of=2`.
+     *
+     * So this asserts the value that excludes that path, and asserts it is
+     * not the one that silently permits it.
+     */
+    expect(scroll.props.keyboardShouldPersistTaps).toBe('always');
+    expect(scroll.props.keyboardShouldPersistTaps).not.toBe('handled');
+  });
+
+  it('records every scroll, which is what decides the current candidate', () => {
+    resetEvents();
+    renderScroll();
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+
+    /*
+     * The single-field OTP screen showed a focused input dropped ~30ms after
+     * being granted focus, with `of=1` and no `REQ blur` — so the question
+     * became "what drops focus from one field", and `scrollsChildToFocus` was
+     * disabled on the suspicion that ReactScrollView scrolls inside focus
+     * handling. A `scroll y=` line landing between `focus` and `blur` proves
+     * it; its absence kills the candidate without another build.
+     */
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { y: 42 } } });
+
+    expect(getAllEvents().map((e) => e.text)).toContain('scroll y=42');
+  });
+
+  it('never scrolls itself to a field that just took focus', () => {
+    renderScroll();
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+
+    /*
+     * `NO_SCROLLING` makes `ensureVisible` a no-op on purpose — this
+     * component decided not to scroll to a focused field. Android's
+     * ReactScrollView does it anyway unless told otherwise:
+     * `requestChildFocus` calls `scrollToChild(focused)` whenever
+     * `scrollsChildToFocus` is true, which is its default, and React Native's
+     * own comment says that path deliberately skips the layout-dirty guard
+     * stock Android uses to avoid scrolling mid-layout.
+     *
+     * Asserted rather than assumed because the decision lives in two places
+     * now, and a JS no-op that a native default quietly overrides is exactly
+     * the kind of gap that costs a week.
+     */
+    expect(scroll.props.scrollsChildToFocus).toBe(false);
   });
 
   it('lets content taller than the window scroll rather than compressing it', () => {

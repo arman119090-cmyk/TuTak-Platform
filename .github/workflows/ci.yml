@@ -128,10 +128,19 @@ jobs:
       # returning silently — the exact failure mode it was introduced for.
       # `--verbose` and `timeout-minutes` stay as permanent CI hygiene:
       # verbose output pinpoints a future hang's location instead of silence,
-      # and the 15-minute cap turns any future stall into a fast, readable
-      # failure instead of a multi-hour bleed.
+      # and the cap turns any future stall into a fast, readable failure
+      # instead of a multi-hour bleed.
+      #
+      # The cap was 15 minutes and that stopped being a stall detector: run
+      # #533 on `fix/viva-gateway-path-signing` was killed by it at 15m13s
+      # with every suite still passing, so a green branch reported red. The
+      # suite takes ~4 minutes on a developer machine and roughly three times
+      # that on a shared runner, and this merge adds the OTP and referral
+      # suites to it — 15 was already the running time, not a ceiling above
+      # it. 25 restores the gap between "slow" and "stuck"; the real fix is
+      # to split this into shards, which is tracked separately.
       - name: Integration tests
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: pnpm --filter @tutak/api test:int:verbose
 
       # Applying every migration in order (just above) only proves the

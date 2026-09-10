@@ -1,4 +1,4 @@
-import { AppConfig, assertPoolSplitSums } from './configuration';
+import loadConfiguration, { AppConfig, assertPoolSplitSums } from './configuration';
 
 /**
  * 2026-08-22 3-level referral rework: the pool split grew from four legs
@@ -77,5 +77,87 @@ describe('assertPoolSplitSums', () => {
     policy.poolReferrerL3Bps = 0;
     policy.poolTutakBps = 5000; // 2000 + 3000 + 0 + 0 + 0 + 5000 = 10000
     expect(() => assertPoolSplitSums(policy)).not.toThrow();
+  });
+});
+
+/**
+ * Two names for one setting is a migration aid, and migration aids are where
+ * silent misconfiguration lives. `VIVA_SENDER_NAME=Tu-Tak` next to a
+ * leftover `SMS_SENDER=TuTak` is not a preference to resolve — one of them is
+ * what the operator believes is configured, and picking either one quietly
+ * means half the deployments send under a sender name nobody chose. The
+ * process refuses to start instead, naming both variables.
+ */
+describe('VIVA_* preferred over SMS_*, with a conflict refusing to boot', () => {
+  const KEYS = [
+    'VIVA_API_BASE_URL',
+    'SMS_ENDPOINT',
+    'VIVA_USERNAME',
+    'SMS_USERNAME',
+    'VIVA_PASSWORD',
+    'SMS_TOKEN',
+    'VIVA_SENDER_NAME',
+    'SMS_SENDER',
+    'VIVA_CLIENT_ID',
+    'SMS_VIVA_CLIENT_ID',
+    'VIVA_CLIENT_SECRET',
+    'SMS_VIVA_CLIENT_SECRET',
+    'VIVA_OTP_TEMPLATE_NAME',
+    'SMS_VIVA_TEMPLATE_NAME',
+  ] as const;
+
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of KEYS) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it('takes the VIVA_* name when it is the only one set', () => {
+    process.env.VIVA_SENDER_NAME = 'Tu-Tak';
+    expect(loadConfiguration().sms.sender).toBe('Tu-Tak');
+  });
+
+  it('still reads an already-configured deployment that only has SMS_*', () => {
+    process.env.SMS_SENDER = 'Tu-Tak';
+    process.env.SMS_VIVA_TEMPLATE_NAME = 'Tu-Tak2';
+    const sms = loadConfiguration().sms;
+    expect(sms.sender).toBe('Tu-Tak');
+    expect(sms.viva.templateName).toBe('Tu-Tak2');
+  });
+
+  it('accepts both names when they agree, which is what a careful migration looks like', () => {
+    process.env.VIVA_SENDER_NAME = 'Tu-Tak';
+    process.env.SMS_SENDER = 'Tu-Tak';
+    expect(loadConfiguration().sms.sender).toBe('Tu-Tak');
+  });
+
+  it('refuses to boot when the two names disagree, naming both', () => {
+    process.env.VIVA_SENDER_NAME = 'Tu-Tak';
+    process.env.SMS_SENDER = 'TuTak';
+    expect(() => loadConfiguration()).toThrow(/VIVA_SENDER_NAME and SMS_SENDER are both set/);
+  });
+
+  it('applies the same rule to the credentials, without putting either value in the message', () => {
+    process.env.VIVA_CLIENT_SECRET = 'from-the-dashboard';
+    process.env.SMS_VIVA_CLIENT_SECRET = 'left-over-from-staging';
+    try {
+      loadConfiguration();
+      throw new Error('expected a conflict');
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain('VIVA_CLIENT_SECRET and SMS_VIVA_CLIENT_SECRET');
+      expect(message).not.toContain('from-the-dashboard');
+      expect(message).not.toContain('left-over-from-staging');
+    }
   });
 });

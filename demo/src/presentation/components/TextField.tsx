@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, TextInputProps, View, findNodeHandle } from 'react-native';
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextInputProps,
+  View,
+  findNodeHandle,
+} from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { useEnsureVisibleOnFocus } from './KeyboardAwareScroll';
 import { logEvent } from '../../diagnostics/eventLog';
@@ -133,6 +141,12 @@ export function TextField({
    * to reach the UI thread before there is anything true to read.
    */
   useEffect(() => {
+    // Native tags are a native idea. `react-native-web` keeps `findNodeHandle`
+    // in its API surface and throws the moment it is called — "findNodeHandle
+    // is not supported on web" — which killed the whole render, not just this
+    // line, because it happens inside an effect during mount. The browser has
+    // no native tree to describe, so there is nothing here worth doing there.
+    if (Platform.OS === 'web') return;
     const timer = setTimeout(() => {
       const fieldTag = findNodeHandle(field.current);
       logEvent(

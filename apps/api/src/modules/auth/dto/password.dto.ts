@@ -6,15 +6,23 @@ import { ARMENIAN_PHONE_MESSAGE, ARMENIAN_PHONE_REGEX } from '../../../common/va
  * The upper bound matters as much as the lower one: argon2 hashes whatever it
  * is handed, so an unbounded password is a cheap way to burn CPU.
  */
-const PASSWORD_MIN = 8;
-const PASSWORD_MAX = 128;
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 128;
+
+/**
+ * The one sentence every endpoint that takes a password says when it is too
+ * short. Exported with the bounds so a new caller cannot invent a second,
+ * differently-worded rule for the same requirement — which is exactly what
+ * happened when OTP registration grew a password of its own.
+ */
+export const PASSWORD_MIN_MESSAGE = `password must be at least ${PASSWORD_MIN} characters`;
 
 export class ChangePasswordDto {
   @IsString()
   currentPassword: string;
 
   @IsString()
-  @MinLength(PASSWORD_MIN, { message: `password must be at least ${PASSWORD_MIN} characters` })
+  @MinLength(PASSWORD_MIN, { message: PASSWORD_MIN_MESSAGE })
   @Length(PASSWORD_MIN, PASSWORD_MAX)
   newPassword: string;
 }
@@ -35,7 +43,7 @@ export class ConfirmPasswordResetDto {
   code: string;
 
   @IsString()
-  @MinLength(PASSWORD_MIN, { message: `password must be at least ${PASSWORD_MIN} characters` })
+  @MinLength(PASSWORD_MIN, { message: PASSWORD_MIN_MESSAGE })
   @Length(PASSWORD_MIN, PASSWORD_MAX)
   newPassword: string;
 }

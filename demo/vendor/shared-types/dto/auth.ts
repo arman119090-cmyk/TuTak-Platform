@@ -96,6 +96,16 @@ export interface RequestRegistrationOtpRequestDto {
 export interface VerifyRegistrationOtpRequestDto {
   phone: string;
   code: string;
+  /**
+   * The password the customer chooses, sent with the code that proves the
+   * number. Required: an account is never created without one, so no account
+   * exists whose password its owner does not know.
+   *
+   * The confirmation field a form shows next to it is a client-side check and
+   * is deliberately not here — there is nothing for the server to do with a
+   * second copy of the same string.
+   */
+  password: string;
   firstName?: string;
   lastName?: string;
   email?: string;

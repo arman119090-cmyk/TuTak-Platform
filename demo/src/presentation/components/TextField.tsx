@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -36,6 +37,20 @@ interface Props extends TextInputProps {
    * exactly as before.
    */
   traceId?: string;
+  /**
+   * Adds a show/hide control inside the field, for a password.
+   *
+   * Opt-in rather than inferred from `secureTextEntry`: the existing password
+   * fields — sign-in, change-password, delete-account — are deliberately left
+   * as they are, and a control that appeared on all of them at once would be
+   * a redesign smuggled in under a bug fix. The one screen that needs it is
+   * the one where a typo is expensive, because the password being typed is
+   * being chosen rather than recalled.
+   *
+   * The caller keeps ownership of `secureTextEntry`; this only draws the
+   * control and reports the presses.
+   */
+  revealToggle?: { revealed: boolean; onToggle: () => void; label: string };
 }
 
 /**
@@ -53,6 +68,7 @@ export function TextField({
   error,
   hint,
   prefix,
+  revealToggle,
   traceId,
   // Pulled out of the spread only so the diagnostic log can name it, and
   // handed straight back to the input below unchanged.
@@ -351,6 +367,19 @@ export function TextField({
            */
           autoComplete="off"
         />
+        {revealToggle ? (
+          <Pressable
+            onPress={revealToggle.onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={revealToggle.label}
+            // Bigger than the glyph: the control sits at the edge of a field
+            // the thumb is already near, and a 14pt target there is a
+            // mis-tap that clears nothing but wastes the attempt.
+            hitSlop={12}
+          >
+            <Text style={[text.caption, { color: color.textBrand }]}>{revealToggle.label}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {error ? (

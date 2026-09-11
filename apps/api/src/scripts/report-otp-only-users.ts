@@ -46,38 +46,27 @@
  *   node dist/scripts/report-otp-only-users.js
  */
 import { PrismaClient } from '@prisma/client';
+import {
+  countAccountsEverRegisteredByOtp,
+  findAccountsWithUnknownPassword,
+} from '../modules/users/otp-only-accounts';
 
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
-  const registeredByOtp = await prisma.auditLog.findMany({
-    where: {
-      action: 'USER_LOGIN',
-      entityType: 'User',
-      // Prisma's JSON path filter. `via` is written by
-      // `AuthService.verifyRegistrationOtp` and by nothing else.
-      metadata: { path: ['via'], equals: 'register_otp' },
-    },
-    select: { entityId: true },
-  });
+  const everRegisteredByOtp = await countAccountsEverRegisteredByOtp(prisma);
 
-  const ids = [...new Set(registeredByOtp.map((row) => row.entityId).filter((id): id is string => !!id))];
-
-  if (ids.length === 0) {
+  if (everRegisteredByOtp === 0) {
     console.log('No account in this database was created by the OTP-only flow.');
     return;
   }
 
-  const stillWithoutAKnownPassword = await prisma.user.findMany({
-    where: { id: { in: ids }, passwordChangedAt: null, deletedAt: null },
-    select: { id: true, createdAt: true, isActive: true, isPhoneVerified: true },
-    orderBy: { createdAt: 'asc' },
-  });
+  const stillWithoutAKnownPassword = await findAccountsWithUnknownPassword(prisma);
 
   // The phone number is the account identifier on this platform and is
-  // deliberately not printed: this report is about how many and how old, and
-  // a list of numbers in a terminal scrollback is a customer list.
-  console.log(`Accounts created by the OTP-only flow:            ${ids.length}`);
+  // deliberately not printed: this report is about how many and how old, and a
+  // list of numbers in a terminal scrollback is a customer list.
+  console.log(`Accounts created by the OTP-only flow:            ${everRegisteredByOtp}`);
   console.log(`…of those, still with no password they chose:    ${stillWithoutAKnownPassword.length}`);
   console.log('');
 

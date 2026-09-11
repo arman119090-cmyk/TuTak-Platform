@@ -132,12 +132,20 @@ describe('registration asks for a password before it creates anything', () => {
     const [password] = await passwordFields();
 
     expect(password.props.secureTextEntry).toBe(true);
-    fireEvent.press(screen.getByText('auth.showPassword'));
+    // Found by its accessible name rather than by its glyph: the control is an
+    // eye, and an icon that cannot be named is a control a screen reader
+    // cannot offer.
+    // Both fields carry the control; either one moves the pair.
+    expect(screen.getAllByLabelText('auth.showPassword')).toHaveLength(2);
+    fireEvent.press(screen.getAllByLabelText('auth.showPassword')[1]);
     await waitFor(() => {
       expect(screen.getAllByPlaceholderText('••••••••')[0].props.secureTextEntry).toBe(false);
     });
     // Both fields follow the one control — a form that shows one and hides the
     // other cannot be used to compare them.
     expect(screen.getAllByPlaceholderText('••••••••')[1].props.secureTextEntry).toBe(false);
+
+    // And the button renames itself, so the next press is described correctly.
+    expect(screen.getAllByLabelText('auth.hidePassword')).toHaveLength(2);
   });
 });

@@ -228,6 +228,21 @@ export function OtpRegisterScreen({ navigation }: Props) {
    * they are wrong for not having finished.
    */
   const mismatch = confirmation.length > 0 && password !== confirmation;
+
+  /*
+   * One control, drawn on both fields.
+   *
+   * Both eyes move the same state, so pressing either reveals both — the two
+   * fields exist to be compared, and a form that could show one while hiding
+   * the other would make comparing them impossible. Drawing it on only one
+   * field was the first attempt and it reads as the other field being
+   * unfinished rather than as one control governing the pair.
+   */
+  const reveal = {
+    revealed,
+    onToggle: () => setRevealed((on) => !on),
+    label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
+  };
   // `PASSWORD_MIN` on the API side. Stated here too because a button that
   // waits for the server to say "too short" is a round trip to learn what the
   // hint under the field already says.
@@ -350,11 +365,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
               secureTextEntry={!revealed}
               placeholder="••••••••"
               hint={t('auth.passwordHint')}
-              revealToggle={{
-                revealed,
-                onToggle: () => setRevealed((on) => !on),
-                label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
-              }}
+              revealToggle={reveal}
             />
             <TextField
               label={t('auth.confirmPassword')}
@@ -363,6 +374,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
               onChangeText={setConfirmation}
               secureTextEntry={!revealed}
               placeholder="••••••••"
+              revealToggle={reveal}
               // The mismatch is this screen's own judgement, so it is marked
               // on the second field — the one that can be corrected without
               // retyping the first.

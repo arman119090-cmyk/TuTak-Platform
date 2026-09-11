@@ -86,7 +86,9 @@ registration token → установка пароля → создание ак
 | `apps/api/src/modules/auth/dto/otp.dto.ts` | `VerifyRegistrationOtpDto.password` — обязательное, по тем же правилам |
 | `apps/api/src/modules/auth/auth.service.ts` | `argon2.hash(dto.password)` вместо случайного; `passwordChangedAt` при создании; убран неиспользуемый импорт `randomBytes` |
 | `apps/api/src/modules/users/users.service.ts` | `createCustomer` принимает `passwordChangedAt` |
-| `apps/api/src/scripts/report-otp-only-users.ts` | **новый**, только чтение |
+| `apps/api/src/modules/users/otp-only-accounts.ts` | **новый** — критерий определения legacy, вынесен из скрипта, чтобы его можно было протестировать |
+| `apps/api/src/scripts/report-otp-only-users.ts` | **новый**, только чтение; тонкая обёртка над модулем выше |
+| `apps/api/test/otp-only-accounts.int-spec.ts` | **новый**, 8 тестов на поведение legacy-пользователей |
 | `apps/api/test/auth-otp.int-spec.ts` | 13 вызовов обновлены; перевёрнут устаревший тест; добавлен блок из 5 тестов |
 | `apps/api/test/referral-journey.int-spec.ts` | регистрация в сценарии несёт пароль |
 
@@ -104,6 +106,7 @@ registration token → установка пароля → создание ак
 | `apps/mobile/src/presentation/components/TextField.tsx` | необязательный `revealToggle` — показать/скрыть |
 | `…/OtpRegisterScreen.password.test.tsx` | **новый**, 4 теста |
 | `…/OtpRegisterScreen.errors.test.tsx` | обновлён + 1 новый тест |
+| `apps/mobile/src/presentation/components/EyeIcon.tsx` | **новый** — глаз показать/скрыть |
 
 **Переводы** — `packages/i18n/src/locales/{en,ru,hy}.json`: шесть новых ключей
 в каждом и исправленный `otpRegisterSubtitle`. Наборы ключей во всех трёх
@@ -251,11 +254,12 @@ detected**.
 
 ```
 API, модульные        578 тестов / 38 наборов   ✓
-API, интеграционные  1085 тестов / 80 наборов   ✓   (живая PostgreSQL 16)
+API, интеграционные  1093 теста  / 81 набор     ✓   (живая PostgreSQL 16)
 Мобильное             415 тестов / 50 наборов   ✓
+migration drift       No difference detected    ✓
 ```
 
-Было 1080 интеграционных и 410 мобильных — плюс 5 и плюс 5.
+Было 1080 интеграционных и 410 мобильных — плюс 13 и плюс 5.
 
 Покрытие по вашему списку из 21 пункта:
 
@@ -282,9 +286,35 @@ API, интеграционные  1085 тестов / 80 наборов   ✓  
 | 19 | обычный вход после новой регистрации | **перевёрнутый** `leaves the account usable from the sign-in screen` |
 | 20 | сброс пароля работает | `password.int-spec` (было, не тронут) |
 | 21 | OTP-вход существующего работает | `auth-otp.int-spec` (было, не тронут) |
+| 22 | поведение legacy-пользователей | **новый набор** `otp-only-accounts.int-spec` — 8 тестов, см. ниже |
 
 Плюс сверх списка: `keeps the password when a bad code sends the form back a
 stage` и `can reveal the password`.
+
+### Набор по пункту 22 — чем именно закреплена стратегия «ничего не трогаем»
+
+Решение оставить legacy-пользователей в покое защитимо ровно пока верны три
+вещи. До этого набора не проверялась ни одна.
+
+| тест | что держит |
+|---|---|
+| `can still sign in by SMS` | они не заперты: вход по коду работает |
+| `can set a password without knowing the random one, and then use it` | сброс пароля даёт им пароль, и он потом работает на обычном входе |
+| `is not carrying mustChangePassword` | ничто не закрывает вокруг них приложение |
+| `finds the legacy account` | критерий их находит |
+| `does not name an account registered the new way` | новая регистрация несёт **тот же** маркер `via: 'register_otp'` — отсекает только вторая половина критерия |
+| `does not name a password-registered account at all` | у парольной регистрации `passwordChangedAt` тоже null — отсекает только первая половина |
+| `stops naming a legacy account once its owner has set a password` | множество самоочищается, без чьего-либо вмешательства |
+| `does not name a deleted account` | у удалённого нечего терять |
+
+Два средних теста — причина, по которой критерий состоит из двух половин, а не
+из одной. **Проверено обрывом:** если убрать половину про `passwordChangedAt`,
+падают ровно эти два, остальные шесть остаются зелёными.
+
+Сам критерий переехал из скрипта в `modules/users/otp-only-accounts.ts`:
+запрос, спрятанный в скрипте, — это запрос, который ничем не проверяется, а
+ошибиться в нём можно в обе стороны. Слишком широкий — отчёт называет людей, у
+которых всё хорошо; слишком узкий — будущая миграция кого-то молча пропустит.
 
 ---
 
@@ -304,7 +334,16 @@ eslint .   — чисто
 
 ## 11. Коммит
 
-`d6fb1fa` на ветке `feat/registration-set-password`.
+На ветке `feat/registration-set-password`:
+
+| SHA | что |
+|---|---|
+| `d6fb1fa` | пароль при регистрации (backend + mobile + типы + переводы) |
+| `b337eaa` | этот отчёт |
+| `9812162` | переключатель показать/скрыть в виде глаза, на обоих полях |
+| `01606c0` | набор тестов на legacy-пользователей (п.22) |
+
+PR: https://github.com/arman119090-cmyk/TuTak-Platform/pull/33
 
 **В `main` не влито и на production не выкачено** — вы просили не деплоить
 самому, а Railway собирается из `main` автоматически. Открыт pull request;

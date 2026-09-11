@@ -45,3 +45,24 @@ export function apiErrorCode(error: unknown): string | null {
 export function isTransportFailure(error: unknown): boolean {
   return axios.isAxiosError(error) && !error.response;
 }
+
+/**
+ * Whether the API refused the *shape* of the request rather than its content.
+ *
+ * The global `ValidationPipe` answers a 400 whose `message` is an array — one
+ * entry per rule broken — and nothing else in this API produces that shape. It
+ * is worth telling apart because such a refusal is never about the thing a
+ * screen would otherwise blame: a form that treats every non-transport error
+ * as "the code you typed is wrong" will show a password-length message against
+ * an SMS field and send the customer back a stage to fix something that was
+ * never broken. That happened.
+ *
+ * Keyed on the array rather than on the `Bad Request` string, because the
+ * array is what the pipe produces and the string is a label that could be
+ * reworded.
+ */
+export function isValidationFailure(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const body = error.response?.data as { message?: string | string[] } | undefined;
+  return Array.isArray(body?.message);
+}

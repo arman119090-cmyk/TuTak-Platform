@@ -10,8 +10,14 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@tutak/shared-types';
 import { authApi } from '../../../data/api/authApi';
-import { apiErrorCode, describeApiError, isTransportFailure } from '../../../data/api/errors';
+import {
+  apiErrorCode,
+  describeApiError,
+  isTransportFailure,
+  isValidationFailure,
+} from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 import { useMountTrace } from '../../../diagnostics/instanceTrace';
@@ -193,11 +199,23 @@ export function OtpRegisterScreen({ navigation }: Props) {
         // back with it or it is shown against nothing.
         setReferralError(message);
         setStage('phone');
+      } else if (isValidationFailure(err)) {
+        /*
+         * The API refused the body's shape. Stay here.
+         *
+         * The only field this form can send in a shape the API rejects is the
+         * password — the phone, the code and the device id are all built or
+         * constrained by the screen itself. Treating it as a code error, which
+         * is what the branch below did, showed "password must be shorter
+         * than…" underneath the SMS field and sent the customer back a stage
+         * to correct something that was never wrong.
+         */
+        setFormError(message);
       } else {
         /*
-         * Everything else the API can refuse here is about the code or the
-         * number — wrong digits, an expired challenge, a number taken in the
-         * meantime — and all of them are corrected on stage two.
+         * What is left is about the code or the number — wrong digits, an
+         * expired challenge, a number taken in the meantime — and all of them
+         * are corrected on stage two.
          *
          * The password is kept. It was never the thing that was wrong, and
          * making someone retype it (twice) to fix one digit is how a form
@@ -243,10 +261,12 @@ export function OtpRegisterScreen({ navigation }: Props) {
     onToggle: () => setRevealed((on) => !on),
     label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
   };
-  // `PASSWORD_MIN` on the API side. Stated here too because a button that
-  // waits for the server to say "too short" is a round trip to learn what the
-  // hint under the field already says.
-  const canCreate = password.length >= 8 && password === confirmation && !verifying;
+  // The API's own bounds, from the package both sides read. Stated here so the
+  // button does not need a round trip to learn what the hint under the field
+  // already says — and so the upper bound is enforced where it can still be
+  // prevented rather than explained.
+  const canCreate =
+    password.length >= PASSWORD_MIN_LENGTH && password === confirmation && !verifying;
 
   return (
     <SafeAreaView
@@ -364,6 +384,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
               onChangeText={setPassword}
               secureTextEntry={!revealed}
               placeholder="••••••••"
+              maxLength={PASSWORD_MAX_LENGTH}
               hint={t('auth.passwordHint')}
               revealToggle={reveal}
             />
@@ -374,6 +395,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
               onChangeText={setConfirmation}
               secureTextEntry={!revealed}
               placeholder="••••••••"
+              maxLength={PASSWORD_MAX_LENGTH}
               revealToggle={reveal}
               // The mismatch is this screen's own judgement, so it is marked
               // on the second field — the one that can be corrected without

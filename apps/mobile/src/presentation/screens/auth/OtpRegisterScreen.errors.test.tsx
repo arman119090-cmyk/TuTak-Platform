@@ -148,6 +148,32 @@ describe('where a registration error is shown', () => {
     expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(2);
   });
 
+  it('keeps a rejected password on the stage that owns it', async () => {
+    authApi.requestRegistrationOtp.mockResolvedValue({ success: true });
+    // Exactly what the API's global ValidationPipe answers when the body is
+    // the wrong shape: a 400 whose `message` is an array. The only field this
+    // form can send in a shape the API refuses is the password — it is the one
+    // input with a bound the screen does not enforce.
+    const validationError = apiError(400, 'Bad Request', 'x');
+    (validationError.response as { data: unknown }).data = {
+      code: 'Bad Request',
+      message: ['password must be shorter than or equal to 128 characters'],
+    };
+    authApi.verifyRegistrationOtp.mockRejectedValue(validationError);
+
+    renderScreen();
+    sendCode();
+    await enterCode();
+    await createAccount();
+
+    const text = 'password must be shorter than or equal to 128 characters';
+    await waitFor(() => expect(screen.getByText(text)).toBeTruthy());
+    // The password stage is still on screen: the code was never the problem,
+    // and sending the customer back to re-enter it explains nothing.
+    expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(2);
+    expect(screen.queryByPlaceholderText('000000')).toBeNull();
+  });
+
   it('keeps the password when a bad code sends the form back a stage', async () => {
     authApi.requestRegistrationOtp.mockResolvedValue({ success: true });
     authApi.verifyRegistrationOtp.mockRejectedValue(

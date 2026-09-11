@@ -18,7 +18,6 @@ import {
   User,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomBytes } from 'crypto';
 import { AppConfig } from '../../config/configuration';
 import { generateOpaqueToken, sha256Hex } from '../../common/utils/crypto';
 import { parseDurationMs } from '../../common/utils/duration';
@@ -367,12 +366,23 @@ export class AuthService {
       throw new ForbiddenException('An account with this phone number already exists');
     }
 
-    // A real argon2 hash of an unguessable value, not a raw sentinel — no
-    // password will ever satisfy it, but unlike a non-argon2 string it will
-    // not make argon2.verify() throw the next time this account tries
-    // password-login, so that path still fails as an ordinary wrong password
-    // instead of a 500.
-    const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
+    /*
+     * The customer's own password, hashed — not a random one they will never
+     * know.
+     *
+     * This used to be `argon2.hash(randomBytes(32))`: the OTP proved the
+     * number and the account was created with a password nobody could ever
+     * type. It let someone in immediately and left them with an account they
+     * could only ever reach through another SMS, because the sign-in screen
+     * asks for a password. Every such account also had to be told apart from
+     * a real one afterwards — see `scripts/report-otp-only-users.ts`, which
+     * exists only because of the accounts this line already produced.
+     *
+     * The plaintext lives exactly as long as this call: it arrives on the
+     * DTO, is hashed here, and is never written to a column, an audit row or
+     * a log line. `StructuredLogger` is given no object that carries it.
+     */
+    const passwordHash = await argon2.hash(dto.password);
 
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await this.usersService.createCustomer(
@@ -387,6 +397,16 @@ export class AuthService {
           // separate verify-phone step to gate earning behind here, unlike
           // the password-registration path.
           isPhoneVerified: true,
+          /*
+           * Stamped at creation because the customer chose this password.
+           *
+           * It is not bookkeeping: `passwordChangedAt IS NULL` is half of
+           * how an account from the old OTP-only flow — whose password was
+           * random and unknown — is told apart from one whose owner picked
+           * it. Setting it here keeps every account created from now on out
+           * of that set, whatever happens to the audit trail.
+           */
+          passwordChangedAt: new Date(),
         },
         tx,
       );

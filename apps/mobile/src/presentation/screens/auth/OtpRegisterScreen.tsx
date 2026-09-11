@@ -10,8 +10,14 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@tutak/shared-types';
 import { authApi } from '../../../data/api/authApi';
-import { apiErrorCode, describeApiError, isTransportFailure } from '../../../data/api/errors';
+import {
+  apiErrorCode,
+  describeApiError,
+  isTransportFailure,
+  isValidationFailure,
+} from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 import { useMountTrace } from '../../../diagnostics/instanceTrace';
@@ -20,20 +26,44 @@ import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
 /**
- * Item 3 (GitHub issue #28): phone -> SMS code -> account, no password.
+ * Public customer registration: phone -> SMS code -> a password the customer
+ * chooses -> account.
  *
- * This is the only normal public customer registration path — LoginScreen's
- * "create account" link comes straight here. A new customer never gets a
- * usable session before verifying the code; `RegisterScreen` (password
- * first) still exists but is not mounted in `AuthNavigator` and nothing
- * links to it any more.
+ * This is the only normal public registration path — LoginScreen's "create
+ * account" link comes straight here. `RegisterScreen` (password first) still
+ * exists but is not mounted in `AuthNavigator`, and the order matters: proving
+ * the number comes before the account exists, never after.
  *
- * Name/email are intentionally not collected here — they're optional and
- * completable later via the profile-update screen — so this stays a
- * two-field, two-stage flow: phone (+ optional referral code), then the
- * code. `PurchaseIntentStatusScreen`'s countdown pattern and
- * `VerifyPhoneScreen`'s single-screen stage switch are the closest existing
- * shapes; this follows both rather than introducing a new one.
+ * ## Why there is a third stage
+ *
+ * There used to be two, and the account was created the moment the code was
+ * accepted — with a random password the customer never saw. They were signed
+ * in and then met a sign-in screen asking for a password that did not exist.
+ * The only way back into their own account was another SMS.
+ *
+ * So the code no longer completes anything by itself. It is held here until
+ * the customer has chosen a password, and one request carries both.
+ *
+ * ## What the single final request costs, and why it is still right
+ *
+ * The code is not checked when it is typed: stage two only moves the form
+ * along, and a wrong code is not discovered until the password has been
+ * entered. The alternative — verify the code, hand back a short-lived
+ * registration token, take the password on a second call — removes that
+ * surprise and adds a second credential to issue, scope, expire and test,
+ * for a flow that takes twenty seconds end to end.
+ *
+ * The surprise is paid for instead: on a code error the form returns to stage
+ * two with the field marked, **and keeps the password already typed**, so
+ * correcting a digit costs one field rather than three. Nothing is stored;
+ * the password lives in this component's state and dies with it.
+ *
+ * A wrong code also costs no SMS. The password is validated by the API's
+ * `ValidationPipe` before the handler runs, so a short password is refused
+ * without the code being consumed.
+ *
+ * Name/email are still not collected here — optional, completable later in
+ * the profile screen.
  */
 export function OtpRegisterScreen({ navigation }: Props) {
   const { t, i18n } = useTranslation();
@@ -69,7 +99,28 @@ export function OtpRegisterScreen({ navigation }: Props) {
   const [phone, setPhone] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  /*
+   * One per field, because the eye lives inside a field and a control inside a
+   * thing is expected to act on that thing.
+   *
+   * The first attempt had a single shared flag drawn twice — two buttons that
+   * both did the same global thing, which is a control too many for one piece
+   * of state and is what makes it read as a mistake. Per-field is also what
+   * both platforms do natively (`passwordToggleEnabled`, the iOS secure-field
+   * accessory), so it is the behaviour a thumb already expects.
+   */
+  const [revealPassword, setRevealPassword] = useState(false);
+  const [revealConfirmation, setRevealConfirmation] = useState(false);
+  /*
+   * Which of the three the form is on.
+   *
+   * A named stage rather than the `codeSent` boolean this grew out of: two
+   * booleans for three states is the shape that produces a fourth, impossible
+   * one, and every branch below has to be read twice to rule it out.
+   */
+  const [stage, setStage] = useState<'phone' | 'code' | 'password'>('phone');
   /*
    * Three slots, because one error state was being shown in the wrong place.
    *
@@ -109,7 +160,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
     setSending(true);
     try {
       await authApi.requestRegistrationOtp({ phone: fullPhone });
-      setCodeSent(true);
+      setStage('code');
     } catch (err) {
       // Never a field: this request carries the phone number and nothing
       // else, and the referral code it is drawn next to is not in it.
@@ -119,28 +170,70 @@ export function OtpRegisterScreen({ navigation }: Props) {
     }
   };
 
-  const handleVerify = async () => {
+  /*
+   * Stage two advances the form and nothing else — deliberately.
+   *
+   * There is no "check this code" call to make: the code is single-use, and an
+   * endpoint that reported whether one is valid without spending it would be a
+   * free oracle for guessing. So the code is carried forward and judged once,
+   * by the request that also creates the account.
+   */
+  const handleCodeEntered = () => {
+    clearErrors();
+    setStage('password');
+  };
+
+  const handleCreateAccount = async () => {
     clearErrors();
     setVerifying(true);
     try {
       const result = await authApi.verifyRegistrationOtp({
         phone: fullPhone,
         code,
+        password,
         locale: i18n.language,
         referralCode: referralCode || undefined,
         deviceId,
       });
+      // The one place a session is created. Reaching it means the code was
+      // accepted, the password was accepted, and the account exists.
       await setSession(result.user, result.tokens);
     } catch (err) {
       const message = describeApiError(err) ?? t('auth.confirmCodeFailed');
       if (isTransportFailure(err)) {
         // The request never reached the API, so nothing the user typed was
-        // judged. Marking a field here would blame them for the network.
+        // judged. Marking a field here would blame them for the network, and
+        // sending them back a stage would lose work for no reason.
         setFormError(message);
       } else if (apiErrorCode(err)?.startsWith('REFERRAL')) {
+        // The referral field lives on stage one, so the message has to go
+        // back with it or it is shown against nothing.
         setReferralError(message);
+        setStage('phone');
+      } else if (isValidationFailure(err)) {
+        /*
+         * The API refused the body's shape. Stay here.
+         *
+         * The only field this form can send in a shape the API rejects is the
+         * password — the phone, the code and the device id are all built or
+         * constrained by the screen itself. Treating it as a code error, which
+         * is what the branch below did, showed "password must be shorter
+         * than…" underneath the SMS field and sent the customer back a stage
+         * to correct something that was never wrong.
+         */
+        setFormError(message);
       } else {
+        /*
+         * What is left is about the code or the number — wrong digits, an
+         * expired challenge, a number taken in the meantime — and all of them
+         * are corrected on stage two.
+         *
+         * The password is kept. It was never the thing that was wrong, and
+         * making someone retype it (twice) to fix one digit is how a form
+         * turns a small mistake into an abandoned registration.
+         */
         setCodeError(message);
+        setStage('code');
       }
     } finally {
       setVerifying(false);
@@ -148,7 +241,35 @@ export function OtpRegisterScreen({ navigation }: Props) {
   };
 
   const canSend = phone.length === 8 && !sending;
-  const canVerify = code.length === 6 && !verifying;
+  const canContinue = code.length === 6;
+
+  /*
+   * Said while it is being typed, not on press.
+   *
+   * The button is disabled until the two match, which is the behaviour asked
+   * for — and a disabled button can never explain itself. Pressing it does
+   * nothing and says nothing, so the customer is left to work out which of two
+   * masked fields is wrong. Deriving the message from the fields instead means
+   * the block and the reason for it appear together.
+   *
+   * Held back until the second field has something in it: complaining that
+   * two fields differ while one of them is still empty is telling someone
+   * they are wrong for not having finished.
+   */
+  const mismatch = confirmation.length > 0 && password !== confirmation;
+
+  /** Each field's own eye, reporting and flipping only that field. */
+  const revealToggleFor = (revealed: boolean, set: (fn: (on: boolean) => boolean) => void) => ({
+    revealed,
+    onToggle: () => set((on) => !on),
+    label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
+  });
+  // The API's own bounds, from the package both sides read. Stated here so the
+  // button does not need a round trip to learn what the hint under the field
+  // already says — and so the upper bound is enforced where it can still be
+  // prevented rather than explained.
+  const canCreate =
+    password.length >= PASSWORD_MIN_LENGTH && password === confirmation && !verifying;
 
   return (
     <SafeAreaView
@@ -163,7 +284,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
       >
         <BackButton />
         <Text style={[text.titleLg, { color: color.textPrimary }]}>
-          {t('auth.otpRegisterTitle')}
+          {stage === 'password' ? t('auth.createPasswordTitle') : t('auth.otpRegisterTitle')}
         </Text>
         <Text
           style={[
@@ -171,10 +292,14 @@ export function OtpRegisterScreen({ navigation }: Props) {
             { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] },
           ]}
         >
-          {codeSent ? t('auth.otpRegisterCodeSubtitle', { phone: fullPhone }) : t('auth.otpRegisterSubtitle')}
+          {stage === 'phone'
+            ? t('auth.otpRegisterSubtitle')
+            : stage === 'code'
+              ? t('auth.otpRegisterCodeSubtitle', { phone: fullPhone })
+              : t('auth.createPasswordSubtitle')}
         </Text>
 
-        {!codeSent ? (
+        {stage === 'phone' ? (
           <>
             <TextField
               label={t('auth.phoneNumber')}
@@ -215,7 +340,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
               />
             </View>
           </>
-        ) : (
+        ) : stage === 'code' ? (
           <>
             <TextField
               label={t('auth.resetCode')}
@@ -239,10 +364,9 @@ export function OtpRegisterScreen({ navigation }: Props) {
             ) : null}
             <View style={{ marginTop: space[3] }}>
               <Button
-                label={t('auth.otpRegisterButton')}
-                onPress={handleVerify}
-                loading={verifying}
-                disabled={!canVerify}
+                label={t('common.next')}
+                onPress={handleCodeEntered}
+                disabled={!canContinue}
                 icon={<JakoWingMark size={16} color={color.textInverse} />}
               />
               <Button
@@ -251,6 +375,51 @@ export function OtpRegisterScreen({ navigation }: Props) {
                 variant="tertiary"
                 loading={sending}
                 icon={<JakoWingMark size={16} color={color.textBrand} />}
+              />
+            </View>
+          </>
+        ) : (
+          <>
+            <TextField
+              label={t('auth.password')}
+              traceId="password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!revealPassword}
+              placeholder="••••••••"
+              maxLength={PASSWORD_MAX_LENGTH}
+              hint={t('auth.passwordHint')}
+              revealToggle={revealToggleFor(revealPassword, setRevealPassword)}
+            />
+            <TextField
+              label={t('auth.confirmPassword')}
+              traceId="password-confirm"
+              value={confirmation}
+              onChangeText={setConfirmation}
+              secureTextEntry={!revealConfirmation}
+              placeholder="••••••••"
+              maxLength={PASSWORD_MAX_LENGTH}
+              revealToggle={revealToggleFor(revealConfirmation, setRevealConfirmation)}
+              // The mismatch is this screen's own judgement, so it is marked
+              // on the second field — the one that can be corrected without
+              // retyping the first.
+              error={mismatch ? t('auth.passwordsDoNotMatch') : undefined}
+            />
+            {formError ? (
+              <Text
+                accessibilityRole="alert"
+                style={[text.caption, { color: color.dangerText, marginTop: space[2] }]}
+              >
+                {formError}
+              </Text>
+            ) : null}
+            <View style={{ marginTop: space[3] }}>
+              <Button
+                label={t('auth.registerButton')}
+                onPress={handleCreateAccount}
+                loading={verifying}
+                disabled={!canCreate}
+                icon={<JakoWingMark size={16} color={color.textInverse} />}
               />
             </View>
           </>

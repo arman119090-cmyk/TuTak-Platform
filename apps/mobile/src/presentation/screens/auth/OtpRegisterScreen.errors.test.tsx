@@ -68,6 +68,20 @@ describe('where a registration error is shown', () => {
     fireEvent.press(screen.getByText('auth.sendVerificationCode'));
   };
 
+  /** Code stage -> password stage. Advancing costs no request; see the screen. */
+  const enterCode = async (code = '123456') => {
+    fireEvent.changeText(await screen.findByPlaceholderText('000000'), code);
+    fireEvent.press(screen.getByText('common.next'));
+  };
+
+  /** Fills both password fields and submits the one request this flow makes. */
+  const createAccount = async (password = 'correct-horse', confirmation = password) => {
+    const fields = await screen.findAllByPlaceholderText('••••••••');
+    fireEvent.changeText(fields[0], password);
+    fireEvent.changeText(fields[1], confirmation);
+    fireEvent.press(screen.getByText('auth.registerButton'));
+  };
+
   it('shows a failed send as a form error, never on the referral field', async () => {
     authApi.requestRegistrationOtp.mockRejectedValue(
       apiError(503, 'SERVICE_UNAVAILABLE', 'Verification code delivery is temporarily unavailable.'),
@@ -105,13 +119,14 @@ describe('where a registration error is shown', () => {
     renderScreen();
     sendCode();
 
-    const codeField = await screen.findByPlaceholderText('000000');
-    fireEvent.changeText(codeField, '123456');
-    fireEvent.press(screen.getByText('auth.otpRegisterButton'));
+    await enterCode();
+    await createAccount();
 
     await waitFor(() => expect(screen.getByText('Code is invalid or has expired')).toBeTruthy());
     // On the field, not in the banner: this one really is the code's fault.
     expect(screen.queryByRole('alert')).toBeNull();
+    // And the form went back to the stage that can fix it.
+    expect(screen.getByPlaceholderText('000000')).toBeTruthy();
   });
 
   it('does not mark the code field when the verify request never arrived', async () => {
@@ -120,14 +135,64 @@ describe('where a registration error is shown', () => {
     renderScreen();
     sendCode();
 
-    const codeField = await screen.findByPlaceholderText('000000');
-    fireEvent.changeText(codeField, '123456');
-    fireEvent.press(screen.getByText('auth.otpRegisterButton'));
+    await enterCode();
+    await createAccount();
 
     // Shown, but as a form error rather than as the code being wrong.
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('auth.confirmCodeFailed'),
     );
     expect(screen.getAllByText('auth.confirmCodeFailed')).toHaveLength(1);
+    // A network failure judged nothing, so the password the customer already
+    // typed is still there to submit again.
+    expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(2);
+  });
+
+  it('keeps a rejected password on the stage that owns it', async () => {
+    authApi.requestRegistrationOtp.mockResolvedValue({ success: true });
+    // Exactly what the API's global ValidationPipe answers when the body is
+    // the wrong shape: a 400 whose `message` is an array. The only field this
+    // form can send in a shape the API refuses is the password — it is the one
+    // input with a bound the screen does not enforce.
+    const validationError = apiError(400, 'Bad Request', 'x');
+    (validationError.response as { data: unknown }).data = {
+      code: 'Bad Request',
+      message: ['password must be shorter than or equal to 128 characters'],
+    };
+    authApi.verifyRegistrationOtp.mockRejectedValue(validationError);
+
+    renderScreen();
+    sendCode();
+    await enterCode();
+    await createAccount();
+
+    const text = 'password must be shorter than or equal to 128 characters';
+    await waitFor(() => expect(screen.getByText(text)).toBeTruthy());
+    // The password stage is still on screen: the code was never the problem,
+    // and sending the customer back to re-enter it explains nothing.
+    expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(2);
+    expect(screen.queryByPlaceholderText('000000')).toBeNull();
+  });
+
+  it('keeps the password when a bad code sends the form back a stage', async () => {
+    authApi.requestRegistrationOtp.mockResolvedValue({ success: true });
+    authApi.verifyRegistrationOtp.mockRejectedValue(
+      apiError(401, 'UNAUTHORIZED', 'Code is invalid or has expired'),
+    );
+    renderScreen();
+    sendCode();
+    await enterCode('111111');
+    await createAccount('correct-horse');
+
+    // Back on the code stage…
+    await waitFor(() => expect(screen.getByText('Code is invalid or has expired')).toBeTruthy());
+    // …and forward again without retyping anything but the code.
+    await enterCode('222222');
+    fireEvent.press(screen.getByText('auth.registerButton'));
+
+    await waitFor(() => expect(authApi.verifyRegistrationOtp).toHaveBeenCalledTimes(2));
+    expect(authApi.verifyRegistrationOtp).toHaveBeenLastCalledWith(
+      expect.objectContaining({ code: '222222', password: 'correct-horse' }),
+    );
   });
 });

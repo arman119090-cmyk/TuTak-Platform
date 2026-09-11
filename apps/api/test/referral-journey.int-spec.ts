@@ -85,6 +85,9 @@ describe('Referral journey, invite to reward (integration)', () => {
       {
         phone,
         code: lastCode(),
+        // Registration takes the password the customer chooses; the flow is
+        // not complete without one, so the journey carries one too.
+        password: 'chosen-by-the-customer-1',
         deviceId: `device-${phone}`,
         ...(referralCode ? { referralCode } : {}),
       },

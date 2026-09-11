@@ -101,7 +101,18 @@ export function OtpRegisterScreen({ navigation }: Props) {
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
-  const [revealed, setRevealed] = useState(false);
+  /*
+   * One per field, because the eye lives inside a field and a control inside a
+   * thing is expected to act on that thing.
+   *
+   * The first attempt had a single shared flag drawn twice — two buttons that
+   * both did the same global thing, which is a control too many for one piece
+   * of state and is what makes it read as a mistake. Per-field is also what
+   * both platforms do natively (`passwordToggleEnabled`, the iOS secure-field
+   * accessory), so it is the behaviour a thumb already expects.
+   */
+  const [revealPassword, setRevealPassword] = useState(false);
+  const [revealConfirmation, setRevealConfirmation] = useState(false);
   /*
    * Which of the three the form is on.
    *
@@ -247,20 +258,12 @@ export function OtpRegisterScreen({ navigation }: Props) {
    */
   const mismatch = confirmation.length > 0 && password !== confirmation;
 
-  /*
-   * One control, drawn on both fields.
-   *
-   * Both eyes move the same state, so pressing either reveals both — the two
-   * fields exist to be compared, and a form that could show one while hiding
-   * the other would make comparing them impossible. Drawing it on only one
-   * field was the first attempt and it reads as the other field being
-   * unfinished rather than as one control governing the pair.
-   */
-  const reveal = {
+  /** Each field's own eye, reporting and flipping only that field. */
+  const revealToggleFor = (revealed: boolean, set: (fn: (on: boolean) => boolean) => void) => ({
     revealed,
-    onToggle: () => setRevealed((on) => !on),
+    onToggle: () => set((on) => !on),
     label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
-  };
+  });
   // The API's own bounds, from the package both sides read. Stated here so the
   // button does not need a round trip to learn what the hint under the field
   // already says — and so the upper bound is enforced where it can still be
@@ -382,21 +385,21 @@ export function OtpRegisterScreen({ navigation }: Props) {
               traceId="password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry={!revealed}
+              secureTextEntry={!revealPassword}
               placeholder="••••••••"
               maxLength={PASSWORD_MAX_LENGTH}
               hint={t('auth.passwordHint')}
-              revealToggle={reveal}
+              revealToggle={revealToggleFor(revealPassword, setRevealPassword)}
             />
             <TextField
               label={t('auth.confirmPassword')}
               traceId="password-confirm"
               value={confirmation}
               onChangeText={setConfirmation}
-              secureTextEntry={!revealed}
+              secureTextEntry={!revealConfirmation}
               placeholder="••••••••"
               maxLength={PASSWORD_MAX_LENGTH}
-              revealToggle={reveal}
+              revealToggle={revealToggleFor(revealConfirmation, setRevealConfirmation)}
               // The mismatch is this screen's own judgement, so it is marked
               // on the second field — the one that can be corrected without
               // retyping the first.

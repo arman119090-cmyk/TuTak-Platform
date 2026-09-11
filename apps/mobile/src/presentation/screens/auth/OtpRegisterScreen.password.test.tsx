@@ -125,27 +125,37 @@ describe('registration asks for a password before it creates anything', () => {
     await waitFor(() => expect(mockSetSession).toHaveBeenCalledTimes(1));
   });
 
-  it('can reveal the password, because it is being chosen rather than recalled', async () => {
+  it('gives each field its own eye, acting only on that field', async () => {
     renderScreen();
     sendCode();
     await enterCode();
-    const [password] = await passwordFields();
+    const [password, confirmation] = await passwordFields();
 
     expect(password.props.secureTextEntry).toBe(true);
-    // Found by its accessible name rather than by its glyph: the control is an
-    // eye, and an icon that cannot be named is a control a screen reader
-    // cannot offer.
-    // Both fields carry the control; either one moves the pair.
-    expect(screen.getAllByLabelText('auth.showPassword')).toHaveLength(2);
-    fireEvent.press(screen.getAllByLabelText('auth.showPassword')[1]);
+    expect(confirmation.props.secureTextEntry).toBe(true);
+
+    // Found by accessible name rather than by glyph: an icon that cannot be
+    // named is a control a screen reader cannot offer.
+    const eyes = () => screen.getAllByLabelText('auth.showPassword');
+    expect(eyes()).toHaveLength(2);
+
+    // The second field's eye uncovers the second field and leaves the first
+    // alone. A shared flag drawn twice — the first attempt — would have
+    // uncovered both, which is two controls for one piece of state.
+    fireEvent.press(eyes()[1]);
+    await waitFor(() => {
+      expect(screen.getAllByPlaceholderText('••••••••')[1].props.secureTextEntry).toBe(false);
+    });
+    expect(screen.getAllByPlaceholderText('••••••••')[0].props.secureTextEntry).toBe(true);
+
+    // Only the one that moved renames itself.
+    expect(screen.getAllByLabelText('auth.hidePassword')).toHaveLength(1);
+    expect(screen.getAllByLabelText('auth.showPassword')).toHaveLength(1);
+
+    // And the first field's own eye still works, independently.
+    fireEvent.press(screen.getByLabelText('auth.showPassword'));
     await waitFor(() => {
       expect(screen.getAllByPlaceholderText('••••••••')[0].props.secureTextEntry).toBe(false);
     });
-    // Both fields follow the one control — a form that shows one and hides the
-    // other cannot be used to compare them.
-    expect(screen.getAllByPlaceholderText('••••••••')[1].props.secureTextEntry).toBe(false);
-
-    // And the button renames itself, so the next press is described correctly.
-    expect(screen.getAllByLabelText('auth.hidePassword')).toHaveLength(2);
   });
 });

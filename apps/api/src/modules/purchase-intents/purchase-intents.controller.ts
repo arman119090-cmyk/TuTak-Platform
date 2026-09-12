@@ -4,7 +4,7 @@ import { PermissionName, PurchaseIntentStatus } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
-import { assertPartnerScope } from '../../common/auth/partner-scope';
+import { assertPartnerApprover, assertPartnerScope } from '../../common/auth/partner-scope';
 import { assertResourceBranchScope, branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
@@ -96,9 +96,23 @@ export class PurchaseIntentsController {
 
   /**
    * A TuTak-side refund of merchandise value against a confirmed purchase —
-   * never real money. Gated the same way confirm/reject are: any partner
-   * staff tier scoped to this intent's partner (and its branch, if any),
-   * since undoing a sale is ordinary work for whoever can process one.
+   * never real money.
+   *
+   * Owner or manager only, as of the maker/checker decision of 2026-09-12.
+   * It used to be gated the same way confirm/reject are — any staff tier
+   * scoped to the partner — on the reasoning that undoing a sale is ordinary
+   * work for whoever can process one. It is not: a refund restores the
+   * customer's spent bonus and claws back the referral and deferred shares
+   * that other people may already have spent, and at a till with shift work
+   * that is not a decision to leave with a single cashier's tap.
+   *
+   * Staff who are not owners or managers use
+   * `POST /purchase-intent-refund-requests` instead, and an owner or manager
+   * decides. This route stays for the case that flow cannot serve: an owner
+   * of a business with no second person to ask. That is one person taking
+   * one decision openly, which is honest; approving your own request would
+   * be the same person pretending to be two, which is why
+   * `PurchaseIntentRefundRequestService.approve` refuses it.
    */
   @Post(':id/refund')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
@@ -108,6 +122,7 @@ export class PurchaseIntentsController {
     @Body() dto: RefundPurchaseIntentDto,
   ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    assertPartnerApprover(staff, intent.partnerId, 'refund a purchase directly');
     assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
     return this.purchaseIntentRefunds.refund({
       purchaseIntentId: id,

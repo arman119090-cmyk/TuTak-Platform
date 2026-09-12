@@ -191,6 +191,8 @@ model User {
   challengeParticipation    ReferralChallengeParticipant?  @relation("ChallengeReferee")
   purchaseIntentsAsCustomer PurchaseIntent[]               @relation("PurchaseIntentCustomer")
   purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
+  refundRequestsMade        PurchaseIntentRefundRequest[]  @relation("RefundRequestRequestedBy")
+  refundRequestsDecided     PurchaseIntentRefundRequest[]  @relation("RefundRequestDecidedBy")
   branchStaffAssignments    PartnerBranchStaffAssignment[]
   branchStaffAssigned       PartnerBranchStaffAssignment[] @relation("BranchStaffAssignedBy")
   branchStaffDeactivated    PartnerBranchStaffAssignment[] @relation("BranchStaffDeactivatedBy")
@@ -784,12 +786,74 @@ model PurchaseIntent {
   partner     Partner                @relation(fields: [partnerId], references: [id])
   branch      PartnerBranch?         @relation(fields: [partnerBranchId], references: [id])
   confirmedBy User?                  @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
-  refunds     PurchaseIntentRefund[]
+  refunds        PurchaseIntentRefund[]
+  refundRequests PurchaseIntentRefundRequest[]
 
   @@index([partnerId, status])
   @@index([status, expiresAt])
   @@index([customerId, status])
   @@map("purchase_intents")
+}
+
+/// Who is allowed to decide a refund, and who merely asks for one.
+///
+/// Owner's decision (2026-09-12): a refund moves money back and claws back
+/// bonus that referrers may already have spent, so the person at the till
+/// may start one but may not settle it. `PENDING` is a request with no
+/// financial effect whatsoever; `APPROVED` is the only state that has ever
+/// touched the ledger, and it is reached exactly once per request because
+/// the engine behind it is keyed on this request's own id.
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A refund a member of partner staff has asked for and an owner or manager
+/// has not yet decided — the "maker" half of the same maker/checker split
+/// `PartnerCollection` already uses for bank collections.
+///
+/// Deliberately a separate record from `PurchaseIntentRefund` rather than a
+/// status on it: a refund row means money and bonus have already moved, and
+/// nothing that has not been approved may ever appear in that table. The two
+/// are linked by `refundId` once, at approval.
+model PurchaseIntentRefundRequest {
+  id               String  @id @default(uuid())
+  purchaseIntentId String
+  /// Denormalized from the purchase so an approver's queue is one indexed
+  /// read, and so branch isolation filters in SQL rather than by walking
+  /// back through the intent — same reasoning as `Transaction.partnerBranchId`.
+  partnerId        String
+  partnerBranchId  String?
+  /// Null means "whatever is still refundable", resolved at approval
+  /// against the live `refundedAmount` — never frozen at request time, or a
+  /// request written before another refund landed would reverse more than
+  /// remains.
+  amount           Decimal? @db.Decimal(18, 4)
+  reason           String
+
+  status RefundRequestStatus @default(PENDING)
+
+  requestedByUserId String
+  requestedAt       DateTime @default(now())
+  decidedByUserId   String?
+  decidedAt         DateTime?
+  decisionNote      String?
+
+  /// The refund this request became. Set only on approval, and unique: one
+  /// request can never be spent twice, whatever the caller retries.
+  refundId String? @unique
+
+  purchaseIntent PurchaseIntent      @relation(fields: [purchaseIntentId], references: [id])
+  partner        Partner             @relation(fields: [partnerId], references: [id])
+  branch         PartnerBranch?      @relation(fields: [partnerBranchId], references: [id])
+  requestedBy    User                @relation("RefundRequestRequestedBy", fields: [requestedByUserId], references: [id])
+  decidedBy      User?               @relation("RefundRequestDecidedBy", fields: [decidedByUserId], references: [id])
+  refund         PurchaseIntentRefund? @relation(fields: [refundId], references: [id])
+
+  @@index([partnerId, status])
+  @@index([purchaseIntentId])
+  @@map("purchase_intent_refund_requests")
 }
 
 /// A TuTak-side refund against a confirmed/completed PurchaseIntent —
@@ -822,6 +886,7 @@ model PurchaseIntentRefund {
 
   purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  request           PurchaseIntentRefundRequest?
 
   @@unique([actorId, idempotencyKey])
   @@index([purchaseIntentId])
@@ -968,6 +1033,7 @@ model Partner {
   payouts                Payout[]
   collections            PartnerCollection[]
   purchaseIntents        PurchaseIntent[]
+  refundRequests         PurchaseIntentRefundRequest[]
   offerings              PartnerOfferingItem[]
   apiKeys                PartnerApiKey[]
   roamingCustomerLinks   RoamingCustomerLink[]
@@ -1151,6 +1217,7 @@ model PartnerBranch {
   partner          Partner                        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   integrations     PartnerIntegration[]
   purchaseIntents  PurchaseIntent[]
+  refundRequests   PurchaseIntentRefundRequest[]
   staffAssignments PartnerBranchStaffAssignment[]
   qrCodes          PartnerBranchQrCode[]
   transactions     Transaction[]
@@ -2739,8 +2806,14 @@ enum AuditAction {
   PURCHASE_INTENT_REJECTED
   PURCHASE_INTENT_EXPIRED
   /// A partner refunded merchandise value against a confirmed purchase —
-  /// see `PurchaseIntentRefundService`.
+  /// see `PurchaseIntentRefundService`. Written by the *approval*, never by
+  /// the request: only an approved refund has moved anything.
   PURCHASE_INTENT_REFUNDED
+  /// A member of partner staff asked for a refund. No financial effect —
+  /// see `PurchaseIntentRefundRequestService`.
+  PURCHASE_INTENT_REFUND_REQUESTED
+  /// An owner or manager turned a refund request down.
+  PURCHASE_INTENT_REFUND_REJECTED
   /// Media system (spec §3.3): every mutation of a brand asset or an avatar
   /// writes one of these, with the actor, the target and the asset id. A
   /// partner's public identity is exactly the kind of thing that must be

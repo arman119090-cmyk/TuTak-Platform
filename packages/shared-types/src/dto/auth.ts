@@ -1,6 +1,22 @@
 import { Role } from '../enums/roles';
 import type { MediaImageDto } from './media';
 
+/**
+ * What a password has to be, for every client and for the API.
+ *
+ * Here rather than in either of them because both enforce it and they must
+ * agree: the API refuses a password outside these bounds, and a form that does
+ * not know the same numbers lets the customer type something the server will
+ * reject — then has to explain a refusal it could have prevented. That is
+ * exactly how a password-length error ended up being shown against the SMS
+ * code field.
+ *
+ * The upper bound matters as much as the lower one: argon2 hashes whatever it
+ * is handed, so an unbounded password is a cheap way to burn server CPU.
+ */
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 128;
+
 export interface RegisterRequestDto {
   phone: string;
   email?: string;
@@ -96,6 +112,16 @@ export interface RequestRegistrationOtpRequestDto {
 export interface VerifyRegistrationOtpRequestDto {
   phone: string;
   code: string;
+  /**
+   * The password the customer chooses, sent with the code that proves the
+   * number. Required: an account is never created without one, so no account
+   * exists whose password its owner does not know.
+   *
+   * The confirmation field a form shows next to it is a client-side check and
+   * is deliberately not here — there is nothing for the server to do with a
+   * second copy of the same string.
+   */
+  password: string;
   firstName?: string;
   lastName?: string;
   email?: string;

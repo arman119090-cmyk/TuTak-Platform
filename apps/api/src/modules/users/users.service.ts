@@ -79,6 +79,13 @@ export class UsersService {
       lastName: string;
       locale: string;
       isPhoneVerified?: boolean;
+      /**
+       * When the customer chose this password. Set by the registration flows
+       * that take one; left unset by anything that generates a hash the
+       * account holder does not know, which is what makes the absence of it
+       * meaningful (`scripts/report-otp-only-users.ts`).
+       */
+      passwordChangedAt?: Date;
     },
     tx?: Prisma.TransactionClient,
   ) {

@@ -1,6 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AuthenticatedUserDto, PartnerBranchDto } from '@tutak/shared-types';
+import type {
+  AuthenticatedUserDto,
+  PartnerBranchDto,
+  PartnerBranchQrCodeDto,
+} from '@tutak/shared-types';
 import { Role } from '@tutak/shared-types';
 import QrPage from './page';
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -31,12 +35,20 @@ function parsePartnerPayQr(raw: string): { partnerId: string; branchId?: string 
  * exact same payload as the text fallback, and that a QR-scanning app
  * (`parsePartnerPayQr`, the mobile side) can still parse it.
  *
- * 2026-08-26: a partner with active branches gets one card per branch,
- * each encoding `partnerId:branchId` — see `page.tsx`'s own doc comment.
+ * 2026-08-26: a partner with active branches gets one card per branch.
+ *
+ * 2026-09-12 (pilot QR integrity): a branch card no longer encodes
+ * `partnerId:branchId` at all. That payload is derivable by anyone who can
+ * read a partner's own public ids, so a printed sheet could be copied to a
+ * till that never earned it and could not be withdrawn. A branch card now
+ * carries `TUTAK-BRANCH:<token>` — a token the server issued for that exact
+ * branch and can revoke. The legacy whole-business payload stays only for a
+ * partner with no active branches, and that is what the parser test below
+ * still covers.
  */
 
 jest.mock('@/lib/api/partnerApi', () => ({
-  partnerApi: { listBranches: jest.fn() },
+  partnerApi: { listBranches: jest.fn(), getBranchQr: jest.fn(), issueBranchQr: jest.fn() },
 }));
 
 function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): AuthenticatedUserDto {
@@ -54,6 +66,18 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     showAvatarInReferralList: false,
     personalizedRecommendationsEnabled: false,
     ...overrides,
+  };
+}
+
+function branchQrFixture(branchId: string): PartnerBranchQrCodeDto {
+  return {
+    id: `qr-${branchId}`,
+    partnerId: 'partner-1',
+    partnerBranchId: branchId,
+    token: `token-${branchId}`,
+    status: 'ACTIVE' as PartnerBranchQrCodeDto['status'],
+    createdAt: new Date().toISOString(),
+    revokedAt: null,
   };
 }
 
@@ -115,31 +139,55 @@ describe('QrPage', () => {
     expect(parsePartnerPayQr(expectedPayload)).toEqual({ partnerId: 'partner-1' });
   });
 
-  it('renders one card per active branch, each with its own payload', async () => {
+  it('renders one card per active branch, each carrying that branch\'s own server-issued token', async () => {
     (partnerApi.listBranches as jest.Mock).mockResolvedValue([
       branchFixture({ id: 'branch-1', name: 'Downtown' }),
       branchFixture({ id: 'branch-2', name: 'Airport' }),
     ]);
+    // One token per branch, as the server issues them — the page must print
+    // the token it was given for that branch and never build a payload of
+    // its own from ids it happens to know.
+    (partnerApi.getBranchQr as jest.Mock).mockImplementation(
+      async (_partnerId: string, branchId: string) => branchQrFixture(branchId),
+    );
     useAuthStore.setState({ user: buildUser() });
     renderPage();
 
     expect(await screen.findByText('Downtown')).toBeTruthy();
     expect(screen.getByText('Airport')).toBeTruthy();
 
+    await waitFor(() => expect(screen.getAllByTestId('partner-pay-code')).toHaveLength(2));
     const codes = screen.getAllByTestId('partner-pay-code').map((el) => el.textContent);
-    expect(codes).toContain('TUTAK-PAY:partner-1:branch-1');
-    expect(codes).toContain('TUTAK-PAY:partner-1:branch-2');
+    expect(codes).toContain('TUTAK-BRANCH:token-branch-1');
+    expect(codes).toContain('TUTAK-BRANCH:token-branch-2');
 
-    // Each branch's payload parses back out with the right branch id, and
-    // both still resolve to the same partner — one business, several codes.
-    expect(parsePartnerPayQr('TUTAK-PAY:partner-1:branch-1')).toEqual({
-      partnerId: 'partner-1',
-      branchId: 'branch-1',
-    });
-    expect(parsePartnerPayQr('TUTAK-PAY:partner-1:branch-2')).toEqual({
-      partnerId: 'partner-1',
-      branchId: 'branch-2',
-    });
+    // The derivable legacy payload must not be printed for a branch any
+    // more: that is the whole point of the token.
+    for (const code of codes) {
+      expect(code).not.toContain('TUTAK-PAY:');
+    }
+    expect(partnerApi.getBranchQr).toHaveBeenCalledWith('partner-1', 'branch-1');
+    expect(partnerApi.getBranchQr).toHaveBeenCalledWith('partner-1', 'branch-2');
+  });
+
+  it('offers to issue a branch QR instead of printing anything when the branch has none yet', async () => {
+    (partnerApi.listBranches as jest.Mock).mockResolvedValue([
+      branchFixture({ id: 'branch-1', name: 'Downtown' }),
+    ]);
+    // `null`, not an error: the branch exists and simply has no active QR.
+    (partnerApi.getBranchQr as jest.Mock).mockResolvedValue(null);
+    (partnerApi.issueBranchQr as jest.Mock).mockResolvedValue(branchQrFixture('branch-1'));
+    useAuthStore.setState({ user: buildUser() });
+    renderPage();
+
+    // Nothing scannable is offered until a token exists — printing a card
+    // with no server-side token behind it is what this replaces.
+    expect(await screen.findByText(/no active QR yet/i)).toBeTruthy();
+    expect(screen.queryByTestId('partner-pay-code')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /issue branch qr/i }));
+
+    await waitFor(() => expect(partnerApi.issueBranchQr).toHaveBeenCalledWith('partner-1', 'branch-1'));
   });
 
   it('excludes a deactivated branch, falling back to the whole-business code if none are left active', async () => {

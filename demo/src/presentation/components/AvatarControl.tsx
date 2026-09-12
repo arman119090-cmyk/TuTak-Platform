@@ -44,7 +44,7 @@ export function AvatarControl() {
   const { t } = useTranslation();
   const { color, space, text, radius } = useTheme();
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const patchUser = useAuthStore((s) => s.patchUser);
   const queryClient = useQueryClient();
 
   /** A locally-picked image that has not been sent anywhere yet. */
@@ -57,12 +57,16 @@ export function AvatarControl() {
   const upload = useMutation({
     mutationFn: async () => {
       if (!pending) throw new Error('nothing to upload');
-      return usersApi.uploadAvatar(pending);
+      // The session as it is when the upload leaves. Everything below runs
+      // after an await, by which time somebody else may be signed in on this
+      // handset, and their profile must not receive this person's photo.
+      const sessionEpoch = useAuthStore.getState().sessionEpoch;
+      return { avatar: await usersApi.uploadAvatar(pending), sessionEpoch };
     },
-    onSuccess: (avatar) => {
+    onSuccess: ({ avatar, sessionEpoch }) => {
       // Only now. The server has the derived asset and has handed back the
       // URL that serves it.
-      if (user) setUser({ ...user, avatar });
+      patchUser({ avatar }, sessionEpoch);
       setPending(null);
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
@@ -71,9 +75,13 @@ export function AvatarControl() {
   });
 
   const remove = useMutation({
-    mutationFn: () => usersApi.removeAvatar(),
-    onSuccess: () => {
-      if (user) setUser({ ...user, avatar: null });
+    mutationFn: async () => {
+      const sessionEpoch = useAuthStore.getState().sessionEpoch;
+      await usersApi.removeAvatar();
+      return sessionEpoch;
+    },
+    onSuccess: (sessionEpoch) => {
+      patchUser({ avatar: null }, sessionEpoch);
       setPending(null);
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
@@ -82,9 +90,12 @@ export function AvatarControl() {
   });
 
   const consent = useMutation({
-    mutationFn: (next: boolean) => usersApi.setAvatarConsent(next),
-    onSuccess: (result) => {
-      if (user) setUser({ ...user, showAvatarInReferralList: result.showAvatarInReferralList });
+    mutationFn: async (next: boolean) => {
+      const sessionEpoch = useAuthStore.getState().sessionEpoch;
+      return { result: await usersApi.setAvatarConsent(next), sessionEpoch };
+    },
+    onSuccess: ({ result, sessionEpoch }) => {
+      patchUser({ showAvatarInReferralList: result.showAvatarInReferralList }, sessionEpoch);
     },
     onError: (err) => setError(messageOf(err, t('profile.avatarConsentFailed'))),
   });

@@ -41,4 +41,5 @@ export interface PurchaseIntentDto {
   expiresAt: string;
   confirmedAt: string | null;
   rejectedAt: string | null;
+  cancelledAt: string | null;
 }

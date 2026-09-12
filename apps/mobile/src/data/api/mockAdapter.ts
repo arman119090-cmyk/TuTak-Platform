@@ -395,6 +395,7 @@ function handle(
         expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
         confirmedAt: null,
         rejectedAt: null,
+        cancelledAt: null,
       };
       state.purchaseIntents = [intent, ...state.purchaseIntents];
       return envelope(intent);
@@ -448,6 +449,45 @@ function handle(
     return envelope(stopped);
   }
 
+  // The customer's own way out, offline as well as online: the demo's
+  // auto-confirming poll below only fires while the intent is still
+  // AWAITING_CONFIRMATION, so a cancelled one stays cancelled.
+  const cancelPurchaseIntent = /^\/purchase-intents\/([^/]+)\/cancel$/.exec(path);
+  if (method === 'POST' && cancelPurchaseIntent) {
+    const id = cancelPurchaseIntent[1]!;
+    const existing = state.purchaseIntents.find((pi) => pi.id === id);
+    const cancelled: PurchaseIntentDto = {
+      ...(existing ?? {
+        id,
+        customerId: MOCK_USER.id,
+        partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+        partnerBrand: mockBrandFor(state.partners[0]?.partnerId ?? 'partner-1') ?? {
+          partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+          displayName: state.partners[0]?.name ?? 'TuTak',
+          logo: null,
+        },
+        partnerBranchId: null,
+        grossAmount: '5000',
+        bonusAmountRequested: '0',
+        ordinaryPaymentRemainder: '5000',
+        negotiatedRateBps: 500,
+        maxBonusPaymentPercent: 50,
+        confirmedByUserId: null,
+        rejectionReason: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+        confirmedAt: null,
+        rejectedAt: null,
+      }),
+      status: PurchaseIntentStatus.CANCELLED,
+      cancelledAt: new Date().toISOString(),
+    };
+    state.purchaseIntents = existing
+      ? state.purchaseIntents.map((pi) => (pi.id === id ? cancelled : pi))
+      : [cancelled, ...state.purchaseIntents];
+    return envelope(cancelled);
+  }
+
   const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
   if (method === 'GET' && getPurchaseIntent) {
     const id = getPurchaseIntent[1]!;
@@ -477,6 +517,7 @@ function handle(
       expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
       confirmedAt: null,
       rejectedAt: null,
+      cancelledAt: null,
     };
 
     // No cashier exists in the demo, so the poll itself plays that part —

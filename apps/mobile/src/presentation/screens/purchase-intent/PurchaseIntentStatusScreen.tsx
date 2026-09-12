@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PurchaseIntentStatus as Status, type PurchaseIntentDto } from '@tutak/shared-types';
@@ -18,11 +19,16 @@ import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { formatAmd, formatPoints } from '../../utils/format';
 
 /**
- * Tracks one intent from creation to a terminal state. This screen never
- * writes to the intent — confirm/reject is the cashier's action, at the
- * till, on the partner dashboard (spec §7 steps 9-11) — it only polls
+ * Tracks one intent from creation to a terminal state, polling
  * `GET /purchase-intents/:id` until the status stops being
  * AWAITING_CONFIRMATION.
+ *
+ * Confirm and reject are the cashier's actions, at the till, on the partner
+ * dashboard (spec §7 steps 9-11) — this screen cannot do either. The one
+ * write it does own is the customer's own way out: cancelling a purchase no
+ * cashier has answered yet, which releases the bonus this intent reserved.
+ * Losing that race to the cashier is normal and is rendered as what actually
+ * happened, never as a cancellation.
  */
 export function PurchaseIntentStatusScreen() {
   const { t } = useTranslation();
@@ -63,6 +69,41 @@ export function PurchaseIntentStatusScreen() {
     queryClient.invalidateQueries({ queryKey: ['wallet'] });
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
     navigation.goBack();
+  };
+
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const cancelNow = async () => {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const updated = await purchaseIntentApi.cancel(route.params.intent.id);
+      // Straight into the cache the poll reads, so the terminal state is on
+      // screen before the next 3-second tick.
+      queryClient.setQueryData(['purchase-intent', route.params.intent.id], updated);
+      // The bonus this intent reserved is available again the moment the
+      // server says CANCELLED — the balance must not keep showing it held.
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+    } catch (error) {
+      // 400 is the server saying the purchase left AWAITING_CONFIRMATION
+      // first — the cashier got there, or the window ran out. That is not a
+      // failure to report as one: refetch and let the real state render.
+      const tooLate = axios.isAxiosError(error) && error.response?.status === 400;
+      setCancelError(t(tooLate ? 'purchaseIntent.cancelTooLate' : 'purchaseIntent.cancelFailed'));
+      if (tooLate) {
+        queryClient.invalidateQueries({ queryKey: ['purchase-intent', route.params.intent.id] });
+      }
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const askToCancel = () => {
+    Alert.alert(t('purchaseIntent.cancelConfirmTitle'), t('purchaseIntent.cancelConfirmBody'), [
+      { text: t('purchaseIntent.cancelKeep'), style: 'cancel' },
+      { text: t('purchaseIntent.cancel'), style: 'destructive', onPress: () => void cancelNow() },
+    ]);
   };
 
   if (!intent) {
@@ -183,6 +224,43 @@ export function PurchaseIntentStatusScreen() {
     );
   }
 
+  if (status === Status.CANCELLED) {
+    return (
+      <Screen title={t('purchaseIntent.statusTitle')}>
+        <Surface style={{ paddingVertical: space[8] }}>
+          <View style={{ alignItems: 'center' }}>
+            <Ionicons name="close-circle-outline" size={32} color={color.textSecondary} />
+            <BrandLine brand={intent.partnerBrand} />
+            <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[4] }]}>
+              {formatAmd(intent.grossAmount)}
+            </Text>
+            <Text
+              style={[
+                text.bodySm,
+                { color: color.textSecondary, textAlign: 'center', marginTop: space[2] },
+              ]}
+            >
+              {t('purchaseIntent.cancelled')}
+            </Text>
+          </View>
+        </Surface>
+        <View style={{ marginTop: space[6], gap: space[3] }}>
+          <Button
+            label={t('purchaseIntent.createNew')}
+            onPress={createAnother}
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
+          <Button
+            label={t('purchaseIntent.goHome')}
+            onPress={done}
+            variant="tertiary"
+            icon={<JakoWingMark size={16} color={color.textBrand} />}
+          />
+        </View>
+      </Screen>
+    );
+  }
+
   if (status === Status.EXPIRED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
@@ -279,8 +357,33 @@ export function PurchaseIntentStatusScreen() {
               {t('common.somethingWentWrong')}
             </Text>
           ) : null}
+          {cancelError ? (
+            <Text
+              style={[
+                text.caption,
+                { color: color.dangerText, marginTop: space[3], textAlign: 'center' },
+              ]}
+            >
+              {cancelError}
+            </Text>
+          ) : null}
         </View>
       </Surface>
+      {/*
+        The way out, for the customer who mistyped the amount or picked the
+        wrong branch. Tertiary and below the card on purpose: waiting for the
+        cashier is the expected path, and this must not compete with it —
+        but it has to be reachable without leaving the screen, because the
+        bonus stays reserved until this intent ends.
+      */}
+      <View style={{ marginTop: space[6] }}>
+        <Button
+          label={t('purchaseIntent.cancel')}
+          onPress={askToCancel}
+          variant="tertiary"
+          disabled={cancelling}
+        />
+      </View>
     </Screen>
   );
 }

@@ -3,4 +3,6 @@ export enum PurchaseIntentStatus {
   CONFIRMED = 'CONFIRMED',
   REJECTED = 'REJECTED',
   EXPIRED = 'EXPIRED',
+  /** The customer withdrew the purchase before staff acted on it. */
+  CANCELLED = 'CANCELLED',
 }

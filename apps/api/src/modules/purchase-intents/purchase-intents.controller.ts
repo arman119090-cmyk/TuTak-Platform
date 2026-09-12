@@ -8,6 +8,7 @@ import { assertPartnerScope } from '../../common/auth/partner-scope';
 import { assertResourceBranchScope, branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
+import { FindPurchaseIntentByCodeDto } from './dto/find-by-code.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
@@ -26,6 +27,28 @@ export class PurchaseIntentsController {
   @Post()
   async create(@CurrentUser() customer: RequestUser, @Body() dto: CreatePurchaseIntentDto) {
     return this.purchaseIntents.toDto(await this.purchaseIntents.create(dto, customer.id));
+  }
+
+  /**
+   * Find the live purchase a four-digit till code belongs to.
+   *
+   * Declared before `@Get(':id')` deliberately: Nest matches routes in
+   * declaration order, and a path parameter would otherwise swallow this
+   * one.
+   *
+   * The code is a disambiguator and grants nothing by itself — this is
+   * gated exactly like the queue it is an alternative to: the same
+   * confirm permission, the same partner scope, and the branch scope
+   * applied to the row that comes back, so a cashier cannot pull a
+   * purchase from a branch they are not assigned to.
+   */
+  @Get('by-code')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async findByCode(@CurrentUser() staff: RequestUser, @Query() query: FindPurchaseIntentByCodeDto) {
+    assertPartnerScope(staff, query.partnerId);
+    const intent = await this.purchaseIntents.findActiveByCode(query.partnerId, query.code);
+    assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
+    return this.purchaseIntents.toDto(intent);
   }
 
   @Get(':id')

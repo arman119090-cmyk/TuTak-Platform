@@ -67,6 +67,9 @@ function IntentRow({
 
   return (
     <Tr>
+      <Td className="font-mono text-[16px] font-semibold tracking-[0.2em] text-ink">
+        {intent.confirmationCode ?? '—'}
+      </Td>
       <Td className="font-mono text-[12px] text-faint">{intent.id.slice(-8).toUpperCase()}</Td>
       <Td align="right" className="tabular font-medium">
         {num(intent.grossAmount)} ֏
@@ -169,7 +172,21 @@ export default function PurchaseIntentsPage() {
     },
   });
 
-  const items = intents ?? [];
+  // Matching by the code the customer reads out, without hunting down a
+  // long queue by eye.
+  //
+  // Filtered here rather than through GET /purchase-intents/by-code on
+  // purpose: this list is already exactly the set of awaiting purchases
+  // this cashier is allowed to see (the server scopes it by partner and by
+  // branch), so narrowing it locally is instant and cannot show anything
+  // the queue would not. The endpoint stays the way in for anything that
+  // does not already hold the queue.
+  const [codeFilter, setCodeFilter] = useState('');
+  const digitsOnly = codeFilter.replace(/\D/g, '').slice(0, 4);
+  const all = intents ?? [];
+  const items = digitsOnly
+    ? all.filter((intent) => (intent.confirmationCode ?? '').startsWith(digitsOnly))
+    : all;
 
   return (
     <>
@@ -178,15 +195,39 @@ export default function PurchaseIntentsPage() {
         description="Customers who scanned your code and entered an amount. Confirm to complete the sale — the amount cannot be changed here."
       />
 
+      {all.length > 0 ? (
+        <div className="mb-4 max-w-[220px]">
+          <Input
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="Code, e.g. 0042"
+            aria-label="Find a request by the code the customer read out"
+            value={digitsOnly}
+            onChange={(event) => setCodeFilter(event.target.value)}
+          />
+        </div>
+      ) : null}
+
       {items.length === 0 ? (
         <EmptyState
-          title="No pending requests"
-          message="A new request appears here the moment a customer submits one, and expires on its own after 3 minutes if nobody acts."
+          title={digitsOnly ? 'No request with that code' : 'No pending requests'}
+          message={
+            digitsOnly
+              ? 'Check the digits with the customer. A request also leaves this queue on its own after 3 minutes.'
+              : 'A new request appears here the moment a customer submits one, and expires on its own after 3 minutes if nobody acts.'
+          }
         />
       ) : (
         <Table>
           <thead>
             <tr>
+              {/*
+                The code first, and the id after it: a cashier matches the
+                four digits the customer reads out, while the id is what
+                support asks for later. A row from before codes existed
+                shows a dash and is matched by its id as before.
+              */}
+              <Th>Code</Th>
               <Th>ID</Th>
               <Th align="right">Amount</Th>
               <Th align="right">Bonus requested</Th>

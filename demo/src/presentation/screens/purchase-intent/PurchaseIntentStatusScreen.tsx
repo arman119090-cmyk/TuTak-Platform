@@ -238,6 +238,31 @@ export function PurchaseIntentStatusScreen() {
               −{formatPoints(intent.bonusAmountRequested)} {t('qr.applyBonus').toLowerCase()}
             </Text>
           ) : null}
+          {/*
+            What the cashier actually needs: four digits the customer can
+            read out across a counter. The purchase id is still shown, but
+            below and small — it is what support asks for, not what a queue
+            runs on. A purchase created before codes existed has none, and
+            then the id is all there is.
+          */}
+          {intent.confirmationCode ? (
+            <View style={{ alignItems: 'center', marginTop: space[5] }}>
+              <Text style={[text.caption, { color: color.textSecondary }]}>
+                {t('purchaseIntent.tillCode')}
+              </Text>
+              <Text
+                accessibilityLabel={t('purchaseIntent.tillCodeAccessible', {
+                  digits: intent.confirmationCode.split('').join(' '),
+                })}
+                style={[
+                  text.balanceSm,
+                  { color: color.textPrimary, letterSpacing: 6, marginTop: space[1] },
+                ]}
+              >
+                {intent.confirmationCode}
+              </Text>
+            </View>
+          ) : null}
           <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
             {t('purchaseIntent.purchaseId')}: {intent.id.slice(-8).toUpperCase()}
           </Text>

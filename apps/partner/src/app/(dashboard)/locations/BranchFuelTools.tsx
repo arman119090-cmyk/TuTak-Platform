@@ -13,13 +13,21 @@ const FUEL_LABELS: Record<BranchFuelType, string> = {
 };
 
 /**
- * Fuel-station branches task: everything specific to a `fuel`-category
- * branch that the plain branch form above does not cover — which product it
- * sells, its own scan-to-pay QR, and who is assigned to work there.
- * Rendered inline per branch, collapsed behind "Manage" so a partner with
- * many branches (or none of them fuel) is not shown an empty panel per row.
+ * Operational controls for one physical branch. QR and staff assignment are
+ * universal branch concerns; only fuel classification is fuel-specific.
+ * Keeping them together under one per-branch Manage panel avoids the old bug
+ * where non-fuel partners could have branches but had no UI to issue a branch
+ * QR or scope staff to them.
  */
-export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; branchId: string }) {
+export function BranchFuelTools({
+  partnerId,
+  branchId,
+  isFuelPartner,
+}: {
+  partnerId: string;
+  branchId: string;
+  isFuelPartner: boolean;
+}) {
   const queryClient = useQueryClient();
   const invalidateBranches = () =>
     queryClient.invalidateQueries({ queryKey: ['partner-branches', partnerId] });
@@ -28,7 +36,8 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
     queryKey: ['branch-qr', partnerId, branchId],
     queryFn: () => partnerApi.getBranchQr(partnerId, branchId),
   });
-  const invalidateQr = () => queryClient.invalidateQueries({ queryKey: ['branch-qr', partnerId, branchId] });
+  const invalidateQr = () =>
+    queryClient.invalidateQueries({ queryKey: ['branch-qr', partnerId, branchId] });
 
   const { data: staff, isLoading: staffLoading } = useQuery({
     queryKey: ['branch-staff', partnerId, branchId],
@@ -38,7 +47,8 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
     queryClient.invalidateQueries({ queryKey: ['branch-staff', partnerId, branchId] });
 
   const setFuelType = useMutation({
-    mutationFn: (fuelType: BranchFuelType) => partnerApi.setBranchFuelType(partnerId, branchId, fuelType),
+    mutationFn: (fuelType: BranchFuelType) =>
+      partnerApi.setBranchFuelType(partnerId, branchId, fuelType),
     onSuccess: () => void invalidateBranches(),
   });
 
@@ -55,7 +65,11 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
     onSuccess: () => void invalidateQr(),
   });
 
-  const [assignForm, setAssignForm] = useState({ userId: '', role: BranchStaffRole.STAFF, code: '' });
+  const [assignForm, setAssignForm] = useState({
+    userId: '',
+    role: BranchStaffRole.STAFF,
+    code: '',
+  });
   const assign = useMutation({
     mutationFn: () =>
       partnerApi.assignBranchStaff(partnerId, branchId, {
@@ -70,37 +84,44 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
   });
 
   const deactivate = useMutation({
-    mutationFn: (assignmentId: string) => partnerApi.deactivateBranchStaff(partnerId, branchId, assignmentId),
+    mutationFn: (assignmentId: string) =>
+      partnerApi.deactivateBranchStaff(partnerId, branchId, assignmentId),
     onSuccess: () => void invalidateStaff(),
   });
 
   return (
-    <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-line p-4 lg:grid-cols-3">
-      <div>
-        <div className="text-[13px] font-semibold text-ink">Fuel type</div>
-        <p className="mt-1 text-[12px] text-faint">
-          What this specific location sells. Never guessed from your account&apos;s general gas/petrol
-          settings — see Profile.
-        </p>
-        <Select
-          className="mt-2"
-          disabled={setFuelType.isPending}
-          onChange={(e) => setFuelType.mutate(e.target.value as BranchFuelType)}
-        >
-          <option value="">Not classified yet</option>
-          {Object.values(BranchFuelType).map((ft) => (
-            <option key={ft} value={ft}>
-              {FUEL_LABELS[ft]}
-            </option>
-          ))}
-        </Select>
-      </div>
+    <div
+      className={`mt-4 grid grid-cols-1 gap-4 rounded-lg border border-line p-4 ${
+        isFuelPartner ? 'lg:grid-cols-3' : 'lg:grid-cols-2'
+      }`}
+    >
+      {isFuelPartner ? (
+        <div>
+          <div className="text-[13px] font-semibold text-ink">Fuel type</div>
+          <p className="mt-1 text-[12px] text-faint">
+            What this specific location sells. Never guessed from your account&apos;s general gas/petrol
+            settings — see Profile.
+          </p>
+          <Select
+            className="mt-2"
+            disabled={setFuelType.isPending}
+            onChange={(e) => setFuelType.mutate(e.target.value as BranchFuelType)}
+          >
+            <option value="">Not classified yet</option>
+            {Object.values(BranchFuelType).map((ft) => (
+              <option key={ft} value={ft}>
+                {FUEL_LABELS[ft]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
 
       <div>
         <div className="text-[13px] font-semibold text-ink">Scan-to-pay QR</div>
         <p className="mt-1 text-[12px] text-faint">
-          A customer scans this to open a purchase at this branch specifically — never a general
-          code for the whole chain.
+          A customer scans this to open a purchase at this branch specifically. The opaque token is
+          resolved by TuTak; the QR never trusts a browser-supplied partner or branch id.
         </p>
         {qrLoading ? (
           <p className="mt-2 text-[12px] text-faint">Loading…</p>
@@ -110,16 +131,31 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
               TUTAK-BRANCH:{qr.token}
             </code>
             <div className="mt-2 flex gap-2">
-              <Button size="sm" variant="secondary" loading={rotateQr.isPending} onClick={() => rotateQr.mutate()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={rotateQr.isPending}
+                onClick={() => rotateQr.mutate()}
+              >
                 Rotate
               </Button>
-              <Button size="sm" variant="destructive" loading={revokeQr.isPending} onClick={() => revokeQr.mutate()}>
+              <Button
+                size="sm"
+                variant="destructive"
+                loading={revokeQr.isPending}
+                onClick={() => revokeQr.mutate()}
+              >
                 Revoke
               </Button>
             </div>
           </div>
         ) : (
-          <Button size="sm" className="mt-2" loading={issueQr.isPending} onClick={() => issueQr.mutate()}>
+          <Button
+            size="sm"
+            className="mt-2"
+            loading={issueQr.isPending}
+            onClick={() => issueQr.mutate()}
+          >
             Issue QR code
           </Button>
         )}
@@ -142,11 +178,17 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
               (staff ?? []).map((a) => (
                 <li key={a.id} className="flex items-center justify-between gap-2 text-[12px]">
                   <span className="text-muted">
-                    {a.user ? `${a.user.firstName} ${a.user.lastName}` : a.userId} · {a.employeeDisplayCode}
+                    {a.user ? `${a.user.firstName} ${a.user.lastName}` : a.userId} ·{' '}
+                    {a.employeeDisplayCode}
                   </span>
                   <div className="flex items-center gap-2">
                     <Badge tone="neutral">{a.role.toLowerCase()}</Badge>
-                    <Button size="sm" variant="tertiary" loading={deactivate.isPending} onClick={() => deactivate.mutate(a.id)}>
+                    <Button
+                      size="sm"
+                      variant="tertiary"
+                      loading={deactivate.isPending}
+                      onClick={() => deactivate.mutate(a.id)}
+                    >
                       Remove
                     </Button>
                   </div>
@@ -164,9 +206,18 @@ export function BranchFuelTools({ partnerId, branchId }: { partnerId: string; br
               placeholder="uuid"
             />
           </Field>
+          <Field label="Employee code" hint="Optional display code for the till/shift roster.">
+            <Input
+              value={assignForm.code}
+              onChange={(e) => setAssignForm((f) => ({ ...f, code: e.target.value }))}
+              placeholder="A-17"
+            />
+          </Field>
           <Select
             value={assignForm.role}
-            onChange={(e) => setAssignForm((f) => ({ ...f, role: e.target.value as BranchStaffRole }))}
+            onChange={(e) =>
+              setAssignForm((f) => ({ ...f, role: e.target.value as BranchStaffRole }))
+            }
           >
             <option value={BranchStaffRole.STAFF}>Staff</option>
             <option value={BranchStaffRole.MANAGER}>Manager</option>

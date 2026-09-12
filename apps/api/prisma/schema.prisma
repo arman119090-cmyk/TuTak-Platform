@@ -672,6 +672,26 @@ model PurchaseIntent {
   partnerBranchId String?
   status          PurchaseIntentStatus @default(AWAITING_CONFIRMATION)
 
+  /// The four digits the customer reads out at the till, so a cashier can
+  /// find this exact purchase without scanning anything or typing a uuid.
+  ///
+  /// A disambiguator, not a secret: finding a purchase by code still
+  /// requires staff authentication, the partner scope, and the branch
+  /// scope, exactly as the queue does. Uniqueness is enforced by the
+  /// database, not by this application — a partial unique index over
+  /// (`partnerId`, `confirmationCode`) restricted to
+  /// `AWAITING_CONFIRMATION` rows, so a code belongs to one live purchase
+  /// per business at a time and returns to the pool the moment that
+  /// purchase reaches any terminal state. Prisma cannot express a partial
+  /// unique index, so it lives in the migration alongside the two the
+  /// branch-staff tables already use.
+  ///
+  /// `Char(4)` rather than an Int: 0042 is a different code from 42 on a
+  /// printed slip and in a spoken sentence, and an integer column cannot
+  /// keep the leading zeros that half of all codes need.
+  /// Null on every row created before this column existed.
+  confirmationCode String?              @db.Char(4)
+
   grossAmount              Decimal @db.Decimal(18, 4)
   bonusAmountRequested     Decimal @default(0) @db.Decimal(18, 4)
   /// = grossAmount - bonusAmountRequested, stored rather than derived so the

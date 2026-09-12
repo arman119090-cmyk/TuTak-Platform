@@ -365,6 +365,8 @@
     "payHere": "Վճարել այստեղ",
     "youPay": "Դուք վճարում եք",
     "purchaseId": "Գնման ID",
+    "tillCode": "Ասեք այս կոդը դրամարկղին",
+    "tillCodeAccessible": "Կոդը դրամարկղի համար՝ {{digits}}",
     "createNew": "Ստեղծել նոր գնում",
     "goHome": "Դեպի գլխավոր",
     "cashbackHere": "Այստեղ՝ {{percent}}% վերադարձ"

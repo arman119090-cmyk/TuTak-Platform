@@ -365,6 +365,8 @@
     "payHere": "Оплатить здесь",
     "youPay": "Вы платите",
     "purchaseId": "ID покупки",
+    "tillCode": "Назовите кассиру код",
+    "tillCodeAccessible": "Код для кассира: {{digits}}",
     "createNew": "Создать новую покупку",
     "goHome": "На главную",
     "cashbackHere": "{{percent}}% возврата здесь"

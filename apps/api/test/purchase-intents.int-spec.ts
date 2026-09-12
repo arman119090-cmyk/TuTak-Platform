@@ -11,6 +11,7 @@ import {
 import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { PartnersController } from '../src/modules/partners/partners.controller';
 import { PartnersService } from '../src/modules/partners/partners.service';
+import { PurchaseIntentsController } from '../src/modules/purchase-intents/purchase-intents.controller';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
@@ -38,6 +39,7 @@ describe('PurchaseIntents (integration)', () => {
   let purchaseIntents: PurchaseIntentsService;
   let partners: PartnersService;
   let partnersController: PartnersController;
+  let purchaseIntentsController: PurchaseIntentsController;
   let engine: BonusEngineService;
   let deferredLots: DeferredBonusLotService;
   let ledger: LedgerService;
@@ -48,6 +50,7 @@ describe('PurchaseIntents (integration)', () => {
     purchaseIntents = harness.app.get(PurchaseIntentsService);
     partners = harness.app.get(PartnersService);
     partnersController = harness.app.get(PartnersController);
+    purchaseIntentsController = harness.app.get(PurchaseIntentsController);
     engine = harness.app.get(BonusEngineService);
     deferredLots = harness.app.get(DeferredBonusLotService);
     ledger = harness.app.get(LedgerService);
@@ -459,6 +462,269 @@ describe('PurchaseIntents (integration)', () => {
   });
 
   // ── Financial transaction boundary ────────────────────────────────────
+
+  // ── Four-digit till code ──────────────────────────────────────────────
+
+  /**
+   * The four digits the customer reads out at the till.
+   *
+   * A cashier cannot type a uuid and should not have to scan the customer's
+   * screen back. What makes four digits safe to use for this is not the
+   * digits themselves — they are not a secret, and finding a purchase by
+   * one still requires staff authentication and the partner/branch scope —
+   * it is that a code belongs to exactly one live purchase per business and
+   * returns to the pool the moment that purchase is resolved. Both halves
+   * are enforced by a partial unique index, and that is what these tests
+   * pin.
+   */
+  describe('confirmation code', () => {
+    const CODE_SHAPE = /^\d{4}$/;
+
+    it('gives every new purchase a four-digit code', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000' },
+        user.id,
+      );
+
+      expect(intent.confirmationCode).toMatch(CODE_SHAPE);
+    });
+
+    it('never hands the same code to two purchases awaiting confirmation at one business', async () => {
+      const partner = await createPartner(prisma);
+      const customers = await Promise.all(
+        Array.from({ length: 40 }, () => createCustomer(prisma)),
+      );
+
+      // Concurrently, because the interesting failure is two allocations
+      // racing — a read-then-pick allocator would hand out duplicates here.
+      const intents = await Promise.all(
+        customers.map(({ user }, index) =>
+          purchaseIntents.create(
+            { partnerId: partner.id, grossAmount: String(1000 + index) },
+            user.id,
+          ),
+        ),
+      );
+
+      const codes = intents.map((intent) => intent.confirmationCode);
+      expect(codes.every((code) => CODE_SHAPE.test(code ?? ''))).toBe(true);
+      expect(new Set(codes).size).toBe(intents.length);
+    });
+
+    it('keeps a code that starts with zero exactly as it is', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000' },
+        user.id,
+      );
+
+      // 0042 and 42 are different codes to a person reading a slip aloud,
+      // so the column is Char(4) and the value is padded, never trimmed.
+      await prisma.purchaseIntent.update({
+        where: { id: intent.id },
+        data: { confirmationCode: '0042' },
+      });
+      const stored = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+      expect(stored.confirmationCode).toBe('0042');
+      await expect(purchaseIntents.findActiveByCode(partner.id, '0042')).resolves.toMatchObject({
+        id: intent.id,
+      });
+      // And "42" is not the same thing as "0042".
+      await expect(purchaseIntents.findActiveByCode(partner.id, '42')).rejects.toThrow(/no purchase/i);
+    });
+
+    it('lets the database, not the application, be the one that says a code is taken', async () => {
+      const partner = await createPartner(prisma);
+      const a = await createCustomer(prisma);
+      const b = await createCustomer(prisma);
+      const first = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1000' },
+        a.user.id,
+      );
+      const second = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1001' },
+        b.user.id,
+      );
+
+      const results = await Promise.allSettled([
+        prisma.purchaseIntent.update({
+          where: { id: first.id },
+          data: { confirmationCode: '4242' },
+        }),
+        prisma.purchaseIntent.update({
+          where: { id: second.id },
+          data: { confirmationCode: '4242' },
+        }),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    });
+
+    it('returns the code to the pool once its purchase is resolved', async () => {
+      const partner = await createPartner(prisma);
+      const a = await createCustomer(prisma);
+      const b = await createCustomer(prisma);
+      const staff = await staffMember(partner.id);
+
+      const held = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1000' },
+        a.user.id,
+      );
+      await prisma.purchaseIntent.update({
+        where: { id: held.id },
+        data: { confirmationCode: '7777' },
+      });
+      const waiting = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '1001' },
+        b.user.id,
+      );
+
+      // Taken while the first purchase is live...
+      await expect(
+        prisma.purchaseIntent.update({
+          where: { id: waiting.id },
+          data: { confirmationCode: '7777' },
+        }),
+      ).rejects.toThrow();
+
+      // ...and free again the moment it is not. This is what keeps four
+      // digits enough for a business that runs all day.
+      await purchaseIntents.reject(held.id, staff.id, { reasonCode: 'OTHER' });
+      await expect(
+        prisma.purchaseIntent.update({
+          where: { id: waiting.id },
+          data: { confirmationCode: '7777' },
+        }),
+      ).resolves.toMatchObject({ confirmationCode: '7777' });
+    });
+
+    it('finds the live purchase a code belongs to', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '0' },
+        user.id,
+      );
+
+      const found = await purchaseIntents.findActiveByCode(
+        partner.id,
+        intent.confirmationCode!,
+      );
+      expect(found.id).toBe(intent.id);
+    });
+
+    it('refuses a code from another business, even when the digits match', async () => {
+      const mine = await createPartner(prisma);
+      const theirs = await createPartner(prisma);
+      const { user } = await createCustomer(prisma);
+      const intent = await purchaseIntents.create(
+        { partnerId: theirs.id, grossAmount: '5000' },
+        user.id,
+      );
+
+      await expect(
+        purchaseIntents.findActiveByCode(mine.id, intent.confirmationCode!),
+      ).rejects.toThrow(/no purchase/i);
+    });
+
+    it('refuses a code whose purchase has already been resolved', async () => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000' },
+        user.id,
+      );
+      const code = intent.confirmationCode!;
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      // An old printed slip must not resurface a purchase — or, worse,
+      // somebody else's purchase that has since taken those digits.
+      await expect(purchaseIntents.findActiveByCode(partner.id, code)).rejects.toThrow(
+        /no purchase/i,
+      );
+    });
+
+    it('does not let a cashier pull a purchase from a branch they are not assigned to', async () => {
+      const partner = await createPartner(prisma);
+      const branchA = await prisma.partnerBranch.create({
+        data: {
+          partnerId: partner.id,
+          name: 'Branch A',
+          address: '1 Test St',
+          city: 'Yerevan',
+          latitude: 40.18,
+          longitude: 44.51,
+        },
+      });
+      const branchB = await prisma.partnerBranch.create({
+        data: {
+          partnerId: partner.id,
+          name: 'Branch B',
+          address: '2 Test St',
+          city: 'Yerevan',
+          latitude: 40.19,
+          longitude: 44.52,
+        },
+      });
+      const { user } = await createCustomer(prisma);
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, partnerBranchId: branchA.id, grossAmount: '5000' },
+        user.id,
+      );
+
+      const cashierAtB = await staffMember(partner.id, [RoleName.PARTNER_STAFF]);
+      const requestUser = {
+        ...asRequestUser(cashierAtB.id, [RoleName.PARTNER_STAFF], partner.id),
+        branchIds: [branchB.id],
+      } as RequestUser;
+
+      // The code resolves — it is a disambiguator, not the authorization —
+      // and the branch scope is what refuses the read.
+      await expect(
+        purchaseIntentsController.findByCode(requestUser, {
+          partnerId: partner.id,
+          code: intent.confirmationCode!,
+        }),
+      ).rejects.toThrow(/not authorized/i);
+    });
+
+    it('lets the cashier of the right branch find it by the same code', async () => {
+      const partner = await createPartner(prisma);
+      const branch = await prisma.partnerBranch.create({
+        data: {
+          partnerId: partner.id,
+          name: 'Branch A',
+          address: '1 Test St',
+          city: 'Yerevan',
+          latitude: 40.18,
+          longitude: 44.51,
+        },
+      });
+      const { user } = await createCustomer(prisma);
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, partnerBranchId: branch.id, grossAmount: '5000' },
+        user.id,
+      );
+
+      const cashier = await staffMember(partner.id, [RoleName.PARTNER_STAFF]);
+      const requestUser = {
+        ...asRequestUser(cashier.id, [RoleName.PARTNER_STAFF], partner.id),
+        branchIds: [branch.id],
+      } as RequestUser;
+
+      const found = await purchaseIntentsController.findByCode(requestUser, {
+        partnerId: partner.id,
+        code: intent.confirmationCode!,
+      });
+      expect(found.id).toBe(intent.id);
+      expect(found.confirmationCode).toBe(intent.confirmationCode);
+    });
+  });
 
   describe('financial transaction boundary', () => {
     /**

@@ -365,6 +365,8 @@
     "payHere": "Pay here",
     "youPay": "You pay",
     "purchaseId": "Purchase ID",
+    "tillCode": "Read this code to the cashier",
+    "tillCodeAccessible": "Code for the cashier: {{digits}}",
     "createNew": "Create new purchase",
     "goHome": "Go home",
     "cashbackHere": "{{percent}}% back here"

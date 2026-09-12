@@ -373,6 +373,7 @@ function handle(
         partnerId: dto.partnerId,
         partnerBranchId: dto.partnerBranchId ?? null,
         status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+        confirmationCode: '0042',
         grossAmount: dto.grossAmount,
         bonusAmountRequested,
         ordinaryPaymentRemainder: String(
@@ -466,6 +467,7 @@ function handle(
       },
       partnerBranchId: null,
       status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+      confirmationCode: '0042',
       grossAmount: '5000',
       bonusAmountRequested: '0',
       ordinaryPaymentRemainder: '5000',

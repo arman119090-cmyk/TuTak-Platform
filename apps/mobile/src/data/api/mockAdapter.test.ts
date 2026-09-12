@@ -244,6 +244,10 @@ describe('mockAdapter', () => {
         await call('post', '/purchase-intents', { partnerId: 'partner-sas', grossAmount: '10000' })
       ).data.data;
       expect(created.negotiatedRateBps).toBe(500); // pool = 10000 * 5% = 500
+      // The offline adapter carries the till code too — the status screen
+      // renders it, so a mock without one would show an empty label on a
+      // demo phone.
+      expect(created.confirmationCode).toMatch(/^\d{4}$/);
 
       const before = Number((await call('get', '/wallet/me')).data.data.availableBonus);
 

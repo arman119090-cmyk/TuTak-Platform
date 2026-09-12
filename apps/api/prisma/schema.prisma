@@ -844,12 +844,21 @@ model PurchaseIntentRefundRequest {
   /// request can never be spent twice, whatever the caller retries.
   refundId String? @unique
 
-  purchaseIntent PurchaseIntent      @relation(fields: [purchaseIntentId], references: [id])
-  partner        Partner             @relation(fields: [partnerId], references: [id])
-  branch         PartnerBranch?      @relation(fields: [partnerBranchId], references: [id])
-  requestedBy    User                @relation("RefundRequestRequestedBy", fields: [requestedByUserId], references: [id])
-  decidedBy      User?               @relation("RefundRequestDecidedBy", fields: [decidedByUserId], references: [id])
-  refund         PurchaseIntentRefund? @relation(fields: [refundId], references: [id])
+  purchaseIntent PurchaseIntent @relation(fields: [purchaseIntentId], references: [id])
+  partner        Partner        @relation(fields: [partnerId], references: [id])
+
+  /// `Restrict`, not Prisma's default `SetNull` for an optional relation.
+  /// This row is the record of who asked for money to move back and who
+  /// agreed; quietly blanking the branch it happened at, or the person who
+  /// decided, because some other row was deleted would erase exactly the
+  /// part that makes it evidence. Nothing in this codebase hard-deletes a
+  /// user, a branch or a refund anyway — users are soft-deleted via
+  /// `deletedAt` — so this constrains nothing that happens today and fails
+  /// loudly if that ever changes.
+  branch      PartnerBranch?        @relation(fields: [partnerBranchId], references: [id], onDelete: Restrict)
+  requestedBy User                  @relation("RefundRequestRequestedBy", fields: [requestedByUserId], references: [id])
+  decidedBy   User?                 @relation("RefundRequestDecidedBy", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+  refund      PurchaseIntentRefund? @relation(fields: [refundId], references: [id], onDelete: Restrict)
 
   @@index([partnerId, status])
   @@index([purchaseIntentId])

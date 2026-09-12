@@ -130,8 +130,15 @@ describe('the staging build profile in eas.json', () => {
     process.env = env;
   });
 
+  /**
+   * Railway, not Render, since 2026-09-10. Render has no path to the carrier:
+   * it has no static outbound address, and the signed gateway that supplies
+   * one is wired to the Railway deployment alone. A pilot APK pointed at
+   * Render installs, opens, looks right and can never deliver a verification
+   * code — the same silent failure this block exists to catch.
+   */
   it('carries an address, over https, that is not the phone itself', () => {
-    expect(guards.apiBaseUrl()).toBe('https://tutak-staging-api.onrender.com/v1');
+    expect(guards.apiBaseUrl()).toBe('https://tutak-api-production.up.railway.app/v1');
   });
 
   it('names itself staging, so the app it builds cannot be mistaken for a real install', () => {

@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { AuthOtpPurpose } from '@prisma/client';
 import { generateNumericCode, sha256Hex } from '../../common/utils/crypto';
+import { maskPhone } from '../../common/utils/phone-mask';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { SMS_PROVIDER, SmsProvider } from '../../infrastructure/sms/sms-provider.interface';
 import { OtpIpRateLimitService } from './otp-ip-rate-limit.service';
@@ -34,7 +35,7 @@ export class AuthOtpService {
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
 
-  async requestCode(phone: string, purpose: AuthOtpPurpose): Promise<{ success: true }> {
+  async requestCode(phone: string, purpose: AuthOtpPurpose): Promise<{ success: true; delivered: boolean }> {
     const issued = await this.prisma.authOtpToken.count({
       where: { phone, purpose, createdAt: { gte: new Date(Date.now() - WINDOW_MS) } },
     });
@@ -56,9 +57,22 @@ export class AuthOtpService {
       });
     });
 
-    await this.sms
+    // Reported back rather than only logged. The caller cannot tell a
+    // delivered code from a refused one otherwise, and that difference is
+    // exactly what a diagnosis needs: `success: true` on the wire is
+    // deliberate anti-enumeration and says nothing about the carrier.
+    const delivered = await this.sms
       .send({ to: phone, body: `TuTak: your verification code is ${code}`, templateParams: [code] })
-      .catch((err: Error) => this.logger.error(`Could not deliver OTP to ${phone}: ${err.message}`));
+      .then(() => true)
+      // The number is masked on purpose: this line exists so a failing SMS
+      // route can be diagnosed, and it used to publish the customer's phone
+      // number — the account identifier on this platform — into every log
+      // sink. `err.message` is provider text; the SMS providers are written
+      // to keep the code and the credentials out of it.
+      .catch((err: Error) => {
+        this.logger.error(`Could not deliver OTP to ${maskPhone(phone)}: ${err.message}`);
+        return false;
+      });
 
     // SMS is the only channel a live code travels on.
     //
@@ -71,7 +85,7 @@ export class AuthOtpService {
     // is not a second factor. The notification is gone rather than redacted:
     // its i18n keys were never added, so it rendered as a raw key, and the
     // code it existed to carry is exactly what must not be stored.
-    return { success: true };
+    return { success: true, delivered };
   }
 
   /** Validates and consumes a code. Throws if wrong, expired, or already used. */

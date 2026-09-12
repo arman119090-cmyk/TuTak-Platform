@@ -24,6 +24,7 @@ import { isPublicDeployment } from './config/app-environment';
 import { assertProductionCorsOrigins } from './config/cors-origins';
 import { expressTrustProxySetting } from './config/client-ip';
 import { StructuredLogger } from './common/observability/structured-logger';
+import { SMS_PROVIDER, SmsProvider } from './infrastructure/sms/sms-provider.interface';
 
 const tracingEnabled = startTracing({
   serviceName: process.env.OTEL_SERVICE_NAME ?? 'tutak-api',
@@ -200,6 +201,38 @@ async function bootstrap() {
       (tracingEnabled ? ' (tracing on)' : ''),
   );
 
+  /*
+   * Which SMS transport is actually live, said out loud on every boot.
+   *
+   * It was invisible, and its absence cost a day: a staging deployment was
+   * selecting `UnavailableSmsProvider` — refusing every send before a byte
+   * reached a carrier — while the demo banner underneath announced that SMS
+   * codes were being written to this log. They were not; that stopped being
+   * true when the console transport was removed from public deployments. So
+   * somebody debugging "no code arrived" read the banner, went looking in the
+   * log for a code, and found nothing, twice.
+   *
+   * The name is read from the container rather than re-derived from
+   * configuration: this reports what was *built*, which is the only thing
+   * that answers the question.
+   */
+  const smsTransport = app.get<SmsProvider>(SMS_PROVIDER).name;
+  const smsLogger = new Logger('SMS');
+  if (smsTransport === 'unavailable') {
+    smsLogger.error(
+      `SMS transport: ${smsTransport} — every verification and password-reset code ` +
+        'will be REFUSED. Nobody can sign in or register on this deployment. ' +
+        'Set SMS_DRIVER/SMS_ENDPOINT and their credentials.',
+    );
+  } else if (smsTransport === 'console') {
+    smsLogger.warn(
+      `SMS transport: ${smsTransport} — codes are written to this log and not ` +
+        'delivered. Local development only.',
+    );
+  } else {
+    smsLogger.log(`SMS transport: ${smsTransport}`);
+  }
+
   // Loud on purpose, and at the end so it is the last thing in the log
   // rather than buried under Nest's route table. Somebody reading these logs
   // to work out why a payment never reached the bank should not have to
@@ -212,7 +245,10 @@ async function bootstrap() {
     console.log('  ╠════════════════════════════════════════════════════════════╣');
     console.log('  ║  Payments run on the sandbox acquirer: every charge is      ║');
     console.log('  ║  simulated and nothing reaches a bank.                      ║');
-    console.log('  ║  SMS codes are written to this log, not delivered.          ║');
+    // Deliberately not a claim about SMS. This banner used to say codes were
+    // written to the log, which `DEMO_MODE` has not bought since the console
+    // transport was taken out of public deployments — the line above reports
+    // the real transport instead.
     console.log('  ║                                                            ║');
     console.log('  ║  Every other protection is on: CORS allowlist, security     ║');
     console.log('  ║  headers, rate limits, secret validation.                   ║');

@@ -291,8 +291,16 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
     it('still caps issuance per phone at five an hour', async () => {
       const phone = randomPhone();
       for (let i = 0; i < 5; i += 1) {
+        // `delivered` is asserted alongside `success` rather than matched
+        // loosely: the two mean different things now. `success: true` is the
+        // anti-enumeration answer given to every caller and says nothing
+        // about the carrier; `delivered` is what actually happened to the
+        // message. A cap test that only pinned `success` would pass just as
+        // well against a build where the first five requests were counted
+        // and none of them sent.
         await expect(otpService.requestCode(phone, AuthOtpPurpose.REGISTER)).resolves.toEqual({
           success: true,
+          delivered: true,
         });
       }
       await expect(otpService.requestCode(phone, AuthOtpPurpose.REGISTER)).rejects.toThrow();

@@ -74,6 +74,32 @@ type Tx = Prisma.TransactionClient;
  * implementing a business rule — see docs/HARDENING_AUDIT_2026-08-16.md §M
  * item 8.
  */
+/**
+ * Is this the unique violation that means "those four digits are taken"?
+ *
+ * `meta.target` is not one shape. Prisma reports a unique violation either
+ * as the model's own field names (`['partnerId', 'confirmationCode']`) or
+ * as the database's index name
+ * (`purchase_intents_active_partner_confirmation_code_key`) depending on
+ * what the driver could resolve — camelCase in one, snake_case in the
+ * other, an array in one, a string in the other. Matching only the
+ * snake_case index name is what let a real collision escape the retry loop
+ * as a 500 (caught by CI on a 40-way concurrent allocation, where a
+ * collision is roughly a one-in-thirteen event and so passes locally far
+ * more often than it fails).
+ *
+ * Normalising away case and underscores matches both spellings and cannot
+ * match a different constraint on this table.
+ */
+export function isConfirmationCodeCollision(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = error.meta?.target;
+  const text = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return text.toLowerCase().replace(/_/g, '').includes('confirmationcode');
+}
+
 @Injectable()
 export class PurchaseIntentsService {
   private readonly logger = new Logger(PurchaseIntentsService.name);
@@ -439,13 +465,7 @@ export class PurchaseIntentsService {
       try {
         return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
       } catch (error) {
-        if (
-          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-          error.code !== 'P2002' ||
-          !String(error.meta?.target ?? '').includes('confirmation_code')
-        ) {
-          throw error;
-        }
+        if (!isConfirmationCodeCollision(error)) throw error;
         // Someone else holds that code right now. Draw again.
       }
     }

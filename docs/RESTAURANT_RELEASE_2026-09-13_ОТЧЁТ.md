@@ -212,7 +212,14 @@ applications, образы API/Admin/Partner, Boot the whole stack and seed it,
 **End-to-end tests**, Drive the built mobile app against the stack,
 **Backup and restore rehearsal**.
 
-CI на итоговом `fc1631b`: CI_MAIN_PLACEHOLDER
+CI на итоговом `fc1631b` (прогон #672) упал — но **не на коде релиза**.
+Задание с образами, загрузкой стека, E2E и репетицией backup/restore
+прошло; упал один шаг, «Mobile tests», из-за гонки в тесте отмены покупки:
+перезапрос резолвился мгновенно и гонялся с нажатием кнопки. Тот же код был
+зелёным на ветке и локально. Исправлено в PR
+[#47](https://github.com/arman119090-cmyk/TuTak-Platform/pull/47) — перезапрос
+теперь удерживается и отпускается тестом; `main` после него зелёный на
+`2795f79`.
 
 ## 10. Развёрнуто
 
@@ -244,7 +251,49 @@ not set`, см. блокеры. SMS-транспорт: `budgeted:viva`, 13 фо
 
 ## 11. Android APK
 
-APK_PLACEHOLDER
+- **Скачать (открыть на телефоне):**
+  https://github.com/arman119090-cmyk/TuTak-Platform/releases/tag/apk-production-apk-52
+  — файл `tutak.apk`, одно нажатие.
+- **Прямая ссылка:**
+  https://github.com/arman119090-cmyk/TuTak-Platform/releases/download/apk-production-apk-52/tutak.apk
+- **Сборка:** прогон
+  https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/34777576649 —
+  профиль `production-apk`, сборщик `local`, ветка `main`, коммит `fc1631b`.
+- **Размер:** 126 386 393 байта (120,5 МиБ).
+- **SHA-256:** `2b986485fd9fc17b7a9e0f6b0f16ea139534753156f9bc248cd4e2f31f5f7edf`
+
+Файл скачан и проверен, а не только объявлен: SHA-256 совпал с посчитанным
+в сборке посимвольно.
+
+**Устанавливается обновлением поверх прежнего.** Проверено извлечением
+подписи из файла, а не выведено из настроек:
+
+| | #52 (этот) | #51 | #50 |
+|---|---|---|---|
+| package | `am.tutak.app` | тот же | тот же |
+| versionCode | 1 | 1 | 1 |
+| versionName | 0.1.0 | 0.1.0 | 0.1.0 |
+| сертификат подписи | `AA:9B:27:2A:…:12:34` | тот же | тот же |
+
+Как и раньше: «#52» — номер прогона workflow, а не `versionCode`.
+`autoIncrement` включён только на профиле `production` (App Bundle). Android
+отказывает лишь при **строго меньшем** `versionCode`; при равном установка
+поверх проходит.
+
+**Что зашито внутри** (прочитано из `assets/app.config` в опубликованном
+файле): имя `TuTak`, пакет `am.tutak.app`, `apiBaseUrl` —
+`https://tutak-api-production.up.railway.app/v1`, `appEnv: production`,
+`useMocks: false`, `diagnostics: false`, `commit: fc1631b…`, плагины
+`expo-camera` и `expo-location`, карта — шаблон MapTiler, ключ (значение не
+печатается) и атрибуция `© MapTiler © OpenStreetMap`. `sentryDsn` пуст —
+см. блокеры.
+
+Бандл просмотрен: `MockApi` — 0, диагностический оверлей — 0, `10.0.2.2` —
+0. Четыре `localhost` и один `127.0.0.1` — литералы библиотек (адрес Sentry
+Spotlight по умолчанию, `:8081` Metro, регулярное выражение распознавания
+localhost) и запасное значение `?? 'http://localhost:4000/v1'` в
+`httpClient.ts`, которое не срабатывает, потому что `extra.apiBaseUrl`
+задан.
 
 ## 12. Чек-лист первого живого ресторана
 

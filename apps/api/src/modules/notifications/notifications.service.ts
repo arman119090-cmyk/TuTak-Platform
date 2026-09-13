@@ -1,8 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DevicePlatform, NotificationChannel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import { PushDispatchService } from './push-dispatch.service';
+
+/**
+ * Parameter names a notification may never carry.
+ *
+ * Lower-cased and matched exactly. A denylist is the weaker shape and is
+ * used here on purpose: `params` is an open map whose legitimate keys differ
+ * per template (amounts, partner names, dates), so an allowlist would have
+ * to be maintained alongside every new template and would fail closed on the
+ * harmless ones. Both known leaks are closed at their own call sites; this
+ * catches the next one.
+ */
+const NEVER_IN_A_NOTIFICATION = new Set([
+  'code',
+  'otp',
+  'pin',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'password',
+  'secret',
+]);
 
 export interface SendNotificationParams {
   userId: string;
@@ -21,6 +42,8 @@ export interface SendNotificationParams {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pushDispatch: PushDispatchService,
@@ -41,7 +64,7 @@ export class NotificationsService {
         channel: params.channel ?? NotificationChannel.IN_APP,
         titleKey: params.titleKey,
         bodyKey: params.bodyKey,
-        params: (params.params ?? undefined) as Prisma.InputJsonValue,
+        params: this.withoutSecrets(params.params) as Prisma.InputJsonValue,
       },
     });
 
@@ -55,6 +78,44 @@ export class NotificationsService {
     }
 
     return notification;
+  }
+
+  /**
+   * Drops anything that must never be readable through the inbox.
+   *
+   * A notification row is returned in full by `listMine()` to anyone holding
+   * a session for the account. A password-reset code stored here turned a
+   * session into a password reset; a phone-verification code stored here
+   * defeated phone verification outright, because the entire point of that
+   * code is to prove control of the *number*, and a code readable in-app
+   * proves nothing.
+   *
+   * Both call sites have stopped sending one. This is the second lock, at
+   * the only place every notification passes through: a future caller that
+   * puts a secret in `params` loses it here rather than publishing it, and
+   * the log line says so loudly enough to be found.
+   *
+   * Dropping rather than refusing is deliberate. Refusing would fail the
+   * request a customer is waiting on — and the notification is not the part
+   * that matters, the SMS is.
+   */
+  private withoutSecrets(params: SendNotificationParams['params']) {
+    if (!params || typeof params !== 'object') return params ?? undefined;
+
+    const kept: Record<string, unknown> = {};
+    const dropped: string[] = [];
+    for (const [key, value] of Object.entries(params)) {
+      if (NEVER_IN_A_NOTIFICATION.has(key.toLowerCase())) dropped.push(key);
+      else kept[key] = value;
+    }
+
+    if (dropped.length > 0) {
+      this.logger.error(
+        `Refused to store ${dropped.join(', ')} in a notification: the inbox is readable by ` +
+          'anyone holding a session for this account. Send the secret by SMS and nowhere else.',
+      );
+    }
+    return kept as SendNotificationParams['params'];
   }
 
   /**

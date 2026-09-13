@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { PrismaClient, RoleName } from '@prisma/client';
 import { AdminService } from '../src/modules/admin/admin.service';
 import { UsersService } from '../src/modules/users/users.service';
@@ -37,6 +37,24 @@ describe('Account state enforcement (integration)', () => {
     await truncateAll(prisma);
   });
 
+  /** The caller `setActive` now rank-checks against. */
+  const actingAs = (id: string, ...roles: RoleName[]) =>
+    ({
+      id,
+      phone: '+37400000000',
+      roles,
+      permissions: [],
+      partnerScopes: {},
+      mustChangePassword: false,
+    }) as unknown as Parameters<AdminService['setActive']>[2];
+
+  const platformAdmin = async (role: RoleName) => {
+    const { user } = await createCustomer(prisma);
+    const roleRow = await prisma.role.findUniqueOrThrow({ where: { name: role } });
+    await prisma.userRole.create({ data: { userId: user.id, roleId: roleRow.id } });
+    return user;
+  };
+
   it('builds claims for an active account', async () => {
     const { user } = await createCustomer(prisma);
     const claims = await users.buildRequestUserClaims(user.id);
@@ -45,7 +63,7 @@ describe('Account state enforcement (integration)', () => {
 
   it('rejects a deactivated account on its very next request', async () => {
     const { user } = await createCustomer(prisma);
-    await admin.setActive(user.id, false);
+    await admin.setActive(user.id, false, actingAs('an-admin', RoleName.SUPER_ADMIN));
 
     await expect(users.buildRequestUserClaims(user.id)).rejects.toThrow(UnauthorizedException);
   });
@@ -85,7 +103,7 @@ describe('Account state enforcement (integration)', () => {
       });
     }
 
-    await admin.setActive(user.id, false);
+    await admin.setActive(user.id, false, actingAs('an-admin', RoleName.SUPER_ADMIN));
 
     // Flagging the row alone was not enough: an un-revoked refresh token let
     // the attacker mint new access tokens after being locked out.
@@ -105,10 +123,61 @@ describe('Account state enforcement (integration)', () => {
       },
     });
 
-    await admin.setActive(user.id, true);
+    await admin.setActive(user.id, true, actingAs('an-admin', RoleName.SUPER_ADMIN));
     expect(await prisma.refreshToken.count({ where: { userId: user.id, revokedAt: null } })).toBe(
       1,
     );
+  });
+
+  /**
+   * Disabling an account is not a smaller act than removing one role from
+   * it: it ends every session and locks the person out of the platform
+   * entirely. `revokeRole` has been rank-checked, self-protected and
+   * last-SUPER_ADMIN-protected since it was written; this door had none of
+   * the three.
+   */
+  describe('who may disable whom', () => {
+    it('refuses an ADMIN disabling a SUPER_ADMIN', async () => {
+      const target = await platformAdmin(RoleName.SUPER_ADMIN);
+      const other = await platformAdmin(RoleName.SUPER_ADMIN);
+      expect(other.id).not.toBe(target.id); // not the last one — rank is the point here
+
+      await expect(
+        admin.setActive(target.id, false, actingAs('a-mere-admin', RoleName.ADMIN)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+      expect(after.isActive).toBe(true);
+    });
+
+    it('refuses disabling the last active SUPER_ADMIN', async () => {
+      const onlyOne = await platformAdmin(RoleName.SUPER_ADMIN);
+
+      await expect(
+        admin.setActive(onlyOne.id, false, actingAs('another-super', RoleName.SUPER_ADMIN)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses an administrator disabling themselves', async () => {
+      const self = await platformAdmin(RoleName.SUPER_ADMIN);
+      await expect(
+        admin.setActive(self.id, false, actingAs(self.id, RoleName.SUPER_ADMIN)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('never hands back the password hash', async () => {
+      // An administrator is not an attacker. A hash that travels is one a
+      // proxy logs, a browser caches and a ticket quotes — and offline
+      // cracking does not care which of those it came from.
+      const { user } = await createCustomer(prisma);
+      const result = await admin.setActive(
+        user.id,
+        false,
+        actingAs('an-admin', RoleName.SUPER_ADMIN),
+      );
+      expect(JSON.stringify(result)).not.toContain('passwordHash');
+      expect(Object.keys(result)).not.toContain('passwordHash');
+    });
   });
 
   it('grants a role idempotently', async () => {

@@ -47,13 +47,17 @@ describe('Phone verification (integration)', () => {
     await truncateAll(prisma);
   });
 
-  /** Reads the code out of the notification the request produced. */
+  /**
+   * Reads the code out of the SMS, which is the only place it exists.
+   *
+   * It used to come from the notification row the same call wrote — and a
+   * code readable through the in-app inbox defeats this check entirely,
+   * because the whole point of it is to prove control of the number. The
+   * leak is asserted closed at the bottom of this file.
+   */
   const deliveredCode = async (userId: string) => {
-    const note = await prisma.notification.findFirstOrThrow({
-      where: { userId, titleKey: 'notifications.phoneVerificationTitle' },
-      orderBy: { createdAt: 'desc' },
-    });
-    return (note.params as { code: string }).code;
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    return harness.sms.lastCodeTo(user.phone);
   };
 
   const unverified = () => createCustomer(prisma, { isPhoneVerified: false });
@@ -270,4 +274,28 @@ describe('Phone verification (integration)', () => {
       await expect(verification.assertCanEarn(ok.id)).resolves.toBeUndefined();
     });
   });
+
+  /**
+   * The leak this suite used to depend on, and why it matters more here than
+   * anywhere else: this code exists to prove control of the *number*. One a
+   * session can read proves nothing at all, so a person could have verified
+   * a number that was never theirs.
+   */
+  describe('the code never reaches anything a session can read', () => {
+    it('is not stored on the notification the request writes', async () => {
+      const { user } = await unverified();
+      harness.sms.clear();
+      await verification.request(user.id);
+
+      const code = harness.sms.lastCodeTo(user.phone);
+      expect(code).toMatch(/^\d{4,8}$/);
+
+      const notes = await prisma.notification.findMany({ where: { userId: user.id } });
+      expect(notes.length).toBeGreaterThan(0);
+      for (const note of notes) {
+        expect(JSON.stringify(note.params ?? {})).not.toContain(code);
+      }
+    });
+  });
+
 });

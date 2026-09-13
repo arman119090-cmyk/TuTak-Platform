@@ -62,15 +62,27 @@ import { validate } from '../config/env.validation';
  * configuration it reads `alerts.webhookUrl` and `appEnv` from, and the
  * Redis client `AlertsService` suppresses repeats with. Nothing about the
  * path being verified is stubbed by leaving the rest out.
+ *
+ * Built inside a function rather than declared at module scope, and that is
+ * not style. `ConfigModule.forRoot({ validate })` runs its validation the
+ * moment the decorator is evaluated — which is import time. Declared at the
+ * top level, merely importing this file to unit-test the two pure functions
+ * above would demand `DATABASE_URL` and both JWT secrets, and the unit
+ * suite would stop running on a machine that has none. Nothing here needs
+ * to exist until `main()` asks for it.
  */
-@Module({
-  imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate }),
-    RedisModule,
-    AlertsModule,
-  ],
-})
-class AlertVerifyModule {}
+function alertVerifyModule() {
+  @Module({
+    imports: [
+      ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate }),
+      RedisModule,
+      AlertsModule,
+    ],
+  })
+  class AlertVerifyModule {}
+
+  return AlertVerifyModule;
+}
 
 export interface AlertVerifyResult {
   sent: boolean;
@@ -142,7 +154,7 @@ async function main() {
   const appEnv = resolveAppEnvironment(process.env);
   // `error` so the bootstrap chatter of a whole Nest application does not
   // bury the one line this script exists to print.
-  const app = await NestFactory.createApplicationContext(AlertVerifyModule, {
+  const app = await NestFactory.createApplicationContext(alertVerifyModule(), {
     logger: ['error'],
   });
 

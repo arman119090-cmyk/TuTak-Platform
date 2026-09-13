@@ -24,6 +24,13 @@ module.exports = {
       rootDir: __dirname,
       testEnvironment: 'node',
       testMatch: ['<rootDir>/src/**/*.spec.ts'],
+      // Runs before any module is imported, which is the only moment that
+      // works: `ConfigModule.forRoot({ validate })` validates when its
+      // decorator is evaluated, so a spec that transitively reaches
+      // `AppModule` would otherwise demand a DATABASE_URL and both JWT
+      // secrets before a single test ran. See the file for why filling them
+      // in here weakens nothing.
+      setupFiles: ['<rootDir>/test/setup/unit-env.ts'],
       transform: {
         '^.+\\.ts$': ['ts-jest', { tsconfig: path.join(__dirname, 'tsconfig.spec.json') }],
       },

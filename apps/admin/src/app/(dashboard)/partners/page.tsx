@@ -181,9 +181,22 @@ export default function PartnersPage() {
                     {(p.bonusAccrualRateBps / 100).toFixed(2)}%
                   </Td>
                   <Td>
-                    <Badge tone={p.isActive ? 'available' : 'neutral'}>
-                      {p.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
+                    {/* Two different questions, and this column used to answer
+                        only the second one. `status` says whether the business
+                        was ever admitted; `isActive` says whether an admitted
+                        one is trading today. Showing `isActive` alone made an
+                        application in the queue indistinguishable from a
+                        partner somebody suspended this morning — and nothing
+                        in the panel said anyone was waiting for an answer. */}
+                    {p.status === 'PENDING_APPROVAL' ? (
+                      <Badge tone="pending">Awaiting approval</Badge>
+                    ) : p.status === 'REJECTED' ? (
+                      <Badge tone="danger">Rejected</Badge>
+                    ) : (
+                      <Badge tone={p.isActive ? 'available' : 'neutral'}>
+                        {p.isActive ? 'Active' : 'Suspended'}
+                      </Badge>
+                    )}
                   </Td>
                   <Td align="right">
                     <div className="flex justify-end gap-2">

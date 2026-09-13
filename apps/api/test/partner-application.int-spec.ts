@@ -100,6 +100,69 @@ describe('Partner applications (integration)', () => {
     expect(membership).not.toBeNull();
   });
 
+  describe('what the admin panel is given to work with', () => {
+    /**
+     * The applications page is a filter over this one list — there is no
+     * separate "pending applications" endpoint. So the page can only exist
+     * if `status` actually survives the projection, and `list()` builds its
+     * rows through `toPublicDto`, whose name says the opposite. It does
+     * survive, because that helper only strips the asset rows and spreads
+     * the rest, but that is an implementation detail one refactor away from
+     * quietly emptying the queue.
+     */
+    it('includes the status, so an application can be told from a partner', async () => {
+      const { user } = await createCustomer(prisma);
+      await partners.apply(application(), user.id);
+
+      const listed = await partners.list();
+
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toMatchObject({ status: PartnerStatus.PENDING_APPROVAL });
+    });
+
+    it('includes the tax number, so you can see who still owes you one', async () => {
+      const { user } = await createCustomer(prisma);
+      await partners.apply(application({ taxId: '11223344' }), user.id);
+
+      const listed = await partners.list();
+
+      expect(listed[0]).toMatchObject({ taxId: '11223344', legalName: 'Nairi Foods LLC' });
+    });
+  });
+
+  describe('deciding on an application', () => {
+    it('approving lets the partner trade on the rate they proposed', async () => {
+      const { user } = await createCustomer(prisma);
+      const applied = await partners.apply(application({ taxId: '55667788' }), user.id);
+
+      const approved = await partners.approve(applied.id);
+
+      expect(approved).toMatchObject({
+        status: PartnerStatus.ACTIVE,
+        isActive: true,
+        // Untouched by approval: approving is a yes to the applicant's offer.
+        bonusAccrualRateBps: 1000,
+      });
+    });
+
+    it('rejecting records the reason and leaves the business unable to trade', async () => {
+      const { user } = await createCustomer(prisma);
+      const applied = await partners.apply(application(), user.id);
+
+      const rejected = await partners.reject(applied.id, 'Duplicate of an existing partner');
+
+      expect(rejected).toMatchObject({ status: PartnerStatus.REJECTED, isActive: false });
+    });
+
+    it('refuses to approve the same application twice', async () => {
+      const { user } = await createCustomer(prisma);
+      const applied = await partners.apply(application(), user.id);
+      await partners.approve(applied.id);
+
+      await expect(partners.approve(applied.id)).rejects.toMatchObject({ status: 409 });
+    });
+  });
+
   it('refuses a rate that is not on the 0.5% grid', async () => {
     const { user } = await createCustomer(prisma);
 

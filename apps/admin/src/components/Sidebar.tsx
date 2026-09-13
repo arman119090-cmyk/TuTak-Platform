@@ -10,6 +10,7 @@ const NAV: NavItem[] = [
   { href: '/', label: 'Overview', icon: <NavIcon d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5" /> },
   { href: '/users', label: 'Users', icon: <NavIcon d="M16 20v-1.5A3.5 3.5 0 0 0 12.5 15h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4M15.5 4.2a3.5 3.5 0 0 1 0 6.6" /> },
   { href: '/partners', label: 'Partners', icon: <NavIcon d="M3 21h18M5 21V8l7-5 7 5v13M9.5 21v-5h5v5" /> },
+  { href: '/partner-applications', label: 'Applications', icon: <NavIcon d="M6 3h9l4 4v14H6zM15 3v5h4M9.5 13.5l2 2 4-4" /> },
   { href: '/media', label: 'Brand media', icon: <NavIcon d="M4 16.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5Zm0 0 4.5-4.5 3 3 3.5-3.5L20 15M9 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z" /> },
   { href: '/roaming-cpo-stations', label: 'Roaming-CPO stations', icon: <NavIcon d="M13 2 4 14h7l-1 8 10-13h-7l0-7Z" /> },
   { href: '/bonus', label: 'Bonus adjustments', icon: <NavIcon d="M12 3v18M5 8h9a3 3 0 0 1 0 6H5m0 0h10" /> },

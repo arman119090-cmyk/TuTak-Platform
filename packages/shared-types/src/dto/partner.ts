@@ -94,8 +94,22 @@ export interface PartnerPublicDto {
  * The full record. Returned only to a holder of PARTNER_MANAGE, or to the
  * partner's own people reading their own row.
  */
+/**
+ * Where a partner is in its life, which is not the same question as
+ * `isActive`.
+ *
+ * `status` says whether this business was ever admitted to the platform;
+ * `isActive` says whether an admitted one is trading today. A pending
+ * application and a partner suspended this morning are both "not trading",
+ * and telling them apart is the difference between a queue to work through
+ * and an incident to look into.
+ */
+export type PartnerStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED';
+
 export interface PartnerDto extends PartnerPublicDto {
   legalName: string;
+  /** See `PartnerStatus` — an application in the queue is `PENDING_APPROVAL`. */
+  status: PartnerStatus;
   /** The Armenian ՀՎՀՀ. Null until the partner supplies it — see `Partner.taxId`. */
   taxId: string | null;
   paymentCommissionRateBps: number;

@@ -646,4 +646,51 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
   });
+
+  /**
+   * One charging network must never see another's settlement.
+   *
+   * `externalSessionId` is globally unique and chosen by the CPO, and the
+   * idempotent replay used to look a session up by that field alone — so a
+   * second network settling under an id the first had already used got the
+   * first one's result back: amounts, kWh, which customer it was linked to.
+   * Sequential ids make that an accident; an API key makes it a script.
+   */
+  describe('tenant isolation on the session id', () => {
+    it('does not hand one network another network\'s settled session', async () => {
+      const mine = await scenario();
+      const theirs = await scenario();
+      expect(theirs.station.partnerId).not.toBe(mine.station.partnerId);
+
+      const sharedId = 'sess-both-networks-chose-this';
+      const settled = await settlement.settle(mine.station.partnerId, {
+        externalSessionId: sharedId,
+        externalCustomerId: mine.link.externalCustomerId,
+        externalStationId: mine.station.externalStationId!,
+        externalConnectorId: mine.connector.externalConnectorId!,
+        energyKwh: '5',
+        appliedCustomerRatePerKwh: '105',
+        finalAmount: '525',
+      });
+
+      // The other network settles under the same id it happens to have
+      // chosen. It must not receive the first network's session.
+      const intruding = settlement.settle(theirs.station.partnerId, {
+        externalSessionId: sharedId,
+        externalCustomerId: theirs.link.externalCustomerId,
+        externalStationId: theirs.station.externalStationId!,
+        externalConnectorId: theirs.connector.externalConnectorId!,
+        energyKwh: '5',
+        appliedCustomerRatePerKwh: '105',
+        finalAmount: '525',
+      });
+
+      await expect(intruding).rejects.toThrow();
+      await expect(intruding).rejects.not.toMatchObject({ sessionId: settled.sessionId });
+
+      // And nothing of the first network's was touched.
+      expect(await prisma.evSession.count({ where: { externalSessionId: sharedId } })).toBe(1);
+    });
+  });
+
 });

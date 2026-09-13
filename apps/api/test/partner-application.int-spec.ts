@@ -163,6 +163,52 @@ describe('Partner applications (integration)', () => {
     });
   });
 
+  describe('applying twice', () => {
+    /*
+     * Only reachable since the app grew a button for it. Two identical
+     * applications in the queue give an administrator no way to tell which
+     * to act on, and approving both creates two partners for one shop.
+     */
+    it('refuses a second application while the first is still waiting', async () => {
+      const { user } = await createCustomer(prisma);
+      await partners.apply(application({ displayName: 'Nairi' }), user.id);
+
+      await expect(
+        partners.apply(application({ displayName: 'Nairi again' }), user.id),
+      ).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('lets a rejected applicant try again', async () => {
+      const { user } = await createCustomer(prisma);
+      const first = await partners.apply(application(), user.id);
+      await partners.reject(first.id, 'Wrong category');
+
+      await expect(partners.apply(application(), user.id)).resolves.toMatchObject({
+        status: PartnerStatus.PENDING_APPROVAL,
+      });
+    });
+
+    it('lets someone who already runs a business open a second one', async () => {
+      const { user } = await createCustomer(prisma);
+      const first = await partners.apply(application({ taxId: '10101010' }), user.id);
+      await partners.approve(first.id);
+
+      await expect(
+        partners.apply(application({ displayName: 'Second shop' }), user.id),
+      ).resolves.toMatchObject({ status: PartnerStatus.PENDING_APPROVAL });
+    });
+
+    it('does not block a different applicant', async () => {
+      const first = await createCustomer(prisma);
+      const second = await createCustomer(prisma);
+      await partners.apply(application(), first.user.id);
+
+      await expect(
+        partners.apply(application({ displayName: 'Ararat' }), second.user.id),
+      ).resolves.toBeDefined();
+    });
+  });
+
   it('refuses a rate that is not on the 0.5% grid', async () => {
     const { user } = await createCustomer(prisma);
 

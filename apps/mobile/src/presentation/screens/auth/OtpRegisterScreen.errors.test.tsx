@@ -72,6 +72,11 @@ describe('where a registration error is shown', () => {
   const enterCode = async (code = '123456') => {
     fireEvent.changeText(await screen.findByPlaceholderText('000000'), code);
     fireEvent.press(screen.getByText('common.next'));
+    // Registration now asks for a name between the code and the password.
+    // It is optional and skipping it is a button, so these suites — which
+    // are about the password stage — walk straight past it. That the step
+    // exists and can be skipped is covered in `.name.test.tsx`.
+    fireEvent.press(await screen.findByText('nameStep.skip'));
   };
 
   /** Fills both password fields and submits the one request this flow makes. */

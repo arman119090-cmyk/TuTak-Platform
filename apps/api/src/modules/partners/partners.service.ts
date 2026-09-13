@@ -134,6 +134,34 @@ export class PartnersService {
     if (!isCommissionRateBps(dto.bonusAccrualRateBps)) {
       throw new BadRequestException('bonusAccrualRateBps must be on the 0.5% commission grid');
     }
+
+    /*
+     * One application in the queue at a time.
+     *
+     * Nothing needed this while no client could reach the endpoint. Now a
+     * button reaches it, and a person who taps twice — or opens the form
+     * again while waiting — would put two identical applications in front of
+     * an administrator with no way to tell which one to act on, and approving
+     * both would create two partners for one shop.
+     *
+     * Scoped to a *pending* application on purpose, rather than to owning a
+     * partner at all: someone whose application was rejected may reasonably
+     * apply again, and someone who already runs one business may open a
+     * second. Neither of those is the mistake this guards against.
+     */
+    const waiting = await this.prisma.partnerMembership.findFirst({
+      where: {
+        userId: applicantUserId,
+        partner: { status: PartnerStatus.PENDING_APPROVAL },
+      },
+      include: { partner: { select: { displayName: true } } },
+    });
+    if (waiting) {
+      throw new ConflictException(
+        `An application for "${waiting.partner.displayName}" is already awaiting a decision`,
+      );
+    }
+
     const ownerRole = await this.prisma.role.findUniqueOrThrow({
       where: { name: RoleName.PARTNER_OWNER },
     });

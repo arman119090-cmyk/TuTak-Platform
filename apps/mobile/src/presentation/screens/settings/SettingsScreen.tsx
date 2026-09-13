@@ -124,6 +124,47 @@ export function SettingsScreen() {
       <SectionHeader title={t('profile.sectionTitle')} />
       <AvatarControl />
 
+      {/*
+        Directly under the avatar, because it answers the same question the
+        avatar does — who is this account — and because until now there was
+        nowhere in the app to answer it in words. `PATCH /users/me` accepted a
+        name the whole time and nothing ever sent one, so an account
+        registered by SMS kept the placeholder the server writes: "Customer",
+        with the phone number in place of a surname.
+      */}
+      <Surface padded={false}>
+        <View style={{ paddingHorizontal: space[5] }}>
+          <ListRow
+            title={t('editProfile.entry')}
+            subtitle={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
+            leading={<SettingIcon name="person-outline" />}
+            trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+            onPress={() => navigation.navigate('EditProfile')}
+            last
+          />
+        </View>
+      </Surface>
+
+      {/*
+        The only way into the application form. A business owner is a customer
+        with a shop, so they are already signed in here — and the endpoint
+        behind this has existed since the platform was written with no client
+        to call it.
+      */}
+      <SectionHeader title={t('becomePartner.entry')} />
+      <Surface padded={false}>
+        <View style={{ paddingHorizontal: space[5] }}>
+          <ListRow
+            title={t('becomePartner.entry')}
+            subtitle={t('becomePartner.intro')}
+            leading={<SettingIcon name="storefront-outline" />}
+            trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+            onPress={() => navigation.navigate('BecomePartner')}
+            last
+          />
+        </View>
+      </Surface>
+
       <SectionHeader title={t('settings.language')} />
       <Surface padded={false}>
         <View style={{ paddingHorizontal: space[5] }}>

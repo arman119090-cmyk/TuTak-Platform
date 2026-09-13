@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
+import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@tutak/shared-types';
@@ -111,8 +112,10 @@ export function OtpRegisterScreen({ navigation }: Props) {
    * both platforms do natively (`passwordToggleEnabled`, the iOS secure-field
    * accessory), so it is the behaviour a thumb already expects.
    */
-  const [revealPassword, setRevealPassword] = useState(false);
-  const [revealConfirmation, setRevealConfirmation] = useState(false);
+  // One per box: revealing the password must not also reveal the copy that
+  // exists to catch a typo in it.
+  const revealPassword = usePasswordReveal();
+  const revealConfirmation = usePasswordReveal();
   /*
    * Which of the three the form is on.
    *
@@ -279,11 +282,6 @@ export function OtpRegisterScreen({ navigation }: Props) {
   const mismatch = confirmation.length > 0 && password !== confirmation;
 
   /** Each field's own eye, reporting and flipping only that field. */
-  const revealToggleFor = (revealed: boolean, set: (fn: (on: boolean) => boolean) => void) => ({
-    revealed,
-    onToggle: () => set((on) => !on),
-    label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
-  });
   // The API's own bounds, from the package both sides read. Stated here so the
   // button does not need a round trip to learn what the hint under the field
   // already says — and so the upper bound is enforced where it can still be
@@ -453,21 +451,21 @@ export function OtpRegisterScreen({ navigation }: Props) {
               traceId="password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry={!revealPassword}
+              secureTextEntry={revealPassword.secureTextEntry}
               placeholder="••••••••"
               maxLength={PASSWORD_MAX_LENGTH}
               hint={t('auth.passwordHint')}
-              revealToggle={revealToggleFor(revealPassword, setRevealPassword)}
+              revealToggle={revealPassword.revealToggle}
             />
             <TextField
               label={t('auth.confirmPassword')}
               traceId="password-confirm"
               value={confirmation}
               onChangeText={setConfirmation}
-              secureTextEntry={!revealConfirmation}
+              secureTextEntry={revealConfirmation.secureTextEntry}
               placeholder="••••••••"
               maxLength={PASSWORD_MAX_LENGTH}
-              revealToggle={revealToggleFor(revealConfirmation, setRevealConfirmation)}
+              revealToggle={revealConfirmation.revealToggle}
               // The mismatch is this screen's own judgement, so it is marked
               // on the second field — the one that can be corrected without
               // retyping the first.

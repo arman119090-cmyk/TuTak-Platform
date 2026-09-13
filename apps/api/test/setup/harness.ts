@@ -19,6 +19,10 @@ import { MemoryMediaStorage } from '../../src/infrastructure/media/memory-media-
 import { MediaModule } from '../../src/modules/media/media.module';
 import { ALERT_CHANNEL } from '../../src/infrastructure/alerts/alert-channel.interface';
 import { RecordingAlertChannel } from './recording-alert.channel';
+import { SMS_PROVIDER } from '../../src/infrastructure/sms/sms-provider.interface';
+import { BudgetedSmsProvider } from '../../src/infrastructure/sms/budgeted-sms.provider';
+import { SmsBudgetService } from '../../src/infrastructure/sms/sms-budget.service';
+import { RecordingSmsProvider } from './recording-sms.provider';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -71,6 +75,14 @@ export interface TestHarness {
   alerts: RecordingAlertChannel;
   /** The in-memory object store the media suites read back out of. */
   mediaStorage: MemoryMediaStorage;
+  /**
+   * Every SMS the platform handed to a carrier.
+   *
+   * The only place a verification code exists outside the hash in the
+   * database — which is the point: a suite that needs a code reads it from
+   * here rather than from anything a session could reach.
+   */
+  sms: RecordingSmsProvider;
   /** Clears captured alerts *and* the Redis suppression window. */
   resetAlerts(): Promise<void>;
   close(): Promise<void>;
@@ -148,6 +160,7 @@ function domainTestingModuleBuilder(
   alerts: RecordingAlertChannel,
   mediaStorage: MemoryMediaStorage,
   emitter: SettleableEventEmitter,
+  sms: RecordingSmsProvider,
 ) {
   return Test.createTestingModule({
     imports: [
@@ -190,6 +203,17 @@ function domainTestingModuleBuilder(
     .useValue(alerts)
     .overrideProvider(MEDIA_STORAGE)
     .useValue(mediaStorage)
+    // The recording transport goes *under* the budget wrapper, not in place
+    // of the whole chain. Replacing `SMS_PROVIDER` outright silently took
+    // the global SMS ceiling out of every integration test — the one
+    // protection standing between a loop and the carrier bill — and
+    // `sms-budget.int-spec.ts` is what noticed. This is production's own
+    // composition with only the last hop changed.
+    .overrideProvider(SMS_PROVIDER)
+    .useFactory({
+      factory: (budget: SmsBudgetService) => new BudgetedSmsProvider(sms, budget),
+      inject: [SmsBudgetService],
+    })
     // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
     // instance, so replacing the instance is enough — no listener needs to
     // know it happened.
@@ -206,8 +230,17 @@ export async function createTestHarness(): Promise<TestHarness> {
   // boundary is the real code — the image pipeline really re-encodes, the
   // delivery service really signs — only the bytes' destination changes.
   const mediaStorage = new MemoryMediaStorage();
+  // The only place a verification code exists outside its hash. Suites that
+  // need one read it from here; nothing a session can reach carries it.
+  const sms = new RecordingSmsProvider();
 
-  const moduleRef = await domainTestingModuleBuilder(prisma, alerts, mediaStorage, emitter).compile();
+  const moduleRef = await domainTestingModuleBuilder(
+    prisma,
+    alerts,
+    mediaStorage,
+    emitter,
+    sms,
+  ).compile();
 
   // TestingModule *is* an application context — no HTTP adapter is created,
   // so the suites exercise the services directly with no server listening.
@@ -221,6 +254,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     prisma,
     alerts,
     mediaStorage,
+    sms,
     async resetAlerts() {
       alerts.clear();
       // Suppression lives in Redis and survives table truncation, so without
@@ -285,8 +319,15 @@ export async function createHttpTestHarness(): Promise<HttpTestHarness> {
   const alerts = new RecordingAlertChannel();
   const emitter = new SettleableEventEmitter();
   const mediaStorage = new MemoryMediaStorage();
+  const sms = new RecordingSmsProvider();
 
-  const moduleRef = await domainTestingModuleBuilder(prisma, alerts, mediaStorage, emitter).compile();
+  const moduleRef = await domainTestingModuleBuilder(
+    prisma,
+    alerts,
+    mediaStorage,
+    emitter,
+    sms,
+  ).compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   // Mirrors `main.ts` bootstrap and `AppModule`'s global providers for the

@@ -35,6 +35,49 @@ function assertMayGrant(granter: RequestUser, role: RoleName): void {
   }
 }
 
+/**
+ * The highest rank a *stored* user holds, from their role rows.
+ *
+ * `rankOf` reads a `RequestUser`, which only exists for the caller. Acting on
+ * somebody else means reading their roles from the database, and this is the
+ * shape those come back in.
+ */
+function rankOfRoles(roles: readonly RoleName[]): number {
+  return roles.reduce((highest, role) => Math.max(highest, ROLE_RANK[role] ?? 0), -1);
+}
+
+/**
+ * What an administrator may see of another account.
+ *
+ * `setActive` used to return the whole Prisma `User`, which carries
+ * `passwordHash`. An administrator is not an attacker, but a password hash
+ * that travels is a password hash that gets logged by a proxy, cached by a
+ * browser, and pasted into a ticket — and offline cracking does not care
+ * which of those it came from. Nothing any caller needed was in the fields
+ * left out.
+ */
+function toAdminUserView(user: {
+  id: string;
+  phone: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  isActive: boolean;
+  isPhoneVerified: boolean;
+  createdAt: Date;
+}) {
+  return {
+    id: user.id,
+    phone: user.phone,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    isActive: user.isActive,
+    isPhoneVerified: user.isPhoneVerified,
+    createdAt: user.createdAt,
+  };
+}
+
 function assertScopingMatchesRole(role: RoleName, partnerId?: string): void {
   const needsPartner = PARTNER_SCOPED_ROLES.includes(role);
   if (needsPartner && !partnerId) {
@@ -149,7 +192,53 @@ export class AdminService {
    * refresh, while the isActive check in buildRequestUserClaims kills the
    * current access token on its very next request.
    */
-  async setActive(userId: string, isActive: boolean) {
+  async setActive(userId: string, isActive: boolean, admin: RequestUser) {
+    // Same three protections `revokeRole` has always had, and for the same
+    // reason: disabling an account is not a smaller act than removing a role
+    // from it. It ends every session and locks the person out of the
+    // platform entirely, which is *more* than revoking one role does.
+    // Matches the controller's own check rather than widening it: an
+    // administrator re-enabling themselves is impossible anyway (a disabled
+    // account has no session), and the one that matters is locking yourself
+    // out. Kept here too because a guard that only exists in a controller is
+    // a guard the next caller does not get.
+    if (userId === admin.id && !isActive) {
+      throw new ForbiddenException('You cannot deactivate your own account');
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: { include: { role: true } } },
+    });
+    if (!target) throw new NotFoundException('User not found');
+
+    const targetRoles = target.roles.map((assignment) => assignment.role.name);
+    if (rankOf(admin) < rankOfRoles(targetRoles)) {
+      // Without this an ADMIN could disable a SUPER_ADMIN — every session
+      // ended, no way back in through the product — which is precisely the
+      // escalation the rank ordering exists to prevent, reached through a
+      // different door.
+      throw new ForbiddenException('You cannot change the state of an account ranked above you');
+    }
+
+    // Disabling the last SUPER_ADMIN locks every operator out of the
+    // platform with no way back in, exactly as revoking the last one would.
+    if (!isActive && targetRoles.includes(RoleName.SUPER_ADMIN)) {
+      const superAdminRole = await this.prisma.role.findUniqueOrThrow({
+        where: { name: RoleName.SUPER_ADMIN },
+      });
+      const remaining = await this.prisma.userRole.count({
+        where: {
+          roleId: superAdminRole.id,
+          userId: { not: userId },
+          user: { isActive: true },
+        },
+      });
+      if (remaining === 0) {
+        throw new ForbiddenException('Cannot disable the last active SUPER_ADMIN');
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({ where: { id: userId }, data: { isActive } });
       if (!isActive) {
@@ -158,7 +247,7 @@ export class AdminService {
           data: { revokedAt: new Date() },
         });
       }
-      return user;
+      return toAdminUserView(user);
     });
   }
 

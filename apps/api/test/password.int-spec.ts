@@ -5,6 +5,7 @@ import { PasswordService } from '../src/modules/auth/password.service';
 import { UsersService } from '../src/modules/users/users.service';
 import { sha256Hex } from '../src/common/utils/crypto';
 import { createCustomer } from './setup/fixtures';
+import { NotificationsService } from '../src/modules/notifications/notifications.service';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
@@ -111,13 +112,14 @@ describe('Password lifecycle (integration)', () => {
   // ── Reset ──────────────────────────────────────────────────────────────
 
   describe('reset', () => {
-    /** Reads the delivered code out of the notification the request produced. */
+    /**
+     * Reads the delivered code out of the SMS, which is the only place it
+     * exists. It used to be read from the notification row the same call
+     * wrote — the leak this suite now asserts is closed, two tests below.
+     */
     const deliveredCode = async (userId: string) => {
-      const note = await prisma.notification.findFirstOrThrow({
-        where: { userId, titleKey: 'notifications.passwordResetTitle' },
-        orderBy: { createdAt: 'desc' },
-      });
-      return (note.params as { code: string }).code;
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      return harness.sms.lastCodeTo(user.phone);
     };
 
     it('lets a locked-out customer back in', async () => {
@@ -298,17 +300,57 @@ describe('Password lifecycle (integration)', () => {
       await prisma.user.update({ where: { id: user.id }, data: { mustChangePassword: true } });
 
       await passwords.requestReset(user.phone, meta);
-      const note = await prisma.notification.findFirstOrThrow({
-        where: { userId: user.id, titleKey: 'notifications.passwordResetTitle' },
-      });
-      await passwords.confirmReset(
-        user.phone,
-        (note.params as { code: string }).code,
-        NEXT,
-        meta,
-      );
+      await passwords.confirmReset(user.phone, harness.sms.lastCodeTo(user.phone), NEXT, meta);
 
       expect((await users.buildRequestUserClaims(user.id)).mustChangePassword).toBe(false);
     });
   });
+
+  /**
+   * The leak this suite used to depend on.
+   *
+   * `Notification.params` is returned in full by `GET /notifications` to
+   * anyone holding a session for the account. A reset code stored there
+   * turned a session into a password reset — and a session is exactly what
+   * an attacker has when the one thing they lack is the phone.
+   */
+  describe('the code never reaches anything a session can read', () => {
+    it('is not stored on the notification the reset writes', async () => {
+      const { user } = await withPassword();
+      harness.sms.clear();
+      await passwords.requestReset(user.phone, meta);
+
+      // It really was sent — this is not passing because nothing happened.
+      expect(harness.sms.lastCodeTo(user.phone)).toMatch(/^\d{4,8}$/);
+
+      const notes = await prisma.notification.findMany({ where: { userId: user.id } });
+      expect(notes.length).toBeGreaterThan(0);
+      for (const note of notes) {
+        expect(JSON.stringify(note.params ?? {})).not.toContain(
+          harness.sms.lastCodeTo(user.phone),
+        );
+      }
+    });
+
+    it('is dropped even when a caller puts it in params directly', async () => {
+      // The second lock, at the one place every notification passes through:
+      // a future call site that stores a secret loses it here rather than
+      // publishing it to the inbox.
+      const { user } = await withPassword();
+      const notifications = harness.app.get(NotificationsService);
+      await notifications.send({
+        userId: user.id,
+        titleKey: 'notifications.passwordResetTitle',
+        bodyKey: 'notifications.passwordResetBody',
+        params: { code: '123456', partnerName: 'kept' },
+      });
+
+      const note = await prisma.notification.findFirstOrThrow({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(note.params).toEqual({ partnerName: 'kept' });
+    });
+  });
+
 });

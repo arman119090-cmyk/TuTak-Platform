@@ -83,7 +83,12 @@ export class PhoneVerificationService {
       channel: NotificationChannel.SMS,
       titleKey: 'notifications.phoneVerificationTitle',
       bodyKey: 'notifications.phoneVerificationBody',
-      params: { code },
+      // Deliberately no code. This row is readable through
+      // `GET /notifications` by anyone holding a session for the account,
+      // and a confirmation code that a session can read is not a second
+      // factor at all — for a phone change it is not even a first one,
+      // since the whole point is to prove control of the *number*.
+      // The code travels by SMS and nowhere else.
     });
 
     return { success: true };

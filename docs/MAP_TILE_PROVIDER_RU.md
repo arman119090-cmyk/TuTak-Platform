@@ -4,11 +4,19 @@
 
 **Провайдер: MapTiler.** От тебя нужно **одно действие**:
 
-> Зарегистрироваться на maptiler.com, скопировать ключ (Account → API keys) и
-> добавить его в GitHub: **Settings → Secrets and variables → Actions**
-> — секрет `MAP_TILE_API_KEY`, переменная `MAP_TILE_URL_TEMPLATE` =
-> `https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}`
-> и переменная `MAP_TILE_ATTRIBUTION` = `© MapTiler © OpenStreetMap`.
+> 1. Зарегистрироваться на **maptiler.com** (бесплатный тариф — 100 000 запросов
+>    плиток в месяц, карту TuTak это покрывает с запасом на старте).
+> 2. **Account → API keys** — скопировать ключ.
+> 3. В GitHub: **Settings → Secrets and variables → Actions → вкладка Secrets →
+>    New repository secret**, имя — ровно `MAP_TILE_API_KEY`, значение — ключ.
+>    Нажать **Add secret**.
+
+Всё. Адрес плиток и строку копирайта сборка подставит сама — они не секретные и
+уже прописаны в workflow. Если когда-нибудь понадобится другой провайдер, их
+можно переопределить переменными `MAP_TILE_URL_TEMPLATE` и
+`MAP_TILE_ATTRIBUTION` на той же странице, вкладка **Variables**.
+
+Ключ вводится прямо в GitHub — присылать его мне не нужно и не надо.
 
 Больше ничего. Ни строчки кода менять не нужно — ни в приложении, ни в
 сборке: всё остальное уже сделано.

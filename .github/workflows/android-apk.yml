@@ -213,8 +213,24 @@ jobs:
           #
           # Repository variables rather than inputs: the key belongs to the
           # account, not to one build, and a person dispatching a build should
-          # not have to paste it. Unset means "use the development fallback",
-          # which keeps every existing build working exactly as before.
+          # not have to paste it.
+          #
+          # The template and the attribution line default to MapTiler's when a
+          # key is present and they are not, so configuring the provider is
+          # one secret rather than one secret and two variables that have to
+          # be copied exactly. Neither default is a secret — the URL shape is
+          # in MapTiler's public documentation and the attribution is a
+          # credit line that is drawn on screen — and an override is still
+          # just setting the repository variable, which is what switching
+          # provider later looks like.
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_URL_TEMPLATE" ]; then
+            MAP_TILE_URL_TEMPLATE='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
+            echo "MAP_TILE_URL_TEMPLATE not set; defaulting to MapTiler's streets-v2 raster tiles."
+          fi
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_ATTRIBUTION" ]; then
+            MAP_TILE_ATTRIBUTION='© MapTiler © OpenStreetMap'
+            echo "MAP_TILE_ATTRIBUTION not set; defaulting to MapTiler's required credit line."
+          fi
           if [ -n "$MAP_TILE_URL_TEMPLATE" ]; then
             tmp=$(mktemp)
             jq --arg p "$PROFILE" --arg v "$MAP_TILE_URL_TEMPLATE" \

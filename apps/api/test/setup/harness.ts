@@ -20,6 +20,8 @@ import { MediaModule } from '../../src/modules/media/media.module';
 import { ALERT_CHANNEL } from '../../src/infrastructure/alerts/alert-channel.interface';
 import { RecordingAlertChannel } from './recording-alert.channel';
 import { SMS_PROVIDER } from '../../src/infrastructure/sms/sms-provider.interface';
+import { BudgetedSmsProvider } from '../../src/infrastructure/sms/budgeted-sms.provider';
+import { SmsBudgetService } from '../../src/infrastructure/sms/sms-budget.service';
 import { RecordingSmsProvider } from './recording-sms.provider';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
@@ -201,8 +203,17 @@ function domainTestingModuleBuilder(
     .useValue(alerts)
     .overrideProvider(MEDIA_STORAGE)
     .useValue(mediaStorage)
+    // The recording transport goes *under* the budget wrapper, not in place
+    // of the whole chain. Replacing `SMS_PROVIDER` outright silently took
+    // the global SMS ceiling out of every integration test — the one
+    // protection standing between a loop and the carrier bill — and
+    // `sms-budget.int-spec.ts` is what noticed. This is production's own
+    // composition with only the last hop changed.
     .overrideProvider(SMS_PROVIDER)
-    .useValue(sms)
+    .useFactory({
+      factory: (budget: SmsBudgetService) => new BudgetedSmsProvider(sms, budget),
+      inject: [SmsBudgetService],
+    })
     // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
     // instance, so replacing the instance is enough — no listener needs to
     // know it happened.

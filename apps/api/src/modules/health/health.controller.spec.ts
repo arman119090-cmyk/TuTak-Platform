@@ -16,13 +16,13 @@ describe('HealthController readiness', () => {
     storage?: () => Promise<unknown>;
   }) =>
     new HealthController(
-      { $queryRaw: opts.db ?? (async () => [1]) } as never,
-      { ping: opts.redis ?? (async () => 'PONG') } as never,
+      { $queryRaw: opts.db ?? (() => Promise.resolve([1])) } as never,
+      { ping: opts.redis ?? (() => Promise.resolve('PONG')) } as never,
       {
         driverName: 's3',
-        get: opts.storage ?? (async () => null),
-        put: async () => undefined,
-        delete: async () => undefined,
+        get: opts.storage ?? (() => Promise.resolve(null)),
+        put: () => Promise.resolve(),
+        delete: () => Promise.resolve(),
       } as never,
       { get: () => false } as never,
     );
@@ -36,14 +36,14 @@ describe('HealthController readiness', () => {
   });
 
   it('is not ready without the database', async () => {
-    const controller = build({ db: async () => { throw new Error('down'); } });
+    const controller = build({ db: () => Promise.reject(new Error('down')) });
     await expect(controller.ready()).rejects.toBeInstanceOf(HttpException);
   });
 
   it('is not ready without Redis', async () => {
     // Every queue, lock and rate limit in this API runs on it: a request that
     // reserves bonus cannot complete while it is gone.
-    const controller = build({ redis: async () => { throw new Error('down'); } });
+    const controller = build({ redis: () => Promise.reject(new Error('down')) });
     await expect(controller.ready()).rejects.toBeInstanceOf(HttpException);
   });
 
@@ -52,7 +52,7 @@ describe('HealthController readiness', () => {
     // to load; purchases, accrual, referral payouts and refunds all complete.
     // Failing readiness here would pull every replica out of rotation and
     // stop the till because a picture could not be fetched.
-    const controller = build({ storage: async () => { throw new Error('bucket unreachable'); } });
+    const controller = build({ storage: () => Promise.reject(new Error('bucket unreachable')) });
 
     const result = await controller.ready();
     expect(result.status).toBe('ok');
@@ -62,9 +62,9 @@ describe('HealthController readiness', () => {
   it('probes storage with a key that cannot exist, and never writes', async () => {
     const reads: string[] = [];
     const controller = build({
-      storage: async (...args: unknown[]) => {
+      storage: (...args: unknown[]) => {
         reads.push(String(args[0]));
-        return null;
+        return Promise.resolve(null);
       },
     } as never);
 

@@ -191,12 +191,48 @@ jobs:
         env:
           API_BASE_URL: ${{ inputs.api_base_url }}
           PROFILE: ${{ inputs.profile }}
+          # The tile provider. `MAP_TILE_API_KEY` is a secret because it is
+          # billable; the template and the attribution line are not secrets
+          # and read better in plain repository variables.
+          MAP_TILE_URL_TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
+          MAP_TILE_API_KEY: ${{ secrets.MAP_TILE_API_KEY }}
+          MAP_TILE_ATTRIBUTION: ${{ vars.MAP_TILE_ATTRIBUTION }}
         run: |
           set -e
           tmp=$(mktemp)
           jq --arg p "$PROFILE" --arg url "$API_BASE_URL" \
             '.build[$p].env.API_BASE_URL = $url' eas.json > "$tmp"
           mv "$tmp" eas.json
+          # The map's tile provider crosses the same boundary for the same
+          # reason, and matters for the same kind of failure: a build with no
+          # provider configured falls back to openstreetmap.org, whose usage
+          # policy asks applications with real traffic to use their own
+          # provider. That fallback is right for a developer and wrong for
+          # anything handed to a customer, and the difference is invisible on
+          # screen until the tiles stop arriving.
+          #
+          # Repository variables rather than inputs: the key belongs to the
+          # account, not to one build, and a person dispatching a build should
+          # not have to paste it. Unset means "use the development fallback",
+          # which keeps every existing build working exactly as before.
+          if [ -n "$MAP_TILE_URL_TEMPLATE" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg v "$MAP_TILE_URL_TEMPLATE" \
+              '.build[$p].env.MAP_TILE_URL_TEMPLATE = $v' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
+          if [ -n "$MAP_TILE_API_KEY" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg v "$MAP_TILE_API_KEY" \
+              '.build[$p].env.MAP_TILE_API_KEY = $v' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
+          if [ -n "$MAP_TILE_ATTRIBUTION" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg v "$MAP_TILE_ATTRIBUTION" \
+              '.build[$p].env.MAP_TILE_ATTRIBUTION = $v' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
           # The project id crosses the same boundary and was making the same
           # trip on the same missing bus: the builder logged
           # "extra.eas.projectId is missing" while this job had it in its

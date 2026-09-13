@@ -28,6 +28,36 @@ const MIN_PURCHASES_FOR_RECOMMENDATION = 2;
 /** Enough to feel personal; few enough that "recommended" stays a meaningful label, not most of the list. */
 const MAX_RECOMMENDED_CATEGORIES = 2;
 
+/**
+ * The cashback at which a partner is marked as giving noticeably more.
+ *
+ * A tuning knob, not a law: it lives here so it can be changed without an app
+ * release, and so every client agrees on what "generous" means on any given
+ * day. Set where it is because the ordinary offer sits at a few percent, and
+ * a badge that most of the list carries stops meaning anything.
+ */
+export const HIGH_CASHBACK_PERCENT = 5;
+
+/**
+ * How near two places have to be before their rates are worth comparing.
+ *
+ * Five hundred metres is about a six-minute walk — close enough that a
+ * customer standing between the two shops is genuinely choosing, rather than
+ * being sent somewhere. Within one band the better rate ranks first; between
+ * bands the nearer band always wins, however generous the far one is.
+ *
+ * Banding, rather than a weighted score of distance and rate: a score can
+ * always be out-bid, so a high enough rate would eventually drag a partner
+ * across the city to the top of a list that is supposed to mean "near you".
+ * A band cannot be out-bid — it is a hard boundary, and that is the point.
+ */
+const DISTANCE_BAND_KM = 0.5;
+
+/** Which half-kilometre a distance falls in. */
+function distanceBand(distanceKm: number): number {
+  return Math.floor(distanceKm / DISTANCE_BAND_KM);
+}
+
 @Injectable()
 export class PartnersService {
   constructor(
@@ -631,12 +661,35 @@ export class PartnersService {
           sellsGas: b.partner.sellsGas,
           sellsPetrol: b.partner.sellsPetrol,
           recommended: recommendedCategories.includes(branchCategory),
+          highCashback: b.partner.bonusAccrualRateBps / 100 >= HIGH_CASHBACK_PERCENT,
         };
       })
       .filter((b) => b.distanceKm <= radiusKm)
-      // Recommended first, nearest first within each group — personalising
-      // this list reorders it, it never hides anything that was already on it.
-      .sort((a, b) => Number(b.recommended) - Number(a.recommended) || a.distanceKm - b.distanceKm);
+      /*
+       * Recommended first; then near before far; then generous before stingy.
+       *
+       * The middle key is the one that needs explaining. A partner who offers
+       * more deserves to be found more easily — otherwise the rate is a
+       * number the applicant picks and nobody ever rewards, and there is
+       * nothing honest to tell them when we ask for a better one. But sorting
+       * by rate outright would put a shop nine kilometres away above the one
+       * across the road, and this screen answers "where can I spend near
+       * here". A customer who walks past the near shop to reach the generous
+       * one is not better off.
+       *
+       * So distance is compared in bands rather than exactly. Inside a band
+       * the shops are close enough that the choice between them is a real
+       * choice, and there the better rate wins; across bands, nearer always
+       * wins however generous the far one is. Exact distance breaks the
+       * remaining ties, so the order is total and stable.
+       */
+      .sort(
+        (a, b) =>
+          Number(b.recommended) - Number(a.recommended) ||
+          distanceBand(a.distanceKm) - distanceBand(b.distanceKm) ||
+          b.cashbackPercent - a.cashbackPercent ||
+          a.distanceKm - b.distanceKm,
+      );
   }
 
   /**

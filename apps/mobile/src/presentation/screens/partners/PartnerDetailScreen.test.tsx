@@ -49,6 +49,7 @@ const basePartner: NearbyPartnerDto = {
   latitude: 40.19,
   longitude: 44.51,
   cashbackPercent: 3,
+  highCashback: false,
   distanceKm: 1.5,
   logo: null,
   cover: null,

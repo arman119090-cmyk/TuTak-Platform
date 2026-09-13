@@ -175,6 +175,16 @@ export interface NearbyPartnerDto {
   /** Straight-line kilometres from the point asked about, to one decimal. */
   distanceKm: number;
   /**
+   * True when this partner gives noticeably more back than the ordinary
+   * offer, at `HIGH_CASHBACK_PERCENT` or above.
+   *
+   * It exists so that choosing a generous rate buys a partner something real
+   * rather than a number nobody compares. The threshold lives on the server
+   * so it can be retuned without waiting for an app release, and so every
+   * client agrees on what "generous" means today.
+   */
+  highCashback: boolean;
+  /**
    * The chain's published logo — spec §1.3's "catalogue/map card".
    *
    * Per *partner*, not per branch: a chain's four shops are four pins with one

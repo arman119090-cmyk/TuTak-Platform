@@ -48,12 +48,14 @@ export class PurchaseIntentRefundRequestsController {
   ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(purchaseIntentId);
     assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
-    return this.requests.request({
-      purchaseIntentId: intent.id,
-      amount: dto.amount,
-      reason: dto.reason,
-      requestedByUserId: staff.id,
-    });
+    return this.requests.toDto(
+      await this.requests.request({
+        purchaseIntentId: intent.id,
+        amount: dto.amount,
+        reason: dto.reason,
+        requestedByUserId: staff.id,
+      }),
+    );
   }
 
   /**
@@ -65,11 +67,12 @@ export class PurchaseIntentRefundRequestsController {
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
   async list(@CurrentUser() user: RequestUser, @Query() query: ListRefundRequestsDto) {
     assertPartnerScope(user, query.partnerId);
-    return this.requests.listForPartner(
+    const rows = await this.requests.listForPartner(
       query.partnerId,
       query.status,
       branchFilterFor(user, query.partnerId),
     );
+    return rows.map((row) => this.requests.toDto(row));
   }
 
   /** Owner or manager only, and never the person who asked. */
@@ -79,7 +82,7 @@ export class PurchaseIntentRefundRequestsController {
     const request = await this.requests.findOrThrow(id);
     assertPartnerApprover(user, request.partnerId, 'approve a refund');
     assertResourceBranchScope(user, request.partnerId, request.partnerBranchId);
-    return this.requests.approve(id, user.id);
+    return this.requests.toDto(await this.requests.approve(id, user.id));
   }
 
   /** Same gate as approving: turning a refund down is also a decision. */
@@ -93,6 +96,6 @@ export class PurchaseIntentRefundRequestsController {
     const request = await this.requests.findOrThrow(id);
     assertPartnerApprover(user, request.partnerId, 'decide a refund');
     assertResourceBranchScope(user, request.partnerId, request.partnerBranchId);
-    return this.requests.reject(id, user.id, dto.note);
+    return this.requests.toDto(await this.requests.reject(id, user.id, dto.note));
   }
 }

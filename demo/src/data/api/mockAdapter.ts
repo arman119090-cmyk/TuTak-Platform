@@ -379,6 +379,7 @@ function handle(
         ordinaryPaymentRemainder: String(
           Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
         ),
+        refundedAmount: '0',
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
         maxBonusPaymentPercent: 50,
         // The brand snapshot the real API takes at creation — see
@@ -511,6 +512,7 @@ function handle(
       grossAmount: '5000',
       bonusAmountRequested: '0',
       ordinaryPaymentRemainder: '5000',
+      refundedAmount: '0',
       negotiatedRateBps: 500,
       maxBonusPaymentPercent: 50,
       confirmedByUserId: null,

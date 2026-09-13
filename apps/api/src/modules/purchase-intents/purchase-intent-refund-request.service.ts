@@ -10,7 +10,7 @@ import {
   PurchaseIntentStatus,
   RefundRequestStatus,
 } from '@prisma/client';
-import { parsePositiveMoney } from '../../common/utils/money';
+import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
@@ -262,6 +262,45 @@ export class PurchaseIntentRefundRequestService {
       orderBy: { requestedAt: 'desc' },
       take: 200,
     });
+  }
+
+  /**
+   * The wire shape. Prisma hands back `Decimal` and `Date`; both serialize
+   * to something a client can read, but only by accident of whatever
+   * `JSON.stringify` decides today. Money is a string here for the same
+   * reason it is everywhere else in this codebase — a JSON number cannot
+   * hold 18,4 without lying — and timestamps are ISO strings.
+   */
+  toDto(request: {
+    id: string;
+    purchaseIntentId: string;
+    partnerId: string;
+    partnerBranchId: string | null;
+    amount: Prisma.Decimal | null;
+    reason: string;
+    status: RefundRequestStatus;
+    requestedByUserId: string;
+    requestedAt: Date;
+    decidedByUserId: string | null;
+    decidedAt: Date | null;
+    decisionNote: string | null;
+    refundId: string | null;
+  }) {
+    return {
+      id: request.id,
+      purchaseIntentId: request.purchaseIntentId,
+      partnerId: request.partnerId,
+      partnerBranchId: request.partnerBranchId,
+      amount: request.amount ? request.amount.toFixed(MONEY_SCALE) : null,
+      reason: request.reason,
+      status: request.status,
+      requestedByUserId: request.requestedByUserId,
+      requestedAt: request.requestedAt.toISOString(),
+      decidedByUserId: request.decidedByUserId,
+      decidedAt: request.decidedAt ? request.decidedAt.toISOString() : null,
+      decisionNote: request.decisionNote,
+      refundId: request.refundId,
+    };
   }
 
   findOrThrow(requestId: string) {

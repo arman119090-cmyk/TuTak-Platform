@@ -1,6 +1,7 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
+import { isSupportedLocale } from '@tutak/i18n';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
 /**
@@ -171,6 +172,21 @@ function handle(
     // ── Profile and avatar ──────────────────────────────────────────────
     case 'GET /users/me':
       return envelope(state.user);
+
+    /**
+     * The profile edit the app actually makes: the interface language.
+     *
+     * Only `locale` is honoured, and only against the three languages the
+     * app ships. The real endpoint validates the same set server-side and
+     * refuses anything else, so accepting a fourth here would let the demo
+     * reach a state the product cannot.
+     */
+    case 'PATCH /users/me': {
+      const dto = body<{ locale?: string }>(config);
+      const locale = dto.locale && isSupportedLocale(dto.locale) ? dto.locale : state.user.locale;
+      state.user = { ...state.user, locale };
+      return envelope(state.user);
+    }
 
     /**
      * The offline avatar upload.
@@ -373,11 +389,13 @@ function handle(
         partnerId: dto.partnerId,
         partnerBranchId: dto.partnerBranchId ?? null,
         status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+        confirmationCode: '0042',
         grossAmount: dto.grossAmount,
         bonusAmountRequested,
         ordinaryPaymentRemainder: String(
           Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
         ),
+        refundedAmount: '0',
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
         maxBonusPaymentPercent: 50,
         // The brand snapshot the real API takes at creation — see
@@ -390,11 +408,13 @@ function handle(
           logo: null,
         },
         confirmedByUserId: null,
+        rejectedByUserId: null,
         rejectionReason: null,
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
         confirmedAt: null,
         rejectedAt: null,
+        cancelledAt: null,
       };
       state.purchaseIntents = [intent, ...state.purchaseIntents];
       return envelope(intent);
@@ -448,6 +468,48 @@ function handle(
     return envelope(stopped);
   }
 
+  // The customer's own way out, offline as well as online: the demo's
+  // auto-confirming poll below only fires while the intent is still
+  // AWAITING_CONFIRMATION, so a cancelled one stays cancelled.
+  const cancelPurchaseIntent = /^\/purchase-intents\/([^/]+)\/cancel$/.exec(path);
+  if (method === 'POST' && cancelPurchaseIntent) {
+    const id = cancelPurchaseIntent[1]!;
+    const existing = state.purchaseIntents.find((pi) => pi.id === id);
+    const cancelled: PurchaseIntentDto = {
+      ...(existing ?? {
+        id,
+        customerId: MOCK_USER.id,
+        partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+        partnerBrand: mockBrandFor(state.partners[0]?.partnerId ?? 'partner-1') ?? {
+          partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+          displayName: state.partners[0]?.name ?? 'TuTak',
+          logo: null,
+        },
+        partnerBranchId: null,
+        grossAmount: '5000',
+        bonusAmountRequested: '0',
+        ordinaryPaymentRemainder: '5000',
+        refundedAmount: '0',
+        confirmationCode: '0042',
+        negotiatedRateBps: 500,
+        maxBonusPaymentPercent: 50,
+        confirmedByUserId: null,
+        rejectedByUserId: null,
+        rejectionReason: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+        confirmedAt: null,
+        rejectedAt: null,
+      }),
+      status: PurchaseIntentStatus.CANCELLED,
+      cancelledAt: new Date().toISOString(),
+    };
+    state.purchaseIntents = existing
+      ? state.purchaseIntents.map((pi) => (pi.id === id ? cancelled : pi))
+      : [cancelled, ...state.purchaseIntents];
+    return envelope(cancelled);
+  }
+
   const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
   if (method === 'GET' && getPurchaseIntent) {
     const id = getPurchaseIntent[1]!;
@@ -466,17 +528,21 @@ function handle(
       },
       partnerBranchId: null,
       status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+      confirmationCode: '0042',
       grossAmount: '5000',
       bonusAmountRequested: '0',
       ordinaryPaymentRemainder: '5000',
+      refundedAmount: '0',
       negotiatedRateBps: 500,
       maxBonusPaymentPercent: 50,
       confirmedByUserId: null,
+      rejectedByUserId: null,
       rejectionReason: null,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
       confirmedAt: null,
       rejectedAt: null,
+      cancelledAt: null,
     };
 
     // No cashier exists in the demo, so the poll itself plays that part —

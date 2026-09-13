@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { resetSessionCaches } from '@tutak/design/web';
 import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 
 interface AuthState {
@@ -12,9 +13,24 @@ interface AuthState {
    * AuthGate can tell "signed out" from "not asked yet".
    */
   hasRestored: boolean;
+  /**
+   * Which session the state above belongs to. Bumped by `setSession` and
+   * `clear` — every sign-in, sign-out and account switch.
+   *
+   * A refresh that left before a sign-out answers after it, carrying an access
+   * token the API issued while the session was still open. Nothing in that
+   * reply says it is stale; only this counter does. Sharper here than in the
+   * admin panel: partner staff hand one browser around a counter.
+   */
+  sessionEpoch: number;
   markRestored: () => void;
   setSession: (user: AuthenticatedUserDto, tokens: AuthTokensDto) => void;
-  setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>) => void;
+  /**
+   * Writes a refreshed access token into the session it belongs to. With
+   * `expectedEpoch` given and no longer current, the write is refused and
+   * `false` returned — the token is real, but its session is gone.
+   */
+  setTokens: (tokens: Pick<AuthTokensDto, 'accessToken'>, expectedEpoch?: number) => boolean;
   clear: () => void;
 }
 
@@ -47,18 +63,41 @@ function getOrCreateDeviceId(): string {
  * identifies this browser to the refresh-token rotation, and it has to
  * survive a reload for that rotation to recognise the device at all.
  */
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   accessToken: null,
   deviceId: getOrCreateDeviceId(),
   hasRestored: false,
+  sessionEpoch: 0,
   markRestored: () => set({ hasRestored: true }),
-  setSession: (user, tokens) => set({ user, accessToken: tokens.accessToken }),
-  setTokens: (tokens) => set({ accessToken: tokens.accessToken }),
-  clear: () => set({ user: null, accessToken: null }),
+  setSession: (user, tokens) => {
+    // Before the new session is visible, not after: a query that renders
+    // between the two would be the previous user's data under the new one's
+    // name.
+    resetSessionCaches();
+    set({ user, accessToken: tokens.accessToken, sessionEpoch: get().sessionEpoch + 1 });
+  },
+  setTokens: (tokens, expectedEpoch) => {
+    if (expectedEpoch !== undefined && expectedEpoch !== get().sessionEpoch) {
+      return false;
+    }
+    set({ accessToken: tokens.accessToken });
+    return true;
+  },
+  clear: () => {
+    set({ user: null, accessToken: null, sessionEpoch: get().sessionEpoch + 1 });
+    resetSessionCaches();
+  },
 }));
 
-export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_STAFF'] as const;
+/**
+ * `PARTNER_MANAGER` belongs here too, and its absence was a real gap: a user
+ * who holds *only* that role resolved to no partner at all, so every screen
+ * in this dashboard came up empty for them. It surfaced with the refund
+ * queue, where a manager is explicitly one of the two people allowed to
+ * decide — but it was never specific to refunds.
+ */
+export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_MANAGER', 'PARTNER_STAFF'] as const;
 
 /** MVP assumption: a partner-role user belongs to exactly one partner. */
 export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string | null {
@@ -77,6 +116,24 @@ export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string |
  * server-side (commercial settings, partner integrations), so a MANAGER/
  * STAFF operator sees why an action is unavailable instead of a raw 403.
  */
+/**
+ * True when `user` may *decide* a refund at `partnerId` — owner or manager.
+ * Mirrors `assertPartnerApprover` on the API
+ * (`common/auth/partner-scope.ts`), and is used only to decide what to draw:
+ * the server refuses the action regardless, so this is about a cashier not
+ * being shown a button that will only ever answer 403.
+ */
+export function isPartnerApprover(
+  user: AuthenticatedUserDto | null,
+  partnerId: string | null,
+): boolean {
+  if (!user || !partnerId) return false;
+  return (
+    (user.partnerScopes['PARTNER_OWNER'] ?? []).includes(partnerId) ||
+    (user.partnerScopes['PARTNER_MANAGER'] ?? []).includes(partnerId)
+  );
+}
+
 export function isPartnerOwner(user: AuthenticatedUserDto | null, partnerId: string | null): boolean {
   if (!user || !partnerId) return false;
   return (user.partnerScopes['PARTNER_OWNER'] ?? []).includes(partnerId);

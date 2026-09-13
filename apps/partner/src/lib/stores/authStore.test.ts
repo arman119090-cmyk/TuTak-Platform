@@ -23,6 +23,7 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     avatar: null,
     showAvatarInReferralList: false,
     personalizedRecommendationsEnabled: false,
+    mustChangePassword: false,
     ...overrides,
   };
 }
@@ -83,8 +84,16 @@ describe('partner authStore', () => {
 });
 
 describe('PARTNER_ROLES', () => {
-  it('admits only PARTNER_OWNER and PARTNER_STAFF', () => {
-    expect(PARTNER_ROLES).toEqual(['PARTNER_OWNER', 'PARTNER_STAFF']);
+  /**
+   * PARTNER_MANAGER was missing here, and the omission was not harmless: a
+   * user holding only that role resolved to no partner at all, so every
+   * screen in this dashboard came up empty for them. The API has had the
+   * tier since the branch/staff work, and the refund queue — where a manager
+   * is explicitly one of the two people allowed to decide — is where it
+   * showed. Order matters: the most privileged scope is resolved first.
+   */
+  it('admits every partner tier the API can hand out, most privileged first', () => {
+    expect(PARTNER_ROLES).toEqual(['PARTNER_OWNER', 'PARTNER_MANAGER', 'PARTNER_STAFF']);
   });
 });
 

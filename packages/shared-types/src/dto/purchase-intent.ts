@@ -22,9 +22,23 @@ export interface PurchaseIntentDto {
   partnerId: string;
   partnerBranchId: string | null;
   status: PurchaseIntentStatus;
+  /**
+   * The four digits the customer reads out at the till so a cashier can
+   * find this purchase without scanning. A disambiguator, not a secret —
+   * finding a purchase by it still needs staff authentication and the
+   * partner/branch scope. Null on purchases created before codes existed.
+   */
+  confirmationCode: string | null;
   grossAmount: string;
   bonusAmountRequested: string;
   ordinaryPaymentRemainder: string;
+  /**
+   * How much of this purchase's merchandise value has already been returned.
+   * `0` for a sale nobody has refunded. Exposed so a dashboard can show what
+   * is still returnable without asking for the refund list of every row it
+   * draws.
+   */
+  refundedAmount: string;
   negotiatedRateBps: number;
   maxBonusPaymentPercent: number;
   /**
@@ -36,9 +50,53 @@ export interface PurchaseIntentDto {
    */
   partnerBrand: PartnerBrandDto;
   confirmedByUserId: string | null;
+  /** Who refused it. Null on purchases rejected before this was recorded. */
+  rejectedByUserId: string | null;
   rejectionReason: string | null;
   createdAt: string;
   expiresAt: string;
   confirmedAt: string | null;
   rejectedAt: string | null;
+  cancelledAt: string | null;
+}
+
+/**
+ * Whether a refund somebody asked for has been decided yet — the maker/
+ * checker split the owner chose on 2026-09-12. `PENDING` has no financial
+ * effect whatsoever; only `APPROVED` has ever touched the ledger.
+ */
+export enum RefundRequestStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+}
+
+/** A refund a member of staff asked for, as the dashboard sees it. */
+export interface PurchaseIntentRefundRequestDto {
+  id: string;
+  purchaseIntentId: string;
+  partnerId: string;
+  partnerBranchId: string | null;
+  /** Null means "whatever is still refundable", resolved at approval. */
+  amount: string | null;
+  reason: string;
+  status: RefundRequestStatus;
+  requestedByUserId: string;
+  requestedAt: string;
+  decidedByUserId: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  /** The refund this became, once approved. */
+  refundId: string | null;
+}
+
+/** What a cashier sends when a customer brings something back. */
+export interface CreateRefundRequestRequestDto {
+  amount?: string;
+  reason: string;
+}
+
+/** What an owner or manager sends when turning one down. */
+export interface RejectRefundRequestRequestDto {
+  note?: string;
 }

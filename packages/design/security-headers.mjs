@@ -155,6 +155,27 @@ export function securityHeaders(options) {
       value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
     },
     { key: 'X-DNS-Prefetch-Control', value: 'off' },
+    // Neither dashboard is a page anyone should arrive at from a search
+    // result. Nothing here was telling a crawler that: there is no robots
+    // rule in either app, and a request to the live staging admin's
+    // `/robots.txt` answers 404 — so the sign-in page of a platform that
+    // moves money was free to be indexed.
+    //
+    // Indexing is not itself an access hole: signing in still needs
+    // credentials, and the lockout and rate limits are in place. What it
+    // removes is the free reconnaissance — an indexed admin login is a
+    // published list of where to point credential stuffing, and being absent
+    // from that list costs one header.
+    //
+    // Sent as a header rather than a meta tag because it also covers what a
+    // meta tag cannot: JSON, downloads, and any non-HTML response.
+    //
+    // Deliberately *not* paired with a `Disallow: /` robots.txt, which is the
+    // reflex here and is worse: a crawler that is forbidden to fetch the page
+    // never reads this header, and a URL it finds linked elsewhere can still
+    // be listed with no content. Letting the crawler in to be told "noindex"
+    // is what actually keeps the page out.
+    { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
   ];
 
   if (!options.isDevelopment) {

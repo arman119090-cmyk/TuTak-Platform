@@ -6,5 +6,6 @@ export { Providers } from './components/Providers';
 export { ThemeToggle } from './ThemeToggle';
 export { themeInitScript, THEME_STORAGE_KEY, DEFAULT_THEME } from './theme-script';
 export type { ThemeName } from './theme-script';
-export { createHttpClient, restoreSession } from './httpClient';
+export { createHttpClient, restoreSession, SessionChangedError } from './httpClient';
 export type { ApiEnvelope, HttpAuthStore } from './httpClient';
+export { registerSessionCacheReset, resetSessionCaches } from './sessionCache';

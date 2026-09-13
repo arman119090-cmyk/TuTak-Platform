@@ -9,16 +9,10 @@ import { partnerApi } from '@/lib/api/partnerApi';
 import { BranchFuelTools } from './BranchFuelTools';
 
 /**
- * A partner's own physical locations — spec: partner self-service branches
- * (Arman, 2026-08-26: "1" — the partner adds their own, the platform does
- * not do it on their behalf). A chain can have as many as it actually has;
- * nothing here caps it below the API's own generous sanity ceiling.
- *
- * Individual create/edit/deactivate, unlike `/profile`'s offerings list:
- * a branch is referenced by real purchase history, so closing one
- * deactivates it rather than deleting the row — see `PartnerBranchDto.isActive`.
- *
- * OWNER-only, same tier as `/profile` and `/branding`.
+ * A partner's own physical locations — spec: partner self-service branches.
+ * Branch operations (QR + staff) exist for every physical partner; only the
+ * fuel-type selector is fuel-specific. A branch is referenced by purchase
+ * history, so closing one deactivates it rather than deleting the row.
  */
 export default function LocationsPage() {
   const { user } = useAuthStore();
@@ -311,15 +305,13 @@ function BranchesCard({
                           <Button size="sm" variant="tertiary" onClick={() => startEdit(branch)}>
                             Edit
                           </Button>
-                          {isFuelPartner ? (
-                            <Button
-                              size="sm"
-                              variant="tertiary"
-                              onClick={() => setManagingId(managingId === branch.id ? null : branch.id)}
-                            >
-                              {managingId === branch.id ? 'Close' : 'Manage'}
-                            </Button>
-                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="tertiary"
+                            onClick={() => setManagingId(managingId === branch.id ? null : branch.id)}
+                          >
+                            {managingId === branch.id ? 'Close' : 'Manage'}
+                          </Button>
                           <Button
                             size="sm"
                             variant="tertiary"
@@ -335,10 +327,14 @@ function BranchesCard({
                         </div>
                       </Td>
                     </Tr>
-                    {isFuelPartner && managingId === branch.id ? (
+                    {managingId === branch.id ? (
                       <Tr key={`${branch.id}-manage`}>
                         <Td colSpan={5}>
-                          <BranchFuelTools partnerId={partnerId} branchId={branch.id} />
+                          <BranchFuelTools
+                            partnerId={partnerId}
+                            branchId={branch.id}
+                            isFuelPartner={isFuelPartner}
+                          />
                         </Td>
                       </Tr>
                     ) : null}

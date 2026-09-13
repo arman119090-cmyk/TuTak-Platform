@@ -285,6 +285,23 @@ module.exports = ({ config }) => ({
         recordAudioAndroid: false,
       },
     ],
+    [
+      'expo-location',
+      {
+        // Foreground only, and worded as what it actually does: the map
+        // sorts partners by how near they are, and the app works without
+        // it. There is no background tracking anywhere in this codebase,
+        // so the plugin's background options are deliberately not set —
+        // asking for "always" would be a store-review question with no
+        // good answer, and a reason to decline the install.
+        locationAlwaysAndWhenInUsePermission:
+          'TuTak uses your location to show partners near you on the map.',
+        locationWhenInUsePermission:
+          'TuTak uses your location to show partners near you on the map.',
+        isIosBackgroundLocationEnabled: false,
+        isAndroidBackgroundLocationEnabled: false,
+      },
+    ],
     // Wires the native Sentry SDKs into the iOS/Android projects EAS builds
     // and adds the build-phase scripts that upload debug symbols/source
     // maps. `authToken` is deliberately not passed here: those native
@@ -311,6 +328,28 @@ module.exports = ({ config }) => ({
   ],
   extra: {
     apiBaseUrl: apiBaseUrl(),
+    /**
+     * Where the map picture comes from — see
+     * `src/presentation/components/map/tileSource.ts` for why this is
+     * configuration rather than a constant in the code.
+     *
+     * The default is openstreetmap.org, which is right for development and
+     * wrong for a shipped app: those servers run on donated capacity and
+     * their usage policy asks apps with real traffic to use a provider of
+     * their own. Moving is two build-time variables and no code change.
+     *
+     * `MAP_TILE_API_KEY` is not a secret in the sense `SENTRY_AUTH_TOKEN`
+     * is: a tile key identifies the account the tiles are billed to, is
+     * restricted by the provider to this app's bundle id, and has to reach
+     * the device to be used at all — exactly like `sentryDsn` below.
+     */
+    map: {
+      tileUrlTemplate:
+        process.env.MAP_TILE_URL_TEMPLATE ??
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      tileApiKey: process.env.MAP_TILE_API_KEY ?? '',
+      attribution: process.env.MAP_TILE_ATTRIBUTION ?? '© OpenStreetMap',
+    },
     appEnv: process.env.APP_ENV ?? 'development',
     /**
      * The on-screen event log. Only the `diagnostic` EAS profile sets this,

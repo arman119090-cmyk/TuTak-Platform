@@ -11,7 +11,7 @@ import {
   TILE_SIZE,
   type LatLng,
 } from './mercator';
-import { ATTRIBUTION, tileUrl } from './tileSource';
+import { attribution, tileRequestHeaders, tileUrl } from './tileSource';
 
 /**
  * A slippy map, built out of `<Image>` and arithmetic.
@@ -57,6 +57,21 @@ export function TileMap({
   const [centre, setCentre] = useState<LatLng>(initialCentre);
   const [zoom, setZoom] = useState(initialZoom);
 
+  /**
+   * `initialCentre` is not fixed any more: it starts as the city centre and
+   * becomes the person's real position when the fix arrives, seconds later.
+   * The map follows that change — but only until the person takes over. Once
+   * they have dragged, being yanked somewhere else by a late fix is the map
+   * losing their place, which is the one thing a map must never do.
+   */
+  const takenOver = useRef(false);
+  const followed = useRef(`${initialCentre.lat},${initialCentre.lng}`);
+  const initialKey = `${initialCentre.lat},${initialCentre.lng}`;
+  if (!takenOver.current && followed.current !== initialKey) {
+    followed.current = initialKey;
+    setCentre(initialCentre);
+  }
+
   // The pan is read and written between renders, so it is a ref: routing it
   // through state would re-render on every one of the sixty frames a drag
   // produces and re-fetch the tile grid each time.
@@ -101,6 +116,9 @@ export function TileMap({
         onMoveShouldSetPanResponder: (_event, gesture) =>
           Math.abs(gesture.dx) > 3 || Math.abs(gesture.dy) > 3,
         onPanResponderGrant: () => {
+          // From here on the person is driving: a location fix that lands
+          // mid-pan must not pull the view out from under them.
+          takenOver.current = true;
           dragStart.current = { centre, zoom };
         },
         onPanResponderMove: (_event, gesture) => {
@@ -163,7 +181,10 @@ export function TileMap({
       {tiles.map((tile) => (
         <Image
           key={`${tile.z}/${tile.x}/${tile.y}`}
-          source={{ uri: tileUrl(tile.x, tile.y, tile.z) }}
+          // Identification, not decoration: a tile provider that cannot
+          // tell who is calling is entitled to refuse, and OSM's policy
+          // says it does. See `tileSource.ts`.
+          source={{ uri: tileUrl(tile.x, tile.y, tile.z), headers: tileRequestHeaders() }}
           style={{
             position: 'absolute',
             left: tile.left,
@@ -218,6 +239,24 @@ export function TileMap({
       ))}
 
       <View style={[styles.zoomStack, { right: space[3], top: space[3] }]}>
+        {/*
+          Back to where the map was told to look — which, once a location fix
+          has arrived, is where the person is. Offered only after they have
+          panned away, because before that it would do nothing and a control
+          that does nothing teaches people not to trust the others.
+        */}
+        {takenOver.current ? (
+          <ZoomButton
+            icon="locate"
+            label="◎"
+            disabled={false}
+            onPress={() => {
+              takenOver.current = false;
+              followed.current = `${initialCentre.lat},${initialCentre.lng}`;
+              setCentre(initialCentre);
+            }}
+          />
+        ) : null}
         <ZoomButton
           icon="add"
           label="+"
@@ -240,7 +279,7 @@ export function TileMap({
           { color: color.textTertiary, backgroundColor: premium.glass.dark },
         ]}
       >
-        {ATTRIBUTION}
+        {attribution()}
       </Text>
     </View>
   );

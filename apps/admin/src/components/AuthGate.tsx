@@ -41,6 +41,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     const isAdmin = user?.roles.some((r) => (ADMIN_ROLES as readonly string[]).includes(r));
     if (!accessToken || !user || !isAdmin) {
       router.replace('/login');
+    } else if (user.mustChangePassword) {
+      // Every other endpoint is refused by `PasswordRotationGuard` until this
+      // is done, so rendering the dashboard would draw a shell of screens
+      // that all answer 403. Send them to the one page that works.
+      router.replace('/change-password');
     } else {
       setChecked(true);
     }

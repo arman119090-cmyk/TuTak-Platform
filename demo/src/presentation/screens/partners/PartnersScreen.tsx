@@ -553,6 +553,17 @@ function PartnerCard({
             <Text style={[text.headline, { color: premium.brand.light }]}>
               {partner.cashbackPercent}%
             </Text>
+            {/* What makes offering a generous rate worth something. The
+                server decides where the line is — the threshold lives there
+                so it can move without an app release — and ranks these
+                partners ahead of nearer-equal neighbours; this is the part
+                the customer can see, and so the part that makes the ranking
+                an honest thing to promise an applicant. */}
+            {partner.highCashback ? (
+              <View style={{ marginTop: space[1] }}>
+                <StatePill state="available" label={t('partners.goodValue')} />
+              </View>
+            ) : null}
             <Text style={[text.caption, { color: color.textTertiary, marginTop: 2 }]}>
               {formatDistance(partner.distanceKm)}
             </Text>

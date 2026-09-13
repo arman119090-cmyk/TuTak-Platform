@@ -10,6 +10,9 @@ import { ReferralScreen } from '../../presentation/screens/referral/ReferralScre
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { EditProfileScreen } from '../../presentation/screens/settings/EditProfileScreen';
+import { BecomePartnerScreen } from '../../presentation/screens/partner-application/BecomePartnerScreen';
+import { PartnerApplicationSentScreen } from '../../presentation/screens/partner-application/PartnerApplicationSentScreen';
 import { DeleteAccountScreen } from '../../presentation/screens/settings/DeleteAccountScreen';
 import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
 import { CreatePurchaseIntentScreen } from '../../presentation/screens/purchase-intent/CreatePurchaseIntentScreen';
@@ -77,6 +80,21 @@ export function RootNavigator() {
         name="EvSession"
         component={EvSessionScreen}
         options={{ title: t('ev.sessionTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{ title: t('editProfile.title'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="BecomePartner"
+        component={BecomePartnerScreen}
+        options={{ title: t('becomePartner.title'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="PartnerApplicationSent"
+        component={PartnerApplicationSentScreen}
+        options={{ title: t('partnerApplication.title'), headerShown: false }}
       />
       <Stack.Screen
         name="ChangePassword"

@@ -292,6 +292,21 @@ export function TextField({
            * it here, per field, rather than by removing the hints.
            */
           importantForAutofill="no"
+          /*
+           * The field's accessible name.
+           *
+           * The label above is a sibling `Text`, not something React Native
+           * associates with the input — there is no `htmlFor` here — so
+           * without this a screen reader reaches the box and announces an
+           * edit field with no name at all. Every field in the app was in
+           * that state.
+           *
+           * `label` and not `hint`: the hint explains, the label identifies,
+           * and a name is what the reader needs first. Callers that want
+           * something different pass their own, which the spread below
+           * overrides this with.
+           */
+          accessibilityLabel={label}
           placeholderTextColor={color.textTertiary}
           // Without this the OS paints a black caret on a black field, and
           // the user cannot see where they are typing.

@@ -21,7 +21,7 @@ import { PartnerMark } from '../../components/PartnerMark';
 import { EmptyState } from '../../components/EmptyState';
 import { Surface } from '../../components/Surface';
 import { Skeleton } from '../../components/Skeleton';
-import { walletApi } from '../../../data/api/walletApi';
+import { isWalletAbsent, walletApi } from '../../../data/api/walletApi';
 import { transactionsApi } from '../../../data/api/transactionsApi';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { formatDayGroup, formatSigned } from '../../utils/format';
@@ -42,11 +42,14 @@ export function HomeScreen({ navigation }: Props) {
     data: wallet,
     isLoading: walletLoading,
     isError: walletError,
+    error: walletErrorValue,
     refetch: refetchWallet,
   } = useQuery({
     queryKey: ['wallet'],
     queryFn: walletApi.getMyWallet,
   });
+  // An account with no wallet is a state, not a fault — see `isWalletAbsent`.
+  const noWallet = walletError && isWalletAbsent(walletErrorValue);
   const { data: txs, isLoading: txLoading } = useQuery({
     queryKey: ['transactions', 'recent'],
     queryFn: () => transactionsApi.myHistory(),
@@ -77,7 +80,17 @@ export function HomeScreen({ navigation }: Props) {
         </View>
 
         <View style={{ paddingHorizontal: layout.screenPaddingX }}>
-          {walletError ? (
+          {noWallet ? (
+            // Said plainly, and with no "Retry": nothing failed, so asking
+            // again would produce the same answer. Still no balance drawn —
+            // there is no wallet behind this account to draw one from.
+            <Surface>
+              <EmptyState
+                title={t('wallet.noWalletTitle')}
+                message={t('wallet.noWalletBody')}
+              />
+            </Surface>
+          ) : walletError ? (
             // `BalanceCard` renders `available ?? 0`, so a failed request puts
             // a confident "0 points" on the first screen of the app. A
             // customer reading that has no way to tell it from having spent

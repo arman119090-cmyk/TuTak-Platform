@@ -36,6 +36,8 @@ export interface PurchaseIntentDto {
    */
   partnerBrand: PartnerBrandDto;
   confirmedByUserId: string | null;
+  /** Who refused it. Null on purchases rejected before this was recorded. */
+  rejectedByUserId: string | null;
   rejectionReason: string | null;
   createdAt: string;
   expiresAt: string;

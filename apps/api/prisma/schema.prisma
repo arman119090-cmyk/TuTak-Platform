@@ -191,6 +191,7 @@ model User {
   challengeParticipation    ReferralChallengeParticipant?  @relation("ChallengeReferee")
   purchaseIntentsAsCustomer PurchaseIntent[]               @relation("PurchaseIntentCustomer")
   purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
+  purchaseIntentsRejected   PurchaseIntent[]               @relation("PurchaseIntentRejectedBy")
   branchStaffAssignments    PartnerBranchStaffAssignment[]
   branchStaffAssigned       PartnerBranchStaffAssignment[] @relation("BranchStaffAssignedBy")
   branchStaffDeactivated    PartnerBranchStaffAssignment[] @relation("BranchStaffDeactivatedBy")
@@ -764,8 +765,18 @@ model PurchaseIntent {
 
   bonusReservationId  String?
   sourceTransactionId String?
-  /// Individual staff identity of whoever confirmed or rejected — spec §25/§33.
+  /// Individual staff identity of whoever confirmed this purchase — spec
+  /// §25/§33. Confirmation only: this column used to claim it held "whoever
+  /// confirmed or rejected", and `reject()` never wrote it, so for every
+  /// rejected purchase the row did not say who turned the customer away.
   confirmedByUserId   String?
+  /// And who did. Separate from `confirmedByUserId` rather than shared with
+  /// it: a column named "confirmed by" holding the person who refused is the
+  /// kind of naming that misleads a year later, when somebody reads a report
+  /// instead of this comment. Null on every row rejected before this column
+  /// existed — their actor is in `AuditLog` and nowhere else, and inventing
+  /// one here would misstate who did what.
+  rejectedByUserId    String?
   rejectionReason     String?
 
   /// Set once, at confirmation. A repeat confirm call with the same key
@@ -784,6 +795,7 @@ model PurchaseIntent {
   partner     Partner                @relation(fields: [partnerId], references: [id])
   branch      PartnerBranch?         @relation(fields: [partnerBranchId], references: [id])
   confirmedBy User?                  @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  rejectedBy  User?                  @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
   refunds     PurchaseIntentRefund[]
 
   @@index([partnerId, status])

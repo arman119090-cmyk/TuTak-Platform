@@ -599,10 +599,35 @@ export class AuthService {
     return { user: await this.toAuthenticatedUser(user, claims), tokens };
   }
 
+  /**
+   * Closes one device's session: its refresh tokens and its push delivery.
+   *
+   * The push token has to go with them. It is an address, not a credential,
+   * and the address is a physical handset — so leaving it behind keeps
+   * sending this account's notifications to a phone whose owner has signed
+   * out of it. The bodies carry amounts (`notifications.listener.ts`), so
+   * that is one person's payments arriving on another's lock screen once the
+   * handset is handed on, sold, or shared at home.
+   *
+   * It gets worse than "stale", because `registerPushToken` upserts on
+   * `(userId, deviceId)`: when the next person signs in on the same handset
+   * a *second* Device row is created with the same token, and one phone is
+   * then a live delivery address for two accounts at once.
+   *
+   * Scoped to this user and this device, deliberately. Another account's row
+   * for the same handset belongs to that account's own live session, and
+   * clearing it would silence notifications nobody asked to stop. Only the
+   * row is kept — `deviceName` and `lastSeenAt` are device history worth
+   * having; what is removed is the ability to deliver.
+   */
   async logout(userId: string, deviceId: string, meta: RequestMeta) {
     await this.prisma.refreshToken.updateMany({
       where: { userId, deviceId, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+    await this.prisma.device.updateMany({
+      where: { userId, deviceId, pushToken: { not: null } },
+      data: { pushToken: null },
     });
     await this.auditService.record({
       actorUserId: userId,

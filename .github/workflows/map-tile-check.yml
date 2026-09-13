@@ -1,24 +1,27 @@
-# Asks the tile provider, from outside, whether it will serve us a tile.
+# Asks the tile provider, from outside, why it will not serve us a tile.
 #
 # The map failing on a handset looks the same whatever the cause: a grey
 # rectangle, or the app's own "unavailable" line. The provider knows the
-# reason and says it in the response body — an invalid key, an origin that is
-# not on the allow-list, a quota that has run out, a map id that does not
-# exist. This fetches one real tile and prints what came back.
+# reason — an invalid key, an origin that is not on the allow-list, a map the
+# plan does not include, a quota that has run out — but it answers a *tile*
+# request with a placeholder PNG and a bare status code, which says only
+# "no". Its JSON endpoints answer the same question in words, so this asks
+# both and puts the answers side by side.
 #
-# It never prints the key or the URL that contains it. Only status codes and
-# the provider's own message, which carries no credential.
+# It never prints the key or a URL containing it. Status codes, response
+# headers, the provider's own text, and the key's length — enough to tell a
+# truncated secret from a rejected one, and none of it a credential.
 #
-# Runs on a runner rather than a laptop for the same reason the proxy probe
-# does: the question is what the provider does with *our* key from outside
-# our network, and "Run workflow" is a button that works from a phone.
+# Runs on a runner rather than here for the same reason the proxy probe does:
+# the question is what the provider does with our key from outside our
+# network, and this network's proxy refuses api.maptiler.com outright.
 name: Check the map tiles
 
 on:
   workflow_dispatch:
     inputs:
       referer:
-        description: 'The Referer the app sends. Leave as-is unless testing an origin restriction.'
+        description: 'The Referer the app sends. Change it to test an origin restriction.'
         required: false
         default: 'https://tutak.am'
         type: string
@@ -27,7 +30,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch one tile, three ways
+      - name: Ask the provider why
         env:
           KEY: ${{ secrets.MAP_TILE_API_KEY }}
           TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
@@ -40,60 +43,98 @@ jobs:
             exit 1
           fi
 
-          # The same default the APK build falls back to when only the key
-          # is set. Assigned on its own line, single-quoted: written as a
+          # The same default the APK build falls back to when only the key is
+          # set. Assigned on its own line, single-quoted: written as a
           # `${TEMPLATE:-...}` default, bash ends the expansion at the `{z}`
-          # placeholder's closing brace and the URL comes out mangled — which
-          # is exactly what the first run of this probe measured, and why it
-          # reported a 404 that said nothing about our key.
+          # placeholder's closing brace and the URL comes out mangled.
           default_template='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
           template="$TEMPLATE"
           if [ -z "$template" ]; then
-            echo "No MAP_TILE_URL_TEMPLATE variable is set; using the build's own fallback."
             template="$default_template"
           fi
           # One real tile over Yerevan at zoom 12.
-          url="${template//\{z\}/12}"
-          url="${url//\{x\}/2782}"
-          url="${url//\{y\}/1541}"
-          url="${url//\{s\}/a}"
-          url="${url//\{key\}/$KEY}"
+          expand() {
+            local u="${1//\{z\}/12}"
+            u="${u//\{x\}/2782}"
+            u="${u//\{y\}/1541}"
+            u="${u//\{s\}/a}"
+            printf '%s' "${u//\{key\}/$KEY}"
+          }
 
+          # Every request goes through here, so the key can only ever leave
+          # in the URL curl is handed and never in anything echoed.
           probe() {
-            local label="$1"; shift
-            local body status
-            body=$(curl --silent --show-error --location --max-time 25 \
-              --write-out '\n%{http_code}' "$@" "$url" 2>&1) || body=$'(request failed)\n000'
-            status="${body##*$'\n'}"
-            body="${body%$'\n'*}"
+            local label="$1" url="$2"; shift 2
+            local head body status ctype
+            head=$(curl --silent --show-error --location --max-time 25 \
+              --output /tmp/body.bin --dump-header /tmp/head.txt \
+              --write-out '%{http_code} %{content_type}' "$@" "$url" 2>&1) \
+              || head='000 request-failed'
+            status="${head%% *}"
+            ctype="${head#* }"
             echo "### $label"
-            echo "HTTP status: $status"
-            # An image body is binary and enormous; only a text error is worth
-            # showing, and a provider's error message carries no credential.
-            if [ "$status" = "200" ]; then
-              echo "Body: (a tile — $(printf '%s' "$body" | wc -c) bytes)"
-            else
-              printf 'Body: %.400s\n' "$body"
+            echo ""
+            echo "- HTTP status: **$status**"
+            echo "- Content type: \`$ctype\`"
+            # A provider that answers in words is answering the question; an
+            # image body is a placeholder tile and says nothing beyond the
+            # status code, so it is described rather than dumped.
+            case "$ctype" in
+              image/*)
+                echo "- Body: a placeholder image ($(wc -c < /tmp/body.bin) bytes) — no explanation in it"
+                ;;
+              *)
+                body=$(tr -d '\0' < /tmp/body.bin | head -c 400)
+                echo "- Body:"
+                echo ""
+                echo '```'
+                echo "$body"
+                echo '```'
+                ;;
+            esac
+            # MapTiler puts its reason in a header on some routes.
+            grep -iE '^(x-|cf-cache|retry-after|www-authenticate)' /tmp/head.txt \
+              | grep -viE '^(x-amz-|x-cache|x-served-by|x-timer|x-request-id)' \
+              | sed 's/^/    /' | head -12 > /tmp/hdr.txt || true
+            if [ -s /tmp/hdr.txt ]; then
+              echo ""
+              echo "- Headers worth reading:"
+              echo ""
+              sed 's/^/  /' /tmp/hdr.txt
             fi
             echo ""
           }
 
+          app_headers=(--header "User-Agent: TuTak/0.1.0 (https://tutak.am)" --header "Referer: $REFERER")
+
           {
-            echo "## Tile provider response"
+            echo "## What the tile provider says"
             echo ""
-            echo "Template in use: \`${template//$KEY/REDACTED}\`"
+            echo "Template: \`${template//$KEY/REDACTED}\`"
             echo ""
-            # The built URL, key removed. A placeholder left unsubstituted
-            # here means the request never had a chance, and the provider's
-            # answer would be about the wrong address rather than our key.
-            echo "Tile asked for: \`${url//$KEY/REDACTED}\`"
+            # Not the key, and not enough to reconstruct it: only whether the
+            # secret stored here is the shape and size of a real one. A
+            # truncated or pasted-with-whitespace secret is by far the
+            # cheapest explanation for a flat refusal, and this rules it in
+            # or out without anyone reading a credential.
+            echo "Key stored here: ${#KEY} characters$( printf '%s' "$KEY" | grep -qE '^[A-Za-z0-9]+$' && echo ', letters and digits only' || echo ', **contains something other than letters and digits** — check for stray spaces or newlines' )"
             echo ""
-            probe "As the app asks (User-Agent + Referer)" \
-              --header "User-Agent: TuTak/0.1.0 (https://tutak.am)" \
-              --header "Referer: $REFERER"
-            probe "Without a Referer" \
-              --header "User-Agent: TuTak/0.1.0 (https://tutak.am)"
-            probe "Bare request, no headers of ours"
+
+            echo "## The tile the app asks for"
+            echo ""
+            probe "As the app asks (User-Agent + Referer: $REFERER)" "$(expand "$template")" "${app_headers[@]}"
+            probe "Without a Referer" "$(expand "$template")" --header "User-Agent: TuTak/0.1.0 (https://tutak.am)"
+
+            echo "## The same questions asked where the answer is in words"
+            echo ""
+            # TileJSON for the same map. Same key, same account, same map id —
+            # but this route answers in JSON, so a refusal here names itself.
+            probe "TileJSON for streets-v2" \
+              "https://api.maptiler.com/maps/streets-v2/tiles.json?key=$KEY" "${app_headers[@]}"
+            # A different map on the same key separates "this key is refused"
+            # from "this key may not have this map".
+            probe "TileJSON for basic-v2 (a different map, same key)" \
+              "https://api.maptiler.com/maps/basic-v2/tiles.json?key=$KEY" "${app_headers[@]}"
           } >> "$GITHUB_STEP_SUMMARY"
 
           cat "$GITHUB_STEP_SUMMARY"

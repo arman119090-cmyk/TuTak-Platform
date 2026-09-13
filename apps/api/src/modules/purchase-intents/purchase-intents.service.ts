@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -16,6 +17,7 @@ import {
   TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { randomInt } from 'node:crypto';
 import { AppConfig } from '../../config/configuration';
 import {
   MONEY_SCALE,
@@ -73,6 +75,32 @@ type Tx = Prisma.TransactionClient;
  * implementing a business rule — see docs/HARDENING_AUDIT_2026-08-16.md §M
  * item 8.
  */
+/**
+ * Is this the unique violation that means "those four digits are taken"?
+ *
+ * `meta.target` is not one shape. Prisma reports a unique violation either
+ * as the model's own field names (`['partnerId', 'confirmationCode']`) or
+ * as the database's index name
+ * (`purchase_intents_active_partner_confirmation_code_key`) depending on
+ * what the driver could resolve — camelCase in one, snake_case in the
+ * other, an array in one, a string in the other. Matching only the
+ * snake_case index name is what let a real collision escape the retry loop
+ * as a 500 (caught by CI on a 40-way concurrent allocation, where a
+ * collision is roughly a one-in-thirteen event and so passes locally far
+ * more often than it fails).
+ *
+ * Normalising away case and underscores matches both spellings and cannot
+ * match a different constraint on this table.
+ */
+export function isConfirmationCodeCollision(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = error.meta?.target;
+  const text = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return text.toLowerCase().replace(/_/g, '').includes('confirmationcode');
+}
+
 @Injectable()
 export class PurchaseIntentsService {
   private readonly logger = new Logger(PurchaseIntentsService.name);
@@ -356,8 +384,7 @@ export class PurchaseIntentsService {
         bonusReservationId = reservation.reservationId;
       }
 
-      const intent = await this.prisma.purchaseIntent.create({
-        data: {
+      const intent = await this.createWithConfirmationCode({
           customerId,
           partnerId: partner.id,
           partnerBranchId: dto.partnerBranchId,
@@ -378,7 +405,6 @@ export class PurchaseIntentsService {
           bonusReservationId,
           sourceTransactionId: transaction.id,
           expiresAt,
-        },
       });
 
       await this.auditService.record({
@@ -407,6 +433,72 @@ export class PurchaseIntentsService {
         .catch(() => undefined);
       throw err;
     }
+  }
+
+  /**
+   * Creates the intent with a four-digit code the till can use to find it.
+   *
+   * The code is allocated by *trying* it: a random draw, then the insert,
+   * and on the database's unique-violation another draw. Reading the taken
+   * codes first and picking a free one would be a check-then-act with a
+   * window between the two, and two customers at the same business in the
+   * same instant would both be told the same four digits. Here the index is
+   * the allocator — the only way to hold a code is to own the row that has
+   * it, and only one insert can win.
+   *
+   * Twelve attempts: with a three-minute window, the number of purchases a
+   * single business can have awaiting confirmation at once is in the tens,
+   * so the chance of even one collision is small and of twelve in a row
+   * vanishing. Exhausting them is a real (if practically unreachable)
+   * capacity limit, not a request error — hence 503 and "try again", which
+   * is exactly what a customer's retry does.
+   */
+  private async createWithConfirmationCode(
+    data: Omit<Prisma.PurchaseIntentUncheckedCreateInput, 'confirmationCode'>,
+  ) {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      // `randomInt` and not `Math.random`: the code is not a secret, but it
+      // is read aloud in a shop, and a predictable sequence would let one
+      // customer guess the code of the person ahead of them in the queue.
+      // `padStart` is what keeps 0042 from becoming 42 — see the column's
+      // own note on why this is Char(4).
+      const confirmationCode = String(randomInt(0, 10_000)).padStart(4, '0');
+      try {
+        return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
+      } catch (error) {
+        if (!isConfirmationCodeCollision(error)) throw error;
+        // Someone else holds that code right now. Draw again.
+      }
+    }
+    throw new ServiceUnavailableException(
+      'Could not allocate a purchase code just now — please try again',
+    );
+  }
+
+  /**
+   * The till's way in: the customer reads out four digits, the cashier types
+   * them, and this returns the one live purchase they belong to.
+   *
+   * Scoped to the partner by the caller (`assertPartnerScope`) and to the
+   * branch by the caller too (`assertResourceBranchScope` on the row this
+   * returns) — a code is a disambiguator, and it grants nothing on its own.
+   * Only `AWAITING_CONFIRMATION` rows are searched, which is both what the
+   * cashier means and what the partial unique index makes unambiguous: a
+   * resolved purchase releases its code, so an old slip cannot resurface
+   * someone else's purchase.
+   */
+  async findActiveByCode(partnerId: string, confirmationCode: string) {
+    const intent = await this.prisma.purchaseIntent.findFirst({
+      where: {
+        partnerId,
+        confirmationCode,
+        status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+      },
+    });
+    if (!intent) {
+      throw new NotFoundException('No purchase is waiting for that code');
+    }
+    return intent;
   }
 
   /**

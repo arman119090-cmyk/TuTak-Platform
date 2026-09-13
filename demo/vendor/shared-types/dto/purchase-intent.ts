@@ -22,6 +22,13 @@ export interface PurchaseIntentDto {
   partnerId: string;
   partnerBranchId: string | null;
   status: PurchaseIntentStatus;
+  /**
+   * The four digits the customer reads out at the till so a cashier can
+   * find this purchase without scanning. A disambiguator, not a secret —
+   * finding a purchase by it still needs staff authentication and the
+   * partner/branch scope. Null on purchases created before codes existed.
+   */
+  confirmationCode: string | null;
   grossAmount: string;
   bonusAmountRequested: string;
   ordinaryPaymentRemainder: string;

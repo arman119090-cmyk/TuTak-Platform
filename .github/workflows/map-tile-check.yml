@@ -107,6 +107,13 @@ jobs:
 
           app_headers=(--header "User-Agent: TuTak/0.1.0 (https://tutak.am)" --header "Referer: $REFERER")
 
+          # The same secret with whitespace stripped from both ends. A key
+          # pasted with a trailing newline is indistinguishable from a wrong
+          # key in the provider's answer — both are "Invalid key" — so the
+          # probe asks with the trimmed value too and lets the two answers
+          # separate a bad paste from a bad key.
+          TRIMMED="$(printf '%s' "$KEY" | tr -d '[:space:]')"
+
           {
             echo "## What the tile provider says"
             echo ""
@@ -117,7 +124,18 @@ jobs:
             # truncated or pasted-with-whitespace secret is by far the
             # cheapest explanation for a flat refusal, and this rules it in
             # or out without anyone reading a credential.
-            echo "Key stored here: ${#KEY} characters$( printf '%s' "$KEY" | grep -qE '^[A-Za-z0-9]+$' && echo ', letters and digits only' || echo ', **contains something other than letters and digits** — check for stray spaces or newlines' )"
+            echo "Key stored here: ${#KEY} characters, ${#TRIMMED} once whitespace at either end is removed."
+            if [ "${#TRIMMED}" != "${#KEY}" ]; then
+              echo ""
+              echo "The stored secret has whitespace around it — a newline or space came along with the paste."
+            fi
+            if printf '%s' "$TRIMMED" | grep -qE '^[A-Za-z0-9]+$'; then
+              echo ""
+              echo "Trimmed, it is letters and digits only, which is the shape of a MapTiler key."
+            else
+              echo ""
+              echo "Even trimmed it holds something other than letters and digits, so it is not a MapTiler key as pasted."
+            fi
             echo ""
 
             echo "## The tile the app asks for"
@@ -135,6 +153,11 @@ jobs:
             # from "this key may not have this map".
             probe "TileJSON for basic-v2 (a different map, same key)" \
               "https://api.maptiler.com/maps/basic-v2/tiles.json?key=$KEY" "${app_headers[@]}"
+            # The decisive one. If this passes where the stored value fails,
+            # nothing is wrong with the key or the account and the whole
+            # outage is a stray character in the secret.
+            probe "TileJSON for streets-v2, with the secret's whitespace stripped" \
+              "https://api.maptiler.com/maps/streets-v2/tiles.json?key=$TRIMMED" "${app_headers[@]}"
           } >> "$GITHUB_STEP_SUMMARY"
 
           cat "$GITHUB_STEP_SUMMARY"

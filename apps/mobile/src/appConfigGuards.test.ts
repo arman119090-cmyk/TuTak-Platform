@@ -249,3 +249,54 @@ describe('refuseUnkeyedMapInInstallableBuild', () => {
     });
   });
 });
+
+/**
+ * The profile a customer actually installs from.
+ *
+ * `preview` and `staging` both name the app "TuTak (preview)" / "TuTak
+ * (staging)" on the home screen — right for a pilot, wrong for the build
+ * handed to people paying with it. Only `APP_ENV=production` gives the plain
+ * name, and the existing `production` profile builds an app bundle for Play
+ * rather than something anybody can install from a link.
+ *
+ * Everything above would still pass if this profile pointed at localhost,
+ * dropped its address or used plain http — the guards would be correct and
+ * unreached, because nothing joins them to the file the builder reads.
+ */
+describe('the production-apk build profile in eas.json', () => {
+  const env = process.env;
+  const profile = (
+    require('../eas.json') as { build: Record<string, { env?: Record<string, string>; android?: { buildType?: string } }> }
+  ).build['production-apk'];
+
+  beforeEach(() => {
+    process.env = { ...env };
+    delete process.env.API_BASE_URL;
+    delete process.env.ALLOW_INSECURE_API_BASE_URL;
+    for (const [key, value] of Object.entries(profile.env ?? {})) process.env[key] = value;
+  });
+
+  afterAll(() => {
+    process.env = env;
+  });
+
+  it('is installable rather than a Play bundle', () => {
+    expect(profile.android?.buildType).toBe('apk');
+  });
+
+  it('names itself production, so the app on the phone is called TuTak', () => {
+    expect(profile.env?.APP_ENV).toBe('production');
+  });
+
+  it('carries the production address, over https, that is not the phone itself', () => {
+    expect(guards.apiBaseUrl()).toBe('https://tutak-api-production.up.railway.app/v1');
+  });
+
+  it('cannot be built without a real tile provider', () => {
+    // The escape hatch is refused for production, so this profile has no way
+    // to ship on the development map even if somebody sets the flag.
+    process.env.MAP_TILE_ALLOW_FALLBACK = '1';
+    delete process.env.MAP_TILE_URL_TEMPLATE;
+    expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).toThrow();
+  });
+});

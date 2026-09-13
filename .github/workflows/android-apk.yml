@@ -49,11 +49,11 @@ on:
         required: true
         type: string
       profile:
-        description: 'preview = standalone. staging = standalone, app name visibly marked "TuTak (staging)". diagnostic = preview plus the on-screen event log. development = needs a Metro server on a computer.'
+        description: 'production-apk = what customers install: named "TuTak", no marking, sideloadable. preview/staging = standalone but visibly marked. diagnostic = preview plus the on-screen event log. development = needs a Metro server on a computer.'
         required: true
-        default: preview
+        default: production-apk
         type: choice
-        options: [preview, staging, diagnostic, development]
+        options: [production-apk, preview, staging, diagnostic, development]
       builder:
         description: 'local = build here on the GitHub runner, spends no EAS build credit. cloud = build on EAS, spends one credit and also leaves a download link on expo.dev.'
         required: true

@@ -195,7 +195,10 @@ jobs:
           # billable; the template and the attribution line are not secrets
           # and read better in plain repository variables.
           MAP_TILE_URL_TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
-          MAP_TILE_API_KEY: ${{ secrets.MAP_TILE_API_KEY }}
+          # The secret first, then a repository variable of the same name —
+          # see `map-tile-check.yml` for why a tile key may live in either.
+          # A build that finds neither is refused by the gate below.
+          MAP_TILE_API_KEY: ${{ secrets.MAP_TILE_API_KEY || vars.MAP_TILE_API_KEY }}
           MAP_TILE_ATTRIBUTION: ${{ vars.MAP_TILE_ATTRIBUTION }}
         run: |
           set -e

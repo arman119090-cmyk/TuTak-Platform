@@ -32,11 +32,20 @@ jobs:
     steps:
       - name: Ask the provider why
         env:
-          KEY: ${{ secrets.MAP_TILE_API_KEY }}
-          # The same name as a repository *variable*. Settings has two tabs
-          # side by side, and a key pasted into the wrong one is stored
-          # perfectly and read by nothing — a failure with no error anywhere.
-          KEY_AS_VARIABLE: ${{ vars.MAP_TILE_API_KEY }}
+          # The secret first, then a repository variable of the same name.
+          #
+          # A tile key is not a secret in the sense an access token is: it
+          # ships inside every APK — it was read straight out of build 50's
+          # binary — so anyone who installs the app already has it, and what
+          # actually protects the account is MapTiler's own origin
+          # restriction. Storing it write-only bought nothing and cost the one
+          # thing that mattered: it could not be read back and checked, so two
+          # attempts at entering it failed invisibly.
+          #
+          # As a variable it is visible in Settings, which means a mistyped
+          # character can be seen and corrected by the person who typed it.
+          KEY: ${{ secrets.MAP_TILE_API_KEY || vars.MAP_TILE_API_KEY }}
+          KEY_IS_SECRET: ${{ secrets.MAP_TILE_API_KEY != '' }}
           TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
           REFERER: ${{ inputs.referer }}
         run: |
@@ -160,10 +169,12 @@ jobs:
               fi
             fi
             echo ""
-            if [ -n "${KEY_AS_VARIABLE:-}" ]; then
-              echo "⚠️ There is also a repository **variable** named MAP_TILE_API_KEY. The build reads the **secret**, never the variable — if the key was pasted into Variables, nothing uses it."
-              echo ""
+            if [ "${KEY_IS_SECRET:-}" = "true" ]; then
+              echo "Read from the repository **secret**."
+            else
+              echo "Read from the repository **variable** — the secret is empty. This is fine for a tile key, and it is the copy you can see and correct in Settings."
             fi
+            echo ""
 
             echo "## The tile the app asks for"
             echo ""

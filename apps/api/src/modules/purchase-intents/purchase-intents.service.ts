@@ -878,6 +878,10 @@ export class PurchaseIntentsService {
         where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
         data: {
           status: PurchaseIntentStatus.REJECTED,
+          // The individual who refused, on the row itself and not only in
+          // the audit log — see the column's own note. An owner asking "who
+          // turned my customer away" should not need a second table.
+          rejectedByUserId: staffUserId,
           rejectionReason: dto.comment ? `${dto.reasonCode}: ${dto.comment}` : dto.reasonCode,
           rejectedAt: new Date(),
         },

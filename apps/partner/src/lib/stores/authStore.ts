@@ -58,7 +58,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   clear: () => set({ user: null, accessToken: null }),
 }));
 
-export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_STAFF'] as const;
+/**
+ * `PARTNER_MANAGER` belongs here too, and its absence was a real gap: a user
+ * who holds *only* that role resolved to no partner at all, so every screen
+ * in this dashboard came up empty for them. It surfaced with the refund
+ * queue, where a manager is explicitly one of the two people allowed to
+ * decide — but it was never specific to refunds.
+ */
+export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_MANAGER', 'PARTNER_STAFF'] as const;
 
 /** MVP assumption: a partner-role user belongs to exactly one partner. */
 export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string | null {
@@ -77,6 +84,24 @@ export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string |
  * server-side (commercial settings, partner integrations), so a MANAGER/
  * STAFF operator sees why an action is unavailable instead of a raw 403.
  */
+/**
+ * True when `user` may *decide* a refund at `partnerId` — owner or manager.
+ * Mirrors `assertPartnerApprover` on the API
+ * (`common/auth/partner-scope.ts`), and is used only to decide what to draw:
+ * the server refuses the action regardless, so this is about a cashier not
+ * being shown a button that will only ever answer 403.
+ */
+export function isPartnerApprover(
+  user: AuthenticatedUserDto | null,
+  partnerId: string | null,
+): boolean {
+  if (!user || !partnerId) return false;
+  return (
+    (user.partnerScopes['PARTNER_OWNER'] ?? []).includes(partnerId) ||
+    (user.partnerScopes['PARTNER_MANAGER'] ?? []).includes(partnerId)
+  );
+}
+
 export function isPartnerOwner(user: AuthenticatedUserDto | null, partnerId: string | null): boolean {
   if (!user || !partnerId) return false;
   return (user.partnerScopes['PARTNER_OWNER'] ?? []).includes(partnerId);

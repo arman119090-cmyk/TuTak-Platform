@@ -10,6 +10,12 @@ import { HealthController } from './health.controller';
  * errors; red over something cosmetic takes a working till offline.
  */
 describe('HealthController readiness', () => {
+  let fired: { key: string; title: string }[] = [];
+
+  beforeEach(() => {
+    fired = [];
+  });
+
   const build = (opts: {
     db?: () => Promise<unknown>;
     redis?: () => Promise<unknown>;
@@ -25,6 +31,12 @@ describe('HealthController readiness', () => {
         delete: () => Promise.resolve(),
       } as never,
       { get: () => false } as never,
+      {
+        fire: (alert: { key: string; title: string }) => {
+          fired.push(alert);
+          return Promise.resolve(true);
+        },
+      } as never,
     );
 
   it('is ready when everything answers', async () => {
@@ -57,6 +69,23 @@ describe('HealthController readiness', () => {
     const result = await controller.ready();
     expect(result.status).toBe('ok');
     expect(result.checks.storage).toBe('error');
+  });
+
+  it('tells somebody when the bucket is gone, because nothing else would', async () => {
+    // Storage is the one dependency whose failure deliberately does not take
+    // the instance out of rotation, so it produces no deployment-health
+    // signal either. Without this, the first report of a media outage is a
+    // customer noticing a blank logo.
+    const controller = build({ storage: () => Promise.reject(new Error('bucket unreachable')) });
+    await controller.ready();
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.key).toBe('storage.unreachable:s3');
+  });
+
+  it('raises nothing while storage is answering', async () => {
+    await build({}).ready();
+    expect(fired).toHaveLength(0);
   });
 
   it('probes storage with a key that cannot exist, and never writes', async () => {

@@ -128,6 +128,7 @@ export function PartnerDetailScreen() {
           initialCentre={{ lat: partner.latitude, lng: partner.longitude }}
           initialZoom={16}
           height={180}
+          unavailableLabel={t('partners.mapUnavailable')}
         />
       </View>
 

@@ -293,6 +293,7 @@ export function PartnersScreen() {
           selectedId={selectedId}
           onSelect={selectFromMap}
           height={260}
+          unavailableLabel={t('partners.mapUnavailable')}
         />
 
         {/*

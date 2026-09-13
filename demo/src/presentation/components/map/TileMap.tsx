@@ -36,6 +36,19 @@ export interface MapMarker {
 const MIN_ZOOM = 3;
 const MAX_ZOOM = 18;
 
+/**
+ * How much of a screenful has to fail before the map admits it.
+ *
+ * One tile that does not arrive is a dropped request, and the map still reads
+ * correctly around the gap. Most of them failing is a different event — no
+ * network, a revoked key, a provider quota reached — and it leaves a blank
+ * rectangle that looks exactly like an area with nothing in it. That is the
+ * failure worth naming: a customer staring at an empty square cannot tell
+ * "the map is broken" from "there is nothing here", and will conclude the
+ * second.
+ */
+const TILES_FAILED_BEFORE_SAYING_SO = 0.5;
+
 export function TileMap({
   markers,
   initialCentre,
@@ -43,6 +56,7 @@ export function TileMap({
   selectedId,
   onSelect,
   height = 260,
+  unavailableLabel,
 }: {
   markers: MapMarker[];
   initialCentre: LatLng;
@@ -50,10 +64,29 @@ export function TileMap({
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   height?: number;
+  /**
+   * What to say when the basemap will not load. Passed in rather than
+   * translated here so this component stays free of i18n, like every other
+   * piece of pure presentation in this folder. Omitted, the map fails the
+   * way it always did — silently.
+   */
+  unavailableLabel?: string;
 }) {
   const { color, radius, space, text, premium } = useTheme();
 
   const [size, setSize] = useState({ width: 0, height: 0 });
+  // Keyed by tile URL, not by z/x/y: a tile that failed under one provider
+  // is not the same request after the provider changes, and a pan back to a
+  // previously failed square should ask again rather than stay condemned.
+  const [failedTiles, setFailedTiles] = useState<ReadonlySet<string>>(new Set());
+  const noteTileFailed = useCallback((uri: string) => {
+    setFailedTiles((previous) => {
+      if (previous.has(uri)) return previous;
+      const next = new Set(previous);
+      next.add(uri);
+      return next;
+    });
+  }, []);
   const [centre, setCentre] = useState<LatLng>(initialCentre);
   const [zoom, setZoom] = useState(initialZoom);
 
@@ -147,6 +180,20 @@ export function TileMap({
     [centre, zoom, size.width, size.height],
   );
 
+  /**
+   * Measured over the tiles currently on screen rather than over every
+   * failure ever seen, so the message appears while the map is broken and
+   * goes away by itself the moment tiles start arriving again — no retry
+   * button, no state to get stuck in.
+   */
+  const basemapUnavailable = useMemo(() => {
+    if (tiles.length === 0) return false;
+    const failed = tiles.filter((tile) =>
+      failedTiles.has(tileUrl(tile.x, tile.y, tile.z)),
+    ).length;
+    return failed / tiles.length >= TILES_FAILED_BEFORE_SAYING_SO;
+  }, [tiles, failedTiles]);
+
   const placed = useMemo(
     () =>
       size.width > 0
@@ -181,6 +228,7 @@ export function TileMap({
       {tiles.map((tile) => (
         <Image
           key={`${tile.z}/${tile.x}/${tile.y}`}
+          onError={() => noteTileFailed(tileUrl(tile.x, tile.y, tile.z))}
           // Identification, not decoration: a tile provider that cannot
           // tell who is calling is entitled to refuse, and OSM's policy
           // says it does. See `tileSource.ts`.
@@ -216,6 +264,17 @@ export function TileMap({
           describing behaviour nobody saw. Nothing replaces it — the frame's
           own border and rounded corners are enough to separate the map from
           the rest of the screen. */}
+
+      {basemapUnavailable && unavailableLabel ? (
+        <View style={styles.unavailable} pointerEvents="none">
+          <Text
+            style={[text.caption, { color: color.textSecondary, textAlign: 'center' }]}
+            accessibilityRole="text"
+          >
+            {unavailableLabel}
+          </Text>
+        </View>
+      ) : null}
 
       {placed.map(({ marker, at }) => (
         <View
@@ -335,5 +394,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingHorizontal: 6,
     paddingVertical: 2,
+  },
+  unavailable: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
 });

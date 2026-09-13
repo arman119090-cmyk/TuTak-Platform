@@ -66,6 +66,7 @@ describe('HealthController readiness under a failing dependency', () => {
       { ping: () => Promise.resolve('PONG') } as never,
       { driverName: 'memory', get: () => Promise.resolve(null) } as never,
       { get: () => false } as never,
+      { fire: () => Promise.resolve(true) } as never,
     );
 
     await expect(failingController.ready()).rejects.toThrow(HttpException);

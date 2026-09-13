@@ -213,8 +213,24 @@ jobs:
           #
           # Repository variables rather than inputs: the key belongs to the
           # account, not to one build, and a person dispatching a build should
-          # not have to paste it. Unset means "use the development fallback",
-          # which keeps every existing build working exactly as before.
+          # not have to paste it.
+          #
+          # The template and the attribution line default to MapTiler's when a
+          # key is present and they are not, so configuring the provider is
+          # one secret rather than one secret and two variables that have to
+          # be copied exactly. Neither default is a secret — the URL shape is
+          # in MapTiler's public documentation and the attribution is a
+          # credit line that is drawn on screen — and an override is still
+          # just setting the repository variable, which is what switching
+          # provider later looks like.
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_URL_TEMPLATE" ]; then
+            MAP_TILE_URL_TEMPLATE='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
+            echo "MAP_TILE_URL_TEMPLATE not set; defaulting to MapTiler's streets-v2 raster tiles."
+          fi
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_ATTRIBUTION" ]; then
+            MAP_TILE_ATTRIBUTION='© MapTiler © OpenStreetMap'
+            echo "MAP_TILE_ATTRIBUTION not set; defaulting to MapTiler's required credit line."
+          fi
           if [ -n "$MAP_TILE_URL_TEMPLATE" ]; then
             tmp=$(mktemp)
             jq --arg p "$PROFILE" --arg v "$MAP_TILE_URL_TEMPLATE" \
@@ -412,6 +428,23 @@ jobs:
             exit 1
           fi
 
+      # The one number that says "the file on the phone is the file this run
+      # built". Everything else identifying a build — the run number, the
+      # commit, the release tag — describes what was *meant* to be produced.
+      # Computed here rather than left to whoever needs it, because the only
+      # other way to get it is to download 120 MB and hash it by hand, and a
+      # check nobody can afford to run is a check nobody runs.
+      - name: Checksum the APK
+        id: checksum
+        working-directory: apps/mobile
+        run: |
+          SUM="$(sha256sum tutak.apk | cut -d' ' -f1)"
+          BYTES="$(stat -c%s tutak.apk)"
+          echo "sha256=$SUM" >> "$GITHUB_OUTPUT"
+          echo "bytes=$BYTES" >> "$GITHUB_OUTPUT"
+          echo "SHA-256: $SUM"
+          echo "Size:    $BYTES bytes"
+
       - name: Attach the APK to this run
         uses: actions/upload-artifact@v4
         with:
@@ -437,13 +470,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: apk-${{ inputs.profile }}-${{ github.run_number }}
           API_BASE_URL: ${{ inputs.api_base_url }}
+          APK_SHA256: ${{ steps.checksum.outputs.sha256 }}
+          APK_BYTES: ${{ steps.checksum.outputs.bytes }}
         run: |
           set -euo pipefail
           notes="Commit \`$GITHUB_SHA\`. Talks to \`$API_BASE_URL\`.
 
           Open this page on the Android phone and tap **tutak.apk** below.
           Android will ask permission to install from this source, which is
-          expected for an app that did not come from Play."
+          expected for an app that did not come from Play.
+
+          SHA-256 \`$APK_SHA256\` — $APK_BYTES bytes."
           gh release create "$TAG" apps/mobile/tutak.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -458,6 +495,8 @@ jobs:
           APK_URL: ${{ steps.build.outputs.apk_url }}
           BUILD_ID: ${{ steps.build.outputs.build_id }}
           RELEASE_URL: ${{ steps.release.outputs.url }}
+          APK_SHA256: ${{ steps.checksum.outputs.sha256 }}
+          APK_BYTES: ${{ steps.checksum.outputs.bytes }}
         run: |
           {
             echo "## The APK"
@@ -489,4 +528,8 @@ jobs:
             echo "Android will ask permission to install from this source; that is expected for an app that did not come from Play."
             echo ""
             echo "This build talks to \`${{ inputs.api_base_url }}\`."
+            if [ -n "${APK_SHA256:-}" ]; then
+              echo ""
+              echo "SHA-256 \`$APK_SHA256\` — $APK_BYTES bytes."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

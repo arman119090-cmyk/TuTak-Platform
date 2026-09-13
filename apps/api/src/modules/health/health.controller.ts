@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
+import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { AppConfig } from '../../config/configuration';
 import { MEDIA_STORAGE, MediaStorage } from '../../infrastructure/media/media-storage.interface';
@@ -30,6 +31,7 @@ export class HealthController {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @Inject(MEDIA_STORAGE) private readonly storage: MediaStorage,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly alerts: AlertsService,
   ) {}
 
   /**
@@ -74,15 +76,37 @@ export class HealthController {
     };
 
     if (storage.status === 'rejected') {
+      const reason =
+        storage.reason instanceof Error ? storage.reason.message : String(storage.reason);
+
       // Reported in the body *and* written to the log, because nothing else
       // would ever say it: a bucket outage is invisible from the outside
-      // until somebody notices a missing logo. This line is what an alert
-      // can be built on, and what the readiness probe leaves behind.
-      this.logger.error(
-        `Object storage (${this.storage.driverName}) is unreachable: ${
-          storage.reason instanceof Error ? storage.reason.message : String(storage.reason)
-        }`,
-      );
+      // until somebody notices a missing logo.
+      this.logger.error(`Object storage (${this.storage.driverName}) is unreachable: ${reason}`);
+
+      // And told to a person, which the log alone never does. This is the
+      // alert this line was always described as being available for — the
+      // one dependency whose failure deliberately does *not* take the
+      // instance out of rotation, and therefore the one failure that
+      // produces no other signal anywhere. Everything else that can break
+      // here either fails readiness (and shows up as a deployment going
+      // unhealthy) or already fires its own alert.
+      //
+      // One key for the whole condition rather than one per probe: readiness
+      // is polled every few seconds, and `AlertsService` suppresses a
+      // repeated key for fifteen minutes, so a bucket outage is one
+      // notification rather than several hundred. Not awaited — readiness
+      // must answer the load balancer on time whatever the alert channel is
+      // doing, and a rejected send is already handled inside `fire`.
+      void this.alerts.fire({
+        key: `storage.unreachable:${this.storage.driverName}`,
+        severity: 'warning',
+        title: 'Object storage is unreachable',
+        body:
+          `Readiness could not read from ${this.storage.driverName}: ${reason}. ` +
+          'Partner logos and customer avatars will not load. Purchases, bonus accrual, ' +
+          'referral payouts and refunds are unaffected and the API stays in rotation.',
+      });
     }
 
     // Only the two that make a request impossible take the instance out of

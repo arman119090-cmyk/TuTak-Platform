@@ -17,6 +17,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { proxyChainProbe } from './common/middleware/proxy-chain-probe';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 import { resolveTrustProxySetting } from './config/trust-proxy';
@@ -64,6 +65,11 @@ async function bootstrap() {
   app.use(compression());
   // Required to read the httpOnly refresh cookie the web clients now use.
   app.use(cookieParser());
+  // Answers, in the log and nowhere else, how many hops this deployment's own
+  // infrastructure adds to X-Forwarded-For — the measurement `client-ip.ts`
+  // insists on and that nothing else could produce. Inert unless a request
+  // asks for it by header; see `proxy-chain-probe.ts`.
+  app.use(proxyChainProbe());
 
   // Reflecting any origin while sending credentials is a misconfiguration, and
   // CORS_ORIGINS is not required by env validation — so a deployment that

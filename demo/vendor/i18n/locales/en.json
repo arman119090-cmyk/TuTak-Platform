@@ -336,7 +336,8 @@
     "distance": "Distance",
     "cashback": "Cashback",
     "about": "About",
-    "offerings": "Products & services"
+    "offerings": "Products & services",
+    "mapUnavailable": "The map is unavailable right now. Partners are listed below."
   },
   "partnerCategory": {
     "grocery": "Groceries",

@@ -24,6 +24,8 @@ got here.
 | Is there dead code or duplication lying around? | [CODEBASE_AUDIT_2026-08-30.md](CODEBASE_AUDIT_2026-08-30.md) |
 | How does roaming-CPO (a partner's own charging network) work? | [ROAMING_CPO_INTEGRATION_2026-08-25.md](ROAMING_CPO_INTEGRATION_2026-08-25.md) → [...-27-SECURITY.md](ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md) → [...FINANCIAL_ACCOUNTING_2026-08-29.md](ROAMING_CPO_FINANCIAL_ACCOUNTING_2026-08-29.md) → [...PREPAID_BALANCE_2026-08-29.md](ROAMING_CPO_PREPAID_BALANCE_2026-08-29.md), in that order |
 | How do fuel-station branches/staff work? | [FUEL_STATION_BRANCHES_2026-08-29.md](FUEL_STATION_BRANCHES_2026-08-29.md) |
+| Can we connect a real restaurant today? | [RESTAURANT_READINESS_2026-09-13.md](RESTAURANT_READINESS_2026-09-13.md), then the checklist at its end |
+| What is left before real users? | [AUDIT_ROADMAP_2026-09-10.md](AUDIT_ROADMAP_2026-09-10.md) → [ROADMAP_STATUS_2026-09-13.md](ROADMAP_STATUS_2026-09-13.md) for where each item actually stands |
 
 ## Current
 
@@ -55,6 +57,10 @@ got here.
 | [SECURITY_HARDENING_2026-08-23.md](SECURITY_HARDENING_2026-08-23.md) · [PENTEST_2026-08-23.md](PENTEST_2026-08-23.md) | CORS/headers/rate-limit hardening and an adversarial pass looking for real holes |
 | [INVESTOR_DEMO_RU.md](INVESTOR_DEMO_RU.md) · [ANDROID_APK_RU.md](ANDROID_APK_RU.md) · [STORE_SUBMISSION.md](STORE_SUBMISSION.md) | Investor walkthrough, building an installable APK from a phone, app-store submission notes |
 | [PARTNER_TERMS.md](PARTNER_TERMS.md) · [LEGAL_AGREEMENTS_DRAFT_RU.md](LEGAL_AGREEMENTS_DRAFT_RU.md) | Draft legal terms — not reviewed by a lawyer, do not ship as-is |
+| [AUDIT_ROADMAP_2026-09-10.md](AUDIT_ROADMAP_2026-09-10.md) | The maturity audit and the P0–P3 plan with hour estimates. Read with the status document below, not on its own — several items moved |
+| [ROADMAP_STATUS_2026-09-13.md](ROADMAP_STATUS_2026-09-13.md) | Where every roadmap item actually stands, checked against the code, the lockfile, Railway variables and the GitHub API. Also the branch survey: which of the 36 are merged, which are superseded, and why merging a superseded one would roll `main` back |
+| [RESTAURANT_READINESS_2026-09-13.md](RESTAURANT_READINESS_2026-09-13.md) · [RESTAURANT_FLOW_MAP_2026-09-13.md](RESTAURANT_FLOW_MAP_2026-09-13.md) | The restaurant scenario end to end: what was already right, the defects found (two of them security), what was deliberately left alone, and a READY/PARTIAL/MISSING grade per link of the chain |
+| [RELEASE_2026-09-13_MIGRATION_AND_ROLLBACK.md](RELEASE_2026-09-13_MIGRATION_AND_ROLLBACK.md) | Measured cost and rollback boundary of the migrations in the 13 September releases — the template for how a migration should be justified before it ships |
 
 ## Superseded
 

@@ -209,6 +209,37 @@ describe('The partner application, end to end (integration)', () => {
     });
   });
 
+  describe('the rate an applicant proposed is the rate they trade on', () => {
+    /*
+     * The assumption the whole "propose a generous rate" arrangement rests
+     * on, and it is currently held up by a field being absent from a DTO.
+     *
+     * A higher rate ranks a partner ahead of nearer-equal neighbours and
+     * earns a marker customers can see. If an owner could lower their own
+     * rate afterwards, that would be a bait-and-switch they could perform
+     * alone: apply at 10%, be approved and ranked on it, then drop to 0.5%
+     * while keeping the position. `UpdateCommercialSettingsDto` deliberately
+     * omits `bonusAccrualRateBps` — spec §10 — and nothing else a partner can
+     * reach writes it.
+     */
+    it('does not let an owner lower their own cashback while changing what they can', async () => {
+      const applicant = await personWhoCanApply();
+      const partner = await controller.apply(applicant.as, application());
+      await controller.approvePartner(await platformAdmin(), partner.id);
+      const asOwner = ownerOf(partner.id, applicant.id);
+
+      const updated = await controller.updateCommercialSettings(asOwner, partner.id, {
+        maxBonusPaymentPercent: 40,
+      });
+
+      // The cap they may set moved; the rate customers were promised did not.
+      expect(updated).toMatchObject({
+        maxBonusPaymentPercent: 40,
+        bonusAccrualRateBps: 1000,
+      });
+    });
+  });
+
   describe('one partner never reaches another', () => {
     it('refuses an owner asking about somebody else’s business', async () => {
       const mine = await personWhoCanApply();

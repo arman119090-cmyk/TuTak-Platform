@@ -80,6 +80,26 @@ export function assertPartnerOwner(user: RequestUser, partnerId: string, action:
 }
 
 /**
+ * The tiers that may *decide* a refund, as opposed to asking for one.
+ *
+ * Owner's decision (2026-09-12): the person at the till may start a refund
+ * and may not settle it. `PARTNER_MANAGER` is included deliberately — a
+ * shift manager is who is actually present when a customer brings something
+ * back, and requiring the owner personally would make the feature unusable
+ * on a Sunday evening. A platform admin passes, as everywhere else.
+ */
+export function assertPartnerApprover(user: RequestUser, partnerId: string, action: string): void {
+  if (isPlatformAdmin(user)) return;
+  const scopes = user.partnerScopes ?? {};
+  const approves =
+    scopes[RoleName.PARTNER_OWNER]?.includes(partnerId) ||
+    scopes[RoleName.PARTNER_MANAGER]?.includes(partnerId);
+  if (!approves) {
+    throw new ForbiddenException(`Only the partner owner or a manager may ${action}`);
+  }
+}
+
+/**
  * Roles that grant `EV_STATION_MANAGE` — kept in sync with
  * `scripts/role-permissions.ts` (ADMIN/SUPER_ADMIN also grant it, but both
  * are platform-admin roles already handled by the `isPlatformAdmin` check

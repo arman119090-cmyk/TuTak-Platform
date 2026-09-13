@@ -6,14 +6,16 @@ import { PartnersModule } from '../partners/partners.module';
 import { ReferralModule } from '../referral/referral.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
+import { PurchaseIntentRefundRequestsController } from './purchase-intent-refund-requests.controller';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsController } from './purchase-intents.controller';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
 @Module({
   imports: [AuditModule, LedgerModule, MediaModule, PartnersModule, ReferralModule, TransactionsModule, WalletModule],
-  controllers: [PurchaseIntentsController],
-  providers: [PurchaseIntentsService, PurchaseIntentRefundService],
-  exports: [PurchaseIntentsService, PurchaseIntentRefundService],
+  controllers: [PurchaseIntentsController, PurchaseIntentRefundRequestsController],
+  providers: [PurchaseIntentsService, PurchaseIntentRefundService, PurchaseIntentRefundRequestService],
+  exports: [PurchaseIntentsService, PurchaseIntentRefundService, PurchaseIntentRefundRequestService],
 })
 export class PurchaseIntentsModule {}

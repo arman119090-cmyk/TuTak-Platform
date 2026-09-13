@@ -20,6 +20,7 @@
     "test:unit": "jest --selectProjects unit",
     "test:int": "jest --selectProjects integration",
     "test:int:verbose": "jest --selectProjects integration --verbose",
+    "test:int:shard": "jest --selectProjects integration --verbose --shard=\"$JEST_SHARD\"",
     "sentry:verify": "ts-node -r tsconfig-paths/register src/scripts/sentry-verify.ts",
     "alert:verify": "ts-node -r tsconfig-paths/register src/scripts/alert-verify.ts"
   },

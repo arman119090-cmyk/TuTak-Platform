@@ -83,8 +83,15 @@ function renderScreen() {
 /** Presses the destructive button of the confirmation alert, as a customer would. */
 function confirmTheAlert() {
   const alert = Alert.alert as unknown as jest.Mock;
-  const buttons = alert.mock.calls.at(-1)?.[2] as Array<{ style?: string; onPress?: () => void }>;
-  const destructive = buttons.find((b) => b.style === 'destructive');
+  const buttons = alert.mock.calls.at(-1)?.[2] as
+    | Array<{ style?: string; onPress?: () => void }>
+    | undefined;
+  // Says which thing went wrong. Without this the failure was a bare
+  // `Cannot read properties of undefined (reading 'find')`, which describes
+  // the helper rather than the screen — and the screen not raising the
+  // alert at all is the interesting case, not a missing button inside one.
+  expect(buttons).toBeDefined();
+  const destructive = buttons!.find((b) => b.style === 'destructive');
   expect(destructive).toBeDefined();
   destructive!.onPress?.();
 }
@@ -149,11 +156,38 @@ describe('PurchaseIntentStatusScreen — customer cancellation', () => {
         response: { status: 400, data: { message: 'This purchase can no longer be cancelled' } },
       }),
     );
-    (purchaseIntentApi.get as jest.Mock).mockResolvedValue(confirmed);
+    /*
+     * Held, not resolved.
+     *
+     * The screen renders the route's own (still cancellable) intent first
+     * and replaces it with whatever the refetch returns. Resolving this
+     * immediately made the test a race between that refetch and the press:
+     * lose it, and the CONFIRMED branch has already rendered, there is no
+     * cancel button, `askToCancel` never runs, and the assertion died on a
+     * `TypeError` inside the alert helper. That is exactly what happened on
+     * a loaded CI runner while the same test passed everywhere else.
+     *
+     * Driving it instead of racing it also puts the events in the order the
+     * test is about: the customer taps cancel *believing* the purchase is
+     * still theirs to cancel, and only then does the truth arrive.
+     */
+    let tellTheScreenTheTruth!: () => void;
+    (purchaseIntentApi.get as jest.Mock).mockReturnValue(
+      new Promise((resolve) => {
+        tellTheScreenTheTruth = () => resolve(confirmed);
+      }),
+    );
 
     const { findByText, queryByText } = renderScreen();
     fireEvent.press(await findByText('purchaseIntent.cancel'));
     await act(async () => confirmTheAlert());
+
+    // The cashier got there first: the cancel is refused, and the refetch
+    // that follows it carries the confirmation.
+    await waitFor(() => expect(purchaseIntentApi.cancel).toHaveBeenCalledWith('pi-1'));
+    await act(async () => {
+      tellTheScreenTheTruth();
+    });
 
     await findByText('purchaseIntent.confirmed');
     expect(queryByText('purchaseIntent.cancelled')).toBeNull();

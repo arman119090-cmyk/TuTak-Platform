@@ -20,7 +20,8 @@
     "test:unit": "jest --selectProjects unit",
     "test:int": "jest --selectProjects integration",
     "test:int:verbose": "jest --selectProjects integration --verbose",
-    "sentry:verify": "ts-node -r tsconfig-paths/register src/scripts/sentry-verify.ts"
+    "sentry:verify": "ts-node -r tsconfig-paths/register src/scripts/sentry-verify.ts",
+    "alert:verify": "ts-node -r tsconfig-paths/register src/scripts/alert-verify.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

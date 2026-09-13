@@ -15,11 +15,49 @@ import { captureApiException, initSentry, normalizeRoute, UNMATCHED_ROUTE } from
 
 describe('initSentry', () => {
   const originalDsn = process.env.SENTRY_DSN;
+  const originalAppEnv = process.env.APP_ENV;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     if (originalDsn === undefined) delete process.env.SENTRY_DSN;
     else process.env.SENTRY_DSN = originalDsn;
+    if (originalAppEnv === undefined) delete process.env.APP_ENV;
+    else process.env.APP_ENV = originalAppEnv;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
     initMock.mockClear();
+  });
+
+  /**
+   * Which deployment an event came from — the question `APP_ENV` exists to
+   * answer and `NODE_ENV` cannot.
+   *
+   * `app-environment.ts` says it in its own docblock: `NODE_ENV` is
+   * `production` for anything deployed, always, and `APP_ENV` names *which*
+   * deployment it is. Sentry was reading `NODE_ENV` anyway, so a staging
+   * deployment — which on Railway also runs with `NODE_ENV=production` —
+   * filed its errors under `production`. Two deployments in one bucket is
+   * worse than no bucket: an alert on "production error rate" fires for a
+   * staging smoke test, and the one that matters gets tuned out.
+   */
+  it('reports the deployment it is, not the mode Node is in', () => {
+    process.env.SENTRY_DSN = 'https://example@o0.ingest.sentry.io/1';
+    process.env.NODE_ENV = 'production';
+    process.env.APP_ENV = 'staging';
+
+    initSentry();
+
+    expect((initMock.mock.calls[0]![0] as Record<string, unknown>).environment).toBe('staging');
+  });
+
+  it('falls back to NODE_ENV where APP_ENV has not been set yet', () => {
+    process.env.SENTRY_DSN = 'https://example@o0.ingest.sentry.io/1';
+    process.env.NODE_ENV = 'production';
+    delete process.env.APP_ENV;
+
+    initSentry();
+
+    expect((initMock.mock.calls[0]![0] as Record<string, unknown>).environment).toBe('production');
   });
 
   it('does nothing and returns false when SENTRY_DSN is unset', () => {

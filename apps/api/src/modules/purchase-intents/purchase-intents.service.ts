@@ -306,13 +306,60 @@ export class PurchaseIntentsService {
       );
     }
 
-    // Fuel-station branches task: a `fuel`-category partner's branches sell
-    // different, non-interchangeable products (petrol vs. methane vs.
-    // propane) and have their own staff/queue — a purchase with no branch at
-    // all would have nobody scoped to confirm it. Every *other* category
-    // keeps `partnerBranchId` fully optional, exactly as before this task.
-    if (partner.category === 'fuel' && !dto.partnerBranchId) {
-      throw new BadRequestException('Select which branch this purchase is at');
+    /*
+     * A purchase names the branch it happened at whenever the partner has
+     * one to name.
+     *
+     * This used to read `partner.category === 'fuel'`, because branch
+     * scoping arrived with the fuel-station work and a station's branches
+     * sell non-interchangeable products. But the property has nothing to do
+     * with fuel: it is that a partner with locations has branch-scoped staff,
+     * and a branch-less row is then in an unreachable state that three
+     * separate mechanisms describe differently.
+     *
+     *  - `branchFilterFor` builds `{ partnerBranchId: { in: [...] } }`, and
+     *    SQL's `IN` never matches NULL — the purchase appears in no
+     *    branch-scoped queue at all.
+     *  - `assertResourceBranchScope` skips the branch check when the branch
+     *    is null — so that same purchase is confirmable by *any* of the
+     *    partner's staff, a cashier from another branch included, via the
+     *    till-code lookup that does not need the queue.
+     *  - `Transaction.partnerBranchId` stays null, so the takings land in
+     *    the partner's totals and in no branch's.
+     *
+     * Invisible where it should be listed, reachable where it should not be,
+     * and attributed nowhere. Requiring the branch is what makes "what this
+     * cashier may confirm" and "what this cashier can see" the same set.
+     *
+     * Only *active* branches count. A restaurant that closed its one
+     * location is a business with nowhere to walk into, and `create` already
+     * refuses a named branch that is closed — demanding one here as well
+     * would leave it unable to trade at all.
+     *
+     * `fuel` keeps its own floor on top of that, rather than being folded
+     * into the general rule and quietly loosened: a station that has not
+     * created its branch rows yet used to be unable to take a purchase at
+     * all, and that is deliberate — which product a station sells is a
+     * per-branch fact (`PartnerBranch.fuelType`), so a station with no
+     * branches has nowhere to record what was actually bought. The general
+     * rule below would have let it trade branch-lessly.
+     *
+     * The count runs only when no branch was given, so the ordinary path —
+     * a scanned branch QR, which always carries one — pays nothing for it.
+     */
+    if (!dto.partnerBranchId) {
+      const openBranches = await this.prisma.partnerBranch.count({
+        where: { partnerId: partner.id, isActive: true },
+      });
+      if (openBranches > 0 || partner.category === 'fuel') {
+        // Names the way out, not just the refusal. The one way to reach this
+        // with a real partner is scanning a whole-business code printed
+        // before the business had locations; the code at the till is the
+        // branch one, and that is what the customer needs to be told.
+        throw new BadRequestException(
+          'Select which branch this purchase is at, or scan the code displayed at this location',
+        );
+      }
     }
 
     if (dto.partnerBranchId) {

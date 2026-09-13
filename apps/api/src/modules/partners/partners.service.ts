@@ -9,7 +9,9 @@ import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { PartnerOfferingInputDto } from './dto/replace-partner-offerings.dto';
 import {
+  canonicalPartnerCategory,
   haversineKm,
+  NAMED_PARTNER_CATEGORIES,
   toPartnerCategory,
   type FuelType,
   type NearbyPartner,
@@ -83,7 +85,10 @@ export class PartnersService {
           legalName: dto.legalName,
           displayName: dto.displayName,
           taxId: dto.taxId,
-          category: dto.category,
+          // Stored the way every reader already assumes it is — see
+          // `canonicalPartnerCategory`. Without this a partner is drawn
+          // under one chip and returned by another.
+          category: canonicalPartnerCategory(dto.category),
           bonusAccrualRateBps: dto.bonusAccrualRateBps,
           sellsGas: dto.sellsGas ?? false,
           sellsPetrol: dto.sellsPetrol ?? false,
@@ -172,7 +177,9 @@ export class PartnersService {
           legalName: dto.legalName,
           displayName: dto.displayName,
           taxId: dto.taxId,
-          category: dto.category,
+          // See `create` above: the applicant types this by hand, so it is
+          // the likeliest place for a stray capital or space to enter.
+          category: canonicalPartnerCategory(dto.category),
           bonusAccrualRateBps: dto.bonusAccrualRateBps,
           status: PartnerStatus.PENDING_APPROVAL,
           isActive: false,
@@ -441,6 +448,20 @@ export class PartnersService {
     sellsGas: true,
     sellsPetrol: true,
     bonusAccrualRateBps: true,
+    // The partner's own ceiling on how much of a bill bonus may cover. It
+    // is the one number that decides whether the amount a customer types on
+    // the purchase screen will be accepted, and it lived on the private
+    // projection only — so the first time anyone learned a restaurant caps
+    // bonus at 30% was being refused at the till. It is a published term of
+    // trade, not a commercial secret: `paymentCommissionRateBps`, which is,
+    // stays out of this list.
+    maxBonusPaymentPercent: true,
+    // Whether this business is trading, and if not, which kind of not.
+    // `isActive` alone cannot say: an application still awaiting a decision
+    // and a business that was switched off for fraud are both `false`, and
+    // a client holding a deep link had no way to tell either from a normal
+    // partner — the field simply was not in the projection.
+    status: true,
     isActive: true,
     createdAt: true,
     // The brand a directory card shows — spec §1.3/§4. The whole asset row is
@@ -487,9 +508,26 @@ export class PartnersService {
     return { id: item.id, name: item.name, description: item.description, price: item.price };
   }
 
-  /** Every partner, in the projection safe for any authenticated caller. */
+  /**
+   * Every *trading* partner, in the projection safe for any authenticated
+   * caller.
+   *
+   * The `where` is the point. This used to select every row, so a business
+   * that had merely applied — or one an administrator had rejected, or
+   * switched off — was served to any signed-in customer as an ordinary
+   * entry in the directory, at whatever cashback rate it had proposed for
+   * itself. `nearby` has always filtered on `isActive`, which is why this
+   * never reached the map; the directory is the surface that never got the
+   * check.
+   *
+   * Both conditions, not one: `status` is the business decision and
+   * `isActive` is the operational switch, they are set independently
+   * (`setActive` moves one and not the other), and a customer should see a
+   * partner only when both say yes.
+   */
   async listPublic() {
     const partners = await this.prisma.partner.findMany({
+      where: { status: PartnerStatus.ACTIVE, isActive: true },
       select: PartnersService.PUBLIC_FIELDS,
       orderBy: { createdAt: 'desc' },
     });
@@ -595,6 +633,22 @@ export class PartnersService {
    * somebody there to earn points they will not get is worse than not showing
    * it at all.
    */
+  /**
+   * The `where` fragment for one filter chip.
+   *
+   * Every chip but one is a column comparison. `other` is not: it is defined
+   * by `toPartnerCategory` as "none of the recognised categories", which is
+   * how a partner stored as `retail` comes to be drawn under it. Matching
+   * the column against the literal string `other` therefore returned
+   * nothing for exactly the cards the chip was showing — a filter that
+   * hides its own contents.
+   */
+  private static categoryFilter(category: string) {
+    return category === 'other'
+      ? { category: { notIn: [...NAMED_PARTNER_CATEGORIES] } }
+      : { category };
+  }
+
   async listNearbyBranches(params: {
     lat: number;
     lng: number;
@@ -623,10 +677,11 @@ export class PartnersService {
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
         partner: {
           isActive: true,
+          status: PartnerStatus.ACTIVE,
           ...(fuelType
             ? { category: 'fuel', ...(fuelType === 'gas' ? { sellsGas: true } : { sellsPetrol: true }) }
             : category
-              ? { category }
+              ? PartnersService.categoryFilter(category)
               : {}),
         },
         ...(q

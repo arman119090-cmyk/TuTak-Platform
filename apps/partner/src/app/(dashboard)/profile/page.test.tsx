@@ -53,6 +53,7 @@ function partnerFixture(overrides: Partial<PartnerDto> = {}): PartnerDto {
     sellsGas: false,
     sellsPetrol: false,
     bonusAccrualRateBps: 300,
+    maxBonusPaymentPercent: 100,
     paymentCommissionRateBps: 250,
     isActive: true,
     payoutsBlockedAt: null,

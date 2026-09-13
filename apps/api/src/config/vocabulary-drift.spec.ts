@@ -68,6 +68,37 @@ describe('the shared types mirror the schema', () => {
   });
 });
 
+describe('a union type mirrors the schema too', () => {
+  /**
+   * `PartnerStatus` is written as a string union rather than an enum object,
+   * so it has no runtime members and the table above — which reads
+   * `Object.values` — cannot see it. That is exactly why it drifted: the
+   * schema has four statuses and the union carried three, silently missing
+   * `SUSPENDED`. A client narrowing on that union would compile a `switch`
+   * that looked exhaustive over a state the database produces the moment an
+   * administrator suspends a partner.
+   *
+   * Read as source text, the same way the Prisma enums above are, because
+   * there is nothing else to read.
+   */
+  const union = (typeName: string, file: string): string[] => {
+    const source = readFileSync(join(__dirname, file), 'utf8');
+    const match = source.match(new RegExp(`export type ${typeName} =([^;]*);`));
+    if (!match?.[1]) throw new Error(`type ${typeName} is not in ${file}`);
+    return match[1]
+      .split('|')
+      .map((part) => part.trim().replace(/^'|'$/g, ''))
+      .filter(Boolean)
+      .sort();
+  };
+
+  it('PartnerStatus and the schema agree in both directions', () => {
+    expect(union('PartnerStatus', '../../../../packages/shared-types/src/dto/partner.ts')).toEqual(
+      prismaEnum('PartnerStatus'),
+    );
+  });
+});
+
 describe('the partner categories are the same list on both sides', () => {
   /**
    * This one is not schema-backed, and that is why it needs guarding harder

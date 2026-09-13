@@ -79,7 +79,10 @@ async function main(): Promise<void> {
       legalName: `Chaos Partner ${Date.now()}`,
       displayName: 'Chaos',
       taxId: `chaos-${Date.now()}`,
-      category: 'RETAIL',
+      // Lowercase because `partners_category_canonical` requires it — this
+      // script writes the row directly, so it is one of the writers that
+      // constraint exists to catch.
+      category: 'retail',
       bonusAccrualRateBps: 500,
       paymentCommissionRateBps: 250,
       isActive: true,

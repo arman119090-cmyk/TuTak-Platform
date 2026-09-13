@@ -1,4 +1,5 @@
 import {
+  AuditAction,
   BonusEntryType,
   BonusLotStatus,
   BonusReservationStatus,
@@ -459,6 +460,317 @@ describe('PurchaseIntents (integration)', () => {
   });
 
   // ── Financial transaction boundary ────────────────────────────────────
+
+  // ── Customer cancellation ─────────────────────────────────────────────
+
+  /**
+   * The customer's own way out of a purchase no cashier has answered yet.
+   *
+   * Before this existed the only exits from `AWAITING_CONFIRMATION` were a
+   * staff decision and the expiry sweep, which left a customer who mistyped
+   * the amount standing at the till with their bonus reserved for the rest
+   * of the window — unable to start the correct purchase, because the hold
+   * is against available balance.
+   *
+   * Every test here is about the same two properties: the bonus comes back
+   * exactly once, and the row records what actually happened rather than
+   * what was asked for.
+   */
+  describe('customer cancellation', () => {
+    it('cancel() releases the reservation, fails the transaction and stamps cancelledAt', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      // The hold is real before the cancel — otherwise the release below
+      // would prove nothing.
+      const held = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(held.availableBonus.toFixed(4)).toBe('500.0000');
+
+      const cancelled = await purchaseIntents.cancel(intent.id, user.id);
+
+      expect(cancelled.status).toBe(PurchaseIntentStatus.CANCELLED);
+      expect(cancelled.cancelledAt).toBeInstanceOf(Date);
+      // Not a staff decision: nothing that describes one may be filled in.
+      expect(cancelled.confirmedByUserId).toBeNull();
+      expect(cancelled.rejectionReason).toBeNull();
+      expect(cancelled.confirmedAt).toBeNull();
+      expect(cancelled.rejectedAt).toBeNull();
+
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.RELEASED);
+      const transaction = await prisma.transaction.findUniqueOrThrow({
+        where: { id: intent.sourceTransactionId! },
+      });
+      expect(transaction.status).toBe(TransactionStatus.FAILED);
+      // Nothing financial was posted: a cancelled purchase never happened.
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(0);
+    });
+
+    it('records the cancellation against the customer who made it', async () => {
+      const { user } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      await purchaseIntents.cancel(intent.id, user.id);
+
+      const audit = await prisma.auditLog.findMany({
+        where: { action: AuditAction.PURCHASE_INTENT_CANCELLED, entityId: intent.id },
+      });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.actorUserId).toBe(user.id);
+    });
+
+    it('refuses a cancel from anyone but the purchase\'s own customer', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const { user: stranger } = await createCustomer(prisma);
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+
+      await expect(purchaseIntents.cancel(intent.id, stranger.id)).rejects.toThrow(
+        /another customer/i,
+      );
+
+      // Untouched: still awaiting, still reserved. A stranger must not be
+      // able to free someone else's hold either.
+      const after = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(after.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('500.0000');
+    });
+
+    it('is idempotent: a second cancel returns the same state and releases nothing twice', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      const first = await purchaseIntents.cancel(intent.id, user.id);
+      const second = await purchaseIntents.cancel(intent.id, user.id);
+
+      expect(second.status).toBe(PurchaseIntentStatus.CANCELLED);
+      expect(second.cancelledAt?.getTime()).toBe(first.cancelledAt?.getTime());
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000'); // not 1500
+      expect(
+        await prisma.bonusLedgerEntry.count({
+          where: { walletId: wallet.id, type: BonusEntryType.RESERVE_RELEASE },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { action: AuditAction.PURCHASE_INTENT_CANCELLED, entityId: intent.id },
+        }),
+      ).toBe(1);
+    });
+
+    /**
+     * Deliberately an error, not a silent no-op returning CONFIRMED. The
+     * bonus and the money have already moved; a client told "fine" would
+     * show the customer a cancellation that did not happen. Undoing a
+     * confirmed purchase is `PurchaseIntentRefundService`'s job, under the
+     * partner's own dual control — not a customer-side button.
+     */
+    it('refuses to cancel a purchase the cashier already confirmed, and undoes nothing', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      await purchaseIntents.confirm(intent.id, staff.id);
+
+      await expect(purchaseIntents.cancel(intent.id, user.id)).rejects.toThrow(
+        /no longer be cancelled/i,
+      );
+
+      const after = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(after.status).toBe(PurchaseIntentStatus.CONFIRMED);
+      expect(after.cancelledAt).toBeNull();
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      expect(reservation.status).toBe(BonusReservationStatus.SETTLED);
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(1);
+      // The 500 stays spent. Asserting a balance here would assert the
+      // confirmed purchase's own accrual as well (the pool's green leg lands
+      // in the same column), which is another test's subject — the precise
+      // property this one is about is that the hold was never given back.
+      expect(
+        await prisma.bonusLedgerEntry.count({
+          where: { walletId: wallet.id, type: BonusEntryType.RESERVE_RELEASE },
+        }),
+      ).toBe(0);
+    });
+
+    it('refuses to cancel a purchase the cashier already rejected', async () => {
+      const { user } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      await purchaseIntents.reject(intent.id, staff.id, { reasonCode: 'OTHER' });
+
+      await expect(purchaseIntents.cancel(intent.id, user.id)).rejects.toThrow(
+        /no longer be cancelled/i,
+      );
+      const after = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(after.status).toBe(PurchaseIntentStatus.REJECTED);
+      expect(after.cancelledAt).toBeNull();
+    });
+
+    /**
+     * Same ordering `reject()` uses, for the same reason: the row must say
+     * that the window ran out, not that the customer cancelled it after the
+     * fact — the sweep simply had not reached it yet.
+     */
+    it('past the 3-minute window, expires the intent instead of cancelling it', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+      await prisma.purchaseIntent.update({
+        where: { id: intent.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      await expect(purchaseIntents.cancel(intent.id, user.id)).rejects.toThrow(/expired/i);
+
+      const after = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(after.status).toBe(PurchaseIntentStatus.EXPIRED);
+      expect(after.cancelledAt).toBeNull();
+      // Expiry released the hold, so the customer is not left short either.
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+    });
+
+    it('lets a cancel and a confirm race without double-processing', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const staff = await staffMember(partner.id);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000', bonusAmountRequested: '500' },
+        user.id,
+      );
+
+      await Promise.allSettled([
+        purchaseIntents.cancel(intent.id, user.id),
+        purchaseIntents.confirm(intent.id, staff.id),
+      ]);
+
+      const final = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect([PurchaseIntentStatus.CANCELLED, PurchaseIntentStatus.CONFIRMED]).toContain(
+        final.status,
+      );
+
+      const reservation = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: intent.bonusReservationId! },
+      });
+      const pool = await prisma.ledgerTransaction.count({
+        where: { kind: 'partner.contribution' },
+      });
+      const releases = await prisma.bonusLedgerEntry.count({
+        where: { walletId: wallet.id, type: BonusEntryType.RESERVE_RELEASE },
+      });
+
+      if (final.status === PurchaseIntentStatus.CANCELLED) {
+        // Cancel won: the hold came back exactly once and no pool was paid.
+        expect(reservation.status).toBe(BonusReservationStatus.RELEASED);
+        expect(releases).toBe(1);
+        expect(pool).toBe(0);
+        expect(final.confirmedByUserId).toBeNull();
+      } else {
+        // Confirm won: the hold was spent, not returned, and the pool was
+        // paid exactly once.
+        expect(reservation.status).toBe(BonusReservationStatus.SETTLED);
+        expect(releases).toBe(0);
+        expect(pool).toBe(1);
+        expect(final.cancelledAt).toBeNull();
+      }
+    });
+
+    it('lets a cancel and the expiry sweep race without releasing the hold twice', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+
+      await Promise.allSettled([
+        purchaseIntents.cancel(intent.id, user.id),
+        purchaseIntents.expireStale(),
+      ]);
+
+      const final = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect([PurchaseIntentStatus.CANCELLED, PurchaseIntentStatus.EXPIRED]).toContain(
+        final.status,
+      );
+      // Whoever won, the customer's 500 came back once — never twice, never
+      // not at all.
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+      expect(
+        await prisma.bonusLedgerEntry.count({
+          where: { walletId: wallet.id, type: BonusEntryType.RESERVE_RELEASE },
+        }),
+      ).toBe(1);
+    });
+
+    it('lets two concurrent cancels resolve to one cancellation', async () => {
+      const { user, wallet } = await fundedCustomer('1000');
+      const partner = await createPartner(prisma);
+
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '5000', bonusAmountRequested: '500' },
+        user.id,
+      );
+
+      const results = await Promise.allSettled([
+        purchaseIntents.cancel(intent.id, user.id),
+        purchaseIntents.cancel(intent.id, user.id),
+      ]);
+      // Neither call is an error — the customer double-tapping is not a
+      // failure to report.
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+
+      const final = await purchaseIntents.findByIdOrThrow(intent.id);
+      expect(final.status).toBe(PurchaseIntentStatus.CANCELLED);
+      const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      expect(walletAfter.availableBonus.toFixed(4)).toBe('1000.0000');
+      expect(
+        await prisma.bonusLedgerEntry.count({
+          where: { walletId: wallet.id, type: BonusEntryType.RESERVE_RELEASE },
+        }),
+      ).toBe(1);
+    });
+  });
 
   describe('financial transaction boundary', () => {
     /**

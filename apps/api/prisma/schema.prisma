@@ -652,6 +652,13 @@ enum PurchaseIntentStatus {
   CONFIRMED
   REJECTED
   EXPIRED
+  /// The customer withdrew the purchase themselves, before any member of
+  /// staff acted on it. Deliberately its own state rather than folded into
+  /// `REJECTED`: a partner reading its own queue must be able to tell a
+  /// purchase its cashier turned down from one the customer walked away
+  /// from, and `rejectionReason`/`confirmedByUserId` describe a staff
+  /// decision that never happened here.
+  CANCELLED
 }
 
 /// Spec §7-9: the new standard purchase flow. Customer scans a partner/branch
@@ -777,6 +784,9 @@ model PurchaseIntent {
   expiresAt   DateTime
   confirmedAt DateTime?
   rejectedAt  DateTime?
+  /// Set once, by the customer's own cancel action — see
+  /// `PurchaseIntentsService.cancel`.
+  cancelledAt DateTime?
 
   brandLogoAsset MediaAsset? @relation("PurchaseIntentBrandLogo", fields: [brandLogoAssetId], references: [id])
 
@@ -2738,6 +2748,8 @@ enum AuditAction {
   PURCHASE_INTENT_CONFIRMED
   PURCHASE_INTENT_REJECTED
   PURCHASE_INTENT_EXPIRED
+  /// The customer withdrew their own purchase before staff acted on it.
+  PURCHASE_INTENT_CANCELLED
   /// A partner refunded merchandise value against a confirmed purchase —
   /// see `PurchaseIntentRefundService`.
   PURCHASE_INTENT_REFUNDED

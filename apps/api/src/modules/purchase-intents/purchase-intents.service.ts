@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
@@ -805,6 +811,106 @@ export class PurchaseIntentsService {
       );
     });
 
+    return this.findByIdOrThrow(intentId);
+  }
+
+  /**
+   * The customer withdraws their own purchase before any member of staff
+   * has acted on it.
+   *
+   * Why this exists: until now the only ways out of `AWAITING_CONFIRMATION`
+   * were a cashier's tap and the expiry sweep. A customer who mistyped the
+   * amount, picked the wrong branch, or simply changed their mind had to
+   * stand at the till and wait out the whole window with their bonus
+   * reserved — `bonusEngine.reserve` has already moved it out of available
+   * balance, so they cannot start the correct purchase either. At a busy
+   * fuel station that is the difference between a queue that moves and one
+   * that does not.
+   *
+   * Three deliberate choices:
+   *
+   * 1. `CANCELLED` is its own terminal state, not `REJECTED` with a
+   *    reason. The partner's queue and its history must distinguish "our
+   *    cashier turned this down" from "the customer walked away", and
+   *    `rejectionReason`/`confirmedByUserId` describe a staff decision that
+   *    never happened here.
+   * 2. Ownership is checked here, in the service, not only in the
+   *    controller: the one thing that must never be possible is one
+   *    customer cancelling another's purchase, and that invariant should
+   *    not depend on which route reaches this method.
+   * 3. Only a repeat *cancel* is idempotent. A purchase that a cashier has
+   *    already confirmed is refused rather than silently answered with its
+   *    current state — the bonus and the money have moved, and a client
+   *    that asked to cancel must not be told "fine" when the answer is
+   *    "too late"; it is `PurchaseIntentRefundService`'s job from there.
+   *
+   * The expiry ordering mirrors `reject()` exactly, for the same reason
+   * its docblock gives: an intent whose deadline has passed but that the
+   * sweep has not reached yet is expired first and then refused, so the row
+   * records what actually happened to it (the window ran out) instead of a
+   * cancellation made outside the window it was valid for.
+   *
+   * Concurrency: the claim and the act are one atomic unit, the same
+   * conditional `updateMany` the rest of this file uses. Cancel ↔ Confirm,
+   * Cancel ↔ Reject, Cancel ↔ Expire and Cancel ↔ Cancel all resolve to
+   * exactly one winner, because all four paths flip the same row out of
+   * `AWAITING_CONFIRMATION` and only the winner's `count` is 1 — so the
+   * reservation is released (or settled) exactly once, whatever the order.
+   */
+  async cancel(intentId: string, customerId: string) {
+    const intent = await this.findByIdOrThrow(intentId);
+
+    if (intent.customerId !== customerId) {
+      throw new ForbiddenException('This purchase belongs to another customer');
+    }
+    if (intent.status === PurchaseIntentStatus.CANCELLED) {
+      return intent; // already cancelled by this customer — idempotent
+    }
+    if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
+      throw new BadRequestException('This purchase can no longer be cancelled');
+    }
+    if (intent.expiresAt < new Date()) {
+      await this.expireOne(intent);
+      throw new BadRequestException('This purchase intent has expired');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.purchaseIntent.updateMany({
+        where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
+        data: { status: PurchaseIntentStatus.CANCELLED, cancelledAt: new Date() },
+      });
+      if (claimed.count === 0) return;
+
+      if (intent.bonusReservationId) {
+        await this.bonusEngine.releaseReservation(
+          intent.bonusReservationId,
+          'customer_cancelled',
+          tx,
+        );
+      }
+      if (intent.sourceTransactionId) {
+        await this.transactionsService.markFailed(
+          intent.sourceTransactionId,
+          'customer_cancelled',
+          tx,
+        );
+      }
+
+      await this.auditService.record(
+        {
+          actorUserId: customerId,
+          action: AuditAction.PURCHASE_INTENT_CANCELLED,
+          entityType: 'PurchaseIntent',
+          entityId: intentId,
+          metadata: {},
+        },
+        tx,
+      );
+    });
+
+    // Deliberately re-read rather than returning the row this method
+    // started from: on the losing side of a Cancel ↔ Confirm race the
+    // caller must be told what actually became of the purchase.
     return this.findByIdOrThrow(intentId);
   }
 

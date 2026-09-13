@@ -74,6 +74,19 @@ export class PurchaseIntentsController {
    * Spec §7 steps 9-11 / §25-26. Any partner staff tier scoped to this
    * intent's partner *and*, when the intent carries one, its branch.
    */
+  /**
+   * The customer's own way out of a purchase nobody has confirmed yet.
+   *
+   * No `@RequirePermissions`: this is the customer's action on their own
+   * record, exactly like `POST /purchase-intents`, and the ownership check
+   * lives in the service so it cannot be bypassed by another route
+   * reaching the same method.
+   */
+  @Post(':id/cancel')
+  async cancel(@CurrentUser() customer: RequestUser, @UuidParam('id') id: string) {
+    return this.purchaseIntents.toDto(await this.purchaseIntents.cancel(id, customer.id));
+  }
+
   @Post(':id/confirm')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
   async confirm(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {

@@ -336,7 +336,8 @@
     "distance": "Расстояние",
     "cashback": "Кэшбэк",
     "about": "О партнёре",
-    "offerings": "Товары и услуги"
+    "offerings": "Товары и услуги",
+    "mapUnavailable": "Карта сейчас недоступна. Партнёры ниже — списком."
   },
   "partnerCategory": {
     "grocery": "Продукты",

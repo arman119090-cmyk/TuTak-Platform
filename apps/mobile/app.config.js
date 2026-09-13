@@ -96,6 +96,62 @@ function diagnosticsEnabled() {
 }
 
 /**
+ * A build anybody installs may not quietly ship on the development map.
+ *
+ * The tile default is openstreetmap.org, which is the right thing to develop
+ * against and the wrong thing to ship: those servers run on donated capacity
+ * and OSM's own tile usage policy asks applications with real traffic to use
+ * a provider instead. An app that ignores that does not fail loudly — it
+ * keeps working until the day OSM blocks it, and then the map is a grey
+ * rectangle for every customer at once, with nothing in the app or the logs
+ * saying why.
+ *
+ * That failure is invisible at build time, invisible in CI and invisible in
+ * review. It showed up here exactly that way: APK #47 was built, shipped and
+ * described as ready, and only unpacking the binary revealed it was on the
+ * fallback — the configuration was in place, the key simply had not been
+ * added, and nothing anywhere said so.
+ *
+ * So the check is structural, like `refuseDemoEnv` and the `http://` refusal
+ * below: development builds keep the fallback and everything a person
+ * installs must name its provider. `MAP_TILE_ALLOW_FALLBACK=1` is the escape
+ * hatch for deliberately building an installable app before the account
+ * exists — it has to be typed, which is the whole point.
+ */
+function refuseUnkeyedMapInInstallableBuild(appEnv) {
+  const shipping = appEnv === 'preview' || appEnv === 'staging' || appEnv === 'production';
+  if (!shipping) return;
+  if (process.env.MAP_TILE_URL_TEMPLATE) return;
+  if (process.env.MAP_TILE_ALLOW_FALLBACK === '1') return;
+
+  throw new Error(
+    `APP_ENV is "${appEnv}" and MAP_TILE_URL_TEMPLATE is not set, so this build would ship on ` +
+      'the openstreetmap.org development fallback.\n\n' +
+      'OSM runs on donated capacity and its tile usage policy asks applications with real ' +
+      'traffic to use a provider. A build that ignores that works until it is blocked, and ' +
+      'then every customer sees a grey map at the same moment.\n\n' +
+      'Set MAP_TILE_URL_TEMPLATE (and MAP_TILE_API_KEY, and MAP_TILE_ATTRIBUTION) — ' +
+      'docs/MAP_TILE_PROVIDER_RU.md is the one-page version. To build an installable app ' +
+      'before the provider account exists, set MAP_TILE_ALLOW_FALLBACK=1 and know that the ' +
+      'map in it is not the map that ships.',
+  );
+}
+
+/**
+ * The map settings the app ships with — and the one place the refusal above
+ * is reached from, so no build can be configured without it having run.
+ */
+function mapExtra() {
+  refuseUnkeyedMapInInstallableBuild(process.env.APP_ENV ?? 'development');
+  return {
+    tileUrlTemplate:
+      process.env.MAP_TILE_URL_TEMPLATE ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    tileApiKey: process.env.MAP_TILE_API_KEY ?? '',
+    attribution: process.env.MAP_TILE_ATTRIBUTION ?? '© OpenStreetMap',
+  };
+}
+
+/**
  * Transport security, decided at build time rather than hoped for at runtime.
  *
  * The check above already refuses `localhost` outside development, which
@@ -343,13 +399,7 @@ module.exports = ({ config }) => ({
      * restricted by the provider to this app's bundle id, and has to reach
      * the device to be used at all — exactly like `sentryDsn` below.
      */
-    map: {
-      tileUrlTemplate:
-        process.env.MAP_TILE_URL_TEMPLATE ??
-        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      tileApiKey: process.env.MAP_TILE_API_KEY ?? '',
-      attribution: process.env.MAP_TILE_ATTRIBUTION ?? '© OpenStreetMap',
-    },
+    map: mapExtra(),
     appEnv: process.env.APP_ENV ?? 'development',
     /**
      * The on-screen event log. Only the `diagnostic` EAS profile sets this,
@@ -396,3 +446,5 @@ module.exports = ({ config }) => ({
 // from a test evaluates the module, not the config factory below it.
 module.exports.assertTransportSecurity = assertTransportSecurity;
 module.exports.apiBaseUrl = apiBaseUrl;
+module.exports.refuseUnkeyedMapInInstallableBuild = refuseUnkeyedMapInInstallableBuild;
+module.exports.mapExtra = mapExtra;

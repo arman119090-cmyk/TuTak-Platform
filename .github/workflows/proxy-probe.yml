@@ -1,0 +1,55 @@
+# Measures how many hops a deployment's infrastructure adds to
+# `X-Forwarded-For`, which is the one number `CLIENT_IP_TRUSTED_HOPS` needs
+# and the one number nobody is allowed to guess.
+#
+# Why a workflow rather than a line in a README: the measurement has to come
+# from outside the deployment, over the real edge, from a machine that is not
+# the deployment itself. A runner is exactly that, and "Run workflow" is a
+# button that works from a phone.
+#
+# The probe sends `X-Forwarded-For: 203.0.113.7` — TEST-NET-3, reserved by
+# RFC 5737 for documentation, so it can never be a real client address and
+# can never be confused with one in the reading. The API prints the shape of
+# the chain it received to its own log (addresses are deliberately not
+# printed); read that line on Railway and it names the value to set.
+name: Measure the proxy chain
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'A URL on the deployment to probe. Its liveness endpoint is ideal — e.g. https://your-api-host/health'
+        required: true
+        type: string
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send one probe request
+        env:
+          URL: ${{ inputs.url }}
+        # --fail is deliberately absent: a 4xx/5xx still reached the process,
+        # and reaching it is the whole point. The status is printed instead,
+        # so a wrong URL is obvious rather than silent.
+        run: |
+          set -uo pipefail
+          echo "Probing $URL"
+          status=$(curl --silent --show-error --location \
+            --max-time 30 \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --header 'X-TuTak-Proxy-Probe: 1' \
+            --header 'X-Forwarded-For: 203.0.113.7' \
+            "$URL") || status="(request failed)"
+          echo "HTTP status: $status"
+          {
+            echo "## Proxy chain probe sent"
+            echo ""
+            echo "Sent to \`$URL\` with \`X-Forwarded-For: 203.0.113.7\` (one entry)."
+            echo "HTTP status: \`$status\`"
+            echo ""
+            echo "Now read the deployment's log for the line from \`ProxyChain\`."
+            echo "It names the \`CLIENT_IP_TRUSTED_HOPS\` value to set, or says not to use"
+            echo "\`xff-depth\` on this deployment at all."
+          } >> "$GITHUB_STEP_SUMMARY"

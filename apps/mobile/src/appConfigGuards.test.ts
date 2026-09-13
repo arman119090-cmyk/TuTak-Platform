@@ -9,6 +9,7 @@
 const guards = require('../app.config.js') as {
   assertTransportSecurity: (appEnv: string, url: string) => void;
   apiBaseUrl: () => string;
+  refuseUnkeyedMapInInstallableBuild: (appEnv: string) => void;
 };
 
 describe('assertTransportSecurity', () => {
@@ -143,5 +144,43 @@ describe('the staging build profile in eas.json', () => {
 
   it('names itself staging, so the app it builds cannot be mistaken for a real install', () => {
     expect(profile.env?.APP_ENV).toBe('staging');
+  });
+});
+
+describe('refuseUnkeyedMapInInstallableBuild', () => {
+  beforeEach(() => {
+    delete process.env.MAP_TILE_URL_TEMPLATE;
+    delete process.env.MAP_TILE_ALLOW_FALLBACK;
+  });
+
+  afterEach(() => {
+    delete process.env.MAP_TILE_URL_TEMPLATE;
+    delete process.env.MAP_TILE_ALLOW_FALLBACK;
+  });
+
+  it.each(['preview', 'staging', 'production'])(
+    'refuses to build %s on the development tile fallback',
+    (appEnv) => {
+      expect(() => guards.refuseUnkeyedMapInInstallableBuild(appEnv)).toThrow(
+        /MAP_TILE_URL_TEMPLATE/,
+      );
+    },
+  );
+
+  it('lets development keep the fallback', () => {
+    // Development is the one case the OSM default is right for, and making
+    // a local run need a provider account would be a worse trade than the
+    // one this guard exists to prevent.
+    expect(() => guards.refuseUnkeyedMapInInstallableBuild('development')).not.toThrow();
+  });
+
+  it('accepts a shipping build once a provider is named', () => {
+    process.env.MAP_TILE_URL_TEMPLATE = 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={key}';
+    expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).not.toThrow();
+  });
+
+  it('has an escape hatch that has to be typed', () => {
+    process.env.MAP_TILE_ALLOW_FALLBACK = '1';
+    expect(() => guards.refuseUnkeyedMapInInstallableBuild('preview')).not.toThrow();
   });
 });

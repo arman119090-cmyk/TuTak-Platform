@@ -65,6 +65,8 @@ const detailFixture = (overrides: Partial<PartnerPublicDto> = {}): PartnerPublic
   sellsGas: false,
   sellsPetrol: false,
   bonusAccrualRateBps: 300,
+  maxBonusPaymentPercent: 100,
+  status: 'ACTIVE',
   isActive: true,
   createdAt: new Date().toISOString(),
   logo: null,
@@ -228,6 +230,63 @@ describe('PartnerDetailScreen', () => {
       expect(screen.getByText('1 500 ֏')).toBeTruthy();
       expect(screen.getByText('2 000 ֏')).toBeTruthy();
       expect(screen.queryByText('purchaseIntent.payHere')).toBeTruthy(); // unrelated CTA still present
+    });
+  });
+
+  describe('what the points may be spent on here', () => {
+    it('says how much of a bill bonus may cover when the partner caps it', async () => {
+      (partnersApi.get as jest.Mock).mockResolvedValue(
+        detailFixture({ maxBonusPaymentPercent: 30 }),
+      );
+
+      renderScreen();
+
+      await waitFor(() => expect(screen.getByText('partners.howToSpend')).toBeTruthy());
+    });
+
+    it('says so plainly when the whole bill may be paid with points', async () => {
+      // 100 is the default, and "up to 100%" reads like a restriction.
+      (partnersApi.get as jest.Mock).mockResolvedValue(
+        detailFixture({ maxBonusPaymentPercent: 100 }),
+      );
+
+      renderScreen();
+
+      await waitFor(() => expect(screen.getByText('partners.howToSpendAll')).toBeTruthy());
+    });
+  });
+
+  describe('a business that is not trading', () => {
+    it('offers no way to pay a partner still waiting for approval', async () => {
+      (partnersApi.get as jest.Mock).mockResolvedValue(
+        detailFixture({ status: 'PENDING_APPROVAL', isActive: false }),
+      );
+
+      renderScreen();
+
+      await waitFor(() => expect(screen.getByText('partners.notTradingYet')).toBeTruthy());
+      expect(screen.queryByText('purchaseIntent.payHere')).toBeNull();
+    });
+
+    it('distinguishes one that was switched off from one that never opened', async () => {
+      (partnersApi.get as jest.Mock).mockResolvedValue(
+        detailFixture({ status: 'SUSPENDED', isActive: false }),
+      );
+
+      renderScreen();
+
+      await waitFor(() => expect(screen.getByText('partners.notTrading')).toBeTruthy());
+      expect(screen.queryByText('purchaseIntent.payHere')).toBeNull();
+    });
+
+    it('keeps the pay button while the detail is still in flight', async () => {
+      // The nearby list this screen is opened from only ever contains
+      // trading partners, so an unanswered fetch must not read as a refusal.
+      (partnersApi.get as jest.Mock).mockReturnValue(new Promise(() => {}));
+
+      renderScreen();
+
+      expect(screen.queryByText('purchaseIntent.payHere')).toBeTruthy();
     });
   });
 });

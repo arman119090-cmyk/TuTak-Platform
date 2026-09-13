@@ -181,19 +181,62 @@ export function PartnerDetailScreen() {
         {t('partners.howToEarn', { percent: partner.cashbackPercent })}
       </Text>
 
-      <View style={{ marginTop: space[4] }}>
-        <Button
-          label={t('purchaseIntent.payHere')}
-          onPress={() =>
-            navigation.navigate('CreatePurchaseIntent', {
-              partnerId: partner.partnerId,
-              partnerBranchId: partner.id,
-              partnerName: partner.name,
-            })
-          }
-          icon={<JakoWingMark size={16} color={color.textInverse} />}
-        />
-      </View>
+      {/*
+        The other half of the deal, and the half the customer used to learn
+        by being refused at the till: how much of the bill their points may
+        actually cover here. `maxBonusPaymentPercent` is the partner's own
+        published ceiling, and 100 is phrased as "the whole bill" rather
+        than "up to 100%", which reads like a restriction.
+      */}
+      {typeof detail?.maxBonusPaymentPercent === 'number' ? (
+        <Text
+          style={[
+            text.bodySm,
+            { color: color.textSecondary, textAlign: 'center', marginTop: space[2] },
+          ]}
+        >
+          {detail.maxBonusPaymentPercent >= 100
+            ? t('partners.howToSpendAll')
+            : t('partners.howToSpend', { percent: detail.maxBonusPaymentPercent })}
+        </Text>
+      ) : null}
+
+      {/*
+        A business that is not trading does not get a Pay button that leads
+        to a refusal. `status` distinguishes the two cases that matter to a
+        customer standing in front of the place: one that has applied and is
+        waiting, and one that was switched off.
+
+        Phrased as "the server said no", not "the server did not say yes":
+        while the detail is still loading — and against any older build of
+        the API that does not send `status` at all — the button stays. The
+        nearby list only ever contains trading partners, so the optimistic
+        case is also the true one, and a field this screen cannot see must
+        never be the reason a customer cannot pay.
+      */}
+      {detail && (detail.isActive === false || (detail.status && detail.status !== 'ACTIVE')) ? (
+        <Surface style={{ marginTop: space[4] }}>
+          <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
+            {detail.status === 'PENDING_APPROVAL'
+              ? t('partners.notTradingYet')
+              : t('partners.notTrading')}
+          </Text>
+        </Surface>
+      ) : (
+        <View style={{ marginTop: space[4] }}>
+          <Button
+            label={t('purchaseIntent.payHere')}
+            onPress={() =>
+              navigation.navigate('CreatePurchaseIntent', {
+                partnerId: partner.partnerId,
+                partnerBranchId: partner.id,
+                partnerName: partner.name,
+              })
+            }
+            icon={<JakoWingMark size={16} color={color.textInverse} />}
+          />
+        </View>
+      )}
     </Screen>
   );
 }

@@ -140,12 +140,27 @@ describe('Media revocation and attempt counting (integration)', () => {
       // completion in that window. A plain `Promise.all` here passes against
       // the broken code — the two calls simply do not overlap at the point
       // that matters, and the test proves nothing on the run where it passes.
+      //
+      // `arrived` is what makes "the first caller" mean the first caller.
+      // The spy used to hold whichever call reached it first and the test
+      // started the second without waiting, so the two raced for that slot
+      // — and `consumeCode` does two awaits before `findFirst` (the
+      // per-address budget, then the hourly aggregate), either of which can
+      // be slower on the opening call while a connection is still cold. Lose
+      // that race and the *second* call is the one parked on `held`, which
+      // is released only after the second call returns: a deadlock, seen as
+      // a 60-second timeout on a loaded CI runner and reproducible locally
+      // by running this file on its own.
       const phone = '+37477123456';
       await otp.requestCode(phone, AuthOtpPurpose.REGISTER);
 
       let release!: () => void;
       const held = new Promise<void>((resolve) => {
         release = resolve;
+      });
+      let reached!: () => void;
+      const arrived = new Promise<void>((resolve) => {
+        reached = resolve;
       });
       let heldOnce = false;
       const realFindFirst = prisma.authOtpToken.findFirst.bind(prisma.authOtpToken);
@@ -154,6 +169,7 @@ describe('Media revocation and attempt counting (integration)', () => {
         if (heldOnce) return realFindFirst(args);
         heldOnce = true;
         const row = await realFindFirst(args);
+        reached();
         await held;
         return row;
       }) as never);
@@ -161,6 +177,9 @@ describe('Media revocation and attempt counting (integration)', () => {
       const first = otp.consumeCode(phone, AuthOtpPurpose.REGISTER, '000000').catch(
         () => undefined,
       );
+      // Only once the first caller is demonstrably parked is there a window
+      // for the second one to run inside.
+      await arrived;
       await otp.consumeCode(phone, AuthOtpPurpose.REGISTER, '111111').catch(() => undefined);
       release();
       await first;

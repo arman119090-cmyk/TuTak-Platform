@@ -28,6 +28,7 @@
  * app.module.ts.
  */
 import 'reflect-metadata';
+import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import {
@@ -329,6 +330,53 @@ async function main() {
   });
   await grantRole(staff.id, RoleName.PARTNER_STAFF, cafe.id);
   await prisma.partnerMembership.create({ data: { partnerId: cafe.id, userId: staff.id } });
+
+  /*
+   * The cashier actually works somewhere, and there is a code on the table.
+   *
+   * Neither existed before, and together they were the difference between a
+   * demo stack that looks complete and one a purchase can go through. A
+   * purchase must name the branch it happened at whenever the partner has
+   * branches, and a cashier may only confirm purchases at branches they are
+   * assigned to — so a two-branch cafe with an unassigned cashier and no
+   * branch codes could take no money at all through its own till.
+   *
+   * Lilit is put on the Northern Avenue branch specifically, not on both:
+   * branch scoping is a real part of this product and a seed that grants
+   * everyone everything demonstrates the opposite of what it does. Gor, as
+   * the owner, sees every branch without needing a row here.
+   */
+  log.log('Assigning branch staff and issuing branch QR codes…');
+  // By name, not by position: `orderBy` here and the order the branch list
+  // endpoint returns are different things, and the comment above names a
+  // specific branch.
+  const northernAve = await prisma.partnerBranch.findFirst({
+    where: { partnerId: cafe.id, name: { contains: 'Northern' } },
+  });
+  if (northernAve) {
+    await prisma.partnerBranchStaffAssignment.create({
+      data: {
+        partnerId: cafe.id,
+        partnerBranchId: northernAve.id,
+        userId: staff.id,
+        employeeDisplayCode: 'B-001',
+        assignedByUserId: owner.id,
+      },
+    });
+  }
+
+  const allBranches = await prisma.partnerBranch.findMany({ orderBy: { createdAt: 'asc' } });
+  await prisma.partnerBranchQrCode.createMany({
+    data: allBranches.map((branch) => ({
+      partnerId: branch.partnerId,
+      partnerBranchId: branch.id,
+      // Random and meaningless on its own, exactly like
+      // `PartnerBranchQrService.issue` produces: nothing about the partner
+      // or the branch can be read off a printed code.
+      token: randomUUID(),
+      issuedByUserId: owner.id,
+    })),
+  });
 
   const marketOwner = await createUser({
     phone: '+37477200003',

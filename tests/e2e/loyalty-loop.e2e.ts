@@ -19,22 +19,52 @@ import {
  * "scanned" it by calling the redeem endpoint with the resulting token.
  * `docs/NEXT_CLAUDE_TASK.md` replaced that with the PurchaseIntent flow the
  * rest of this suite already assumes (`money-movement.e2e.ts`'s payments,
- * `docs/LAUNCH_READINESS_2026-08-16.md` §C): the partner's QR is now a
- * static, amount-free `TUTAK-PAY:<partnerId>` code, the customer enters the
- * amount themselves and creates the `PurchaseIntent`, and the partner's
- * dashboard confirms it — see `apps/partner/.../qr/page.tsx` (no more
- * amount input) and `apps/partner/.../purchase-intents/page.tsx` (the new
- * confirm queue). This test now exercises that flow instead: the merchant
- * half moved from "generate the QR" to "confirm the request," and the
- * customer half stays on the API for the same reason as before — scanning
- * is a camera on a phone with no browser equivalent to drive, and creating
- * a PurchaseIntent is the same endpoint the app calls once it has resolved
- * the scanned code to a partner id.
+ * `docs/LAUNCH_READINESS_2026-08-16.md` §C): the QR carries no amount, the
+ * customer enters it themselves and creates the `PurchaseIntent`, and the
+ * partner's dashboard confirms it — see `apps/partner/.../qr/page.tsx` (no
+ * more amount input) and `apps/partner/.../purchase-intents/page.tsx` (the
+ * confirm queue).
+ *
+ * The customer half stays on the API because scanning is a camera on a
+ * phone with no browser equivalent to drive — but it now scans what the
+ * phone actually scans. Cafe Yerevan has two branches, and a purchase at a
+ * partner with branches must name the one it happened at, so these tests
+ * used to create an intent belonging to neither: invisible in every
+ * branch-scoped queue, confirmable by a cashier from the other branch, and
+ * counted in no branch's takings. `resolveBranchQr` below is the same
+ * `GET /partner-branch-qr/resolve/:token` call the app makes after reading
+ * a `TUTAK-BRANCH:<token>` code off the table, and it is the only thing
+ * that turns an opaque token into a partner and a branch.
  */
 test.describe('QR payment loop', () => {
   // Signed in once, in auth.setup.ts. Re-authenticating per test would spend
   // the login rate limit on setup rather than on what is under test.
   test.use({ storageState: PARTNER_STATE });
+
+  /**
+   * What the phone gets back from scanning the code on the table.
+   *
+   * The owner reads their own branch's active QR — the same screen that
+   * prints it — and the token is then resolved through the public endpoint
+   * the customer's app calls. Nothing here trusts an id the test chose: the
+   * partner and branch both come back from the server, which is the whole
+   * point of the token being opaque.
+   */
+  const scanBranchCode = async (ownerToken: string, partnerId: string) => {
+    const branches = await api<Array<{ id: string; name: string; isActive: boolean }>>(
+      ownerToken,
+      `/partners/${partnerId}/branches`,
+    );
+    const branch = branches.find((b) => b.isActive)!;
+    const qr = await api<{ token: string }>(
+      ownerToken,
+      `/partners/${partnerId}/branches/${branch.id}/qr`,
+    );
+    return api<{ partnerId: string; partnerBranchId: string }>(
+      ownerToken,
+      `/partner-branch-qr/resolve/${qr.token}`,
+    );
+  };
 
   test('a merchant invoice paid by a customer accrues points and balances the ledger', async ({
     page,
@@ -51,12 +81,17 @@ test.describe('QR payment loop', () => {
     );
 
     // ── The customer, through the API the app calls ──────────────────────
-    // Scanning the partner's static code and typing the amount both happen
-    // on the phone; this is the same POST /purchase-intents call the app
-    // makes once it has resolved TUTAK-PAY:<partnerId>.
+    // Scanning the code on the table and typing the amount both happen on
+    // the phone; this is the same resolve-then-create pair the app makes.
+    const ownerToken = await apiLogin(PHONES.partnerOwner, 'owner');
+    const scanned = await scanBranchCode(ownerToken, cafe.id);
     const intent = await api<{ id: string }>(customerToken, '/purchase-intents', {
       method: 'POST',
-      body: { partnerId: cafe.id, grossAmount: '7000' },
+      body: {
+        partnerId: scanned.partnerId,
+        partnerBranchId: scanned.partnerBranchId,
+        grossAmount: '7000',
+      },
     });
 
     // ── The merchant, in the browser ─────────────────────────────────────
@@ -108,9 +143,14 @@ test.describe('QR payment loop', () => {
 
     const before = await api<{ lifetimeEarned: string }>(customerToken, '/wallet/me');
 
+    const scanned = await scanBranchCode(ownerToken, cafe.id);
     const intent = await api<{ id: string }>(customerToken, '/purchase-intents', {
       method: 'POST',
-      body: { partnerId: cafe.id, grossAmount: '1500' },
+      body: {
+        partnerId: scanned.partnerId,
+        partnerBranchId: scanned.partnerBranchId,
+        grossAmount: '1500',
+      },
     });
 
     await api(ownerToken, `/purchase-intents/${intent.id}/confirm`, { method: 'POST' });
@@ -135,9 +175,14 @@ test.describe('QR payment loop', () => {
     const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
     const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
 
+    const scanned = await scanBranchCode(ownerToken, cafe.id);
     const intent = await api<{ id: string }>(customerToken, '/purchase-intents', {
       method: 'POST',
-      body: { partnerId: cafe.id, grossAmount: '2200' },
+      body: {
+        partnerId: scanned.partnerId,
+        partnerBranchId: scanned.partnerBranchId,
+        grossAmount: '2200',
+      },
     });
 
     const first = await api<{ status: string; confirmedAt: string }>(

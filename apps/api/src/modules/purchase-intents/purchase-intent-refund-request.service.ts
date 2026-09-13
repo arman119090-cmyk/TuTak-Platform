@@ -213,6 +213,92 @@ export class PurchaseIntentRefundRequestService {
     });
   }
 
+  /**
+   * An owner or manager refunds without asking anyone — and the refund still
+   * shows up where every other refund does.
+   *
+   * The question this answers: is a direct owner refund a legitimate second
+   * path, or a hole in dual control? Both, depending on what the control is
+   * *for*. The principle the owner chose is that the person at the till may
+   * not settle a refund alone. It is not that money can never move without
+   * two people: most TuTak partners are one person, and a rule that leaves a
+   * solo owner unable to refund a customer standing in front of them would
+   * be broken in practice within a week — by handing the owner's login to a
+   * cashier, which is worse than the thing the rule was protecting against.
+   *
+   * So the path stays, with the two properties that make it honest rather
+   * than a bypass:
+   *
+   * 1. **It is not invisible.** It writes the same record an approved
+   *    request writes, with the owner as both the person who asked and the
+   *    person who agreed. The returns screen, the audit trail and any future
+   *    report see one list of refunds, not one list plus a quieter path that
+   *    only shows up in the ledger.
+   * 2. **It cannot be used to step around a cashier who did ask.** While a
+   *    request is waiting on this purchase, the direct route is refused and
+   *    the owner is sent to decide that request — which records who asked.
+   *    Without this, an owner could answer an awkward request by quietly
+   *    refunding the same purchase themselves and leaving the request to
+   *    expire, and the record would never say a cashier had raised it.
+   */
+  async refundDirectly(params: {
+    purchaseIntentId: string;
+    amount?: string;
+    reason: string;
+    actorId: string;
+    idempotencyKey: string;
+  }) {
+    const waiting = await this.prisma.purchaseIntentRefundRequest.findFirst({
+      where: {
+        purchaseIntentId: params.purchaseIntentId,
+        status: RefundRequestStatus.PENDING,
+      },
+    });
+    if (waiting) {
+      throw new BadRequestException(
+        'A refund request is already waiting for a decision on this purchase — approve or refuse that instead',
+      );
+    }
+
+    const refund = await this.refunds.refund({
+      purchaseIntentId: params.purchaseIntentId,
+      amount: params.amount,
+      reason: params.reason,
+      actorId: params.actorId,
+      idempotencyKey: params.idempotencyKey,
+    });
+
+    // A replayed request returns the refund that already exists, and the
+    // record for it already exists too — `refundId` is unique, so this is
+    // the lookup rather than a second row.
+    const recorded = await this.prisma.purchaseIntentRefundRequest.findUnique({
+      where: { refundId: refund.refundId },
+    });
+    if (recorded) return recorded;
+
+    const intent = await this.prisma.purchaseIntent.findUniqueOrThrow({
+      where: { id: params.purchaseIntentId },
+    });
+
+    return this.prisma.purchaseIntentRefundRequest.create({
+      data: {
+        purchaseIntentId: intent.id,
+        partnerId: intent.partnerId,
+        partnerBranchId: intent.partnerBranchId,
+        amount: params.amount ?? null,
+        reason: params.reason,
+        status: RefundRequestStatus.APPROVED,
+        // The same person on both halves, stated rather than hidden: this is
+        // one person taking one decision openly, which is exactly what
+        // distinguishes it from approving your own request.
+        requestedByUserId: params.actorId,
+        decidedByUserId: params.actorId,
+        decidedAt: new Date(),
+        refundId: refund.refundId,
+      },
+    });
+  }
+
   /** An owner or manager turns it down. Nothing financial happens. */
   async reject(requestId: string, approverUserId: string, note?: string) {
     const request = await this.findOrThrow(requestId);

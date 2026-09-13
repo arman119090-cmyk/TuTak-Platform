@@ -11,6 +11,7 @@ import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { FindPurchaseIntentByCodeDto } from './dto/find-by-code.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
@@ -21,6 +22,7 @@ export class PurchaseIntentsController {
   constructor(
     private readonly purchaseIntents: PurchaseIntentsService,
     private readonly purchaseIntentRefunds: PurchaseIntentRefundService,
+    private readonly refundRequests: PurchaseIntentRefundRequestService,
   ) {}
 
   /** Spec §7 steps 1-8. Any authenticated customer, for themselves. */
@@ -160,7 +162,11 @@ export class PurchaseIntentsController {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertPartnerApprover(staff, intent.partnerId, 'refund a purchase directly');
     assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
-    return this.purchaseIntentRefunds.refund({
+    // Routed through the request service, not straight at the engine, so
+    // this refund leaves the same record an approved request does — see
+    // `refundDirectly` for why the path exists at all and what stops it
+    // being a way around a cashier who did ask.
+    return this.refundRequests.refundDirectly({
       purchaseIntentId: id,
       amount: dto.amount,
       reason: dto.reason,

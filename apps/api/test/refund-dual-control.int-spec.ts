@@ -213,6 +213,82 @@ describe('Refund dual control (integration)', () => {
     expect(await prisma.purchaseIntentRefund.count()).toBe(1);
   });
 
+  describe('the owner\'s direct refund', () => {
+    /**
+     * Why this path exists at all, and why it is not a hole.
+     *
+     * The principle is that the person at the till may not settle a refund
+     * alone — not that money can never move without two people. Most TuTak
+     * partners are one person, and a rule that leaves a solo owner unable to
+     * refund a customer standing in front of them gets broken within a week,
+     * by handing the owner's login to a cashier. That is worse than what the
+     * rule was protecting against.
+     */
+    it('leaves the same record an approved request leaves, with the owner on both halves', async () => {
+      const { partner, owner, intent } = await confirmedPurchase();
+
+      await purchaseIntentsController.refund(
+        asRequestUser(owner.id, RoleName.PARTNER_OWNER, partner.id),
+        intent.id,
+        { amount: '1000', reason: 'Owner handled it at the counter', idempotencyKey: 'direct-1' },
+      );
+
+      // One list of refunds, not one list plus a quieter path that only ever
+      // shows up in the ledger.
+      const records = await prisma.purchaseIntentRefundRequest.findMany({
+        where: { purchaseIntentId: intent.id },
+      });
+      expect(records).toHaveLength(1);
+      expect(records[0]!.status).toBe(RefundRequestStatus.APPROVED);
+      expect(records[0]!.requestedByUserId).toBe(owner.id);
+      expect(records[0]!.decidedByUserId).toBe(owner.id);
+      expect(records[0]!.refundId).toBeTruthy();
+      expect(await prisma.purchaseIntentRefund.count()).toBe(1);
+    });
+
+    it('cannot be used to step around a cashier who did ask', async () => {
+      const { partner, owner, intent } = await confirmedPurchase();
+      const cashier = await userWithRole(partner.id, RoleName.PARTNER_STAFF);
+      await requests.request({
+        purchaseIntentId: intent.id,
+        amount: '1000',
+        reason: 'Customer returned it',
+        requestedByUserId: cashier.id,
+      });
+
+      // Without this, an owner could answer an awkward request by quietly
+      // refunding the same purchase themselves and letting the request
+      // expire — and no record would ever say a cashier had raised it.
+      await expect(
+        purchaseIntentsController.refund(
+          asRequestUser(owner.id, RoleName.PARTNER_OWNER, partner.id),
+          intent.id,
+          { amount: '1000', reason: 'never mind', idempotencyKey: 'direct-2' },
+        ),
+      ).rejects.toThrow(/waiting for a decision/i);
+      expect(await prisma.purchaseIntentRefund.count()).toBe(0);
+    });
+
+    it('records one refund, once, when the same request is replayed', async () => {
+      const { partner, owner, intent } = await confirmedPurchase();
+      const call = () =>
+        purchaseIntentsController.refund(
+          asRequestUser(owner.id, RoleName.PARTNER_OWNER, partner.id),
+          intent.id,
+          { amount: '1000', reason: 'Owner handled it', idempotencyKey: 'direct-replay' },
+        );
+
+      const first = await call();
+      const second = await call();
+
+      expect(second.id).toBe(first.id);
+      expect(await prisma.purchaseIntentRefund.count()).toBe(1);
+      expect(
+        await prisma.purchaseIntentRefundRequest.count({ where: { purchaseIntentId: intent.id } }),
+      ).toBe(1);
+    });
+  });
+
   it('allows only one undecided request per purchase', async () => {
     const { partner, intent } = await confirmedPurchase();
     const cashier = await userWithRole(partner.id, RoleName.PARTNER_STAFF);

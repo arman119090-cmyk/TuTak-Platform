@@ -46,6 +46,11 @@ jobs:
           # character can be seen and corrected by the person who typed it.
           KEY: ${{ secrets.MAP_TILE_API_KEY || vars.MAP_TILE_API_KEY }}
           KEY_IS_SECRET: ${{ secrets.MAP_TILE_API_KEY != '' }}
+          # Reported separately so one run answers the whole question. The
+          # secret wins when both exist, which is conventional and also a
+          # trap: a stale secret silently beats a variable somebody just
+          # fixed, and the run looks identical to having changed nothing.
+          KEY_VARIABLE: ${{ vars.MAP_TILE_API_KEY }}
           TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
           REFERER: ${{ inputs.referer }}
         run: |
@@ -171,8 +176,16 @@ jobs:
             echo ""
             if [ "${KEY_IS_SECRET:-}" = "true" ]; then
               echo "Read from the repository **secret**."
+              if [ -n "${KEY_VARIABLE:-}" ]; then
+                var_trimmed="$(printf '%s' "$KEY_VARIABLE" | tr -d '[:space:]')"
+                var_letters=$(printf '%s' "$var_trimmed" | tr -cd 'A-Za-z' | wc -c)
+                var_digits=$(printf '%s' "$var_trimmed" | tr -cd '0-9' | wc -c)
+                var_others=$(( ${#var_trimmed} - var_letters - var_digits ))
+                echo ""
+                echo "⚠️ A **variable** of the same name also exists and was NOT used — the secret wins while it is set. The variable holds ${#var_trimmed} characters: $var_letters letters, $var_digits digits, $var_others other. **Delete the secret** and this variable becomes the one in play."
+              fi
             else
-              echo "Read from the repository **variable** — the secret is empty. This is fine for a tile key, and it is the copy you can see and correct in Settings."
+              echo "Read from the repository **variable** — no secret is set. This is fine for a tile key, and it is the copy you can see and correct in Settings."
             fi
             echo ""
 

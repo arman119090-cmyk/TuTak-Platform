@@ -311,6 +311,28 @@ module.exports = ({ config }) => ({
   ],
   extra: {
     apiBaseUrl: apiBaseUrl(),
+    /**
+     * Where the map picture comes from — see
+     * `src/presentation/components/map/tileSource.ts` for why this is
+     * configuration rather than a constant in the code.
+     *
+     * The default is openstreetmap.org, which is right for development and
+     * wrong for a shipped app: those servers run on donated capacity and
+     * their usage policy asks apps with real traffic to use a provider of
+     * their own. Moving is two build-time variables and no code change.
+     *
+     * `MAP_TILE_API_KEY` is not a secret in the sense `SENTRY_AUTH_TOKEN`
+     * is: a tile key identifies the account the tiles are billed to, is
+     * restricted by the provider to this app's bundle id, and has to reach
+     * the device to be used at all — exactly like `sentryDsn` below.
+     */
+    map: {
+      tileUrlTemplate:
+        process.env.MAP_TILE_URL_TEMPLATE ??
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      tileApiKey: process.env.MAP_TILE_API_KEY ?? '',
+      attribution: process.env.MAP_TILE_ATTRIBUTION ?? '© OpenStreetMap',
+    },
     appEnv: process.env.APP_ENV ?? 'development',
     /**
      * The on-screen event log. Only the `diagnostic` EAS profile sets this,

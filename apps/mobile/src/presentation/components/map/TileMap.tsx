@@ -11,7 +11,7 @@ import {
   TILE_SIZE,
   type LatLng,
 } from './mercator';
-import { ATTRIBUTION, tileUrl } from './tileSource';
+import { attribution, tileRequestHeaders, tileUrl } from './tileSource';
 
 /**
  * A slippy map, built out of `<Image>` and arithmetic.
@@ -163,7 +163,10 @@ export function TileMap({
       {tiles.map((tile) => (
         <Image
           key={`${tile.z}/${tile.x}/${tile.y}`}
-          source={{ uri: tileUrl(tile.x, tile.y, tile.z) }}
+          // Identification, not decoration: a tile provider that cannot
+          // tell who is calling is entitled to refuse, and OSM's policy
+          // says it does. See `tileSource.ts`.
+          source={{ uri: tileUrl(tile.x, tile.y, tile.z), headers: tileRequestHeaders() }}
           style={{
             position: 'absolute',
             left: tile.left,
@@ -240,7 +243,7 @@ export function TileMap({
           { color: color.textTertiary, backgroundColor: premium.glass.dark },
         ]}
       >
-        {ATTRIBUTION}
+        {attribution()}
       </Text>
     </View>
   );

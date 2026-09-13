@@ -139,9 +139,34 @@ jobs:
       # suites to it — 15 was already the running time, not a ceiling above
       # it. 25 restores the gap between "slow" and "stuck"; the real fix is
       # to split this into shards, which is tracked separately.
-      - name: Integration tests
-        timeout-minutes: 25
-        run: pnpm --filter @tutak/api test:int:verbose
+      # Moved to the `integration` job below, which runs it in shards. The
+      # long comment above is the history of this step and stays with it
+      # there; what is left here is the pointer, so nobody adds a second
+      # copy back into this job.
+
+      # Applied explicitly, rather than relying on the integration suite's
+      # `globalSetup` having done it as a side effect.
+      #
+      # That is what it used to do, and the coupling was invisible: moving
+      # the integration tests into their own sharded job below took the
+      # database out from under the drift check in the same edit, and
+      # nothing in either step said they were related. A check that silently
+      # depends on another step's side effect is a check that stops running
+      # the first time somebody reorders the file.
+      - name: Apply the migration history
+        # Against `tutak`, not `tutak_test`. The service container creates
+        # `tutak` (see POSTGRES_DB above) and nothing else; `tutak_test` is
+        # created by the integration suite's own `ensureDatabaseExists`,
+        # because `prisma migrate deploy` does not create a database it
+        # cannot connect to. This job no longer runs that suite, so it uses
+        # the database that is already there. Which one it is does not
+        # matter to the check below — only that the full history has been
+        # applied to it.
+        run: |
+          cd apps/api
+          pnpm exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://tutak:tutak_ci_password@localhost:5432/tutak?schema=public
 
       # Applying every migration in order (just above) only proves the
       # migration history is internally consistent — it says nothing about
@@ -152,14 +177,13 @@ jobs:
       # app would keep working locally (Prisma Client is generated from
       # schema.prisma directly) right up until a real deploy applied the
       # migration history and got a database shaped differently from what
-      # the code assumes. `tutak_test` already has the full history applied
-      # from the step above, so this diffs that live result against the
-      # schema file with no separate shadow database needed.
+      # the code assumes. This diffs the live result against the schema file
+      # with no separate shadow database needed.
       - name: Migration drift check
         run: |
           cd apps/api
           if ! pnpm exec prisma migrate diff \
-            --from-url "$TEST_DATABASE_URL" \
+            --from-url "$MIGRATED_DATABASE_URL" \
             --to-schema-datamodel prisma/schema.prisma \
             --exit-code; then
             echo "::error::schema.prisma does not match what prisma/migrations produces." \
@@ -167,6 +191,8 @@ jobs:
               "every schema.prisma change, then commit the migration."
             exit 1
           fi
+        env:
+          MIGRATED_DATABASE_URL: postgresql://tutak:tutak_ci_password@localhost:5432/tutak?schema=public
 
       - name: Mobile tests
         run: pnpm --filter @tutak/mobile test
@@ -206,6 +232,95 @@ jobs:
         run: pnpm build
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/v1
+
+  # The integration suite, split across parallel runners.
+  #
+  # It cannot be split *inside* one runner: `jest.config.js` pins
+  # `maxWorkers: 1` because every suite shares one database and truncates
+  # between tests, so two workers deadlock each other's TRUNCATE against an
+  # open transaction. Sharding across jobs sidesteps that rather than
+  # fighting it — GitHub gives each matrix job its own service containers,
+  # so each shard gets a private PostgreSQL and a private Redis, stays
+  # serial inside itself, and the constraint is untouched.
+  #
+  # Three shards, not more: each one pays ~2 minutes of checkout, install
+  # and `prisma generate` before it runs a single test, so the setup cost
+  # starts to swallow the saving. Three takes the suite from ~10 minutes to
+  # ~5 wall-clock and leaves the whole workflow roughly halved.
+  #
+  # `timeout-minutes` stays generous for the same reason it was raised to 25
+  # in the first place: it is a stall detector, not a performance budget.
+  # Per shard the suite is a third of the work, so 15 keeps the same wide
+  # gap between "slow runner" and "stuck".
+  integration:
+    name: Integration tests (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One shard failing must not cancel the others: which tests fail
+      # matters more than that some did, and a cancelled sibling reports
+      # nothing.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tutak
+          POSTGRES_PASSWORD: tutak_ci_password
+          POSTGRES_DB: tutak
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tutak"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @tutak/api prisma:generate
+
+      # globalSetup creates tutak_test, applies the full migration history,
+      # and runs VALIDATE CONSTRAINT on bonus_ledger_delta_matches_direction.
+      # That constraint ships NOT VALID to grandfather pre-existing rows in
+      # long-lived databases; on a database built from scratch it must hold
+      # universally, so this proves no code path can write a ledger entry
+      # whose deltas contradict its direction. It runs once per shard, on
+      # that shard's own database.
+      #
+      # `--verbose` is permanent CI hygiene: it pinpoints a future hang's
+      # location instead of leaving silence. `--forceExit` is deliberately
+      # absent — see the 2026-08-30 hardening note in git history for the
+      # open handle it used to paper over and why removing it was the fix.
+      - name: Integration tests
+        timeout-minutes: 15
+        run: pnpm --filter @tutak/api test:int:shard
+        env:
+          JEST_SHARD: ${{ matrix.shard }}/3
 
   # The demo stack is only a real deliverable if the images actually build.
   # This job is the proof: it builds all three Dockerfiles the same way

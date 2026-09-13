@@ -21,7 +21,7 @@ import { proxyChainProbe } from './common/middleware/proxy-chain-probe';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 import { resolveTrustProxySetting } from './config/trust-proxy';
-import { isPublicDeployment } from './config/app-environment';
+import { isPublicDeployment, resolveAppEnvironment } from './config/app-environment';
 import { assertProductionCorsOrigins } from './config/cors-origins';
 import { expressTrustProxySetting } from './config/client-ip';
 import { StructuredLogger } from './common/observability/structured-logger';
@@ -30,7 +30,9 @@ import { SMS_PROVIDER, SmsProvider } from './infrastructure/sms/sms-provider.int
 const tracingEnabled = startTracing({
   serviceName: process.env.OTEL_SERVICE_NAME ?? 'tutak-api',
   serviceVersion: process.env.npm_package_version ?? '0.1.0',
-  environment: process.env.NODE_ENV ?? 'development',
+  // Same reason as `initSentry`: traces have to say which deployment they
+  // came from, and on Railway `NODE_ENV` is `production` everywhere.
+  environment: resolveAppEnvironment(process.env),
   endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? '',
   headers: process.env.OTEL_EXPORTER_OTLP_HEADERS ?? '',
   debug: process.env.OTEL_DEBUG === 'true',

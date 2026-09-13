@@ -10,10 +10,47 @@ import {
   PurchaseIntentStatus,
   RefundRequestStatus,
 } from '@prisma/client';
+import { createHash } from 'crypto';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { IdempotencyInFlightException } from '../ledger/idempotency.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
+
+/**
+ * The engine key a decision row settles under.
+ *
+ * Derived from the row and nothing else, so every attempt to settle the same
+ * decision — a retry, a second approver, a process that came back after
+ * dying — asks the engine the same question and gets the same answer.
+ */
+function engineKeyFor(requestId: string): string {
+  return `refund-request:${requestId}`;
+}
+
+/**
+ * A decision row id derived from the caller's own idempotency key.
+ *
+ * The direct route has no row to start from: the owner decides and refunds
+ * in one call. If that call created a fresh row each time, a retry would
+ * create a second decision and settle it under a second engine key — which
+ * is a second refund. Deriving the id means a replay lands on the row the
+ * first attempt created, and the primary key does the excluding.
+ *
+ * Shaped like a UUID because that is what every other id in this table looks
+ * like and tooling reads them; the column is a string, so the shape is for
+ * humans rather than for Postgres.
+ */
+function directDecisionId(actorId: string, idempotencyKey: string): string {
+  const digest = createHash('sha256').update(`${actorId}\u0000${idempotencyKey}`).digest('hex');
+  return [
+    digest.slice(0, 8),
+    digest.slice(8, 12),
+    `5${digest.slice(13, 16)}`,
+    ((parseInt(digest.slice(16, 17), 16) & 0x3) | 0x8).toString(16) + digest.slice(17, 20),
+    digest.slice(20, 32),
+  ].join('-');
+}
 
 /**
  * Did this come from the one-pending-per-purchase partial unique index?
@@ -185,31 +222,79 @@ export class PurchaseIntentRefundRequestService {
       return claimedRequest; // already posted — idempotent
     }
 
+    return this.settle(claimedRequest, approverUserId);
+  }
+
+  /**
+   * Runs the engine for a decision that has already been taken, and attaches
+   * the refund to it. Shared by `approve` and `refundDirectly` so there is
+   * one recovery story rather than two.
+   *
+   * The actor is the decider recorded on the row, never the caller. That is
+   * what makes a second approver a lookup instead of a second refund: the
+   * engine's idempotency is scoped to the actor, so the actor must not
+   * change between attempts at the same decision.
+   */
+  private async settle(
+    decision: { id: string; purchaseIntentId: string; amount: Prisma.Decimal | null; reason: string; decidedByUserId: string | null },
+    fallbackActorId: string,
+  ) {
     let refund;
     try {
       refund = await this.refunds.refund({
-        purchaseIntentId: claimedRequest.purchaseIntentId,
-        amount: claimedRequest.amount ? claimedRequest.amount.toString() : undefined,
-        reason: claimedRequest.reason,
-        // The decider recorded on the row, never the caller — see the
-        // docblock: this is what makes a second approver a lookup.
-        actorId: claimedRequest.decidedByUserId ?? approverUserId,
-        idempotencyKey: `refund-request:${claimedRequest.id}`,
+        purchaseIntentId: decision.purchaseIntentId,
+        amount: decision.amount ? decision.amount.toString() : undefined,
+        reason: decision.reason,
+        actorId: decision.decidedByUserId ?? fallbackActorId,
+        idempotencyKey: engineKeyFor(decision.id),
       });
     } catch (error) {
-      // Nothing was posted, so the decision must not stand either — a
-      // request stuck APPROVED with no refund behind it is worse than one
-      // that visibly needs deciding again.
+      // An exception is not evidence that nothing was posted. Ask the ledger
+      // before touching the decision: a throw *after* the money moved — a
+      // connection dropped on the way back, a failure in the bookkeeping that
+      // follows the commit — would otherwise release a decision whose refund
+      // already exists, and the next approver would post a second one.
+      const posted = await this.postedRefundFor(decision);
+      if (posted) return this.attachRefund(decision.id, posted.id);
+
+      // "Already in progress" is the opposite of "nothing happened": another
+      // attempt owns this work and may be committing right now. Hold the
+      // decision — a retry finds it APPROVED with no refund yet and finishes
+      // it, with the same actor and therefore the same engine key.
+      if (error instanceof IdempotencyInFlightException) throw error;
+
+      // A genuine refusal by the engine: nothing was posted and nothing will
+      // be. The request goes back for a human to decide again — but the
+      // decider stays on the row. Clearing it was the whole bug: the next
+      // approver would then be a different actor, and an actor-scoped
+      // idempotency key that differs is a second refund waiting to happen.
       await this.prisma.purchaseIntentRefundRequest.updateMany({
-        where: { id: claimedRequest.id, status: RefundRequestStatus.APPROVED, refundId: null },
-        data: { status: RefundRequestStatus.PENDING, decidedByUserId: null, decidedAt: null },
+        where: { id: decision.id, status: RefundRequestStatus.APPROVED, refundId: null },
+        data: { status: RefundRequestStatus.PENDING, decidedAt: null },
       });
       throw error;
     }
 
+    return this.attachRefund(decision.id, refund.refundId);
+  }
+
+  private attachRefund(requestId: string, refundId: string) {
     return this.prisma.purchaseIntentRefundRequest.update({
-      where: { id: claimedRequest.id },
-      data: { refundId: refund.refundId },
+      where: { id: requestId },
+      data: { refundId },
+    });
+  }
+
+  /**
+   * Did this decision's refund actually get posted?
+   *
+   * Looked up by the engine key rather than by actor, so the answer is the
+   * same whoever asks — including a caller recovering from an attempt that
+   * was not its own.
+   */
+  private postedRefundFor(decision: { id: string; purchaseIntentId: string }) {
+    return this.prisma.purchaseIntentRefund.findFirst({
+      where: { purchaseIntentId: decision.purchaseIntentId, idempotencyKey: engineKeyFor(decision.id) },
     });
   }
 
@@ -248,55 +333,69 @@ export class PurchaseIntentRefundRequestService {
     actorId: string;
     idempotencyKey: string;
   }) {
-    const waiting = await this.prisma.purchaseIntentRefundRequest.findFirst({
-      where: {
-        purchaseIntentId: params.purchaseIntentId,
-        status: RefundRequestStatus.PENDING,
-      },
-    });
-    if (waiting) {
-      throw new BadRequestException(
-        'A refund request is already waiting for a decision on this purchase — approve or refuse that instead',
-      );
-    }
+    // The decision is written *before* the money moves, in one transaction
+    // with the check that nothing is waiting. Three separate steps were two
+    // holes at once: a request raised between the check and the refund
+    // defeated the promise that this route cannot step around a cashier who
+    // asked, and a failure between the refund and the record left money in
+    // the ledger with nothing in the place every other refund shows up.
+    //
+    // The row's id is derived from the caller's own idempotency key, so a
+    // replay lands on the row the first attempt created instead of opening a
+    // second decision — and settles under the same engine key.
+    const decisionId = directDecisionId(params.actorId, params.idempotencyKey);
 
-    const refund = await this.refunds.refund({
-      purchaseIntentId: params.purchaseIntentId,
-      amount: params.amount,
-      reason: params.reason,
-      actorId: params.actorId,
-      idempotencyKey: params.idempotencyKey,
+    const decision = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.purchaseIntentRefundRequest.findUnique({
+        where: { id: decisionId },
+      });
+      if (existing) return existing;
+
+      // Serialises this against `request()` on the same purchase: both take
+      // the intent row, so "is anything waiting?" cannot be answered from
+      // under a request that is being written at the same moment.
+      // `id` is text here, not a native uuid — every id in this schema is
+      // `String @default(uuid())`, so no cast.
+      await tx.$queryRaw`SELECT id FROM purchase_intents WHERE id = ${params.purchaseIntentId} FOR UPDATE`;
+
+      const waiting = await tx.purchaseIntentRefundRequest.findFirst({
+        where: {
+          purchaseIntentId: params.purchaseIntentId,
+          status: RefundRequestStatus.PENDING,
+        },
+      });
+      if (waiting) {
+        throw new BadRequestException(
+          'A refund request is already waiting for a decision on this purchase — approve or refuse that instead',
+        );
+      }
+
+      const intent = await tx.purchaseIntent.findUniqueOrThrow({
+        where: { id: params.purchaseIntentId },
+      });
+
+      return tx.purchaseIntentRefundRequest.create({
+        data: {
+          id: decisionId,
+          purchaseIntentId: intent.id,
+          partnerId: intent.partnerId,
+          partnerBranchId: intent.partnerBranchId,
+          amount: params.amount ?? null,
+          reason: params.reason,
+          status: RefundRequestStatus.APPROVED,
+          // The same person on both halves, stated rather than hidden: this
+          // is one person taking one decision openly, which is exactly what
+          // distinguishes it from approving your own request.
+          requestedByUserId: params.actorId,
+          decidedByUserId: params.actorId,
+          decidedAt: new Date(),
+        },
+      });
     });
 
-    // A replayed request returns the refund that already exists, and the
-    // record for it already exists too — `refundId` is unique, so this is
-    // the lookup rather than a second row.
-    const recorded = await this.prisma.purchaseIntentRefundRequest.findUnique({
-      where: { refundId: refund.refundId },
-    });
-    if (recorded) return recorded;
+    if (decision.refundId) return decision; // already settled — idempotent
 
-    const intent = await this.prisma.purchaseIntent.findUniqueOrThrow({
-      where: { id: params.purchaseIntentId },
-    });
-
-    return this.prisma.purchaseIntentRefundRequest.create({
-      data: {
-        purchaseIntentId: intent.id,
-        partnerId: intent.partnerId,
-        partnerBranchId: intent.partnerBranchId,
-        amount: params.amount ?? null,
-        reason: params.reason,
-        status: RefundRequestStatus.APPROVED,
-        // The same person on both halves, stated rather than hidden: this is
-        // one person taking one decision openly, which is exactly what
-        // distinguishes it from approving your own request.
-        requestedByUserId: params.actorId,
-        decidedByUserId: params.actorId,
-        decidedAt: new Date(),
-        refundId: refund.refundId,
-      },
-    });
+    return this.settle(decision, params.actorId);
   }
 
   /** An owner or manager turns it down. Nothing financial happens. */
@@ -311,8 +410,14 @@ export class PurchaseIntentRefundRequestService {
     }
     this.assertNotSelfApproval(request.requestedByUserId, approverUserId);
 
-    const rejected = await this.prisma.purchaseIntentRefundRequest.update({
-      where: { id: request.id },
+    // Conditional on the status that was just read, and on there being no
+    // refund behind it. An unconditional update here was a way to overwrite
+    // an approval that landed in between: the row would say REJECTED while
+    // the refund existed and the customer's wallet had the money, and the
+    // returns screen, the audit trail and the partner would all say a
+    // customer had been turned down.
+    const refused = await this.prisma.purchaseIntentRefundRequest.updateMany({
+      where: { id: request.id, status: RefundRequestStatus.PENDING, refundId: null },
       data: {
         status: RefundRequestStatus.REJECTED,
         decidedByUserId: approverUserId,
@@ -320,6 +425,16 @@ export class PurchaseIntentRefundRequestService {
         decisionNote: note ?? null,
       },
     });
+    if (refused.count === 0) {
+      // Somebody decided it between the read and the write. Whatever they
+      // decided stands — and nothing is audited, because this call decided
+      // nothing.
+      const current = await this.findOrThrow(requestId);
+      if (current.status === RefundRequestStatus.REJECTED) return current;
+      throw new BadRequestException('This refund request has already been decided');
+    }
+
+    const rejected = await this.findOrThrow(requestId);
 
     await this.auditService.record({
       actorUserId: approverUserId,

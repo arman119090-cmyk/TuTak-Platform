@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PrismaClient, RefundRequestStatus, RoleName } from '@prisma/client';
+import { hashIdempotencyRequest } from '../src/modules/ledger/idempotency.service';
 import { PurchaseIntentRefundRequestService } from '../src/modules/purchase-intents/purchase-intent-refund-request.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { createCustomer, createPartner } from './setup/fixtures';
@@ -84,14 +85,18 @@ describe('Refund decision races (integration)', () => {
       release = resolve;
     });
     const real = requests.findOrThrow.bind(requests);
-    const spy = jest
-      .spyOn(requests, 'findOrThrow')
-      .mockImplementation(async (requestId: string) => {
-        const row = await real(requestId);
-        spy.mockRestore();
-        await held;
-        return row;
-      });
+    // The flag is set before the first await, not after it: restoring the
+    // spy from inside its own body leaves a window in which the *second*
+    // caller is held too, and two callers waiting on the same release is a
+    // deadlock rather than a race.
+    let held_once = false;
+    jest.spyOn(requests, 'findOrThrow').mockImplementation(async (requestId: string) => {
+      if (held_once) return real(requestId);
+      held_once = true;
+      const row = await real(requestId);
+      await held;
+      return row;
+    });
     return { release };
   };
 
@@ -129,12 +134,21 @@ describe('Refund decision races (integration)', () => {
     // key it would claim is already IN_FLIGHT and inside its lease, which is
     // exactly what a second attempt from the same approver meets when a
     // phone retries a request that has not answered yet.
-    const engineScope = `purchase-intent-refund:${owner.id}`;
+    const row = await prisma.purchaseIntentRefundRequest.findUniqueOrThrow({
+      where: { id: request.id },
+    });
     await prisma.idempotencyRecord.create({
       data: {
-        scope: engineScope,
+        scope: `purchase-intent-refund:${owner.id}`,
         key: `refund-request:${request.id}`,
-        requestHash: 'a-hash-that-will-not-match-is-still-a-conflict',
+        // The hash the engine itself would compute, so this reaches the
+        // "still running" branch rather than the "key reused with a
+        // different body" one. The two mean opposite things here.
+        requestHash: hashIdempotencyRequest({
+          purchaseIntentId: row.purchaseIntentId,
+          amount: row.amount ? row.amount.toString() : null,
+          reason: row.reason,
+        }),
         status: 'IN_FLIGHT',
       },
     });
@@ -153,6 +167,38 @@ describe('Refund decision races (integration)', () => {
     expect(after.decidedByUserId).toBe(owner.id);
   });
 
+  it('a decision whose work will never run is released for a human to take again', async () => {
+    const { owner, request } = await pendingRequest();
+
+    // The other `ConflictException` the idempotency store raises: the key is
+    // claimed with a *different* request body, so the engine will never run
+    // this work. Nothing was posted and nothing will be, so holding the
+    // decision would wedge the request APPROVED with no refund behind it
+    // forever. This is the distinction the typed in-flight exception exists
+    // to make — matching on the message text would have worked until
+    // somebody improved the wording.
+    await prisma.idempotencyRecord.create({
+      data: {
+        scope: `purchase-intent-refund:${owner.id}`,
+        key: `refund-request:${request.id}`,
+        requestHash: 'a-different-request-entirely',
+        status: 'IN_FLIGHT',
+      },
+    });
+
+    await expect(requests.approve(request.id, owner.id)).rejects.toThrow();
+
+    const after = await prisma.purchaseIntentRefundRequest.findUniqueOrThrow({
+      where: { id: request.id },
+    });
+    expect(after.status).toBe(RefundRequestStatus.PENDING);
+    // The decider stays on the row. Clearing it was the original bug: the
+    // next approver would be a different actor, and an actor-scoped
+    // idempotency key that differs is a second refund waiting to happen.
+    expect(after.decidedByUserId).toBe(owner.id);
+    expect(await refundCount()).toBe(0);
+  });
+
   it('one request can never become two refunds, whoever approves it', async () => {
     const { owner, manager, request } = await pendingRequest();
 
@@ -168,7 +214,7 @@ describe('Refund decision races (integration)', () => {
     expect(intent.refundedAmount.toFixed(2)).toBe('4000.00');
   });
 
-  it('a direct refund is refused when a request appears while it is deciding', async () => {
+  it('a direct refund waits for a request being raised, and then refuses', async () => {
     const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
     const owner = await userWithRole(partner.id, RoleName.PARTNER_OWNER);
     const staff = await userWithRole(partner.id, RoleName.PARTNER_STAFF);
@@ -179,26 +225,46 @@ describe('Refund decision races (integration)', () => {
     );
     await purchaseIntents.confirm(intent.id, owner.id);
 
-    // The owner starts a direct refund. A cashier raises a request in the
-    // window between the owner's "is anything waiting?" check and the money
-    // moving. The direct route exists on the promise that it can never step
-    // around a cashier who did ask — so it must lose this race, not win it.
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
+    // A cashier's request is written and its purchase locked, but not yet
+    // committed. The owner starts a direct refund on the same purchase. The
+    // direct route exists on the promise that it can never step around a
+    // cashier who asked, so it must block on that lock and then find the
+    // request — not read past it and win.
+    //
+    // Driven by the lock rather than by sleeps or a spy: the earlier version
+    // of this test patched the root client's `findFirst`, which the fix then
+    // moved inside a transaction, leaving the test to pass or fail on
+    // timing. A test that is right only when the machine is slow is worse
+    // than no test.
+    let releaseTx!: () => void;
+    const txHeld = new Promise<void>((resolve) => {
+      releaseTx = resolve;
     });
-    const realFindFirst = prisma.purchaseIntentRefundRequest.findFirst.bind(
-      prisma.purchaseIntentRefundRequest,
-    );
-    const spy = jest
-      .spyOn(prisma.purchaseIntentRefundRequest, 'findFirst')
-      .mockImplementation(async (args: never) => {
-        const row = await realFindFirst(args);
-        spy.mockRestore();
-        await held;
-        return row;
-      });
+    let lockTaken!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      lockTaken = resolve;
+    });
 
+    const raising = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM purchase_intents WHERE id = ${intent.id} FOR UPDATE`;
+        await tx.purchaseIntentRefundRequest.create({
+          data: {
+            purchaseIntentId: intent.id,
+            partnerId: partner.id,
+            partnerBranchId: null,
+            amount: '2000',
+            reason: 'cashier asked first',
+            requestedByUserId: staff.id,
+          },
+        });
+        lockTaken();
+        await txHeld;
+      },
+      { timeout: 20_000 },
+    );
+
+    await locked;
     const refunding = requests.refundDirectly({
       purchaseIntentId: intent.id,
       amount: '3000',
@@ -206,14 +272,8 @@ describe('Refund decision races (integration)', () => {
       actorId: owner.id,
       idempotencyKey: 'owner-direct-1',
     });
-
-    await requests.request({
-      purchaseIntentId: intent.id,
-      amount: '2000',
-      reason: 'cashier asked first',
-      requestedByUserId: staff.id,
-    });
-    release();
+    releaseTx();
+    await raising;
 
     await expect(refunding).rejects.toBeInstanceOf(BadRequestException);
     expect(await refundCount()).toBe(0);
@@ -235,11 +295,9 @@ describe('Refund decision races (integration)', () => {
     const realCreate = prisma.purchaseIntentRefundRequest.create.bind(
       prisma.purchaseIntentRefundRequest,
     );
-    jest
-      .spyOn(prisma.purchaseIntentRefundRequest, 'create')
-      .mockImplementation(async () => {
-        throw new Error('process died before the record was written');
-      });
+    jest.spyOn(prisma.purchaseIntentRefundRequest, 'create').mockImplementation((() => {
+      throw new Error('process died before the record was written');
+    }) as never);
 
     await requests
       .refundDirectly({
@@ -251,7 +309,9 @@ describe('Refund decision races (integration)', () => {
       })
       .catch(() => undefined);
 
-    jest.spyOn(prisma.purchaseIntentRefundRequest, 'create').mockImplementation(realCreate);
+    jest
+      .spyOn(prisma.purchaseIntentRefundRequest, 'create')
+      .mockImplementation(realCreate as never);
 
     const refunds = await refundCount();
     const records = await prisma.purchaseIntentRefundRequest.count();

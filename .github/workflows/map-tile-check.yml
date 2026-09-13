@@ -40,8 +40,18 @@ jobs:
             exit 1
           fi
 
-          # Same default the build uses when no template variable is set.
-          template="${TEMPLATE:-https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}}"
+          # The same default the APK build falls back to when only the key
+          # is set. Assigned on its own line, single-quoted: written as a
+          # `${TEMPLATE:-...}` default, bash ends the expansion at the `{z}`
+          # placeholder's closing brace and the URL comes out mangled — which
+          # is exactly what the first run of this probe measured, and why it
+          # reported a 404 that said nothing about our key.
+          default_template='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
+          template="$TEMPLATE"
+          if [ -z "$template" ]; then
+            echo "No MAP_TILE_URL_TEMPLATE variable is set; using the build's own fallback."
+            template="$default_template"
+          fi
           # One real tile over Yerevan at zoom 12.
           url="${template//\{z\}/12}"
           url="${url//\{x\}/2782}"
@@ -72,6 +82,11 @@ jobs:
             echo "## Tile provider response"
             echo ""
             echo "Template in use: \`${template//$KEY/REDACTED}\`"
+            echo ""
+            # The built URL, key removed. A placeholder left unsubstituted
+            # here means the request never had a chance, and the provider's
+            # answer would be about the wrong address rather than our key.
+            echo "Tile asked for: \`${url//$KEY/REDACTED}\`"
             echo ""
             probe "As the app asks (User-Agent + Referer)" \
               --header "User-Agent: TuTak/0.1.0 (https://tutak.am)" \

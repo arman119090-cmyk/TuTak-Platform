@@ -71,36 +71,39 @@ describe('consuming an OTP (unit, stubbed database)', () => {
       }
     };
 
-    const update = jest.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-      if (!row || row.id !== where.id) throw new Error('record to update not found');
+    // `Promise.resolve` rather than `async`: these hand back a promise
+    // because Prisma does, and an `async` function with nothing to await is
+    // a lint error that would have to be silenced rather than answered.
+    const update = jest.fn(({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      if (!row || row.id !== where.id) return Promise.reject(new Error('record to update not found'));
       applyData(row, data);
       // Prisma returns the row as it stands after the write, which is the
       // whole reason the service can read the post-increment count.
-      return { ...row };
+      return Promise.resolve({ ...row });
     });
 
     const updateMany = jest.fn(
-      async ({ where, data }: { where: { id: string; consumedAt?: null }; data: Record<string, unknown> }) => {
-        if (!row || row.id !== where.id) return { count: 0 };
+      ({ where, data }: { where: { id: string; consumedAt?: null }; data: Record<string, unknown> }) => {
+        if (!row || row.id !== where.id) return Promise.resolve({ count: 0 });
         // The condition that makes the write a claim rather than an
         // overwrite: it matches nothing once somebody else has spent the row.
-        if (where.consumedAt === null && row.consumedAt != null) return { count: 0 };
+        if (where.consumedAt === null && row.consumedAt != null) return Promise.resolve({ count: 0 });
         applyData(row, data);
-        return { count: 1 };
+        return Promise.resolve({ count: 1 });
       },
     );
 
     const prisma = {
       authOtpToken: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { attempts: options.attemptsInWindow ?? 0 } }),
-        findFirst: jest.fn(async () => {
-          if (!row) return null;
+        findFirst: jest.fn(() => {
+          if (!row) return Promise.resolve(null);
           const seen = { ...row };
           // The race, modelled where it really happens: this request read a
           // live challenge, and the other request spent it before this one
           // got to its own write.
           if (options.spentByAnotherRequest) row.consumedAt = new Date();
-          return seen;
+          return Promise.resolve(seen);
         }),
         update,
         updateMany,

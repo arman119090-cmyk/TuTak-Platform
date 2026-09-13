@@ -98,7 +98,9 @@
     "history": "Transaction history",
     "noTransactions": "No transactions yet",
     "totalBalance": "Total balance",
-    "expiringSoon": "Expiring soon"
+    "expiringSoon": "Expiring soon",
+    "noWalletTitle": "No wallet yet",
+    "noWalletBody": "This account has no points wallet. Register with a phone number to start earning."
   },
   "bonus": {
     "earned": "Earned",

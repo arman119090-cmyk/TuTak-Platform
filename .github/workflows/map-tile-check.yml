@@ -33,6 +33,10 @@ jobs:
       - name: Ask the provider why
         env:
           KEY: ${{ secrets.MAP_TILE_API_KEY }}
+          # The same name as a repository *variable*. Settings has two tabs
+          # side by side, and a key pasted into the wrong one is stored
+          # perfectly and read by nothing — a failure with no error anywhere.
+          KEY_AS_VARIABLE: ${{ vars.MAP_TILE_API_KEY }}
           TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
           REFERER: ${{ inputs.referer }}
         run: |
@@ -125,18 +129,41 @@ jobs:
             # cheapest explanation for a flat refusal, and this rules it in
             # or out without anyone reading a credential.
             echo "Key stored here: ${#KEY} characters, ${#TRIMMED} once whitespace at either end is removed."
+            echo ""
+            # A one-way fingerprint of the stored secret. Eight hex characters
+            # of a SHA-256 cannot be turned back into the key, and nothing
+            # about the key can be read out of them — but they change when the
+            # key changes, which is the one question a second run has to
+            # answer and length alone cannot: was the secret actually
+            # replaced, or did the save not take?
+            echo "Fingerprint: \`$(printf '%s' "$TRIMMED" | sha256sum | cut -c1-8)\` — compare it with the previous run; the same fingerprint means the same secret."
+            echo ""
             if [ "${#TRIMMED}" != "${#KEY}" ]; then
-              echo ""
               echo "The stored secret has whitespace around it — a newline or space came along with the paste."
+              echo ""
             fi
-            if printf '%s' "$TRIMMED" | grep -qE '^[A-Za-z0-9]+$'; then
-              echo ""
-              echo "Trimmed, it is letters and digits only, which is the shape of a MapTiler key."
-            else
-              echo ""
-              echo "Even trimmed it holds something other than letters and digits, so it is not a MapTiler key as pasted."
+            # Counted by class, never shown. A MapTiler key is twenty letters
+            # and digits; anything else names the kind of mistake without
+            # naming the character or where it sits.
+            letters=$(printf '%s' "$TRIMMED" | tr -cd 'A-Za-z' | wc -c)
+            digits=$(printf '%s' "$TRIMMED" | tr -cd '0-9' | wc -c)
+            nonascii=$(printf '%s' "$TRIMMED" | LC_ALL=C tr -cd '\000-\177' | wc -c)
+            others=$(( ${#TRIMMED} - letters - digits ))
+            echo "Made of: $letters letters, $digits digits, $others other characters."
+            if [ "$others" -gt 0 ]; then
+              if [ "$nonascii" != "${#TRIMMED}" ]; then
+                echo ""
+                echo "Some of those are **not ASCII** — a letter that looks Latin but is not, or an invisible character. That happens when a key is copied by selecting it with the mouse instead of using the copy button."
+              else
+                echo ""
+                echo "They are ordinary ASCII punctuation — check for a stray quote, dash or space inside the value."
+              fi
             fi
             echo ""
+            if [ -n "${KEY_AS_VARIABLE:-}" ]; then
+              echo "⚠️ There is also a repository **variable** named MAP_TILE_API_KEY. The build reads the **secret**, never the variable — if the key was pasted into Variables, nothing uses it."
+              echo ""
+            fi
 
             echo "## The tile the app asks for"
             echo ""

@@ -26,6 +26,11 @@ on:
         description: 'A URL on the deployment to probe. Its liveness endpoint is ideal — e.g. https://your-api-host/health'
         required: true
         type: string
+      marker:
+        description: 'The address to send as the caller-written X-Forwarded-For entry. Change it to confirm the reading does not depend on the address class — an edge that drops reserved ranges but forwards routable ones would otherwise read as safe when it is not.'
+        required: false
+        default: '203.0.113.7'
+        type: string
 
 jobs:
   probe:
@@ -34,6 +39,7 @@ jobs:
       - name: Send one probe request
         env:
           URL: ${{ inputs.url }}
+          MARKER: ${{ inputs.marker }}
         # --fail is deliberately absent: a 4xx/5xx still reached the process,
         # and reaching it is the whole point. The status is printed instead,
         # so a wrong URL is obvious rather than silent.
@@ -44,14 +50,14 @@ jobs:
             --max-time 30 \
             --output /dev/null \
             --write-out '%{http_code}' \
-            --header 'X-TuTak-Proxy-Probe: 203.0.113.7' \
-            --header 'X-Forwarded-For: 203.0.113.7' \
+            --header "X-TuTak-Proxy-Probe: $MARKER" \
+            --header "X-Forwarded-For: $MARKER" \
             "$URL") || status="(request failed)"
           echo "HTTP status: $status"
           {
             echo "## Proxy chain probe sent"
             echo ""
-            echo "Sent to \`$URL\` with \`X-Forwarded-For: 203.0.113.7\` (one entry)."
+            echo "Sent to \`$URL\` with \`X-Forwarded-For: $MARKER\` (one entry)."
             echo "HTTP status: \`$status\`"
             echo ""
             echo "Now read the deployment's log for the line from \`ProxyChain\`."

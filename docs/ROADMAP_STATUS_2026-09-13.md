@@ -12,7 +12,7 @@
 
 | # | Пункт | Статус | Чем подтверждено |
 |---|---|---|---|
-| P0-1 | Свести ветки в `main` и защитить его | 🟡 | `main` — боевая ветка, Railway развёрнут с неё (три сервиса на `fc1631b`). Влиты `fix/viva-gateway-path-signing`, `fix/mobile-api-base-url-railway`, `claude/android-keyboard-diagnostics-20260908`, `claude/session-security-fixes-20260907` — проверено `git merge-base --is-ancestor`. **Не влита** `claude/viva-sms-integration-20260908` (4 коммита сверх main). **Ветка по умолчанию всё ещё `claude/tutak-loyalty-mvp-e485jm`**, не `main`. **Защита ветки не настроена** (`/branches/main/protection` → 403). В репозитории 36 веток |
+| P0-1 | Свести ветки в `main` и защитить его | 🟡 | `main` — боевая ветка, Railway развёрнут с неё. Все ветки из пункта влиты. **Ветка по умолчанию всё ещё `claude/tutak-loyalty-mvp-e485jm`**, не `main`. **Защита ветки не настроена** (`/branches/main/protection` → 403). 36 веток, разбор — в разделе «Ветки» ниже |
 | P0-2 | Обновить `next` ≥ 16.3.3, `sharp` ≥ 0.35.4, `multer` ≥ 2.3.0 | ❌ | В `pnpm-lock.yaml` фактически стоят `next@16.3.0`, `sharp@0.35.3`, `multer@2.2.0`. Диапазоны в `package.json` (`^16.3.0`, `^0.35.3`) допускают новые версии, но lockfile их не поднимал |
 | P0-3 | Включить Sentry в проде | ❌ | В `tutak-api` переменной `SENTRY_DSN` нет. В `tutak-admin` есть только `NEXT_PUBLIC_SENTRY_ENVIRONMENT` — без самого DSN он ничего не делает |
 | P0-4 | Включить алерты | ❌ | `ALERT_WEBHOOK_URL` в `tutak-api` нет. API сам пишет при старте: «Reconciliation discrepancies, dead-lettered outbox events and failed background jobs will be logged and nothing more — no one will be told» |
@@ -56,6 +56,53 @@
 ### P3 — полгода и дальше
 
 P3-1 … P3-7 — ❌, ни один не начат. Это ожидаемо и правильно.
+
+---
+
+## 1а. Ветки
+
+Проверено по каждой из 36: сколько коммитов сверх `main`, насколько отстаёт,
+и что дал бы её merge.
+
+**Полностью влиты — 21 штука, удалять безопасно, их работа целиком в `main`:**
+`audit/pilot-pr1-qr-purchaseintent-20260912`, `audit/pilot-pr3-infra-observability-20260912`,
+`claude/android-keyboard-diagnostics-20260908`, `claude/dashboard-noindex-20260907`,
+`claude/session-security-fixes-20260907`, `claude/tutak-staging-flow-check-hl97qh`,
+`demo/new-design-mobile`, `deploy/railway-api-df1fd99`, `feat/map-real-location`,
+`feat/map-tile-provider`, `feat/purchase-intent-confirmation-code`,
+`feat/purchase-intent-customer-cancel`, `feat/refund-dual-control`,
+`feat/refund-queue-ui`, `feat/registration-set-password`,
+`feat/staff-identity-audit`, `fix/media-and-attempt-races`,
+`fix/mobile-api-base-url-railway`, `fix/refund-decision-races`,
+`fix/viva-gateway-path-signing`, `release/rc-1`.
+
+**Устарели — 13 штук.** Каждая отстаёт от `main` на 92–390 коммитов, и её
+merge не добавил бы работу, а откатил бы чужую. Их собственные коммиты давно
+приехали в `main` другим путём, с другими хешами, поэтому `git` и считает их
+«неслитыми».
+
+Разобрана до конца одна — `claude/viva-sms-integration-20260908`, та самая, о
+которой шла речь. **Вывод обратный тому, что я написал раньше: `main` не
+отстаёт от неё, а опережает.** Все её файлы в `main` есть, а сверх них `main`
+содержит исправление подписи пути в шлюзе Viva (`signedPath` вместо `path`,
+ветка `fix/viva-gateway-path-signing`), которого в ней нет. Слить её — значит
+вернуть ошибку, из-за которой шлюз отклонял запросы с любым секретом,
+правильный включительно. Ветку надо удалить, а не сливать.
+
+Остальные двенадцать выглядят так же по всем признакам, но каждую я поштучно
+не вскрывал: `audit/pilot-pr2-purchase-code-20260912`,
+`audit/refund-pilot-gap`, `claude/project-context-session-history-9fj7pp`,
+`claude/staging-sms-observability-20260909`, `claude/staging-sms-viva-20260909`,
+`claude/tutak-loyalty-mvp-e485jm`, `claude/viva-sms-integration-20260908`,
+`codex/fix-staging-admin-api-url`, `demo/android-new-ui-20260817`,
+`deploy/staging-api-5c28b95`, `deploy/staging-api-d23946e`,
+`design/tutak-mobile-v2-handoff`, `docs/railway-production-context`.
+
+**Отдельно про ветку по умолчанию.** `claude/tutak-loyalty-mvp-e485jm` — это
+именно она, и она отстаёт от `main` на 192 коммита. Всё, что видит человек,
+открывший репозиторий, и всё, что предлагает кнопка «Run workflow», — это
+состояние двухнедельной давности. Переключение на `main` из вашего списка
+закрывает не косметику.
 
 ---
 
@@ -115,7 +162,7 @@ P3-1 … P3-7 — ❌, ни один не начат. Это ожидаемо и
 | 4 | Включить Sentry: `SENTRY_DSN` в три сервиса, поправить `environment` | P0 | вы (DSN) + я | 3–4 |
 | 5 | Проверить бэкапы Railway восстановлением, записать процедуру и время | P0 | вы | 3–4 |
 | 6 | Сделать `main` веткой по умолчанию и включить защиту | P0 | вы | 0,5 |
-| 7 | Разобрать `claude/viva-sms-integration-20260908` (4 коммита вне main) и убрать мёртвые ветки | P0 | я | 2–3 |
+| 7 | Удалить 21 полностью влитую ветку и разобрать 13 устаревших (разбор сделан, см. «Ветки») | P0 | вы (подтверждение) + я | 1–2 |
 | 8 | Выключить `SEED_BASELINE`, сменить пароль супер-админа, записать реестр секретов | P0 | вы | 1–2 |
 | 9 | Политика конфиденциальности и оферта | P0 | вы + юрист | 4–8 |
 | 10 | Шардинг интеграционного набора в CI | P0 | я | 2–3 |

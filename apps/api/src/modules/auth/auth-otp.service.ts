@@ -107,8 +107,33 @@ export class AuthOtpService {
     });
     if ((spent._sum.attempts ?? 0) >= MAX_ATTEMPTS_PER_WINDOW) throw invalid;
 
+    /*
+     * `attempts` is part of the condition, not only of the burn below.
+     *
+     * The per-challenge limit used to be enforced by one write: cross it, and
+     * the next statement sets `consumedAt`. Two statements, so there is a gap
+     * — a process that stops between them, or a burn that fails, leaves a
+     * challenge at the limit and still selectable. It would then keep taking
+     * guesses until the per-number budget stopped it, which is three times as
+     * many as the challenge was ever meant to allow.
+     *
+     * Reading the limit as well as writing it closes that: an exhausted
+     * challenge is invisible whether or not the burn landed. The burn stays,
+     * because it is what makes the state visible in the row rather than
+     * inferred from a count, and because `findFirst` filtering on
+     * `consumedAt` is what the correct-code path claims against.
+     *
+     * Measured, not assumed — `otp-consumption-races.int-spec.ts` creates the
+     * exact post-crash row and fails if a guess reaches it.
+     */
     const challenge = await this.prisma.authOtpToken.findFirst({
-      where: { phone, purpose, consumedAt: null, expiresAt: { gt: new Date() } },
+      where: {
+        phone,
+        purpose,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: MAX_ATTEMPTS },
+      },
       orderBy: { createdAt: 'desc' },
     });
     if (!challenge) throw invalid;

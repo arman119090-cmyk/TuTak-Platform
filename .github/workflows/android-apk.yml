@@ -223,6 +223,12 @@ jobs:
           # credit line that is drawn on screen — and an override is still
           # just setting the repository variable, which is what switching
           # provider later looks like.
+          # A secret pasted through a browser can arrive with a newline or a
+          # trailing space attached. The provider then refuses a key that is
+          # correct in every visible respect, and the only symptom is a grey
+          # map on a phone. Strip it here, where the value enters the build,
+          # rather than making every reader of it defend itself.
+          MAP_TILE_API_KEY="$(printf '%s' "$MAP_TILE_API_KEY" | tr -d '[:space:]')"
           if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_URL_TEMPLATE" ]; then
             MAP_TILE_URL_TEMPLATE='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
             echo "MAP_TILE_URL_TEMPLATE not set; defaulting to MapTiler's streets-v2 raster tiles."
@@ -285,6 +291,107 @@ jobs:
           git -c user.email=actions@github.com -c user.name='GitHub Actions' \
             commit -q -m "ci: point $PROFILE at $API_BASE_URL" -- eas.json
           echo "eas.json committed locally for this build only"
+
+      - name: Ask the tile provider whether this key works
+        # The map on the first shipped APK was a grey rectangle. Every part of
+        # this pipeline had done its job: the key reached eas.json, eas.json
+        # reached the builder, the builder baked it into the binary, and
+        # unpacking the APK showed the template, the key and the credit line
+        # exactly where they belong. The provider was answering 403 "Invalid
+        # key" to every tile, and nothing between the secret and the handset
+        # was in a position to notice — the app's own fallback text is the
+        # first and only report, and it reaches a person, not a build.
+        #
+        # So the build asks before it ships. One request, before twenty
+        # minutes of compilation: if the provider will not serve this key,
+        # there is no point producing an installable that cannot draw a map.
+        #
+        # Only for profiles that are handed to someone. A developer building
+        # locally against openstreetmap.org has no key and needs none, and
+        # this must not stand between them and a build.
+        working-directory: apps/mobile
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -uo pipefail
+          # The same rule app.config.js applies, read from the same place it
+          # reads: APP_ENV, not the profile's name. `diagnostic` is a preview
+          # build with an overlay, and it is handed to people — keying on the
+          # profile name would have quietly exempted it.
+          app_env=$(jq -r --arg p "$PROFILE" '.build[$p].env.APP_ENV // ""' eas.json)
+          shipping=false
+          case "$app_env" in
+            preview|staging|production) shipping=true ;;
+          esac
+
+          key=$(jq -r --arg p "$PROFILE" '.build[$p].env.MAP_TILE_API_KEY // ""' eas.json)
+          template=$(jq -r --arg p "$PROFILE" '.build[$p].env.MAP_TILE_URL_TEMPLATE // ""' eas.json)
+
+          if [ -z "$key" ] || [ -z "$template" ]; then
+            if [ "$shipping" = true ]; then
+              echo "::error::Profile $PROFILE has no tile provider configured. Set the MAP_TILE_API_KEY secret."
+              exit 1
+            fi
+            echo "No tile provider configured, and APP_ENV=$app_env is not a build anyone is handed. Skipping."
+            exit 0
+          fi
+
+          # A secret that picked up a newline or a space on the way into
+          # GitHub is a valid key the provider will refuse, and it looks
+          # identical to a wrong one in its answer. Say so by name.
+          trimmed=$(printf '%s' "$key" | tr -d '[:space:]')
+          if [ "${#trimmed}" != "${#key}" ]; then
+            echo "::warning::The MAP_TILE_API_KEY secret has whitespace around it; testing the trimmed value."
+            key="$trimmed"
+          fi
+
+          # One real tile over Yerevan, the same address the app builds.
+          url="${template//\{z\}/12}"
+          url="${url//\{x\}/2782}"
+          url="${url//\{y\}/1541}"
+          url="${url//\{s\}/a}"
+          url="${url//\{key\}/$key}"
+
+          ask() {
+            curl --silent --show-error --location --max-time 25 \
+              --output /dev/null --write-out '%{http_code}' \
+              --header "User-Agent: TuTak/1.0 (https://tutak.am)" \
+              --header "Referer: https://tutak.am" "$url" 2>/dev/null || echo 000
+          }
+          status=$(ask)
+          # A request that never completed says nothing about the key, and a
+          # release should not be blocked by one dropped connection. A refusal
+          # is not retried — the provider already answered.
+          if [ "$status" = "000" ]; then
+            echo "The first request did not complete; asking once more."
+            sleep 5
+            status=$(ask)
+          fi
+
+          if [ "$status" = "200" ]; then
+            echo "The tile provider served a tile for this key."
+            exit 0
+          fi
+
+          # The tile route answers a refusal with a placeholder image, which
+          # explains nothing. MapTiler's TileJSON route answers the same
+          # refusal in words, so the failure names itself in the log rather
+          # than leaving a bare status code for someone to interpret.
+          reason=""
+          case "$template" in
+            https://api.maptiler.com/maps/*)
+              map_id="${template#https://api.maptiler.com/maps/}"
+              map_id="${map_id%%/*}"
+              reason=$(curl --silent --max-time 25 \
+                "https://api.maptiler.com/maps/$map_id/tiles.json?key=$key" | head -c 200)
+              ;;
+          esac
+
+          echo "::error::The tile provider refused this key (HTTP $status)${reason:+ — $reason}"
+          echo "The APK would install and show no map, so the build stops here."
+          echo "Fix the MAP_TILE_API_KEY secret at Settings -> Secrets and variables -> Actions,"
+          echo "checking it against https://cloud.maptiler.com/account/keys/ , then dispatch again."
+          exit 1
 
       - name: Read the app config the way EAS will read it
         # Deliberately hostile: it throws away this job's environment and

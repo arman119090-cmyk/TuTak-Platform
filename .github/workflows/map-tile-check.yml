@@ -1,0 +1,84 @@
+# Asks the tile provider, from outside, whether it will serve us a tile.
+#
+# The map failing on a handset looks the same whatever the cause: a grey
+# rectangle, or the app's own "unavailable" line. The provider knows the
+# reason and says it in the response body — an invalid key, an origin that is
+# not on the allow-list, a quota that has run out, a map id that does not
+# exist. This fetches one real tile and prints what came back.
+#
+# It never prints the key or the URL that contains it. Only status codes and
+# the provider's own message, which carries no credential.
+#
+# Runs on a runner rather than a laptop for the same reason the proxy probe
+# does: the question is what the provider does with *our* key from outside
+# our network, and "Run workflow" is a button that works from a phone.
+name: Check the map tiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      referer:
+        description: 'The Referer the app sends. Leave as-is unless testing an origin restriction.'
+        required: false
+        default: 'https://tutak.am'
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch one tile, three ways
+        env:
+          KEY: ${{ secrets.MAP_TILE_API_KEY }}
+          TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
+          REFERER: ${{ inputs.referer }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${KEY:-}" ]; then
+            echo "::error::MAP_TILE_API_KEY is not set as a repository secret."
+            exit 1
+          fi
+
+          # Same default the build uses when no template variable is set.
+          template="${TEMPLATE:-https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}}"
+          # One real tile over Yerevan at zoom 12.
+          url="${template//\{z\}/12}"
+          url="${url//\{x\}/2782}"
+          url="${url//\{y\}/1541}"
+          url="${url//\{s\}/a}"
+          url="${url//\{key\}/$KEY}"
+
+          probe() {
+            local label="$1"; shift
+            local body status
+            body=$(curl --silent --show-error --location --max-time 25 \
+              --write-out '\n%{http_code}' "$@" "$url" 2>&1) || body=$'(request failed)\n000'
+            status="${body##*$'\n'}"
+            body="${body%$'\n'*}"
+            echo "### $label"
+            echo "HTTP status: $status"
+            # An image body is binary and enormous; only a text error is worth
+            # showing, and a provider's error message carries no credential.
+            if [ "$status" = "200" ]; then
+              echo "Body: (a tile — $(printf '%s' "$body" | wc -c) bytes)"
+            else
+              printf 'Body: %.400s\n' "$body"
+            fi
+            echo ""
+          }
+
+          {
+            echo "## Tile provider response"
+            echo ""
+            echo "Template in use: \`${template//$KEY/REDACTED}\`"
+            echo ""
+            probe "As the app asks (User-Agent + Referer)" \
+              --header "User-Agent: TuTak/0.1.0 (https://tutak.am)" \
+              --header "Referer: $REFERER"
+            probe "Without a Referer" \
+              --header "User-Agent: TuTak/0.1.0 (https://tutak.am)"
+            probe "Bare request, no headers of ours"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat "$GITHUB_STEP_SUMMARY"

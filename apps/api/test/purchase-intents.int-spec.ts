@@ -772,6 +772,9 @@ describe('PurchaseIntents (integration)', () => {
           where: { walletId: wallet.id, type: BonusEntryType.RESERVE_RELEASE },
         }),
       ).toBe(1);
+    });
+  });
+
   // ── Four-digit till code ──────────────────────────────────────────────
 
   /**

@@ -81,6 +81,13 @@ function purchaseFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIn
     bonusAmountRequested: '0',
     ordinaryPaymentRemainder: '10000',
     refundedAmount: '0',
+    // Added by the purchase-intent work this screen now sits alongside: the
+    // till code (#36), the customer's own cancellation (#35) and who refused
+    // a purchase (#41). A fixture that lies about the shape of a DTO is a
+    // test that stops proving anything the day the real one changes.
+    confirmationCode: '0042',
+    rejectedByUserId: null,
+    cancelledAt: null,
     negotiatedRateBps: 500,
     maxBonusPaymentPercent: 50,
     partnerBrand: { partnerId: 'partner-1', displayName: 'Verified Shop', logo: null },

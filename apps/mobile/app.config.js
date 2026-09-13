@@ -121,20 +121,71 @@ function diagnosticsEnabled() {
 function refuseUnkeyedMapInInstallableBuild(appEnv) {
   const shipping = appEnv === 'preview' || appEnv === 'staging' || appEnv === 'production';
   if (!shipping) return;
-  if (process.env.MAP_TILE_URL_TEMPLATE) return;
-  if (process.env.MAP_TILE_ALLOW_FALLBACK === '1') return;
 
-  throw new Error(
-    `APP_ENV is "${appEnv}" and MAP_TILE_URL_TEMPLATE is not set, so this build would ship on ` +
-      'the openstreetmap.org development fallback.\n\n' +
-      'OSM runs on donated capacity and its tile usage policy asks applications with real ' +
-      'traffic to use a provider. A build that ignores that works until it is blocked, and ' +
-      'then every customer sees a grey map at the same moment.\n\n' +
-      'Set MAP_TILE_URL_TEMPLATE (and MAP_TILE_API_KEY, and MAP_TILE_ATTRIBUTION) — ' +
-      'docs/MAP_TILE_PROVIDER_RU.md is the one-page version. To build an installable app ' +
-      'before the provider account exists, set MAP_TILE_ALLOW_FALLBACK=1 and know that the ' +
-      'map in it is not the map that ships.',
-  );
+  const template = (process.env.MAP_TILE_URL_TEMPLATE ?? '').trim();
+  const key = (process.env.MAP_TILE_API_KEY ?? '').trim();
+  const attribution = (process.env.MAP_TILE_ATTRIBUTION ?? '').trim();
+  const refuse = (what) => {
+    throw new Error(
+      `APP_ENV is "${appEnv}" and ${what}\n\n` +
+        'docs/MAP_TILE_PROVIDER_RU.md is the one-page version of setting this up. To build ' +
+        'an installable app before the provider account exists, set ' +
+        'MAP_TILE_ALLOW_FALLBACK=1 — it is refused for `production`, because a production ' +
+        'build on the development map is not a thing anybody should be able to type their ' +
+        'way into.',
+    );
+  };
+
+  // The escape hatch is for getting an installable build out before the
+  // provider account exists. `production` is not that situation, and a flag
+  // that can be set by accident in the one place it must never apply is not
+  // an escape hatch, it is a hole with a label on it.
+  const allowFallback = process.env.MAP_TILE_ALLOW_FALLBACK === '1' && appEnv !== 'production';
+  if (!template) {
+    if (allowFallback) return;
+    refuse(
+      'MAP_TILE_URL_TEMPLATE is not set, so this build would ship on the ' +
+        'openstreetmap.org development fallback. OSM runs on donated capacity and its tile ' +
+        'usage policy asks applications with real traffic to use a provider. A build that ' +
+        'ignores that works until it is blocked, and then every customer sees a grey map at ' +
+        'the same moment.',
+    );
+  }
+
+  // Set is not the same as correct, and these are the four ways it has been
+  // wrong in practice rather than in theory: pointing back at the fallback
+  // on purpose, plain HTTP, a template whose key placeholder nothing fills,
+  // and a provider credited to nobody.
+  if (/openstreetmap\.org/i.test(template)) {
+    refuse(
+      'MAP_TILE_URL_TEMPLATE still points at openstreetmap.org. Naming it explicitly does ' +
+        'not make it a provider — it is the same donated capacity the fallback used.',
+    );
+  }
+
+  if (/^http:\/\//i.test(template)) {
+    refuse(
+      'MAP_TILE_URL_TEMPLATE uses plain http. Every tile request would carry the account ' +
+        'key in clear text over whatever network the phone is on, and Android blocks ' +
+        'cleartext traffic by default anyway — the map would simply be blank.',
+    );
+  }
+
+  if (template.includes('{key}') && !key) {
+    refuse(
+      'MAP_TILE_URL_TEMPLATE has a {key} placeholder and MAP_TILE_API_KEY is empty, so every ' +
+        'tile request would go out with an empty key and be refused by the provider. The ' +
+        'map would be blank on every phone, and nothing in the build would have said so.',
+    );
+  }
+
+  if (!attribution) {
+    refuse(
+      'MAP_TILE_ATTRIBUTION is empty. Every provider worth using requires visible credit, ' +
+        'and OpenStreetMap data is ODbL — shipping without it is a licence breach, not a ' +
+        'cosmetic omission.',
+    );
+  }
 }
 
 /**

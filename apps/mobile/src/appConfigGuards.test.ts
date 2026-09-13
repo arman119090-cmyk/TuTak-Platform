@@ -148,15 +148,28 @@ describe('the staging build profile in eas.json', () => {
 });
 
 describe('refuseUnkeyedMapInInstallableBuild', () => {
+  const MAPTILER = 'https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}';
+
   beforeEach(() => {
     delete process.env.MAP_TILE_URL_TEMPLATE;
+    delete process.env.MAP_TILE_API_KEY;
+    delete process.env.MAP_TILE_ATTRIBUTION;
     delete process.env.MAP_TILE_ALLOW_FALLBACK;
   });
 
   afterEach(() => {
     delete process.env.MAP_TILE_URL_TEMPLATE;
+    delete process.env.MAP_TILE_API_KEY;
+    delete process.env.MAP_TILE_ATTRIBUTION;
     delete process.env.MAP_TILE_ALLOW_FALLBACK;
   });
+
+  /** Everything a shipping build is supposed to have. */
+  const configured = () => {
+    process.env.MAP_TILE_URL_TEMPLATE = MAPTILER;
+    process.env.MAP_TILE_API_KEY = 'a-key';
+    process.env.MAP_TILE_ATTRIBUTION = '© MapTiler © OpenStreetMap';
+  };
 
   it.each(['preview', 'staging', 'production'])(
     'refuses to build %s on the development tile fallback',
@@ -175,12 +188,64 @@ describe('refuseUnkeyedMapInInstallableBuild', () => {
   });
 
   it('accepts a shipping build once a provider is named', () => {
-    process.env.MAP_TILE_URL_TEMPLATE = 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={key}';
+    configured();
     expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).not.toThrow();
   });
 
   it('has an escape hatch that has to be typed', () => {
     process.env.MAP_TILE_ALLOW_FALLBACK = '1';
     expect(() => guards.refuseUnkeyedMapInInstallableBuild('preview')).not.toThrow();
+  });
+
+  it('refuses the escape hatch for production', () => {
+    // A flag that can be set by accident in the one place it must never
+    // apply is not an escape hatch, it is a hole with a label on it.
+    process.env.MAP_TILE_ALLOW_FALLBACK = '1';
+    expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).toThrow(
+      /MAP_TILE_URL_TEMPLATE/,
+    );
+  });
+
+  describe('set is not the same as correct', () => {
+    it('refuses a template that still points at openstreetmap.org', () => {
+      configured();
+      process.env.MAP_TILE_URL_TEMPLATE = 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).toThrow(
+        /openstreetmap\.org/,
+      );
+    });
+
+    it('refuses plain http, which would ship the key in clear text', () => {
+      configured();
+      process.env.MAP_TILE_URL_TEMPLATE = 'http://tiles.example.com/{z}/{x}/{y}.png?key={key}';
+      expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).toThrow(/http/);
+    });
+
+    it('refuses a {key} placeholder with nothing to fill it', () => {
+      // Every tile request would go out with an empty key and be refused by
+      // the provider: a blank map on every phone, with nothing in the build
+      // having said so.
+      configured();
+      delete process.env.MAP_TILE_API_KEY;
+      expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).toThrow(
+        /MAP_TILE_API_KEY/,
+      );
+    });
+
+    it('refuses a provider credited to nobody', () => {
+      configured();
+      delete process.env.MAP_TILE_ATTRIBUTION;
+      expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).toThrow(
+        /MAP_TILE_ATTRIBUTION/,
+      );
+    });
+
+    it('accepts a keyless provider that needs no placeholder', () => {
+      // Not every provider uses a key in the URL; the check is that a
+      // placeholder has something to fill it, not that a key must exist.
+      process.env.MAP_TILE_URL_TEMPLATE = 'https://tiles.example.com/{z}/{x}/{y}.png';
+      process.env.MAP_TILE_ATTRIBUTION = '© Example';
+      expect(() => guards.refuseUnkeyedMapInInstallableBuild('production')).not.toThrow();
+    });
   });
 });

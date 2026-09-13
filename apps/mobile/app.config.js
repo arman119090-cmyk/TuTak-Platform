@@ -285,6 +285,23 @@ module.exports = ({ config }) => ({
         recordAudioAndroid: false,
       },
     ],
+    [
+      'expo-location',
+      {
+        // Foreground only, and worded as what it actually does: the map
+        // sorts partners by how near they are, and the app works without
+        // it. There is no background tracking anywhere in this codebase,
+        // so the plugin's background options are deliberately not set —
+        // asking for "always" would be a store-review question with no
+        // good answer, and a reason to decline the install.
+        locationAlwaysAndWhenInUsePermission:
+          'TuTak uses your location to show partners near you on the map.',
+        locationWhenInUsePermission:
+          'TuTak uses your location to show partners near you on the map.',
+        isIosBackgroundLocationEnabled: false,
+        isAndroidBackgroundLocationEnabled: false,
+      },
+    ],
     // Wires the native Sentry SDKs into the iOS/Android projects EAS builds
     // and adds the build-phase scripts that upload debug symbols/source
     // maps. `authToken` is deliberately not passed here: those native

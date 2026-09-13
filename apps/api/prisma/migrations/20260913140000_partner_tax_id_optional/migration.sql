@@ -1,0 +1,15 @@
+-- The Armenian ՀՎՀՀ becomes optional on a partner.
+--
+-- Self-service applications (POST /partners/apply) ask a business owner for
+-- this number before any relationship exists in which to chase it. Refusing
+-- the application over a number the applicant cannot find on a Saturday
+-- evening loses the partner, not the paperwork; it can be filled in from the
+-- partner's own panel once they are in.
+--
+-- The unique index stays. In PostgreSQL one NULL is not equal to another, so
+-- any number of partners may carry none, while two partners may still never
+-- claim the same number.
+--
+-- Widening a NOT NULL column to nullable rewrites no rows and takes only a
+-- brief ACCESS EXCLUSIVE lock on the catalog entry.
+ALTER TABLE "partners" ALTER COLUMN "taxId" DROP NOT NULL;

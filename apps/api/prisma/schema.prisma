@@ -964,7 +964,16 @@ model Partner {
   id                        String        @id @default(uuid())
   legalName                 String
   displayName               String
-  taxId                     String        @unique
+  /// The Armenian ՀՎՀՀ. Optional, because a self-service applicant is asked
+  /// for it before there is any relationship in which to chase it, and a
+  /// business that cannot find its number on a Saturday evening should not
+  /// be turned away at the door — it can be filled in from the partner's own
+  /// panel afterwards.
+  ///
+  /// Still `@unique`: in PostgreSQL one NULL is not equal to another, so any
+  /// number of partners may have none while two partners may never claim the
+  /// same number.
+  taxId                     String?       @unique
   category                  String
   /// Meaningful only when `category` is `fuel` — whether this station sells
   /// gas. Propane and methane are one customer-facing bucket, not two: a

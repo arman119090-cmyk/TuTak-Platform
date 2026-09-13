@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
+import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
@@ -25,6 +26,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
 
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const reveal = usePasswordReveal();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -83,7 +85,8 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
             label={t('auth.newPassword')}
             value={newPassword}
             onChangeText={setNewPassword}
-            secureTextEntry
+            secureTextEntry={reveal.secureTextEntry}
+            revealToggle={reveal.revealToggle}
             placeholder="••••••••"
             hint={t('auth.passwordHint')}
             error={error ?? undefined}

@@ -1,0 +1,89 @@
+# Asks the deployed stack, from outside, whether it is actually serving.
+#
+# Railway reports which commit it deployed and whether the deploy succeeded.
+# Neither says the process came up and answers — a container can deploy
+# successfully and then fail its first request, and the dashboard still shows
+# green. This asks the three addresses a person would open.
+#
+# It runs on a runner because this project's own tooling sits behind a proxy
+# that refuses `*.up.railway.app`: from there every check returns 000, which
+# is indistinguishable from the service being down.
+name: Check the deployed stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      api:
+        description: 'API base, without a trailing slash.'
+        required: false
+        default: 'https://tutak-api-production.up.railway.app'
+        type: string
+      admin:
+        description: 'Admin panel sign-in page.'
+        required: false
+        default: 'https://tutak-admin-production.up.railway.app/login'
+        type: string
+      partner:
+        description: 'Partner panel sign-in page.'
+        required: false
+        default: 'https://tutak-partner-production.up.railway.app/login'
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask each service whether it is up
+        env:
+          API: ${{ inputs.api }}
+          ADMIN: ${{ inputs.admin }}
+          PARTNER: ${{ inputs.partner }}
+        run: |
+          set -uo pipefail
+          failed=0
+
+          # `--fail` is deliberately absent: the status is the answer, and a
+          # 4xx still proves the process is answering. Only a 000 — nothing
+          # came back at all — and a 5xx are treated as failures.
+          probe() {
+            local label="$1" url="$2" body_file
+            body_file=$(mktemp)
+            local status
+            status=$(curl --silent --show-error --location --max-time 30 \
+              --output "$body_file" --write-out '%{http_code}' "$url" 2>/dev/null) || status=000
+            echo "### $label"
+            echo ""
+            echo "- \`$url\`"
+            echo "- HTTP status: **$status**"
+            case "$status" in
+              000) echo "- **Nothing answered.**"; failed=1 ;;
+              5*)  echo "- **The process answered with a fault.**"; failed=1 ;;
+            esac
+            # Only for the JSON endpoints; a sign-in page is a wall of HTML.
+            case "$url" in
+              */health|*/health/ready)
+                echo ""
+                echo '```'
+                head -c 300 "$body_file"
+                echo ""
+                echo '```'
+                ;;
+            esac
+            echo ""
+            rm -f "$body_file"
+          }
+
+          {
+            echo "## Deployed stack"
+            echo ""
+            probe "API — liveness" "$API/health"
+            probe "API — readiness (database, Redis, object storage)" "$API/health/ready"
+            probe "Admin panel" "$ADMIN"
+            probe "Partner panel" "$PARTNER"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" = "1" ]; then
+            echo "::error::At least one service did not answer, or answered with a fault."
+            exit 1
+          fi

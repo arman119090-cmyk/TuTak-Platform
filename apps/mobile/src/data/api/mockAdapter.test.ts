@@ -281,12 +281,39 @@ describe('mockAdapter', () => {
         params: { lat: 40.1776, lng: 44.5126, radiusKm: 25, ...params },
       } as InternalAxiosRequestConfig);
 
-    it('returns the nearest partner first', async () => {
+    /*
+     * The ordering this used to assert — strictly ascending distance — is no
+     * longer the rule, and the change was deliberate: a partner who offers
+     * more cashback now ranks ahead of a nearer one, so that choosing a
+     * generous rate buys them something real. It is bounded, though, and the
+     * bound is the part worth testing. Distance is compared in
+     * half-kilometre bands: inside a band the better rate wins, and across
+     * bands the nearer band always wins however generous the far one is.
+     *
+     * So this checks the bound rather than the raw sequence, which is what
+     * actually protects the screen: whatever the rates, nothing far may climb
+     * over something near. See `PartnersService.listNearbyBranches`.
+     */
+    it('never lets a further partner climb over a nearer band', async () => {
       const rows = (await nearby()).data.data as Array<{ distanceKm: number }>;
       expect(rows.length).toBeGreaterThan(5);
 
-      const distances = rows.map((r) => r.distanceKm);
-      expect(distances).toEqual([...distances].sort((a, b) => a - b));
+      const bands = rows.map((r) => Math.floor(r.distanceKm / 0.5));
+      expect(bands).toEqual([...bands].sort((a, b) => a - b));
+    });
+
+    it('ranks the more generous partner first among equally near ones', async () => {
+      const rows = (await nearby()).data.data as Array<{
+        distanceKm: number;
+        cashbackPercent: number;
+      }>;
+
+      for (let i = 1; i < rows.length; i += 1) {
+        const previous = rows[i - 1]!;
+        const current = rows[i]!;
+        if (Math.floor(previous.distanceKm / 0.5) !== Math.floor(current.distanceKm / 0.5)) continue;
+        expect(previous.cashbackPercent).toBeGreaterThanOrEqual(current.cashbackPercent);
+      }
     });
 
     it('puts each partner somewhere different, so the map is not one stack', async () => {

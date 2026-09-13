@@ -293,8 +293,57 @@ function handle(
               : true,
           )
           .filter((p) => p.distanceKm <= radiusKm)
-          .sort((a, b) => a.distanceKm - b.distanceKm),
+          /*
+           * The same ordering the server applies, and it has to be the same
+           * one: this demo's job is to answer "does this screen work", and a
+           * list sorted by distance alone would show the "good value" marker
+           * scattered through an order production never produces.
+           *
+           * Distance in half-kilometre bands, then the better rate inside a
+           * band, then exact distance. See `PartnersService.listNearbyBranches`
+           * for why it is banded rather than weighted.
+           */
+          .sort(
+            (a, b) =>
+              Math.floor(a.distanceKm / 0.5) - Math.floor(b.distanceKm / 0.5) ||
+              b.cashbackPercent - a.cashbackPercent ||
+              a.distanceKm - b.distanceKm,
+          ),
       );
+    }
+
+    /**
+     * Applying to become a partner.
+     *
+     * The demo accepts it and hands back a partner awaiting approval, which
+     * is what the real endpoint does — the screen's job here is to show that
+     * the form submits and the confirmation appears. Nothing is added to
+     * `state.partners`: an application cannot trade until an administrator
+     * approves it, so a demo that made the applicant's shop appear on the map
+     * would be showing something the real system refuses.
+     */
+    case 'POST /partners/apply': {
+      const dto = (config.data ? JSON.parse(config.data as string) : {}) as {
+        legalName?: string;
+        displayName?: string;
+        taxId?: string;
+        category?: string;
+        bonusAccrualRateBps?: number;
+      };
+      return envelope({
+        id: `partner-application-${Date.now()}`,
+        displayName: dto.displayName ?? '',
+        category: dto.category ?? 'other',
+        bonusAccrualRateBps: dto.bonusAccrualRateBps ?? 0,
+        sellsGas: false,
+        sellsPetrol: false,
+        isActive: false,
+        createdAt: new Date().toISOString(),
+        logo: null,
+        cover: null,
+        about: null,
+        offerings: [],
+      });
     }
 
     // ── EV ──────────────────────────────────────────────────────────────

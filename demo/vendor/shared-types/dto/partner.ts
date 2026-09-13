@@ -94,9 +94,24 @@ export interface PartnerPublicDto {
  * The full record. Returned only to a holder of PARTNER_MANAGE, or to the
  * partner's own people reading their own row.
  */
+/**
+ * Where a partner is in its life, which is not the same question as
+ * `isActive`.
+ *
+ * `status` says whether this business was ever admitted to the platform;
+ * `isActive` says whether an admitted one is trading today. A pending
+ * application and a partner suspended this morning are both "not trading",
+ * and telling them apart is the difference between a queue to work through
+ * and an incident to look into.
+ */
+export type PartnerStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED';
+
 export interface PartnerDto extends PartnerPublicDto {
   legalName: string;
-  taxId: string;
+  /** See `PartnerStatus` — an application in the queue is `PENDING_APPROVAL`. */
+  status: PartnerStatus;
+  /** The Armenian ՀՎՀՀ. Null until the partner supplies it — see `Partner.taxId`. */
+  taxId: string | null;
   paymentCommissionRateBps: number;
   payoutsBlockedAt: string | null;
   payoutsBlockedReason: string | null;
@@ -106,7 +121,7 @@ export interface PartnerDto extends PartnerPublicDto {
 export interface CreatePartnerRequestDto {
   legalName: string;
   displayName: string;
-  taxId: string;
+  taxId?: string;
   category: string;
   bonusAccrualRateBps: number;
   ownerUserId: string;
@@ -159,6 +174,16 @@ export interface NearbyPartnerDto {
   cashbackPercent: number;
   /** Straight-line kilometres from the point asked about, to one decimal. */
   distanceKm: number;
+  /**
+   * True when this partner gives noticeably more back than the ordinary
+   * offer, at `HIGH_CASHBACK_PERCENT` or above.
+   *
+   * It exists so that choosing a generous rate buys a partner something real
+   * rather than a number nobody compares. The threshold lives on the server
+   * so it can be retuned without waiting for an app release, and so every
+   * client agrees on what "generous" means today.
+   */
+  highCashback: boolean;
   /**
    * The chain's published logo — spec §1.3's "catalogue/map card".
    *

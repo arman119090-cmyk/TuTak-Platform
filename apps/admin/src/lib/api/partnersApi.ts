@@ -16,6 +16,24 @@ export const partnersApi = {
     const { data } = await httpClient.post<ApiEnvelope<PartnerDto>>('/partners', dto);
     return data.data;
   },
+  /**
+   * Admits an application. The rate the applicant proposed is what the
+   * partner trades on — approval is a yes to their offer, not a place to
+   * type a different number.
+   */
+  async approve(id: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerDto>>(`/partners/${id}/approve`, {});
+    return data.data;
+  },
+
+  /** Turns an application down. The reason is required and is recorded. */
+  async reject(id: string, reason: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerDto>>(`/partners/${id}/reject`, {
+      reason,
+    });
+    return data.data;
+  },
+
   async setActive(id: string, isActive: boolean) {
     const { data } = await httpClient.patch<ApiEnvelope<PartnerDto>>(`/partners/${id}/active`, {
       isActive,

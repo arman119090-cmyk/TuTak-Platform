@@ -34,6 +34,16 @@
         "API_BASE_URL": "https://tutak-api-production.up.railway.app/v1"
       }
     },
+    "production-apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "production",
+        "API_BASE_URL": "https://tutak-api-production.up.railway.app/v1"
+      }
+    },
     "staging-render": {
       "distribution": "internal",
       "android": {

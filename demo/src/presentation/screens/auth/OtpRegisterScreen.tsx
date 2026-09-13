@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
+import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@tutak/shared-types';
@@ -111,8 +112,10 @@ export function OtpRegisterScreen({ navigation }: Props) {
    * both platforms do natively (`passwordToggleEnabled`, the iOS secure-field
    * accessory), so it is the behaviour a thumb already expects.
    */
-  const [revealPassword, setRevealPassword] = useState(false);
-  const [revealConfirmation, setRevealConfirmation] = useState(false);
+  // One per box: revealing the password must not also reveal the copy that
+  // exists to catch a typo in it.
+  const revealPassword = usePasswordReveal();
+  const revealConfirmation = usePasswordReveal();
   /*
    * Which of the three the form is on.
    *
@@ -120,7 +123,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
    * booleans for three states is the shape that produces a fourth, impossible
    * one, and every branch below has to be read twice to rule it out.
    */
-  const [stage, setStage] = useState<'phone' | 'code' | 'password'>('phone');
+  const [stage, setStage] = useState<'phone' | 'code' | 'name' | 'password'>('phone');
   /*
    * Three slots, because one error state was being shown in the wrong place.
    *
@@ -141,6 +144,21 @@ export function OtpRegisterScreen({ navigation }: Props) {
    * which is the point: the rule is executable rather than a comment, and
    * whoever adds such a response gets the field marking for free.
    */
+  /*
+   * Optional, and asked for on a step of their own.
+   *
+   * The server has accepted these two since OTP registration was written and
+   * nothing ever sent them, so it fell back to what it writes when no name is
+   * given: `firstName` "Customer", with the phone number standing in for a
+   * surname. Every account registered by SMS carries that, which is what put
+   * "Привет, Customer" on the home screen.
+   *
+   * Their own step rather than two more boxes beside the password: next to
+   * two required fields a name reads as required too, and the whole point is
+   * that it is not. Skipping is a button, not a guess.
+   */
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [referralError, setReferralError] = useState<string | null>(null);
@@ -180,7 +198,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
    */
   const handleCodeEntered = () => {
     clearErrors();
-    setStage('password');
+    setStage('name');
   };
 
   const handleCreateAccount = async () => {
@@ -191,6 +209,11 @@ export function OtpRegisterScreen({ navigation }: Props) {
         phone: fullPhone,
         code,
         password,
+        // Omitted rather than sent empty: the server validates a present name
+        // as one to fifty characters, so `''` would be a rejection rather
+        // than "no name given".
+        ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
+        ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
         locale: i18n.language,
         referralCode: referralCode || undefined,
         deviceId,
@@ -259,11 +282,6 @@ export function OtpRegisterScreen({ navigation }: Props) {
   const mismatch = confirmation.length > 0 && password !== confirmation;
 
   /** Each field's own eye, reporting and flipping only that field. */
-  const revealToggleFor = (revealed: boolean, set: (fn: (on: boolean) => boolean) => void) => ({
-    revealed,
-    onToggle: () => set((on) => !on),
-    label: revealed ? t('auth.hidePassword') : t('auth.showPassword'),
-  });
   // The API's own bounds, from the package both sides read. Stated here so the
   // button does not need a round trip to learn what the hint under the field
   // already says — and so the upper bound is enforced where it can still be
@@ -284,7 +302,11 @@ export function OtpRegisterScreen({ navigation }: Props) {
       >
         <BackButton />
         <Text style={[text.titleLg, { color: color.textPrimary }]}>
-          {stage === 'password' ? t('auth.createPasswordTitle') : t('auth.otpRegisterTitle')}
+          {stage === 'password'
+            ? t('auth.createPasswordTitle')
+            : stage === 'name'
+              ? t('nameStep.title')
+              : t('auth.otpRegisterTitle')}
         </Text>
         <Text
           style={[
@@ -296,7 +318,9 @@ export function OtpRegisterScreen({ navigation }: Props) {
             ? t('auth.otpRegisterSubtitle')
             : stage === 'code'
               ? t('auth.otpRegisterCodeSubtitle', { phone: fullPhone })
-              : t('auth.createPasswordSubtitle')}
+              : stage === 'name'
+                ? t('nameStep.body')
+                : t('auth.createPasswordSubtitle')}
         </Text>
 
         {stage === 'phone' ? (
@@ -378,6 +402,48 @@ export function OtpRegisterScreen({ navigation }: Props) {
               />
             </View>
           </>
+        ) : stage === 'name' ? (
+          <>
+            <TextField
+              label={t('editProfile.firstName')}
+              traceId="first-name"
+              value={firstName}
+              onChangeText={setFirstName}
+              autoCapitalize="words"
+              maxLength={50}
+            />
+            <TextField
+              label={t('editProfile.lastName')}
+              traceId="last-name"
+              value={lastName}
+              onChangeText={setLastName}
+              autoCapitalize="words"
+              maxLength={50}
+            />
+            <View style={{ marginTop: space[3] }}>
+              <Button
+                label={t('nameStep.continue')}
+                onPress={() => {
+                  clearErrors();
+                  setStage('password');
+                }}
+                icon={<JakoWingMark size={16} color={color.textInverse} />}
+              />
+              {/* Skipping leaves both blank, and blank is omitted from the
+                  request — so the server falls back exactly as it does today.
+                  Nothing is lost that a person cannot add later in Profile. */}
+              <Button
+                label={t('nameStep.skip')}
+                variant="tertiary"
+                onPress={() => {
+                  clearErrors();
+                  setFirstName('');
+                  setLastName('');
+                  setStage('password');
+                }}
+              />
+            </View>
+          </>
         ) : (
           <>
             <TextField
@@ -385,21 +451,21 @@ export function OtpRegisterScreen({ navigation }: Props) {
               traceId="password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry={!revealPassword}
+              secureTextEntry={revealPassword.secureTextEntry}
               placeholder="••••••••"
               maxLength={PASSWORD_MAX_LENGTH}
               hint={t('auth.passwordHint')}
-              revealToggle={revealToggleFor(revealPassword, setRevealPassword)}
+              revealToggle={revealPassword.revealToggle}
             />
             <TextField
               label={t('auth.confirmPassword')}
               traceId="password-confirm"
               value={confirmation}
               onChangeText={setConfirmation}
-              secureTextEntry={!revealConfirmation}
+              secureTextEntry={revealConfirmation.secureTextEntry}
               placeholder="••••••••"
               maxLength={PASSWORD_MAX_LENGTH}
-              revealToggle={revealToggleFor(revealConfirmation, setRevealConfirmation)}
+              revealToggle={revealConfirmation.revealToggle}
               // The mismatch is this screen's own judgement, so it is marked
               // on the second field — the one that can be corrected without
               // retyping the first.

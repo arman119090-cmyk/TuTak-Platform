@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { TextField } from '../../components/TextField';
+import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
@@ -25,6 +26,7 @@ export function LoginScreen({ navigation }: Props) {
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const reveal = usePasswordReveal();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   /**
@@ -131,7 +133,8 @@ export function LoginScreen({ navigation }: Props) {
             traceId="password"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={reveal.secureTextEntry}
+            revealToggle={reveal.revealToggle}
             placeholder="••••••••"
             error={error ?? undefined}
           />

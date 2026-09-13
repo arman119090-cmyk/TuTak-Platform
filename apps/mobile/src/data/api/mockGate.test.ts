@@ -68,6 +68,8 @@ describe("the production config cannot produce either flag", () => {
   const SHIPPING_ENV = {
     API_BASE_URL: 'https://api.example.com/v1',
     MAP_TILE_URL_TEMPLATE: 'https://tiles.example.com/{z}/{x}/{y}.png?key={key}',
+    MAP_TILE_API_KEY: 'a-key',
+    MAP_TILE_ATTRIBUTION: '© Example',
   };
 
   it.each([

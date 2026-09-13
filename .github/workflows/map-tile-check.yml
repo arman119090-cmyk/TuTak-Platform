@@ -1,0 +1,214 @@
+# Asks the tile provider, from outside, why it will not serve us a tile.
+#
+# The map failing on a handset looks the same whatever the cause: a grey
+# rectangle, or the app's own "unavailable" line. The provider knows the
+# reason — an invalid key, an origin that is not on the allow-list, a map the
+# plan does not include, a quota that has run out — but it answers a *tile*
+# request with a placeholder PNG and a bare status code, which says only
+# "no". Its JSON endpoints answer the same question in words, so this asks
+# both and puts the answers side by side.
+#
+# It never prints the key or a URL containing it. Status codes, response
+# headers, the provider's own text, and the key's length — enough to tell a
+# truncated secret from a rejected one, and none of it a credential.
+#
+# Runs on a runner rather than here for the same reason the proxy probe does:
+# the question is what the provider does with our key from outside our
+# network, and this network's proxy refuses api.maptiler.com outright.
+name: Check the map tiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      referer:
+        description: 'The Referer the app sends. Change it to test an origin restriction.'
+        required: false
+        default: 'https://tutak.am'
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the provider why
+        env:
+          # The secret first, then a repository variable of the same name.
+          #
+          # A tile key is not a secret in the sense an access token is: it
+          # ships inside every APK — it was read straight out of build 50's
+          # binary — so anyone who installs the app already has it, and what
+          # actually protects the account is MapTiler's own origin
+          # restriction. Storing it write-only bought nothing and cost the one
+          # thing that mattered: it could not be read back and checked, so two
+          # attempts at entering it failed invisibly.
+          #
+          # As a variable it is visible in Settings, which means a mistyped
+          # character can be seen and corrected by the person who typed it.
+          KEY: ${{ secrets.MAP_TILE_API_KEY || vars.MAP_TILE_API_KEY }}
+          KEY_IS_SECRET: ${{ secrets.MAP_TILE_API_KEY != '' }}
+          # Reported separately so one run answers the whole question. The
+          # secret wins when both exist, which is conventional and also a
+          # trap: a stale secret silently beats a variable somebody just
+          # fixed, and the run looks identical to having changed nothing.
+          KEY_VARIABLE: ${{ vars.MAP_TILE_API_KEY }}
+          TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
+          REFERER: ${{ inputs.referer }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${KEY:-}" ]; then
+            echo "::error::MAP_TILE_API_KEY is not set as a repository secret."
+            exit 1
+          fi
+
+          # The same default the APK build falls back to when only the key is
+          # set. Assigned on its own line, single-quoted: written as a
+          # `${TEMPLATE:-...}` default, bash ends the expansion at the `{z}`
+          # placeholder's closing brace and the URL comes out mangled.
+          default_template='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
+          template="$TEMPLATE"
+          if [ -z "$template" ]; then
+            template="$default_template"
+          fi
+          # One real tile over Yerevan at zoom 12.
+          expand() {
+            local u="${1//\{z\}/12}"
+            u="${u//\{x\}/2782}"
+            u="${u//\{y\}/1541}"
+            u="${u//\{s\}/a}"
+            printf '%s' "${u//\{key\}/$KEY}"
+          }
+
+          # Every request goes through here, so the key can only ever leave
+          # in the URL curl is handed and never in anything echoed.
+          probe() {
+            local label="$1" url="$2"; shift 2
+            local head body status ctype
+            head=$(curl --silent --show-error --location --max-time 25 \
+              --output /tmp/body.bin --dump-header /tmp/head.txt \
+              --write-out '%{http_code} %{content_type}' "$@" "$url" 2>&1) \
+              || head='000 request-failed'
+            status="${head%% *}"
+            ctype="${head#* }"
+            echo "### $label"
+            echo ""
+            echo "- HTTP status: **$status**"
+            echo "- Content type: \`$ctype\`"
+            # A provider that answers in words is answering the question; an
+            # image body is a placeholder tile and says nothing beyond the
+            # status code, so it is described rather than dumped.
+            case "$ctype" in
+              image/*)
+                echo "- Body: a placeholder image ($(wc -c < /tmp/body.bin) bytes) — no explanation in it"
+                ;;
+              *)
+                body=$(tr -d '\0' < /tmp/body.bin | head -c 400)
+                echo "- Body:"
+                echo ""
+                echo '```'
+                echo "$body"
+                echo '```'
+                ;;
+            esac
+            # MapTiler puts its reason in a header on some routes.
+            grep -iE '^(x-|cf-cache|retry-after|www-authenticate)' /tmp/head.txt \
+              | grep -viE '^(x-amz-|x-cache|x-served-by|x-timer|x-request-id)' \
+              | sed 's/^/    /' | head -12 > /tmp/hdr.txt || true
+            if [ -s /tmp/hdr.txt ]; then
+              echo ""
+              echo "- Headers worth reading:"
+              echo ""
+              sed 's/^/  /' /tmp/hdr.txt
+            fi
+            echo ""
+          }
+
+          app_headers=(--header "User-Agent: TuTak/0.1.0 (https://tutak.am)" --header "Referer: $REFERER")
+
+          # The same secret with whitespace stripped from both ends. A key
+          # pasted with a trailing newline is indistinguishable from a wrong
+          # key in the provider's answer — both are "Invalid key" — so the
+          # probe asks with the trimmed value too and lets the two answers
+          # separate a bad paste from a bad key.
+          TRIMMED="$(printf '%s' "$KEY" | tr -d '[:space:]')"
+
+          {
+            echo "## What the tile provider says"
+            echo ""
+            echo "Template: \`${template//$KEY/REDACTED}\`"
+            echo ""
+            # Not the key, and not enough to reconstruct it: only whether the
+            # secret stored here is the shape and size of a real one. A
+            # truncated or pasted-with-whitespace secret is by far the
+            # cheapest explanation for a flat refusal, and this rules it in
+            # or out without anyone reading a credential.
+            echo "Key stored here: ${#KEY} characters, ${#TRIMMED} once whitespace at either end is removed."
+            echo ""
+            # A one-way fingerprint of the stored secret. Eight hex characters
+            # of a SHA-256 cannot be turned back into the key, and nothing
+            # about the key can be read out of them — but they change when the
+            # key changes, which is the one question a second run has to
+            # answer and length alone cannot: was the secret actually
+            # replaced, or did the save not take?
+            echo "Fingerprint: \`$(printf '%s' "$TRIMMED" | sha256sum | cut -c1-8)\` — compare it with the previous run; the same fingerprint means the same secret."
+            echo ""
+            if [ "${#TRIMMED}" != "${#KEY}" ]; then
+              echo "The stored secret has whitespace around it — a newline or space came along with the paste."
+              echo ""
+            fi
+            # Counted by class, never shown. A MapTiler key is twenty letters
+            # and digits; anything else names the kind of mistake without
+            # naming the character or where it sits.
+            letters=$(printf '%s' "$TRIMMED" | tr -cd 'A-Za-z' | wc -c)
+            digits=$(printf '%s' "$TRIMMED" | tr -cd '0-9' | wc -c)
+            nonascii=$(printf '%s' "$TRIMMED" | LC_ALL=C tr -cd '\000-\177' | wc -c)
+            others=$(( ${#TRIMMED} - letters - digits ))
+            echo "Made of: $letters letters, $digits digits, $others other characters."
+            if [ "$others" -gt 0 ]; then
+              if [ "$nonascii" != "${#TRIMMED}" ]; then
+                echo ""
+                echo "Some of those are **not ASCII** — a letter that looks Latin but is not, or an invisible character. That happens when a key is copied by selecting it with the mouse instead of using the copy button."
+              else
+                echo ""
+                echo "They are ordinary ASCII punctuation — check for a stray quote, dash or space inside the value."
+              fi
+            fi
+            echo ""
+            if [ "${KEY_IS_SECRET:-}" = "true" ]; then
+              echo "Read from the repository **secret**."
+              if [ -n "${KEY_VARIABLE:-}" ]; then
+                var_trimmed="$(printf '%s' "$KEY_VARIABLE" | tr -d '[:space:]')"
+                var_letters=$(printf '%s' "$var_trimmed" | tr -cd 'A-Za-z' | wc -c)
+                var_digits=$(printf '%s' "$var_trimmed" | tr -cd '0-9' | wc -c)
+                var_others=$(( ${#var_trimmed} - var_letters - var_digits ))
+                echo ""
+                echo "⚠️ A **variable** of the same name also exists and was NOT used — the secret wins while it is set. The variable holds ${#var_trimmed} characters: $var_letters letters, $var_digits digits, $var_others other. **Delete the secret** and this variable becomes the one in play."
+              fi
+            else
+              echo "Read from the repository **variable** — no secret is set. This is fine for a tile key, and it is the copy you can see and correct in Settings."
+            fi
+            echo ""
+
+            echo "## The tile the app asks for"
+            echo ""
+            probe "As the app asks (User-Agent + Referer: $REFERER)" "$(expand "$template")" "${app_headers[@]}"
+            probe "Without a Referer" "$(expand "$template")" --header "User-Agent: TuTak/0.1.0 (https://tutak.am)"
+
+            echo "## The same questions asked where the answer is in words"
+            echo ""
+            # TileJSON for the same map. Same key, same account, same map id —
+            # but this route answers in JSON, so a refusal here names itself.
+            probe "TileJSON for streets-v2" \
+              "https://api.maptiler.com/maps/streets-v2/tiles.json?key=$KEY" "${app_headers[@]}"
+            # A different map on the same key separates "this key is refused"
+            # from "this key may not have this map".
+            probe "TileJSON for basic-v2 (a different map, same key)" \
+              "https://api.maptiler.com/maps/basic-v2/tiles.json?key=$KEY" "${app_headers[@]}"
+            # The decisive one. If this passes where the stored value fails,
+            # nothing is wrong with the key or the account and the whole
+            # outage is a stray character in the secret.
+            probe "TileJSON for streets-v2, with the secret's whitespace stripped" \
+              "https://api.maptiler.com/maps/streets-v2/tiles.json?key=$TRIMMED" "${app_headers[@]}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat "$GITHUB_STEP_SUMMARY"

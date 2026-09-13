@@ -46,6 +46,9 @@ function partnerFixture(overrides: Partial<PartnerDto> = {}): PartnerDto {
     displayName: 'SAS Supermarket',
     legalName: 'SAS Supermarket LLC',
     taxId: '00000000',
+    // A partner reading its own panel is one an administrator admitted; a
+    // pending application has no panel to sign in to.
+    status: 'ACTIVE',
     category: 'grocery',
     sellsGas: false,
     sellsPetrol: false,

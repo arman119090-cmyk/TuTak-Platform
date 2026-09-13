@@ -56,6 +56,11 @@ describe('registration asks for a password before it creates anything', () => {
   const enterCode = async (code = '123456') => {
     fireEvent.changeText(await screen.findByPlaceholderText('000000'), code);
     fireEvent.press(screen.getByText('common.next'));
+    // Registration now asks for a name between the code and the password.
+    // It is optional and skipping it is a button, so these suites — which
+    // are about the password stage — walk straight past it. That the step
+    // exists and can be skipped is covered in `.name.test.tsx`.
+    fireEvent.press(await screen.findByText('nameStep.skip'));
   };
 
   const passwordFields = async () => screen.findAllByPlaceholderText('••••••••');

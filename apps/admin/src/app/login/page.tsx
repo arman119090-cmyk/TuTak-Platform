@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthShell, Button, Field, Input } from '@tutak/design/web';
+import { AuthShell, Button, Field, Input, PasswordInput } from '@tutak/design/web';
 import { authApi } from '@/lib/api/authApi';
 import { ADMIN_ROLES, useAuthStore } from '@/lib/stores/authStore';
 
@@ -57,8 +57,7 @@ export default function LoginPage() {
         </Field>
 
         <Field label="Password" error={error ?? undefined}>
-          <Input
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"

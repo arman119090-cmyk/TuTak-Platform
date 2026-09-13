@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthShell, Button, Field, Input } from '@tutak/design/web';
+import { AuthShell, Button, Field, PasswordInput } from '@tutak/design/web';
 import { passwordApi } from '@/lib/api/passwordApi';
 import { useAuthStore } from '@/lib/stores/authStore';
 
@@ -70,24 +70,21 @@ export default function ChangePasswordPage() {
     >
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="Current password">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="current-password"
             value={currentPassword}
             onChange={(event) => setCurrentPassword(event.target.value)}
           />
         </Field>
         <Field label="New password">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
           />
         </Field>
         <Field label="Repeat the new password">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}

@@ -23,6 +23,7 @@ function buildUser(overrides: Partial<AuthenticatedUserDto> = {}): Authenticated
     avatar: null,
     showAvatarInReferralList: false,
     personalizedRecommendationsEnabled: false,
+    mustChangePassword: false,
     ...overrides,
   };
 }

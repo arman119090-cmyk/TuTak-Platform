@@ -670,6 +670,12 @@ export class AuthService {
       roles: claims.roles,
       permissions: claims.permissions,
       partnerScopes: claims.partnerScopes,
+      // The one piece of state a dashboard cannot work without and was never
+      // given. A seeded or admin-reset account signs in successfully and then
+      // has every other endpoint refused by `PasswordRotationGuard` — without
+      // this flag the client cannot tell that from a broken deployment, and
+      // has nothing to route the person to.
+      mustChangePassword: claims.mustChangePassword,
     };
   }
 

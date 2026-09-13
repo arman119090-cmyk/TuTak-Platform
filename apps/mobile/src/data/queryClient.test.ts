@@ -22,6 +22,7 @@ const userA: AuthenticatedUserDto = {
   avatar: null,
   showAvatarInReferralList: false,
   personalizedRecommendationsEnabled: false,
+  mustChangePassword: false,
 };
 
 const userB: AuthenticatedUserDto = { ...userA, id: 'user-b', firstName: 'Bagrat', lastName: 'B' };

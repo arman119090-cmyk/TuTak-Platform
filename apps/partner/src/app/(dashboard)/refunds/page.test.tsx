@@ -46,6 +46,7 @@ function buildUser(role: Role): AuthenticatedUserDto {
     avatar: null,
     showAvatarInReferralList: false,
     personalizedRecommendationsEnabled: false,
+    mustChangePassword: false,
   };
 }
 

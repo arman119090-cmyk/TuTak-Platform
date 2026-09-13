@@ -23,6 +23,7 @@ const baseUser: AuthenticatedUserDto = {
   avatar: null,
   showAvatarInReferralList: false,
   personalizedRecommendationsEnabled: false,
+  mustChangePassword: false,
 };
 
 const tokens: AuthTokensDto = {

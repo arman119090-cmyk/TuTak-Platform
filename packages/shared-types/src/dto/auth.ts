@@ -65,6 +65,14 @@ export interface AuthenticatedUserDto {
    */
   showAvatarInReferralList: boolean;
   /**
+   * True when this account cannot use anything until its password is
+   * changed — a seeded administrator, or one an admin has just reset.
+   * `PasswordRotationGuard` refuses every other endpoint while it is set, so
+   * a dashboard that does not read this has no way to explain why a
+   * successful sign-in is followed by nothing but 403s.
+   */
+  mustChangePassword: boolean;
+  /**
    * Whether this customer opted in to nearby partners being ranked by their
    * own purchase history. Default false — behavioural personalisation is
    * off until the customer turns it on, same posture as

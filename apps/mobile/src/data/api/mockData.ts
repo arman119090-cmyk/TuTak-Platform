@@ -65,6 +65,7 @@ export const MOCK_USER: AuthenticatedUserDto = {
   avatar: null,
   showAvatarInReferralList: false,
   personalizedRecommendationsEnabled: false,
+  mustChangePassword: false,
 };
 
 export function mockTokens() {

@@ -7,11 +7,16 @@
 # the deployment itself. A runner is exactly that, and "Run workflow" is a
 # button that works from a phone.
 #
-# The probe sends `X-Forwarded-For: 203.0.113.7` — TEST-NET-3, reserved by
-# RFC 5737 for documentation, so it can never be a real client address and
-# can never be confused with one in the reading. The API prints the shape of
-# the chain it received to its own log (addresses are deliberately not
-# printed); read that line on Railway and it names the value to set.
+# The probe sends `X-Forwarded-For: 203.0.113.7` and names that same value in
+# `X-TuTak-Proxy-Probe`. 203.0.113.7 is TEST-NET-3, reserved by RFC 5737 for
+# documentation, so it can never be a real client address and can never be
+# confused with one. Naming it is what lets the API tell the entry the caller
+# wrote from the entries its own edge appended: everything to the right of
+# the marker is infrastructure, and that count is the answer.
+#
+# The API prints the shape of the chain to its own log — positions and counts
+# only, never addresses. Read that line on Railway and it names the value to
+# set, or says not to use `xff-depth` on this deployment at all.
 name: Measure the proxy chain
 
 on:
@@ -39,7 +44,7 @@ jobs:
             --max-time 30 \
             --output /dev/null \
             --write-out '%{http_code}' \
-            --header 'X-TuTak-Proxy-Probe: 1' \
+            --header 'X-TuTak-Proxy-Probe: 203.0.113.7' \
             --header 'X-Forwarded-For: 203.0.113.7' \
             "$URL") || status="(request failed)"
           echo "HTTP status: $status"

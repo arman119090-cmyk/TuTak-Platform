@@ -96,7 +96,8 @@ export interface PartnerPublicDto {
  */
 export interface PartnerDto extends PartnerPublicDto {
   legalName: string;
-  taxId: string;
+  /** The Armenian ՀՎՀՀ. Null until the partner supplies it — see `Partner.taxId`. */
+  taxId: string | null;
   paymentCommissionRateBps: number;
   payoutsBlockedAt: string | null;
   payoutsBlockedReason: string | null;
@@ -106,7 +107,7 @@ export interface PartnerDto extends PartnerPublicDto {
 export interface CreatePartnerRequestDto {
   legalName: string;
   displayName: string;
-  taxId: string;
+  taxId?: string;
   category: string;
   bonusAccrualRateBps: number;
   ownerUserId: string;

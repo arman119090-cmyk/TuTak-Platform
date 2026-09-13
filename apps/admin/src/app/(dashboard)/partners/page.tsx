@@ -44,7 +44,10 @@ export default function PartnersPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await partnersApi.create(form);
+      // An empty box means "no number", not an empty number: the server
+      // refuses a `taxId` shorter than five characters, so sending `''`
+      // would fail validation on a field the applicant is allowed to skip.
+      await partnersApi.create({ ...form, taxId: form.taxId.trim() || undefined });
       queryClient.invalidateQueries({ queryKey: ['partners'] });
       setForm(EMPTY);
       setOpen(false);
@@ -84,9 +87,8 @@ export default function PartnersPage() {
                 onChange={(e) => setForm({ ...form, displayName: e.target.value })}
               />
             </Field>
-            <Field label="Tax ID">
+            <Field label="Tax ID" hint="ՀՎՀՀ — optional, the partner can fill it in later">
               <Input
-                required
                 value={form.taxId}
                 onChange={(e) => setForm({ ...form, taxId: e.target.value })}
               />

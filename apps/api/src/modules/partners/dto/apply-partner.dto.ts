@@ -1,4 +1,4 @@
-import { IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 import { IsCommissionRateBps } from '../../../common/validators/is-commission-rate-bps.validator';
 
 /**
@@ -17,9 +17,16 @@ export class ApplyPartnerDto {
   @Length(2, 100)
   displayName: string;
 
+  /**
+   * Optional on purpose. This form is the first contact with a business that
+   * has not agreed to anything yet, and a required tax number turns away the
+   * applicant rather than producing the number. It can be filled in from the
+   * partner's own panel once they are in.
+   */
+  @IsOptional()
   @IsString()
   @Length(5, 30)
-  taxId: string;
+  taxId?: string;
 
   @IsString()
   @Length(2, 50)

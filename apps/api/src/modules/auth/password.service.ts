@@ -163,15 +163,26 @@ export class PasswordService {
     if (!challenge) throw invalid;
 
     if (challenge.codeHash !== sha256Hex(code)) {
-      const attempts = challenge.attempts + 1;
-      await this.prisma.passwordResetToken.update({
+      // Incremented by the database, not by this process. `attempts + 1`
+      // read the count and wrote back a number computed from it, so two
+      // wrong guesses arriving together both read the same value and both
+      // wrote the same one: N simultaneous guesses cost one attempt instead
+      // of N, and the ceiling below could be walked straight past by firing
+      // them in parallel rather than in sequence.
+      //
+      // Burning the challenge stays a separate, conditional write: it must
+      // happen once whichever attempt crosses the line, and `consumedAt`
+      // already being set is the thing that decides.
+      const bumped = await this.prisma.passwordResetToken.update({
         where: { id: challenge.id },
-        data: {
-          attempts,
-          // Burn the challenge rather than let it be ground down.
-          ...(attempts >= MAX_RESET_ATTEMPTS ? { consumedAt: new Date() } : {}),
-        },
+        data: { attempts: { increment: 1 } },
       });
+      if (bumped.attempts >= MAX_RESET_ATTEMPTS && !bumped.consumedAt) {
+        await this.prisma.passwordResetToken.updateMany({
+          where: { id: challenge.id, consumedAt: null },
+          data: { consumedAt: new Date() },
+        });
+      }
       throw invalid;
     }
 

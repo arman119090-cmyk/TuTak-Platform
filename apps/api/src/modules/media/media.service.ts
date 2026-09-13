@@ -329,13 +329,18 @@ export class MediaService {
     const processed = await this.images.process(params.file, params.kind);
     const keys = mintMediaKeys(params.kind);
 
-    // Bytes first — see the class docblock for why this order and not the
-    // other one.
-    await this.storage.put(keys.original, processed.original.body, processed.original.contentType);
-    await this.storage.put(keys.display, processed.display.body, processed.display.contentType);
-    await this.storage.put(keys.thumb, processed.thumbnail.body, processed.thumbnail.contentType);
-
     try {
+      // Bytes first — see the class docblock for why this order and not the
+      // other one. Inside the `try` because there are three of them: a
+      // failure on the second or the third used to leave the ones before it
+      // in the bucket with no row pointing at them and nothing that would
+      // ever delete them. Orphaned bytes are not just cost — they are an
+      // untracked copy of somebody's face or a partner's artwork, sitting in
+      // storage outside every record the platform keeps.
+      await this.storage.put(keys.original, processed.original.body, processed.original.contentType);
+      await this.storage.put(keys.display, processed.display.body, processed.display.contentType);
+      await this.storage.put(keys.thumb, processed.thumbnail.body, processed.thumbnail.contentType);
+
       return await this.prisma.$transaction(async (tx) => {
         if (params.supersedePending && params.partnerId) {
           // A superseded submission was never public and nothing snapshotted

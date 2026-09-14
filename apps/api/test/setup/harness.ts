@@ -31,6 +31,7 @@ import { PurchaseIntentsModule } from '../../src/modules/purchase-intents/purcha
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
 import { PaymentsModule } from '../../src/modules/payments/payments.module';
+import { PartnerSettlementsModule } from '../../src/modules/partner-settlements/partner-settlements.module';
 import { SettlementModule } from '../../src/modules/settlement/settlement.module';
 import { PayoutsModule } from '../../src/modules/payouts/payouts.module';
 import { ReconciliationModule } from '../../src/modules/reconciliation/reconciliation.module';
@@ -190,6 +191,7 @@ function domainTestingModuleBuilder(
       AnalyticsModule,
       LedgerModule,
       PaymentsModule,
+      PartnerSettlementsModule,
       SettlementModule,
       PayoutsModule,
       ReconciliationModule,

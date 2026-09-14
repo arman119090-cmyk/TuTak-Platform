@@ -31,12 +31,14 @@ export const useBiometricStore = create<BiometricState>((set, get) => ({
   enabled: false, locked: false, busy: false, kind: null,
   hydrate: async () => {
     const { user, sessionEpoch } = currentSession();
-    const stamp = generation;
     let owner: string | null = null;
     let unreadable = false;
     try { owner = await readBiometricOwner(); } catch { unreadable = true; }
     const kind = await availableBiometrics().catch(() => null);
-    if (stamp !== generation || sessionEpoch !== currentSession().sessionEpoch) return;
+    // Backgrounding invalidates an in-flight scan, not the saved preference.
+    // Dropping hydration for that reason would leave the default unlocked state
+    // in place. Only a different auth session may discard this result.
+    if (sessionEpoch !== currentSession().sessionEpoch || user?.id !== currentSession().user?.id) return;
     const enabled = Boolean(user && (unreadable || owner === user.id));
     set({ enabled, locked: enabled, kind });
   },

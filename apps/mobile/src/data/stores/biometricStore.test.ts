@@ -111,3 +111,24 @@ it('removes a late enrollment after logout instead of recreating the old account
   expect(state().enabled).toBe(false);
   expect(mocked.removeBiometricProof).toHaveBeenCalled();
 });
+
+it('retains the cold-start lock if backgrounding interrupts preference hydration', async () => {
+  const preference = deferred<string | null>();
+  mocked.readBiometricOwner.mockReturnValueOnce(preference.promise);
+  const hydration = state().hydrate();
+  state().lock();
+  preference.resolve('a');
+  await hydration;
+  expect(state()).toMatchObject({ enabled: true, locked: true });
+});
+
+it('does not restore a saved lock into a new account after hydration races with logout', async () => {
+  const preference = deferred<string | null>();
+  mocked.readBiometricOwner.mockReturnValueOnce(preference.promise);
+  const hydration = state().hydrate();
+  await useAuthStore.getState().clear();
+  useAuthStore.setState({ user: { id: 'b' } as AuthenticatedUserDto });
+  preference.resolve('a');
+  await hydration;
+  expect(state()).toMatchObject({ enabled: false, locked: false });
+});

@@ -242,8 +242,9 @@ describe('PartnerSettlementService (integration)', () => {
       // opening balance somebody typed in.
       const refundLegs = owing.entries.filter((e) => e.sourceType === 'PurchaseIntentRefund');
       expect(refundLegs).toHaveLength(1);
-      expect(refundLegs[0].amount.toFixed(2)).toBe('9000.00');
-      expect(refundLegs[0].direction).toBe(PostingDirection.DEBIT);
+      const refundLeg = refundLegs[0]!;
+      expect(refundLeg.amount.toFixed(2)).toBe('9000.00');
+      expect(refundLeg.direction).toBe(PostingDirection.DEBIT);
 
       const next = await payInFull('BANK-8');
       expect(new Decimal(next.netPayableAmount).toFixed(2)).toBe('6000.00');

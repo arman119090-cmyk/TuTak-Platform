@@ -289,6 +289,17 @@ export function PartnersScreen() {
       >
         <TileMap
           markers={mapMarkers}
+          /*
+           * What the person asked for, not what came back. The map reframes
+           * when this changes — a new chip or a new search deserves a fresh
+           * view — and holds its place when only the results change, which
+           * happens on its own every time the device's location updates and
+           * the nearby query re-runs. Keyed on the results instead, a drag
+           * was undone a second or two after it was made.
+           */
+          frameKey={`${filter.kind}:${
+            filter.kind === 'category' || filter.kind === 'fuelType' ? filter.value : ''
+          }:${query}`}
           initialCentre={centre}
           selectedId={selectedId}
           onSelect={selectFromMap}

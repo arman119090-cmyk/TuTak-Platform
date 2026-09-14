@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { useBiometricStore } from '../stores/biometricStore';
 import Constants from 'expo-constants';
 import type { AuthResponseDto, AuthTokensDto } from '@tutak/shared-types';
 import { useAuthStore } from '../stores/authStore';
@@ -62,6 +63,8 @@ interface SessionScopedRequest {
 }
 
 httpClient.interceptors.request.use((config) => {
+  const endingSession = config.method?.toLowerCase() === 'post' && config.url === '/auth/logout';
+  if (useBiometricStore.getState().locked && !endingSession) throw new axios.CanceledError('Application locked');
   const { accessToken, sessionEpoch } = useAuthStore.getState();
   (config as typeof config & SessionScopedRequest)._sessionEpoch = sessionEpoch;
   if (accessToken) {
@@ -97,6 +100,7 @@ export class SessionChangedError extends Error {
 let refreshInFlight: { epoch: number; promise: Promise<AuthTokensDto> } | null = null;
 
 async function refreshTokens(epoch: number): Promise<AuthTokensDto> {
+  if (useBiometricStore.getState().locked) throw new axios.CanceledError('Application locked');
   const { refreshToken, deviceId, setTokens, clear } = useAuthStore.getState();
   if (!refreshToken) {
     throw new Error('No refresh token available');

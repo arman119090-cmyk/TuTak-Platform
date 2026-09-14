@@ -1,5 +1,8 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useMemo, useState } from 'react';
+import { AppState, StyleSheet, View } from 'react-native';
+import { useBiometricStore } from './src/data/stores/biometricStore';
+import { BiometricLockScreen } from './src/presentation/screens/BiometricLockScreen';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -36,6 +39,16 @@ function Root() {
   const theme = useTheme();
   const { user, hydrate } = useAuthStore();
   const [ready, setReady] = useState(false);
+  const locked = useBiometricStore((state) => state.locked);
+  const biometricEnabled = useBiometricStore((state) => state.enabled);
+  const [obscured, setObscured] = useState(AppState.currentState !== 'active');
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      setObscured(state !== 'active');
+      if (state === 'background') useBiometricStore.getState().lock();
+    });
+    return () => subscription.remove();
+  }, []);
 
   /*
    * The reference mark every other mount line is read against.
@@ -135,6 +148,7 @@ function Root() {
     // passes the rejection along to nobody, which is an unhandled rejection
     // and a red box on top of an app that did start.
     hydrate()
+      .then(() => useBiometricStore.getState().hydrate())
       .catch(() => undefined)
       .then(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,7 +157,7 @@ function Root() {
   // Asks for notification permission once a session exists — after someone
   // has signed in and seen what the app does, which is when a prompt has a
   // chance of being allowed.
-  usePushRegistration();
+  usePushRegistration(ready && !locked);
 
   // One subscription for the whole app: it drives both the banner below and
   // TanStack Query's own online state, so a paused query and the message on
@@ -168,7 +182,7 @@ function Root() {
           fixed "light" style here left the status bar unreadable against a
           white screen. */}
       <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
-      {user ? <RootNavigator /> : <AuthNavigator />}
+      {user ? (locked ? <BiometricLockScreen /> : <RootNavigator />) : <AuthNavigator />}
       {/*
         Inside the navigator so it sits over whatever screen is showing, and
         last so nothing paints over it. Renders `null` in every build except
@@ -177,7 +191,10 @@ function Root() {
       {/* Above the navigator and below the diagnostic overlay: it must be
           visible on every screen without taking the screen away. */}
       <OfflineBanner />
-      <DiagnosticOverlay />
+      {!locked && <DiagnosticOverlay />}
+      {biometricEnabled && obscured && (
+        <View style={StyleSheet.absoluteFill} accessibilityViewIsModal><SplashScreen /></View>
+      )}
     </NavigationContainer>
   );
 }

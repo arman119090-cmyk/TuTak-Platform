@@ -453,5 +453,20 @@
     "body": "So the app can address you by name. You can skip this and fill it in later.",
     "continue": "Continue",
     "skip": "Skip"
+  },
+  "biometric": {
+    "face": "Face ID",
+    "fingerprint": "Fingerprint unlock",
+    "biometric": "Biometric unlock",
+    "prompt": "Unlock TuTak",
+    "consent": "Use this phone’s biometrics to open TuTak? Anyone with biometrics enrolled on this phone can open your session. Your face and fingerprints stay on your device. You can turn this off in Settings.",
+    "enable": "Enable",
+    "explain": "Optional. Verification when reopening the app. SMS or password sign-in remains available.",
+    "notChanged": "The setting was not changed. Verify your biometrics on this phone and try again.",
+    "locked": "App locked",
+    "unlockExplain": "Verify your identity on this phone to open TuTak.",
+    "unlock": "Unlock",
+    "failed": "Could not unlock. Try again or sign in with SMS / password.",
+    "otherLogin": "Sign out and use SMS / password"
   }
 }

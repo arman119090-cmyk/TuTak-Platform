@@ -380,6 +380,8 @@ module.exports = ({ config }) => ({
     favicon: './assets/icon.png',
   },
   plugins: [
+    ['expo-local-authentication', { faceIDPermission: 'Разрешить TuTak использовать Face ID для разблокировки приложения?' }],
+    ['expo-secure-store', { faceIDPermission: 'Разрешить TuTak использовать Face ID для разблокировки приложения?' }],
     [
       'expo-camera',
       {

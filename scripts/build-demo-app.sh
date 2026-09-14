@@ -175,6 +175,8 @@ fs.writeFileSync(
         },
         web: { bundler: 'metro', output: 'single', favicon: './assets/icon.png' },
         plugins: [
+          ['expo-local-authentication', { faceIDPermission: 'Allow TuTak to use Face ID to unlock the app?' }],
+          ['expo-secure-store', { faceIDPermission: 'Allow TuTak to use Face ID to unlock the app?' }],
           [
             'expo-camera',
             {

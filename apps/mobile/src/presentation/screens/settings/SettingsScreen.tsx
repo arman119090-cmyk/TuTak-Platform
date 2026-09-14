@@ -1,4 +1,5 @@
 import React from 'react';
+import { BiometricSetting } from '../../components/BiometricSetting';
 import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
@@ -218,6 +219,7 @@ export function SettingsScreen() {
       </Surface>
 
       <SectionHeader title={t('settings.security')} />
+      <BiometricSetting />
       <Surface padded={false}>
         <View style={{ paddingHorizontal: space[5] }}>
           {/*

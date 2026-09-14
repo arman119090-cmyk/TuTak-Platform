@@ -4,6 +4,7 @@ import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 import { Role } from '@tutak/shared-types';
 import { httpClient } from './httpClient';
 import { useAuthStore } from '../stores/authStore';
+import { useBiometricStore } from '../stores/biometricStore';
 
 jest.mock('../storage/secureStorage', () => ({
   getItem: jest.fn(async () => null),
@@ -271,5 +272,19 @@ describe('mobile httpClient — session lifetime across refresh', () => {
     const replay = adapter.mock.calls[1]![0] as AxiosRequestConfig;
     expect(replay.headers?.Authorization).toBe('Bearer a2-access');
     expect(useAuthStore.getState().accessToken).toBe('a2-access');
+  });
+});
+
+
+describe('biometric network gate', () => {
+  afterEach(() => useBiometricStore.setState({ locked: false }));
+  it('blocks private requests before transport but allows ending the session', async () => {
+    const adapter = jest.fn(async config => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config }));
+    httpClient.defaults.adapter = adapter;
+    useBiometricStore.setState({ locked: true });
+    await expect(httpClient.get('/wallet/me')).rejects.toMatchObject({ code: 'ERR_CANCELED' });
+    expect(adapter).not.toHaveBeenCalled();
+    await httpClient.post('/auth/logout');
+    expect(adapter).toHaveBeenCalledTimes(1);
   });
 });

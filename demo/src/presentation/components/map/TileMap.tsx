@@ -381,7 +381,7 @@ export function TileMap({
         {takenOver.current ? (
           <ZoomButton
             icon="locate"
-            label="◎"
+            accessibilityLabel="Show my location"
             disabled={false}
             onPress={() => {
               takenOver.current = false;
@@ -392,13 +392,13 @@ export function TileMap({
         ) : null}
         <ZoomButton
           icon="add"
-          label="+"
+          accessibilityLabel="Zoom in"
           onPress={() => setZoom((z) => Math.min(MAX_ZOOM, z + 1))}
           disabled={zoom >= MAX_ZOOM}
         />
         <ZoomButton
           icon="remove"
-          label="−"
+          accessibilityLabel="Zoom out"
           onPress={() => setZoom((z) => Math.max(MIN_ZOOM, z - 1))}
           disabled={zoom <= MIN_ZOOM}
         />
@@ -420,12 +420,26 @@ export function TileMap({
 
 function ZoomButton({
   icon,
-  label,
+  accessibilityLabel,
   onPress,
   disabled,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
-  label: string;
+  /**
+   * What the button *does*, said out loud.
+   *
+   * This used to be derived from a `label` prop holding the glyph —
+   * `label === '+' ? 'Zoom in' : 'Zoom out'` — so every button that was not
+   * the plus announced itself as "Zoom out". The recentre button (`◎`)
+   * therefore promised a screen-reader user it would zoom out and then moved
+   * the map somewhere else instead.
+   *
+   * The `label` prop is gone rather than renamed: it was never rendered —
+   * the button draws only the icon — so its sole purpose was to be guessed
+   * from. A control has to say what it does, and saying it is cheaper than
+   * inferring it.
+   */
+  accessibilityLabel: string;
   onPress: () => void;
   disabled: boolean;
 }) {
@@ -435,7 +449,7 @@ function ZoomButton({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel={label === '+' ? 'Zoom in' : 'Zoom out'}
+      accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [
         styles.zoomButton,
         {

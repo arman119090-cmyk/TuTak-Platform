@@ -26,6 +26,7 @@ got here.
 | How do fuel-station branches/staff work? | [FUEL_STATION_BRANCHES_2026-08-29.md](FUEL_STATION_BRANCHES_2026-08-29.md) |
 | Can we connect a real restaurant today? | [RESTAURANT_READINESS_2026-09-13.md](RESTAURANT_READINESS_2026-09-13.md), then the checklist at its end |
 | What is left before real users? | [AUDIT_ROADMAP_2026-09-10.md](AUDIT_ROADMAP_2026-09-10.md) → [ROADMAP_STATUS_2026-09-13.md](ROADMAP_STATUS_2026-09-13.md) for where each item actually stands |
+| What personal data do we actually hold, and for how long? | [PERSONAL_DATA_INVENTORY_RU.md](PERSONAL_DATA_INVENTORY_RU.md), then `public/privacy.html` for what we tell people |
 
 ## Current
 
@@ -56,10 +57,12 @@ got here.
 | [ID_VALIDATION_2026-08-23.md](ID_VALIDATION_2026-08-23.md) | UUID/id validation sweep against IDOR |
 | [SECURITY_HARDENING_2026-08-23.md](SECURITY_HARDENING_2026-08-23.md) · [PENTEST_2026-08-23.md](PENTEST_2026-08-23.md) | CORS/headers/rate-limit hardening and an adversarial pass looking for real holes |
 | [INVESTOR_DEMO_RU.md](INVESTOR_DEMO_RU.md) · [ANDROID_APK_RU.md](ANDROID_APK_RU.md) · [STORE_SUBMISSION.md](STORE_SUBMISSION.md) | Investor walkthrough, building an installable APK from a phone, app-store submission notes |
-| [PARTNER_TERMS.md](PARTNER_TERMS.md) · [LEGAL_AGREEMENTS_DRAFT_RU.md](LEGAL_AGREEMENTS_DRAFT_RU.md) | Draft legal terms — not reviewed by a lawyer, do not ship as-is |
+| [PARTNER_TERMS.md](PARTNER_TERMS.md) · [LEGAL_AGREEMENTS_DRAFT_RU.md](LEGAL_AGREEMENTS_DRAFT_RU.md) · [PUBLIC_OFFER_RU.md](PUBLIC_OFFER_RU.md) | Draft legal terms — not reviewed by a lawyer, do not ship as-is. `LEGAL_AGREEMENTS_DRAFT_RU.md` is the structure; `PUBLIC_OFFER_RU.md` is draft text with the actual numbers read out of the code |
+| [PERSONAL_DATA_INVENTORY_RU.md](PERSONAL_DATA_INVENTORY_RU.md) · [PRIVACY_POLICY_RU.md](PRIVACY_POLICY_RU.md) | What the platform genuinely collects, with a code reference per claim — and the Russian review copy of `public/privacy.html`. The published original is the HTML file, not the Markdown: change one and you change both, or they drift |
 | [AUDIT_ROADMAP_2026-09-10.md](AUDIT_ROADMAP_2026-09-10.md) | The maturity audit and the P0–P3 plan with hour estimates. Read with the status document below, not on its own — several items moved |
 | [ROADMAP_STATUS_2026-09-13.md](ROADMAP_STATUS_2026-09-13.md) | Where every roadmap item actually stands, checked against the code, the lockfile, Railway variables and the GitHub API. Also the branch survey: which of the 36 are merged, which are superseded, and why merging a superseded one would roll `main` back |
 | [RESTAURANT_READINESS_2026-09-13.md](RESTAURANT_READINESS_2026-09-13.md) · [RESTAURANT_FLOW_MAP_2026-09-13.md](RESTAURANT_FLOW_MAP_2026-09-13.md) | The restaurant scenario end to end: what was already right, the defects found (two of them security), what was deliberately left alone, and a READY/PARTIAL/MISSING grade per link of the chain |
+| [OTCHET_2026-09-13_PR48_I_P0-10.md](OTCHET_2026-09-13_PR48_I_P0-10.md) | The 13 September evening release: PR #48 merged, the deploy verified, and the P0-10 correction — the privacy policy existed all along in `public/`, and three of its statements disagreed with the code |
 | [RELEASE_2026-09-13_MIGRATION_AND_ROLLBACK.md](RELEASE_2026-09-13_MIGRATION_AND_ROLLBACK.md) | Measured cost and rollback boundary of the migrations in the 13 September releases — the template for how a migration should be justified before it ships |
 
 ## Superseded

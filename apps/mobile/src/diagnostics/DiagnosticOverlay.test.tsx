@@ -67,3 +67,6 @@ function wrappingStyleOf(node: unknown): Record<string, unknown> {
   }
   return {};
 }
+
+// Native Sentry starts a repeating cleanup timer on import. It is outside this UI test.
+jest.mock('@sentry/react-native', () => ({ withScope: jest.fn(), captureException: jest.fn(), flush: jest.fn() }));

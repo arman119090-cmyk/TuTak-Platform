@@ -1,7 +1,9 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as SecureStore from 'expo-secure-store';
 import App from './App';
+import { useBiometricStore } from './src/data/stores/biometricStore';
 import i18n from './src/app/i18n/i18n';
 import { useAuthStore } from './src/data/stores/authStore';
 
@@ -87,6 +89,8 @@ describe('App', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    AppState.currentState = 'active';
+    useBiometricStore.setState({ enabled: false, locked: false, busy: false });
     mockedSecureStore.getItemAsync.mockResolvedValue(null);
     mockedSecureStore.setItemAsync.mockResolvedValue();
     // Zustand stores outlive a test file. Without this, the second test
@@ -175,6 +179,29 @@ describe('App', () => {
     expect(screen.queryByText(loginHeading())).toBeNull();
   });
 
+  it('never mounts the private navigator before an enrolled cold-start scan succeeds', async () => {
+    let accept!: (value: string) => void;
+    const scan = new Promise<string>(resolve => { accept = resolve; });
+    mockedSecureStore.getItemAsync.mockImplementation(async (key: string) => {
+      if (key === 'tutak.user') return JSON.stringify({ id: 'user-1', locale: 'ru' });
+      if (key === 'tutak.accessToken') return 'access-token';
+      if (key === 'tutak.refreshToken') return 'refresh-token';
+      if (key === 'tutak.biometric.owner.v1') return 'user-1';
+      if (key === 'tutak.biometric.proof.v1') return scan;
+      return null;
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(i18n.t('biometric.locked'))).toBeTruthy());
+    expect(screen.queryByText('signed-in-app')).toBeNull();
+    fireEvent.press(screen.getByText(i18n.t('biometric.unlock')));
+    expect(screen.queryByText('signed-in-app')).toBeNull();
+    await act(async () => { accept('user-1'); });
+    expect(await screen.findByText('signed-in-app')).toBeTruthy();
+    act(() => { useBiometricStore.getState().lock(); });
+    expect(screen.queryByText('signed-in-app')).toBeNull();
+    expect(screen.getByText(i18n.t('biometric.locked'))).toBeTruthy();
+  });
+
   it('treats an unparseable stored user as no session rather than a crash', async () => {
     mockedSecureStore.getItemAsync.mockImplementation(async (key: string) =>
       key === 'tutak.user' ? '{ this is not json' : null,
@@ -185,3 +212,6 @@ describe('App', () => {
     expect(await screen.findByText(loginHeading())).toBeTruthy();
   });
 });
+
+// Native Sentry starts a repeating cleanup timer on import. It is outside this UI test.
+jest.mock('@sentry/react-native', () => ({ withScope: jest.fn(), captureException: jest.fn(), flush: jest.fn() }));

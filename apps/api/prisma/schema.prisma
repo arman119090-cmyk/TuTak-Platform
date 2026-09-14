@@ -700,7 +700,7 @@ model PurchaseIntent {
   /// printed slip and in a spoken sentence, and an integer column cannot
   /// keep the leading zeros that half of all codes need.
   /// Null on every row created before this column existed.
-  confirmationCode String?              @db.Char(4)
+  confirmationCode String? @db.Char(4)
 
   grossAmount              Decimal @db.Decimal(18, 4)
   bonusAmountRequested     Decimal @default(0) @db.Decimal(18, 4)
@@ -823,10 +823,10 @@ model PurchaseIntent {
 
   brandLogoAsset MediaAsset? @relation("PurchaseIntentBrandLogo", fields: [brandLogoAssetId], references: [id])
 
-  customer    User                   @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
-  partner     Partner                @relation(fields: [partnerId], references: [id])
-  branch      PartnerBranch?         @relation(fields: [partnerBranchId], references: [id])
-  confirmedBy User?                  @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  customer       User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
+  partner        Partner                       @relation(fields: [partnerId], references: [id])
+  branch         PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
+  confirmedBy    User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
   rejectedBy     User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
   refunds        PurchaseIntentRefund[]
   refundRequests PurchaseIntentRefundRequest[]
@@ -860,7 +860,7 @@ enum RefundRequestStatus {
 /// nothing that has not been approved may ever appear in that table. The two
 /// are linked by `refundId` once, at approval.
 model PurchaseIntentRefundRequest {
-  id               String  @id @default(uuid())
+  id               String   @id @default(uuid())
   purchaseIntentId String
   /// Denormalized from the purchase so an approver's queue is one indexed
   /// read, and so branch isolation filters in SQL rather than by walking
@@ -877,7 +877,7 @@ model PurchaseIntentRefundRequest {
   status RefundRequestStatus @default(PENDING)
 
   requestedByUserId String
-  requestedAt       DateTime @default(now())
+  requestedAt       DateTime  @default(now())
   decidedByUserId   String?
   decidedAt         DateTime?
   decisionNote      String?
@@ -935,8 +935,8 @@ model PurchaseIntentRefund {
   idempotencyKey      String?
   createdAt           DateTime @default(now())
 
-  purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
-  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  purchaseIntent    PurchaseIntent               @relation(fields: [purchaseIntentId], references: [id])
+  ledgerTransaction LedgerTransaction?           @relation(fields: [ledgerTransactionId], references: [id])
   request           PurchaseIntentRefundRequest?
 
   @@unique([actorId, idempotencyKey])
@@ -1089,18 +1089,28 @@ model Partner {
   evStations             EvStation[]
   userRoles              UserRole[]
   payments               Payment[]
-  settlements            Settlement[]
-  payouts                Payout[]
-  collections            PartnerCollection[]
-  purchaseIntents        PurchaseIntent[]
-  refundRequests         PurchaseIntentRefundRequest[]
-  offerings              PartnerOfferingItem[]
-  apiKeys                PartnerApiKey[]
-  roamingCustomerLinks   RoamingCustomerLink[]
+  /// How often this partner is settled. Per-partner, not one global period:
+  /// a weekly restaurant and a monthly fuel chain are both normal, and
+  /// hardcoding one cadence would force the other into it (Arman, 14.09.2026).
+  settlementPeriodicity  SettlementPeriodicity          @default(MONTHLY)
+  /// Day the period is anchored to. 1-7 (Mon-Sun) for WEEKLY/BIWEEKLY, 1-28
+  /// for MONTHLY — 28 so a monthly anchor exists in February too.
+  settlementAnchorDay    Int                            @default(1)
+
+  settlements          Settlement[]
+  payouts              Payout[]
+  collections          PartnerCollection[]
+  partnerSettlements   PartnerSettlement[]
+  bankAccounts         PartnerBankAccount[]
+  purchaseIntents      PurchaseIntent[]
+  refundRequests       PurchaseIntentRefundRequest[]
+  offerings            PartnerOfferingItem[]
+  apiKeys              PartnerApiKey[]
+  roamingCustomerLinks RoamingCustomerLink[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
-  referralCode           ReferralCode?
-  referralInvitesMade    ReferralInvite[]               @relation("PartnerReferrer")
+  referralCode         ReferralCode?
+  referralInvitesMade  ReferralInvite[]              @relation("PartnerReferrer")
 
   logoAsset   MediaAsset?  @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
   coverAsset  MediaAsset?  @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
@@ -2273,6 +2283,7 @@ model LedgerTransaction {
   acquirerSettlement   AcquirerSettlement?
   partnerCollection    PartnerCollection?
   balanceTopUp         BalanceTopUp?
+  partnerSettlement    PartnerSettlement?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -2289,8 +2300,11 @@ model LedgerPosting {
   currency      Currency         @default(AMD)
   createdAt     DateTime         @default(now())
 
-  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  account     LedgerAccount     @relation(fields: [accountId], references: [id])
+  transaction     LedgerTransaction       @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account         LedgerAccount           @relation(fields: [accountId], references: [id])
+  /// Set once this posting has been claimed by a partner settlement. Its
+  /// absence is what makes a posting "unsettled".
+  settlementEntry PartnerSettlementEntry?
 
   @@index([accountId, id])
   @@index([transactionId])
@@ -2764,6 +2778,179 @@ enum ReconciliationStatus {
 /// Drift is recorded and escalated, never auto-corrected: a reconciliation
 /// engine that silently adjusts balances hides exactly the bug it exists to
 /// find.
+/// How often a partner is settled. Per-partner — see `Partner.settlementPeriodicity`.
+enum SettlementPeriodicity {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+/// Where a partner's bank transfer goes.
+///
+/// Rows are never edited. Changing a partner's details deactivates the old
+/// row and inserts a new one, so "what were the details when we paid them in
+/// March" is answerable from the table itself rather than from an audit log
+/// that might have been pruned. A settlement additionally snapshots the
+/// details it was approved against (`PartnerSettlement.beneficiarySnapshot`),
+/// because the answer has to survive even this table being corrected later.
+model PartnerBankAccount {
+  id               String    @id @default(uuid())
+  partnerId        String
+  beneficiaryName  String
+  /// Free-form on purpose: IBAN in some banks, a domestic account number in
+  /// others. Validation belongs to whoever knows the banking rules, not here.
+  accountNumber    String
+  bankName         String
+  swiftBic         String?
+  isActive         Boolean   @default(true)
+  createdByUserId  String?
+  createdAt        DateTime  @default(now())
+  /// Set when a newer row replaced this one. Never deleted.
+  replacedAt       DateTime?
+  replacedByUserId String?
+
+  partner     Partner             @relation(fields: [partnerId], references: [id])
+  settlements PartnerSettlement[]
+
+  /// At most one live destination per partner. A partial index, so the
+  /// history rows (isActive = false) are unconstrained.
+  @@index([partnerId, isActive])
+  @@map("partner_bank_accounts")
+}
+
+enum PartnerSettlementStatus {
+  /// Being assembled. Entries are already claimed (so nothing else can take
+  /// them) but no money is promised.
+  DRAFT
+  /// The figures are final and the document is attached. Awaiting approval.
+  READY
+  /// A second admin approved it — the "checker" half of maker/checker.
+  APPROVED
+  /// The bank transfer has been initiated by hand and we are waiting for it
+  /// to land. Nothing is posted yet.
+  PAYMENT_PENDING
+  /// The transfer landed. This is the only status that posts to the ledger,
+  /// and the row is immutable from here on.
+  PAID
+  /// The transfer was rejected or returned. Entries stay claimed — the
+  /// settlement is the record of the attempt — and a new settlement is made.
+  FAILED
+  /// Abandoned before payment. Releases its entries back to unsettled.
+  CANCELLED
+}
+
+/// One period's worth of a partner's payable, frozen.
+///
+/// The unit of settlement is deliberately the existing `LedgerPosting` on the
+/// partner's `PARTNER_PAYABLE` account, not a second parallel partner ledger:
+/// this codebase already keeps immutable double-entry postings, and a rollup
+/// table maintained alongside them would be a second source of truth that can
+/// disagree with the first. `PartnerSettlementEntry` claims postings; a
+/// partner's *unsettled* payable is exactly the postings with no claim.
+///
+/// That one decision gives most of what the brief asks for:
+///
+/// - **A frozen amount.** Once entries are claimed the figure cannot drift,
+///   because a later purchase produces a *new* posting, which by definition
+///   is not in this settlement.
+/// - **No double payment.** Enforced by a unique index on
+///   `PartnerSettlementEntry.ledgerPostingId`, in the database, not in code.
+/// - **Refund after payout.** The reversing postings a refund writes are
+///   simply unclaimed postings, so the next settlement picks them up as
+///   negatives. The PAID settlement is never touched.
+/// - **Explainable debt.** Every claimed posting keeps its own `kind` and
+///   source, so a negative balance can always be itemised back to the
+///   purchases and refunds that produced it.
+model PartnerSettlement {
+  id          String                  @id @default(uuid())
+  partnerId   String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      PartnerSettlementStatus @default(DRAFT)
+  currency    Currency                @default(AMD)
+
+  /// Sum of the claimed CREDIT postings — what the platform owes for.
+  accruedAmount    Decimal @default(0) @db.Decimal(18, 4)
+  /// Sum of the claimed DEBIT postings — commission, refund reversals, and
+  /// the debt carried in from earlier periods.
+  deductionAmount  Decimal @default(0) @db.Decimal(18, 4)
+  /// accrued - deduction. Always > 0 for a settlement that can be paid; a
+  /// non-positive balance is not settled at all, it stays unclaimed and
+  /// carries forward.
+  netPayableAmount Decimal @default(0) @db.Decimal(18, 4)
+  entryCount       Int     @default(0)
+
+  /// The tax/accounting document this payment is made against. Deliberately
+  /// free-form: the Armenian form is a legal question that is not settled,
+  /// and inventing a shape here would be inventing a tax rule.
+  documentNumber    String?
+  documentDate      DateTime?
+  documentReference String?
+
+  /// The bank's own reference for the transfer. Unique per currency, so one
+  /// transfer cannot be used to close two settlements — the same guarantee
+  /// `PartnerCollection` already has for money coming the other way.
+  bankTransferReference String?
+
+  /// Where the money was sent, as it read at approval time. Kept even if the
+  /// partner's details change afterwards.
+  bankAccountId       String?
+  beneficiarySnapshot Json?
+
+  createdByUserId   String?
+  createdAt         DateTime  @default(now())
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  paidByUserId      String?
+  paidAt            DateTime?
+  failedReason      String?
+  cancelledByUserId String?
+  cancelledAt       DateTime?
+  cancelledReason   String?
+
+  /// The payout posting, written only when the status becomes PAID.
+  ledgerTransactionId String? @unique
+
+  updatedAt DateTime @updatedAt
+
+  partner           Partner                  @relation(fields: [partnerId], references: [id])
+  bankAccount       PartnerBankAccount?      @relation(fields: [bankAccountId], references: [id])
+  ledgerTransaction LedgerTransaction?       @relation(fields: [ledgerTransactionId], references: [id])
+  entries           PartnerSettlementEntry[]
+
+  @@unique([currency, bankTransferReference])
+  @@index([partnerId, periodStart])
+  @@index([status])
+  @@map("partner_settlements")
+}
+
+/// A single ledger posting claimed by one settlement, for ever.
+///
+/// The unique index on `ledgerPostingId` is the hard invariant the whole
+/// design rests on: a posting the platform has already paid for cannot be
+/// paid for again, whatever a retried job or a second admin does.
+model PartnerSettlementEntry {
+  id              String           @id @default(uuid())
+  settlementId    String
+  ledgerPostingId String           @unique
+  partnerId       String
+  amount          Decimal          @db.Decimal(18, 4)
+  direction       PostingDirection
+  /// `LedgerTransaction.kind`, copied so a settlement can be itemised
+  /// without walking back through the ledger.
+  kind            String
+  sourceType      String
+  sourceId        String
+  occurredAt      DateTime
+
+  settlement PartnerSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  posting    LedgerPosting     @relation(fields: [ledgerPostingId], references: [id])
+
+  @@index([settlementId])
+  @@index([partnerId, occurredAt])
+  @@map("partner_settlement_entries")
+}
+
 model ReconciliationRun {
   id          String               @id @default(uuid())
   /// UTC midnight of the day reconciled.

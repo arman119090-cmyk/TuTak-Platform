@@ -157,10 +157,29 @@ export interface AppConfig {
      * The legacy card-payment/PSP subsystem (`PaymentsModule`: `/payments`,
      * `/refunds`, `PaymentEngineService`, `RefundEngineService`).
      *
-     * The approved canonical model does not have TuTak charge the
-     * customer's card at all — the customer pays the partner directly
-     * outside TuTak, and the whole PurchaseIntent/refund path this platform
-     * actually ships on (`purchase-intents`) never touches a PSP. Yet
+     * ## The model below was superseded on 14.09.2026
+     *
+     * Arman's decision of that date changes the business: the customer will
+     * pay **inside** TuTak through a licensed provider (Idram is the one
+     * being negotiated), TuTak will owe the partner a net amount, and that
+     * amount will be paid out by ordinary bank transfer against a settlement
+     * document. `PartnerSettlementsModule` is the first half of that, and it
+     * is live. The customer-money half is deliberately unbuilt: who legally
+     * holds a customer's stored balance — Idram as the issuer, or TuTak on
+     * its own merchant account — is unresolved, and building either shape
+     * before that is answered would be guessing about regulation.
+     *
+     * The paragraph below is kept rather than deleted because it explains
+     * why the code looks the way it does, and deleting it would make the
+     * next reader think nobody ever decided.
+     *
+     * > The approved canonical model does not have TuTak charge the
+     * > customer's card at all — the customer pays the partner directly
+     * > outside TuTak, and the whole PurchaseIntent/refund path this platform
+     * > actually ships on (`purchase-intents`) never touches a PSP.
+     *
+     * That is still an accurate description of what runs today. It is no
+     * longer a description of where this is going. Yet
      * `PaymentsModule` used to be imported unconditionally, and its own
      * provider factory refuses to boot `NODE_ENV=production` without either
      * a real acquirer or `DEMO_MODE=true` — meaning a canonical production

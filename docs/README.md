@@ -28,6 +28,7 @@ got here.
 | What is left before real users? | [AUDIT_ROADMAP_2026-09-10.md](AUDIT_ROADMAP_2026-09-10.md) → [ROADMAP_STATUS_2026-09-13.md](ROADMAP_STATUS_2026-09-13.md) for where each item actually stands |
 | What personal data do we actually hold, and for how long? | [PERSONAL_DATA_INVENTORY_RU.md](PERSONAL_DATA_INVENTORY_RU.md), then `public/privacy.html` for what we tell people |
 | Why does a gesture work in a test but not on a phone? | [OTCHET_2026-09-14_KARTA.md](OTCHET_2026-09-14_KARTA.md) — `gesture.dx` lives in the responder instance, not in the event |
+| Does customer money pass through TuTak? | [AUDIT_MONEY_2026-09-14_ISSLEDOVANIE.md](AUDIT_MONEY_2026-09-14_ISSLEDOVANIE.md) — no, and that is a recorded decision, not an omission |
 
 ## Current
 
@@ -65,6 +66,7 @@ got here.
 | [RESTAURANT_READINESS_2026-09-13.md](RESTAURANT_READINESS_2026-09-13.md) · [RESTAURANT_FLOW_MAP_2026-09-13.md](RESTAURANT_FLOW_MAP_2026-09-13.md) | The restaurant scenario end to end: what was already right, the defects found (two of them security), what was deliberately left alone, and a READY/PARTIAL/MISSING grade per link of the chain |
 | [OTCHET_2026-09-13_PR48_I_P0-10.md](OTCHET_2026-09-13_PR48_I_P0-10.md) | The 13 September evening release: PR #48 merged, the deploy verified, and the P0-10 correction — the privacy policy existed all along in `public/`, and three of its statements disagreed with the code |
 | [OTCHET_2026-09-14_KARTA.md](OTCHET_2026-09-14_KARTA.md) | Why the map could not be dragged: a `PanResponder` rebuilt on every frame threw away all but the last one, and a refit undid the drag a second later. Also the accessibility label that told a screen-reader user the recentre button would zoom out |
+| [AUDIT_MONEY_2026-09-14_ISSLEDOVANIE.md](AUDIT_MONEY_2026-09-14_ISSLEDOVANIE.md) | What the money flow actually is: no customer money passes through TuTak at all today — the customer pays the partner directly and the ledger records a net obligation between the two. Findings by severity, and the business decision that has to come before any of it is built |
 | [RELEASE_2026-09-13_MIGRATION_AND_ROLLBACK.md](RELEASE_2026-09-13_MIGRATION_AND_ROLLBACK.md) | Measured cost and rollback boundary of the migrations in the 13 September releases — the template for how a migration should be justified before it ships |
 
 ## Superseded

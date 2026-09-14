@@ -51,6 +51,7 @@ const TILES_FAILED_BEFORE_SAYING_SO = 0.5;
 
 export function TileMap({
   markers,
+  frameKey,
   initialCentre,
   initialZoom = 13,
   selectedId,
@@ -59,6 +60,20 @@ export function TileMap({
   unavailableLabel,
 }: {
   markers: MapMarker[];
+  /**
+   * What the caller asked for, as a string — the filter chip, the search
+   * text, whatever decides *which* markers these are.
+   *
+   * The map reframes when this changes, because a different question
+   * deserves a fresh view even if the person had dragged. It deliberately
+   * does **not** reframe when only the markers change underneath an
+   * unchanged question: that happens on its own whenever the nearby query
+   * re-runs, and reframing then throws away the place the person dragged to.
+   *
+   * Omit it and the map simply never reframes after a drag, which is the
+   * safe half of the behaviour.
+   */
+  frameKey?: string;
   initialCentre: LatLng;
   initialZoom?: number;
   selectedId?: string | null;
@@ -110,11 +125,41 @@ export function TileMap({
   // produces and re-fetch the tile grid each time.
   const dragStart = useRef<{ centre: LatLng; zoom: number } | null>(null);
 
+  /**
+   * Where the map is, readable from a callback that outlives the render it
+   * was created in.
+   *
+   * These exist so the `PanResponder` below can be built exactly once. See
+   * the comment on it: rebuilding it mid-gesture silently throws away most
+   * of the drag, and the only reason it was being rebuilt was to let its
+   * handlers see the current centre and zoom. A ref does that without
+   * changing identity.
+   */
+  const centreRef = useRef(centre);
+  const zoomRef = useRef(zoom);
+  centreRef.current = centre;
+  zoomRef.current = zoom;
+
   // What the map was last told to fit. A screen whose results change — a
   // category chip, a search — should reframe; a screen the user has just
-  // dragged should not be yanked back. Keyed on the markers themselves.
+  // dragged should not be yanked back.
+  //
+  // Keying this on the markers alone was wrong, and wrong in a way that
+  // looked like the map refusing to move: the nearby query re-runs whenever
+  // the device's own position updates, the marker set comes back different,
+  // and the map reframed — undoing the drag seconds after it happened. The
+  // question being asked is what should decide this, so `frameKey` does.
   const fitted = useRef<string | null>(null);
+  const askedFor = useRef<string | undefined>(frameKey);
   const markerKey = markers.map((m) => m.id).join('|');
+
+  // A new question: follow it, even if the person had taken the map over.
+  // They asked for this.
+  const questionChanged = askedFor.current !== frameKey;
+  if (questionChanged) {
+    askedFor.current = frameKey;
+    takenOver.current = false;
+  }
 
   const onLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height: h } = event.nativeEvent.layout;
@@ -125,7 +170,9 @@ export function TileMap({
   // Done during render rather than in an effect so the first painted frame is
   // already framed — an effect would show one frame at the default centre and
   // then jump, which reads as the map having lost its place.
-  if (size.width > 0 && markers.length > 0 && fitted.current !== markerKey) {
+  const shouldFrame =
+    fitted.current !== markerKey && (questionChanged || !takenOver.current);
+  if (size.width > 0 && markers.length > 0 && shouldFrame) {
     fitted.current = markerKey;
     const fit = fitBounds({
       points: markers.map((m) => m.position),
@@ -139,6 +186,33 @@ export function TileMap({
     }
   }
 
+  /**
+   * Built once for the life of the component, and that is the whole point.
+   *
+   * This used to be `useMemo(..., [centre, zoom])` so the handlers could read
+   * the current position. The trap: `onPanResponderMove` calls `setCentre`,
+   * `panBy` returns a fresh object, so `centre` changed identity on every
+   * frame of a drag — and a new `PanResponder` came with it.
+   *
+   * That matters because `gesture.dx` is not computed from the event. It is
+   * accumulated inside the responder's own `gestureState`, which starts at
+   * zero and is only advanced by the frames *that instance* has seen. A
+   * replacement instance never receives `onPanResponderGrant`, so it starts
+   * from `dx: 0` and adds only the frames after its own creation — while
+   * `panBy` below measures from where the drag began. The two disagree, and
+   * the map ends up displaced by a single frame's worth of movement and
+   * snapping back to the start on the next one.
+   *
+   * Measured: an 80px swipe delivered in three frames moved the map 35px —
+   * exactly the last frame — and a slow, steady drag moves a few pixels and
+   * returns, which is indistinguishable from a map that cannot be dragged at
+   * all. That is what was reported. `TileMap.test.tsx` drives the gesture
+   * through the props actually on the node, with a touch history shaped the
+   * way the platform shapes one, and fails on the old code.
+   *
+   * Nothing here needs to change between renders, so nothing does: the
+   * current position is read from refs.
+   */
   const responder = useMemo(
     () =>
       PanResponder.create({
@@ -152,7 +226,7 @@ export function TileMap({
           // From here on the person is driving: a location fix that lands
           // mid-pan must not pull the view out from under them.
           takenOver.current = true;
-          dragStart.current = { centre, zoom };
+          dragStart.current = { centre: centreRef.current, zoom: zoomRef.current };
         },
         onPanResponderMove: (_event, gesture) => {
           const from = dragStart.current;
@@ -169,7 +243,7 @@ export function TileMap({
           dragStart.current = null;
         },
       }),
-    [centre, zoom],
+    [],
   );
 
   const tiles = useMemo(

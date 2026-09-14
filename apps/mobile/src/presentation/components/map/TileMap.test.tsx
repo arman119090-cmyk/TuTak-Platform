@@ -77,3 +77,206 @@ describe('TileMap when the basemap fails', () => {
     expect(screen.queryByText(LABEL)).toBeNull();
   });
 });
+
+/**
+ * Dragging the map with a finger.
+ *
+ * There were no tests here at all, which is how a map that cannot be panned
+ * reached a release. Two things have to be imitated faithfully, and both are
+ * the point:
+ *
+ * 1. **React Native's responder system dispatches to the handlers currently
+ *    on the node's props.** So each step below re-reads `panHandlers` from
+ *    the freshly rendered element rather than holding the object it got at
+ *    the start. A test that captures the handlers once tests a component
+ *    that does not exist.
+ * 2. **`PanResponder` computes `dx`/`dy` from `event.touchHistory`,** not
+ *    from anything the caller passes. Feeding it a bare `pageX` would let a
+ *    broken component pass, because the numbers would come from the test
+ *    instead of from the responder.
+ */
+function mapFrame() {
+  return screen.UNSAFE_getByType(View);
+}
+
+/** The tile offsets are what actually moves on screen. */
+function firstTilePosition() {
+  const tile = tileImages()[0];
+  return { left: tile.props.style.left, top: tile.props.style.top };
+}
+
+const TOUCH_ID = 1;
+
+/**
+ * A moving finger, recorded the way the platform records one.
+ *
+ * `previous*` has to be the position at the *previous* frame, not the current
+ * one: `PanResponder` derives each step from the difference between them. A
+ * history where previous equals current makes every per-frame delta zero,
+ * which would let a broken component look merely sluggish instead of stuck —
+ * and would make this test a description of the test rather than of the map.
+ */
+function finger(x0: number, y0: number) {
+  let prevX = x0;
+  let prevY = y0;
+  let prevT = 0;
+  let clock = 0;
+
+  return function at(dx: number, dy: number) {
+    const x = x0 + dx;
+    const y = y0 + dy;
+    clock += 16;
+    const bank: unknown[] = [];
+    bank[TOUCH_ID] = {
+      touchActive: true,
+      startPageX: x0,
+      startPageY: y0,
+      startTimeStamp: 0,
+      currentPageX: x,
+      currentPageY: y,
+      currentTimeStamp: clock,
+      previousPageX: prevX,
+      previousPageY: prevY,
+      previousTimeStamp: prevT,
+    };
+    prevX = x;
+    prevY = y;
+    prevT = clock;
+    return {
+      nativeEvent: {
+        identifier: TOUCH_ID,
+        pageX: x,
+        pageY: y,
+        touches: [{ identifier: TOUCH_ID, pageX: x, pageY: y }],
+        changedTouches: [],
+      },
+      touchHistory: {
+        touchBank: bank,
+        numberActiveTouches: 1,
+        indexOfSingleActiveTouch: TOUCH_ID,
+        mostRecentTimeStamp: clock,
+      },
+    };
+  };
+}
+
+function drag(steps: Array<{ dx: number; dy: number }>) {
+  const x0 = 160;
+  const y0 = 130;
+  const at = finger(x0, y0);
+
+  act(() => {
+    const h = mapFrame().props;
+    h.onStartShouldSetResponder?.(at(0, 0));
+    h.onMoveShouldSetResponder?.(at(steps[0].dx, steps[0].dy));
+    h.onResponderGrant?.(at(0, 0));
+  });
+
+  for (const step of steps) {
+    act(() => {
+      // Deliberately re-read from the current props every time.
+      mapFrame().props.onResponderMove?.(at(step.dx, step.dy));
+    });
+  }
+
+  const last = steps[steps.length - 1];
+  act(() => {
+    mapFrame().props.onResponderRelease?.(at(last.dx, last.dy));
+  });
+}
+
+describe('dragging the map', () => {
+  it('follows the finger across a multi-step drag', () => {
+    renderMap();
+    const before = firstTilePosition();
+
+    // One continuous swipe left, reported as the running total from the
+    // start of the gesture — which is what `gestureState.dx` is.
+    drag([
+      { dx: -20, dy: 0 },
+      { dx: -45, dy: 0 },
+      { dx: -80, dy: 0 },
+    ]);
+
+    const after = firstTilePosition();
+    expect(after.left).toBeCloseTo(before.left - 80, 0);
+    expect(after.top).toBeCloseTo(before.top, 0);
+  });
+});
+
+describe('the map keeps the place the person put it', () => {
+  const PINS = [
+    { id: 'a', position: { lat: 40.18, lng: 44.51 }, render: () => <View /> },
+    { id: 'b', position: { lat: 40.19, lng: 44.52 }, render: () => <View /> },
+  ];
+
+  it('is not yanked away by a location fix that lands after the drag', () => {
+    const { rerender } = renderMap();
+    drag([{ dx: -30, dy: -20 }, { dx: -60, dy: -40 }]);
+    const afterDrag = firstTilePosition();
+
+    // The real sequence: the app opens on the city centre, the person drags,
+    // and the GPS fix arrives seconds later with somewhere else entirely.
+    act(() => {
+      rerender(
+        <ThemeProvider>
+          <TileMap
+            markers={[]}
+            initialCentre={{ lat: 40.25, lng: 44.6 }}
+            unavailableLabel={LABEL}
+          />
+        </ThemeProvider>,
+      );
+    });
+
+    expect(firstTilePosition()).toEqual(afterDrag);
+  });
+
+  it('does not reframe onto new markers once the person has dragged', () => {
+    // The markers change for reasons that have nothing to do with the map:
+    // the nearby query re-runs when the device's own fix moves. Refitting
+    // then would undo the drag — the same symptom as a map that will not
+    // move, arriving by a different route.
+    const { rerender } = renderMap({ markers: PINS });
+    drag([{ dx: -40, dy: 0 }, { dx: -90, dy: 0 }]);
+    const afterDrag = firstTilePosition();
+
+    act(() => {
+      rerender(
+        <ThemeProvider>
+          <TileMap
+            markers={[...PINS, { id: 'c', position: { lat: 40.3, lng: 44.7 }, render: () => <View /> }]}
+            initialCentre={{ lat: 40.1772, lng: 44.5035 }}
+            unavailableLabel={LABEL}
+          />
+        </ThemeProvider>,
+      );
+    });
+
+    expect(firstTilePosition()).toEqual(afterDrag);
+  });
+
+  it('does reframe when the person asks a different question', () => {
+    // The other half of the same rule, and the one that would silently rot:
+    // a fix that only ever refuses to reframe would pass the test above and
+    // leave the category chips pointing at a view of somewhere else.
+    const { rerender } = renderMap({ markers: PINS, frameKey: 'all::' });
+    drag([{ dx: -40, dy: 0 }, { dx: -90, dy: 0 }]);
+    const afterDrag = firstTilePosition();
+
+    act(() => {
+      rerender(
+        <ThemeProvider>
+          <TileMap
+            markers={[{ id: 'z', position: { lat: 40.4, lng: 44.9 }, render: () => <View /> }]}
+            frameKey="category:restaurant:"
+            initialCentre={{ lat: 40.1772, lng: 44.5035 }}
+            unavailableLabel={LABEL}
+          />
+        </ThemeProvider>,
+      );
+    });
+
+    expect(firstTilePosition()).not.toEqual(afterDrag);
+  });
+});

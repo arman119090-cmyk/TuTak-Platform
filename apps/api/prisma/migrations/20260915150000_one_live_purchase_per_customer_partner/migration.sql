@@ -63,6 +63,16 @@
 --      are resolved by the provider or by a two-person reconciliation.
 --   4. **Verify, then migrate.** When the preflight returns no rows, deploy.
 --
+-- One step this refusal creates, found by rehearsing it rather than by
+-- reasoning about it: a refused migration is recorded as *failed* in
+-- `_prisma_migrations`, and `migrate deploy` will not continue past it until
+-- somebody says what became of it. Nothing here was applied — the check runs
+-- before the index — so it is rolled back, not forward:
+--
+--     prisma migrate resolve --rolled-back 20260915150000_one_live_purchase_per_customer_partner
+--
+-- Run that after clearing the duplicates and before retrying the deploy.
+--
 -- The preflight function is left in place afterwards so the same check can be
 -- run before the deploy rather than discovered during it.
 -- ────────────────────────────────────────────────────────────────────────

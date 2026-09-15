@@ -38,3 +38,19 @@ export type UnitOfMeasureKey = (typeof UNIT_OF_MEASURE_KEYS)[number];
 export function unitLabelKey(unit: UnitOfMeasureKey): string {
   return `unitOfMeasure.${unit}`;
 }
+
+/**
+ * The label directly, for a client with no i18next runtime.
+ *
+ * The partner dashboard is English-only and has no translation machinery;
+ * giving it one just to render "L" would be inventing a subsystem. This keeps
+ * the labels where §8 requires — in the shared layer, keyed by the financial
+ * enum — while letting a plain React app read one.
+ *
+ * Falls back to the key rather than to another locale's label: a missing
+ * translation should look wrong, not quietly become English.
+ */
+export function unitLabel(unit: UnitOfMeasureKey, locale: SupportedLocale = DEFAULT_LOCALE): string {
+  const bundle = i18nResources[locale].translation as { unitOfMeasure?: Record<string, string> };
+  return bundle.unitOfMeasure?.[unit] ?? unit;
+}

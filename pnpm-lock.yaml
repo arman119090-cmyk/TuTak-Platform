@@ -454,6 +454,9 @@ importers:
       '@tutak/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@tutak/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@tutak/observability':
         specifier: workspace:*
         version: link:../../packages/observability

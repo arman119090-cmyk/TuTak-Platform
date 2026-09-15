@@ -14,6 +14,8 @@ import {
   PartnerSettlementStatus,
   PostingDirection,
   Prisma,
+  ReconciliationOutcome,
+  ReconciliationSource,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
@@ -437,6 +439,8 @@ export class PartnerSettlementService {
       bankTransferReference: string;
       from: readonly PartnerSettlementStatus[];
       event: string;
+      /** Extra columns to stamp on the same claim — a reconciliation's checker. */
+      extra?: Prisma.PartnerSettlementUpdateManyMutationInput;
     },
   ) {
     const reference = params.bankTransferReference.trim();
@@ -486,6 +490,7 @@ export class PartnerSettlementService {
       const claimed = await tx.partnerSettlement.updateMany({
         where: { id, status: settlement.status },
         data: {
+          ...params.extra,
           status: PartnerSettlementStatus.PAID,
           paidByUserId: params.actorId,
           paidAt: new Date(),
@@ -538,7 +543,8 @@ export class PartnerSettlementService {
    *
    * Only call this when the bank's answer is unambiguous. If it is not,
    * `markRequiresReconciliation` is the honest answer: a retry on a maybe is
-   * how a partner gets paid twice.
+   * how a partner gets paid twice. Resolving one of those takes evidence and
+   * two different people — see `proposeReconciliationOutcome`.
    */
   async markFailed(
     id: string,
@@ -562,12 +568,20 @@ export class PartnerSettlementService {
    * wrong guesses cost differently: guessing "it went" leaves a partner
    * unpaid with a ledger that says otherwise, guessing "it did not go" pays
    * them twice. A human reads the bank statement and calls
-   * `resolveReconciliation` with what it actually says.
+   * `proposeReconciliationOutcome` with what it actually says, and a second
+   * person confirms it.
    */
   async markRequiresReconciliation(
     id: string,
-    params: { actorId: string; reason: string; bankTransferReference?: string },
+    params: {
+      actorId: string;
+      reason: string;
+      bankTransferReference?: string;
+      /** Defaults to FINANCE. `PARTNER_REPORT` locks the reporter out of resolving it. */
+      source?: ReconciliationSource;
+    },
   ) {
+    const source = params.source ?? ReconciliationSource.FINANCE;
     return this.recordOutcome(id, {
       actorId: params.actorId,
       reason: params.reason,
@@ -575,23 +589,158 @@ export class PartnerSettlementService {
       to: PartnerSettlementStatus.REQUIRES_RECONCILIATION,
       outcome: 'unresolved',
       event: 'settlement.requires_reconciliation',
+      extra: {
+        reconciliationSource: source,
+        reconciliationReportedByUserId: params.actorId,
+        reconciliationReportedAt: new Date(),
+      },
     });
   }
 
   /**
-   * A human has read the bank statement and knows which way the ambiguous
-   * attempt went.
+   * A partner says the money never arrived.
    *
-   * `money-moved` closes the settlement exactly as `markPaid` would, posting
-   * once. `money-did-not-move` returns it to the retryable `FAILED` state.
-   * There is no third answer: "still not sure" means leave it alone.
+   * Deliberately its own method rather than a flag on the one above, because
+   * it is a different act by a different kind of person. Arman's decision of
+   * 15.09.2026: a partner may report a problem and may not confirm whether
+   * money moved — they are the payee, and a payee who can both report a
+   * missing transfer and confirm that it never arrived can order their own
+   * second payment.
+   *
+   * So this records the doubt, moves the settlement out of the payable set,
+   * and locks the reporter out of both halves of resolving it. The database
+   * enforces the lock-out as well (see
+   * `partner_settlements_partner_reporter_does_not_resolve`), because a
+   * service method is not a boundary a script has to respect.
    */
-  async resolveReconciliation(
+  async reportTransferProblem(
     id: string,
-    params:
-      | { actorId: string; outcome: 'money-moved'; bankTransferReference: string }
-      | { actorId: string; outcome: 'money-did-not-move'; reason: string },
+    params: { partnerUserId: string; partnerId: string; reason: string },
   ) {
+    const settlement = await this.prisma.partnerSettlement.findUnique({ where: { id } });
+    if (!settlement) throw new NotFoundException('Settlement not found');
+    if (settlement.partnerId !== params.partnerId) {
+      // Not "forbidden": a partner should not learn that another partner's
+      // settlement exists by being told they may not touch it.
+      throw new NotFoundException('Settlement not found');
+    }
+
+    return this.recordOutcome(id, {
+      actorId: params.partnerUserId,
+      reason: params.reason,
+      to: PartnerSettlementStatus.REQUIRES_RECONCILIATION,
+      outcome: 'unresolved',
+      event: 'settlement.partner_reported_problem',
+      extra: {
+        reconciliationSource: ReconciliationSource.PARTNER_REPORT,
+        reconciliationReportedByUserId: params.partnerUserId,
+        reconciliationReportedAt: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Somebody in finance has read the bank statement and says what it shows.
+   *
+   * This is the **proposal**, and on its own it moves nothing. Arman's
+   * decision of 15.09.2026 is that an ambiguous transfer is resolved by two
+   * different people with evidence between them — the same maker/checker rule
+   * the settlement's own approval already has, applied to the other decision
+   * that moves money.
+   *
+   * The evidence is free-form and mandatory. Free-form because a statement
+   * line, a wire reference and a bank's own case id are all legitimate and
+   * requiring a shape would mean guessing what the bank provides; mandatory
+   * because "we think it went through" with nothing behind it is precisely
+   * what this mechanism exists to stop.
+   *
+   * Re-proposing is allowed while nobody has confirmed — a first reading of a
+   * statement can be wrong, and forcing a new settlement to correct it would
+   * be worse. Once confirmed, the settlement has left this state entirely.
+   */
+  async proposeReconciliationOutcome(
+    id: string,
+    params: {
+      actorId: string;
+      outcome: ReconciliationOutcome;
+      evidence: string;
+      /** Required for MONEY_MOVED: the reference that proves it. */
+      bankTransferReference?: string;
+    },
+  ) {
+    const evidence = params.evidence.trim();
+    if (!evidence) {
+      throw new BadRequestException('Say what the bank statement shows — evidence is required');
+    }
+    if (
+      params.outcome === ReconciliationOutcome.MONEY_MOVED &&
+      !params.bankTransferReference?.trim()
+    ) {
+      throw new BadRequestException(
+        'A transfer that went through has a bank reference; name it',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const settlement = await tx.partnerSettlement.findUnique({ where: { id } });
+      if (!settlement) throw new NotFoundException('Settlement not found');
+      if (settlement.status !== PartnerSettlementStatus.REQUIRES_RECONCILIATION) {
+        throw new ConflictException(
+          `Settlement is ${settlement.status}; only one awaiting reconciliation can be resolved`,
+        );
+      }
+      this.assertNotTheReporter(settlement, params.actorId);
+
+      await tx.partnerSettlement.update({
+        where: { id },
+        data: {
+          reconciliationOutcome: params.outcome,
+          reconciliationEvidence: evidence,
+          reconciliationProposedByUserId: params.actorId,
+          reconciliationProposedAt: new Date(),
+          // A fresh proposal clears any earlier confirmation attempt's
+          // fields; nothing can be confirmed that has not been proposed since.
+          reconciliationConfirmedByUserId: null,
+          reconciliationConfirmedAt: null,
+          bankTransferReference:
+            params.outcome === ReconciliationOutcome.MONEY_MOVED
+              ? params.bankTransferReference!.trim()
+              : settlement.bankTransferReference,
+        },
+      });
+
+      await this.audit.record(
+        {
+          actorUserId: params.actorId,
+          action: AuditAction.PARTNER_UPDATED,
+          entityType: 'PartnerSettlement',
+          entityId: id,
+          metadata: {
+            event: 'settlement.reconciliation_proposed',
+            partnerId: settlement.partnerId,
+            amount: settlement.netPayableAmount.toFixed(4),
+            outcome: params.outcome,
+            evidence,
+          },
+        },
+        tx,
+      );
+      return tx.partnerSettlement.findUniqueOrThrow({ where: { id } });
+    });
+  }
+
+  /**
+   * The second pair of eyes, and the act that finally moves the settlement.
+   *
+   * `MONEY_MOVED` closes it exactly as `markPaid` would, through the same
+   * `payFrom` — one posting, written once. `MONEY_DID_NOT_MOVE` returns it to
+   * the retryable `FAILED` state.
+   *
+   * The checker may not be the proposer, and neither may be a partner who
+   * reported the problem. Both rules are also CHECK constraints, because a
+   * service method is a convenience and the table is the boundary.
+   */
+  async confirmReconciliationOutcome(id: string, params: { actorId: string }) {
     const settlement = await this.prisma.partnerSettlement.findUnique({ where: { id } });
     if (!settlement) throw new NotFoundException('Settlement not found');
     if (settlement.status !== PartnerSettlementStatus.REQUIRES_RECONCILIATION) {
@@ -599,24 +748,62 @@ export class PartnerSettlementService {
         `Settlement is ${settlement.status}; only one awaiting reconciliation can be resolved`,
       );
     }
+    if (!settlement.reconciliationOutcome || !settlement.reconciliationProposedByUserId) {
+      throw new ConflictException('Nobody has proposed what the bank statement shows yet');
+    }
+    this.assertNotTheReporter(settlement, params.actorId);
+    if (this.dualControl && settlement.reconciliationProposedByUserId === params.actorId) {
+      throw new ForbiddenException(
+        'You proposed this reconciliation; a second person has to confirm it',
+      );
+    }
 
-    if (params.outcome === 'money-moved') {
+    const confirmed = {
+      reconciliationConfirmedByUserId: params.actorId,
+      reconciliationConfirmedAt: new Date(),
+    };
+
+    if (settlement.reconciliationOutcome === ReconciliationOutcome.MONEY_MOVED) {
       return this.payFrom(id, {
         actorId: params.actorId,
-        bankTransferReference: params.bankTransferReference,
+        bankTransferReference: settlement.bankTransferReference!,
         from: [PartnerSettlementStatus.REQUIRES_RECONCILIATION],
         event: 'settlement.reconciled_paid',
+        extra: confirmed,
       });
     }
 
     return this.recordOutcome(id, {
       actorId: params.actorId,
-      reason: params.reason,
+      reason: settlement.reconciliationEvidence ?? 'Reconciled: the statement shows no debit',
       to: PartnerSettlementStatus.FAILED,
       outcome: 'failed',
       event: 'settlement.reconciled_failed',
       from: [PartnerSettlementStatus.REQUIRES_RECONCILIATION],
+      extra: confirmed,
     });
+  }
+
+  /**
+   * A partner who reported a missing transfer does not get to settle the
+   * question of whether it happened. Checked here so the caller gets a
+   * sentence; also a CHECK constraint, so a script gets refused too.
+   */
+  private assertNotTheReporter(
+    settlement: {
+      reconciliationSource: ReconciliationSource | null;
+      reconciliationReportedByUserId: string | null;
+    },
+    actorId: string,
+  ): void {
+    if (
+      settlement.reconciliationSource === ReconciliationSource.PARTNER_REPORT &&
+      settlement.reconciliationReportedByUserId === actorId
+    ) {
+      throw new ForbiddenException(
+        'You reported this problem; whether the money moved is for finance to establish',
+      );
+    }
   }
 
   /**
@@ -677,6 +864,8 @@ export class PartnerSettlementService {
       outcome: 'failed' | 'unresolved';
       event: string;
       from?: readonly PartnerSettlementStatus[];
+      /** Extra columns to stamp on the same claim, inside the same transaction. */
+      extra?: Prisma.PartnerSettlementUpdateManyMutationInput;
     },
   ) {
     const reason = params.reason.trim();
@@ -689,7 +878,7 @@ export class PartnerSettlementService {
 
       const claimed = await tx.partnerSettlement.updateMany({
         where: { id, status: { in: [...from] } },
-        data: { status: params.to, failedReason: reason },
+        data: { ...params.extra, status: params.to, failedReason: reason },
       });
       if (claimed.count === 0) {
         throw new ConflictException(

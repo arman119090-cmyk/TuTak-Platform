@@ -213,6 +213,29 @@ export interface AppConfig {
      * has never been exercised against the real provider.
      */
     tutakPspEnabled: boolean;
+    /**
+     * Whether a purchase collected through the provider may be refunded
+     * through this platform at all.
+     *
+     * Off, and Arman's decision of 15.09.2026 is that it stays off until the
+     * provider's own refund/reversal API is confirmed to exist. The two
+     * alternatives were both rejected on the record:
+     *
+     *  - a routine manual bank refund, which puts an operator in the money
+     *    path with no provider record tying the return to the original
+     *    payment;
+     *  - refunding in bonus points, which is not a refund. The customer paid
+     *    real money and is owed real money.
+     *
+     * So the honest behaviour while the capability is unknown is to refuse,
+     * and say why. A refund button built on an endpoint nobody has confirmed
+     * exists is a button that lies to a customer about their money.
+     *
+     * Turning this on is not sufficient by itself: `PspAdapter.capabilities
+     * .refund` must also be true for the provider in question, so switching
+     * a flag cannot conjure an API.
+     */
+    pspRefundsEnabled: boolean;
   };
   /**
    * Where partner brand assets and customer avatars actually live
@@ -578,6 +601,9 @@ const buildConfig = (): AppConfig => ({
     // Same "off until explicitly on" default and the same reason: a route
     // whose provider is not contracted is a route that cannot take money.
     tutakPspEnabled: process.env.TUTAK_PSP_ENABLED === 'true',
+    // Off until the provider's refund API is confirmed to exist — and even
+    // then the adapter's own capability has the last word.
+    pspRefundsEnabled: process.env.PSP_REFUNDS_ENABLED === 'true',
   },
   media: {
     // Local disk unless told otherwise. That is the right default for a

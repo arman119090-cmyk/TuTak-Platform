@@ -7,6 +7,7 @@ import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
+import type { PspAttemptAgeingService } from '../psp/psp-attempt-ageing.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
@@ -52,6 +53,7 @@ export interface SweepDependencies {
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
   partnerSettlement: PartnerSettlementCheckService;
+  pspAgeing: PspAttemptAgeingService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -252,6 +254,17 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 26 * 60 * 60_000,
     lockTtlMs: 10 * 60_000,
     run: ({ partnerSettlement }) => partnerSettlement.checkOverdueSettlements(),
+  },
+  {
+    name: 'psp.escalate-stale-attempts',
+    why: "A payment attempt the provider never answered leaves a customer possibly charged for a purchase nobody can complete, and it will not resolve itself. This sweep makes it louder — and deliberately never makes it *go away*: Arman's decision of 15.09.2026 is that time creates alerts and escalation, never a resolution. The one status change it makes (live → EXPIRED) keeps the attempt in the unsafe set, so the purchase stays blocked; releasing it takes the provider's own answer or two people reconciling it by hand.",
+    // Every ten minutes. The customer whose money is somewhere unaccounted
+    // for is the one waiting, so the escalation clock should be theirs rather
+    // than an operator's convenience.
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ pspAgeing }) => pspAgeing.escalateStaleAttempts(),
   },
   {
     name: 'reconciliation.nightly',

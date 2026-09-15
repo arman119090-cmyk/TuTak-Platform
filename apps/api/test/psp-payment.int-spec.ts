@@ -567,6 +567,188 @@ describe('PSP payment route (integration)', () => {
     });
   });
 
+  /**
+   * The second race, found by Arman on 15.09.2026, and it went straight
+   * through both guards written for the first one.
+   *
+   * The hole was that both of those guards were about *payment attempts*, and
+   * the dangerous moment is a purchase that has **no attempt yet**:
+   *
+   *   1. purchase A is created on `TUTAK_PSP`. The customer has not pressed
+   *      "pay", so no `PspPaymentAttempt` row exists and
+   *      `assertNoUnresolvedPayment` has nothing to object to.
+   *   2. purchase B is created on `DIRECT_PARTNER` — which the old index did
+   *      not constrain at all — and confirmed at the till. Cash changes hands.
+   *   3. `beginAttempt(A)` opens a real Idram bill for a purchase already
+   *      paid for, and the customer pays twice.
+   *
+   * So the invariant moved up a level, off the attempt and onto the purchase:
+   * one customer has at most one unfinished purchase at a business, whatever
+   * route it collects on.
+   */
+  describe('one unfinished purchase per customer per business', () => {
+    it('refuses a direct purchase while a provider purchase is open with no attempt yet', async () => {
+      const customer = await createCustomer(prisma);
+      const psPending = await intents.create(
+        { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
+        customer.user.id,
+      );
+      // The exact state the race needs: a live PSP purchase and no attempt.
+      expect(await prisma.pspPaymentAttempt.count({ where: { purchaseIntentId: psPending.id } }))
+        .toBe(0);
+
+      await expect(
+        intents.create({ partnerId, grossAmount: '15000' }, customer.user.id),
+      ).rejects.toThrow(/already have a purchase in progress/i);
+    });
+
+    it('refuses a provider purchase while a direct purchase is open', async () => {
+      const customer = await createCustomer(prisma);
+      await intents.create({ partnerId, grossAmount: '15000' }, customer.user.id);
+
+      await expect(
+        intents.create(
+          { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
+          customer.user.id,
+        ),
+      ).rejects.toThrow(/already have a purchase in progress/i);
+    });
+
+    it('lets exactly one of two concurrent creates on different routes win', async () => {
+      const customer = await createCustomer(prisma);
+      const results = await Promise.allSettled([
+        intents.create(
+          { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
+          customer.user.id,
+        ),
+        intents.create({ partnerId, grossAmount: '15000' }, customer.user.id),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(
+        await prisma.purchaseIntent.count({
+          where: {
+            customerId: customer.user.id,
+            partnerId,
+            status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+          },
+        }),
+      ).toBe(1);
+
+      // The loser is refused for the real reason, not with a code-allocation
+      // failure dressed up as one.
+      const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(String(rejected.reason)).toMatch(/already have a purchase in progress/i);
+    });
+
+    it('does not strand the loser’s bonus reservation', async () => {
+      const customer = await createCustomer(prisma);
+      await grantBonus(customer, '2000');
+
+      await intents.create(
+        { partnerId, grossAmount: '15000', bonusAmountRequested: '1000' },
+        customer.user.id,
+      );
+      await expect(
+        intents.create(
+          {
+            partnerId,
+            grossAmount: '15000',
+            bonusAmountRequested: '1000',
+            paymentRoute: PaymentRoute.TUTAK_PSP,
+          },
+          customer.user.id,
+        ),
+      ).rejects.toThrow(/already have a purchase in progress/i);
+
+      // Exactly one purchase's worth of bonus is held, not two.
+      const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: customer.user.id } });
+      expect(new Decimal(wallet.reservedBonus).toFixed(2)).toBe('1000.00');
+    });
+
+    it.each([
+      [
+        'CONFIRMED',
+        async (intentId: string) => {
+          await intents.confirm(intentId, staffId);
+        },
+      ],
+      [
+        'REJECTED',
+        async (intentId: string) => {
+          await intents.reject(intentId, staffId, { reasonCode: 'wrong_amount' });
+        },
+      ],
+      [
+        'CANCELLED',
+        async (intentId: string, customerId: string) => {
+          await intents.cancel(intentId, customerId);
+        },
+      ],
+    ])('lets the customer buy again once the previous purchase is %s', async (_label, finish) => {
+      const customer = await createCustomer(prisma);
+      const first = await intents.create({ partnerId, grossAmount: '5000' }, customer.user.id);
+      await finish(first.id, customer.user.id);
+
+      await expect(
+        intents.create({ partnerId, grossAmount: '5000' }, customer.user.id),
+      ).resolves.toBeDefined();
+    });
+
+    it('keeps blocking when the purchase expired but its provider attempt did not resolve', async () => {
+      const customer = await createCustomer(prisma);
+      const first = await intents.create(
+        { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
+        customer.user.id,
+      );
+      const attempt = await attemptFor(first.id, 'bill-expired-block');
+      await prisma.pspPaymentAttempt.update({
+        where: { id: attempt.id },
+        data: { status: PspAttemptStatus.EXPIRED, liveKey: null, resolvedAt: new Date() },
+      });
+      await prisma.purchaseIntent.update({
+        where: { id: first.id },
+        data: { status: PurchaseIntentStatus.EXPIRED },
+      });
+
+      // The purchase is over on our side; the money is not resolved on the
+      // provider's. The unique index cannot see that — the attempt check can.
+      await expect(
+        intents.create({ partnerId, grossAmount: '15000' }, customer.user.id),
+      ).rejects.toThrow(/has not finished/i);
+    });
+
+    it('releases safely once the provider says, authoritatively, that it failed', async () => {
+      const customer = await createCustomer(prisma);
+      const first = await intents.create(
+        { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
+        customer.user.id,
+      );
+      const attempt = await attemptFor(first.id, 'bill-auth-failed');
+      await prisma.pspPaymentAttempt.update({
+        where: { id: attempt.id },
+        data: { status: PspAttemptStatus.FAILED, liveKey: null, resolvedAt: new Date() },
+      });
+      await prisma.purchaseIntent.update({
+        where: { id: first.id },
+        data: { status: PurchaseIntentStatus.EXPIRED },
+      });
+
+      const next = await intents.create({ partnerId, grossAmount: '15000' }, customer.user.id);
+      expect(next.status).toBe(PurchaseIntentStatus.AWAITING_CONFIRMATION);
+    });
+
+    it('constrains nothing across different businesses', async () => {
+      const customer = await createCustomer(prisma);
+      const elsewhere = await createPartner(prisma, { displayName: 'Another Business' });
+      await intents.create({ partnerId, grossAmount: '5000' }, customer.user.id);
+
+      await expect(
+        intents.create({ partnerId: elsewhere.id, grossAmount: '5000' }, customer.user.id),
+      ).resolves.toBeDefined();
+    });
+  });
+
   /** Finding 5: the route a client asks for is the route it gets. */
   describe('choosing a route at creation', () => {
     it('defaults to the partner-direct route when no client says otherwise', async () => {

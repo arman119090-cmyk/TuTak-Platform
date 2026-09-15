@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  ContributionRuleKind,
   PaymentRoute,
   BonusEntryType,
   LedgerAccountType,
@@ -26,7 +27,6 @@ import {
   parseMoney,
   parsePositiveMoney,
   roundCharge,
-  roundIssued,
 } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -34,6 +34,8 @@ import { MediaViewService } from '../media/media-view.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { contributionForPurchase } from '../partners/contribution/contribution-rule';
+import { PartnerContributionRuleService } from '../partners/contribution/partner-contribution-rule.service';
 import { PartnersService } from '../partners/partners.service';
 import { MONEY_MAY_HAVE_MOVED } from '../psp/psp-attempt-safety';
 import { CURRENT_REFERRAL_PROGRAM_VERSION, ReferralChainLevel, ReferralService } from '../referral/referral.service';
@@ -104,6 +106,83 @@ export function isConfirmationCodeCollision(error: unknown): boolean {
   return text.toLowerCase().replace(/_/g, '').includes('confirmationcode');
 }
 
+/**
+ * Whether this is the database refusing a second unfinished purchase for the
+ * same customer at the same business.
+ *
+ * Separate from `isConfirmationCodeCollision` and checked separately: a code
+ * collision is retried by drawing another code, and retrying *this* one would
+ * loop twelve times and then lie about why it failed.
+ */
+export function isLivePurchaseCollision(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = error.meta?.target;
+  const text = (Array.isArray(target) ? target.join(',') : String(target ?? ''))
+    .toLowerCase()
+    .replace(/_/g, '');
+  // Prisma reports a partial unique index either by its name or by the
+  // columns it covers, depending on how it learned about it — and this index
+  // is declared in SQL rather than in the schema, so in practice it is the
+  // columns. Both spellings are accepted; nothing else in this table is
+  // unique on that pair, so the column form cannot mean anything else.
+  return (
+    text.includes('onelivepercustomerpartner') ||
+    (text.includes('customerid') && text.includes('partnerid'))
+  );
+}
+
+/**
+ * The refusal both halves of the one-live-purchase guard give.
+ *
+ * One sentence, one place: the server check and the database's own unique
+ * violation are the same rule seen from two distances, and a customer who hit
+ * the race should not get a different explanation from the one who did not.
+ */
+const ONE_LIVE_PURCHASE_MESSAGE =
+  'You already have a purchase in progress at this business. Finish or cancel it ' +
+  'before starting another';
+
+/**
+ * The per-unit line item on a purchase, if it has one.
+ *
+ * Returns the three columns together or nothing at all — `quantity` alone is
+ * a receipt that cannot be re-derived, and the database says so too. The
+ * cross-check against `grossAmount` is here because a till that sends
+ * 50 L × 300 AMD and a gross of 14,000 has a bug, and storing both numbers
+ * would leave two different answers to "what did this cost" on one row.
+ */
+function parseLineItem(
+  dto: { quantity?: string; quantityUnit?: string; unitPrice?: string },
+  grossAmount: Decimal,
+): { quantity: Decimal; quantityUnit: string; unitPrice: Decimal } | null {
+  const present = [dto.quantity, dto.quantityUnit, dto.unitPrice].filter(
+    (v) => v !== undefined && v !== null && String(v).trim() !== '',
+  );
+  if (present.length === 0) return null;
+  if (present.length !== 3) {
+    throw new BadRequestException(
+      'A per-unit purchase needs all of quantity, quantityUnit and unitPrice',
+    );
+  }
+
+  const quantity = parsePositiveMoney(dto.quantity!, 'quantity');
+  const unitPrice = parseMoney(dto.unitPrice!, 'unitPrice');
+  if (unitPrice.lessThan(0)) throw new BadRequestException('unitPrice cannot be negative');
+
+  const quantityUnit = dto.quantityUnit!.trim();
+  if (!quantityUnit) throw new BadRequestException('quantityUnit cannot be blank');
+
+  if (!quantity.times(unitPrice).equals(grossAmount)) {
+    throw new BadRequestException(
+      `quantity × unitPrice (${quantity.times(unitPrice).toString()}) must equal ` +
+        `grossAmount (${grossAmount.toString()})`,
+    );
+  }
+  return { quantity, quantityUnit, unitPrice };
+}
+
 @Injectable()
 export class PurchaseIntentsService {
   private readonly logger = new Logger(PurchaseIntentsService.name);
@@ -113,6 +192,7 @@ export class PurchaseIntentsService {
     private readonly bonusEngine: BonusEngineService,
     private readonly walletService: WalletService,
     private readonly partnersService: PartnersService,
+    private readonly contributionRules: PartnerContributionRuleService,
     private readonly transactionsService: TransactionsService,
     private readonly referralService: ReferralService,
     private readonly deferredBonusLots: DeferredBonusLotService,
@@ -400,6 +480,28 @@ export class PurchaseIntentsService {
       );
     }
 
+    const lineItem = parseLineItem(dto, grossAmount);
+    const rule = await this.contributionRules.liveRule(partner.id);
+
+    /*
+     * A per-unit partner needs to know what was sold.
+     *
+     * Refused here rather than at confirmation because the customer is still
+     * standing at the pump: "how many litres" is answerable now and not in
+     * three minutes. The database refuses the same combination as a last
+     * resort (`purchase_intent_rule_snapshot_matches`), but a constraint name
+     * is not something to show a customer.
+     */
+    if (
+      rule &&
+      rule.kind !== ContributionRuleKind.PERCENT_BPS &&
+      (!lineItem || lineItem.quantityUnit !== rule.unit)
+    ) {
+      throw new BadRequestException(
+        `This business prices per ${rule.unit}; the purchase must say how many were sold`,
+      );
+    }
+
     const ordinaryPaymentRemainder = grossAmount.minus(bonusAmountRequested);
     const intentTimeoutSeconds = this.config.get('purchasePolicy.intentTimeoutSeconds', {
       infer: true,
@@ -452,6 +554,14 @@ export class PurchaseIntentsService {
           bonusAmountRequested,
           ordinaryPaymentRemainder,
           paymentRoute,
+          ...lineItem,
+          // The terms this purchase is priced under, named exactly and by
+          // version. `negotiatedRateBps` is still written below — it is what
+          // a purchase with no rule falls back to, and leaving it out would
+          // make the two paths differ in more than the arithmetic.
+          contributionRuleId: rule?.id ?? null,
+          contributionRuleVersion: rule?.version ?? null,
+          contributionRuleKind: rule?.kind ?? null,
           // Commercial snapshot — spec §8. Frozen here; later changes to the
           // partner's settings never touch a PurchaseIntent already created.
           negotiatedRateBps: partner.bonusAccrualRateBps,
@@ -478,6 +588,8 @@ export class PurchaseIntentsService {
           grossAmount: grossAmount.toString(),
           bonusAmountRequested: bonusAmountRequested.toString(),
           paymentRoute,
+          contributionRuleVersion: rule?.version ?? null,
+          contributionRuleKind: rule?.kind ?? null,
         },
       });
 
@@ -541,6 +653,23 @@ export class PurchaseIntentsService {
    * customer for an unrelated provider's silence.
    */
   private async assertNoUnresolvedPayment(customerId: string, partnerId: string): Promise<void> {
+    // (a) Another purchase is simply still in flight. Route-independent, and
+    // checked first because it is the common case and the cheaper query.
+    const live = await this.prisma.purchaseIntent.findFirst({
+      where: { customerId, partnerId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
+      select: { id: true, paymentRoute: true },
+    });
+    if (live) {
+      this.logger.warn(
+        `Refusing a new purchase for customer ${customerId} at partner ${partnerId}: ` +
+          `intent ${live.id} (${live.paymentRoute}) is still awaiting confirmation`,
+      );
+      throw new ConflictException(ONE_LIVE_PURCHASE_MESSAGE);
+    }
+
+    // (b) No purchase is in flight, but a provider may still be holding money
+    // from one that is over. An EXPIRED purchase whose attempt timed out is
+    // exactly this: final on our side, unresolved on theirs.
     const blocking = await this.prisma.pspPaymentAttempt.findFirst({
       where: {
         status: { in: [...MONEY_MAY_HAVE_MOVED] },
@@ -560,6 +689,7 @@ export class PurchaseIntentsService {
         'or ask staff to resolve it, before starting a new purchase',
     );
   }
+
 
   /**
    * Creates the intent with a four-digit code the till can use to find it.
@@ -592,6 +722,10 @@ export class PurchaseIntentsService {
       try {
         return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
       } catch (error) {
+        // Two creates raced past the service check and the database arbitrated.
+        // Not retryable — drawing a different code changes nothing about the
+        // fact that this customer already has a purchase open here.
+        if (isLivePurchaseCollision(error)) throw new ConflictException(ONE_LIVE_PURCHASE_MESSAGE);
         if (!isConfirmationCodeCollision(error)) throw error;
         // Someone else holds that code right now. Draw again.
       }
@@ -760,10 +894,17 @@ export class PurchaseIntentsService {
     staffUserId: string | null,
     externalTx?: Prisma.TransactionClient,
   ): Promise<'settled' | 'already-resolved'> {
-    // Spec §12: the pool is gross × the *snapshotted* negotiated rate — not
-    // whatever the partner's rate is today. Rounded down to the column's own
-    // 4-decimal-place precision up front, not left as a raw product.
-    const pool = roundIssued(intent.grossAmount.times(intent.negotiatedRateBps).dividedBy(10_000));
+    // Spec §12: the pool is computed from the terms this purchase was
+    // *snapshotted* under — not from whatever the partner's terms are today.
+    //
+    // Since 15.09.2026 that snapshot can be a per-unit rule (HAZE: 10 AMD of
+    // every litre) rather than a percentage, and this line is the **only**
+    // place that difference exists. Everything below — the split into green,
+    // deferred and three referrer legs, the debit to `PARTNER_PAYABLE`, the
+    // refund reversal — takes `pool` and never asks how it was arrived at.
+    // That was Arman's explicit instruction: a new pricing shape must not
+    // duplicate the ledger economics.
+    const pool = await this.contributionFor(intent);
 
     // Read-only, and safe to resolve before the transaction: attribution is
     // immutable once created (spec §5) at every level, so the chain cannot
@@ -888,6 +1029,39 @@ export class PurchaseIntentsService {
       this.logger.error(`Purchase intent ${intent.id} settlement failed and was rolled back: ${err}`);
       throw err;
     }
+  }
+
+  /**
+   * TuTak's share of this purchase, under the terms it was priced at.
+   *
+   * Reads the rule row the purchase *names*, never the partner's current
+   * terms: a contract renegotiated this morning must not change what last
+   * week's receipt says. The rule is immutable and never deleted, so the row
+   * read here is byte-for-byte the row that was read at creation.
+   *
+   * A purchase with no rule snapshot — every purchase made before
+   * 15.09.2026, and every partner who has never had a rule written — falls
+   * back to `negotiatedRateBps`, which is the arithmetic those purchases have
+   * always used. Arman's decision is explicit that existing percentage
+   * partners are not to be broken.
+   */
+  private async contributionFor(intent: {
+    grossAmount: Decimal;
+    quantity: Decimal | null;
+    quantityUnit: string | null;
+    negotiatedRateBps: number;
+    contributionRuleId: string | null;
+    contributionRuleKind: ContributionRuleKind | null;
+  }): Promise<Decimal> {
+    const rule = intent.contributionRuleId
+      ? await this.prisma.partnerContributionRule.findUnique({
+          where: { id: intent.contributionRuleId },
+        })
+      : null;
+    return contributionForPurchase(
+      intent,
+      rule ? PartnerContributionRuleService.termsOf(rule) : null,
+    );
   }
 
   /**

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -12,6 +13,7 @@ import {
   PostingDirection,
   Prisma,
   PspAttemptStatus,
+  PspResolutionBasis,
   PurchaseIntentStatus,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -330,6 +332,82 @@ export class PspPaymentService {
 
       return { alreadySettled: false, attemptId: attempt.id, ledgerTransactionId: posted.id };
     });
+  }
+
+  /**
+   * Two people have read the provider's statement and agree no money moved.
+   *
+   * The only way an `EXPIRED` or `REQUIRES_RECONCILIATION` attempt is ever
+   * released, short of the provider itself answering. Arman's decision of
+   * 15.09.2026: a timeout is not a provider saying no, so nothing about the
+   * passage of time can do this — not a sweep, not an operator clicking
+   * "give up", not a retention job. Only a reading of the provider's own
+   * record, by two people who are not the same person.
+   *
+   * Once this lands the purchase is genuinely free: `hasUnsafeAttempt` goes
+   * false, a new attempt may be started and the customer may buy again at
+   * that business. That is the entire consequence, and it is why the bar is
+   * two people and a written reason rather than a confirmation dialog.
+   *
+   * Note what this does **not** do: it never marks an attempt `SUCCEEDED`.
+   * Money arriving is settled by a verified provider confirmation and by
+   * nothing else — a human asserting that a payment worked would post to the
+   * ledger on somebody's word, which is the one thing this whole module is
+   * built to prevent.
+   */
+  async reconcileAttemptManually(params: {
+    attemptId: string;
+    reconciledByUserId: string;
+    checkedByUserId: string;
+    evidence: string;
+  }) {
+    const evidence = params.evidence.trim();
+    if (!evidence) {
+      throw new BadRequestException(
+        'Say what the provider’s record shows — evidence is required',
+      );
+    }
+    if (params.reconciledByUserId === params.checkedByUserId) {
+      throw new ForbiddenException(
+        'Releasing a payment nobody can account for takes two different people',
+      );
+    }
+
+    const attempt = await this.prisma.pspPaymentAttempt.findUnique({
+      where: { id: params.attemptId },
+    });
+    if (!attempt) throw new NotFoundException('Payment attempt not found');
+    if (
+      attempt.status !== PspAttemptStatus.EXPIRED &&
+      attempt.status !== PspAttemptStatus.REQUIRES_RECONCILIATION
+    ) {
+      throw new ConflictException(
+        `Attempt is ${attempt.status}; only a timed-out or disputed attempt is reconciled by hand`,
+      );
+    }
+
+    const claimed = await this.prisma.pspPaymentAttempt.updateMany({
+      where: { id: attempt.id, status: attempt.status },
+      data: {
+        status: PspAttemptStatus.FAILED,
+        resolutionBasis: PspResolutionBasis.MANUAL_RECONCILIATION,
+        reconciledByUserId: params.reconciledByUserId,
+        reconciliationCheckedByUserId: params.checkedByUserId,
+        reconciliationEvidence: evidence,
+        failureReason: `Reconciled by hand: ${evidence}`,
+        liveKey: null,
+        resolvedAt: new Date(),
+      },
+    });
+    if (claimed.count === 0) {
+      throw new ConflictException('Attempt was resolved by someone else');
+    }
+
+    this.logger.warn(
+      `PSP attempt ${attempt.id} released by manual reconciliation ` +
+        `(${params.reconciledByUserId} / ${params.checkedByUserId}): ${evidence}`,
+    );
+    return this.prisma.pspPaymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
   }
 
   /**

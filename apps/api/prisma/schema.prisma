@@ -737,6 +737,25 @@ model PurchaseIntent {
   quantityUnit String?
   unitPrice    Decimal? @db.Decimal(18, 4)
 
+  /// The commercial terms this purchase was priced under, named exactly.
+  ///
+  /// Null on every purchase made before 15.09.2026 and on every partner who
+  /// has no rule row, which is why `negotiatedRateBps` below is still
+  /// written and still read: a percentage partner with no rule behaves
+  /// exactly as it did, and nothing about the old rows had to be migrated or
+  /// reinterpreted.
+  ///
+  /// `contributionRuleVersion` and `contributionRuleKind` are duplicated out
+  /// of the rule on purpose. The foreign key already reaches the row, but a
+  /// receipt should be readable without a join, and a rule that is one day
+  /// deleted in a database restore should not take the description of what
+  /// was charged with it.
+  contributionRuleId      String?
+  contributionRuleVersion Int?
+  contributionRuleKind    ContributionRuleKind?
+
+  /// The legacy single-number snapshot. Still the source of truth for a
+  /// purchase with no rule snapshot; ignored when there is one.
   negotiatedRateBps      Int
   maxBonusPaymentPercent Int
 
@@ -848,6 +867,7 @@ model PurchaseIntent {
 
   customer           User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
   partner            Partner                       @relation(fields: [partnerId], references: [id])
+  contributionRule   PartnerContributionRule?      @relation(fields: [contributionRuleId], references: [id])
   branch             PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
   confirmedBy        User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
   rejectedBy         User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
@@ -858,14 +878,15 @@ model PurchaseIntent {
   @@index([partnerId, status])
   @@index([status, expiresAt])
   @@index([customerId, status])
-  /// At most one live in-TuTak checkout per customer per business, as a
-  /// partial unique index created by migration — see
-  /// `20260915130000_one_live_psp_checkout`. Prisma cannot express a partial
-  /// unique index, so it is declared there and not here; this comment exists
-  /// so the next reader of this model knows the constraint is real.
-  //   CREATE UNIQUE INDEX purchase_intents_one_live_psp_checkout
+  /// At most one *unfinished* purchase per customer per business, whatever
+  /// route it collects on. A partial unique index created by migration — see
+  /// `20260915150000_one_live_purchase_per_customer_partner` for the race it
+  /// closes. Prisma cannot express a partial unique index, so it is declared
+  /// there and not here; this comment exists so the next reader of this model
+  /// knows the constraint is real.
+  //   CREATE UNIQUE INDEX purchase_intents_one_live_per_customer_partner
   //     ON purchase_intents (customerId, partnerId)
-  //     WHERE paymentRoute = 'TUTAK_PSP' AND status = 'AWAITING_CONFIRMATION';
+  //     WHERE status = 'AWAITING_CONFIRMATION';
   @@map("purchase_intents")
 }
 
@@ -1144,9 +1165,10 @@ model Partner {
   referralCode         ReferralCode?
   referralInvitesMade  ReferralInvite[]              @relation("PartnerReferrer")
 
-  logoAsset   MediaAsset?  @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
-  coverAsset  MediaAsset?  @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
-  mediaAssets MediaAsset[] @relation("MediaAssetSubjectPartner")
+  logoAsset                MediaAsset?               @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
+  coverAsset               MediaAsset?               @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
+  mediaAssets              MediaAsset[]              @relation("MediaAssetSubjectPartner")
+  partnerContributionRules PartnerContributionRule[]
 
   @@map("partners")
 }
@@ -2851,6 +2873,28 @@ model PartnerBankAccount {
   @@map("partner_bank_accounts")
 }
 
+/// Who raised the doubt about a bank transfer.
+///
+/// Arman's decision of 15.09.2026: a partner may *report* that a transfer did
+/// not arrive, and may not *confirm* whether money moved. The two are
+/// different acts and this column is what keeps them apart — a settlement
+/// flagged by a partner's report reads differently from one flagged by
+/// finance, and only finance can resolve either.
+enum ReconciliationSource {
+  /// Finance noticed it: a timeout, a reference the bank cannot find.
+  FINANCE
+  /// The partner said the money never arrived. A report, not a finding.
+  PARTNER_REPORT
+}
+
+/// What a human established the ambiguous transfer actually did.
+enum ReconciliationOutcome {
+  /// The statement shows the debit. The settlement closes as paid.
+  MONEY_MOVED
+  /// The statement shows no debit. The settlement becomes retryable.
+  MONEY_DID_NOT_MOVE
+}
+
 enum PartnerSettlementStatus {
   /// Being assembled. Entries are already claimed (so nothing else can take
   /// them) but no money is promised.
@@ -2940,6 +2984,30 @@ model PartnerSettlement {
   bankAccountId       String?
   beneficiarySnapshot Json?
 
+  /// ── Reconciliation, when the bank's answer was ambiguous ──────────────
+  ///
+  /// Every column here exists because Arman's decision of 15.09.2026 requires
+  /// that resolving an ambiguous transfer carry evidence and two different
+  /// people. The proposal and the confirmation are separate acts by separate
+  /// actors, exactly as `approve` is separate from `markReady`: one person
+  /// deciding alone that money moved is one person deciding alone to pay a
+  /// partner twice.
+  reconciliationSource            ReconciliationSource?
+  /// Who said something was wrong. May be a partner — that is a report.
+  reconciliationReportedByUserId  String?
+  reconciliationReportedAt        DateTime?
+  /// The proposed answer, and what it rests on. `reconciliationEvidence` is
+  /// free-form on purpose: it is a bank statement line, a reference number, a
+  /// case id from the bank's own support. Requiring a shape would mean
+  /// guessing what the bank provides.
+  reconciliationOutcome           ReconciliationOutcome?
+  reconciliationEvidence          String?
+  reconciliationProposedByUserId  String?
+  reconciliationProposedAt        DateTime?
+  /// The second pair of eyes. Never the proposer, and never the partner.
+  reconciliationConfirmedByUserId String?
+  reconciliationConfirmedAt       DateTime?
+
   createdByUserId   String?
   createdAt         DateTime  @default(now())
   approvedByUserId  String?
@@ -3028,6 +3096,29 @@ enum DirectTender {
 /// onwards is a state in which the provider **may already have taken the
 /// customer's money**, and while a purchase sits in one of them no cash may
 /// be collected for it by any other route.
+/// Why a provider attempt was resolved the way it was.
+///
+/// Arman's decision of 15.09.2026: **time never resolves an attempt.** A
+/// timeout is the absence of an answer, not the answer "no", and letting the
+/// clock write `FAILED` is how a purchase the provider already charged for is
+/// declared safe to collect again. So an attempt may only leave the unsafe
+/// set on one of the bases below — and `TIMEOUT` is deliberately not one of
+/// them, because there is nothing to put in this column for "we waited".
+///
+/// Ageing still does something: it raises alerts and escalates, so a human
+/// looks. It just never decides.
+enum PspResolutionBasis {
+  /// The provider's own signed callback said so.
+  PROVIDER_CALLBACK
+  /// The provider's status API was asked and answered. Requires the adapter
+  /// to declare `statusQuery`, which Idram's does not today.
+  PROVIDER_STATUS_QUERY
+  /// Two people read the provider's statement and agreed what it shows. The
+  /// manual counterpart of a settlement's maker/checker reconciliation, and
+  /// subject to the same rule: never one person alone.
+  MANUAL_RECONCILIATION
+}
+
 enum PspAttemptStatus {
   /// A bill exists at the provider. The customer may be paying right now.
   INITIATED
@@ -3096,6 +3187,24 @@ model PspPaymentAttempt {
   /// Everything the provider sent, kept verbatim for disputes.
   providerPayload Json?
 
+  /// ── How this attempt stopped being unsafe ─────────────────────────────
+  ///
+  /// Null while unresolved, and null for ever on an attempt that timed out
+  /// and was never answered — `EXPIRED` is a state of not knowing, not a
+  /// resolution. A database trigger refuses `FAILED` without one of these,
+  /// which is what makes "time never releases a purchase" a property of the
+  /// table rather than a habit of the code.
+  resolutionBasis               PspResolutionBasis?
+  /// MANUAL_RECONCILIATION only: two different people, and what they read.
+  reconciledByUserId            String?
+  reconciliationCheckedByUserId String?
+  reconciliationEvidence        String?
+
+  /// Ageing. Raised by the sweep so an unresolved attempt gets louder rather
+  /// than being quietly decided; neither column ever changes `status`.
+  escalatedAt     DateTime?
+  escalationCount Int       @default(0)
+
   createdAt   DateTime  @default(now())
   confirmedAt DateTime?
   resolvedAt  DateTime?
@@ -3125,6 +3234,99 @@ enum FeePayer {
 /// Versioned rather than edited: a purchase made in March must still be
 /// explainable by March's rate after the contract changes in June. Rules are
 /// never updated in place — a change closes the old row and opens a new one.
+/// How a partner's contribution to TuTak is priced.
+///
+/// The platform started with one answer — a percentage of the sale, in basis
+/// points on a 50-point grid — and Arman's decision of 15.09.2026 is that
+/// this stays for the partners it fits and stops being the only answer.
+///
+/// The forcing case is fuel. HAZE's terms are 10 AMD of every 300 AMD litre,
+/// which is one thirtieth: 333.33 basis points. Not an integer, and not on
+/// the grid. Rounding it to 3 % or 3.5 % changes real money on every tank —
+/// 50 AMD either way on a 15,000 AMD fill — and loosening the grid for
+/// everyone to accommodate one pricing shape would be fixing the wrong thing.
+/// A per-litre margin is not a percentage that happens to be awkward; it is a
+/// different kind of number.
+enum ContributionRuleKind {
+  /// A share of the sale, in basis points. What every partner used before
+  /// 15.09.2026 and what most will keep using.
+  PERCENT_BPS
+  /// A fixed amount per unit sold — 10 AMD per litre. Requires the purchase
+  /// to carry `quantity`/`quantityUnit`, because there is nothing to multiply
+  /// otherwise.
+  FIXED_PER_UNIT
+  /// Both, added. Exists because a supplier contract that has a per-unit
+  /// margin *and* a percentage on top is an ordinary thing to sign, and
+  /// modelling it as two rules would mean two snapshots on one purchase.
+  HYBRID
+}
+
+/// A partner's commercial terms, versioned and immutable.
+///
+/// ## Why a row and not a column
+///
+/// `Partner.bonusAccrualRateBps` is a single mutable number, which makes two
+/// true statements impossible to hold at once: "this is what we charge" and
+/// "this is what we charged for that sale in March". Changing the rate
+/// silently rewrites the second. A purchase snapshots
+/// `negotiatedRateBps`, which fixed the percentage case, but a snapshot of a
+/// number cannot record *which kind* of term it was, nor let anyone answer
+/// "what were HAZE's terms in March" without reading a purchase from March.
+///
+/// So terms become rows: one per version, never edited, only closed. A
+/// contract change opens the next version and closes the previous one, and
+/// every purchase names the exact version it was priced under.
+///
+/// ## What is deliberately not here
+///
+/// No approval workflow, and no per-branch terms. Both are real questions and
+/// neither has been decided; inventing either now would be guessing about the
+/// commercial process rather than recording it.
+model PartnerContributionRule {
+  id        String               @id @default(uuid())
+  partnerId String
+  /// 1, 2, 3 — per partner, and the number a purchase's snapshot names.
+  version   Int
+  kind      ContributionRuleKind
+
+  /// PERCENT_BPS and HYBRID: the share of the sale. Unlike
+  /// `Partner.bonusAccrualRateBps` this is **not** on the 50-point grid:
+  /// the grid exists to keep a human-negotiated headline rate tidy, and a
+  /// rule row is the negotiated contract itself.
+  percentBps   Int?
+  /// FIXED_PER_UNIT and HYBRID: the amount per unit. 10.0000 for HAZE.
+  fixedPerUnit Decimal? @db.Decimal(18, 4)
+  /// The unit that amount is per — "L", "kWh", "kg". Must match the
+  /// purchase's own `quantityUnit`, or the multiplication is meaningless:
+  /// 10 AMD per litre against a quantity measured in kilograms is not a
+  /// rounding problem, it is a wrong invoice.
+  unit         String?
+
+  currency Currency @default(AMD)
+
+  effectiveFrom  DateTime  @default(now())
+  /// Null means live. Closing the window is the only edit the database
+  /// permits on this row.
+  effectiveUntil DateTime?
+
+  /// Set to a constant while the rule is live and nulled when it is closed,
+  /// so "one live rule per partner" is a partial unique index rather than a
+  /// convention. Same trick as `PspPaymentAttempt.liveKey`.
+  liveKey String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  note            String?
+
+  partner   Partner          @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  purchases PurchaseIntent[]
+
+  @@unique([partnerId, version])
+  @@unique([partnerId, liveKey])
+  @@index([partnerId, effectiveFrom])
+  @@map("partner_contribution_rules")
+}
+
 model PspFeeRule {
   id              String    @id @default(uuid())
   provider        String

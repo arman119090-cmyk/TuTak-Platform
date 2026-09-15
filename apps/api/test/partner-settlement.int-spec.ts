@@ -3,6 +3,8 @@ import {
   PartnerSettlementStatus,
   PostingDirection,
   PrismaClient,
+  ReconciliationOutcome,
+  ReconciliationSource,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PartnerSettlementService } from '../src/modules/partner-settlements/partner-settlement.service';
@@ -39,6 +41,8 @@ describe('PartnerSettlementService (integration)', () => {
   let partnerId = '';
   let maker = '';
   let checker = '';
+  /** A person on the partner's side — the payee, never the arbiter. */
+  let partnerUser = '';
 
   beforeEach(async () => {
     await truncateAll(prisma);
@@ -46,6 +50,7 @@ describe('PartnerSettlementService (integration)', () => {
     partnerId = partner.id;
     maker = (await createStaffUser(prisma)).id;
     checker = (await createStaffUser(prisma)).id;
+    partnerUser = (await createStaffUser(prisma)).id;
     await prisma.partnerBankAccount.create({
       data: {
         partnerId,
@@ -510,16 +515,24 @@ describe('PartnerSettlementService (integration)', () => {
       expect(attempt.resolvedAt).toBeNull();
     });
 
-    it('closes out when a human finds the money did leave', async () => {
+    it('closes out when two people find the money did leave', async () => {
       const settlement = await ambiguous('7000');
 
-      const paid = await settlements.resolveReconciliation(settlement.id, {
-        actorId: checker,
-        outcome: 'money-moved',
+      await settlements.proposeReconciliationOutcome(settlement.id, {
+        actorId: maker,
+        outcome: ReconciliationOutcome.MONEY_MOVED,
+        evidence: 'Statement line 2026-09-14, debit 7,000.00, ref MAYBE-1',
         bankTransferReference: 'MAYBE-1',
       });
+      const paid = await settlements.confirmReconciliationOutcome(settlement.id, {
+        actorId: checker,
+      });
+
       expect(paid.status).toBe(PartnerSettlementStatus.PAID);
       expect((await payableBalance()).toFixed(2)).toBe('0.00');
+      expect(paid.reconciliationProposedByUserId).toBe(maker);
+      expect(paid.reconciliationConfirmedByUserId).toBe(checker);
+      expect(paid.reconciliationEvidence).toMatch(/Statement line/);
 
       // The same attempt turned out to have worked — not a new one beside it.
       const attempts = await prisma.partnerSettlementTransferAttempt.findMany({
@@ -529,13 +542,16 @@ describe('PartnerSettlementService (integration)', () => {
       expect(attempts[0]).toMatchObject({ succeeded: true, bankTransferReference: 'MAYBE-1' });
     });
 
-    it('becomes retryable again when a human finds it did not', async () => {
+    it('becomes retryable again when two people find it did not', async () => {
       const settlement = await ambiguous('7000');
 
-      const failed = await settlements.resolveReconciliation(settlement.id, {
+      await settlements.proposeReconciliationOutcome(settlement.id, {
+        actorId: maker,
+        outcome: ReconciliationOutcome.MONEY_DID_NOT_MOVE,
+        evidence: 'No debit on the account for 2026-09-14 or since',
+      });
+      const failed = await settlements.confirmReconciliationOutcome(settlement.id, {
         actorId: checker,
-        outcome: 'money-did-not-move',
-        reason: 'Statement shows no debit',
       });
       expect(failed.status).toBe(PartnerSettlementStatus.FAILED);
 
@@ -548,6 +564,190 @@ describe('PartnerSettlementService (integration)', () => {
         await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
       ).toBe(1);
       expect((await payableBalance()).toFixed(2)).toBe('0.00');
+    });
+
+    it('moves nothing on the proposal alone', async () => {
+      const settlement = await ambiguous('7000');
+
+      const proposed = await settlements.proposeReconciliationOutcome(settlement.id, {
+        actorId: maker,
+        outcome: ReconciliationOutcome.MONEY_MOVED,
+        evidence: 'Statement line 2026-09-14',
+        bankTransferReference: 'MAYBE-1',
+      });
+      expect(proposed.status).toBe(PartnerSettlementStatus.REQUIRES_RECONCILIATION);
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(0);
+    });
+
+    it('will not let the proposer confirm their own reading', async () => {
+      const settlement = await ambiguous('7000');
+      await settlements.proposeReconciliationOutcome(settlement.id, {
+        actorId: maker,
+        outcome: ReconciliationOutcome.MONEY_MOVED,
+        evidence: 'Statement line 2026-09-14',
+        bankTransferReference: 'MAYBE-1',
+      });
+
+      await expect(
+        settlements.confirmReconciliationOutcome(settlement.id, { actorId: maker }),
+      ).rejects.toThrow(/second person has to confirm/i);
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(0);
+    });
+
+    it('will not confirm what nobody proposed', async () => {
+      const settlement = await ambiguous('7000');
+      await expect(
+        settlements.confirmReconciliationOutcome(settlement.id, { actorId: checker }),
+      ).rejects.toThrow(/Nobody has proposed/i);
+    });
+
+    it('demands evidence, and a reference for money it says moved', async () => {
+      const settlement = await ambiguous('7000');
+
+      await expect(
+        settlements.proposeReconciliationOutcome(settlement.id, {
+          actorId: maker,
+          outcome: ReconciliationOutcome.MONEY_DID_NOT_MOVE,
+          evidence: '   ',
+        }),
+      ).rejects.toThrow(/evidence is required/i);
+
+      await expect(
+        settlements.proposeReconciliationOutcome(settlement.id, {
+          actorId: maker,
+          outcome: ReconciliationOutcome.MONEY_MOVED,
+          evidence: 'It looked right',
+        }),
+      ).rejects.toThrow(/has a bank reference/i);
+    });
+
+    it('refuses at the database level to record one person as both maker and checker', async () => {
+      const settlement = await ambiguous('7000');
+
+      await expect(
+        prisma.partnerSettlement.update({
+          where: { id: settlement.id },
+          data: {
+            reconciliationOutcome: ReconciliationOutcome.MONEY_MOVED,
+            reconciliationEvidence: 'anything',
+            reconciliationProposedByUserId: maker,
+            reconciliationProposedAt: new Date(),
+            reconciliationConfirmedByUserId: maker,
+            reconciliationConfirmedAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('refuses at the database level to record a confirmation with no evidence', async () => {
+      const settlement = await ambiguous('7000');
+
+      await expect(
+        prisma.partnerSettlement.update({
+          where: { id: settlement.id },
+          data: {
+            reconciliationOutcome: ReconciliationOutcome.MONEY_MOVED,
+            reconciliationProposedByUserId: maker,
+            reconciliationProposedAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  /**
+   * A partner may say the money never arrived. A partner may not say whether
+   * it moved — they are the payee, and a payee who can do both can order
+   * their own second payment. Arman's decision of 15.09.2026.
+   */
+  describe('a partner reporting a missing transfer', () => {
+    async function reported() {
+      await accrue('6000');
+      const draft = await settlements.createDraft({ ...period(), partnerId, actorId: maker });
+      await settlements.markReady(draft.id, { actorId: maker });
+      await settlements.approve(draft.id, checker);
+      await settlements.markPaymentPending(draft.id, checker);
+      await settlements.reportTransferProblem(draft.id, {
+        partnerUserId: partnerUser,
+        partnerId,
+        reason: 'Nothing arrived on our account',
+      });
+      return draft;
+    }
+
+    it('flags it for finance and records who reported it', async () => {
+      const settlement = await reported();
+      const after = await prisma.partnerSettlement.findUniqueOrThrow({
+        where: { id: settlement.id },
+      });
+      expect(after.status).toBe(PartnerSettlementStatus.REQUIRES_RECONCILIATION);
+      expect(after.reconciliationSource).toBe(ReconciliationSource.PARTNER_REPORT);
+      expect(after.reconciliationReportedByUserId).toBe(partnerUser);
+      // A report is not a finding: nothing is proposed and nothing is paid.
+      expect(after.reconciliationOutcome).toBeNull();
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(0);
+    });
+
+    it('will not let the reporting partner propose or confirm the answer', async () => {
+      const settlement = await reported();
+
+      await expect(
+        settlements.proposeReconciliationOutcome(settlement.id, {
+          actorId: partnerUser,
+          outcome: ReconciliationOutcome.MONEY_DID_NOT_MOVE,
+          evidence: 'We never got it',
+        }),
+      ).rejects.toThrow(/for finance to establish/i);
+
+      await settlements.proposeReconciliationOutcome(settlement.id, {
+        actorId: maker,
+        outcome: ReconciliationOutcome.MONEY_DID_NOT_MOVE,
+        evidence: 'No debit on the account',
+      });
+      await expect(
+        settlements.confirmReconciliationOutcome(settlement.id, { actorId: partnerUser }),
+      ).rejects.toThrow(/for finance to establish/i);
+    });
+
+    it('is resolved by two finance people, and then retryable', async () => {
+      const settlement = await reported();
+
+      await settlements.proposeReconciliationOutcome(settlement.id, {
+        actorId: maker,
+        outcome: ReconciliationOutcome.MONEY_DID_NOT_MOVE,
+        evidence: 'Bank case 44812: the transfer was never submitted',
+      });
+      const failed = await settlements.confirmReconciliationOutcome(settlement.id, {
+        actorId: checker,
+      });
+      expect(failed.status).toBe(PartnerSettlementStatus.FAILED);
+
+      const paid = await settlements.markPaid(settlement.id, {
+        actorId: checker,
+        bankTransferReference: 'RESUBMITTED-1',
+      });
+      expect(paid.status).toBe(PartnerSettlementStatus.PAID);
+      expect((await payableBalance()).toFixed(2)).toBe('0.00');
+    });
+
+    it('does not let a partner touch another partner’s settlement', async () => {
+      const settlement = await reported();
+      const stranger = (await createStaffUser(prisma)).id;
+      const otherPartner = await createPartner(prisma, { displayName: 'Somebody Else' });
+
+      await expect(
+        settlements.reportTransferProblem(settlement.id, {
+          partnerUserId: stranger,
+          partnerId: otherPartner.id,
+          reason: 'Nothing arrived',
+        }),
+      ).rejects.toThrow(/not found/i);
     });
   });
 

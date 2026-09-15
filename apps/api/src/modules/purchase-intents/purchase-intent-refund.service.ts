@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -11,11 +12,14 @@ import {
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PaymentRoute,
   PurchaseIntentStatus,
   ReferralProgramVersion,
   ReferrerType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { ConfigService } from '@nestjs/config';
+import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -23,6 +27,7 @@ import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
+import { PSP_ADAPTER, PspAdapter } from '../psp/psp-adapter.interface';
 import { ReferralService, ResolvedReferrer } from '../referral/referral.service';
 
 /** One stored (never re-walked) snapshot level of a THREE_LEVEL_V2 `PurchaseIntent`'s referrer chain. */
@@ -88,6 +93,8 @@ export class PurchaseIntentRefundService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService<AppConfig, true>,
+    @Inject(PSP_ADAPTER) private readonly adapter: PspAdapter,
     private readonly bonusEngine: BonusEngineService,
     private readonly deferredBonusLots: DeferredBonusLotService,
     private readonly referralService: ReferralService,
@@ -153,10 +160,63 @@ export class PurchaseIntentRefundService {
     }
   }
 
+  /**
+   * A purchase the provider collected cannot be refunded here yet.
+   *
+   * ## Why this is a refusal and not a workaround
+   *
+   * Arman's decision of 15.09.2026, and he ruled out both of the obvious
+   * workarounds by name. Neither was rejected for being hard:
+   *
+   *  - **A routine manual bank transfer back to the customer.** It moves the
+   *    right amount, and it leaves no record at the provider tying the return
+   *    to the original payment. A chargeback three months later is then
+   *    argued with a bank statement against a provider ledger that still says
+   *    the customer paid and was never refunded.
+   *  - **Refunding in bonus points.** The customer paid real money. Points
+   *    are spendable at TuTak partners on TuTak's terms, and swapping one for
+   *    the other without asking is not a refund, it is a forced purchase.
+   *
+   * What is left is to say so. The loyalty side of a refund — reversing
+   * accrual, deferred lots, referrer shares — is not the hard part and is not
+   * what is missing; the hard part is returning money through a provider
+   * whose refund API nobody has confirmed exists.
+   *
+   * Two gates, deliberately, because either alone would be a lie: the flag
+   * says the business has decided refunds may happen, and
+   * `capabilities.refund` says the provider can actually perform one. A flag
+   * cannot conjure an API, and an API nobody has approved the use of should
+   * not fire because an environment variable drifted.
+   *
+   * `DIRECT_PARTNER` purchases are untouched — the partner took the money at
+   * the till and gives it back at the till, exactly as before this route
+   * existed.
+   */
+  private assertRefundableRoute(intent: { id: string; paymentRoute: PaymentRoute }): void {
+    if (intent.paymentRoute !== PaymentRoute.TUTAK_PSP) return;
+
+    const allowed =
+      this.config.get('features.pspRefundsEnabled', { infer: true }) &&
+      this.adapter.capabilities.refund;
+    if (allowed) return;
+
+    this.logger.warn(
+      `Refusing a refund on provider-collected purchase ${intent.id}: ` +
+        `flag=${String(this.config.get('features.pspRefundsEnabled', { infer: true }))} ` +
+        `providerRefundCapability=${String(this.adapter.capabilities.refund)}`,
+    );
+    throw new BadRequestException(
+      'This purchase was paid through a payment provider, and returning that money ' +
+        'is not available yet. Escalate it to finance — do not refund it by hand or ' +
+        'in bonus points.',
+    );
+  }
+
   private async postRefund(tx: Tx, params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
     const { purchaseIntentId, reason, actorId, idempotencyKey } = params;
     const intent = await tx.purchaseIntent.findUnique({ where: { id: purchaseIntentId } });
     if (!intent) throw new NotFoundException('Purchase intent not found');
+    this.assertRefundableRoute(intent);
     if (intent.status !== PurchaseIntentStatus.CONFIRMED) {
       throw new BadRequestException('Only a confirmed purchase can be refunded');
     }

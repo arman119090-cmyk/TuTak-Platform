@@ -197,6 +197,22 @@ export interface AppConfig {
      * `DEMO_MODE`) still refuses to boot, exactly as before.
      */
     cardPaymentsEnabled: boolean;
+    /**
+     * Whether a customer may choose to pay the remainder **inside TuTak**
+     * through a licensed provider (`PaymentRoute.TUTAK_PSP`), rather than
+     * handing the money to the partner directly.
+     *
+     * Off by default, and deliberately a flag of its own rather than a reuse
+     * of `cardPaymentsEnabled`: that one governs the legacy acquirer surface
+     * the canonical model never used, and this one governs a route that
+     * changes who owes whom. Turning it on where no provider contract exists
+     * would let a customer open a purchase nothing can collect.
+     *
+     * Production keeps this off until Arman decides otherwise (15.09.2026):
+     * the Idram integration is written against published documentation and
+     * has never been exercised against the real provider.
+     */
+    tutakPspEnabled: boolean;
   };
   /**
    * Where partner brand assets and customer avatars actually live
@@ -559,6 +575,9 @@ const buildConfig = (): AppConfig => ({
     // announce, so the safe default is "this subsystem does not exist,"
     // not "on until proven otherwise."
     cardPaymentsEnabled: process.env.CARD_PAYMENTS_ENABLED === 'true',
+    // Same "off until explicitly on" default and the same reason: a route
+    // whose provider is not contracted is a route that cannot take money.
+    tutakPspEnabled: process.env.TUTAK_PSP_ENABLED === 'true',
   },
   media: {
     // Local disk unless told otherwise. That is the right default for a

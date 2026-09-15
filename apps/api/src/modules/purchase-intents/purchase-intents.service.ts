@@ -35,6 +35,7 @@ import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { PartnersService } from '../partners/partners.service';
+import { MONEY_MAY_HAVE_MOVED } from '../psp/psp-attempt-safety';
 import { CURRENT_REFERRAL_PROGRAM_VERSION, ReferralChainLevel, ReferralService } from '../referral/referral.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -308,6 +309,16 @@ export class PurchaseIntentsService {
       );
     }
 
+    const paymentRoute = dto.paymentRoute ?? PaymentRoute.DIRECT_PARTNER;
+    if (
+      paymentRoute === PaymentRoute.TUTAK_PSP &&
+      !this.config.get('features.tutakPspEnabled', { infer: true })
+    ) {
+      throw new BadRequestException('Paying inside TuTak is not available yet');
+    }
+
+    await this.assertNoUnresolvedPayment(customerId, partner.id);
+
     /*
      * A purchase names the branch it happened at whenever the partner has
      * one to name.
@@ -440,6 +451,7 @@ export class PurchaseIntentsService {
           grossAmount,
           bonusAmountRequested,
           ordinaryPaymentRemainder,
+          paymentRoute,
           // Commercial snapshot — spec §8. Frozen here; later changes to the
           // partner's settings never touch a PurchaseIntent already created.
           negotiatedRateBps: partner.bonusAccrualRateBps,
@@ -465,6 +477,7 @@ export class PurchaseIntentsService {
           partnerId: partner.id,
           grossAmount: grossAmount.toString(),
           bonusAmountRequested: bonusAmountRequested.toString(),
+          paymentRoute,
         },
       });
 
@@ -482,6 +495,70 @@ export class PurchaseIntentsService {
         .catch(() => undefined);
       throw err;
     }
+  }
+
+  /**
+   * Refuse to start a new purchase at a business where this customer already
+   * has one whose money may have moved.
+   *
+   * ## The failure this closes
+   *
+   * Found in Arman's review of 15.09.2026, and it is a cross-purchase
+   * failure, which is why no amount of care inside a single purchase
+   * prevents it:
+   *
+   * 1. The customer opens purchase A and picks `TUTAK_PSP`. The provider
+   *    bill opens. The customer pays, or does not — nobody here knows yet.
+   * 2. Nothing conclusive arrives. A's attempt sits `INITIATED`, or is swept
+   *    to `EXPIRED`, which is **not** a synonym for "no money moved".
+   * 3. The customer, seeing no confirmation, pays the cashier in cash. The
+   *    cashier opens purchase B and confirms it. B settles cleanly.
+   * 4. The provider's confirmation for A arrives late.
+   *
+   * After step 4 the customer has paid for one meal twice. `settleFrom-
+   * ProviderConfirmation` stops A being *settled* twice — A is its own
+   * purchase and B is its own purchase, so each settles exactly once, and
+   * that is precisely the problem: two correct settlements for one meal.
+   *
+   * ## Why the check is here and not at confirmation
+   *
+   * Because by confirmation time the money is already gone. The only moment
+   * at which the second purchase can still be prevented is before it exists,
+   * and the only thing that can prevent it is knowing the first one is
+   * unresolved.
+   *
+   * ## What counts as unresolved
+   *
+   * `MONEY_MAY_HAVE_MOVED` in `PspPaymentService` is the same list, and it
+   * is deliberately generous: everything except `FAILED`, the one status the
+   * provider states authoritatively. An attempt this customer abandoned two
+   * days ago still blocks, and that is the correct trade — a customer who
+   * cannot buy is inconvenienced, a customer charged twice is robbed. The
+   * way out is resolving the old attempt, not ignoring it.
+   *
+   * Scoped to the same partner, not globally: two unrelated businesses are
+   * two unrelated purchases, and blocking the second would be punishing the
+   * customer for an unrelated provider's silence.
+   */
+  private async assertNoUnresolvedPayment(customerId: string, partnerId: string): Promise<void> {
+    const blocking = await this.prisma.pspPaymentAttempt.findFirst({
+      where: {
+        status: { in: [...MONEY_MAY_HAVE_MOVED] },
+        purchaseIntent: { customerId, partnerId },
+      },
+      select: { id: true, status: true, purchaseIntentId: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!blocking) return;
+
+    this.logger.warn(
+      `Refusing a new purchase for customer ${customerId} at partner ${partnerId}: ` +
+        `attempt ${blocking.id} on intent ${blocking.purchaseIntentId} is ${blocking.status}`,
+    );
+    throw new ConflictException(
+      'An earlier payment at this business has not finished. Wait for it to settle, ' +
+        'or ask staff to resolve it, before starting a new purchase',
+    );
   }
 
   /**
@@ -633,9 +710,55 @@ export class PurchaseIntentsService {
    * versa: a real accounting entry with no bonus ever reaching the
    * customer's wallet.
    */
+  /**
+   * Finishes a purchase whose money arrived through a payment provider.
+   *
+   * The provider's cash leg is posted by `PspPaymentService` in the same
+   * transaction it passes in here, so the two commit together. Before this
+   * existed, a verified provider payment moved the cash and left the purchase
+   * itself unconfirmed: no points accrued, no referral paid, no commission
+   * posted, and an intent still sitting in AWAITING_CONFIRMATION that a
+   * cashier could then be asked to confirm. Found by Arman's review of the
+   * branch, and it is the worst class of bug this system can have — money
+   * moved, economics did not.
+   *
+   * Returns `already-resolved` when the purchase was settled by an earlier
+   * delivery of the same callback, which is a normal outcome, not an error.
+   */
+  async settleFromProviderConfirmation(
+    intentId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<'settled' | 'already-resolved'> {
+    const intent = await this.findByIdOrThrow(intentId);
+    if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
+      return 'already-resolved';
+    }
+    return this.settlePurchase(intent, null, tx);
+  }
+
+  /**
+   * Everything a confirmed purchase means, in one transaction.
+   *
+   * Called by both routes and deliberately unaware of which: the cashier's
+   * confirmation and a verified provider callback produce identical loyalty
+   * economics, and the only difference between them is who handed over the
+   * cash — which is recorded elsewhere. Duplicating this for the provider
+   * path would have been two implementations of the same rules, drifting.
+   *
+   * `externalTx` is how the provider route gets atomicity across both halves.
+   * The provider's cash leg and this settlement have to commit together or
+   * not at all; a partial state would be a customer charged for a purchase
+   * that never accrued their points. Passing the caller's transaction is what
+   * makes "both or neither" true rather than aspirational.
+   *
+   * `staffUserId` is null for a provider confirmation. Nobody at the partner
+   * confirmed it, and recording a person who did not act would be a lie in
+   * the audit trail.
+   */
   private async settlePurchase(
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
-    staffUserId: string,
+    staffUserId: string | null,
+    externalTx?: Prisma.TransactionClient,
   ): Promise<'settled' | 'already-resolved'> {
     // Spec §12: the pool is gross × the *snapshotted* negotiated rate — not
     // whatever the partner's rate is today. Rounded down to the column's own
@@ -656,8 +779,7 @@ export class PurchaseIntentsService {
     const l2Entry = chain.find((c) => c.level === 2) ?? null;
     const l3Entry = chain.find((c) => c.level === 3) ?? null;
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient) => {
         // Conditional on still being AWAITING_CONFIRMATION, exactly like
         // the rest of this codebase's claim-then-act pattern — but now the
         // claim and the act are the same atomic unit.
@@ -752,8 +874,11 @@ export class PurchaseIntentsService {
           await this.postRedemptionCompensation(intent, tx);
         }
 
-        return 'settled' as const;
-      });
+      return 'settled' as const;
+    };
+
+    try {
+      return externalTx ? await run(externalTx) : await this.prisma.$transaction(run);
     } catch (err) {
       // Nothing to unwind by hand: the transaction above is one atomic
       // unit, so a failure anywhere in it rolled back the status claim

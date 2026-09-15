@@ -858,6 +858,14 @@ model PurchaseIntent {
   @@index([partnerId, status])
   @@index([status, expiresAt])
   @@index([customerId, status])
+  /// At most one live in-TuTak checkout per customer per business, as a
+  /// partial unique index created by migration — see
+  /// `20260915130000_one_live_psp_checkout`. Prisma cannot express a partial
+  /// unique index, so it is declared there and not here; this comment exists
+  /// so the next reader of this model knows the constraint is real.
+  //   CREATE UNIQUE INDEX purchase_intents_one_live_psp_checkout
+  //     ON purchase_intents (customerId, partnerId)
+  //     WHERE paymentRoute = 'TUTAK_PSP' AND status = 'AWAITING_CONFIRMATION';
   @@map("purchase_intents")
 }
 
@@ -2857,9 +2865,19 @@ enum PartnerSettlementStatus {
   /// The transfer landed. This is the only status that posts to the ledger,
   /// and the row is immutable from here on.
   PAID
-  /// The transfer was rejected or returned. Entries stay claimed — the
-  /// settlement is the record of the attempt — and a new settlement is made.
+  /// A transfer attempt was rejected or returned. **Not terminal.** The
+  /// settlement keeps its entries and a new transfer may be attempted against
+  /// the same figure: the settlement is the statement of what is owed, and a
+  /// bank refusing one transfer does not change what is owed.
+  ///
+  /// Making this terminal was a real bug — it stranded the claimed postings
+  /// for ever, so a partner whose transfer bounced could never be paid for
+  /// those sales at all. Found by Arman's review.
   FAILED
+  /// The bank's answer is ambiguous — a timeout, a reference that cannot be
+  /// found, a partial. Never retried automatically: a retry on an ambiguous
+  /// result is how a partner gets paid twice.
+  REQUIRES_RECONCILIATION
   /// Abandoned before payment. Releases its entries back to unsettled.
   CANCELLED
 }
@@ -2938,10 +2956,11 @@ model PartnerSettlement {
 
   updatedAt DateTime @updatedAt
 
-  partner           Partner                  @relation(fields: [partnerId], references: [id])
-  bankAccount       PartnerBankAccount?      @relation(fields: [bankAccountId], references: [id])
-  ledgerTransaction LedgerTransaction?       @relation(fields: [ledgerTransactionId], references: [id])
+  partner           Partner                            @relation(fields: [partnerId], references: [id])
+  bankAccount       PartnerBankAccount?                @relation(fields: [bankAccountId], references: [id])
+  ledgerTransaction LedgerTransaction?                 @relation(fields: [ledgerTransactionId], references: [id])
   entries           PartnerSettlementEntry[]
+  transferAttempts  PartnerSettlementTransferAttempt[]
 
   @@unique([currency, bankTransferReference])
   @@index([partnerId, periodStart])
@@ -3125,6 +3144,43 @@ model PspFeeRule {
 
   @@index([provider, effectiveFrom])
   @@map("psp_fee_rules")
+}
+
+/// One attempt to move a settlement's money to the partner's bank.
+///
+/// Separate from the settlement because they are different facts. The
+/// settlement says what is owed and is frozen once approved; a transfer is a
+/// thing somebody does in a banking app, which can fail and be repeated. One
+/// settlement therefore has many attempts and at most one that succeeded.
+///
+/// The partial unique index is what makes "at most one succeeded" true in the
+/// database rather than in a service: a second successful attempt on the same
+/// settlement cannot be inserted.
+model PartnerSettlementTransferAttempt {
+  id           String   @id @default(uuid())
+  settlementId String
+  amount       Decimal  @db.Decimal(18, 4)
+  currency     Currency @default(AMD)
+
+  /// The bank's reference for this attempt. Unique per currency across all
+  /// attempts, so one real transfer cannot be recorded twice.
+  bankTransferReference String?
+  succeeded             Boolean @default(false)
+  failureReason         String?
+  /// Set only on the attempt that worked, so the partial unique index below
+  /// can hold "one success per settlement".
+  successKey            String?
+
+  attemptedByUserId String?
+  attemptedAt       DateTime  @default(now())
+  resolvedAt        DateTime?
+
+  settlement PartnerSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@unique([settlementId, successKey])
+  @@unique([currency, bankTransferReference])
+  @@index([settlementId, attemptedAt])
+  @@map("partner_settlement_transfer_attempts")
 }
 
 model ReconciliationRun {

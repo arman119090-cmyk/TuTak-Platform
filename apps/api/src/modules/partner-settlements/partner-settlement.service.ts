@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  Currency,
   LedgerAccountType,
   PartnerSettlementStatus,
   PostingDirection,
@@ -26,6 +27,33 @@ import {
 } from './settleable-kinds';
 
 type Tx = Prisma.TransactionClient;
+
+/**
+ * The states a bank transfer may be attempted from.
+ *
+ * `FAILED` is in the list deliberately. A settlement is the statement of what
+ * a partner is owed; a bank refusing to move the money does not change what
+ * is owed, it only means nobody has moved it yet. Treating `FAILED` as
+ * terminal stranded the claimed postings for ever — the bug Arman's review of
+ * 15.09.2026 found.
+ *
+ * `REQUIRES_RECONCILIATION` is deliberately *not* in the list. There the
+ * question is not "has it been paid yet" but "did the last attempt already
+ * pay it", and only a human reading the bank statement can answer that.
+ */
+const TRANSFER_ATTEMPTABLE: readonly PartnerSettlementStatus[] = [
+  PartnerSettlementStatus.APPROVED,
+  PartnerSettlementStatus.PAYMENT_PENDING,
+  PartnerSettlementStatus.FAILED,
+];
+
+/**
+ * The marker that makes the partial unique index
+ * `(settlementId, successKey)` mean "at most one successful transfer per
+ * settlement". Set on the winning attempt and on no other, so a second
+ * success is a unique violation rather than a second row nobody notices.
+ */
+const TRANSFER_SUCCESS_KEY = 'paid';
 
 export interface UnsettledEntry {
   ledgerPostingId: string;
@@ -355,10 +383,15 @@ export class PartnerSettlementService {
     });
   }
 
-  /** The transfer has been initiated by hand; nothing is posted yet. */
+  /**
+   * The transfer has been initiated by hand; nothing is posted yet.
+   *
+   * `FAILED` is in the accepted set because a bounced transfer does not
+   * change what is owed — see `TRANSFER_ATTEMPTABLE`.
+   */
   async markPaymentPending(id: string, actorId: string) {
     return this.transition(id, {
-      from: [PartnerSettlementStatus.APPROVED],
+      from: [...TRANSFER_ATTEMPTABLE],
       to: PartnerSettlementStatus.PAYMENT_PENDING,
       actorId,
       data: {},
@@ -380,18 +413,43 @@ export class PartnerSettlementService {
    * point the row is immutable at the database level.
    */
   async markPaid(id: string, params: { actorId: string; bankTransferReference: string }) {
+    return this.payFrom(id, {
+      actorId: params.actorId,
+      bankTransferReference: params.bankTransferReference,
+      from: TRANSFER_ATTEMPTABLE,
+      event: 'settlement.paid',
+    });
+  }
+
+  /**
+   * The single place a settlement is ever closed against real money.
+   *
+   * `from` is what makes the two callers different and nothing else: the
+   * ordinary path accepts an approved or in-flight settlement, and
+   * reconciliation accepts only one that was flagged ambiguous. Sharing the
+   * body is the point — two copies of "post and mark paid" is two chances to
+   * post twice.
+   */
+  private async payFrom(
+    id: string,
+    params: {
+      actorId: string;
+      bankTransferReference: string;
+      from: readonly PartnerSettlementStatus[];
+      event: string;
+    },
+  ) {
     const reference = params.bankTransferReference.trim();
     if (!reference) throw new BadRequestException('A bank transfer reference is required');
 
     return this.prisma.$transaction(async (tx) => {
       const settlement = await tx.partnerSettlement.findUnique({ where: { id } });
       if (!settlement) throw new NotFoundException('Settlement not found');
-      if (
-        settlement.status !== PartnerSettlementStatus.APPROVED &&
-        settlement.status !== PartnerSettlementStatus.PAYMENT_PENDING
-      ) {
+      if (!params.from.includes(settlement.status)) {
         throw new ConflictException(
-          `Settlement is ${settlement.status}; only an approved settlement can be marked paid`,
+          settlement.status === PartnerSettlementStatus.REQUIRES_RECONCILIATION
+            ? 'Settlement needs reconciliation; resolve it explicitly rather than marking it paid'
+            : `Settlement is ${settlement.status}; expected one of ${params.from.join(', ')}`,
         );
       }
 
@@ -441,6 +499,12 @@ export class PartnerSettlementService {
         throw new ConflictException('Settlement was already resolved by someone else');
       }
 
+      await this.recordAttempt(tx, settlement, {
+        actorId: params.actorId,
+        outcome: 'succeeded',
+        bankTransferReference: reference,
+      });
+
       await this.audit.record(
         {
           actorUserId: params.actorId,
@@ -448,7 +512,7 @@ export class PartnerSettlementService {
           entityType: 'PartnerSettlement',
           entityId: id,
           metadata: {
-            event: 'settlement.paid',
+            event: params.event,
             partnerId: settlement.partnerId,
             amount: settlement.netPayableAmount.toFixed(4),
             bankTransferReference: reference,
@@ -461,18 +525,97 @@ export class PartnerSettlementService {
   }
 
   /**
-   * The transfer bounced. Entries stay claimed on purpose: this settlement is
-   * the record that the attempt happened, and releasing its postings would
-   * make the failed attempt disappear from the partner's history. A fresh
-   * settlement is made for the retry, against whatever is unclaimed then.
+   * The bank refused the transfer, or returned it, and we know for certain
+   * that no money left. The settlement stays exactly as it is — same claimed
+   * entries, same figure — and a new transfer may be attempted against it.
+   *
+   * It used to be terminal. That was a real bug, found in Arman's review of
+   * 15.09.2026: the entries stayed claimed and no settlement could ever pick
+   * them up again, so a partner whose transfer bounced was silently never
+   * paid for those sales. "A fresh settlement is made for the retry" — what
+   * the old docblock here claimed — could not happen, because the postings
+   * that fresh settlement would need were already spoken for.
+   *
+   * Only call this when the bank's answer is unambiguous. If it is not,
+   * `markRequiresReconciliation` is the honest answer: a retry on a maybe is
+   * how a partner gets paid twice.
    */
-  async markFailed(id: string, params: { actorId: string; reason: string }) {
-    return this.transition(id, {
-      from: [PartnerSettlementStatus.APPROVED, PartnerSettlementStatus.PAYMENT_PENDING],
-      to: PartnerSettlementStatus.FAILED,
+  async markFailed(
+    id: string,
+    params: { actorId: string; reason: string; bankTransferReference?: string },
+  ) {
+    return this.recordOutcome(id, {
       actorId: params.actorId,
-      data: { failedReason: params.reason },
+      reason: params.reason,
+      bankTransferReference: params.bankTransferReference,
+      to: PartnerSettlementStatus.FAILED,
+      outcome: 'failed',
       event: 'settlement.failed',
+    });
+  }
+
+  /**
+   * The bank's answer is ambiguous: a timeout, a reference it cannot find, a
+   * partial. The money may or may not have left.
+   *
+   * This never retries and never posts. Both would be guesses, and the two
+   * wrong guesses cost differently: guessing "it went" leaves a partner
+   * unpaid with a ledger that says otherwise, guessing "it did not go" pays
+   * them twice. A human reads the bank statement and calls
+   * `resolveReconciliation` with what it actually says.
+   */
+  async markRequiresReconciliation(
+    id: string,
+    params: { actorId: string; reason: string; bankTransferReference?: string },
+  ) {
+    return this.recordOutcome(id, {
+      actorId: params.actorId,
+      reason: params.reason,
+      bankTransferReference: params.bankTransferReference,
+      to: PartnerSettlementStatus.REQUIRES_RECONCILIATION,
+      outcome: 'unresolved',
+      event: 'settlement.requires_reconciliation',
+    });
+  }
+
+  /**
+   * A human has read the bank statement and knows which way the ambiguous
+   * attempt went.
+   *
+   * `money-moved` closes the settlement exactly as `markPaid` would, posting
+   * once. `money-did-not-move` returns it to the retryable `FAILED` state.
+   * There is no third answer: "still not sure" means leave it alone.
+   */
+  async resolveReconciliation(
+    id: string,
+    params:
+      | { actorId: string; outcome: 'money-moved'; bankTransferReference: string }
+      | { actorId: string; outcome: 'money-did-not-move'; reason: string },
+  ) {
+    const settlement = await this.prisma.partnerSettlement.findUnique({ where: { id } });
+    if (!settlement) throw new NotFoundException('Settlement not found');
+    if (settlement.status !== PartnerSettlementStatus.REQUIRES_RECONCILIATION) {
+      throw new ConflictException(
+        `Settlement is ${settlement.status}; only one awaiting reconciliation can be resolved`,
+      );
+    }
+
+    if (params.outcome === 'money-moved') {
+      return this.payFrom(id, {
+        actorId: params.actorId,
+        bankTransferReference: params.bankTransferReference,
+        from: [PartnerSettlementStatus.REQUIRES_RECONCILIATION],
+        event: 'settlement.reconciled_paid',
+      });
+    }
+
+    return this.recordOutcome(id, {
+      actorId: params.actorId,
+      reason: params.reason,
+      to: PartnerSettlementStatus.FAILED,
+      outcome: 'failed',
+      event: 'settlement.reconciled_failed',
+      from: [PartnerSettlementStatus.REQUIRES_RECONCILIATION],
     });
   }
 
@@ -513,6 +656,134 @@ export class PartnerSettlementService {
         tx,
       );
       return tx.partnerSettlement.findUniqueOrThrow({ where: { id } });
+    });
+  }
+
+  /**
+   * Record the outcome of one transfer attempt and move the settlement to the
+   * state that outcome implies.
+   *
+   * Both halves happen in one transaction on purpose: a settlement that says
+   * `FAILED` with no attempt row explaining which transfer failed is exactly
+   * the audit gap this whole model exists to close.
+   */
+  private async recordOutcome(
+    id: string,
+    params: {
+      actorId: string;
+      reason: string;
+      bankTransferReference?: string;
+      to: PartnerSettlementStatus;
+      outcome: 'failed' | 'unresolved';
+      event: string;
+      from?: readonly PartnerSettlementStatus[];
+    },
+  ) {
+    const reason = params.reason.trim();
+    if (!reason) throw new BadRequestException('A reason is required');
+    const from = params.from ?? TRANSFER_ATTEMPTABLE;
+
+    return this.prisma.$transaction(async (tx) => {
+      const settlement = await tx.partnerSettlement.findUnique({ where: { id } });
+      if (!settlement) throw new NotFoundException('Settlement not found');
+
+      const claimed = await tx.partnerSettlement.updateMany({
+        where: { id, status: { in: [...from] } },
+        data: { status: params.to, failedReason: reason },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          `Settlement is ${settlement.status}; expected one of ${from.join(', ')}`,
+        );
+      }
+
+      await this.recordAttempt(tx, settlement, {
+        actorId: params.actorId,
+        outcome: params.outcome,
+        reason,
+        bankTransferReference: params.bankTransferReference,
+      });
+
+      await this.audit.record(
+        {
+          actorUserId: params.actorId,
+          action: AuditAction.PARTNER_UPDATED,
+          entityType: 'PartnerSettlement',
+          entityId: id,
+          metadata: {
+            event: params.event,
+            partnerId: settlement.partnerId,
+            amount: settlement.netPayableAmount.toFixed(4),
+            reason,
+          },
+        },
+        tx,
+      );
+      return tx.partnerSettlement.findUniqueOrThrow({ where: { id } });
+    });
+  }
+
+  /**
+   * One row per try at moving the money.
+   *
+   * Three outcomes, and the difference between the last two is the whole
+   * reason this table exists:
+   *
+   * - `succeeded` — the money left. Carries the bank's reference and the
+   *   success key, and the database refuses to change it afterwards.
+   * - `failed` — resolved, and the answer was no. `resolvedAt` is set.
+   * - `unresolved` — nobody knows. `resolvedAt` stays null, which is the
+   *   mark of an attempt that might have moved money.
+   *
+   * When an ambiguous attempt is later resolved by a human, the *same* row is
+   * updated rather than a new one written: the bank reference is unique
+   * across attempts, so re-inserting it would collide, and more importantly
+   * the history should read "this attempt turned out to have worked", not
+   * "some attempt failed and a different one worked".
+   */
+  private async recordAttempt(
+    tx: Tx,
+    settlement: { id: string; netPayableAmount: Decimal; currency: Currency },
+    params: {
+      actorId: string;
+      outcome: 'succeeded' | 'failed' | 'unresolved';
+      reason?: string;
+      bankTransferReference?: string;
+    },
+  ) {
+    const succeeded = params.outcome === 'succeeded';
+    const reference = params.bankTransferReference?.trim() || null;
+    const data = {
+      succeeded,
+      failureReason: succeeded ? null : (params.reason ?? null),
+      successKey: succeeded ? TRANSFER_SUCCESS_KEY : null,
+      bankTransferReference: reference,
+      attemptedByUserId: params.actorId,
+      resolvedAt: params.outcome === 'unresolved' ? null : new Date(),
+    };
+
+    if (reference) {
+      const resolved = await tx.partnerSettlementTransferAttempt.updateMany({
+        where: {
+          settlementId: settlement.id,
+          bankTransferReference: reference,
+          succeeded: false,
+          resolvedAt: null,
+        },
+        data,
+      });
+      if (resolved.count > 0) return;
+    }
+
+    await tx.partnerSettlementTransferAttempt.create({
+      data: {
+        ...data,
+        settlementId: settlement.id,
+        // The database checks both against the settlement; passing anything
+        // else here is caught rather than stored.
+        amount: settlement.netPayableAmount,
+        currency: settlement.currency,
+      },
     });
   }
 

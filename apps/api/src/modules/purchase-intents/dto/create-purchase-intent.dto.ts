@@ -1,4 +1,5 @@
-import { IsNumberString, IsOptional, IsUUID } from 'class-validator';
+import { PaymentRoute } from '@prisma/client';
+import { IsEnum, IsNumberString, IsOptional, IsUUID } from 'class-validator';
 
 /**
  * Spec §7: customer scans the partner/branch QR, then enters the amounts
@@ -24,4 +25,23 @@ export class CreatePurchaseIntentDto {
   @IsNumberString()
   @IsOptional()
   bonusAmountRequested?: string;
+
+  /**
+   * How the remainder is paid.
+   *
+   * Optional, and omitting it means `DIRECT_PARTNER` — the route every
+   * client built before 15.09.2026 uses, where the customer hands cash or a
+   * card to the partner and the partner's own till takes the money. Clients
+   * that know about `TUTAK_PSP` ask for it explicitly; every older one keeps
+   * working untouched, which is the whole reason this is optional rather
+   * than required.
+   *
+   * It is a request, not a decision: `create` refuses `TUTAK_PSP` when card
+   * payments are switched off, and the chosen route is then fixed for the
+   * life of the purchase by a database constraint — one purchase, one money
+   * route.
+   */
+  @IsEnum(PaymentRoute)
+  @IsOptional()
+  paymentRoute?: PaymentRoute;
 }

@@ -282,4 +282,287 @@ describe('PartnerSettlementService (integration)', () => {
     // Unclassified money is not paid: only the known 1000 is settleable.
     expect(unsettled.net.toFixed(2)).toBe('1000.00');
   });
+  /**
+   * Finding 3 of Arman's review of 15.09.2026, and it was a real bug rather
+   * than a design preference.
+   *
+   * `FAILED` used to be terminal. The settlement kept its claimed
+   * `PartnerSettlementEntry` rows — claiming is what freezes the figure, and
+   * a claimed posting belongs to at most one settlement for ever — so after a
+   * bounced transfer those postings could never be picked up by anything. The
+   * partner was owed the money, the ledger said so, and no settlement in the
+   * system could ever pay it. The old docblock claimed "a fresh settlement is
+   * made for the retry", which could not happen for exactly that reason.
+   *
+   * The fix separates the statement of what is owed (the settlement, approved
+   * once and frozen) from an attempt at moving it (`PartnerSettlement-
+   * TransferAttempt`, one row per try).
+   */
+  describe('a bounced transfer', () => {
+    async function approved(amount = '8000') {
+      await accrue(amount);
+      const draft = await settlements.createDraft({ ...period(), partnerId, actorId: maker });
+      await settlements.markReady(draft.id, { actorId: maker, documentNumber: 'ФАКТУРА-R' });
+      await settlements.approve(draft.id, checker);
+      return draft;
+    }
+
+    it('leaves what is owed intact and pays it on the retry, exactly once', async () => {
+      const settlement = await approved('8000');
+
+      await settlements.markPaymentPending(settlement.id, checker);
+      const failed = await settlements.markFailed(settlement.id, {
+        actorId: checker,
+        reason: 'Beneficiary account closed',
+      });
+      expect(failed.status).toBe(PartnerSettlementStatus.FAILED);
+
+      // The entries are still claimed — the figure the partner was shown has
+      // not changed — and the postings have not leaked back into unsettled.
+      expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } }))
+        .toBe(settlement.entryCount);
+      expect((await settlements.unsettled(partnerId)).net.toFixed(2)).toBe('0.00');
+      // Nothing was posted for a transfer that did not happen.
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(0);
+
+      // The retry: a new bank reference against the same figure.
+      const paid = await settlements.markPaid(settlement.id, {
+        actorId: checker,
+        bankTransferReference: 'BANK-RETRY',
+      });
+      expect(paid.status).toBe(PartnerSettlementStatus.PAID);
+      expect(new Decimal(paid.netPayableAmount).toFixed(2)).toBe('8000.00');
+
+      // Paid once, for 8,000, not twice.
+      const payouts = await prisma.ledgerPosting.findMany({
+        where: { transaction: { kind: 'partner.settlement.paid' } },
+        include: { account: { select: { type: true } } },
+      });
+      expect(payouts).toHaveLength(2);
+      const discharged = payouts.find(
+        (x) => x.account.type === LedgerAccountType.PARTNER_PAYABLE,
+      );
+      expect(discharged?.direction).toBe(PostingDirection.DEBIT);
+      expect(new Decimal(discharged!.amount).toFixed(2)).toBe('8000.00');
+
+      // Both tries are on the record, and only the second says it worked.
+      const attempts = await prisma.partnerSettlementTransferAttempt.findMany({
+        where: { settlementId: settlement.id },
+        orderBy: { attemptedAt: 'asc' },
+      });
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]).toMatchObject({ succeeded: false, failureReason: 'Beneficiary account closed' });
+      expect(attempts[1]).toMatchObject({ succeeded: true, bankTransferReference: 'BANK-RETRY' });
+      // And the partner's payable is square: 8,000 in, 8,000 out.
+      expect((await payableBalance()).toFixed(2)).toBe('0.00');
+    });
+
+    it('records every bounce, and still pays only once at the end', async () => {
+      const settlement = await approved('5000');
+
+      for (const reason of ['Wrong IBAN', 'Bank rejected', 'Returned by beneficiary']) {
+        await settlements.markFailed(settlement.id, { actorId: checker, reason });
+      }
+      await settlements.markPaid(settlement.id, {
+        actorId: checker,
+        bankTransferReference: 'BANK-FINALLY',
+      });
+
+      const attempts = await prisma.partnerSettlementTransferAttempt.findMany({
+        where: { settlementId: settlement.id },
+      });
+      expect(attempts).toHaveLength(4);
+      expect(attempts.filter((a) => a.succeeded)).toHaveLength(1);
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(1);
+    });
+
+    it('pays once when the retry races itself', async () => {
+      const settlement = await approved('4000');
+      await settlements.markFailed(settlement.id, { actorId: checker, reason: 'Timed out' });
+
+      const results = await Promise.allSettled([
+        settlements.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'RACE-A' }),
+        settlements.markPaid(settlement.id, { actorId: maker, bankTransferReference: 'RACE-B' }),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(1);
+      expect(
+        await prisma.partnerSettlementTransferAttempt.count({
+          where: { settlementId: settlement.id, succeeded: true },
+        }),
+      ).toBe(1);
+    });
+
+    it('will not let a second attempt claim success on the same settlement', async () => {
+      const settlement = await approved('3000');
+      await settlements.markPaid(settlement.id, {
+        actorId: checker,
+        bankTransferReference: 'BANK-ONE',
+      });
+
+      // Straight at the table, past every service check: the index refuses.
+      await expect(
+        prisma.partnerSettlementTransferAttempt.create({
+          data: {
+            settlementId: settlement.id,
+            amount: new Decimal('3000'),
+            succeeded: true,
+            successKey: 'paid',
+            bankTransferReference: 'BANK-TWO',
+            resolvedAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('will not record an attempt for a different figure than the settlement', async () => {
+      const settlement = await approved('3000');
+
+      await expect(
+        prisma.partnerSettlementTransferAttempt.create({
+          data: { settlementId: settlement.id, amount: new Decimal('9999') },
+        }),
+      ).rejects.toThrow(/does not match settlement/i);
+    });
+
+    it('keeps the approved figure frozen while it waits for a retry', async () => {
+      const settlement = await approved('6000');
+      await settlements.markFailed(settlement.id, { actorId: checker, reason: 'Bounced' });
+
+      // A purchase made after approval must not join the failed settlement.
+      const late = await accrue('1500');
+      await expect(
+        prisma.partnerSettlementEntry.create({
+          data: {
+            settlementId: settlement.id,
+            ledgerPostingId: (
+              await prisma.ledgerPosting.findFirstOrThrow({
+                where: {
+                  transactionId: late.id,
+                  account: { type: LedgerAccountType.PARTNER_PAYABLE },
+                },
+              })
+            ).id,
+            partnerId,
+            amount: new Decimal('1500'),
+            direction: PostingDirection.CREDIT,
+            kind: 'partner.bonus_redemption_compensation',
+            sourceType: 'PurchaseIntent',
+            sourceId: 'late',
+            occurredAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow(/entries are frozen/i);
+
+      // It goes into the next settlement instead, which is where it belongs.
+      expect((await settlements.unsettled(partnerId)).net.toFixed(2)).toBe('1500.00');
+    });
+  });
+
+  /**
+   * The third outcome, and the one that costs money if it is guessed at: the
+   * bank's answer is ambiguous. Retrying a maybe is how a partner gets paid
+   * twice; treating it as failed is the same thing by another name.
+   */
+  describe('an ambiguous bank result', () => {
+    async function ambiguous(amount = '7000') {
+      await accrue(amount);
+      const draft = await settlements.createDraft({ ...period(), partnerId, actorId: maker });
+      await settlements.markReady(draft.id, { actorId: maker });
+      await settlements.approve(draft.id, checker);
+      await settlements.markPaymentPending(draft.id, checker);
+      await settlements.markRequiresReconciliation(draft.id, {
+        actorId: checker,
+        reason: 'Bank timed out; reference not found in the statement',
+        bankTransferReference: 'MAYBE-1',
+      });
+      return draft;
+    }
+
+    it('never retries itself', async () => {
+      const settlement = await ambiguous();
+
+      await expect(
+        settlements.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'GUESS' }),
+      ).rejects.toThrow(/needs reconciliation/i);
+      await expect(settlements.markPaymentPending(settlement.id, checker)).rejects.toThrow(
+        /REQUIRES_RECONCILIATION/,
+      );
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(0);
+    });
+
+    it('records the attempt as unresolved, not as failed', async () => {
+      const settlement = await ambiguous();
+      const attempt = await prisma.partnerSettlementTransferAttempt.findFirstOrThrow({
+        where: { settlementId: settlement.id },
+      });
+      // Unresolved is the whole point: nobody knows yet, and the row says so
+      // rather than pretending one way or the other.
+      expect(attempt.succeeded).toBe(false);
+      expect(attempt.resolvedAt).toBeNull();
+    });
+
+    it('closes out when a human finds the money did leave', async () => {
+      const settlement = await ambiguous('7000');
+
+      const paid = await settlements.resolveReconciliation(settlement.id, {
+        actorId: checker,
+        outcome: 'money-moved',
+        bankTransferReference: 'MAYBE-1',
+      });
+      expect(paid.status).toBe(PartnerSettlementStatus.PAID);
+      expect((await payableBalance()).toFixed(2)).toBe('0.00');
+
+      // The same attempt turned out to have worked — not a new one beside it.
+      const attempts = await prisma.partnerSettlementTransferAttempt.findMany({
+        where: { settlementId: settlement.id },
+      });
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]).toMatchObject({ succeeded: true, bankTransferReference: 'MAYBE-1' });
+    });
+
+    it('becomes retryable again when a human finds it did not', async () => {
+      const settlement = await ambiguous('7000');
+
+      const failed = await settlements.resolveReconciliation(settlement.id, {
+        actorId: checker,
+        outcome: 'money-did-not-move',
+        reason: 'Statement shows no debit',
+      });
+      expect(failed.status).toBe(PartnerSettlementStatus.FAILED);
+
+      const paid = await settlements.markPaid(settlement.id, {
+        actorId: checker,
+        bankTransferReference: 'AFTER-RECONCILE',
+      });
+      expect(paid.status).toBe(PartnerSettlementStatus.PAID);
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid' } }),
+      ).toBe(1);
+      expect((await payableBalance()).toFixed(2)).toBe('0.00');
+    });
+  });
+
+  /** Net movement on this partner's payable account, credits positive. */
+  async function payableBalance(): Promise<Decimal> {
+    const postings = await prisma.ledgerPosting.findMany({
+      where: { account: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId } },
+      select: { amount: true, direction: true },
+    });
+    return postings.reduce(
+      (sum, x) =>
+        x.direction === PostingDirection.CREDIT
+          ? sum.plus(new Decimal(x.amount))
+          : sum.minus(new Decimal(x.amount)),
+      new Decimal(0),
+    );
+  }
 });

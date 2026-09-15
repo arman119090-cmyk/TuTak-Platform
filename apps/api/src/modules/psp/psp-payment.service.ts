@@ -17,26 +17,11 @@ import {
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
+import { MONEY_MAY_HAVE_MOVED } from './psp-attempt-safety';
 import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
-
-/**
- * Statuses in which the provider may already hold the customer's money.
- *
- * `EXPIRED` is in the list, and that is the point of the list. A timed-out
- * attempt feels like a failure and is not one: nothing authoritative said the
- * payment did not happen, so treating it as safe is how a customer ends up
- * paying twice. Only `FAILED` — an explicit provider denial — clears a
- * purchase for another route.
- */
-const MONEY_MAY_HAVE_MOVED: readonly PspAttemptStatus[] = [
-  PspAttemptStatus.INITIATED,
-  PspAttemptStatus.PENDING_CONFIRMATION,
-  PspAttemptStatus.SUCCEEDED,
-  PspAttemptStatus.EXPIRED,
-  PspAttemptStatus.REQUIRES_RECONCILIATION,
-];
 
 /** The value `liveKey` holds while an attempt is unresolved. */
 const LIVE = 'live';
@@ -75,6 +60,7 @@ export class PspPaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly purchases: PurchaseIntentsService,
     @Inject(PSP_ADAPTER) private readonly adapter: PspAdapter,
   ) {}
 
@@ -136,6 +122,29 @@ export class PspPaymentService {
     if (intent.ordinaryPaymentRemainder.lessThanOrEqualTo(0)) {
       throw new BadRequestException(
         'Nothing to collect: this purchase is covered entirely by bonus points',
+      );
+    }
+
+    /*
+     * No second bill while an earlier attempt might hold the customer's money.
+     *
+     * The unique index on `(purchaseIntentId, liveKey)` is not enough on its
+     * own, and that gap was real: an amount mismatch clears `liveKey` (the
+     * attempt is no longer *live*) while leaving the money's fate unknown.
+     * Without this check the customer could be handed a fresh bill for a
+     * purchase the provider may already have charged them for. Found by
+     * Arman's review.
+     *
+     * `EXPIRED` and `REQUIRES_RECONCILIATION` are both in the unsafe set for
+     * the same reason `EXPIRED` always was: nothing authoritative said the
+     * money did not move. Only an explicit provider failure clears a purchase
+     * for another attempt.
+     */
+    if (await this.hasUnsafeAttempt(intent.id)) {
+      throw new ConflictException(
+        'An earlier payment attempt for this purchase is unresolved, and the provider ' +
+          'may already hold the money. A new payment cannot be started until that ' +
+          'attempt is resolved — this is what stops the customer paying twice.',
       );
     }
 
@@ -290,6 +299,17 @@ export class PspPaymentService {
         },
         tx,
       );
+
+      /*
+       * The purchase itself, in this same transaction.
+       *
+       * Both halves or neither: the cash leg above and everything a confirmed
+       * purchase means — points accrued, referral paid, commission posted,
+       * the intent marked CONFIRMED — commit together. Before this call
+       * existed the provider's money moved and the purchase stayed
+       * unconfirmed, which is a customer charged for points they never got.
+       */
+      await this.purchases.settleFromProviderConfirmation(attempt.purchaseIntentId, tx);
 
       const claimed = await tx.pspPaymentAttempt.updateMany({
         where: { id: attempt.id, status: { in: [PspAttemptStatus.INITIATED, PspAttemptStatus.PENDING_CONFIRMATION] } },

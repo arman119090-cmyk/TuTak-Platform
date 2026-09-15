@@ -102,9 +102,7 @@ export class PartnerSettlementCheckService {
         currency: Currency.AMD,
       },
     });
-    const accountByPartner = new Map(
-      accounts.filter((a) => a.partnerId).map((a) => [a.partnerId!, a]),
-    );
+    const accountByPartner = new Map(accounts.filter((a) => a.partnerId).map((a) => [a.partnerId!, a]));
 
     let overdue = 0;
     for (const partner of duePartners) {
@@ -141,9 +139,7 @@ export class PartnerSettlementCheckService {
     // balance being positive means the partner owes TuTak (the case
     // `PartnerCollectionService.amountOwed` reports).
     const owedToPartner = rawBalance.negated();
-    const direction = owedToPartner.isPositive()
-      ? 'TuTak owes the partner'
-      : 'the partner owes TuTak';
+    const direction = owedToPartner.isPositive() ? 'TuTak owes the partner' : 'the partner owes TuTak';
     const net = owedToPartner.abs().toFixed(MONEY_SCALE);
     const since = lastSettledAt ? lastSettledAt.toISOString() : 'never';
 

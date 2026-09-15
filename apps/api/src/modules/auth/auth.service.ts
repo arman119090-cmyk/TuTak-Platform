@@ -31,12 +31,7 @@ import { AuthOtpService } from './auth-otp.service';
 import { OtpIpRateLimitService } from './otp-ip-rate-limit.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import {
-  RequestLoginOtpDto,
-  RequestRegistrationOtpDto,
-  VerifyLoginOtpDto,
-  VerifyRegistrationOtpDto,
-} from './dto/otp.dto';
+import { RequestLoginOtpDto, RequestRegistrationOtpDto, VerifyLoginOtpDto, VerifyRegistrationOtpDto } from './dto/otp.dto';
 import { JwtAccessPayload } from './strategies/jwt.strategy';
 import { RequestUser } from './types/request-user.type';
 
@@ -328,7 +323,9 @@ export class AuthService {
    * the wrong system entirely.
    */
   private classifyOtpFailure(err: unknown): string {
-    return err instanceof BadRequestException ? 'refused-number-rate-limit' : 'failed-before-send';
+    return err instanceof BadRequestException
+      ? 'refused-number-rate-limit'
+      : 'failed-before-send';
   }
 
   async requestRegistrationOtp(dto: RequestRegistrationOtpDto, meta: RequestMeta = {}) {
@@ -353,23 +350,14 @@ export class AuthService {
         });
       this.logOtpOutcome(
         'register',
-        issued.delivered
-          ? 'code-handed-to-carrier'
-          : 'failure' in issued
-            ? issued.failure
-            : 'carrier-refused',
+        issued.delivered ? 'code-handed-to-carrier' : ('failure' in issued ? issued.failure : 'carrier-refused'),
       );
     }
     return { success: true as const };
   }
 
   async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto, meta: RequestMeta) {
-    await this.authOtpService.consumeCode(
-      dto.phone,
-      AuthOtpPurpose.REGISTER,
-      dto.code,
-      meta.ipAddress,
-    );
+    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.REGISTER, dto.code, meta.ipAddress);
 
     // Re-checked after the code is spent: nothing stops someone else
     // registering the same number via the password path in between.
@@ -489,11 +477,7 @@ export class AuthService {
         });
       this.logOtpOutcome(
         'login',
-        issued.delivered
-          ? 'code-handed-to-carrier'
-          : 'failure' in issued
-            ? issued.failure
-            : 'carrier-refused',
+        issued.delivered ? 'code-handed-to-carrier' : ('failure' in issued ? issued.failure : 'carrier-refused'),
       );
     }
     return { success: true };
@@ -502,12 +486,7 @@ export class AuthService {
   async verifyLoginOtp(dto: VerifyLoginOtpDto, meta: RequestMeta) {
     const invalid = new UnauthorizedException('Code is invalid or has expired');
 
-    await this.authOtpService.consumeCode(
-      dto.phone,
-      AuthOtpPurpose.LOGIN,
-      dto.code,
-      meta.ipAddress,
-    );
+    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.LOGIN, dto.code, meta.ipAddress);
 
     const user = await this.usersService.findByPhone(dto.phone);
     if (!user || !user.isActive || user.deletedAt) {
@@ -706,7 +685,12 @@ export class AuthService {
    * rotated first. Neither is distinguishable from the other, and both mean a
    * token escaped, so every live token for that device dies.
    */
-  private async handleReuse(userId: string, deviceId: string, tokenId: string, meta: RequestMeta) {
+  private async handleReuse(
+    userId: string,
+    deviceId: string,
+    tokenId: string,
+    meta: RequestMeta,
+  ) {
     const revoked = await this.prisma.refreshToken.updateMany({
       where: { userId, deviceId, revokedAt: null },
       data: { revokedAt: new Date() },

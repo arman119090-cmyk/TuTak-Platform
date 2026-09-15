@@ -77,10 +77,7 @@ describe('Nearby partners — personalization (integration)', () => {
   }
 
   const consentOn = (userId: string) =>
-    prisma.user.update({
-      where: { id: userId },
-      data: { personalizedRecommendationsConsent: true },
-    });
+    prisma.user.update({ where: { id: userId }, data: { personalizedRecommendationsConsent: true } });
 
   beforeAll(async () => {
     harness = await createTestHarness();

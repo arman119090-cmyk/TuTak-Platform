@@ -16,7 +16,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       // Only when the deployment has stated a limit; otherwise this is the
       // same URL Prisma would have read for itself, and the same default
       // pool. See `database-url.ts` for why no number is invented here.
-      ...(databaseUrl ? { datasources: { db: { url: applyPoolSettings(databaseUrl) } } } : {}),
+      ...(databaseUrl
+        ? { datasources: { db: { url: applyPoolSettings(databaseUrl) } } }
+        : {}),
     });
   }
 

@@ -1,8 +1,5 @@
 import { IsIn, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
-import {
-  ARMENIAN_PHONE_MESSAGE,
-  ARMENIAN_PHONE_REGEX,
-} from '../../../common/validators/armenian-phone';
+import { ARMENIAN_PHONE_MESSAGE, ARMENIAN_PHONE_REGEX } from '../../../common/validators/armenian-phone';
 
 export class RegisterDto {
   @IsString()

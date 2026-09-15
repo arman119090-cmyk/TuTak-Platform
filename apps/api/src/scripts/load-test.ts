@@ -119,9 +119,7 @@ function report(title: string, samples: Sample[], elapsedMs: number): void {
   say(`  throughput    ${(ok.length / (elapsedMs / 1000)).toFixed(1)} ok/s`);
   say(`  succeeded     ${ok.length}`);
   say(`  failed        ${failed.length}`);
-  say(
-    `  p50 / p95 / p99   ${percentile(durations, 50)} / ${percentile(durations, 95)} / ${percentile(durations, 99)} ms`,
-  );
+  say(`  p50 / p95 / p99   ${percentile(durations, 50)} / ${percentile(durations, 95)} / ${percentile(durations, 99)} ms`);
   say(`  slowest       ${durations.at(-1) ?? 0} ms`);
   for (const [message, count] of errors) {
     say(`  ✗ ${count}×  ${message}`);
@@ -458,9 +456,7 @@ async function main() {
     });
     chained.push(customerId);
   }
-  say(
-    `created ${trees.length} referral trees and ${bonusOnly.length + chained.length} money-path customers`,
-  );
+  say(`created ${trees.length} referral trees and ${bonusOnly.length + chained.length} money-path customers`);
 
   // Earn the balance the next phases spend. Sequential on purpose: this is
   // setup, not a measurement, and running it flat out would only add noise
@@ -571,9 +567,7 @@ async function main() {
   const check = async (label: string, sql: Promise<Array<{ n: bigint | number }>>) => {
     const offenders = Number((await sql)[0]?.n ?? 0);
     if (offenders > 0) broken += 1;
-    say(
-      `  ${offenders === 0 ? '✓' : '✗'} ${label}${offenders === 0 ? '' : ` — ${offenders} row(s)`}`,
-    );
+    say(`  ${offenders === 0 ? '✓' : '✗'} ${label}${offenders === 0 ? '' : ` — ${offenders} row(s)`}`);
   };
 
   // A wallet's cached balances are a denormalisation of its lots and holds.
@@ -718,8 +712,7 @@ async function main() {
       [split.l3, intent.referrer3Amount ?? new Decimal(0)],
       [split.tutak, intent.tutakAmount],
     ];
-    if (legs.some(([expected, actual]) => actual === null || !expected.equals(actual)))
-      mispriced += 1;
+    if (legs.some(([expected, actual]) => actual === null || !expected.equals(actual))) mispriced += 1;
 
     // The chain stored on the purchase must be the chain the customer
     // actually has. A referrer from another tree here would be one
@@ -727,14 +720,11 @@ async function main() {
     let live = chainCache.get(intent.customerId);
     if (!live) {
       const resolved = await referrals.resolveReferralChain(intent.customerId);
-      live = resolved.map((entry) =>
-        entry.type === 'USER' ? entry.userId! : `partner:${entry.partnerId!}`,
-      );
+      live = resolved.map((entry) => (entry.type === 'USER' ? entry.userId! : `partner:${entry.partnerId!}`));
       chainCache.set(intent.customerId, live);
     }
     const storedIds = stored.map((entry) => entry.userId);
-    if (storedIds.length !== live.length || storedIds.some((id, i) => id !== live![i]))
-      contaminated += 1;
+    if (storedIds.length !== live.length || storedIds.some((id, i) => id !== live![i])) contaminated += 1;
   }
   say(
     `  ${mispriced === 0 ? '✓' : '✗'} all six legs match the program's own split on ${confirmed.length} confirmed purchase(s)${mispriced === 0 ? '' : ` — ${mispriced} mispriced`}`,
@@ -747,10 +737,7 @@ async function main() {
 
   const held = await prisma.bonusReservation.groupBy({ by: ['status'], _count: { _all: true } });
   say(`  holds         ${held.map((h) => `${h.status}=${h._count._all}`).join(' ') || 'none'}`);
-  const intentStates = await prisma.purchaseIntent.groupBy({
-    by: ['status'],
-    _count: { _all: true },
-  });
+  const intentStates = await prisma.purchaseIntent.groupBy({ by: ['status'], _count: { _all: true } });
   say(`  intents       ${intentStates.map((i) => `${i.status}=${i._count._all}`).join(' ')}`);
 
   await app.close();

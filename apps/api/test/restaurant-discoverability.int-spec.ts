@@ -230,9 +230,7 @@ describe('Finding a restaurant, and being told the truth about it (integration)'
       bonusAccrualRateBps: 500,
     });
 
-    expect((await partners.list(await admin())).map((p) => p.displayName)).toContain(
-      'Not Yet Open',
-    );
+    expect((await partners.list(await admin())).map((p) => p.displayName)).toContain('Not Yet Open');
   });
 
   it('says on the record itself whether a restaurant is open for business', async () => {

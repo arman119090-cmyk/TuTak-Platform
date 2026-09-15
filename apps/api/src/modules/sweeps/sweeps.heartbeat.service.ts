@@ -168,9 +168,7 @@ export class SweepsHeartbeatService implements OnApplicationBootstrap, OnModuleD
         // to know what is broken for customers, not what a queue looks like.
         body:
           `It last completed ${
-            everRan
-              ? `${Math.round(silentMs / 60_000)} minute(s) ago`
-              : 'never since this instance started'
+            everRan ? `${Math.round(silentMs / 60_000)} minute(s) ago` : 'never since this instance started'
           }, and its tolerance is ${Math.round(sweep.maxSilenceMs / 60_000)} minute(s). ` +
           `What this job exists to do: ${sweep.why}`,
         context: {

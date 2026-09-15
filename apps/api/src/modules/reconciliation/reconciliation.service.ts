@@ -164,10 +164,9 @@ export class ReconciliationService {
           runId: run.id,
           findings: findings.length,
           partnersBlocked: partnersBlocked.length,
-          worstDrift:
-            findings
-              .map((f) => f.drift)
-              .sort((a, b) => Math.abs(Number(b)) - Math.abs(Number(a)))[0] ?? '0',
+          worstDrift: findings
+            .map((f) => f.drift)
+            .sort((a, b) => Math.abs(Number(b)) - Math.abs(Number(a)))[0] ?? '0',
         },
       });
     } else {

@@ -245,14 +245,10 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
         finalAmount: '80',
       };
 
-      const settleOnce = (
-        settlement as unknown as { settleOnce: (p: string, d: typeof dto) => Promise<unknown> }
-      ).settleOnce.bind(settlement);
+      const settleOnce = (settlement as unknown as { settleOnce: (p: string, d: typeof dto) => Promise<unknown> })
+        .settleOnce.bind(settlement);
 
-      const [a, b] = await Promise.all([
-        settleOnce(station.partnerId, dto),
-        settleOnce(station.partnerId, dto),
-      ]);
+      const [a, b] = await Promise.all([settleOnce(station.partnerId, dto), settleOnce(station.partnerId, dto)]);
       expect((a as { sessionId: string }).sessionId).toBe((b as { sessionId: string }).sessionId);
       expect(await prisma.evSession.count({ where: { externalSessionId: 'sess-race' } })).toBe(1);
       expect(
@@ -379,9 +375,7 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
     it('links a TuTak user to a roaming-CPO customer id, then settles against that mapping', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma, {});
-      const { station, connector } = await createRoamingCpoStation(prisma, {
-        partnerId: partner.id,
-      });
+      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
 
       const link = await customersService.link(user.id, partner.id, 'roaming-cust-explicit');
       expect(link.userId).toBe(user.id);
@@ -406,9 +400,9 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
       const partner = await createPartner(prisma, {});
 
       await customersService.link(userA.id, partner.id, 'roaming-cust-taken');
-      await expect(
-        customersService.link(userB.id, partner.id, 'roaming-cust-taken'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(customersService.link(userB.id, partner.id, 'roaming-cust-taken')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -492,10 +486,7 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
   describe('multi-station tariff independence', () => {
     it('two stations under one roaming-CPO partner keep independent retail tariffs and independent session snapshots', async () => {
       const { user } = await createCustomer(prisma);
-      const partner = await createPartner(prisma, {
-        evWholesaleRatePerKwh: '75.00',
-        evMarginReferralCapPerKwh: '20.00',
-      });
+      const partner = await createPartner(prisma, { evWholesaleRatePerKwh: '75.00', evMarginReferralCapPerKwh: '20.00' });
       const stationA = await createRoamingCpoStation(prisma, {
         partnerId: partner.id,
         standardRetailRatePerKwh: '115.00',
@@ -508,12 +499,8 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
 
       // Station A raises its posted price; station B must not move.
       await stationsService.updateTariff(stationA.station.id, '130.00');
-      const refreshedA = await prisma.evStation.findUniqueOrThrow({
-        where: { id: stationA.station.id },
-      });
-      const refreshedB = await prisma.evStation.findUniqueOrThrow({
-        where: { id: stationB.station.id },
-      });
+      const refreshedA = await prisma.evStation.findUniqueOrThrow({ where: { id: stationA.station.id } });
+      const refreshedB = await prisma.evStation.findUniqueOrThrow({ where: { id: stationB.station.id } });
       expect(refreshedA.standardRetailRatePerKwh?.toFixed(2)).toBe('130.00');
       expect(refreshedB.standardRetailRatePerKwh?.toFixed(2)).toBe('110.00');
 
@@ -555,14 +542,9 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
     it('a station belonging to another partner cannot be settled against by this partner', async () => {
       const partnerX = await createPartner(prisma, {});
       const partnerY = await createPartner(prisma, {});
-      const { station, connector } = await createRoamingCpoStation(prisma, {
-        partnerId: partnerX.id,
-      });
+      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partnerX.id });
       const { user } = await createCustomer(prisma);
-      const link = await linkRoamingCpoCustomer(prisma, {
-        partnerId: partnerY.id,
-        userId: user.id,
-      });
+      const link = await linkRoamingCpoCustomer(prisma, { partnerId: partnerY.id, userId: user.id });
 
       await expect(
         settlement.settle(partnerY.id, {
@@ -617,24 +599,15 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
         latitude: 40.18,
         longitude: 44.51,
         standardRetailRatePerKwh: '115.00',
-        connectors: [
-          { externalConnectorId: 'ext-connector-1', connectorType: 'CCS2' as const, powerKw: 60 },
-        ],
+        connectors: [{ externalConnectorId: 'ext-connector-1', connectorType: 'CCS2' as const, powerKw: 60 }],
       };
 
       const first = await stationsService.sync(partner.id, dto);
-      const second = await stationsService.sync(partner.id, {
-        ...dto,
-        standardRetailRatePerKwh: '118.00',
-      });
+      const second = await stationsService.sync(partner.id, { ...dto, standardRetailRatePerKwh: '118.00' });
 
       expect(second.id).toBe(first.id);
-      expect(await prisma.evStation.count({ where: { externalStationId: 'ext-station-1' } })).toBe(
-        1,
-      );
-      expect(
-        await prisma.evConnector.count({ where: { externalConnectorId: 'ext-connector-1' } }),
-      ).toBe(1);
+      expect(await prisma.evStation.count({ where: { externalStationId: 'ext-station-1' } })).toBe(1);
+      expect(await prisma.evConnector.count({ where: { externalConnectorId: 'ext-connector-1' } })).toBe(1);
       expect(second.standardRetailRatePerKwh?.toFixed(2)).toBe('118.00');
     });
   });
@@ -668,9 +641,9 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
       const partner = await createPartner(prisma, {});
       const issued = await apiKeys.issue({ partnerId: partner.id });
       await apiKeys.revoke(issued.id, partner.id);
-      await expect(guard.canActivate(ctx({ 'x-api-key': issued.apiKey }))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        guard.canActivate(ctx({ 'x-api-key': issued.apiKey })),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -684,7 +657,7 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
    * Sequential ids make that an accident; an API key makes it a script.
    */
   describe('tenant isolation on the session id', () => {
-    it("does not hand one network another network's settled session", async () => {
+    it('does not hand one network another network\'s settled session', async () => {
       const mine = await scenario();
       const theirs = await scenario();
       expect(theirs.station.partnerId).not.toBe(mine.station.partnerId);
@@ -719,4 +692,5 @@ describe('Roaming-CPO wholesale-resale integration (integration)', () => {
       expect(await prisma.evSession.count({ where: { externalSessionId: sharedId } })).toBe(1);
     });
   });
+
 });

@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { Currency, LedgerAccountType, PostingDirection, Prisma } from '@prisma/client';
+import {
+  Currency,
+  LedgerAccountType,
+  PostingDirection,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -249,7 +254,9 @@ export class LedgerService {
     //
     // The retry stays for deadlocks, which are still possible when one
     // transaction touches several accounts in a different order from another.
-    return tx ? run(tx) : withRetry(() => this.prisma.$transaction(run), this.logger);
+    return tx
+      ? run(tx)
+      : withRetry(() => this.prisma.$transaction(run), this.logger);
   }
 
   /**
@@ -302,7 +309,9 @@ export class LedgerService {
       return reversal;
     };
 
-    return tx ? run(tx) : withRetry(() => this.prisma.$transaction(run), this.logger);
+    return tx
+      ? run(tx)
+      : withRetry(() => this.prisma.$transaction(run), this.logger);
   }
 
   /**

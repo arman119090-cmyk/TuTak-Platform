@@ -67,9 +67,7 @@ async function main(): Promise<void> {
   // deliberately not printed: this report is about how many and how old, and a
   // list of numbers in a terminal scrollback is a customer list.
   console.log(`Accounts created by the OTP-only flow:            ${everRegisteredByOtp}`);
-  console.log(
-    `…of those, still with no password they chose:    ${stillWithoutAKnownPassword.length}`,
-  );
+  console.log(`…of those, still with no password they chose:    ${stillWithoutAKnownPassword.length}`);
   console.log('');
 
   for (const user of stillWithoutAKnownPassword) {

@@ -254,64 +254,18 @@ async function main() {
   log.log('Creating branches…');
   await prisma.partnerBranch.createMany({
     data: [
-      {
-        partnerId: cafe.id,
-        name: 'Cafe Yerevan — Northern Ave',
-        address: 'Հյուսիսային պող. 12',
-        city: 'Yerevan',
-        latitude: 40.1826,
-        longitude: 44.5145,
-      },
-      {
-        partnerId: cafe.id,
-        name: 'Cafe Yerevan — Cascade',
-        address: 'Թամանյան 5',
-        city: 'Yerevan',
-        latitude: 40.1899,
-        longitude: 44.5153,
-      },
-      {
-        partnerId: market.id,
-        name: 'TuTak Market — Arabkir',
-        address: 'Կոմիտաս 42',
-        city: 'Yerevan',
-        latitude: 40.2044,
-        longitude: 44.4989,
-      },
-      {
-        partnerId: pharm.id,
-        name: 'Ararat Pharm — Gyumri',
-        address: 'Շիրակացի 8',
-        city: 'Gyumri',
-        latitude: 40.7894,
-        longitude: 43.8475,
-      },
+      { partnerId: cafe.id, name: 'Cafe Yerevan — Northern Ave', address: 'Հյուսիսային պող. 12', city: 'Yerevan', latitude: 40.1826, longitude: 44.5145 },
+      { partnerId: cafe.id, name: 'Cafe Yerevan — Cascade', address: 'Թամանյան 5', city: 'Yerevan', latitude: 40.1899, longitude: 44.5153 },
+      { partnerId: market.id, name: 'TuTak Market — Arabkir', address: 'Կոմիտաս 42', city: 'Yerevan', latitude: 40.2044, longitude: 44.4989 },
+      { partnerId: pharm.id, name: 'Ararat Pharm — Gyumri', address: 'Շիրակացի 8', city: 'Gyumri', latitude: 40.7894, longitude: 43.8475 },
     ],
   });
 
   log.log('Creating EV stations…');
   for (const station of [
-    {
-      name: 'ElectroGo — Republic Square',
-      address: 'Հանրապետության հրապարակ',
-      city: 'Yerevan',
-      latitude: 40.1776,
-      longitude: 44.5126,
-    },
-    {
-      name: 'ElectroGo — Sevan Highway',
-      address: 'Մ4 խճուղի, 42 կմ',
-      city: 'Sevan',
-      latitude: 40.5535,
-      longitude: 44.9511,
-    },
-    {
-      name: 'ElectroGo — Dilijan',
-      address: 'Կալինինի 3',
-      city: 'Dilijan',
-      latitude: 40.7408,
-      longitude: 44.8631,
-    },
+    { name: 'ElectroGo — Republic Square', address: 'Հանրապետության հրապարակ', city: 'Yerevan', latitude: 40.1776, longitude: 44.5126 },
+    { name: 'ElectroGo — Sevan Highway', address: 'Մ4 խճուղի, 42 կմ', city: 'Sevan', latitude: 40.5535, longitude: 44.9511 },
+    { name: 'ElectroGo — Dilijan', address: 'Կալինինի 3', city: 'Dilijan', latitude: 40.7408, longitude: 44.8631 },
   ]) {
     const created = await prisma.evStation.create({
       data: {
@@ -475,11 +429,7 @@ async function main() {
 
   // ── QR payments: the loyalty loop ──────────────────────────────────────
 
-  const asRequestUser = (
-    user: User,
-    roles: RoleName[],
-    scopes: Record<string, string[]> = {},
-  ): RequestUser => ({
+  const asRequestUser = (user: User, roles: RoleName[], scopes: Record<string, string[]> = {}): RequestUser => ({
     id: user.id,
     phone: user.phone,
     roles,
@@ -590,9 +540,7 @@ async function main() {
 
   log.log('Requesting a payout…');
   const available = await payouts.availableBalance(cafe.id);
-  const payoutAmount = available.greaterThan(20_000)
-    ? new Decimal('20000')
-    : available.dividedBy(2);
+  const payoutAmount = available.greaterThan(20_000) ? new Decimal('20000') : available.dividedBy(2);
   if (payoutAmount.greaterThan(0)) {
     const payout = await payouts.requestPayout({
       partnerId: cafe.id,

@@ -25,7 +25,9 @@ export class PasswordRotationGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest<{ user?: RequestUser }>();
     if (user?.mustChangePassword) {
-      throw new ForbiddenException('Your password must be changed before you can use this account');
+      throw new ForbiddenException(
+        'Your password must be changed before you can use this account',
+      );
     }
     return true;
   }

@@ -44,9 +44,7 @@ export class FraudDetectionService {
     relatedTransactionId?: string;
     metadata?: Record<string, unknown>;
   }) {
-    this.logger.warn(
-      `Fraud signal raised: ${params.type} (${params.severity}) user=${params.userId}`,
-    );
+    this.logger.warn(`Fraud signal raised: ${params.type} (${params.severity}) user=${params.userId}`);
     return this.prisma.fraudSignal.create({
       data: {
         userId: params.userId,

@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { NotificationChannel } from '@prisma/client';
 import { generateNumericCode, sha256Hex } from '../../common/utils/crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -169,7 +163,9 @@ export class PhoneVerificationService {
       select: { isPhoneVerified: true },
     });
     if (!user.isPhoneVerified) {
-      throw new BadRequestException('Verify your phone number before you can earn bonus points');
+      throw new BadRequestException(
+        'Verify your phone number before you can earn bonus points',
+      );
     }
   }
 }

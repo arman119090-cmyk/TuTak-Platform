@@ -154,7 +154,10 @@ export class RoamingCpoSettlementService {
       0,
     );
     const cappedMarginPerKwh = Decimal.min(marginPerKwh, params.marginReferralCapPerKwh);
-    const uncappedMarginPerKwh = Decimal.max(marginPerKwh.minus(params.marginReferralCapPerKwh), 0);
+    const uncappedMarginPerKwh = Decimal.max(
+      marginPerKwh.minus(params.marginReferralCapPerKwh),
+      0,
+    );
     const pool = roundIssued(cappedMarginPerKwh.times(params.energyKwh));
     const uncappedRevenue = roundIssued(uncappedMarginPerKwh.times(params.energyKwh));
     return { marginPerKwh, cappedMarginPerKwh, uncappedMarginPerKwh, pool, uncappedRevenue };
@@ -181,17 +184,13 @@ export class RoamingCpoSettlementService {
       where: { externalStationId: dto.externalStationId },
     });
     if (!station || station.partnerId !== partnerId) {
-      throw new BadRequestException(
-        'Unknown roaming-CPO station — sync it before settling a session on it',
-      );
+      throw new BadRequestException('Unknown roaming-CPO station — sync it before settling a session on it');
     }
     const connector = await this.prisma.evConnector.findUnique({
       where: { externalConnectorId: dto.externalConnectorId },
     });
     if (!connector || connector.stationId !== station.id) {
-      throw new BadRequestException(
-        'Unknown roaming-CPO connector — sync it before settling a session on it',
-      );
+      throw new BadRequestException('Unknown roaming-CPO connector — sync it before settling a session on it');
     }
 
     const link = await this.prisma.roamingCustomerLink.findUnique({
@@ -224,10 +223,7 @@ export class RoamingCpoSettlementService {
     const reportedFinal = parseMoney(dto.finalAmount, 'finalAmount');
 
     const expectedCost = roundCharge(energyKwh.times(appliedRate));
-    const tolerance = Decimal.max(
-      expectedCost.times(RECONCILE_TOLERANCE_PCT),
-      RECONCILE_TOLERANCE_FLOOR,
-    );
+    const tolerance = Decimal.max(expectedCost.times(RECONCILE_TOLERANCE_PCT), RECONCILE_TOLERANCE_FLOOR);
     if (reportedFinal.minus(expectedCost).abs().greaterThan(tolerance)) {
       throw new BadRequestException(
         `finalAmount (${reportedFinal.toString()}) does not reconcile with energyKwh × ` +
@@ -328,7 +324,7 @@ export class RoamingCpoSettlementService {
       let settled;
       try {
         settled = await this.prisma.$transaction(async (tx) => {
-          const session = await tx.evSession.create({
+        const session = await tx.evSession.create({
             data: {
               connectorId: connector.id,
               userId,
@@ -366,74 +362,66 @@ export class RoamingCpoSettlementService {
             },
           });
 
-          await tx.evCdr.create({
-            data: {
-              sessionId: session.id,
-              totalEnergy: energyKwh,
-              totalCost: cost,
-              totalTimeSec:
-                dto.startedAt && dto.stoppedAt
-                  ? Math.max(
-                      0,
-                      Math.round(
-                        (new Date(dto.stoppedAt).getTime() - new Date(dto.startedAt).getTime()) /
-                          1000,
-                      ),
-                    )
-                  : 0,
-              // The partner's own report *is* the settled CDR — there is
-              // nothing further to reconcile it against, unlike a roaming
-              // OCPI session where our figure and the CPO's arrive separately.
-              reconciliation: EvCdrReconciliation.NOT_APPLICABLE,
-              raw: { ...dto } as unknown as Prisma.InputJsonValue,
-            },
-          });
+        await tx.evCdr.create({
+          data: {
+            sessionId: session.id,
+            totalEnergy: energyKwh,
+            totalCost: cost,
+            totalTimeSec:
+              dto.startedAt && dto.stoppedAt
+                ? Math.max(
+                    0,
+                    Math.round((new Date(dto.stoppedAt).getTime() - new Date(dto.startedAt).getTime()) / 1000),
+                  )
+                : 0,
+            // The partner's own report *is* the settled CDR — there is
+            // nothing further to reconcile it against, unlike a roaming
+            // OCPI session where our figure and the CPO's arrive separately.
+            reconciliation: EvCdrReconciliation.NOT_APPLICABLE,
+            raw: { ...dto } as unknown as Prisma.InputJsonValue,
+          },
+        });
 
-          let greenLotId: string | null = null;
-          if (green.greaterThan(0)) {
-            const created = await this.bonusEngine.accrue(
-              {
-                walletId,
-                type: BonusEntryType.ACCRUAL_PURCHASE,
-                amount: green,
-                sourceTransactionId: transaction.id,
-              },
-              tx,
-            );
-            greenLotId = created.id;
-          }
-          await this.deferredBonusLots.advanceExistingLots(userId, cost, transaction.id, tx);
-          if (deferred.greaterThan(0)) {
-            await this.deferredBonusLots.createLot(userId, deferred, transaction.id, tx);
-          }
-          await this.referralService.creditChainShares(chain, { l1, l2, l3 }, transaction.id, tx);
-
-          await this.outbox.publish(tx, {
-            aggregateType: 'Transaction',
-            aggregateId: transaction.id,
-            eventType: 'roaming.margin.ledger_post',
-            payload: {
-              partnerId,
-              pool: pool.toString(),
-              green: green.toString(),
-              deferred: deferred.toString(),
-              l1: l1.toString(),
-              l2: l2.toString(),
-              l3: l3.toString(),
-              tutak: tutak.toString(),
-              uncappedRevenue: uncappedRevenue.toString(),
-              chain: chain.map(serializeChainLevel),
-              transactionId: transaction.id,
-            },
-          });
-
-          const completedTx = await this.transactionsService.markCompleted(
-            transaction.id,
-            { bonusEarnedAmount: green },
+        let greenLotId: string | null = null;
+        if (green.greaterThan(0)) {
+          const created = await this.bonusEngine.accrue(
+            { walletId, type: BonusEntryType.ACCRUAL_PURCHASE, amount: green, sourceTransactionId: transaction.id },
             tx,
           );
+          greenLotId = created.id;
+        }
+        await this.deferredBonusLots.advanceExistingLots(userId, cost, transaction.id, tx);
+        if (deferred.greaterThan(0)) {
+          await this.deferredBonusLots.createLot(userId, deferred, transaction.id, tx);
+        }
+        await this.referralService.creditChainShares(chain, { l1, l2, l3 }, transaction.id, tx);
 
-          return { duplicate: false as const, session, greenLotId, completedTx };
+        await this.outbox.publish(tx, {
+          aggregateType: 'Transaction',
+          aggregateId: transaction.id,
+          eventType: 'roaming.margin.ledger_post',
+          payload: {
+            partnerId,
+            pool: pool.toString(),
+            green: green.toString(),
+            deferred: deferred.toString(),
+            l1: l1.toString(),
+            l2: l2.toString(),
+            l3: l3.toString(),
+            tutak: tutak.toString(),
+            uncappedRevenue: uncappedRevenue.toString(),
+            chain: chain.map(serializeChainLevel),
+            transactionId: transaction.id,
+          },
+        });
+
+        const completedTx = await this.transactionsService.markCompleted(
+          transaction.id,
+          { bonusEarnedAmount: green },
+          tx,
+        );
+
+        return { duplicate: false as const, session, greenLotId, completedTx };
         });
       } catch (err) {
         // Postgres aborts the whole transaction on the first statement
@@ -454,12 +442,7 @@ export class RoamingCpoSettlementService {
               'This externalSessionId is already in use — choose an id unique to your network',
             );
           }
-          settled = {
-            duplicate: true as const,
-            session: existing,
-            greenLotId: null,
-            completedTx: null,
-          };
+          settled = { duplicate: true as const, session: existing, greenLotId: null, completedTx: null };
         } else {
           throw err;
         }
@@ -498,16 +481,12 @@ export class RoamingCpoSettlementService {
       if (reservationId) {
         await this.bonusEngine
           .compensateReservation(reservationId, 'roaming_settle_failed')
-          .catch((e) =>
-            this.compensationFailed('bonus reservation', reservationId!, dto.externalSessionId, e),
-          );
+          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, dto.externalSessionId, e));
       }
       if (accruedLotId) {
         await this.bonusEngine
           .reverseAccrualLot(accruedLotId, 'roaming_settle_failed')
-          .catch((e) =>
-            this.compensationFailed('bonus accrual', accruedLotId!, dto.externalSessionId, e),
-          );
+          .catch((e) => this.compensationFailed('bonus accrual', accruedLotId!, dto.externalSessionId, e));
       }
       await this.transactionsService.markFailed(
         transaction.id,
@@ -558,11 +537,7 @@ export class RoamingCpoSettlementService {
 
     const run = async (tx: Tx) => {
       const existing = await tx.ledgerTransaction.findFirst({
-        where: {
-          kind: 'roaming.margin.settlement',
-          sourceType: 'Transaction',
-          sourceId: transactionId,
-        },
+        where: { kind: 'roaming.margin.settlement', sourceType: 'Transaction', sourceId: transactionId },
         select: { id: true },
       });
       if (existing) return;
@@ -598,33 +573,16 @@ export class RoamingCpoSettlementService {
       const postings = [
         { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: totalDebit },
         ...(customerLiability.greaterThan(0)
-          ? [
-              {
-                accountId: bonusLiabilityAccount.id,
-                direction: PostingDirection.CREDIT,
-                amount: customerLiability,
-              },
-            ]
+          ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
           : []),
         ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
         ...(revenueCredit.greaterThan(0)
-          ? [
-              {
-                accountId: revenueAccount.id,
-                direction: PostingDirection.CREDIT,
-                amount: revenueCredit,
-              },
-            ]
+          ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: revenueCredit }]
           : []),
       ];
 
       await this.ledger.post(
-        {
-          kind: 'roaming.margin.settlement',
-          sourceType: 'Transaction',
-          sourceId: transactionId,
-          postings,
-        },
+        { kind: 'roaming.margin.settlement', sourceType: 'Transaction', sourceId: transactionId, postings },
         tx,
       );
     };
@@ -644,9 +602,7 @@ export class RoamingCpoSettlementService {
         const code = (err as { code?: string })?.code;
         const message = err instanceof Error ? err.message : '';
         const retryable =
-          code === '40001' ||
-          code === '40P01' ||
-          /write conflict|deadlock|could not serialize/i.test(message);
+          code === '40001' || code === '40P01' || /write conflict|deadlock|could not serialize/i.test(message);
         if (!retryable || attempt === maxAttempts) throw err;
         const delay = Math.floor(2 ** attempt * 5 * (0.5 + Math.random()));
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -685,16 +641,9 @@ export class RoamingCpoSettlementService {
     return session;
   }
 
-  private compensationFailed(
-    what: string,
-    entityId: string,
-    externalSessionId: string,
-    err: unknown,
-  ): void {
+  private compensationFailed(what: string, entityId: string, externalSessionId: string, err: unknown): void {
     const message = err instanceof Error ? err.message : String(err);
-    this.logger.error(
-      `Failed to compensate ${what} after roaming-CPO settlement failure: ${message}`,
-    );
+    this.logger.error(`Failed to compensate ${what} after roaming-CPO settlement failure: ${message}`);
     this.alerts
       .fire({
         severity: 'critical',

@@ -15,7 +15,9 @@ export interface OcpiAdapter {
   }): Promise<{ accepted: boolean; ocpiSessionId?: string }>;
 
   /** Pushes a stop-charging command to the remote CPO. */
-  stopRemoteSession(params: { ocpiSessionId: string }): Promise<{ accepted: boolean }>;
+  stopRemoteSession(params: {
+    ocpiSessionId: string;
+  }): Promise<{ accepted: boolean }>;
 
   /** Pulls the final Charge Detail Record once the remote CPO has settled the session. */
   fetchCdr(ocpiSessionId: string): Promise<{

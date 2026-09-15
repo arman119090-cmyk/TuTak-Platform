@@ -112,7 +112,9 @@ describe('assertProductionJwtSecretsAreStrong', () => {
 
   it('rejects a low-entropy secret (repeated character) even if long enough', () => {
     expect(() =>
-      assertProductionJwtSecretsAreStrong(validEnv({ JWT_ACCESS_SECRET: 'a'.repeat(40) }) as never),
+      assertProductionJwtSecretsAreStrong(
+        validEnv({ JWT_ACCESS_SECRET: 'a'.repeat(40) }) as never,
+      ),
     ).toThrow(/does not look cryptographically random/);
   });
 

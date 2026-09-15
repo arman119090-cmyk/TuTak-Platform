@@ -60,10 +60,7 @@ describe('Authorization (integration)', () => {
 
       // SUPER_ADMIN holds every permission, so this was a one-call takeover.
       await expect(
-        admin.assignRole(
-          { userId: target.id, role: RoleName.SUPER_ADMIN },
-          actor(adminUser.id, [RoleName.ADMIN]),
-        ),
+        admin.assignRole({ userId: target.id, role: RoleName.SUPER_ADMIN }, actor(adminUser.id, [RoleName.ADMIN])),
       ).rejects.toThrow(ForbiddenException);
 
       expect(await prisma.userRole.count({ where: { userId: target.id } })).toBe(0);
@@ -142,10 +139,7 @@ describe('Authorization (integration)', () => {
       const granter = actor(adminUser.id, [RoleName.ADMIN]);
 
       const first = await admin.assignRole({ userId: target.id, role: RoleName.CUSTOMER }, granter);
-      const second = await admin.assignRole(
-        { userId: target.id, role: RoleName.CUSTOMER },
-        granter,
-      );
+      const second = await admin.assignRole({ userId: target.id, role: RoleName.CUSTOMER }, granter);
       expect(second.id).toBe(first.id);
       expect(await prisma.userRole.count({ where: { userId: target.id } })).toBe(1);
     });
@@ -255,10 +249,11 @@ describe('Authorization (integration)', () => {
       // report meter values against partner-b's real sessions despite
       // holding no EV-managing role there. Only partner-a, the one actually
       // scoped via a role that grants the permission, may ever be returned.
-      const mixedRoleUser = actor('u5', [RoleName.PARTNER_STAFF, RoleName.PARTNER_OWNER], {
-        PARTNER_STAFF: ['partner-b'],
-        PARTNER_OWNER: ['partner-a'],
-      });
+      const mixedRoleUser = actor(
+        'u5',
+        [RoleName.PARTNER_STAFF, RoleName.PARTNER_OWNER],
+        { PARTNER_STAFF: ['partner-b'], PARTNER_OWNER: ['partner-a'] },
+      );
       expect(resolveOperatorPartner(mixedRoleUser)).toBe('partner-a');
       expect(resolveOperatorPartner(mixedRoleUser)).not.toBe('partner-b');
     });

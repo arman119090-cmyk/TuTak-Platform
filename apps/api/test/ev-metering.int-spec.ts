@@ -60,9 +60,9 @@ describe('EV metering authorization (integration)', () => {
 
       // The original attack, verbatim: declare 9,999,999 kWh and collect 5% of
       // 999,999,900 AMD. A 50 kW connector needs 200,000 hours to deliver that.
-      await expect(sessions.reportMeterValue(session.id, '9999999', user.id)).rejects.toThrow(
-        /exceeds what the connector could have delivered/,
-      );
+      await expect(
+        sessions.reportMeterValue(session.id, '9999999', user.id),
+      ).rejects.toThrow(/exceeds what the connector could have delivered/);
 
       await expect(sessions.stop(session.id, user.id, {})).resolves.toMatchObject({
         energyKwh: '0',
@@ -103,9 +103,9 @@ describe('EV metering authorization (integration)', () => {
 
       // Without an ownership check any customer could inflate any other
       // customer's bill to the ceiling.
-      await expect(sessions.reportMeterValue(session.id, '40', attacker.id)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        sessions.reportMeterValue(session.id, '40', attacker.id),
+      ).rejects.toThrow(NotFoundException);
 
       const untouched = await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } });
       expect(untouched.energyKwh?.toFixed(3)).toBe('0.000');

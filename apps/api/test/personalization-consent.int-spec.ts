@@ -62,8 +62,7 @@ describe('Personalization consent (integration)', () => {
     );
     expect(on.personalizedRecommendationsEnabled).toBe(true);
     expect(
-      (await prisma.user.findUniqueOrThrow({ where: { id: user.id } }))
-        .personalizedRecommendationsConsent,
+      (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).personalizedRecommendationsConsent,
     ).toBe(true);
 
     const off = await controller.updatePersonalizationConsent(
@@ -77,16 +76,8 @@ describe('Personalization consent (integration)', () => {
   it('audits every change, actor and outcome', async () => {
     const { user } = await createCustomer(prisma);
 
-    await controller.updatePersonalizationConsent(
-      asUser(user.id),
-      { personalizedRecommendationsEnabled: true },
-      req,
-    );
-    await controller.updatePersonalizationConsent(
-      asUser(user.id),
-      { personalizedRecommendationsEnabled: false },
-      req,
-    );
+    await controller.updatePersonalizationConsent(asUser(user.id), { personalizedRecommendationsEnabled: true }, req);
+    await controller.updatePersonalizationConsent(asUser(user.id), { personalizedRecommendationsEnabled: false }, req);
 
     const logs = await prisma.auditLog.findMany({
       where: { action: 'PERSONALIZATION_CONSENT_CHANGED', entityId: user.id },

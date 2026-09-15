@@ -13,7 +13,8 @@ export interface PspChargeRequest {
 }
 
 export type PspChargeResult =
-  { outcome: 'CAPTURED'; pspReference: string } | { outcome: 'DECLINED'; declineReason: string };
+  | { outcome: 'CAPTURED'; pspReference: string }
+  | { outcome: 'DECLINED'; declineReason: string };
 
 export interface PspRefundRequest {
   amount: Decimal;

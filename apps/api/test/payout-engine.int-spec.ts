@@ -220,9 +220,9 @@ describe('PayoutEngineService (integration)', () => {
       idempotencyKey: 'payout-dual-1',
     });
 
-    await expect(payouts.confirmPaid(requested.payoutId, 'BANK-SELF', 'admin-1')).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      payouts.confirmPaid(requested.payoutId, 'BANK-SELF', 'admin-1'),
+    ).rejects.toThrow(ForbiddenException);
 
     // And nothing moved: the refusal has to happen before the ledger does,
     // or the control is decorative.

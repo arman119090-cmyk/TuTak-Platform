@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BranchStaffRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
@@ -27,11 +22,7 @@ export class PartnerBranchStaffService {
 
   listForBranch(partnerId: string, branchId: string, includeInactive = false) {
     return this.prisma.partnerBranchStaffAssignment.findMany({
-      where: {
-        partnerId,
-        partnerBranchId: branchId,
-        ...(includeInactive ? {} : { isActive: true }),
-      },
+      where: { partnerId, partnerBranchId: branchId, ...(includeInactive ? {} : { isActive: true }) },
       include: { user: { select: { id: true, firstName: true, lastName: true, phone: true } } },
       orderBy: { createdAt: 'asc' },
     });
@@ -97,12 +88,7 @@ export class PartnerBranchStaffService {
   async assign(
     partnerId: string,
     branchId: string,
-    params: {
-      userId: string;
-      role?: BranchStaffRole;
-      employeeDisplayCode?: string;
-      assignedByUserId: string;
-    },
+    params: { userId: string; role?: BranchStaffRole; employeeDisplayCode?: string; assignedByUserId: string },
   ) {
     await this.assertBranchBelongsToPartner(partnerId, branchId);
 
@@ -113,8 +99,7 @@ export class PartnerBranchStaffService {
       throw new BadRequestException('This user has no staff role at this partner yet');
     }
 
-    const employeeDisplayCode =
-      params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
+    const employeeDisplayCode = params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
 
     try {
       return await this.prisma.partnerBranchStaffAssignment.create({
@@ -154,9 +139,7 @@ export class PartnerBranchStaffService {
       data: { isActive: false, deactivatedAt: new Date(), deactivatedByUserId },
     });
     if (count === 0) throw new NotFoundException('Active assignment not found');
-    return this.prisma.partnerBranchStaffAssignment.findUniqueOrThrow({
-      where: { id: assignmentId },
-    });
+    return this.prisma.partnerBranchStaffAssignment.findUniqueOrThrow({ where: { id: assignmentId } });
   }
 
   /**

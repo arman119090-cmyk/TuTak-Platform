@@ -388,11 +388,7 @@ export class EvCdrReconciliationService {
           transaction.id,
         );
 
-        await this.transactionsService.markCompleted(
-          transaction.id,
-          { bonusEarnedAmount: green },
-          tx,
-        );
+        await this.transactionsService.markCompleted(transaction.id, { bonusEarnedAmount: green }, tx);
       });
 
       // Best-effort, deliberately outside the transaction above: the
@@ -408,10 +404,7 @@ export class EvCdrReconciliationService {
       await this.customerBalance
         .collectFromBalance(session.userId, cost, Currency.AMD, transaction.id)
         .catch((e) =>
-          this.logger.error(
-            `Balance collection failed for roaming session ${session.id} (receivable stands)`,
-            e,
-          ),
+          this.logger.error(`Balance collection failed for roaming session ${session.id} (receivable stands)`, e),
         );
 
       return true;
@@ -561,22 +554,17 @@ export class EvCdrReconciliationService {
     transactionId: string,
   ): Promise<void> {
     const existing = await tx.ledgerTransaction.findFirst({
-      where: {
-        kind: 'ev.roaming.app_settlement',
-        sourceType: 'Transaction',
-        sourceId: transactionId,
-      },
+      where: { kind: 'ev.roaming.app_settlement', sourceType: 'Transaction', sourceId: transactionId },
       select: { id: true },
     });
     if (existing) return;
 
-    const [partnerAccount, bonusLiabilityAccount, revenueAccount, receivableAccount] =
-      await Promise.all([
-        this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, tx),
-        this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
-        this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
-        this.ledger.accountFor({ type: LedgerAccountType.EV_ROAMING_RECEIVABLE }, tx),
-      ]);
+    const [partnerAccount, bonusLiabilityAccount, revenueAccount, receivableAccount] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.EV_ROAMING_RECEIVABLE }, tx),
+    ]);
 
     const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
     const userLiability = amounts.chain
@@ -615,29 +603,13 @@ export class EvCdrReconciliationService {
     // "residual, not independently rounded" discipline `computePoolSplit`'s
     // own `tutak` leg already relies on).
     const postings = [
-      {
-        accountId: partnerAccount.id,
-        direction: PostingDirection.CREDIT,
-        amount: amounts.wholesaleAmount,
-      },
+      { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: amounts.wholesaleAmount },
       ...(customerLiability.greaterThan(0)
-        ? [
-            {
-              accountId: bonusLiabilityAccount.id,
-              direction: PostingDirection.CREDIT,
-              amount: customerLiability,
-            },
-          ]
+        ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
         : []),
       ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
       ...(revenueCredit.greaterThan(0)
-        ? [
-            {
-              accountId: revenueAccount.id,
-              direction: PostingDirection.CREDIT,
-              amount: revenueCredit,
-            },
-          ]
+        ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: revenueCredit }]
         : []),
     ];
     const totalCredit = postings.reduce((sum, p) => sum.plus(p.amount), new Decimal(0));
@@ -649,11 +621,7 @@ export class EvCdrReconciliationService {
         sourceType: 'Transaction',
         sourceId: transactionId,
         postings: [
-          {
-            accountId: receivableAccount.id,
-            direction: PostingDirection.DEBIT,
-            amount: totalCredit,
-          },
+          { accountId: receivableAccount.id, direction: PostingDirection.DEBIT, amount: totalCredit },
           ...postings,
         ],
       },
@@ -820,22 +788,12 @@ export class EvCdrReconciliationService {
         where: { sourceTransactionId: transactionId, type: BonusEntryType.ACCRUAL_PURCHASE },
       });
       if (greenLot) {
-        await this.bonusEngine.reverseAccrualLot(
-          greenLot.id,
-          'ev_cdr_overbilled',
-          greenClawback,
-          tx,
-        );
+        await this.bonusEngine.reverseAccrualLot(greenLot.id, 'ev_cdr_overbilled', greenClawback, tx);
       }
     }
 
     if (deferredClawback.greaterThan(0)) {
-      await this.deferredBonusLots.reverseForRefund(
-        transactionId,
-        deferredClawback,
-        'ev_cdr_overbilled',
-        tx,
-      );
+      await this.deferredBonusLots.reverseForRefund(transactionId, deferredClawback, 'ev_cdr_overbilled', tx);
     }
 
     if (referrerClawback.greaterThan(0) && referrer?.type === 'USER') {
@@ -850,12 +808,7 @@ export class EvCdrReconciliationService {
           })
         : null;
       if (referralLot) {
-        await this.bonusEngine.reverseAccrualLot(
-          referralLot.id,
-          'ev_cdr_overbilled',
-          referrerClawback,
-          tx,
-        );
+        await this.bonusEngine.reverseAccrualLot(referralLot.id, 'ev_cdr_overbilled', referrerClawback, tx);
       }
     }
 
@@ -951,22 +904,12 @@ export class EvCdrReconciliationService {
         where: { sourceTransactionId: transactionId, type: BonusEntryType.ACCRUAL_PURCHASE },
       });
       if (greenLot) {
-        await this.bonusEngine.reverseAccrualLot(
-          greenLot.id,
-          'ev_cdr_overbilled',
-          greenClawback,
-          tx,
-        );
+        await this.bonusEngine.reverseAccrualLot(greenLot.id, 'ev_cdr_overbilled', greenClawback, tx);
       }
     }
 
     if (deferredClawback.greaterThan(0)) {
-      await this.deferredBonusLots.reverseForRefund(
-        transactionId,
-        deferredClawback,
-        'ev_cdr_overbilled',
-        tx,
-      );
+      await this.deferredBonusLots.reverseForRefund(transactionId, deferredClawback, 'ev_cdr_overbilled', tx);
     }
 
     // Per-level clawback — a USER-type level's share lives in its own
@@ -975,16 +918,11 @@ export class EvCdrReconciliationService {
     // PARTNER-type level has no wallet lot, so its whole clawback amount
     // reverses directly against their `PARTNER_PAYABLE` in the ledger step.
     for (const lvl of levels) {
-      if (lvl.type !== ReferrerType.USER || !lvl.userId || lvl.amount.lessThanOrEqualTo(0))
-        continue;
+      if (lvl.type !== ReferrerType.USER || !lvl.userId || lvl.amount.lessThanOrEqualTo(0)) continue;
       const wallet = await tx.wallet.findUnique({ where: { userId: lvl.userId } });
       const lot = wallet
         ? await tx.bonusLot.findFirst({
-            where: {
-              sourceTransactionId: transactionId,
-              type: BonusEntryType.ACCRUAL_REFERRAL,
-              walletId: wallet.id,
-            },
+            where: { sourceTransactionId: transactionId, type: BonusEntryType.ACCRUAL_REFERRAL, walletId: wallet.id },
           })
         : null;
       if (lot) {
@@ -1047,10 +985,7 @@ export class EvCdrReconciliationService {
     if (existing) return;
 
     const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor(
-        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.partnerId },
-        tx,
-      ),
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.partnerId }, tx),
       this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
       this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
     ]);
@@ -1079,10 +1014,7 @@ export class EvCdrReconciliationService {
             {
               accountId: (
                 await this.ledger.accountFor(
-                  {
-                    type: LedgerAccountType.PARTNER_PAYABLE,
-                    partnerId: amounts.referrer.partnerId,
-                  },
+                  { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.referrer.partnerId },
                   tx,
                 )
               ).id,
@@ -1092,13 +1024,7 @@ export class EvCdrReconciliationService {
           ]
         : []),
       ...(tutakRevenueClawback.greaterThan(0)
-        ? [
-            {
-              accountId: revenueAccount.id,
-              direction: PostingDirection.DEBIT,
-              amount: tutakRevenueClawback,
-            },
-          ]
+        ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: tutakRevenueClawback }]
         : []),
     ];
 
@@ -1152,10 +1078,7 @@ export class EvCdrReconciliationService {
     if (existing) return;
 
     const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor(
-        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.partnerId },
-        tx,
-      ),
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.partnerId }, tx),
       this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
       this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
     ]);
@@ -1163,9 +1086,7 @@ export class EvCdrReconciliationService {
     const userLevelsClawback = amounts.levels
       .filter((l) => l.type === ReferrerType.USER)
       .reduce((s, l) => s.plus(l.amount), new Decimal(0));
-    const customerLiabilityClawback = amounts.greenClawback
-      .plus(amounts.deferredClawback)
-      .plus(userLevelsClawback);
+    const customerLiabilityClawback = amounts.greenClawback.plus(amounts.deferredClawback).plus(userLevelsClawback);
 
     const partnerReferrerPostings = await Promise.all(
       amounts.levels
@@ -1183,23 +1104,11 @@ export class EvCdrReconciliationService {
       // Reverses the original DEBIT: the partner now owes TuTak less.
       { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: poolClawback },
       ...(customerLiabilityClawback.greaterThan(0)
-        ? [
-            {
-              accountId: bonusLiabilityAccount.id,
-              direction: PostingDirection.DEBIT,
-              amount: customerLiabilityClawback,
-            },
-          ]
+        ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: customerLiabilityClawback }]
         : []),
       ...partnerReferrerPostings,
       ...(amounts.tutakClawback.greaterThan(0)
-        ? [
-            {
-              accountId: revenueAccount.id,
-              direction: PostingDirection.DEBIT,
-              amount: amounts.tutakClawback,
-            },
-          ]
+        ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: amounts.tutakClawback }]
         : []),
     ];
 
@@ -1242,9 +1151,7 @@ export class EvCdrReconciliationService {
       where: { id: cdrId },
       data: { reconciliation: EvCdrReconciliation.UNAVAILABLE, reconciledAt: new Date() },
     });
-    this.logger.error(
-      `Operator never produced a CDR for session ${sessionId} after ${attempts} attempts`,
-    );
+    this.logger.error(`Operator never produced a CDR for session ${sessionId} after ${attempts} attempts`);
     await this.alerts.fire({
       severity: 'warning',
       key: `ev.cdr.unavailable:${sessionId}`,

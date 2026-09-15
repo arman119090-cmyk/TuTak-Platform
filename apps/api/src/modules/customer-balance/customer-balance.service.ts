@@ -1,12 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  BalanceTopUp,
-  BalanceTopUpStatus,
-  Currency,
-  LedgerAccountType,
-  PostingDirection,
-} from '@prisma/client';
+import { BalanceTopUp, BalanceTopUpStatus, Currency, LedgerAccountType, PostingDirection } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -55,11 +49,7 @@ export class CustomerBalanceService {
       return this.initiateTopUpOnce(userId, amount);
     }
     return this.idempotency.run(
-      {
-        scope: `balance-topup:${userId}`,
-        key: idempotencyKey,
-        request: { amount: amount.toString() },
-      },
+      { scope: `balance-topup:${userId}`, key: idempotencyKey, request: { amount: amount.toString() } },
       () => this.initiateTopUpOnce(userId, amount, idempotencyKey),
     );
   }
@@ -146,9 +136,7 @@ export class CustomerBalanceService {
       where: { providerReference: verified.providerReference },
     });
     if (!topUp) {
-      this.logger.warn(
-        `Top-up webhook for unknown providerReference ${verified.providerReference}`,
-      );
+      this.logger.warn(`Top-up webhook for unknown providerReference ${verified.providerReference}`);
       return;
     }
     if (topUp.status !== BalanceTopUpStatus.PENDING) {
@@ -161,10 +149,7 @@ export class CustomerBalanceService {
       await this.prisma.balanceTopUp.updateMany({
         where: { id: topUp.id, status: BalanceTopUpStatus.PENDING },
         data: {
-          status:
-            verified.outcome === 'DECLINED'
-              ? BalanceTopUpStatus.DECLINED
-              : BalanceTopUpStatus.FAILED,
+          status: verified.outcome === 'DECLINED' ? BalanceTopUpStatus.DECLINED : BalanceTopUpStatus.FAILED,
           declineReason: verified.declineReason,
         },
       });
@@ -186,16 +171,9 @@ export class CustomerBalanceService {
       if (claimed.count === 0) return;
 
       const [pspAccount, balanceAccount] = await Promise.all([
+        this.ledger.accountFor({ type: LedgerAccountType.PSP_RECEIVABLE, currency: topUp.currency }, tx),
         this.ledger.accountFor(
-          { type: LedgerAccountType.PSP_RECEIVABLE, currency: topUp.currency },
-          tx,
-        ),
-        this.ledger.accountFor(
-          {
-            type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE,
-            userId: topUp.userId,
-            currency: topUp.currency,
-          },
+          { type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId: topUp.userId, currency: topUp.currency },
           tx,
         ),
       ]);
@@ -214,11 +192,7 @@ export class CustomerBalanceService {
           currency: topUp.currency,
           postings: [
             { accountId: pspAccount.id, direction: PostingDirection.DEBIT, amount: topUp.amount },
-            {
-              accountId: balanceAccount.id,
-              direction: PostingDirection.CREDIT,
-              amount: topUp.amount,
-            },
+            { accountId: balanceAccount.id, direction: PostingDirection.CREDIT, amount: topUp.amount },
           ],
         },
         tx,
@@ -267,11 +241,7 @@ export class CustomerBalanceService {
 
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.ledgerTransaction.findFirst({
-        where: {
-          kind: 'ev.roaming.balance_collection',
-          sourceType: 'Transaction',
-          sourceId: sourceTransactionId,
-        },
+        where: { kind: 'ev.roaming.balance_collection', sourceType: 'Transaction', sourceId: sourceTransactionId },
         select: { id: true },
       });
       if (existing) return false;

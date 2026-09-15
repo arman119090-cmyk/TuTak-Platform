@@ -141,9 +141,7 @@ describe('PurchaseIntents (integration)', () => {
       expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
       expect(reservation.amount.toFixed(4)).toBe('1000.0000');
       expect(
-        (
-          await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })
-        ).availableBonus.toFixed(4),
+        (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).availableBonus.toFixed(4),
       ).toBe('1000.0000'); // 2000 - 1000 held
     });
 
@@ -265,9 +263,7 @@ describe('PurchaseIntents (integration)', () => {
 
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.lifetimeEarned.toFixed(4)).toBe('100.0000');
-      expect(
-        await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } }),
-      ).toBe(1);
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(1);
     });
 
     it('reject() releases the bonus reservation and fails the transaction', async () => {
@@ -453,9 +449,7 @@ describe('PurchaseIntents (integration)', () => {
       });
       expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
 
-      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({
-        where: { id: wallet.id },
-      });
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfterFailure.reservedBonus.toFixed(4)).toBe('500.0000');
 
       // A retry, with the injected failure gone, sweeps it cleanly.
@@ -520,9 +514,7 @@ describe('PurchaseIntents (integration)', () => {
       });
       expect(transaction.status).toBe(TransactionStatus.FAILED);
       // Nothing financial was posted: a cancelled purchase never happened.
-      expect(
-        await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } }),
-      ).toBe(0);
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(0);
     });
 
     it('records the cancellation against the customer who made it', async () => {
@@ -542,7 +534,7 @@ describe('PurchaseIntents (integration)', () => {
       expect(audit[0]!.actorUserId).toBe(user.id);
     });
 
-    it("refuses a cancel from anyone but the purchase's own customer", async () => {
+    it('refuses a cancel from anyone but the purchase\'s own customer', async () => {
       const { user, wallet } = await fundedCustomer('1000');
       const { user: stranger } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
@@ -620,9 +612,7 @@ describe('PurchaseIntents (integration)', () => {
         where: { id: intent.bonusReservationId! },
       });
       expect(reservation.status).toBe(BonusReservationStatus.SETTLED);
-      expect(
-        await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } }),
-      ).toBe(1);
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(1);
       // The 500 stays spent. Asserting a balance here would assert the
       // confirmed purchase's own accrual as well (the pool's green leg lands
       // in the same column), which is another test's subject — the precise
@@ -816,7 +806,9 @@ describe('PurchaseIntents (integration)', () => {
 
     it('never hands the same code to two purchases awaiting confirmation at one business', async () => {
       const partner = await createPartner(prisma);
-      const customers = await Promise.all(Array.from({ length: 40 }, () => createCustomer(prisma)));
+      const customers = await Promise.all(
+        Array.from({ length: 40 }, () => createCustomer(prisma)),
+      );
 
       // Concurrently, because the interesting failure is two allocations
       // racing — a read-then-pick allocator would hand out duplicates here.
@@ -854,9 +846,7 @@ describe('PurchaseIntents (integration)', () => {
         id: intent.id,
       });
       // And "42" is not the same thing as "0042".
-      await expect(purchaseIntents.findActiveByCode(partner.id, '42')).rejects.toThrow(
-        /no purchase/i,
-      );
+      await expect(purchaseIntents.findActiveByCode(partner.id, '42')).rejects.toThrow(/no purchase/i);
     });
 
     it('lets the database, not the application, be the one that says a code is taken', async () => {
@@ -932,7 +922,10 @@ describe('PurchaseIntents (integration)', () => {
         user.id,
       );
 
-      const found = await purchaseIntents.findActiveByCode(partner.id, intent.confirmationCode!);
+      const found = await purchaseIntents.findActiveByCode(
+        partner.id,
+        intent.confirmationCode!,
+      );
       expect(found.id).toBe(intent.id);
     });
 
@@ -1094,9 +1087,7 @@ describe('PurchaseIntents (integration)', () => {
       expect(await prisma.ledgerTransaction.count()).toBe(0);
       expect(await prisma.deferredBonusLot.count()).toBe(0);
 
-      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({
-        where: { id: wallet.id },
-      });
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfterFailure.availableBonus.toFixed(4)).toBe('0.0000');
       expect(walletAfterFailure.lifetimeEarned.toFixed(4)).toBe('0.0000');
 
@@ -1122,9 +1113,7 @@ describe('PurchaseIntents (integration)', () => {
       );
 
       const transactions = harness.app.get(TransactionsService);
-      jest
-        .spyOn(transactions, 'markCompleted')
-        .mockRejectedValueOnce(new Error('database went away'));
+      jest.spyOn(transactions, 'markCompleted').mockRejectedValueOnce(new Error('database went away'));
 
       await expect(purchaseIntents.confirm(intent.id, staff.id)).rejects.toThrow(
         'database went away',
@@ -1139,9 +1128,7 @@ describe('PurchaseIntents (integration)', () => {
         where: { id: intent.bonusReservationId! },
       });
       expect(reservation.status).toBe(BonusReservationStatus.ACTIVE);
-      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({
-        where: { id: wallet.id },
-      });
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfterFailure.availableBonus.toFixed(4)).toBe('500.0000'); // still held, not released or spent
       expect(walletAfterFailure.reservedBonus.toFixed(4)).toBe('500.0000');
     });
@@ -1200,20 +1187,12 @@ describe('PurchaseIntents (integration)', () => {
       // resolved intent, not errors) — what matters is they agree on
       // exactly one final, terminal state, not two contradictory ones.
       const final = await purchaseIntents.findByIdOrThrow(intent.id);
-      expect([PurchaseIntentStatus.CONFIRMED, PurchaseIntentStatus.REJECTED]).toContain(
-        final.status,
-      );
+      expect([PurchaseIntentStatus.CONFIRMED, PurchaseIntentStatus.REJECTED]).toContain(final.status);
 
-      if (
-        confirmResult.status === 'fulfilled' &&
-        confirmResult.value.status === PurchaseIntentStatus.CONFIRMED
-      ) {
+      if (confirmResult.status === 'fulfilled' && confirmResult.value.status === PurchaseIntentStatus.CONFIRMED) {
         expect(final.status).toBe(PurchaseIntentStatus.CONFIRMED);
       }
-      if (
-        rejectResult.status === 'fulfilled' &&
-        rejectResult.value.status === PurchaseIntentStatus.REJECTED
-      ) {
+      if (rejectResult.status === 'fulfilled' && rejectResult.value.status === PurchaseIntentStatus.REJECTED) {
         // Only reachable if confirm lost the race — the two outcomes are
         // mutually exclusive by construction (both branches read the same
         // final `intent`), so this asserts the same thing from the other side.
@@ -1286,10 +1265,7 @@ describe('PurchaseIntents (integration)', () => {
 
       // The partner's rate changes after the intent was created but before
       // it is confirmed — the snapshot must win.
-      await prisma.partner.update({
-        where: { id: partner.id },
-        data: { bonusAccrualRateBps: 1000 },
-      });
+      await prisma.partner.update({ where: { id: partner.id }, data: { bonusAccrualRateBps: 1000 } });
 
       await purchaseIntents.confirm(intent.id, staff.id);
 
@@ -1333,9 +1309,7 @@ describe('PurchaseIntents (integration)', () => {
       let childId = refereeId;
       for (let i = 0; i < levels; i += 1) {
         const { user } = await createCustomer(prisma);
-        await prisma.referralCode.create({
-          data: { userId: user.id, code: `TT-CHAIN-${childId}-${i}` },
-        });
+        await prisma.referralCode.create({ data: { userId: user.id, code: `TT-CHAIN-${childId}-${i}` } });
         await prisma.referralInvite.create({
           data: { referrerType: 'USER', referrerUserId: user.id, refereeUserId: childId },
         });
@@ -1360,9 +1334,7 @@ describe('PurchaseIntents (integration)', () => {
 
       expect(confirmed.programVersion).toBe('THREE_LEVEL_V2');
 
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: referee.id },
-      });
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
       expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // green, 20% of 500
 
       const lot = await prisma.deferredBonusLot.findFirstOrThrow({ where: { userId: referee.id } });
@@ -1379,9 +1351,7 @@ describe('PurchaseIntents (integration)', () => {
       const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
       });
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PLATFORM_REVENUE' },
-      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       // TuTak's 30% (150) — every level had a recipient, so nothing extra
       // folds into it.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('150.0000');
@@ -1421,31 +1391,21 @@ describe('PurchaseIntents (integration)', () => {
           expect(wallet.availableBonus.toFixed(4)).toBe(`${expectedByLevel[i]}.0000`);
         }
 
-        const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-          where: { type: 'PLATFORM_REVENUE' },
-        });
+        const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
         // TuTak's base 30% (150) plus whatever the missing levels would have
         // paid — never left unallocated, never redistributed to the levels
         // that do exist.
         const missingLevelsTotal = expectedByLevel.slice(chainLength).reduce((a, b) => a + b, 0);
-        expect(revenueAccount.balance.negated().toFixed(4)).toBe(
-          `${150 + missingLevelsTotal}.0000`,
-        );
+        expect(revenueAccount.balance.negated().toFixed(4)).toBe(`${150 + missingLevelsTotal}.0000`);
       },
     );
 
     it('direct partner-referrer: only L1 is paid (via the partner-payable ledger), L2/L3 go to TuTak', async () => {
       const referrerPartner = await createPartner(prisma, { displayName: 'Referrer Co' });
-      await prisma.referralCode.create({
-        data: { partnerId: referrerPartner.id, code: 'TP-CHAIN1' },
-      });
+      await prisma.referralCode.create({ data: { partnerId: referrerPartner.id, code: 'TP-CHAIN1' } });
       const { user: referee } = await createCustomer(prisma);
       await prisma.referralInvite.create({
-        data: {
-          referrerType: 'PARTNER',
-          referrerPartnerId: referrerPartner.id,
-          refereeUserId: referee.id,
-        },
+        data: { referrerType: 'PARTNER', referrerPartnerId: referrerPartner.id, refereeUserId: referee.id },
       });
 
       const sellingPartner = await createPartner(prisma, { bonusAccrualRateBps: 500 }); // pool = 500
@@ -1465,14 +1425,10 @@ describe('PurchaseIntents (integration)', () => {
       });
       expect(referrerAccount.balance.negated().toFixed(4)).toBe('50.0000'); // L1, 10% of 500
 
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: referee.id },
-      });
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
       expect(refereeWallet.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share
 
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PLATFORM_REVENUE' },
-      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       // TuTak base 30% (150) + L2/L3's missing shares (25 + 25) = 200.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('200.0000');
     });
@@ -1510,9 +1466,7 @@ describe('PurchaseIntents (integration)', () => {
       const pool = new Decimal('349.9999');
       expect(confirmed.poolAmount!.toFixed(4)).toBe(pool.toFixed(4));
 
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: referee.id },
-      });
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referee.id } });
       const green = refereeWallet.availableBonus;
       expect(green.toFixed(4)).toBe('69.9999'); // truncated down from 69.99998, never up
 
@@ -1530,9 +1484,7 @@ describe('PurchaseIntents (integration)', () => {
       const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
       });
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PLATFORM_REVENUE' },
-      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       const tutakRevenue = revenueAccount.balance.negated();
       // Not 104.9999 (what independently rounding 30% would give) —
       // 105.0004, the residual that absorbs the other five legs' cumulative
@@ -1592,9 +1544,7 @@ describe('PurchaseIntents (integration)', () => {
       );
       await purchaseIntents.confirm(intent.id, staff.id);
 
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PLATFORM_REVENUE' },
-      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       // TuTak base (150) + L1/L2/L3 shares that have nowhere else to go
       // (50 + 25 + 25) = 250.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('250.0000');
@@ -1612,10 +1562,7 @@ describe('PurchaseIntents (integration)', () => {
 
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const staff = await staffMember(partner.id);
-      const intent = await purchaseIntents.create(
-        { partnerId: partner.id, grossAmount: '10000' },
-        user.id,
-      );
+      const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, user.id);
       await purchaseIntents.confirm(intent.id, staff.id);
 
       const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
@@ -1623,9 +1570,7 @@ describe('PurchaseIntents (integration)', () => {
       // referral, never 150 (green + a self-referral share).
       expect(wallet.availableBonus.toFixed(4)).toBe('100.0000');
 
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PLATFORM_REVENUE' },
-      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       // The whole 500 pool that isn't green/deferred (150 + 50 + 25 + 25 = 250) goes to TuTak.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('250.0000');
     });
@@ -1645,10 +1590,7 @@ describe('PurchaseIntents (integration)', () => {
 
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const staff = await staffMember(partner.id);
-      const intent = await purchaseIntents.create(
-        { partnerId: partner.id, grossAmount: '10000' },
-        userA.id,
-      );
+      const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, userA.id);
       await purchaseIntents.confirm(intent.id, staff.id);
 
       // L1 (userB) is legitimately paid — that part of the chain is real.
@@ -1658,9 +1600,7 @@ describe('PurchaseIntents (integration)', () => {
       const userAWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: userA.id } });
       expect(userAWallet.availableBonus.toFixed(4)).toBe('100.0000'); // green only
 
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'PLATFORM_REVENUE' },
-      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
       // TuTak gets base (150) + the refused L2/L3 shares (25 + 25) = 200.
       expect(revenueAccount.balance.negated().toFixed(4)).toBe('200.0000');
     });
@@ -1726,12 +1666,7 @@ describe('PurchaseIntents (integration)', () => {
       // T1: advances the lot by 10000, then stays open — holding its row
       // lock on the lot — until explicitly released below.
       const first = prisma.$transaction(async (tx) => {
-        await deferredLots.advanceExistingLots(
-          user.id,
-          new Decimal('10000'),
-          'concurrent-tx-1',
-          tx,
-        );
+        await deferredLots.advanceExistingLots(user.id, new Decimal('10000'), 'concurrent-tx-1', tx);
         await heldOpen;
       });
 
@@ -1741,12 +1676,7 @@ describe('PurchaseIntents (integration)', () => {
       // read the bug depends on.
       await new Promise((resolve) => setTimeout(resolve, 100));
       const second = prisma.$transaction(async (tx) => {
-        await deferredLots.advanceExistingLots(
-          user.id,
-          new Decimal('15000'),
-          'concurrent-tx-2',
-          tx,
-        );
+        await deferredLots.advanceExistingLots(user.id, new Decimal('15000'), 'concurrent-tx-2', tx);
       });
 
       // T2's own write now blocks on T1's row lock. Give it time to reach
@@ -1801,9 +1731,7 @@ describe('PurchaseIntents (integration)', () => {
       );
       await purchaseIntents.confirm(third.id, staff.id);
 
-      const lotAUnlocked = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lotA.id },
-      });
+      const lotAUnlocked = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lotA.id } });
       expect(lotAUnlocked.status).toBe(DeferredBonusLotStatus.AVAILABLE);
       expect(lotAUnlocked.grantedBonusLotId).not.toBeNull();
 
@@ -1814,9 +1742,7 @@ describe('PurchaseIntents (integration)', () => {
       expect(deferredGrant.status).toBe(BonusLotStatus.AVAILABLE);
       expect(deferredGrant.originalAmount.toFixed(4)).toBe('150.0000');
       // The wallet actually holds it as spendable green points now.
-      expect(walletAfter.availableBonus.greaterThanOrEqualTo(deferredGrant.originalAmount)).toBe(
-        true,
-      );
+      expect(walletAfter.availableBonus.greaterThanOrEqualTo(deferredGrant.originalAmount)).toBe(true);
     });
 
     it('unlocks in a single purchase when gross alone clears the threshold — no monthly minimum', async () => {
@@ -1874,7 +1800,7 @@ describe('PurchaseIntents (integration)', () => {
       expect(walletAfter.availableBonus.toFixed(4)).toBe('100.0000'); // only the green share, never the deferred one
     });
 
-    it("recognizes an expired lot's value as TuTak revenue, releasing the liability booked for it at purchase time", async () => {
+    it('recognizes an expired lot\'s value as TuTak revenue, releasing the liability booked for it at purchase time', async () => {
       // Business decision (GitHub Issue #28 audit follow-up, 2026-08-16,
       // hardening-audit §N item 1): an expired lot's value becomes TuTak
       // revenue, not a silent write-off.

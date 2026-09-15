@@ -87,7 +87,9 @@ export async function assertLotsBackBalances(prisma: PrismaClient, walletId: str
   });
 
   const sum = (status: BonusLotStatus) =>
-    lots.filter((l) => l.status === status).reduce((acc, l) => acc.plus(l.remainingAmount), ZERO);
+    lots
+      .filter((l) => l.status === status)
+      .reduce((acc, l) => acc.plus(l.remainingAmount), ZERO);
 
   expect(sum(BonusLotStatus.AVAILABLE).toFixed(4)).toBe(wallet.availableBonus.toFixed(4));
   expect(sum(BonusLotStatus.PENDING).toFixed(4)).toBe(wallet.pendingBonus.toFixed(4));

@@ -1,10 +1,4 @@
-import {
-  BonusEntryType,
-  EvSessionStatus,
-  PrismaClient,
-  QrCodeType,
-  RoleName,
-} from '@prisma/client';
+import { BonusEntryType, EvSessionStatus, PrismaClient, QrCodeType, RoleName } from '@prisma/client';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { EvReservationsService } from '../src/modules/ev-charging/ev-reservations.service';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
@@ -124,9 +118,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
       const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
-      await prisma.userRole.create({
-        data: { userId: user.id, roleId: role.id, partnerId: partner.id },
-      });
+      await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId: partner.id } });
 
       await expect(
         qrPayments.issue(
@@ -136,13 +128,11 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       ).resolves.toBeDefined();
     });
 
-    it("refuses staff added via a partner-scoped role from redeeming a colleague's invoice", async () => {
+    it('refuses staff added via a partner-scoped role from redeeming a colleague\'s invoice', async () => {
       const { user: issuerStaff, partner } = await insider();
       const { user: roleStaff, wallet } = await createCustomer(prisma);
       const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
-      await prisma.userRole.create({
-        data: { userId: roleStaff.id, roleId: role.id, partnerId: partner.id },
-      });
+      await prisma.userRole.create({ data: { userId: roleStaff.id, roleId: role.id, partnerId: partner.id } });
 
       const code = await qrPayments.issue(
         { type: QrCodeType.DYNAMIC_INVOICE, partnerId: partner.id, amount: '1000000' },
@@ -211,10 +201,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
 
     it('earns no bonus for a partner member charging at their own connector', async () => {
       const { user, wallet, partner } = await insider(500); // 5% would normally accrue
-      const connector = await createEvConnector(prisma, {
-        partnerId: partner.id,
-        pricePerKwh: '100.00',
-      });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
       const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% would be 5
 
@@ -234,13 +221,8 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       const { user, wallet } = await createCustomer(prisma);
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
-      await prisma.userRole.create({
-        data: { userId: user.id, roleId: role.id, partnerId: partner.id },
-      });
-      const connector = await createEvConnector(prisma, {
-        partnerId: partner.id,
-        pricePerKwh: '100.00',
-      });
+      await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, partnerId: partner.id } });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
       const result = await chargeToCompletion(user.id, connector.id);
 
@@ -253,10 +235,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
     it('still lets an ordinary customer earn bonus charging at a partner they have no affiliation with', async () => {
       const { user, wallet } = await createCustomer(prisma);
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
-      const connector = await createEvConnector(prisma, {
-        partnerId: partner.id,
-        pricePerKwh: '100.00',
-      });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
       const result = await chargeToCompletion(user.id, connector.id); // cost 100, 5% = 5 pool
 
@@ -283,10 +262,7 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
         amount: '50',
         pendingHours: 0,
       });
-      const connector = await createEvConnector(prisma, {
-        partnerId: partner.id,
-        pricePerKwh: '100.00',
-      });
+      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
 
       const session = await sessions.start({ connectorId: connector.id }, user.id);
       await sessions.reportMeterValue(session.id, '1', user.id); // cost 100
@@ -347,9 +323,9 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
       // partner silently lost every subsequent customer.
       expect(await sessions.expireStaleSessions()).toBe(1);
 
-      expect((await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status).toBe(
-        EvSessionStatus.INVALID,
-      );
+      expect(
+        (await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status,
+      ).toBe(EvSessionStatus.INVALID);
       expect(
         (await prisma.evConnector.findUniqueOrThrow({ where: { id: connector.id } })).status,
       ).toBe('AVAILABLE');
@@ -358,9 +334,9 @@ describe('Self-dealing and unbounded sessions (integration)', () => {
     it('leaves a session that is still within the window', async () => {
       const { session } = await openSession(1);
       expect(await sessions.expireStaleSessions()).toBe(0);
-      expect((await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status).toBe(
-        EvSessionStatus.CHARGING,
-      );
+      expect(
+        (await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status,
+      ).toBe(EvSessionStatus.CHARGING);
     });
 
     it('lets the freed connector be used again', async () => {

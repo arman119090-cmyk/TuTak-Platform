@@ -195,14 +195,19 @@ async function bootstrap() {
   app.enableShutdownHooks();
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
-      void Promise.allSettled([stopTracing(), Sentry.close(2000)]).finally(() => process.exit(0));
+      void Promise.allSettled([stopTracing(), Sentry.close(2000)]).finally(() =>
+        process.exit(0),
+      );
     });
   }
 
   const port = config.get('port', { infer: true });
   await app.listen(port);
   // eslint-disable-next-line no-console
-  console.log(`TuTak API listening on port ${port}` + (tracingEnabled ? ' (tracing on)' : ''));
+  console.log(
+    `TuTak API listening on port ${port}` +
+      (tracingEnabled ? ' (tracing on)' : ''),
+  );
 
   /*
    * Which SMS transport is actually live, said out loud on every boot.

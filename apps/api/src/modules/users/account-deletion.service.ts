@@ -192,7 +192,9 @@ export class AccountDeletionService {
       },
     });
     if (activeSessions > 0) {
-      throw new ConflictException('Finish your charging session before deleting your account.');
+      throw new ConflictException(
+        'Finish your charging session before deleting your account.',
+      );
     }
 
     if (walletId) {

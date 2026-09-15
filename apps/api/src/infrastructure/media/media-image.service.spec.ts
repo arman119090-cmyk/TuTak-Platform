@@ -88,7 +88,8 @@ describe('MediaImageService', () => {
     it('refuses HTML renamed as an image', () =>
       reject(Buffer.from('<html><script>alert(1)</script></html>')));
 
-    it('refuses a ZIP renamed as an image', () => reject(Buffer.from('PK', 'latin1')));
+    it('refuses a ZIP renamed as an image', () =>
+      reject(Buffer.from('PK', 'latin1')));
 
     it('refuses a GIF, animated or not', async () => {
       await reject(await solid(64, 64).gif().toBuffer());

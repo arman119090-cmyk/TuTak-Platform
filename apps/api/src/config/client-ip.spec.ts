@@ -1,6 +1,10 @@
 import express from 'express';
 import type { Server } from 'http';
-import { clientIpIsPerCaller, expressTrustProxySetting, resolveClientIpConfig } from './client-ip';
+import {
+  clientIpIsPerCaller,
+  expressTrustProxySetting,
+  resolveClientIpConfig,
+} from './client-ip';
 
 describe('resolveClientIpConfig', () => {
   it('defaults to the socket address, which no header can change', () => {
@@ -55,7 +59,9 @@ describe('req.ip under a proxy chain that only appends', () => {
   const servers: Server[] = [];
 
   afterAll(async () => {
-    await Promise.all(servers.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
+    await Promise.all(
+      servers.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))),
+    );
   });
 
   /** A real listening Express app, so this asserts Express, not our belief about it. */
@@ -96,9 +102,9 @@ describe('req.ip under a proxy chain that only appends', () => {
     // However many addresses the client stuffs in front, the position
     // counted from the right is unchanged — which is the entire reason for
     // counting from that end rather than taking the leftmost value.
-    expect(await whoami(1, { 'X-Forwarded-For': '1.1.1.1, 2.2.2.2, 3.3.3.3, 203.0.113.7' })).toBe(
-      '203.0.113.7',
-    );
+    expect(
+      await whoami(1, { 'X-Forwarded-For': '1.1.1.1, 2.2.2.2, 3.3.3.3, 203.0.113.7' }),
+    ).toBe('203.0.113.7');
   });
 
   it('selects the spoofed value when the hop count is too high — why it is never guessed', async () => {
@@ -109,7 +115,9 @@ describe('req.ip under a proxy chain that only appends', () => {
     // Each extra hop walks one position further left, deeper into ground the
     // attacker wrote: at 3 the selected address is the leftmost value they
     // supplied.
-    expect(await whoami(3, { 'X-Forwarded-For': '7.7.7.7, 8.8.8.8, 203.0.113.7' })).toBe('7.7.7.7');
+    expect(
+      await whoami(3, { 'X-Forwarded-For': '7.7.7.7, 8.8.8.8, 203.0.113.7' }),
+    ).toBe('7.7.7.7');
   });
 
   it('falls back to the socket address when the header is absent', async () => {

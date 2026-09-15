@@ -57,7 +57,9 @@ describe('consuming an OTP (unit, stubbed database)', () => {
     /** Another request consumes the same challenge between our read and our write. */
     spentByAnotherRequest?: boolean;
   }) => {
-    const row: Row | null = options.challenge ? { consumedAt: null, ...options.challenge } : null;
+    const row: Row | null = options.challenge
+      ? { consumedAt: null, ...options.challenge }
+      : null;
 
     const applyData = (target: Row, data: Record<string, unknown>) => {
       for (const [field, value] of Object.entries(data)) {
@@ -72,30 +74,20 @@ describe('consuming an OTP (unit, stubbed database)', () => {
     // `Promise.resolve` rather than `async`: these hand back a promise
     // because Prisma does, and an `async` function with nothing to await is
     // a lint error that would have to be silenced rather than answered.
-    const update = jest.fn(
-      ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-        if (!row || row.id !== where.id)
-          return Promise.reject(new Error('record to update not found'));
-        applyData(row, data);
-        // Prisma returns the row as it stands after the write, which is the
-        // whole reason the service can read the post-increment count.
-        return Promise.resolve({ ...row });
-      },
-    );
+    const update = jest.fn(({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      if (!row || row.id !== where.id) return Promise.reject(new Error('record to update not found'));
+      applyData(row, data);
+      // Prisma returns the row as it stands after the write, which is the
+      // whole reason the service can read the post-increment count.
+      return Promise.resolve({ ...row });
+    });
 
     const updateMany = jest.fn(
-      ({
-        where,
-        data,
-      }: {
-        where: { id: string; consumedAt?: null };
-        data: Record<string, unknown>;
-      }) => {
+      ({ where, data }: { where: { id: string; consumedAt?: null }; data: Record<string, unknown> }) => {
         if (!row || row.id !== where.id) return Promise.resolve({ count: 0 });
         // The condition that makes the write a claim rather than an
         // overwrite: it matches nothing once somebody else has spent the row.
-        if (where.consumedAt === null && row.consumedAt != null)
-          return Promise.resolve({ count: 0 });
+        if (where.consumedAt === null && row.consumedAt != null) return Promise.resolve({ count: 0 });
         applyData(row, data);
         return Promise.resolve({ count: 1 });
       },
@@ -103,9 +95,7 @@ describe('consuming an OTP (unit, stubbed database)', () => {
 
     const prisma = {
       authOtpToken: {
-        aggregate: jest
-          .fn()
-          .mockResolvedValue({ _sum: { attempts: options.attemptsInWindow ?? 0 } }),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { attempts: options.attemptsInWindow ?? 0 } }),
         findFirst: jest.fn(() => {
           if (!row) return Promise.resolve(null);
           const seen = { ...row };
@@ -156,9 +146,7 @@ describe('consuming an OTP (unit, stubbed database)', () => {
     ['a code already used', { challenge: null }],
     ['a code spent by a racing request', { challenge: live, spentByAnotherRequest: true }],
   ])('refuses %s with exactly the same answer', async (_case, options) => {
-    const { service } = build(
-      options as { challenge: Row | null; spentByAnotherRequest?: boolean },
-    );
+    const { service } = build(options as { challenge: Row | null; spentByAnotherRequest?: boolean });
 
     await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE)).rejects.toThrow(
       'Code is invalid or has expired',
@@ -166,9 +154,7 @@ describe('consuming an OTP (unit, stubbed database)', () => {
   });
 
   it('counts a wrong attempt against the challenge', async () => {
-    const { service, update, row } = build({
-      challenge: { ...live, codeHash: sha256Hex('000000') },
-    });
+    const { service, update, row } = build({ challenge: { ...live, codeHash: sha256Hex('000000') } });
 
     await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE)).rejects.toThrow();
 
@@ -183,9 +169,7 @@ describe('consuming an OTP (unit, stubbed database)', () => {
   });
 
   it('leaves a challenge usable while attempts remain', async () => {
-    const { service, row } = build({
-      challenge: { ...live, codeHash: sha256Hex('000000'), attempts: 3 },
-    });
+    const { service, row } = build({ challenge: { ...live, codeHash: sha256Hex('000000'), attempts: 3 } });
 
     await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE)).rejects.toThrow();
 
@@ -196,9 +180,7 @@ describe('consuming an OTP (unit, stubbed database)', () => {
   });
 
   it('burns the challenge once the attempts run out, rather than letting it be guessed', async () => {
-    const { service, row } = build({
-      challenge: { ...live, codeHash: sha256Hex('000000'), attempts: 4 },
-    });
+    const { service, row } = build({ challenge: { ...live, codeHash: sha256Hex('000000'), attempts: 4 } });
 
     await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE)).rejects.toThrow();
 
@@ -234,21 +216,12 @@ describe('consuming an OTP (unit, stubbed database)', () => {
   it('charges the per-address verify budget before looking anything up', async () => {
     const consume = jest.fn().mockRejectedValue(new Error('Too many requests'));
     const prisma = {
-      authOtpToken: {
-        aggregate: jest.fn(),
-        findFirst: jest.fn(),
-        update: jest.fn(),
-        updateMany: jest.fn(),
-      },
+      authOtpToken: { aggregate: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     } as unknown as PrismaService;
-    const service = new AuthOtpService(
-      prisma,
-      { consume } as unknown as OtpIpRateLimitService,
-      {
-        name: 'stub',
-        send: jest.fn(),
-      } as unknown as SmsProvider,
-    );
+    const service = new AuthOtpService(prisma, { consume } as unknown as OtpIpRateLimitService, {
+      name: 'stub',
+      send: jest.fn(),
+    } as unknown as SmsProvider);
 
     await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE, '1.2.3.4')).rejects.toThrow(
       'Too many requests',

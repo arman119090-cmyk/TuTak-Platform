@@ -1,4 +1,8 @@
-import { PrismaClient, ReferralChallengeParticipantStatus, TransactionType } from '@prisma/client';
+import {
+  PrismaClient,
+  ReferralChallengeParticipantStatus,
+  TransactionType,
+} from '@prisma/client';
 import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
 import { createCustomer, createPartner } from './setup/fixtures';
@@ -91,9 +95,9 @@ describe('Outbox (integration)', () => {
       // An event that outlived its transaction would have a consumer settle
       // a payment the database says never completed.
       expect(await prisma.outboxEvent.count()).toBe(0);
-      expect((await prisma.transaction.findUniqueOrThrow({ where: { id: tx.id } })).status).toBe(
-        'INITIATED',
-      );
+      expect(
+        (await prisma.transaction.findUniqueOrThrow({ where: { id: tx.id } })).status,
+      ).toBe('INITIATED');
     });
 
     it('survives a process that dies before the handler runs', async () => {
@@ -112,27 +116,20 @@ describe('Outbox (integration)', () => {
       // outbox this qualification was gone for good.
       await completedPurchase(referee.user.id, partner.id, '10000');
       expect(
-        (
-          await prisma.referralChallengeParticipant.findUniqueOrThrow({
-            where: { id: participant.id },
-          })
-        ).status,
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } }))
+          .status,
       ).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
 
       // A worker comes back.
       expect(await outbox.drain()).toBe(1);
 
       expect(
-        (
-          await prisma.referralChallengeParticipant.findUniqueOrThrow({
-            where: { id: participant.id },
-          })
-        ).status,
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } }))
+          .status,
       ).toBe(ReferralChallengeParticipantStatus.REWARDED);
       expect(
-        (
-          await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })
-        ).lifetimeEarned.toFixed(4),
+        (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } }))
+          .lifetimeEarned.toFixed(4),
       ).toBe('1000.0000');
     });
   });
@@ -245,7 +242,9 @@ describe('Outbox (integration)', () => {
 
       // When the backoff elapses, it goes through.
       expect(await outbox.drain(new Date(Date.now() + 600_000))).toBe(1);
-      expect((await prisma.outboxEvent.findFirstOrThrow()).processedAt).not.toBeNull();
+      expect(
+        (await prisma.outboxEvent.findFirstOrThrow()).processedAt,
+      ).not.toBeNull();
     });
 
     it('leaves an exhausted event visible instead of discarding it', async () => {

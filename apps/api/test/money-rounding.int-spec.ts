@@ -17,12 +17,7 @@ import {
   COMMISSION_RATE_MIN_BPS,
   COMMISSION_RATE_STEP_BPS,
 } from '../src/common/validators/is-commission-rate-bps.validator';
-import {
-  createCustomer,
-  createDynamicInvoiceQr,
-  createEvConnector,
-  createPartner,
-} from './setup/fixtures';
+import { createCustomer, createDynamicInvoiceQr, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
 
@@ -245,9 +240,7 @@ describe('Money rounding (integration)', () => {
     };
 
     const GRID = Array.from(
-      {
-        length: (COMMISSION_RATE_MAX_BPS - COMMISSION_RATE_MIN_BPS) / COMMISSION_RATE_STEP_BPS + 1,
-      },
+      { length: (COMMISSION_RATE_MAX_BPS - COMMISSION_RATE_MIN_BPS) / COMMISSION_RATE_STEP_BPS + 1 },
       (_, i) => COMMISSION_RATE_MIN_BPS + i * COMMISSION_RATE_STEP_BPS,
     );
 
@@ -288,29 +281,24 @@ describe('Money rounding (integration)', () => {
         postings
           .filter((p) => p.direction === direction)
           .reduce((sum, p) => sum.plus(p.amount), new Decimal(0));
-      expect(sumBy(PostingDirection.DEBIT).toString()).toBe(
-        sumBy(PostingDirection.CREDIT).toString(),
-      );
+      expect(sumBy(PostingDirection.DEBIT).toString()).toBe(sumBy(PostingDirection.CREDIT).toString());
     });
 
     it.each([
       [COMMISSION_RATE_MIN_BPS, '999.99'],
       [COMMISSION_RATE_MAX_BPS, '1'],
       [1050, '54321.13'],
-    ])(
-      'settles %p bps against gross %p — grid boundaries × more awkward amounts',
-      async (bps, gross) => {
-        const { user } = await createCustomer(prisma);
-        const partner = await createPartner(prisma, { bonusAccrualRateBps: bps as number });
-        const staff = await staffMember(partner.id);
+    ])('settles %p bps against gross %p — grid boundaries × more awkward amounts', async (bps, gross) => {
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: bps as number });
+      const staff = await staffMember(partner.id);
 
-        const intent = await purchaseIntents.create(
-          { partnerId: partner.id, grossAmount: gross as string },
-          user.id,
-        );
-        const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
-        expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
-      },
-    );
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: gross as string },
+        user.id,
+      );
+      const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
+      expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
+    });
   });
 });

@@ -130,10 +130,7 @@ async function main(): Promise<void> {
         attempts.push({ key, userId, at, ok: true, paymentId: result.paymentId });
       } catch (err) {
         attempts.push({
-          key,
-          userId,
-          at,
-          ok: false,
+          key, userId, at, ok: false,
           error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
         });
       }
@@ -300,8 +297,7 @@ async function main(): Promise<void> {
   // ── Verdict ───────────────────────────────────────────────────────────
   say();
   const problems: string[] = [];
-  if (unbacked.length)
-    problems.push(`${unbacked.length} reported capture(s) with no ledger transaction`);
+  if (unbacked.length) problems.push(`${unbacked.length} reported capture(s) with no ledger transaction`);
   if (doubleCharged) problems.push('payment count does not match completed idempotency records');
   if (keyless > 0) problems.push(`${keyless} payment(s) written without an idempotency key`);
   if (!balanced) problems.push('ledger does not balance');

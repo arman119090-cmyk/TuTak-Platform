@@ -50,9 +50,7 @@ describe('Referral journey, invite to reward (integration)', () => {
     outbox = harness.app.get(OutboxService);
     sms = harness.app.get<SmsProvider>(SMS_PROVIDER);
     const config = harness.app.get<ConfigService<AppConfig, true>>(ConfigService);
-    qualificationAmount = config.get('purchasePolicy.challengeQualificationAmount', {
-      infer: true,
-    });
+    qualificationAmount = config.get('purchasePolicy.challengeQualificationAmount', { infer: true });
     rewardAmount = config.get('purchasePolicy.challengeRewardAmount', { infer: true });
   });
 

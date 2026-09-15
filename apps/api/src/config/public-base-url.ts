@@ -38,8 +38,8 @@ export function assertProductionMediaPublicBaseUrl(
   throw new Error(
     `MEDIA_PUBLIC_BASE_URL is "${publicBaseUrl}" in production. That names the machine serving ` +
       'the request, not a reachable host, so every partner logo and customer avatar URL this API ' +
-      "hands to the mobile app and the dashboards would point at the viewer's own computer — " +
-      "silently, with the API still reporting healthy. Set it to this API's public address " +
+      'hands to the mobile app and the dashboards would point at the viewer\'s own computer — ' +
+      'silently, with the API still reporting healthy. Set it to this API\'s public address ' +
       '(scheme and host, no trailing slash), e.g. MEDIA_PUBLIC_BASE_URL=https://api.example.com',
   );
 }

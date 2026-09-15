@@ -164,10 +164,7 @@ describe('Staff identity and branch access (integration)', () => {
       expect(before.branchIds).toContain(branch.id);
       expect(() =>
         assertResourceBranchScope(
-          {
-            ...asRequestUser(cashier.id, RoleName.PARTNER_STAFF, partner.id),
-            branchIds: before.branchIds,
-          } as RequestUser,
+          { ...asRequestUser(cashier.id, RoleName.PARTNER_STAFF, partner.id), branchIds: before.branchIds } as RequestUser,
           partner.id,
           branch.id,
         ),
@@ -184,10 +181,7 @@ describe('Staff identity and branch access (integration)', () => {
       expect(after.branchIds).not.toContain(branch.id);
       expect(() =>
         assertResourceBranchScope(
-          {
-            ...asRequestUser(cashier.id, RoleName.PARTNER_STAFF, partner.id),
-            branchIds: after.branchIds,
-          } as RequestUser,
+          { ...asRequestUser(cashier.id, RoleName.PARTNER_STAFF, partner.id), branchIds: after.branchIds } as RequestUser,
           partner.id,
           branch.id,
         ),

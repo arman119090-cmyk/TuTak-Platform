@@ -1,9 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import {
-  hashIdempotencyRequest,
-  IdempotencyService,
-} from '../src/modules/ledger/idempotency.service';
+import { hashIdempotencyRequest, IdempotencyService } from '../src/modules/ledger/idempotency.service';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { TEST_DATABASE_URL } from './setup/test-database';
 
@@ -88,8 +85,9 @@ describe('IdempotencyService (integration)', () => {
     );
 
     await expect(
-      idempotency.run({ scope: 'payment:user-1', key: 'req-1', request: { amount: '999' } }, () =>
-        Promise.resolve({ chargeId: 'ch_2' }),
+      idempotency.run(
+        { scope: 'payment:user-1', key: 'req-1', request: { amount: '999' } },
+        () => Promise.resolve({ chargeId: 'ch_2' }),
       ),
     ).rejects.toThrow(ConflictException);
   });

@@ -74,7 +74,8 @@ describe('Nearby partners ranked by cashback (integration)', () => {
     });
   }
 
-  const namesFrom = async () => (await controller.nearby(asCustomer(), query())).map((b) => b.name);
+  const namesFrom = async () =>
+    (await controller.nearby(asCustomer(), query())).map((b) => b.name);
 
   beforeAll(async () => {
     harness = await createTestHarness();

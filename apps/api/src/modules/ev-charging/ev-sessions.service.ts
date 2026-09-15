@@ -225,14 +225,8 @@ export class EvSessionsService {
     // stopOnce(), around the bonus-accrual computation, not here.
 
     if (dto.reservationId) {
-      const reservation = await this.prisma.evReservation.findUnique({
-        where: { id: dto.reservationId },
-      });
-      if (
-        !reservation ||
-        reservation.userId !== userId ||
-        reservation.connectorId !== dto.connectorId
-      ) {
+      const reservation = await this.prisma.evReservation.findUnique({ where: { id: dto.reservationId } });
+      if (!reservation || reservation.userId !== userId || reservation.connectorId !== dto.connectorId) {
         throw new BadRequestException('Reservation does not match this user/connector');
       }
       if (reservation.status !== EvReservationStatus.CONFIRMED) {
@@ -524,10 +518,12 @@ export class EvSessionsService {
       metadata: { sessionId: session.id, energyKwh: energyKwh.toString() },
     });
 
-    const anomalous = await this.fraudDetection.checkVelocity(userId, transaction.id).catch((e) => {
-      this.logger.error('Fraud velocity check failed', e);
-      return false;
-    });
+    const anomalous = await this.fraudDetection
+      .checkVelocity(userId, transaction.id)
+      .catch((e) => {
+        this.logger.error('Fraud velocity check failed', e);
+        return false;
+      });
     if (anomalous) {
       await this.transactionsService.markFlagged(transaction.id, 'velocity_limit_exceeded');
       await this.releaseConnector(session.connectorId, session.id).catch((e) =>
@@ -547,9 +543,7 @@ export class EvSessionsService {
       }
 
       if (session.connector.ocpiEvseUid) {
-        await this.ocpiAdapter.stopRemoteSession({
-          ocpiSessionId: session.ocpiCdrId ?? session.id,
-        });
+        await this.ocpiAdapter.stopRemoteSession({ ocpiSessionId: session.ocpiCdrId ?? session.id });
       }
 
       await this.prisma.$transaction(async (tx) => {
@@ -591,11 +585,8 @@ export class EvSessionsService {
       let green = new Decimal(0);
       let completed: Awaited<ReturnType<TransactionsService['markCompleted']>> | undefined;
       const rateBps = session.connector.station.partnerId
-        ? (
-            await this.prisma.partner.findUnique({
-              where: { id: session.connector.station.partnerId },
-            })
-          )?.bonusAccrualRateBps
+        ? (await this.prisma.partner.findUnique({ where: { id: session.connector.station.partnerId } }))
+            ?.bonusAccrualRateBps
         : undefined;
       const canEarn = await this.phoneVerification
         .assertCanEarn(userId)
@@ -674,12 +665,7 @@ export class EvSessionsService {
           let greenLotId: string | null = null;
           if (green.greaterThan(0)) {
             const created = await this.bonusEngine.accrue(
-              {
-                walletId,
-                type: BonusEntryType.ACCRUAL_PURCHASE,
-                amount: green,
-                sourceTransactionId: transaction.id,
-              },
+              { walletId, type: BonusEntryType.ACCRUAL_PURCHASE, amount: green, sourceTransactionId: transaction.id },
               tx,
             );
             greenLotId = created.id;
@@ -765,9 +751,7 @@ export class EvSessionsService {
       if (reservationId) {
         await this.bonusEngine
           .compensateReservation(reservationId, 'ev_stop_failed')
-          .catch((e) =>
-            this.compensationFailed('bonus reservation', reservationId!, session.id, e),
-          );
+          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, session.id, e));
       }
       if (accruedLotId) {
         await this.bonusEngine
@@ -816,9 +800,7 @@ export class EvSessionsService {
 
     try {
       if (session.connector.ocpiEvseUid) {
-        await this.ocpiAdapter.stopRemoteSession({
-          ocpiSessionId: session.ocpiCdrId ?? session.id,
-        });
+        await this.ocpiAdapter.stopRemoteSession({ ocpiSessionId: session.ocpiCdrId ?? session.id });
       }
     } catch (err) {
       // The remote command failing must not leave the bay CHARGING forever
@@ -896,11 +878,7 @@ export class EvSessionsService {
 
     const run = async (tx: Tx) => {
       const existing = await tx.ledgerTransaction.findFirst({
-        where: {
-          kind: 'ev.charging.contribution',
-          sourceType: 'Transaction',
-          sourceId: transactionId,
-        },
+        where: { kind: 'ev.charging.contribution', sourceType: 'Transaction', sourceId: transactionId },
         select: { id: true },
       });
       if (existing) return;
@@ -934,23 +912,11 @@ export class EvSessionsService {
       const postings = [
         { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.pool },
         ...(customerLiability.greaterThan(0)
-          ? [
-              {
-                accountId: bonusLiabilityAccount.id,
-                direction: PostingDirection.CREDIT,
-                amount: customerLiability,
-              },
-            ]
+          ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
           : []),
         ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
         ...(amounts.tutak.greaterThan(0)
-          ? [
-              {
-                accountId: revenueAccount.id,
-                direction: PostingDirection.CREDIT,
-                amount: amounts.tutak,
-              },
-            ]
+          ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: amounts.tutak }]
           : []),
       ];
 
@@ -1098,13 +1064,7 @@ export class EvSessionsService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
       include: {
-        connector: {
-          include: {
-            station: {
-              include: { partner: { select: { id: true, displayName: true, logoAssetId: true } } },
-            },
-          },
-        },
+        connector: { include: { station: { include: { partner: { select: { id: true, displayName: true, logoAssetId: true } } } } } },
         cdr: true,
         transaction: {
           select: { partnerId: true, brandDisplayName: true, brandLogoAssetId: true },
@@ -1112,13 +1072,12 @@ export class EvSessionsService {
       },
     });
 
-    const brandSources = sessions.map(
-      (session) =>
-        session.transaction ?? {
-          partnerId: session.connector.station.partner.id,
-          brandDisplayName: session.connector.station.partner.displayName,
-          brandLogoAssetId: session.connector.station.partner.logoAssetId,
-        },
+    const brandSources = sessions.map((session) =>
+      session.transaction ?? {
+        partnerId: session.connector.station.partner.id,
+        brandDisplayName: session.connector.station.partner.displayName,
+        brandLogoAssetId: session.connector.station.partner.logoAssetId,
+      },
     );
     const brands = await this.media.brandsFor(brandSources);
 

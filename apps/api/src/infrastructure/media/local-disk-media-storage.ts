@@ -75,9 +75,7 @@ export class LocalDiskMediaStorage implements MediaStorage {
     const resolved = path.resolve(this.root, key);
     const rootWithSep = path.resolve(this.root) + path.sep;
     if (!resolved.startsWith(rootWithSep)) {
-      throw new Error(
-        `Refusing to resolve a media key outside the media root: ${JSON.stringify(key)}`,
-      );
+      throw new Error(`Refusing to resolve a media key outside the media root: ${JSON.stringify(key)}`);
     }
     return resolved;
   }

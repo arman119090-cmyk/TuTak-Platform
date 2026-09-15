@@ -1,6 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import { Decimal } from '@prisma/client/runtime/library';
-import { MONEY_MAX, parseMoney, parsePositiveMoney, sumDecimals, toDecimal } from './money';
+import {
+  MONEY_MAX,
+  parseMoney,
+  parsePositiveMoney,
+  sumDecimals,
+  toDecimal,
+} from './money';
 
 /**
  * parseMoney is the chokepoint every externally-supplied amount passes

@@ -1,19 +1,8 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { BranchFuelType, BranchStaffRole, PrismaClient, RoleName } from '@prisma/client';
 import { PartnersController } from '../src/modules/partners/partners.controller';
-import {
-  PartnerBranchStaffController,
-  PartnerStaffController,
-} from '../src/modules/partners/partner-branch-staff.controller';
-import {
-  PartnerBranchQrController,
-  PartnerBranchQrResolveController,
-} from '../src/modules/partners/partner-branch-qr.controller';
+import { PartnerBranchStaffController, PartnerStaffController } from '../src/modules/partners/partner-branch-staff.controller';
+import { PartnerBranchQrController, PartnerBranchQrResolveController } from '../src/modules/partners/partner-branch-qr.controller';
 import { PurchaseIntentsController } from '../src/modules/purchase-intents/purchase-intents.controller';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { createCustomer, createPartner } from './setup/fixtures';
@@ -67,14 +56,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
 
   const createBranch = (partnerId: string, name: string) =>
     prisma.partnerBranch.create({
-      data: {
-        partnerId,
-        name,
-        address: 'Addr',
-        city: 'Yerevan',
-        latitude: 40.18,
-        longitude: 44.51,
-      },
+      data: { partnerId, name, address: 'Addr', city: 'Yerevan', latitude: 40.18, longitude: 44.51 },
     });
 
   /** A real user row holding `role` scoped to `partnerId` — the ordinary partner-level grant. */
@@ -115,14 +97,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
   const createFuelIntent = async (partnerId: string, branchId: string) => {
     const { user: customer } = await createCustomer(prisma);
     return purchaseIntentsController.create(
-      {
-        id: customer.id,
-        phone: customer.phone,
-        roles: [RoleName.CUSTOMER],
-        permissions: [],
-        partnerScopes: {},
-        mustChangePassword: false,
-      },
+      { id: customer.id, phone: customer.phone, roles: [RoleName.CUSTOMER], permissions: [], partnerScopes: {}, mustChangePassword: false },
       { partnerId, partnerBranchId: branchId, grossAmount: '5000' },
     );
   };
@@ -196,9 +171,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       const ownerUser = await owner(partner.id);
       const staffUser = await staffMember(partner.id);
 
-      await branchStaffController.assign(ownerUser, partner.id, branch.id, {
-        userId: staffUser.id,
-      });
+      await branchStaffController.assign(ownerUser, partner.id, branch.id, { userId: staffUser.id });
 
       await expect(
         branchStaffController.assign(ownerUser, partner.id, branch.id, { userId: staffUser.id }),
@@ -244,9 +217,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       // confirming it exists under a different tenant would itself leak
       // information an IDOR check should not.
       await expect(
-        branchStaffController.assign(ownerOfMine, mine.id, theirBranch.id, {
-          userId: staffUser.id,
-        }),
+        branchStaffController.assign(ownerOfMine, mine.id, theirBranch.id, { userId: staffUser.id }),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -255,9 +226,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       const branch = await createBranch(partner.id, 'B1');
       const ownerUser = await owner(partner.id);
       const staffUser = await staffMember(partner.id);
-      await branchStaffController.assign(ownerUser, partner.id, branch.id, {
-        userId: staffUser.id,
-      });
+      await branchStaffController.assign(ownerUser, partner.id, branch.id, { userId: staffUser.id });
 
       const assignedCaller = await branchStaff(partner.id, [branch.id]);
       const roster = await branchStaffController.list(assignedCaller, partner.id, branch.id);
@@ -285,9 +254,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
         allBranches: true,
       });
 
-      const role = await prisma.userRole.findFirstOrThrow({
-        where: { userId: manager.id, partnerId: partner.id },
-      });
+      const role = await prisma.userRole.findFirstOrThrow({ where: { userId: manager.id, partnerId: partner.id } });
       expect(role.allBranches).toBe(true);
     });
 
@@ -314,14 +281,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
 
       await expect(
         purchaseIntentsController.create(
-          {
-            id: customer.id,
-            phone: customer.phone,
-            roles: [RoleName.CUSTOMER],
-            permissions: [],
-            partnerScopes: {},
-            mustChangePassword: false,
-          },
+          { id: customer.id, phone: customer.phone, roles: [RoleName.CUSTOMER], permissions: [], partnerScopes: {}, mustChangePassword: false },
           { partnerId: partner.id, grossAmount: '5000' },
         ),
       ).rejects.toThrow(BadRequestException);
@@ -339,14 +299,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       const { user: customer } = await createCustomer(prisma);
 
       const intent = await purchaseIntentsController.create(
-        {
-          id: customer.id,
-          phone: customer.phone,
-          roles: [RoleName.CUSTOMER],
-          permissions: [],
-          partnerScopes: {},
-          mustChangePassword: false,
-        },
+        { id: customer.id, phone: customer.phone, roles: [RoleName.CUSTOMER], permissions: [], partnerScopes: {}, mustChangePassword: false },
         { partnerId: partner.id, grossAmount: '5000' },
       );
       expect(intent.partnerBranchId).toBeNull();
@@ -383,9 +336,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       const intentB = await createFuelIntent(partner.id, branchB.id);
 
       const staffA = await branchStaff(partner.id, [branchA.id]);
-      await expect(purchaseIntentsController.confirm(staffA, intentB.id)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(purchaseIntentsController.confirm(staffA, intentB.id)).rejects.toThrow(ForbiddenException);
     });
 
     it('branch-A staff can confirm a branch-A purchase intent', async () => {
@@ -435,9 +386,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       const intentB = await createFuelIntent(partner.id, branchB.id);
 
       const staffA = await branchStaff(partner.id, [branchA.id]);
-      await expect(purchaseIntentsController.get(staffA, intentB.id)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(purchaseIntentsController.get(staffA, intentB.id)).rejects.toThrow(ForbiddenException);
     });
 
     it('the owner can confirm any branch intent regardless of branch assignment', async () => {
@@ -519,9 +468,7 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       const rotated = await branchQrController.rotate(ownerUser, partner.id, branch.id);
 
       expect(rotated.token).not.toBe(original.token);
-      await expect(branchQrResolveController.resolve(original.token)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(branchQrResolveController.resolve(original.token)).rejects.toThrow(NotFoundException);
       const resolved = await branchQrResolveController.resolve(rotated.token);
       expect(resolved.partnerBranchId).toBe(branch.id);
     });
@@ -547,9 +494,9 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       expect(seen).not.toBeNull();
 
       const unassignedCaller = await branchStaff(partner.id, []);
-      await expect(
-        branchQrController.getActive(unassignedCaller, partner.id, branch.id),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(branchQrController.getActive(unassignedCaller, partner.id, branch.id)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it("a branch's QR never resolves to a different branch of the same partner", async () => {

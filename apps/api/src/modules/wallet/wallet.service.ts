@@ -43,9 +43,7 @@ export class WalletService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const sourceIds = [
-      ...new Set(items.map((i) => i.sourceTransactionId).filter((id): id is string => !!id)),
-    ];
+    const sourceIds = [...new Set(items.map((i) => i.sourceTransactionId).filter((id): id is string => !!id))];
     const sources = sourceIds.length
       ? await this.prisma.transaction.findMany({
           where: { id: { in: sourceIds } },
@@ -53,9 +51,7 @@ export class WalletService {
         })
       : [];
     const brands = await this.media.brandsFor(sources);
-    const brandByTransactionId = new Map(
-      sources.map((source) => [source.id, brands.get(source) ?? null]),
-    );
+    const brandByTransactionId = new Map(sources.map((source) => [source.id, brands.get(source) ?? null]));
 
     return {
       items: items.map((entry) => ({

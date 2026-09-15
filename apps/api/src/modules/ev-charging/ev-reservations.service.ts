@@ -32,19 +32,12 @@ export class EvReservationsService {
   }
 
   async cancel(reservationId: string, userId: string) {
-    const reservation = await this.prisma.evReservation.findUnique({
-      where: { id: reservationId },
-    });
+    const reservation = await this.prisma.evReservation.findUnique({ where: { id: reservationId } });
     if (!reservation || reservation.userId !== userId) {
       throw new NotFoundException('Reservation not found');
     }
-    if (
-      reservation.status !== EvReservationStatus.CONFIRMED &&
-      reservation.status !== EvReservationStatus.PENDING
-    ) {
-      throw new BadRequestException(
-        `Reservation cannot be cancelled (status: ${reservation.status})`,
-      );
+    if (reservation.status !== EvReservationStatus.CONFIRMED && reservation.status !== EvReservationStatus.PENDING) {
+      throw new BadRequestException(`Reservation cannot be cancelled (status: ${reservation.status})`);
     }
 
     return this.prisma.$transaction(async (tx) => {

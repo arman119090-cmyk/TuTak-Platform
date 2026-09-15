@@ -1,12 +1,12 @@
-import {
-  AppEnvironment,
-  isProductionDeployment,
-  isPublicDeployment,
-} from '../../config/app-environment';
+import { AppEnvironment, isProductionDeployment, isPublicDeployment } from '../../config/app-environment';
 import { ConsoleSmsProvider } from './console-sms.provider';
 import { HttpSmsProvider } from './http-sms.provider';
 import { UnavailableSmsProvider } from './unavailable-sms.provider';
-import { VIVA_NUMBER_FORMATS, VivaNumberFormat, VivaSmsProvider } from './viva-sms.provider';
+import {
+  VIVA_NUMBER_FORMATS,
+  VivaNumberFormat,
+  VivaSmsProvider,
+} from './viva-sms.provider';
 import { SmsProvider } from './sms-provider.interface';
 
 export interface SmsTransportOptions {

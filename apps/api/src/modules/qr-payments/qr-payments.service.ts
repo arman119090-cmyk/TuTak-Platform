@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AuditAction, QrCodeStatus, QrCodeType, TransactionType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -85,8 +79,7 @@ export class QrPaymentsService {
       await this.assertCanIssueForPartner(issuer, dto.partnerId);
     }
 
-    const expiresInSeconds =
-      dto.expiresInSeconds ?? (dto.type === QrCodeType.STATIC_MERCHANT ? 3153600000 : 900);
+    const expiresInSeconds = dto.expiresInSeconds ?? (dto.type === QrCodeType.STATIC_MERCHANT ? 3153600000 : 900);
 
     const qr = await this.prisma.qrCode.create({
       data: {
@@ -180,7 +173,9 @@ export class QrPaymentsService {
       throw new BadRequestException('You cannot redeem a code you issued yourself');
     }
     if (qr.partnerId && (await this.partnersService.isAffiliated(qr.partnerId, payerUserId))) {
-      throw new BadRequestException('You cannot redeem a code issued by the partner you belong to');
+      throw new BadRequestException(
+        'You cannot redeem a code issued by the partner you belong to',
+      );
     }
 
     // Static merchant codes are disabled until payment authorization exists.
@@ -243,7 +238,9 @@ export class QrPaymentsService {
       });
     if (anomalous) {
       await this.transactionsService.markFlagged(transaction.id, 'velocity_limit_exceeded');
-      throw new BadRequestException('This payment was held for review. Please try again shortly.');
+      throw new BadRequestException(
+        'This payment was held for review. Please try again shortly.',
+      );
     }
 
     let reservationId: string | null = null;
@@ -282,7 +279,9 @@ export class QrPaymentsService {
         // column holds four, and points are a liability the platform should
         // never over-issue because of a rounding step. Unrounded, this threw
         // out of `parsePositiveMoney` and failed the whole payment.
-        bonusEarned = roundIssued(paidPortion.times(partner.bonusAccrualRateBps).dividedBy(10_000));
+        bonusEarned = roundIssued(
+          paidPortion.times(partner.bonusAccrualRateBps).dividedBy(10_000),
+        );
         if (bonusEarned.greaterThan(0)) {
           const payerWalletId = await this.walletService.getWalletIdForUser(payerUserId);
           const lot = await this.bonusEngine.accrue({
@@ -333,9 +332,7 @@ export class QrPaymentsService {
       if (reservationId) {
         await this.bonusEngine
           .compensateReservation(reservationId, 'qr_redeem_failed')
-          .catch((e) =>
-            this.compensationFailed('bonus reservation', reservationId!, transaction.id, e),
-          );
+          .catch((e) => this.compensationFailed('bonus reservation', reservationId!, transaction.id, e));
       }
       if (accruedLotId) {
         await this.bonusEngine

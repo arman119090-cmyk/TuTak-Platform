@@ -23,7 +23,8 @@ import { BonusEngineService } from '../wallet/bonus-engine.service';
 type Tx = Prisma.TransactionClient;
 
 export type ResolvedReferrer =
-  { type: 'USER'; userId: string } | { type: 'PARTNER'; partnerId: string };
+  | { type: 'USER'; userId: string }
+  | { type: 'PARTNER'; partnerId: string };
 
 /** Re-exported for callers that only need the program-version type, not the whole Prisma namespace. */
 export { ReferralProgramVersion };
@@ -241,11 +242,7 @@ export class ReferralService {
           break;
         }
         seen.add(key);
-        chain.push({
-          level: level as 1 | 2 | 3,
-          type: 'PARTNER',
-          partnerId: invite.referrerPartnerId,
-        });
+        chain.push({ level: level as 1 | 2 | 3, type: 'PARTNER', partnerId: invite.referrerPartnerId });
         break; // spec: a partner referrer does not continue the chain.
       }
 
@@ -296,15 +293,9 @@ export class ReferralService {
 
     const green = roundIssued(pool.times(policy.poolGreenBps).dividedBy(10_000));
     const deferred = roundIssued(pool.times(policy.poolDeferredBps).dividedBy(10_000));
-    const l1 = l1Entry
-      ? roundIssued(pool.times(policy.poolReferrerL1Bps).dividedBy(10_000))
-      : new Decimal(0);
-    const l2 = l2Entry
-      ? roundIssued(pool.times(policy.poolReferrerL2Bps).dividedBy(10_000))
-      : new Decimal(0);
-    const l3 = l3Entry
-      ? roundIssued(pool.times(policy.poolReferrerL3Bps).dividedBy(10_000))
-      : new Decimal(0);
+    const l1 = l1Entry ? roundIssued(pool.times(policy.poolReferrerL1Bps).dividedBy(10_000)) : new Decimal(0);
+    const l2 = l2Entry ? roundIssued(pool.times(policy.poolReferrerL2Bps).dividedBy(10_000)) : new Decimal(0);
+    const l3 = l3Entry ? roundIssued(pool.times(policy.poolReferrerL3Bps).dividedBy(10_000)) : new Decimal(0);
     const tutak = pool.minus(green).minus(deferred).minus(l1).minus(l2).minus(l3);
 
     return { pool, green, deferred, l1, l2, l3, tutak, chain };
@@ -330,13 +321,7 @@ export class ReferralService {
       if (entry.type !== 'USER') continue;
       const amount = byLevel[entry.level];
       if (!amount || amount.lessThanOrEqualTo(0)) continue;
-      await this.creditUserReferrerShare(
-        entry.userId,
-        amount,
-        sourceTransactionId,
-        tx,
-        entry.level,
-      );
+      await this.creditUserReferrerShare(entry.userId, amount, sourceTransactionId, tx, entry.level);
     }
   }
 
@@ -494,58 +479,55 @@ export class ReferralService {
     // simply throws; see `LedgerService`'s own `withRetry` for the same
     // reasoning applied to the ledger.
     await this.runSerializable(async (tx) => {
-      const updated = await tx.referralChallengeParticipant.update({
-        where: { id: participant.id },
-        data: { progressAmount: { increment: transaction.amount } },
-      });
+        const updated = await tx.referralChallengeParticipant.update({
+          where: { id: participant.id },
+          data: { progressAmount: { increment: transaction.amount } },
+        });
 
-      // Traceability for `reverseChallengeContribution`: this transaction
-      // only ever reaches here while the participant is IN_PROGRESS (the
-      // guard at the top of this method), so recording it now is the only
-      // reliable way a later refund can know this specific amount is part
-      // of the current tally (independent audit, GitHub issue #28).
-      await tx.referralChallengeContribution.create({
-        data: { participantId: participant.id, transactionId, amount: transaction.amount },
-      });
+        // Traceability for `reverseChallengeContribution`: this transaction
+        // only ever reaches here while the participant is IN_PROGRESS (the
+        // guard at the top of this method), so recording it now is the only
+        // reliable way a later refund can know this specific amount is part
+        // of the current tally (independent audit, GitHub issue #28).
+        await tx.referralChallengeContribution.create({
+          data: { participantId: participant.id, transactionId, amount: transaction.amount },
+        });
 
-      if (updated.progressAmount.lessThan(updated.requiredAmount)) return;
+        if (updated.progressAmount.lessThan(updated.requiredAmount)) return;
 
-      // Both sides verified, same as the flat one-time reward this evolved
-      // from required (docs/AUDIT_2026-08-B.md §C4/§C5): an unverified
-      // referrer is a farm's collection account, an unverified referee is
-      // the fabricated signup it feeds on. Left IN_PROGRESS rather than
-      // failing outright — a later purchase, after either side verifies,
-      // re-checks this and can still qualify normally.
-      const [referrer, referee] = await Promise.all([
-        tx.user.findUnique({
-          where: { id: participant.referrerUserId },
-          select: { isPhoneVerified: true },
-        }),
-        tx.user.findUnique({ where: { id: refereeUserId }, select: { isPhoneVerified: true } }),
-      ]);
-      if (!referrer?.isPhoneVerified || !referee?.isPhoneVerified) {
-        this.logger.warn(
-          `Referral challenge ${participant.id} reached threshold but an unverified number is involved`,
+        // Both sides verified, same as the flat one-time reward this evolved
+        // from required (docs/AUDIT_2026-08-B.md §C4/§C5): an unverified
+        // referrer is a farm's collection account, an unverified referee is
+        // the fabricated signup it feeds on. Left IN_PROGRESS rather than
+        // failing outright — a later purchase, after either side verifies,
+        // re-checks this and can still qualify normally.
+        const [referrer, referee] = await Promise.all([
+          tx.user.findUnique({ where: { id: participant.referrerUserId }, select: { isPhoneVerified: true } }),
+          tx.user.findUnique({ where: { id: refereeUserId }, select: { isPhoneVerified: true } }),
+        ]);
+        if (!referrer?.isPhoneVerified || !referee?.isPhoneVerified) {
+          this.logger.warn(
+            `Referral challenge ${participant.id} reached threshold but an unverified number is involved`,
+          );
+          return;
+        }
+
+        // Claim QUALIFIED first, conditionally — exactly one caller can move
+        // this participant out of IN_PROGRESS, mirroring the atomicity this
+        // file already relied on for the old one-time reward.
+        const claimed = await tx.referralChallengeParticipant.updateMany({
+          where: { id: participant.id, status: ReferralChallengeParticipantStatus.IN_PROGRESS },
+          data: { status: ReferralChallengeParticipantStatus.QUALIFIED, qualifiedAt: new Date() },
+        });
+        if (claimed.count === 0) return;
+
+        await this.tryRewardChallengeSlot(
+          participant.referrerUserId,
+          participant.refereeUserId,
+          transactionId,
+          tx,
         );
-        return;
-      }
-
-      // Claim QUALIFIED first, conditionally — exactly one caller can move
-      // this participant out of IN_PROGRESS, mirroring the atomicity this
-      // file already relied on for the old one-time reward.
-      const claimed = await tx.referralChallengeParticipant.updateMany({
-        where: { id: participant.id, status: ReferralChallengeParticipantStatus.IN_PROGRESS },
-        data: { status: ReferralChallengeParticipantStatus.QUALIFIED, qualifiedAt: new Date() },
       });
-      if (claimed.count === 0) return;
-
-      await this.tryRewardChallengeSlot(
-        participant.referrerUserId,
-        participant.refereeUserId,
-        transactionId,
-        tx,
-      );
-    });
   }
 
   /**
@@ -596,10 +578,8 @@ export class ReferralService {
 
     const newProgress = contribution.participant.progressAmount.minus(reduceBy);
     const droppedBelowThreshold = newProgress.lessThan(contribution.participant.requiredAmount);
-    const wasQualified =
-      contribution.participant.status === ReferralChallengeParticipantStatus.QUALIFIED;
-    const wasRewarded =
-      contribution.participant.status === ReferralChallengeParticipantStatus.REWARDED;
+    const wasQualified = contribution.participant.status === ReferralChallengeParticipantStatus.QUALIFIED;
+    const wasRewarded = contribution.participant.status === ReferralChallengeParticipantStatus.REWARDED;
 
     const data: Prisma.ReferralChallengeParticipantUpdateInput = { progressAmount: newProgress };
     // A slot a REWARDED participant held is freed the instant its status
@@ -613,10 +593,7 @@ export class ReferralService {
       data.qualifiedAt = null;
       data.rewardedAt = null;
     }
-    await tx.referralChallengeParticipant.update({
-      where: { id: contribution.participantId },
-      data,
-    });
+    await tx.referralChallengeParticipant.update({ where: { id: contribution.participantId }, data });
 
     if (droppedBelowThreshold && wasRewarded) {
       await this.reverseReward(contribution.participant, reason, tx);
@@ -703,9 +680,7 @@ export class ReferralService {
     ]);
     const referrerActual = referrerClawed ?? zero;
     const refereeActual = refereeClawed ?? zero;
-    const shortfall = referrerGranted
-      .minus(referrerActual)
-      .plus(refereeGranted.minus(refereeActual));
+    const shortfall = referrerGranted.minus(referrerActual).plus(refereeGranted.minus(refereeActual));
 
     if (shortfall.greaterThan(0)) {
       this.logger.warn(
@@ -727,11 +702,7 @@ export class ReferralService {
           sourceType: 'ReferralChallengeParticipant',
           sourceId: `${participant.referrerUserId}:${participant.refereeUserId}`,
           postings: [
-            {
-              accountId: bonusLiabilityAccount.id,
-              direction: PostingDirection.DEBIT,
-              amount: recovered,
-            },
+            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: recovered },
             { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: recovered },
           ],
         },
@@ -801,11 +772,7 @@ export class ReferralService {
     }
 
     const claimed = await tx.referralChallengeParticipant.updateMany({
-      where: {
-        referrerUserId,
-        refereeUserId,
-        status: ReferralChallengeParticipantStatus.QUALIFIED,
-      },
+      where: { referrerUserId, refereeUserId, status: ReferralChallengeParticipantStatus.QUALIFIED },
       data: { status: ReferralChallengeParticipantStatus.REWARDED, rewardedAt: new Date() },
     });
     if (claimed.count === 0) return;
@@ -888,16 +855,8 @@ export class ReferralService {
         sourceType: 'ReferralChallengeParticipant',
         sourceId: `${referrerUserId}:${refereeUserId}`,
         postings: [
-          {
-            accountId: revenueAccount.id,
-            direction: PostingDirection.DEBIT,
-            amount: totalRewardAmount,
-          },
-          {
-            accountId: bonusLiabilityAccount.id,
-            direction: PostingDirection.CREDIT,
-            amount: totalRewardAmount,
-          },
+          { accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: totalRewardAmount },
+          { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: totalRewardAmount },
         ],
       },
       tx,

@@ -38,9 +38,7 @@ export interface IdempotencyParams {
 
 /** Exported so tests can construct fixtures whose hash actually matches a given request. */
 export function hashIdempotencyRequest(request: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(request ?? null))
-    .digest('hex');
+  return createHash('sha256').update(JSON.stringify(request ?? null)).digest('hex');
 }
 
 /**
@@ -107,7 +105,9 @@ export class IdempotencyService {
     });
 
     if (existing.requestHash !== requestHash) {
-      throw new ConflictException('Idempotency key was already used with a different request body');
+      throw new ConflictException(
+        'Idempotency key was already used with a different request body',
+      );
     }
 
     if (existing.status === 'COMPLETED') {

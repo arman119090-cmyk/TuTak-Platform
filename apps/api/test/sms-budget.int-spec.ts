@@ -95,7 +95,9 @@ describe('Global SMS budget (integration)', () => {
     it('counts atomically under concurrency, admitting no more than the ceiling', async () => {
       const budget = budgetWith(5, 1000);
 
-      const results = await Promise.allSettled(Array.from({ length: 20 }, () => budget.claim()));
+      const results = await Promise.allSettled(
+        Array.from({ length: 20 }, () => budget.claim()),
+      );
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(5);
       expect(results.filter((r) => r.status === 'rejected')).toHaveLength(15);
@@ -136,10 +138,7 @@ describe('Global SMS budget (integration)', () => {
     });
 
     it.each([
-      [
-        'registration OTP',
-        async () => authService.requestRegistrationOtp({ phone: randomPhone() }),
-      ],
+      ['registration OTP', async () => authService.requestRegistrationOtp({ phone: randomPhone() })],
       [
         'login OTP',
         async () => {

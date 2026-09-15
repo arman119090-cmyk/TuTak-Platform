@@ -1,9 +1,4 @@
-import {
-  EvConnectorStatus,
-  EvReservationStatus,
-  EvSessionStatus,
-  PrismaClient,
-} from '@prisma/client';
+import { EvConnectorStatus, EvReservationStatus, EvSessionStatus, PrismaClient } from '@prisma/client';
 import { EvReservationsService } from '../src/modules/ev-charging/ev-reservations.service';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { createCustomer, createEvConnector, createPartner } from './setup/fixtures';

@@ -61,8 +61,7 @@ export class UsersService {
       personalizedRecommendationsConsent: boolean;
     },
   >(user: T) {
-    const { avatarAsset, avatarConsentReferralList, personalizedRecommendationsConsent, ...rest } =
-      user;
+    const { avatarAsset, avatarConsentReferralList, personalizedRecommendationsConsent, ...rest } = user;
     return {
       ...rest,
       avatar: this.media.signedImage(avatarAsset, user.id),

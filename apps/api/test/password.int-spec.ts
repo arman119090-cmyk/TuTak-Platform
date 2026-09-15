@@ -161,9 +161,9 @@ describe('Password lifecycle (integration)', () => {
       const code = await deliveredCode(user.id);
 
       for (let i = 0; i < 5; i += 1) {
-        await expect(passwords.confirmReset(user.phone, '000000', NEXT, meta)).rejects.toThrow(
-          UnauthorizedException,
-        );
+        await expect(
+          passwords.confirmReset(user.phone, '000000', NEXT, meta),
+        ).rejects.toThrow(UnauthorizedException);
       }
 
       // Even the correct code is worthless now — guessing must be expensive.
@@ -234,7 +234,9 @@ describe('Password lifecycle (integration)', () => {
       for (let round = 0; round < 3; round += 1) {
         await passwords.requestReset(user.phone, meta);
         for (let i = 0; i < 5; i += 1) {
-          await passwords.confirmReset(user.phone, '000000', NEXT, meta).catch(() => undefined);
+          await passwords
+            .confirmReset(user.phone, '000000', NEXT, meta)
+            .catch(() => undefined);
         }
       }
 
@@ -324,7 +326,9 @@ describe('Password lifecycle (integration)', () => {
       const notes = await prisma.notification.findMany({ where: { userId: user.id } });
       expect(notes.length).toBeGreaterThan(0);
       for (const note of notes) {
-        expect(JSON.stringify(note.params ?? {})).not.toContain(harness.sms.lastCodeTo(user.phone));
+        expect(JSON.stringify(note.params ?? {})).not.toContain(
+          harness.sms.lastCodeTo(user.phone),
+        );
       }
     });
 
@@ -348,4 +352,5 @@ describe('Password lifecycle (integration)', () => {
       expect(note.params).toEqual({ partnerName: 'kept' });
     });
   });
+
 });

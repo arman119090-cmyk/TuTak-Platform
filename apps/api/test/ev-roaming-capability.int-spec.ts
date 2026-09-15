@@ -3,12 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { RoamingCpoCustomersService } from '../src/modules/roaming-cpo/roaming-cpo-customers.service';
 import { RoamingCpoSettlementService } from '../src/modules/roaming-cpo/roaming-cpo-settlement.service';
-import {
-  createCustomer,
-  createPartner,
-  createRoamingCpoStation,
-  linkRoamingCpoCustomer,
-} from './setup/fixtures';
+import { createCustomer, createPartner, createRoamingCpoStation, linkRoamingCpoCustomer } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
@@ -58,16 +53,10 @@ describe('Roaming-CPO capability gating (integration)', () => {
     it('still refuses even when customerChargingEnabled is set without a wired ocpiEvseUid', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const { station, connector } = await createRoamingCpoStation(prisma, {
-        partnerId: partner.id,
-      });
+      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       await prisma.evStation.update({
         where: { id: station.id },
-        data: {
-          customerChargingEnabled: true,
-          remoteStartSupported: true,
-          remoteStopSupported: true,
-        },
+        data: { customerChargingEnabled: true, remoteStartSupported: true, remoteStopSupported: true },
       });
 
       // No `ocpiEvseUid` on the connector — nothing to actually command.
@@ -80,16 +69,10 @@ describe('Roaming-CPO capability gating (integration)', () => {
     it('fails closed on the No-op adapter even with every capability flag set and ocpiEvseUid wired', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const { station, connector } = await createRoamingCpoStation(prisma, {
-        partnerId: partner.id,
-      });
+      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       await prisma.evStation.update({
         where: { id: station.id },
-        data: {
-          customerChargingEnabled: true,
-          remoteStartSupported: true,
-          remoteStopSupported: true,
-        },
+        data: { customerChargingEnabled: true, remoteStartSupported: true, remoteStopSupported: true },
       });
       await prisma.evConnector.update({
         where: { id: connector.id },
@@ -119,17 +102,10 @@ describe('Roaming-CPO capability gating (integration)', () => {
       const partner = await createPartner(prisma);
       const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       const session = await prisma.evSession.create({
-        data: {
-          connectorId: connector.id,
-          userId: user.id,
-          status: 'CHARGING',
-          startedAt: new Date(),
-        },
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
       });
 
-      await expect(sessions.reportMeterValue(session.id, '5', user.id)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(sessions.reportMeterValue(session.id, '5', user.id)).rejects.toThrow(BadRequestException);
 
       const untouched = await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } });
       expect(untouched.energyKwh?.toString() ?? null).toBeNull();
@@ -140,12 +116,7 @@ describe('Roaming-CPO capability gating (integration)', () => {
       const partner = await createPartner(prisma);
       const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       const session = await prisma.evSession.create({
-        data: {
-          connectorId: connector.id,
-          userId: user.id,
-          status: 'CHARGING',
-          startedAt: new Date(),
-        },
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
       });
 
       await expect(
@@ -160,12 +131,7 @@ describe('Roaming-CPO capability gating (integration)', () => {
       const partner = await createPartner(prisma);
       const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       const session = await prisma.evSession.create({
-        data: {
-          connectorId: connector.id,
-          userId: user.id,
-          status: 'CHARGING',
-          startedAt: new Date(),
-        },
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
       });
 
       const result = await sessions.stop(session.id, user.id, {});
@@ -177,9 +143,7 @@ describe('Roaming-CPO capability gating (integration)', () => {
       expect(updated.status).toBe('AWAITING_SETTLEMENT');
       expect(updated.stoppedAt).not.toBeNull();
       expect(updated.transactionId).toBeNull();
-      const freedConnector = await prisma.evConnector.findUniqueOrThrow({
-        where: { id: connector.id },
-      });
+      const freedConnector = await prisma.evConnector.findUniqueOrThrow({ where: { id: connector.id } });
       expect(freedConnector.status).toBe('AVAILABLE');
     });
 
@@ -188,12 +152,7 @@ describe('Roaming-CPO capability gating (integration)', () => {
       const partner = await createPartner(prisma);
       const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       const session = await prisma.evSession.create({
-        data: {
-          connectorId: connector.id,
-          userId: user.id,
-          status: 'CHARGING',
-          startedAt: new Date(),
-        },
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
       });
 
       await expect(sessions.stop(session.id, user.id, { bonusAmountToApply: '5' })).rejects.toThrow(
@@ -210,12 +169,7 @@ describe('Roaming-CPO capability gating (integration)', () => {
       const partner = await createPartner(prisma);
       const { connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
       const session = await prisma.evSession.create({
-        data: {
-          connectorId: connector.id,
-          userId: user.id,
-          status: 'CHARGING',
-          startedAt: new Date(),
-        },
+        data: { connectorId: connector.id, userId: user.id, status: 'CHARGING', startedAt: new Date() },
       });
 
       await sessions.stop(session.id, user.id, {});

@@ -29,12 +29,7 @@ export class AnalyticsService {
    * nothing in the response to redact after the fact. Hence the filter is in
    * the `where` both the aggregate and the groupBy share.
    */
-  async partnerAnalytics(
-    partnerId: string,
-    from?: Date,
-    to?: Date,
-    branchIds: string[] | null = null,
-  ) {
+  async partnerAnalytics(partnerId: string, from?: Date, to?: Date, branchIds: string[] | null = null) {
     const where = {
       partnerId,
       status: TransactionStatus.COMPLETED,

@@ -88,9 +88,7 @@ describe('MediaDeliveryService', () => {
     it('refuses a URL whose audience was swapped', () => {
       const url = service.signedUrl(ASSET, 'display', VIEWER);
       const query = parse(url);
-      expect(
-        service.verifySignature(ASSET, 'display', { ...query, aud: 'someone-else' }),
-      ).toBeNull();
+      expect(service.verifySignature(ASSET, 'display', { ...query, aud: 'someone-else' })).toBeNull();
     });
 
     it('refuses a signature lifted onto a different asset', () => {
@@ -117,9 +115,7 @@ describe('MediaDeliveryService', () => {
 
     it('refuses a URL with no signature at all', () => {
       expect(service.verifySignature(ASSET, 'display', {})).toBeNull();
-      expect(
-        service.verifySignature(ASSET, 'display', { aud: VIEWER, exp: '99999999999' }),
-      ).toBeNull();
+      expect(service.verifySignature(ASSET, 'display', { aud: VIEWER, exp: '99999999999' })).toBeNull();
     });
 
     it('cannot be confused by concatenation of its own fields', () => {

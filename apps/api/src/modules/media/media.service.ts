@@ -6,7 +6,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditAction, MediaAsset, MediaAssetKind, MediaAssetStatus, Prisma } from '@prisma/client';
+import {
+  AuditAction,
+  MediaAsset,
+  MediaAssetKind,
+  MediaAssetStatus,
+  Prisma,
+} from '@prisma/client';
 import { MediaImageService } from '../../infrastructure/media/media-image.service';
 import { mintMediaKeys } from '../../infrastructure/media/media-keys';
 import { MEDIA_STORAGE, MediaStorage } from '../../infrastructure/media/media-storage.interface';
@@ -193,8 +199,7 @@ export class MediaService {
     });
     if (!partner) throw new NotFoundException('Partner not found');
 
-    const currentId =
-      params.kind === MediaAssetKind.PARTNER_LOGO ? partner.logoAssetId : partner.coverAssetId;
+    const currentId = params.kind === MediaAssetKind.PARTNER_LOGO ? partner.logoAssetId : partner.coverAssetId;
     if (!currentId) return { revokedAssetId: null };
 
     await this.prisma.$transaction(async (tx) => {
@@ -232,11 +237,7 @@ export class MediaService {
    * URL already handed out keeps resolving until it expires instead of turning
    * into a broken image mid-session.
    */
-  async setUserAvatar(params: {
-    userId: string;
-    file: Buffer;
-    actor: ActorContext;
-  }): Promise<MediaAsset> {
+  async setUserAvatar(params: { userId: string; file: Buffer; actor: ActorContext }): Promise<MediaAsset> {
     const asset = await this.storeAsset({
       kind: MediaAssetKind.USER_AVATAR,
       file: params.file,
@@ -261,10 +262,7 @@ export class MediaService {
     return asset;
   }
 
-  async removeUserAvatar(params: {
-    userId: string;
-    actor: ActorContext;
-  }): Promise<{ removedAssetId: string | null }> {
+  async removeUserAvatar(params: { userId: string; actor: ActorContext }): Promise<{ removedAssetId: string | null }> {
     const user = await this.prisma.user.findUnique({
       where: { id: params.userId },
       select: { avatarAssetId: true },
@@ -276,11 +274,7 @@ export class MediaService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: params.userId }, data: { avatarAssetId: null } });
       await tx.mediaAsset.updateMany({
-        where: {
-          userId: params.userId,
-          kind: MediaAssetKind.USER_AVATAR,
-          status: MediaAssetStatus.ACTIVE,
-        },
+        where: { userId: params.userId, kind: MediaAssetKind.USER_AVATAR, status: MediaAssetStatus.ACTIVE },
         data: { status: MediaAssetStatus.REVOKED, revokedAt: new Date(), approvedAt: new Date() },
       });
     });
@@ -343,11 +337,7 @@ export class MediaService {
       // ever delete them. Orphaned bytes are not just cost — they are an
       // untracked copy of somebody's face or a partner's artwork, sitting in
       // storage outside every record the platform keeps.
-      await this.storage.put(
-        keys.original,
-        processed.original.body,
-        processed.original.contentType,
-      );
+      await this.storage.put(keys.original, processed.original.body, processed.original.contentType);
       await this.storage.put(keys.display, processed.display.body, processed.display.contentType);
       await this.storage.put(keys.thumb, processed.thumbnail.body, processed.thumbnail.contentType);
 
@@ -362,22 +352,13 @@ export class MediaService {
               kind: params.kind,
               status: MediaAssetStatus.PENDING_REVIEW,
             },
-            data: {
-              status: MediaAssetStatus.REVOKED,
-              revokedAt: new Date(),
-              approvedAt: new Date(),
-            },
+            data: { status: MediaAssetStatus.REVOKED, revokedAt: new Date(), approvedAt: new Date() },
           });
         }
 
         if (params.publish) {
           if (params.partnerId) {
-            await this.retirePublished(
-              tx,
-              params.partnerId,
-              params.kind,
-              MediaAssetStatus.REPLACED,
-            );
+            await this.retirePublished(tx, params.partnerId, params.kind, MediaAssetStatus.REPLACED);
           } else if (params.userId) {
             await tx.mediaAsset.updateMany({
               where: {
@@ -385,11 +366,7 @@ export class MediaService {
                 kind: MediaAssetKind.USER_AVATAR,
                 status: MediaAssetStatus.ACTIVE,
               },
-              data: {
-                status: MediaAssetStatus.REPLACED,
-                replacedAt: new Date(),
-                approvedAt: new Date(),
-              },
+              data: { status: MediaAssetStatus.REPLACED, replacedAt: new Date(), approvedAt: new Date() },
             });
           }
         }
@@ -423,10 +400,7 @@ export class MediaService {
               data: pointerFor(params.kind, asset.id),
             });
           } else if (params.userId) {
-            await tx.user.update({
-              where: { id: params.userId },
-              data: { avatarAssetId: asset.id },
-            });
+            await tx.user.update({ where: { id: params.userId }, data: { avatarAssetId: asset.id } });
           }
         }
 
@@ -487,9 +461,7 @@ export class MediaService {
   }
 
   /** The platform-wide approval queue. Administrators only. */
-  listPendingReview(): Promise<
-    (MediaAsset & { partner: { id: string; displayName: string } | null })[]
-  > {
+  listPendingReview(): Promise<(MediaAsset & { partner: { id: string; displayName: string } | null })[]> {
     return this.prisma.mediaAsset.findMany({
       where: { status: MediaAssetStatus.PENDING_REVIEW },
       orderBy: { createdAt: 'asc' },
@@ -504,11 +476,7 @@ export class MediaService {
   /** Reads one derivative's bytes. Callers must have authorised the read. */
   async readVariant(asset: MediaAsset, variant: 'original' | 'display' | 'thumb') {
     const key =
-      variant === 'original'
-        ? asset.storageKey
-        : variant === 'display'
-          ? asset.displayKey
-          : asset.thumbnailKey;
+      variant === 'original' ? asset.storageKey : variant === 'display' ? asset.displayKey : asset.thumbnailKey;
     const object = await this.storage.get(key);
     if (!object) {
       throw new NotFoundException('This image is no longer available');
@@ -518,10 +486,7 @@ export class MediaService {
 }
 
 /** Which `Partner` column points at an asset of this kind. */
-function pointerFor(
-  kind: MediaAssetKind,
-  assetId: string | null,
-): { logoAssetId?: string | null; coverAssetId?: string | null } {
+function pointerFor(kind: MediaAssetKind, assetId: string | null): { logoAssetId?: string | null; coverAssetId?: string | null } {
   switch (kind) {
     case MediaAssetKind.PARTNER_LOGO:
       return { logoAssetId: assetId };

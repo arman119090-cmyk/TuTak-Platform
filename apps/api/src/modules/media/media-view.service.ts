@@ -106,12 +106,10 @@ export class MediaViewService {
     const displayName =
       row.brandDisplayName ??
       row.partner?.displayName ??
-      (
-        await this.prisma.partner.findUnique({
-          where: { id: row.partnerId },
-          select: { displayName: true },
-        })
-      )?.displayName ??
+      (await this.prisma.partner.findUnique({
+        where: { id: row.partnerId },
+        select: { displayName: true },
+      }))?.displayName ??
       '';
 
     let asset = row.brandLogoAsset ?? null;
@@ -130,16 +128,12 @@ export class MediaViewService {
    * turned a single indexed query into a hundred and one. Worth the extra
    * function.
    */
-  async brandsFor<
-    T extends {
-      partnerId: string | null;
-      brandDisplayName: string | null;
-      brandLogoAssetId: string | null;
-    },
-  >(rows: T[]): Promise<Map<T, PartnerBrandDto | null>> {
-    const assetIds = [
-      ...new Set(rows.map((r) => r.brandLogoAssetId).filter((id): id is string => !!id)),
-    ];
+  async brandsFor<T extends {
+    partnerId: string | null;
+    brandDisplayName: string | null;
+    brandLogoAssetId: string | null;
+  }>(rows: T[]): Promise<Map<T, PartnerBrandDto | null>> {
+    const assetIds = [...new Set(rows.map((r) => r.brandLogoAssetId).filter((id): id is string => !!id))];
     const partnerIds = [
       ...new Set(
         rows.filter((r) => r.partnerId && !r.brandDisplayName).map((r) => r.partnerId as string),

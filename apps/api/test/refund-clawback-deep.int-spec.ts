@@ -113,9 +113,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // out below so the spend below draws only from the grant under test.
       const { intent } = await confirmedPurchaseFor(user.id, '200');
 
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
       await isolateForSpend(wallet.id, grantedLotId);
       await spend(wallet.id, '300', 'spend-1'); // 300 of the 500 spent, 200 left
 
@@ -127,9 +126,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         idempotencyKey: 'partial-spend-clawback-1',
       });
 
-      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.progressTurnover.toFixed(4)).toBe('4900.0000');
       // This clawback came via `reverseUnlock` (an *external* contributing
       // purchase dropping turnover below threshold) — the lot's *own*
@@ -142,9 +139,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('300.0000');
       expect(afterRefund.grantedBonusLotId).toBeNull();
 
-      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
       // The wallet never goes negative: only the 200 still sitting unspent
       // was ever reclaimable.
@@ -155,9 +150,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         where: { kind: 'deferred_bonus.unlock_reversed', sourceId: lot.id },
         include: { postings: true },
       });
-      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'BONUS_LIABILITY' },
-      });
+      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
       const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
       // Only the 300 actually forfeited (spent, unrecoverable) is released
       // to revenue — never the 200 that was reclaimed and returned to
@@ -171,9 +164,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const { user, wallet } = await createCustomer(prisma);
       const lot = await seedLot(user.id, '4900');
       const { intent } = await confirmedPurchaseFor(user.id, '200');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
       await isolateForSpend(wallet.id, grantedLotId);
       await spend(wallet.id, '500', 'spend-full-1'); // the entire grant
 
@@ -185,9 +177,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         idempotencyKey: 'full-spend-clawback-1',
       });
 
-      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
       expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
       // Every AMD of this grant was already spent — the entire 500 is
@@ -195,18 +185,14 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('500.0000');
       expect(afterRefund.grantedBonusLotId).toBeNull();
 
-      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
 
       const ledgerTx = await prisma.ledgerTransaction.findFirstOrThrow({
         where: { kind: 'deferred_bonus.unlock_reversed', sourceId: lot.id },
         include: { postings: true },
       });
-      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'BONUS_LIABILITY' },
-      });
+      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
       const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
       expect(liabilityLeg?.amount.toFixed(4)).toBe('500.0000');
 
@@ -222,9 +208,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const lot = await seedLot(user.id, '4900');
       // 4900 + 1000 = 5900 >= 5000, comfortably unlocked.
       const { intent } = await confirmedPurchaseFor(user.id, '1000');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
 
       const staff = await staffMember(intent.partnerId);
       // Refund 700 of the 1000: 5900 - 700 = 5200... still above. Refund
@@ -238,9 +223,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         idempotencyKey: 'partial-drops-below-1',
       });
 
-      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.progressTurnover.toFixed(4)).toBe('4999.0000'); // 5900 - 901
       // Fully reclaimed (nothing spent), reverted to DEFERRED, own-purchase
       // and forfeiture tracking both untouched — ready to requalify.
@@ -249,9 +232,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('0.0000');
       expect(afterRefund.grantedBonusLotId).toBeNull();
 
-      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
 
       await assertWalletIntegrity(prisma, wallet.id);
@@ -266,9 +247,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // spec.ts`'s own idempotency-precheck-ordering tests); kept partial
       // here simply to also exercise the below-threshold drop.
       const { intent } = await confirmedPurchaseFor(user.id, '198');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
 
       const staff = await staffMember(intent.partnerId);
       const params = {
@@ -288,9 +268,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(
         await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed' } }),
       ).toBe(0);
-      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
 
       await assertWalletIntegrity(prisma, wallet.id);
@@ -303,9 +281,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // together they unlock it (4800 + 100 + 100 = 5000).
       const { intent: intentA } = await confirmedPurchaseFor(user.id, '100');
       const { intent: intentB } = await confirmedPurchaseFor(user.id, '100');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
       expect(grantedLotId).toBeTruthy();
 
       const staffA = await staffMember(intentA.partnerId);
@@ -328,9 +305,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         }),
       ]);
 
-      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(afterRefund.progressTurnover.toFixed(4)).toBe('4800.0000');
       // The 500 grant is clawed back exactly once, regardless of which
       // refund's transaction actually performed the claw — reverted to
@@ -341,9 +316,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('0.0000');
       expect(afterRefund.grantedBonusLotId).toBeNull();
 
-      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(walletAfter.availableBonus.isNegative()).toBe(false);
@@ -362,9 +335,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // B unlocks it (4900+200=5100); B is refunded, dropping it back to
       // 4900 and reverting the lot to DEFERRED.
       const { intent: intentB } = await confirmedPurchaseFor(user.id, '200');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
       const staffB = await staffMember(intentB.partnerId);
       await refunds.refund({
         purchaseIntentId: intentB.id,
@@ -379,9 +351,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // C brings genuine new turnover back over the threshold (4900+150=5050).
       await confirmedPurchaseFor(user.id, '150');
 
-      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
       expect(requalified.progressTurnover.toFixed(4)).toBe('5050.0000');
       expect(requalified.grantedBonusLotId).toBeTruthy();
@@ -390,9 +360,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // Nothing was ever spent from the first (invalidated) grant, so the
       // full original 500 — not a penny less — is granted again exactly
       // once: no double credit, no double liability.
-      const newGrant = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: requalified.grantedBonusLotId! },
-      });
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
       expect(newGrant.remainingAmount.toFixed(4)).toBe('500.0000');
       expect(newGrant.originalAmount.toFixed(4)).toBe('500.0000');
 
@@ -406,9 +374,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const { user, wallet } = await createCustomer(prisma);
       const lot = await seedLot(user.id, '4900');
       const { intent: intentB } = await confirmedPurchaseFor(user.id, '200');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
       await isolateForSpend(wallet.id, grantedLotId);
       await spend(wallet.id, '300', 'requalify-partial-spend'); // 300 of 500 spent, 200 left
 
@@ -425,16 +392,12 @@ describe('Refund clawback — deep matrix (integration)', () => {
 
       await confirmedPurchaseFor(user.id, '150'); // 4900+150=5050, requalifies
 
-      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
       // Only the still-valid 200 (500 - 300 already spent) grants again —
       // never the full 500, which would double-credit the 300 the customer
       // already irrevocably received.
-      const newGrant = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: requalified.grantedBonusLotId! },
-      });
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
       expect(newGrant.originalAmount.toFixed(4)).toBe('200.0000');
 
       await assertWalletIntegrity(prisma, wallet.id);
@@ -444,9 +407,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const { user, wallet } = await createCustomer(prisma);
       const lot = await seedLot(user.id, '4900');
       const { intent: intentB } = await confirmedPurchaseFor(user.id, '200');
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
       await isolateForSpend(wallet.id, grantedLotId);
       await spend(wallet.id, '500', 'requalify-full-spend'); // the entire grant, nothing left to reclaim
 
@@ -467,15 +429,13 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // ever grant, so it never unlocks again, and this purchase's turnover
       // isn't even applied to it (no more `DeferredBonusLotContribution`
       // rows are created for an already fully closed-out lot).
-      const stillDeferred = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const stillDeferred = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(stillDeferred.status).toBe(DeferredBonusLotStatus.DEFERRED);
       expect(stillDeferred.grantedBonusLotId).toBeNull();
       expect(stillDeferred.progressTurnover.toFixed(4)).toBe('4900.0000');
     });
 
-    it("combines correctly when the lot's own purchase is partially refunded on top of a full external-contributor clawback", async () => {
+    it('combines correctly when the lot\'s own purchase is partially refunded on top of a full external-contributor clawback', async () => {
       const { user, wallet } = await createCustomer(prisma);
       // A creates the lot for real (so it can be partially refunded itself,
       // unlike a `seedLot` row with no backing PurchaseIntent): 20000 gross
@@ -524,13 +484,9 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // still-valid 150 (300 - 150 already refunded away from A) is ever
       // grantable, never the original 300.
       await confirmedPurchaseFor(user.id, '54000');
-      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
-      const newGrant = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: requalified.grantedBonusLotId! },
-      });
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
       expect(newGrant.originalAmount.toFixed(4)).toBe('150.0000');
 
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
@@ -559,19 +515,18 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // issue #28, `advanceExistingLots`) already uses protects this
       // *second* life of the lot exactly the same way it protects the
       // first — this test proves that still holds post-clawback.
-      await Promise.all([confirmedPurchaseFor(user.id, '60'), confirmedPurchaseFor(user.id, '60')]);
+      await Promise.all([
+        confirmedPurchaseFor(user.id, '60'),
+        confirmedPurchaseFor(user.id, '60'),
+      ]);
 
-      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
       expect(requalified.progressTurnover.toFixed(4)).toBe('5020.0000'); // 4900 + 60 + 60, neither contribution lost
       expect(requalified.grantedBonusLotId).toBeTruthy();
 
       // Granted exactly once, for the full still-valid 500 — not double.
-      const newGrant = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: requalified.grantedBonusLotId! },
-      });
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
       expect(newGrant.originalAmount.toFixed(4)).toBe('500.0000');
       // Only one *live* deferred grant exists — the first (B's, since
       // clawed back and fully reclaimed) is a separate, already-CONSUMED
@@ -582,10 +537,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       });
       const live = deferredLots.filter((l) => l.status === BonusLotStatus.AVAILABLE);
       expect(live).toHaveLength(1);
-      const totalCurrentlyOutstanding = deferredLots.reduce(
-        (sum, l) => sum.plus(l.remainingAmount),
-        new Decimal(0),
-      );
+      const totalCurrentlyOutstanding = deferredLots.reduce((sum, l) => sum.plus(l.remainingAmount), new Decimal(0));
       expect(totalCurrentlyOutstanding.toFixed(4)).toBe('500.0000');
 
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
@@ -626,12 +578,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
         where: { id: participant.id },
       });
-      const referrerWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: referrerUser.id },
-      });
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: refereeUser.id },
-      });
+      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
       await isolateForSpend(referrerWallet.id, rewarded.referrerBonusLotId!);
       await isolateForSpend(refereeWallet.id, rewarded.refereeBonusLotId!);
 
@@ -673,9 +621,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         where: { kind: 'referral.challenge_reward_reversed' },
         include: { postings: true },
       });
-      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
-        where: { type: 'BONUS_LIABILITY' },
-      });
+      const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
       const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
       expect(liabilityLeg?.amount.toFixed(4)).toBe('1600.0000');
 
@@ -691,12 +637,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
         where: { id: participant.id },
       });
-      const referrerWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: referrerUser.id },
-      });
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: refereeUser.id },
-      });
+      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
       await isolateForSpend(referrerWallet.id, rewarded.referrerBonusLotId!);
       await isolateForSpend(refereeWallet.id, rewarded.refereeBonusLotId!);
       await spend(referrerWallet.id, '1000', 'spend-referrer-full');
@@ -725,9 +667,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(refereeLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
 
       expect(
-        await prisma.ledgerTransaction.count({
-          where: { kind: 'referral.challenge_reward_reversed' },
-        }),
+        await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
       ).toBe(0);
 
       // Nothing to reclaim for the reward itself — no posting for it. Both
@@ -769,9 +709,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(after.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
       expect(after.progressAmount.toFixed(4)).toBe('9999.0000');
       expect(
-        await prisma.ledgerTransaction.count({
-          where: { kind: 'referral.challenge_reward_reversed' },
-        }),
+        await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
       ).toBe(1);
     });
 
@@ -797,9 +735,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
 
       expect(second).toEqual(first);
       expect(
-        await prisma.ledgerTransaction.count({
-          where: { kind: 'referral.challenge_reward_reversed' },
-        }),
+        await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
       ).toBe(1);
       const after = await prisma.referralChallengeParticipant.findUniqueOrThrow({
         where: { id: participant.id },
@@ -816,18 +752,10 @@ describe('Refund clawback — deep matrix (integration)', () => {
       for (let i = 0; i < 3; i += 1) {
         const { user: refereeUser } = await createCustomer(prisma);
         await prisma.referralInvite.create({
-          data: {
-            referrerType: ReferrerType.USER,
-            referrerUserId: referrerUser.id,
-            refereeUserId: refereeUser.id,
-          },
+          data: { referrerType: ReferrerType.USER, referrerUserId: referrerUser.id, refereeUserId: refereeUser.id },
         });
         const participant = await prisma.referralChallengeParticipant.create({
-          data: {
-            referrerUserId: referrerUser.id,
-            refereeUserId: refereeUser.id,
-            requiredAmount: '10000',
-          },
+          data: { referrerUserId: referrerUser.id, refereeUserId: refereeUser.id, requiredAmount: '10000' },
         });
         const { intent } = await confirmedPurchaseFor(refereeUser.id, '10000');
         await referral.advanceChallengeProgress(refereeUser.id, intent.sourceTransactionId!);
@@ -835,11 +763,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       }
       for (const { participant } of rewardedParticipants) {
         expect(
-          (
-            await prisma.referralChallengeParticipant.findUniqueOrThrow({
-              where: { id: participant.id },
-            })
-          ).status,
+          (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } }))
+            .status,
         ).toBe(ReferralChallengeParticipantStatus.REWARDED);
       }
 
@@ -847,27 +772,16 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // — qualifies without being rewarded.
       const { user: fourthReferee } = await createCustomer(prisma);
       await prisma.referralInvite.create({
-        data: {
-          referrerType: ReferrerType.USER,
-          referrerUserId: referrerUser.id,
-          refereeUserId: fourthReferee.id,
-        },
+        data: { referrerType: ReferrerType.USER, referrerUserId: referrerUser.id, refereeUserId: fourthReferee.id },
       });
       const fourthParticipant = await prisma.referralChallengeParticipant.create({
-        data: {
-          referrerUserId: referrerUser.id,
-          refereeUserId: fourthReferee.id,
-          requiredAmount: '10000',
-        },
+        data: { referrerUserId: referrerUser.id, refereeUserId: fourthReferee.id, requiredAmount: '10000' },
       });
       const { intent: fourthIntent } = await confirmedPurchaseFor(fourthReferee.id, '10000');
       await referral.advanceChallengeProgress(fourthReferee.id, fourthIntent.sourceTransactionId!);
       expect(
-        (
-          await prisma.referralChallengeParticipant.findUniqueOrThrow({
-            where: { id: fourthParticipant.id },
-          })
-        ).status,
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: fourthParticipant.id } }))
+          .status,
       ).toBe(ReferralChallengeParticipantStatus.QUALIFIED);
 
       // The first referee's purchase is refunded in full, un-rewarding
@@ -881,18 +795,12 @@ describe('Refund clawback — deep matrix (integration)', () => {
         idempotencyKey: 'free-slot-1',
       });
       expect(
-        (
-          await prisma.referralChallengeParticipant.findUniqueOrThrow({
-            where: { id: first.participant.id },
-          })
-        ).status,
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: first.participant.id } }))
+          .status,
       ).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
       expect(
         await prisma.referralChallengeParticipant.count({
-          where: {
-            referrerUserId: referrerUser.id,
-            status: ReferralChallengeParticipantStatus.REWARDED,
-          },
+          where: { referrerUserId: referrerUser.id, status: ReferralChallengeParticipantStatus.REWARDED },
         }),
       ).toBe(2);
 
@@ -902,11 +810,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // transaction crosses the threshold, never retroactively. A fresh
       // qualifying purchase for them now finds the slot open.
       expect(
-        (
-          await prisma.referralChallengeParticipant.findUniqueOrThrow({
-            where: { id: fourthParticipant.id },
-          })
-        ).status,
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: fourthParticipant.id } }))
+          .status,
       ).toBe(ReferralChallengeParticipantStatus.QUALIFIED);
 
       const { intent: fifthIntent } = await confirmedPurchaseFor(fourthReferee.id, '1');
@@ -919,11 +824,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       // behavior rather than asserting a retroactive-fill this fix does
       // not add.
       expect(
-        (
-          await prisma.referralChallengeParticipant.findUniqueOrThrow({
-            where: { id: fourthParticipant.id },
-          })
-        ).status,
+        (await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: fourthParticipant.id } }))
+          .status,
       ).toBe(ReferralChallengeParticipantStatus.QUALIFIED);
     });
 
@@ -979,17 +881,11 @@ describe('Refund clawback — deep matrix (integration)', () => {
 
       // Clawed exactly once, not once per racing refund.
       expect(
-        await prisma.ledgerTransaction.count({
-          where: { kind: 'referral.challenge_reward_reversed' },
-        }),
+        await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
       ).toBe(1);
 
-      const referrerWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: referrerUser.id },
-      });
-      const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-        where: { userId: refereeUser.id },
-      });
+      const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+      const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
       expect(referrerWallet.availableBonus.isNegative()).toBe(false);
       expect(refereeWallet.availableBonus.isNegative()).toBe(false);
 
@@ -1040,12 +936,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
         const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
           where: { id: participant.id },
         });
-        const referrerWallet = await prisma.wallet.findUniqueOrThrow({
-          where: { userId: referrerUser.id },
-        });
-        const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-          where: { userId: refereeUser.id },
-        });
+        const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+        const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
 
         // Proven directly against the DB, not inferred: both lots really
         // were granted exactly 1000 each.
@@ -1094,9 +986,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
           where: { type: 'BONUS_LIABILITY' },
         });
-        const liabilityLeg = ledgerTx.postings.find(
-          (p) => p.accountId === bonusLiabilityAccount.id,
-        );
+        const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
         // 1000 + 1000 = 2000, the true original grant — never 1500 + 1500 =
         // 3000, which would manufacture 1000 AMD of recovered "revenue"
         // TuTak never actually paid out.
@@ -1114,12 +1004,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
         const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
           where: { id: participant.id },
         });
-        const referrerWallet = await prisma.wallet.findUniqueOrThrow({
-          where: { userId: referrerUser.id },
-        });
-        const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-          where: { userId: refereeUser.id },
-        });
+        const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+        const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
         await isolateForSpend(referrerWallet.id, rewarded.referrerBonusLotId!);
         await isolateForSpend(refereeWallet.id, rewarded.refereeBonusLotId!);
 
@@ -1174,9 +1060,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
           where: { type: 'BONUS_LIABILITY' },
         });
-        const liabilityLeg = ledgerTx.postings.find(
-          (p) => p.accountId === bonusLiabilityAccount.id,
-        );
+        const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
         expect(liabilityLeg?.amount.toFixed(4)).toBe('1600.0000');
 
         await assertWalletIntegrity(prisma, referrerWallet.id);
@@ -1191,12 +1075,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
         const rewarded = await prisma.referralChallengeParticipant.findUniqueOrThrow({
           where: { id: participant.id },
         });
-        const referrerWallet = await prisma.wallet.findUniqueOrThrow({
-          where: { userId: referrerUser.id },
-        });
-        const refereeWallet = await prisma.wallet.findUniqueOrThrow({
-          where: { userId: refereeUser.id },
-        });
+        const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
+        const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
         await isolateForSpend(referrerWallet.id, rewarded.referrerBonusLotId!);
         await isolateForSpend(refereeWallet.id, rewarded.refereeBonusLotId!);
         await spend(referrerWallet.id, '1000', 'spend-config-drift-referrer-full');
@@ -1236,9 +1116,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
         // phantom 2000 + 2000 implied by reading live config for the
         // reference point.
         expect(
-          await prisma.ledgerTransaction.count({
-            where: { kind: 'referral.challenge_reward_reversed' },
-          }),
+          await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
         ).toBe(0);
 
         const walletsAfter = await Promise.all([
@@ -1258,7 +1136,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
 
   // ── Deferred lot: two independent reversal mechanisms, same lot ────────
 
-  describe("deferred bonus lot — the lot's own purchase and an external contributor both refunded", () => {
+  describe('deferred bonus lot — the lot\'s own purchase and an external contributor both refunded', () => {
     /**
      * `reverseForRefund` (the lot's *own* originating purchase refunded) and
      * `reverseUnlock` (a *different*, external contributing purchase's
@@ -1343,7 +1221,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
-    it("nets every account back to zero when the lot's own purchase is refunded first", async () => {
+    it('nets every account back to zero when the lot\'s own purchase is refunded first', async () => {
       const { wallet, lot, intentA, intentB } = await twoPurchaseLot();
       const staffA = await staffMember(intentA.partnerId);
       const staffB = await staffMember(intentB.partnerId);
@@ -1399,9 +1277,8 @@ describe('Refund clawback — deep matrix (integration)', () => {
       const { user, wallet, lot, intentA, intentB } = await twoPurchaseLot();
       const staffA = await staffMember(intentA.partnerId);
       const staffB = await staffMember(intentB.partnerId);
-      const grantedLotId = (
-        await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } })
-      ).grantedBonusLotId!;
+      const grantedLotId = (await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } }))
+        .grantedBonusLotId!;
 
       // A refunded *partially* first, while the grant is still live: half
       // its gross (10000 of 20000) reclaims half its deferred share (150 of
@@ -1419,9 +1296,7 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(afterA.refundedAmount.toFixed(4)).toBe('150.0000');
       expect(afterA.forfeitedAmount.toFixed(4)).toBe('0.0000');
       expect(afterA.grantedBonusLotId).toBe(grantedLotId);
-      const grantedAfterA = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedAfterA = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedAfterA.remainingAmount.toFixed(4)).toBe('150.0000');
 
       // Then B: the external contributor is refunded, dropping turnover
@@ -1446,30 +1321,22 @@ describe('Refund clawback — deep matrix (integration)', () => {
       expect(afterB.forfeitedAmount.toFixed(4)).toBe('0.0000');
       expect(afterB.grantedBonusLotId).toBeNull();
 
-      const grantedAfterB = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: grantedLotId },
-      });
+      const grantedAfterB = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
       expect(grantedAfterB.remainingAmount.toFixed(4)).toBe('0.0000');
 
       // No phantom revenue recognition: nothing was actually spent, so no
       // ledger posting should exist for this reversal at all.
       expect(
-        await prisma.ledgerTransaction.count({
-          where: { kind: 'deferred_bonus.unlock_reversed', sourceId: lot.id },
-        }),
+        await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed', sourceId: lot.id } }),
       ).toBe(0);
 
       // The still-valid 150 (300 - 150 refunded, 0 forfeited) must survive
       // and be grantable again exactly once, for exactly that amount, once
       // genuine turnover restores the threshold.
       await confirmedPurchaseFor(user.id, '54000');
-      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({
-        where: { id: lot.id },
-      });
+      const requalified = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lot.id } });
       expect(requalified.status).toBe(DeferredBonusLotStatus.AVAILABLE);
-      const newGrant = await prisma.bonusLot.findUniqueOrThrow({
-        where: { id: requalified.grantedBonusLotId! },
-      });
+      const newGrant = await prisma.bonusLot.findUniqueOrThrow({ where: { id: requalified.grantedBonusLotId! } });
       expect(newGrant.originalAmount.toFixed(4)).toBe('150.0000');
 
       const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });

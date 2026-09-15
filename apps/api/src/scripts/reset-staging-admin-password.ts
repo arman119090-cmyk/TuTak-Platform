@@ -72,7 +72,8 @@ export class StagingAdminResetRefused extends Error {
 }
 
 export type ResetResult =
-  { status: 'skipped' } | { status: 'reset'; userId: string; revokedRefreshTokens: number };
+  | { status: 'skipped' }
+  | { status: 'reset'; userId: string; revokedRefreshTokens: number };
 
 type ResetEnv = Record<string, string | undefined>;
 

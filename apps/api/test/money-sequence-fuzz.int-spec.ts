@@ -122,9 +122,9 @@ describe('Money operations under random sequences (integration)', () => {
     const overRefunded = await prisma.$queryRaw<{ count: bigint }[]>`
       select count(*)::bigint as count from payments where "refundedAmount" > amount
     `;
-    expect(
-      `${context}: payments refunded past capture: ${Number(overRefunded[0]?.count ?? 0)}`,
-    ).toBe(`${context}: payments refunded past capture: 0`);
+    expect(`${context}: payments refunded past capture: ${Number(overRefunded[0]?.count ?? 0)}`).toBe(
+      `${context}: payments refunded past capture: 0`,
+    );
 
     // A partner payable *can* legitimately go positive — the partner owing
     // the platform — when a payout drains the balance and a refund then
@@ -148,9 +148,9 @@ describe('Money operations under random sequences (integration)', () => {
           where p."partnerId" = a."partnerId"
         ), 0)
     `;
-    expect(
-      `${context}: partners owing more than was paid out: ${Number(impossibleDebt[0]?.count ?? 0)}`,
-    ).toBe(`${context}: partners owing more than was paid out: 0`);
+    expect(`${context}: partners owing more than was paid out: ${Number(impossibleDebt[0]?.count ?? 0)}`).toBe(
+      `${context}: partners owing more than was paid out: 0`,
+    );
 
     const negativeWallets = await prisma.$queryRaw<{ count: bigint }[]>`
       select count(*)::bigint as count from wallets
@@ -225,10 +225,9 @@ describe('Money operations under random sequences (integration)', () => {
           if (!payment) continue;
           // Sometimes a legal partial, sometimes deliberately too much.
           const remaining = payment.amount.minus(payment.refundedAmount);
-          const amount =
-            random() < 0.75
-              ? remaining.times(random()).toDecimalPlaces(2).toString()
-              : remaining.plus(50).toFixed(2);
+          const amount = random() < 0.75
+            ? remaining.times(random()).toDecimalPlaces(2).toString()
+            : remaining.plus(50).toFixed(2);
           if (new Decimal(amount).lessThanOrEqualTo(0)) continue;
           await attempt('refund', () =>
             refunds.refund({

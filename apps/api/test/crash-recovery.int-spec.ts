@@ -1,19 +1,9 @@
-import {
-  BonusEntryType,
-  BonusReservationStatus,
-  PrismaClient,
-  TransactionStatus,
-} from '@prisma/client';
+import { BonusEntryType, BonusReservationStatus, PrismaClient, TransactionStatus } from '@prisma/client';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
-import {
-  createCustomer,
-  createDynamicInvoiceQr,
-  createEvConnector,
-  createPartner,
-} from './setup/fixtures';
+import { createCustomer, createDynamicInvoiceQr, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
 
@@ -159,10 +149,7 @@ describe('Crash recovery (integration)', () => {
         .mockRejectedValueOnce(new Error('database went away'));
 
       await expect(
-        qr.redeem(
-          { token: code.token, bonusAmountToApply: '400', idempotencyKey: 'crash-1' },
-          user.id,
-        ),
+        qr.redeem({ token: code.token, bonusAmountToApply: '400', idempotencyKey: 'crash-1' }, user.id),
       ).rejects.toThrow('database went away');
 
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
@@ -288,10 +275,7 @@ describe('Crash recovery (integration)', () => {
         if (key === 'b') {
           jest.spyOn(transactions, 'markCompleted').mockRejectedValueOnce(new Error('crash'));
           await expect(
-            qr.redeem(
-              { token: code.token, bonusAmountToApply: '100', idempotencyKey: key },
-              user.id,
-            ),
+            qr.redeem({ token: code.token, bonusAmountToApply: '100', idempotencyKey: key }, user.id),
           ).rejects.toThrow();
           jest.restoreAllMocks();
         } else {

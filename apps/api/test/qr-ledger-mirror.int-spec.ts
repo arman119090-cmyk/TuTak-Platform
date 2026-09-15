@@ -37,7 +37,8 @@ describe('QrLedgerMirrorService (integration)', () => {
   });
 
   /** Forces the flag on for one test without touching global config. */
-  const withMirrorEnabled = () => jest.spyOn(mirror, 'enabled', 'get').mockReturnValue(true);
+  const withMirrorEnabled = () =>
+    jest.spyOn(mirror, 'enabled', 'get').mockReturnValue(true);
 
   const balanceOf = async (type: LedgerAccountType, partnerId?: string): Promise<string> => {
     const account = await prisma.ledgerAccount.findFirst({

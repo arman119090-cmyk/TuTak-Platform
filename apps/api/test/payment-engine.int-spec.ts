@@ -73,9 +73,9 @@ describe('PaymentEngineService (integration)', () => {
     // platform owes, which is the point: the sign tells you the posting
     // direction, not who the number is "good news" for.
     expect(await balanceOf({ type: LedgerAccountType.PSP_RECEIVABLE })).toBe('10000.0000');
-    expect(
-      await balanceOf({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: partner.id }),
-    ).toBe('-9750.0000');
+    expect(await balanceOf({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: partner.id })).toBe(
+      '-9750.0000',
+    );
     expect(await balanceOf({ type: LedgerAccountType.PLATFORM_REVENUE })).toBe('-250.0000');
 
     // The ledger's own invariant: debits equal credits on every transaction.

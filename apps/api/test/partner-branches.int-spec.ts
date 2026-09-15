@@ -130,9 +130,9 @@ describe('Partner branches (integration)', () => {
 
   it('refuses a caller with no relationship to the partner', async () => {
     const partner = await createPartner(prisma);
-    await expect(controller.createBranch(asUser({}), partner.id, branchInput)).rejects.toThrow(
-      'You are not authorized to act for this partner',
-    );
+    await expect(
+      controller.createBranch(asUser({}), partner.id, branchInput),
+    ).rejects.toThrow('You are not authorized to act for this partner');
   });
 
   it('refuses a MANAGER of the same partner — only the OWNER may write this', async () => {
@@ -169,11 +169,7 @@ describe('Partner branches (integration)', () => {
   it("cannot edit or deactivate another partner's branch by guessing its id, even as a real owner", async () => {
     const mine = await createPartner(prisma);
     const theirs = await createPartner(prisma, { displayName: 'Rival' });
-    const theirBranch = await controller.createBranch(
-      await owner(theirs.id),
-      theirs.id,
-      branchInput,
-    );
+    const theirBranch = await controller.createBranch(await owner(theirs.id), theirs.id, branchInput);
 
     // Scoped correctly to `mine` (passes assertPartnerScope/assertPartnerOwner)
     // but the branch id belongs to `theirs` — the service's own partnerId
@@ -182,9 +178,7 @@ describe('Partner branches (integration)', () => {
       controller.updateBranch(await owner(mine.id), mine.id, theirBranch.id, { name: 'Hijacked' }),
     ).rejects.toThrow('Branch not found');
     await expect(
-      controller.setBranchActive(await owner(mine.id), mine.id, theirBranch.id, {
-        isActive: false,
-      }),
+      controller.setBranchActive(await owner(mine.id), mine.id, theirBranch.id, { isActive: false }),
     ).rejects.toThrow('Branch not found');
   });
 

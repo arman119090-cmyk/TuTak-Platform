@@ -259,9 +259,7 @@ describe('The partner application, end to end (integration)', () => {
       // `async` method: the scope check throws before any promise exists, so
       // `expect(controller.listBranches(...)).rejects` never sees a rejection
       // — the throw escapes the assertion entirely.
-      await expect(async () =>
-        controller.listBranches(asMine, theirsPartner.id),
-      ).rejects.toMatchObject({
+      await expect(async () => controller.listBranches(asMine, theirsPartner.id)).rejects.toMatchObject({
         status: 403,
       });
     });

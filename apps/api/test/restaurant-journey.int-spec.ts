@@ -160,12 +160,7 @@ describe('A restaurant, end to end (integration)', () => {
       mustChangePassword: false,
     }) as RequestUser;
 
-  const asCashier = (
-    userId: string,
-    phone: string,
-    partnerId: string,
-    branchIds: string[],
-  ): RequestUser =>
+  const asCashier = (userId: string, phone: string, partnerId: string, branchIds: string[]): RequestUser =>
     ({
       id: userId,
       phone,
@@ -245,15 +240,13 @@ describe('A restaurant, end to end (integration)', () => {
       name: 'Northern Avenue',
       address: 'Northern Avenue 5',
       city: 'Yerevan',
-      latitude: 40.181,
-      longitude: 44.514,
+      latitude: 40.1810,
+      longitude: 44.5140,
     });
 
     // 10. And puts a cashier on it.
     const cashierPerson = await register();
-    const staffRole = await prisma.role.findUniqueOrThrow({
-      where: { name: RoleName.PARTNER_STAFF },
-    });
+    const staffRole = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
     await prisma.userRole.create({
       data: { userId: cashierPerson.id, roleId: staffRole.id, partnerId: approved.id },
     });
@@ -406,9 +399,7 @@ describe('A restaurant, end to end (integration)', () => {
 
     // 22. Half the loyalty went back with it — the customer's cashback and
     //     all three referral shares, in proportion.
-    const afterPartial = await prisma.purchaseIntent.findUniqueOrThrow({
-      where: { id: intent.id },
-    });
+    const afterPartial = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(afterPartial.refundedAmount.toString()).toBe('10000');
     expect((await available(b.wallet.id)).toString()).toBe(
       settled.referrer2Amount!.dividedBy(2).toString(),
@@ -423,11 +414,8 @@ describe('A restaurant, end to end (integration)', () => {
     // a reward for a friend who did, in fact, spend enough would be a
     // clawback of something that was correctly earned.
     expect(
-      (
-        await prisma.referralChallengeParticipant.findFirstOrThrow({
-          where: { refereeUserId: d.id },
-        })
-      ).status,
+      (await prisma.referralChallengeParticipant.findFirstOrThrow({ where: { refereeUserId: d.id } }))
+        .status,
     ).toBe(ReferralChallengeParticipantStatus.REWARDED);
     expect((await available(d.wallet.id)).toString()).toBe(
       settled.greenAmount!.dividedBy(2).plus(challengeReward).toString(),
@@ -443,9 +431,7 @@ describe('A restaurant, end to end (integration)', () => {
       idempotencyKey: 'restaurant-partial-refund-1',
     });
     expect(
-      (
-        await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } })
-      ).refundedAmount.toString(),
+      (await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } })).refundedAmount.toString(),
     ).toBe('10000');
 
     // 23. The rest of the dinner comes back too.
@@ -462,11 +448,8 @@ describe('A restaurant, end to end (integration)', () => {
     const afterFull = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(afterFull.refundedAmount.toString()).toBe('20000');
     expect(
-      (
-        await prisma.referralChallengeParticipant.findFirstOrThrow({
-          where: { refereeUserId: d.id },
-        })
-      ).status,
+      (await prisma.referralChallengeParticipant.findFirstOrThrow({ where: { refereeUserId: d.id } }))
+        .status,
     ).not.toBe(ReferralChallengeParticipantStatus.REWARDED);
     for (const w of [a.wallet, b.wallet, c.wallet, d.wallet]) {
       expect((await available(w.id)).toString()).toBe('0');
@@ -598,8 +581,8 @@ describe('A restaurant, end to end (integration)', () => {
     expect(owner.permissions).toContain(PermissionName.PARTNER_MANAGE);
     await expect(partners.approvePartner(owner, applied.id)).rejects.toMatchObject({ status: 403 });
 
-    expect((await prisma.partner.findUniqueOrThrow({ where: { id: applied.id } })).status).toBe(
-      PartnerStatus.PENDING_APPROVAL,
-    );
+    expect(
+      (await prisma.partner.findUniqueOrThrow({ where: { id: applied.id } })).status,
+    ).toBe(PartnerStatus.PENDING_APPROVAL);
   }, 120_000);
 });

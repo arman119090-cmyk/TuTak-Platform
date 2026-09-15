@@ -212,10 +212,7 @@ export class TransactionsService {
       status: query.status,
       createdAt:
         query.from || query.to
-          ? {
-              gte: query.from ? new Date(query.from) : undefined,
-              lte: query.to ? new Date(query.to) : undefined,
-            }
+          ? { gte: query.from ? new Date(query.from) : undefined, lte: query.to ? new Date(query.to) : undefined }
           : undefined,
     };
 
@@ -288,9 +285,7 @@ export class TransactionsService {
    * `groupBy` for that reason. Ordered richest-first so a caller taking the
    * top few needs no further sorting.
    */
-  async completedPurchaseCategoryCounts(
-    userId: string,
-  ): Promise<Array<{ category: string; count: number }>> {
+  async completedPurchaseCategoryCounts(userId: string): Promise<Array<{ category: string; count: number }>> {
     const rows = await this.prisma.$queryRaw<Array<{ category: string; count: bigint }>>`
       SELECT p.category AS category, COUNT(*)::bigint AS count
       FROM "transactions" t

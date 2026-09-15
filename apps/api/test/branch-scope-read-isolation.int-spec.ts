@@ -57,14 +57,7 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
 
   const createBranch = (partnerId: string, name: string) =>
     prisma.partnerBranch.create({
-      data: {
-        partnerId,
-        name,
-        address: 'Addr',
-        city: 'Yerevan',
-        latitude: 40.18,
-        longitude: 44.51,
-      },
+      data: { partnerId, name, address: 'Addr', city: 'Yerevan', latitude: 40.18, longitude: 44.51 },
     });
 
   const staffMember = async (partnerId: string, role: RoleName = RoleName.PARTNER_STAFF) => {
@@ -256,7 +249,7 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
   // ── Finding 2: a partner's transaction history ───────────────────────
 
   describe('GET /partners/:id/transactions', () => {
-    it("does not show branch-A staff branch B's operations", async () => {
+    it('does not show branch-A staff branch B\'s operations', async () => {
       const partner = await fuelPartner();
       const branchA = await createBranch(partner.id, 'A');
       const branchB = await createBranch(partner.id, 'B');
@@ -264,9 +257,7 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
       await completedPurchaseAt(partner.id, branchB.id, '9000');
 
       const cashierA = await branchStaff(partner.id, [branchA.id]);
-      const { items } = await partnersController.transactions(cashierA, partner.id, {
-        limit: 20,
-      } as never);
+      const { items } = await partnersController.transactions(cashierA, partner.id, { limit: 20 } as never);
 
       expect(items).toHaveLength(1);
       expect(items[0]!.amount.toString()).toBe('5000');
@@ -279,9 +270,11 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
       await completedPurchaseAt(partner.id, branchA.id, '5000');
       await completedPurchaseAt(partner.id, branchB.id, '9000');
 
-      const { items } = await partnersController.transactions(await owner(partner.id), partner.id, {
-        limit: 20,
-      } as never);
+      const { items } = await partnersController.transactions(
+        await owner(partner.id),
+        partner.id,
+        { limit: 20 } as never,
+      );
 
       expect(items).toHaveLength(2);
     });
@@ -305,7 +298,7 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
   // ── Finding 3: a partner's analytics totals ──────────────────────────
 
   describe('GET /analytics/partners/:partnerId', () => {
-    it("does not fold branch B's revenue into branch-A staff's totals", async () => {
+    it('does not fold branch B\'s revenue into branch-A staff\'s totals', async () => {
       const partner = await fuelPartner();
       const branchA = await createBranch(partner.id, 'A');
       const branchB = await createBranch(partner.id, 'B');
@@ -327,11 +320,7 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
       await completedPurchaseAt(partner.id, branchA.id, '5000');
       await completedPurchaseAt(partner.id, branchB.id, '9000');
 
-      const report = await analyticsController.partner(
-        await owner(partner.id),
-        partner.id,
-        {} as never,
-      );
+      const report = await analyticsController.partner(await owner(partner.id), partner.id, {} as never);
 
       expect(report.totalTransactions).toBe(2);
       expect(report.totalRevenue).toBe('14000.0000');

@@ -137,9 +137,7 @@ describe('RefundEngineService — PSP confirmation boundary (integration)', () =
     // The claim against refundedAmount must be released — the amount is
     // refundable again, not permanently stuck behind a refund that never
     // happened.
-    const paymentAfter = await prisma.payment.findUniqueOrThrow({
-      where: { id: payment.paymentId },
-    });
+    const paymentAfter = await prisma.payment.findUniqueOrThrow({ where: { id: payment.paymentId } });
     expect(paymentAfter.refundedAmount.toFixed(4)).toBe('0.0000');
 
     const row = await prisma.refund.findFirstOrThrow({ where: { paymentId: payment.paymentId } });
@@ -187,9 +185,7 @@ describe('RefundEngineService — PSP confirmation boundary (integration)', () =
     await expect(attempt()).rejects.toThrow(BadRequestException);
 
     expect(await prisma.refund.count({ where: { paymentId: payment.paymentId } })).toBe(1);
-    const paymentAfter = await prisma.payment.findUniqueOrThrow({
-      where: { id: payment.paymentId },
-    });
+    const paymentAfter = await prisma.payment.findUniqueOrThrow({ where: { id: payment.paymentId } });
     expect(paymentAfter.refundedAmount.toFixed(4)).toBe('0.0000');
   });
 
@@ -216,9 +212,7 @@ describe('RefundEngineService — PSP confirmation boundary (integration)', () =
 
     // The claim holds: the acquirer may have processed it regardless of
     // whether this process found out, so the amount stays reserved.
-    const paymentAfter = await prisma.payment.findUniqueOrThrow({
-      where: { id: payment.paymentId },
-    });
+    const paymentAfter = await prisma.payment.findUniqueOrThrow({ where: { id: payment.paymentId } });
     expect(paymentAfter.refundedAmount.toFixed(4)).toBe('10000.0000');
 
     // But nothing that implies confirmed money movement has happened yet.
@@ -288,9 +282,7 @@ describe('RefundEngineService — PSP confirmation boundary (integration)', () =
     expect(row.pspStatus).toBe(RefundPspStatus.FAILED);
     expect(row.ledgerTransactionId).toBeNull();
 
-    const paymentAfter = await prisma.payment.findUniqueOrThrow({
-      where: { id: payment.paymentId },
-    });
+    const paymentAfter = await prisma.payment.findUniqueOrThrow({ where: { id: payment.paymentId } });
     expect(paymentAfter.refundedAmount.toFixed(4)).toBe('0.0000');
     await assertLedgerIntegrity();
   });
@@ -312,9 +304,7 @@ describe('RefundEngineService — PSP confirmation boundary (integration)', () =
 
     const row = await prisma.refund.findUniqueOrThrow({ where: { id: submitted.refundId } });
     expect(row.pspStatus).toBe(RefundPspStatus.PENDING);
-    const paymentAfter = await prisma.payment.findUniqueOrThrow({
-      where: { id: payment.paymentId },
-    });
+    const paymentAfter = await prisma.payment.findUniqueOrThrow({ where: { id: payment.paymentId } });
     expect(paymentAfter.refundedAmount.toFixed(4)).toBe('10000.0000'); // still reserved
   });
 
@@ -412,9 +402,7 @@ describe('RefundEngineService — PSP confirmation boundary (integration)', () =
     expect(second.refundId).toBe(first.refundId);
     expect(second.pspStatus).toBe(RefundPspStatus.PENDING);
     expect(await prisma.refund.count({ where: { paymentId: payment.paymentId } })).toBe(1);
-    const paymentAfter = await prisma.payment.findUniqueOrThrow({
-      where: { id: payment.paymentId },
-    });
+    const paymentAfter = await prisma.payment.findUniqueOrThrow({ where: { id: payment.paymentId } });
     expect(paymentAfter.refundedAmount.toFixed(4)).toBe('4000.0000'); // claimed once, not twice
   });
 

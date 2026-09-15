@@ -171,17 +171,7 @@ describe('readTransactionId', () => {
   });
 
   it('returns null rather than throwing on any other shape', () => {
-    for (const payload of [
-      null,
-      undefined,
-      'text',
-      42,
-      [],
-      [{ trx_unique_id: 'x' }],
-      {},
-      { data: 'x' },
-      { trx_unique_id: 42 },
-    ]) {
+    for (const payload of [null, undefined, 'text', 42, [], [{ trx_unique_id: 'x' }], {}, { data: 'x' }, { trx_unique_id: 42 }]) {
       expect(readTransactionId(payload)).toBeNull();
     }
   });
@@ -550,9 +540,9 @@ describe('selecting the Viva transport', () => {
   it('will not boot without the number format being stated', () => {
     // The one setting the integration document does not specify. Guessing it
     // costs nothing at boot and everything at delivery.
-    expect(() => selectSmsTransport({ ...base, viva: { ...base.viva, numberFormat: '' } })).toThrow(
-      /SMS_VIVA_NUMBER_FORMAT/,
-    );
+    expect(() =>
+      selectSmsTransport({ ...base, viva: { ...base.viva, numberFormat: '' } }),
+    ).toThrow(/SMS_VIVA_NUMBER_FORMAT/);
   });
 
   it('rejects a number format it does not implement', () => {
@@ -679,11 +669,7 @@ describe('gateway request signing', () => {
       { status: 200, body: { access_token: 'a' } },
       { status: 200, body: {} },
     ]);
-    await new VivaSmsProvider(CONFIG).send({
-      to: '+37493600600',
-      body: 'x',
-      templateParams: ['1'],
-    });
+    await new VivaSmsProvider(CONFIG).send({ to: '+37493600600', body: 'x', templateParams: ['1'] });
     expect(headersOf(direct[0]!)['X-TuTak-Signature']).toBeUndefined();
   });
 
@@ -763,11 +749,7 @@ describe('Viva — the verified live contract', () => {
 
   const TOKEN_OK = {
     status: 200,
-    body: {
-      RC: 0,
-      msg: 'Success',
-      result: { access_token: 'access-1', refresh_token: 'refresh-1' },
-    },
+    body: { RC: 0, msg: 'Success', result: { access_token: 'access-1', refresh_token: 'refresh-1' } },
   };
   const SEND_OK = {
     status: 200,
@@ -814,10 +796,7 @@ describe('Viva — the verified live contract', () => {
     const calls = stubFetch([
       TOKEN_OK,
       { status: 401, body: { RC: 401, msg: 'Unauthorized' } },
-      {
-        status: 200,
-        body: { RC: 0, result: { access_token: 'access-2', refresh_token: 'refresh-2' } },
-      },
+      { status: 200, body: { RC: 0, result: { access_token: 'access-2', refresh_token: 'refresh-2' } } },
       SEND_OK,
     ]);
     await send(new VivaSmsProvider(LIVE));
@@ -1285,9 +1264,8 @@ describe('Viva is opt-in, so no test or dev run sends a real SMS', () => {
   });
 
   it('picks the console transport when the whole configuration is empty', () => {
-    expect(
-      selectSmsTransport({ ...base, viva: { ...base.viva, clientId: '', clientSecret: '' } }).name,
-    ).toBe('console');
+    expect(selectSmsTransport({ ...base, viva: { ...base.viva, clientId: '', clientSecret: '' } }).name)
+      .toBe('console');
   });
 
   it('reaches Viva only when the deployment names it', () => {
@@ -1343,3 +1321,4 @@ describe('Viva is opt-in, so no test or dev run sends a real SMS', () => {
     ).toThrow(/must be one of/);
   });
 });
+

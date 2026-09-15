@@ -1,14 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
-import { FraudSignalType, PrismaClient, TransactionStatus, TransactionType } from '@prisma/client';
+import {
+  FraudSignalType,
+  PrismaClient,
+  TransactionStatus,
+  TransactionType,
+} from '@prisma/client';
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
-import {
-  createCustomer,
-  createDynamicInvoiceQr,
-  createEvConnector,
-  createPartner,
-} from './setup/fixtures';
+import { createCustomer, createDynamicInvoiceQr, createEvConnector, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**

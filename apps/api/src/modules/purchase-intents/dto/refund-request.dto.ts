@@ -21,10 +21,7 @@ export class CreateRefundRequestDto {
 
 /** The decision an owner or manager records when turning a request down. */
 export class RejectRefundRequestDto {
-  @ApiPropertyOptional({
-    description: 'What to tell the cashier who asked',
-    example: 'Bring the receipt',
-  })
+  @ApiPropertyOptional({ description: 'What to tell the cashier who asked', example: 'Bring the receipt' })
   @IsOptional()
   @IsString()
   @Length(1, 500)

@@ -25,6 +25,29 @@ import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
 
+/**
+ * The states a verified provider confirmation may still settle from.
+ *
+ * `EXPIRED` is the one that was missing, and its absence was a real defect
+ * found by Arman on 15.09.2026. `EXPIRED` means the platform stopped waiting;
+ * it does not mean the provider stopped processing. A customer who paid at
+ * minute 31 of a 30-minute window had genuinely paid, and the callback saying
+ * so could not be applied: the claim accepted only `INITIATED` and
+ * `PENDING_CONFIRMATION`, so the confirmation was refused and the money sat
+ * with the provider against a purchase nothing could complete.
+ *
+ * `FAILED` is deliberately not here, and neither is any attempt carrying a
+ * `resolutionBasis`: those have been *answered*, by the provider itself or by
+ * two people reading its statement, and an answer outranks a later callback.
+ * That is what stops a late callback and a manual reconciliation both
+ * "winning" and the purchase being accounted for twice.
+ */
+const CONFIRMABLE: readonly PspAttemptStatus[] = [
+  PspAttemptStatus.INITIATED,
+  PspAttemptStatus.PENDING_CONFIRMATION,
+  PspAttemptStatus.EXPIRED,
+];
+
 /** The value `liveKey` holds while an attempt is unresolved. */
 const LIVE = 'live';
 
@@ -109,6 +132,7 @@ export class PspPaymentService {
         paymentRoute: true,
         ordinaryPaymentRemainder: true,
         partnerId: true,
+        merchantApprovedAt: true,
       },
     });
     if (!intent) throw new NotFoundException('Purchase not found');
@@ -124,6 +148,26 @@ export class PspPaymentService {
     if (intent.ordinaryPaymentRemainder.lessThanOrEqualTo(0)) {
       throw new BadRequestException(
         'Nothing to collect: this purchase is covered entirely by bonus points',
+      );
+    }
+
+    /*
+     * Nobody at the business has agreed this sale is real.
+     *
+     * The provider will confirm that money moved, and that is all it can
+     * confirm. The gross, the quantity and the unit price on this purchase
+     * were typed by the customer; one verified callback on them would credit
+     * the partner, mint the customer's own cashback and pay their referrers
+     * for a sale that never happened. Arman's decision of 15.09.2026.
+     *
+     * The database refuses the same thing — a provider attempt cannot be
+     * inserted against an unapproved purchase — so this check is the sentence
+     * a caller gets, not the guarantee.
+     */
+    if (!intent.merchantApprovedAt) {
+      throw new ConflictException(
+        'This purchase has not been approved by the business yet. Staff confirm what is ' +
+          'being sold before a payment can be started.',
       );
     }
 
@@ -164,10 +208,7 @@ export class PspPaymentService {
         },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // The unique index on (purchaseIntentId, liveKey) did its job: a
         // second tap on "pay" cannot open a second bill.
         throw new ConflictException(
@@ -239,7 +280,7 @@ export class PspPaymentService {
     }
     if (!confirmation.amount.equals(found.amount)) {
       await this.prisma.pspPaymentAttempt.updateMany({
-        where: { id: found.id, status: { in: [PspAttemptStatus.INITIATED, PspAttemptStatus.PENDING_CONFIRMATION] } },
+        where: { id: found.id, status: { in: [...CONFIRMABLE] } },
         data: {
           status: PspAttemptStatus.REQUIRES_RECONCILIATION,
           liveKey: null,
@@ -314,9 +355,20 @@ export class PspPaymentService {
       await this.purchases.settleFromProviderConfirmation(attempt.purchaseIntentId, tx);
 
       const claimed = await tx.pspPaymentAttempt.updateMany({
-        where: { id: attempt.id, status: { in: [PspAttemptStatus.INITIATED, PspAttemptStatus.PENDING_CONFIRMATION] } },
+        where: {
+          id: attempt.id,
+          status: { in: [...CONFIRMABLE] },
+          // Nothing authoritative has said otherwise. An attempt carrying a
+          // basis has been answered — by the provider, or by two people
+          // reading its statement — and that answer outranks a callback
+          // arriving afterwards. Part of the same `where` as the status so
+          // the check and the claim are one atomic act rather than a
+          // read followed by a hope.
+          resolutionBasis: null,
+        },
         data: {
           status: PspAttemptStatus.SUCCEEDED,
+          resolutionBasis: PspResolutionBasis.PROVIDER_CALLBACK,
           providerTransactionId: confirmation.providerTransactionId,
           providerFeeAmount: confirmation.feeAmount ?? null,
           ledgerTransactionId: posted.id,
@@ -327,6 +379,10 @@ export class PspPaymentService {
         },
       });
       if (claimed.count === 0) {
+        // Either a concurrent callback won, or a human resolved it first.
+        // Rolling back takes the ledger posting and the purchase settlement
+        // with it, which is the point: one attempt, one outcome, one set of
+        // postings.
         throw new ConflictException('Attempt was resolved concurrently');
       }
 
@@ -363,9 +419,7 @@ export class PspPaymentService {
   }) {
     const evidence = params.evidence.trim();
     if (!evidence) {
-      throw new BadRequestException(
-        'Say what the provider’s record shows — evidence is required',
-      );
+      throw new BadRequestException('Say what the provider’s record shows — evidence is required');
     }
     if (params.reconciledByUserId === params.checkedByUserId) {
       throw new ForbiddenException(

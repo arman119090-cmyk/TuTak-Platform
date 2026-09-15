@@ -31,7 +31,9 @@ export class PartnerBranchQrService {
     await this.assertBranchBelongsToPartner(partnerId, branchId);
     const existing = await this.getActive(partnerId, branchId);
     if (existing) {
-      throw new BadRequestException('This branch already has an active QR code — rotate it instead');
+      throw new BadRequestException(
+        'This branch already has an active QR code — rotate it instead',
+      );
     }
     return this.prisma.partnerBranchQrCode.create({
       data: {
@@ -66,7 +68,11 @@ export class PartnerBranchQrService {
       if (active) {
         await tx.partnerBranchQrCode.update({
           where: { id: active.id },
-          data: { status: PartnerBranchQrStatus.REVOKED, revokedAt: new Date(), revokedByUserId: actorUserId },
+          data: {
+            status: PartnerBranchQrStatus.REVOKED,
+            revokedAt: new Date(),
+            revokedByUserId: actorUserId,
+          },
         });
       }
       return tx.partnerBranchQrCode.create({

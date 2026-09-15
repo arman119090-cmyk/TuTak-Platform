@@ -41,11 +41,15 @@ export class UsersController {
     @Body() dto: UpdatePersonalizationConsentDto,
     @Req() req: Request,
   ) {
-    return this.usersService.setPersonalizationConsent(user.id, dto.personalizedRecommendationsEnabled, {
-      userId: user.id,
-      ipAddress: req.ip ?? null,
-      userAgent: req.get('user-agent') ?? null,
-    });
+    return this.usersService.setPersonalizationConsent(
+      user.id,
+      dto.personalizedRecommendationsEnabled,
+      {
+        userId: user.id,
+        ipAddress: req.ip ?? null,
+        userAgent: req.get('user-agent') ?? null,
+      },
+    );
   }
 
   /**

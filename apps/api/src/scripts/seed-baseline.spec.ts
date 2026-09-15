@@ -6,15 +6,21 @@ jest.mock('argon2', () => ({
 }));
 
 describe('seedBaseline', () => {
-  const permissionUpsert = jest.fn().mockImplementation(({ create }) =>
-    Promise.resolve({ id: `permission:${create.name}`, name: create.name }),
-  );
-  const permissionFindUniqueOrThrow = jest.fn().mockImplementation(({ where }) =>
-    Promise.resolve({ id: `permission:${where.name}`, name: where.name }),
-  );
-  const roleUpsert = jest.fn().mockImplementation(({ create }) =>
-    Promise.resolve({ id: `role:${create.name}`, name: create.name }),
-  );
+  const permissionUpsert = jest
+    .fn()
+    .mockImplementation(({ create }) =>
+      Promise.resolve({ id: `permission:${create.name}`, name: create.name }),
+    );
+  const permissionFindUniqueOrThrow = jest
+    .fn()
+    .mockImplementation(({ where }) =>
+      Promise.resolve({ id: `permission:${where.name}`, name: where.name }),
+    );
+  const roleUpsert = jest
+    .fn()
+    .mockImplementation(({ create }) =>
+      Promise.resolve({ id: `role:${create.name}`, name: create.name }),
+    );
   const roleFindUniqueOrThrow = jest.fn().mockResolvedValue({
     id: 'role:SUPER_ADMIN',
     name: 'SUPER_ADMIN',

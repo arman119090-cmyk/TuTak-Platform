@@ -4,7 +4,10 @@ import sharp from 'sharp';
 import type { Request } from 'express';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { MediaDeliveryController } from '../src/modules/media/media-delivery.controller';
-import { PartnerMediaController, type UploadedImage } from '../src/modules/media/partner-media.controller';
+import {
+  PartnerMediaController,
+  type UploadedImage,
+} from '../src/modules/media/partner-media.controller';
 import { UserAvatarController } from '../src/modules/media/user-avatar.controller';
 import { AdminMediaController } from '../src/modules/media/admin-media.controller';
 import { PartnersController } from '../src/modules/partners/partners.controller';
@@ -163,9 +166,9 @@ describe('Media system (integration)', () => {
       await expect(
         partnerMedia.putLogo(owner(user.id, mine.id), theirs.id, await png(300), req),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      await expect(
-        partnerMedia.list(owner(user.id, mine.id), theirs.id),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(partnerMedia.list(owner(user.id, mine.id), theirs.id)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('an approval by an id belonging to another partner is refused, not confused', async () => {
@@ -235,8 +238,18 @@ describe('Media system (integration)', () => {
       const partner = await createPartner(prisma);
       const { user: shopOwner } = await createCustomer(prisma);
       const { user: platformAdmin } = await createCustomer(prisma);
-      const first = await partnerMedia.putLogo(owner(shopOwner.id, partner.id), partner.id, await png(300), req);
-      const second = await partnerMedia.putLogo(owner(shopOwner.id, partner.id), partner.id, await png(320), req);
+      const first = await partnerMedia.putLogo(
+        owner(shopOwner.id, partner.id),
+        partner.id,
+        await png(300),
+        req,
+      );
+      const second = await partnerMedia.putLogo(
+        owner(shopOwner.id, partner.id),
+        partner.id,
+        await png(320),
+        req,
+      );
 
       const queue = await adminMedia.pending(admin(platformAdmin.id));
       const ids = queue.map((r) => r.id);
@@ -258,7 +271,9 @@ describe('Media system (integration)', () => {
       expect(removed.revokedAssetId).toBeTruthy();
       const row = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
       expect(row.logoAssetId).toBeNull();
-      const asset = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: removed.revokedAssetId! } });
+      const asset = await prisma.mediaAsset.findUniqueOrThrow({
+        where: { id: removed.revokedAssetId! },
+      });
       // Retained, per spec §3.3 — the record is not deleted, only withdrawn.
       expect(asset.status).toBe(MediaAssetStatus.REVOKED);
     });
@@ -272,7 +287,12 @@ describe('Media system (integration)', () => {
       const { user: platformAdmin } = await createCustomer(prisma);
       const { user: shopper } = await createCustomer(prisma);
 
-      const logoV1 = await partnerMedia.putLogo(admin(platformAdmin.id), partner.id, await png(300), req);
+      const logoV1 = await partnerMedia.putLogo(
+        admin(platformAdmin.id),
+        partner.id,
+        await png(300),
+        req,
+      );
 
       const intent = await intents.create(asUser({ id: shopper.id }), {
         partnerId: partner.id,
@@ -282,7 +302,12 @@ describe('Media system (integration)', () => {
       expect(intent.partnerBrand.displayName).toBe('Jazzve Coffee');
 
       // The partner rebrands, and renames itself for good measure.
-      const logoV2 = await partnerMedia.putLogo(admin(platformAdmin.id), partner.id, await png(320), req);
+      const logoV2 = await partnerMedia.putLogo(
+        admin(platformAdmin.id),
+        partner.id,
+        await png(320),
+        req,
+      );
       await prisma.partner.update({ where: { id: partner.id }, data: { displayName: 'Jazzve' } });
       expect(logoV2.id).not.toBe(logoV1.id);
 
@@ -309,7 +334,12 @@ describe('Media system (integration)', () => {
       const partner = await createPartner(prisma, { displayName: 'SAS' });
       const { user: platformAdmin } = await createCustomer(prisma);
       const { user: shopper } = await createCustomer(prisma);
-      const logoV1 = await partnerMedia.putLogo(admin(platformAdmin.id), partner.id, await png(300), req);
+      const logoV1 = await partnerMedia.putLogo(
+        admin(platformAdmin.id),
+        partner.id,
+        await png(300),
+        req,
+      );
 
       const txn = await transactions.create({
         userId: shopper.id,
@@ -332,7 +362,12 @@ describe('Media system (integration)', () => {
       const partner = await createPartner(prisma, { displayName: 'Original Name' });
       const { user: platformAdmin } = await createCustomer(prisma);
       const { user: shopper } = await createCustomer(prisma);
-      const logoV1 = await partnerMedia.putLogo(admin(platformAdmin.id), partner.id, await png(300), req);
+      const logoV1 = await partnerMedia.putLogo(
+        admin(platformAdmin.id),
+        partner.id,
+        await png(300),
+        req,
+      );
 
       const original = await transactions.create({
         userId: shopper.id,
@@ -396,9 +431,9 @@ describe('Media system (integration)', () => {
       const row = history.items.find((i) => i.id === txn.id)!;
       expect(row.partnerBrand?.displayName).toBe('Withdrawn Brand');
       expect(row.partnerBrand?.logo).toBeNull();
-      await expect(delivery.brand(txn.brandLogoAssetId!, 'display', fakeRes().res)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        delivery.brand(txn.brandLogoAssetId!, 'display', fakeRes().res),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -416,7 +451,9 @@ describe('Media system (integration)', () => {
       expect(second.assetId).not.toBe(first.assetId);
       const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
       expect(after.avatarAssetId).toBe(second.assetId);
-      const superseded = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: first.assetId } });
+      const superseded = await prisma.mediaAsset.findUniqueOrThrow({
+        where: { id: first.assetId },
+      });
       expect(superseded.status).toBe(MediaAssetStatus.REPLACED);
 
       const removed = await userAvatar.remove(asUser({ id: user.id }), req);
@@ -508,7 +545,14 @@ describe('Media system (integration)', () => {
       expect(ok.body?.length).toBeGreaterThan(0);
 
       await expect(
-        delivery.private(assetIdOf(url), variantOf(url) as never, outsider.id, q.exp, q.sig, fakeRes().res),
+        delivery.private(
+          assetIdOf(url),
+          variantOf(url) as never,
+          outsider.id,
+          q.exp,
+          q.sig,
+          fakeRes().res,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -522,9 +566,20 @@ describe('Media system (integration)', () => {
       const url = (await referral.listMyInvites(referrer.id))[0]!.referee!.avatar!.url;
       const q = query(url);
 
-      await userAvatar.consent(asUser({ id: referee.id }), { showAvatarInReferralList: false }, req);
+      await userAvatar.consent(
+        asUser({ id: referee.id }),
+        { showAvatarInReferralList: false },
+        req,
+      );
       await expect(
-        delivery.private(assetIdOf(url), variantOf(url) as never, q.aud, q.exp, q.sig, fakeRes().res),
+        delivery.private(
+          assetIdOf(url),
+          variantOf(url) as never,
+          q.aud,
+          q.exp,
+          q.sig,
+          fakeRes().res,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -535,7 +590,11 @@ describe('Media system (integration)', () => {
         data: { referrerUserId: referee.id, refereeUserId: grandchild.id, referrerType: 'USER' },
       });
       await userAvatar.upload(asUser({ id: grandchild.id }), await png(300), req);
-      await userAvatar.consent(asUser({ id: grandchild.id }), { showAvatarInReferralList: true }, req);
+      await userAvatar.consent(
+        asUser({ id: grandchild.id }),
+        { showAvatarInReferralList: true },
+        req,
+      );
 
       const list = await referral.listMyInvites(referrer.id);
       expect(list).toHaveLength(1);
@@ -549,7 +608,11 @@ describe('Media system (integration)', () => {
         data: { referrerUserId: referee.id, refereeUserId: grandchild.id, referrerType: 'USER' },
       });
       await userAvatar.upload(asUser({ id: grandchild.id }), await png(300), req);
-      await userAvatar.consent(asUser({ id: grandchild.id }), { showAvatarInReferralList: true }, req);
+      await userAvatar.consent(
+        asUser({ id: grandchild.id }),
+        { showAvatarInReferralList: true },
+        req,
+      );
 
       // The L1 (direct) referrer of the grandchild is `referee`, and they can
       // see it. `referrer` is two hops up and must not, even holding the id.
@@ -611,14 +674,28 @@ describe('Media system (integration)', () => {
     const { user: shopOwner } = await createCustomer(prisma);
     const { user: platformAdmin } = await createCustomer(prisma);
 
-    const submitted = await partnerMedia.putLogo(owner(shopOwner.id, partner.id), partner.id, await png(300), req);
+    const submitted = await partnerMedia.putLogo(
+      owner(shopOwner.id, partner.id),
+      partner.id,
+      await png(300),
+      req,
+    );
     await partnerMedia.approve(admin(platformAdmin.id), partner.id, submitted.id, req);
     await partnerMedia.deleteLogo(admin(platformAdmin.id), partner.id, req);
     await userAvatar.upload(asUser({ id: shopOwner.id }), await png(300), req);
     await userAvatar.consent(asUser({ id: shopOwner.id }), { showAvatarInReferralList: true }, req);
 
     const logs = await prisma.auditLog.findMany({
-      where: { action: { in: ['MEDIA_ASSET_UPLOADED', 'MEDIA_ASSET_APPROVED', 'MEDIA_ASSET_REVOKED', 'MEDIA_AVATAR_CONSENT_CHANGED'] } },
+      where: {
+        action: {
+          in: [
+            'MEDIA_ASSET_UPLOADED',
+            'MEDIA_ASSET_APPROVED',
+            'MEDIA_ASSET_REVOKED',
+            'MEDIA_AVATAR_CONSENT_CHANGED',
+          ],
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
     expect(logs.map((l) => l.action)).toEqual([
@@ -690,11 +767,9 @@ describe('Media system (integration)', () => {
     ): { limit: number; ttl: number } | null => {
       const target = (controller as Record<string, unknown>)[method];
       const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', target as object) as
-        | number
-        | undefined;
+        number | undefined;
       const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', target as object) as
-        | number
-        | undefined;
+        number | undefined;
       return limit !== undefined && ttl !== undefined ? { limit, ttl } : null;
     };
 

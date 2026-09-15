@@ -357,7 +357,8 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
         abortOnError: false,
       });
       try {
-        const { MEDIA_STORAGE } = await import('../src/infrastructure/media/media-storage.interface');
+        const { MEDIA_STORAGE } =
+          await import('../src/infrastructure/media/media-storage.interface');
         expect(app.get(MEDIA_STORAGE).driverName).toBe('s3');
       } finally {
         await app.close();

@@ -225,7 +225,10 @@ export class PartnerMediaController {
  */
 function uploadPipe() {
   return new ParseFilePipeBuilder()
-    .addMaxSizeValidator({ maxSize: MAX_UPLOAD_BYTES, message: 'The image must be 5 MB or smaller' })
+    .addMaxSizeValidator({
+      maxSize: MAX_UPLOAD_BYTES,
+      message: 'The image must be 5 MB or smaller',
+    })
     .build({ fileIsRequired: true });
 }
 

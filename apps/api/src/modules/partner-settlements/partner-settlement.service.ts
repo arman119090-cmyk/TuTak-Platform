@@ -144,7 +144,14 @@ export class PartnerSettlementService {
     });
     if (!account) {
       const zero = new Decimal(0);
-      return { partnerId, accrued: zero, deductions: zero, net: zero, entries: [], unrecognised: [] };
+      return {
+        partnerId,
+        accrued: zero,
+        deductions: zero,
+        net: zero,
+        entries: [],
+        unrecognised: [],
+      };
     }
 
     const postings = await db.ledgerPosting.findMany({
@@ -306,7 +313,12 @@ export class PartnerSettlementService {
   /** Attaches the accounting document and freezes the figures for approval. */
   async markReady(
     id: string,
-    params: { actorId: string; documentNumber?: string; documentDate?: Date; documentReference?: string },
+    params: {
+      actorId: string;
+      documentNumber?: string;
+      documentDate?: Date;
+      documentReference?: string;
+    },
   ) {
     return this.transition(id, {
       from: [PartnerSettlementStatus.DRAFT],
@@ -676,9 +688,7 @@ export class PartnerSettlementService {
       params.outcome === ReconciliationOutcome.MONEY_MOVED &&
       !params.bankTransferReference?.trim()
     ) {
-      throw new BadRequestException(
-        'A transfer that went through has a bank reference; name it',
-      );
+      throw new BadRequestException('A transfer that went through has a bank reference; name it');
     }
 
     return this.prisma.$transaction(async (tx) => {

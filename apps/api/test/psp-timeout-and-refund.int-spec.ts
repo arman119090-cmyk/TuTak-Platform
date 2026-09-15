@@ -5,7 +5,9 @@ import {
   PspResolutionBasis,
   PurchaseIntentStatus,
 } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 import { Decimal } from '@prisma/client/runtime/library';
+import { AppConfig } from '../src/config/configuration';
 import { PspAttemptAgeingService } from '../src/modules/psp/psp-attempt-ageing.service';
 import { PspPaymentService } from '../src/modules/psp/psp-payment.service';
 import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
@@ -30,6 +32,8 @@ describe('PSP timeouts and refunds (integration)', () => {
   let ageing: PspAttemptAgeingService;
   let intents: PurchaseIntentsService;
   let refunds: PurchaseIntentRefundService;
+  let config: ConfigService<AppConfig, true>;
+  let realGet: (key: string, options?: unknown) => unknown;
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -38,6 +42,12 @@ describe('PSP timeouts and refunds (integration)', () => {
     ageing = harness.app.get(PspAttemptAgeingService);
     intents = harness.app.get(PurchaseIntentsService);
     refunds = harness.app.get(PurchaseIntentRefundService);
+    config = harness.app.get(ConfigService);
+    realGet = config.get.bind(config) as typeof realGet;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -64,6 +74,9 @@ describe('PSP timeouts and refunds (integration)', () => {
       { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
       customer.user.id,
     );
+    // Somebody at the business agrees the sale is real before a bill exists —
+    // the database refuses an attempt otherwise, since 15.09.2026.
+    await intents.approveForPayment(intent.id, staffId, {});
     const attempt = await prisma.pspPaymentAttempt.create({
       data: {
         purchaseIntentId: intent.id,
@@ -186,6 +199,36 @@ describe('PSP timeouts and refunds (integration)', () => {
         }),
       ).rejects.toThrow(/cannot change status and escalate in one write/i);
     });
+
+    it('honours a per-provider threshold rather than a constant', async () => {
+      // Twenty minutes old: stale under a fifteen-minute policy, fresh under
+      // the thirty-minute default. Arman's decision of 15.09.2026 is that
+      // this is configuration because thirty minutes was a number I picked.
+      const { attempt } = await attemptAged(20, 'bill-policy');
+
+      expect((await ageing.escalateStaleAttempts()).expired).toBe(0);
+      expect(
+        (await prisma.pspPaymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).status,
+      ).toBe(PspAttemptStatus.INITIATED);
+
+      // The policy the deployment would carry, swapped in wholesale. Spying
+      // rather than reaching into the ageing service keeps this a test of the
+      // configured behaviour rather than of a private field.
+      jest.spyOn(config, 'get').mockImplementation(((key: string, options?: unknown) =>
+        key === 'psp'
+          ? {
+              defaultStaleAfterMs: 15 * 60_000,
+              defaultEscalateEveryMs: 60 * 60_000,
+              perProvider: { idram: { staleAfterMs: 15 * 60_000 } },
+            }
+          : (realGet as (k: string, o?: unknown) => unknown)(key, options)) as never);
+
+      expect((await ageing.escalateStaleAttempts()).expired).toBe(1);
+      const after = await prisma.pspPaymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+      expect(after.status).toBe(PspAttemptStatus.EXPIRED);
+      // Still not a failure, whatever the threshold says.
+      expect(after.resolutionBasis).toBeNull();
+    });
   });
 
   // ── The only two ways out ──────────────────────────────────────────────
@@ -288,6 +331,7 @@ describe('PSP timeouts and refunds (integration)', () => {
         { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
         customer.user.id,
       );
+      await intents.approveForPayment(intent.id, staffId, {});
       await prisma.pspPaymentAttempt.create({
         data: {
           purchaseIntentId: intent.id,
@@ -315,7 +359,11 @@ describe('PSP timeouts and refunds (integration)', () => {
       ).rejects.toThrow(/not available yet.*do not refund it by hand or\s+in bonus points/is);
 
       // Nothing was reversed behind the refusal.
-      expect(await prisma.ledgerTransaction.count({ where: { kind: /* reversal */ 'partner.contribution_refund' } })).toBe(0);
+      expect(
+        await prisma.ledgerTransaction.count({
+          where: { kind: /* reversal */ 'partner.contribution_refund' },
+        }),
+      ).toBe(0);
     });
 
     it('still refunds an ordinary partner-direct purchase', async () => {

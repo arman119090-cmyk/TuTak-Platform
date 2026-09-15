@@ -72,7 +72,10 @@ describe('ExpoPushProvider', () => {
     await new ExpoPushProvider({ ...config, accessToken: 'secret' }).send([
       message('ExponentPushToken[a]'),
     ]);
-    const withToken = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    const withToken = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<
+      string,
+      string
+    >;
     expect(withToken.Authorization).toBe('Bearer secret');
   });
 
@@ -131,17 +134,17 @@ describe('ExpoPushProvider', () => {
       json: () => Promise.resolve({}),
     } as unknown as Response);
 
-    await expect(new ExpoPushProvider(config).send([message('ExponentPushToken[a]')])).resolves.toEqual(
-      { invalidTokens: [], delivered: 0 },
-    );
+    await expect(
+      new ExpoPushProvider(config).send([message('ExponentPushToken[a]')]),
+    ).resolves.toEqual({ invalidTokens: [], delivered: 0 });
   });
 
   it('resolves rather than throwing when the request itself fails', async () => {
     fetchMock.mockRejectedValue(new Error('ENOTFOUND'));
 
-    await expect(new ExpoPushProvider(config).send([message('ExponentPushToken[a]')])).resolves.toEqual(
-      { invalidTokens: [], delivered: 0 },
-    );
+    await expect(
+      new ExpoPushProvider(config).send([message('ExponentPushToken[a]')]),
+    ).resolves.toEqual({ invalidTokens: [], delivered: 0 });
   });
 
   it('keeps going when one batch fails and another succeeds', async () => {

@@ -88,10 +88,19 @@ export class MediaDeliveryService {
    * so a withdrawn consent or a removed role takes effect immediately rather
    * than whenever the URL happens to expire.
    */
-  signedUrl(assetId: string, variant: MediaVariant, audienceUserId: string, now = Date.now()): string {
+  signedUrl(
+    assetId: string,
+    variant: MediaVariant,
+    audienceUserId: string,
+    now = Date.now(),
+  ): string {
     const expiresAt = Math.floor(now / 1000) + this.ttlSeconds;
     const signature = this.sign(assetId, variant, audienceUserId, expiresAt);
-    const query = new URLSearchParams({ aud: audienceUserId, exp: String(expiresAt), sig: signature });
+    const query = new URLSearchParams({
+      aud: audienceUserId,
+      exp: String(expiresAt),
+      sig: signature,
+    });
     return `${this.baseUrl}/v1/media/private/${assetId}/${variant}?${query.toString()}`;
   }
 
@@ -124,12 +133,23 @@ export class MediaDeliveryService {
     return timingSafeEqual(provided, wanted) ? aud : null;
   }
 
-  private sign(assetId: string, variant: MediaVariant, audienceUserId: string, expiresAt: number): string {
-    return createHmac('sha256', this.secret)
-      // Length-prefixed rather than delimiter-joined: `a|b` and `ab|` must not
-      // produce the same input, or two different (asset, audience) pairs
-      // could share a signature.
-      .update([assetId, variant, audienceUserId, String(expiresAt)].map((p) => `${p.length}:${p}`).join(''))
-      .digest('base64url');
+  private sign(
+    assetId: string,
+    variant: MediaVariant,
+    audienceUserId: string,
+    expiresAt: number,
+  ): string {
+    return (
+      createHmac('sha256', this.secret)
+        // Length-prefixed rather than delimiter-joined: `a|b` and `ab|` must not
+        // produce the same input, or two different (asset, audience) pairs
+        // could share a signature.
+        .update(
+          [assetId, variant, audienceUserId, String(expiresAt)]
+            .map((p) => `${p.length}:${p}`)
+            .join(''),
+        )
+        .digest('base64url')
+    );
   }
 }

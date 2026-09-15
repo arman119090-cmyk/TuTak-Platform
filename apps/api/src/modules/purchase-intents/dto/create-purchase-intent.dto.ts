@@ -1,5 +1,5 @@
-import { PaymentRoute } from '@prisma/client';
-import { IsEnum, IsNumberString, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { PaymentRoute, UnitOfMeasure } from '@prisma/client';
+import { IsEnum, IsNumberString, IsOptional, IsUUID } from 'class-validator';
 
 /**
  * Spec §7: customer scans the partner/branch QR, then enters the amounts
@@ -61,11 +61,18 @@ export class CreatePurchaseIntentDto {
   @IsOptional()
   quantity?: string;
 
-  /** The unit that quantity is in — "L", "kWh". Must match the partner's terms. */
-  @IsString()
-  @Length(1, 16)
+  /**
+   * The unit that quantity is in. Must match the partner's terms.
+   *
+   * A closed enum rather than free text since 15.09.2026: this value is
+   * compared for equality against the contract's own unit, and that
+   * comparison decides whether a per-unit margin may be multiplied. "L" and
+   * "л" being different units is not a display problem, it is a wrong
+   * invoice. Labels live in the client's translations.
+   */
+  @IsEnum(UnitOfMeasure)
   @IsOptional()
-  quantityUnit?: string;
+  quantityUnit?: UnitOfMeasure;
 
   @IsNumberString()
   @IsOptional()

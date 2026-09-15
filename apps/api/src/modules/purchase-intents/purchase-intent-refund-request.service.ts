@@ -4,12 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  AuditAction,
-  Prisma,
-  PurchaseIntentStatus,
-  RefundRequestStatus,
-} from '@prisma/client';
+import { AuditAction, Prisma, PurchaseIntentStatus, RefundRequestStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -236,7 +231,13 @@ export class PurchaseIntentRefundRequestService {
    * change between attempts at the same decision.
    */
   private async settle(
-    decision: { id: string; purchaseIntentId: string; amount: Prisma.Decimal | null; reason: string; decidedByUserId: string | null },
+    decision: {
+      id: string;
+      purchaseIntentId: string;
+      amount: Prisma.Decimal | null;
+      reason: string;
+      decidedByUserId: string | null;
+    },
     fallbackActorId: string,
   ) {
     let refund;
@@ -294,7 +295,10 @@ export class PurchaseIntentRefundRequestService {
    */
   private postedRefundFor(decision: { id: string; purchaseIntentId: string }) {
     return this.prisma.purchaseIntentRefund.findFirst({
-      where: { purchaseIntentId: decision.purchaseIntentId, idempotencyKey: engineKeyFor(decision.id) },
+      where: {
+        purchaseIntentId: decision.purchaseIntentId,
+        idempotencyKey: engineKeyFor(decision.id),
+      },
     });
   }
 
@@ -441,7 +445,10 @@ export class PurchaseIntentRefundRequestService {
       action: AuditAction.PURCHASE_INTENT_REFUND_REJECTED,
       entityType: 'PurchaseIntentRefundRequest',
       entityId: request.id,
-      metadata: { purchaseIntentId: request.purchaseIntentId, requestedBy: request.requestedByUserId },
+      metadata: {
+        purchaseIntentId: request.purchaseIntentId,
+        requestedBy: request.requestedByUserId,
+      },
     });
 
     return rejected;

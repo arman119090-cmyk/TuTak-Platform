@@ -123,7 +123,14 @@ describe('OTP-first auth (integration)', () => {
       const lastCode2 = captureCode();
       await authService.requestRegistrationOtp({ phone: phone2 });
       const r2 = await authService.verifyRegistrationOtp(
-        { phone: phone2, code: lastCode2(), firstName: 'Ani', lastName: 'Petrosyan', deviceId: 'device-2', password: REGISTRATION_PASSWORD },
+        {
+          phone: phone2,
+          code: lastCode2(),
+          firstName: 'Ani',
+          lastName: 'Petrosyan',
+          deviceId: 'device-2',
+          password: REGISTRATION_PASSWORD,
+        },
         {},
       );
       expect(r2.user.firstName).toBe('Ani');
@@ -257,14 +264,23 @@ describe('OTP-first auth (integration)', () => {
     it('captures referral attribution exactly once, at registration', async () => {
       const referrer = await createCustomer(prisma);
       const code = await prisma.referralCode.create({
-        data: { userId: referrer.user.id, code: `TT-${referrer.user.id.slice(0, 8).toUpperCase()}` },
+        data: {
+          userId: referrer.user.id,
+          code: `TT-${referrer.user.id.slice(0, 8).toUpperCase()}`,
+        },
       });
 
       const phone = randomPhone();
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
       const result = await authService.verifyRegistrationOtp(
-        { phone, code: lastCode(), referralCode: code.code, deviceId: 'device-1', password: REGISTRATION_PASSWORD },
+        {
+          phone,
+          code: lastCode(),
+          referralCode: code.code,
+          deviceId: 'device-1',
+          password: REGISTRATION_PASSWORD,
+        },
         {},
       );
 
@@ -274,7 +290,9 @@ describe('OTP-first auth (integration)', () => {
       expect(invite?.referrerUserId).toBe(referrer.user.id);
 
       // Immutable: nothing about the flow accepts a referral code again.
-      expect(await prisma.referralInvite.count({ where: { refereeUserId: result.user.id } })).toBe(1);
+      expect(await prisma.referralInvite.count({ where: { refereeUserId: result.user.id } })).toBe(
+        1,
+      );
     });
 
     it('reports success for an already-registered number, but issues no code for it', async () => {
@@ -312,7 +330,10 @@ describe('OTP-first auth (integration)', () => {
       await createCustomer(prisma, { phone });
 
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'device-1', password: REGISTRATION_PASSWORD }, {}),
+        authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'device-1', password: REGISTRATION_PASSWORD },
+          {},
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -324,11 +345,17 @@ describe('OTP-first auth (integration)', () => {
 
       for (let i = 0; i < 5; i += 1) {
         await expect(
-          authService.verifyRegistrationOtp({ phone, code: '000000', deviceId: 'd', password: REGISTRATION_PASSWORD }, {}),
+          authService.verifyRegistrationOtp(
+            { phone, code: '000000', deviceId: 'd', password: REGISTRATION_PASSWORD },
+            {},
+          ),
         ).rejects.toThrow(UnauthorizedException);
       }
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD }, {}),
+        authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD },
+          {},
+        ),
       ).rejects.toThrow(UnauthorizedException);
       expect(await prisma.user.findUnique({ where: { phone } })).toBeNull();
     });
@@ -344,7 +371,10 @@ describe('OTP-first auth (integration)', () => {
       });
 
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD }, {}),
+        authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD },
+          {},
+        ),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -353,10 +383,16 @@ describe('OTP-first auth (integration)', () => {
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
       const code = lastCode();
-      await authService.verifyRegistrationOtp({ phone, code, deviceId: 'd1', password: REGISTRATION_PASSWORD }, {});
+      await authService.verifyRegistrationOtp(
+        { phone, code, deviceId: 'd1', password: REGISTRATION_PASSWORD },
+        {},
+      );
 
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd2', password: REGISTRATION_PASSWORD }, {}),
+        authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd2', password: REGISTRATION_PASSWORD },
+          {},
+        ),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -370,7 +406,9 @@ describe('OTP-first auth (integration)', () => {
       for (let i = 0; i < 5; i += 1) await authService.requestRegistrationOtp({ phone });
 
       const sendSpy = jest.spyOn(sms, 'send');
-      await expect(authService.requestRegistrationOtp({ phone })).resolves.toEqual({ success: true });
+      await expect(authService.requestRegistrationOtp({ phone })).resolves.toEqual({
+        success: true,
+      });
 
       expect(sendSpy).not.toHaveBeenCalled();
       expect(await prisma.authOtpToken.count({ where: { phone } })).toBe(5);
@@ -564,7 +602,10 @@ describe('OTP-first auth (integration)', () => {
       const phone = randomPhone();
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
-      await authService.verifyRegistrationOtp({ phone, code: lastCode(), deviceId: 'd', password: REGISTRATION_PASSWORD }, {});
+      await authService.verifyRegistrationOtp(
+        { phone, code: lastCode(), deviceId: 'd', password: REGISTRATION_PASSWORD },
+        {},
+      );
 
       const row = await prisma.user.findUniqueOrThrow({ where: { phone } });
       expect(row.passwordHash.startsWith('$argon2')).toBe(true);

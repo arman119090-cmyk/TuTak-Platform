@@ -103,7 +103,9 @@ export class MediaImageService {
     }
 
     if ((metadata.pages ?? 1) > 1) {
-      throw new BadRequestException('Animated images are not accepted — please upload a still image');
+      throw new BadRequestException(
+        'Animated images are not accepted — please upload a still image',
+      );
     }
 
     const width = metadata.width ?? 0;
@@ -119,7 +121,8 @@ export class MediaImageService {
     // Alpha is worth preserving for a brand mark sitting on the app's own
     // surface; spec §3.1 calls this out explicitly. A photograph does not
     // need it, and WebP is roughly a third the size for the same quality.
-    const wantsPng = kind === MediaAssetKind.PARTNER_LOGO && (metadata.hasAlpha === true || format === 'svg');
+    const wantsPng =
+      kind === MediaAssetKind.PARTNER_LOGO && (metadata.hasAlpha === true || format === 'svg');
 
     const original = await this.render(upload, shape.original, shape.fit, wantsPng);
     const display = await this.render(upload, shape.display, shape.fit, wantsPng);

@@ -112,7 +112,9 @@ export function derivePspRefundIdempotencyKey(
   actorId: string,
   idempotencyKey: string,
 ): string {
-  return createHash('sha256').update(`refund:${paymentId}:${actorId}:${idempotencyKey}`).digest('hex');
+  return createHash('sha256')
+    .update(`refund:${paymentId}:${actorId}:${idempotencyKey}`)
+    .digest('hex');
 }
 
 @Injectable()
@@ -262,7 +264,9 @@ export class RefundEngineService {
         `The payment provider declined this refund: ${refund.pspDeclineReason ?? 'declined'}`,
       );
     }
-    const payment = await this.prisma.payment.findUniqueOrThrow({ where: { id: refund.paymentId } });
+    const payment = await this.prisma.payment.findUniqueOrThrow({
+      where: { id: refund.paymentId },
+    });
     return {
       refundId: refund.id,
       amount: refund.amount.toFixed(MONEY_SCALE),

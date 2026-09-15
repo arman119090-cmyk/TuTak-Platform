@@ -135,7 +135,9 @@ describe('Account deletion (integration)', () => {
       await expect(deletion.requestDeletion(user.id, PASSWORD)).rejects.toThrow(
         BadRequestException,
       );
-      expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).deletedAt).toBeNull();
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).deletedAt,
+      ).toBeNull();
     });
 
     it('refuses an administrator, who might be the last one', async () => {

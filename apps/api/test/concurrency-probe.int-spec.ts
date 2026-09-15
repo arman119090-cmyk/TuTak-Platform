@@ -8,7 +8,12 @@ import {
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.service';
 import { BonusEngineService } from '../src/modules/wallet/bonus-engine.service';
-import { createCustomer, createDynamicInvoiceQr, createEvConnector, createPartner } from './setup/fixtures';
+import {
+  createCustomer,
+  createDynamicInvoiceQr,
+  createEvConnector,
+  createPartner,
+} from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
 
@@ -227,8 +232,14 @@ describe('Concurrency probe (integration)', () => {
       // the loser has already spent points by the time it loses. The
       // compensating leg is what has to give them back.
       await Promise.allSettled([
-        qr.redeem({ token: code.token, bonusAmountToApply: '500', idempotencyKey: 'lose-a' }, user.id),
-        qr.redeem({ token: code.token, bonusAmountToApply: '500', idempotencyKey: 'lose-b' }, user.id),
+        qr.redeem(
+          { token: code.token, bonusAmountToApply: '500', idempotencyKey: 'lose-a' },
+          user.id,
+        ),
+        qr.redeem(
+          { token: code.token, bonusAmountToApply: '500', idempotencyKey: 'lose-b' },
+          user.id,
+        ),
       ]);
 
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
@@ -374,7 +385,9 @@ describe('Concurrency probe (integration)', () => {
       ]);
 
       expect(fulfilled(results)).toBe(1);
-      const r1Row = await prisma.bonusReservation.findUniqueOrThrow({ where: { id: r1.reservationId } });
+      const r1Row = await prisma.bonusReservation.findUniqueOrThrow({
+        where: { id: r1.reservationId },
+      });
       const settled = r1Row.status === BonusReservationStatus.SETTLED;
       expect(r1Row.status).toBe(
         settled ? BonusReservationStatus.SETTLED : BonusReservationStatus.RELEASED,

@@ -1,5 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { BranchFuelType, MediaAsset, PartnerOfferingItem, PartnerStatus, Prisma, RoleName } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  BranchFuelType,
+  MediaAsset,
+  PartnerOfferingItem,
+  PartnerStatus,
+  Prisma,
+  RoleName,
+} from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MediaViewService } from '../media/media-view.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -331,7 +343,10 @@ export class PartnersService {
   /** Sanity ceiling, not a business limit — no real chain in this market approaches it; it exists so a scripting mistake cannot flood the map with rows. */
   private static readonly MAX_BRANCHES_PER_PARTNER = 200;
 
-  async createBranch(partnerId: string, dto: { name: string; address: string; city: string; latitude: number; longitude: number }) {
+  async createBranch(
+    partnerId: string,
+    dto: { name: string; address: string; city: string; latitude: number; longitude: number },
+  ) {
     const existing = await this.prisma.partnerBranch.count({ where: { partnerId } });
     if (existing >= PartnersService.MAX_BRANCHES_PER_PARTNER) {
       throw new BadRequestException(
@@ -488,7 +503,11 @@ export class PartnersService {
    * three call sites — is what stops one of them from being forgotten.
    */
   private toPublicDto<
-    T extends { logoAsset: MediaAssetRow; coverAsset: MediaAssetRow; offerings?: PartnerOfferingItem[] },
+    T extends {
+      logoAsset: MediaAssetRow;
+      coverAsset: MediaAssetRow;
+      offerings?: PartnerOfferingItem[];
+    },
   >(partner: T) {
     const { logoAsset, coverAsset, offerings, ...rest } = partner;
     return {
@@ -538,7 +557,11 @@ export class PartnersService {
   async list() {
     const partners = await this.prisma.partner.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { logoAsset: true, coverAsset: true, offerings: { orderBy: { displayOrder: 'asc' } } },
+      include: {
+        logoAsset: true,
+        coverAsset: true,
+        offerings: { orderBy: { displayOrder: 'asc' } },
+      },
     });
     return partners.map((partner) => this.toPublicDto(partner));
   }
@@ -574,7 +597,9 @@ export class PartnersService {
    */
   async isAffiliated(partnerId: string, userId: string): Promise<boolean> {
     const [membership, role] = await Promise.all([
-      this.prisma.partnerMembership.findUnique({ where: { partnerId_userId: { partnerId, userId } } }),
+      this.prisma.partnerMembership.findUnique({
+        where: { partnerId_userId: { partnerId, userId } },
+      }),
       this.prisma.userRole.findFirst({ where: { partnerId, userId } }),
     ]);
     return !!membership || !!role;
@@ -593,7 +618,10 @@ export class PartnersService {
    */
   async setActive(id: string, isActive: boolean) {
     const partner = await this.findByIdOrThrow(id);
-    if (partner.status === PartnerStatus.PENDING_APPROVAL || partner.status === PartnerStatus.REJECTED) {
+    if (
+      partner.status === PartnerStatus.PENDING_APPROVAL ||
+      partner.status === PartnerStatus.REJECTED
+    ) {
       throw new ConflictException(
         `A partner with status ${partner.status} must go through approve/reject, not active/suspend`,
       );
@@ -664,9 +692,7 @@ export class PartnersService {
     customerId?: string;
   }): Promise<NearbyPartner[]> {
     const { lat, lng, radiusKm, category, fuelType, q, customerId } = params;
-    const recommendedCategories = customerId
-      ? await this.recommendedCategoriesFor(customerId)
-      : [];
+    const recommendedCategories = customerId ? await this.recommendedCategoriesFor(customerId) : [];
     const latDelta = radiusKm / 111;
     const lngDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
 
@@ -679,7 +705,10 @@ export class PartnersService {
           isActive: true,
           status: PartnerStatus.ACTIVE,
           ...(fuelType
-            ? { category: 'fuel', ...(fuelType === 'gas' ? { sellsGas: true } : { sellsPetrol: true }) }
+            ? {
+                category: 'fuel',
+                ...(fuelType === 'gas' ? { sellsGas: true } : { sellsPetrol: true }),
+              }
             : category
               ? PartnersService.categoryFilter(category)
               : {}),
@@ -722,57 +751,59 @@ export class PartnersService {
       take: 300,
     });
 
-    return branches
-      .map((b) => {
-        const branchCategory = toPartnerCategory(b.partner.category);
-        return {
-          id: b.id,
-          partnerId: b.partnerId,
-          name: b.partner.displayName,
-          branchName: b.name,
-          category: branchCategory,
-          address: b.address,
-          city: b.city,
-          latitude: b.latitude,
-          longitude: b.longitude,
-          // Basis points to percent here, not in the client. A client that
-          // forgot to divide would advertise 300% cashback.
-          cashbackPercent: b.partner.bonusAccrualRateBps / 100,
-          distanceKm: haversineKm(lat, lng, b.latitude, b.longitude),
-          logo: this.media.currentPartnerImage(b.partner.logoAsset),
-          cover: this.media.currentPartnerImage(b.partner.coverAsset),
-          sellsGas: b.partner.sellsGas,
-          sellsPetrol: b.partner.sellsPetrol,
-          recommended: recommendedCategories.includes(branchCategory),
-          highCashback: b.partner.bonusAccrualRateBps / 100 >= HIGH_CASHBACK_PERCENT,
-        };
-      })
-      .filter((b) => b.distanceKm <= radiusKm)
-      /*
-       * Recommended first; then near before far; then generous before stingy.
-       *
-       * The middle key is the one that needs explaining. A partner who offers
-       * more deserves to be found more easily — otherwise the rate is a
-       * number the applicant picks and nobody ever rewards, and there is
-       * nothing honest to tell them when we ask for a better one. But sorting
-       * by rate outright would put a shop nine kilometres away above the one
-       * across the road, and this screen answers "where can I spend near
-       * here". A customer who walks past the near shop to reach the generous
-       * one is not better off.
-       *
-       * So distance is compared in bands rather than exactly. Inside a band
-       * the shops are close enough that the choice between them is a real
-       * choice, and there the better rate wins; across bands, nearer always
-       * wins however generous the far one is. Exact distance breaks the
-       * remaining ties, so the order is total and stable.
-       */
-      .sort(
-        (a, b) =>
-          Number(b.recommended) - Number(a.recommended) ||
-          distanceBand(a.distanceKm) - distanceBand(b.distanceKm) ||
-          b.cashbackPercent - a.cashbackPercent ||
-          a.distanceKm - b.distanceKm,
-      );
+    return (
+      branches
+        .map((b) => {
+          const branchCategory = toPartnerCategory(b.partner.category);
+          return {
+            id: b.id,
+            partnerId: b.partnerId,
+            name: b.partner.displayName,
+            branchName: b.name,
+            category: branchCategory,
+            address: b.address,
+            city: b.city,
+            latitude: b.latitude,
+            longitude: b.longitude,
+            // Basis points to percent here, not in the client. A client that
+            // forgot to divide would advertise 300% cashback.
+            cashbackPercent: b.partner.bonusAccrualRateBps / 100,
+            distanceKm: haversineKm(lat, lng, b.latitude, b.longitude),
+            logo: this.media.currentPartnerImage(b.partner.logoAsset),
+            cover: this.media.currentPartnerImage(b.partner.coverAsset),
+            sellsGas: b.partner.sellsGas,
+            sellsPetrol: b.partner.sellsPetrol,
+            recommended: recommendedCategories.includes(branchCategory),
+            highCashback: b.partner.bonusAccrualRateBps / 100 >= HIGH_CASHBACK_PERCENT,
+          };
+        })
+        .filter((b) => b.distanceKm <= radiusKm)
+        /*
+         * Recommended first; then near before far; then generous before stingy.
+         *
+         * The middle key is the one that needs explaining. A partner who offers
+         * more deserves to be found more easily — otherwise the rate is a
+         * number the applicant picks and nobody ever rewards, and there is
+         * nothing honest to tell them when we ask for a better one. But sorting
+         * by rate outright would put a shop nine kilometres away above the one
+         * across the road, and this screen answers "where can I spend near
+         * here". A customer who walks past the near shop to reach the generous
+         * one is not better off.
+         *
+         * So distance is compared in bands rather than exactly. Inside a band
+         * the shops are close enough that the choice between them is a real
+         * choice, and there the better rate wins; across bands, nearer always
+         * wins however generous the far one is. Exact distance breaks the
+         * remaining ties, so the order is total and stable.
+         */
+        .sort(
+          (a, b) =>
+            Number(b.recommended) - Number(a.recommended) ||
+            distanceBand(a.distanceKm) - distanceBand(b.distanceKm) ||
+            b.cashbackPercent - a.cashbackPercent ||
+            a.distanceKm - b.distanceKm,
+        )
+    );
   }
 
   /**

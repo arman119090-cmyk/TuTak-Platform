@@ -27,9 +27,8 @@ export class RequestContextMiddleware implements NestMiddleware {
 
     res.setHeader(REQUEST_ID_HEADER, requestId);
 
-    requestContext.run(
-      { requestId, method: req.method, path: req.originalUrl ?? req.url },
-      () => next(),
+    requestContext.run({ requestId, method: req.method, path: req.originalUrl ?? req.url }, () =>
+      next(),
     );
   }
 }

@@ -68,7 +68,7 @@ export function assertProductionCorsOrigins(
     `CORS_ORIGINS contains ${loopback.join(', ')} in production. Those name this machine, ` +
       'not a reachable host: the deployed admin and partner dashboards would be refused by ' +
       'the browser on every credentialed request while the API still reported healthy, and a ' +
-      'page on an operator\'s own laptop would be trusted with credentials against production. ' +
+      "page on an operator's own laptop would be trusted with credentials against production. " +
       'Set CORS_ORIGINS to the real public origins of the admin and partner dashboards ' +
       '(scheme and host, no trailing slash), e.g. ' +
       'CORS_ORIGINS=https://admin.example.com,https://partner.example.com',

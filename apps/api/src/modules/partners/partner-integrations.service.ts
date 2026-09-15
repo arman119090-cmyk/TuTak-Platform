@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AuditAction, PartnerIntegrationStatus, PartnerIntegrationType, Prisma } from '@prisma/client';
+import {
+  AuditAction,
+  PartnerIntegrationStatus,
+  PartnerIntegrationType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
@@ -127,7 +132,11 @@ export class PartnerIntegrationsService {
       action: AuditAction.PARTNER_UPDATED,
       entityType: 'PartnerIntegration',
       entityId: integration.id,
-      metadata: { event: 'website_verified', partnerId: integration.partnerId, websiteUrl: integration.websiteUrl },
+      metadata: {
+        event: 'website_verified',
+        partnerId: integration.partnerId,
+        websiteUrl: integration.websiteUrl,
+      },
     });
 
     return integration;

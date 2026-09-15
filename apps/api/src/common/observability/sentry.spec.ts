@@ -98,7 +98,9 @@ describe('normalizeRoute', () => {
     // A 404 on a URL carrying a customer's name or an account number is the
     // realistic case; the status code is the diagnostic, the URL is not.
     for (const path of ['/v1/users/Арман', '/v1/customers/123456789']) {
-      expect(normalizeRoute({ baseUrl: '', route: undefined, path } as never)).toBe(UNMATCHED_ROUTE);
+      expect(normalizeRoute({ baseUrl: '', route: undefined, path } as never)).toBe(
+        UNMATCHED_ROUTE,
+      );
     }
   });
 });

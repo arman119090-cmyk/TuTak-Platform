@@ -48,10 +48,7 @@ it('polices normally once the address identifies a caller', async () => {
 it('says so once, not on every request', async () => {
   const guard = guardFor('socket');
   const warn = jest
-    .spyOn(
-      (guard as unknown as { log: { warn: (m: string) => void } }).log,
-      'warn',
-    )
+    .spyOn((guard as unknown as { log: { warn: (m: string) => void } }).log, 'warn')
     .mockImplementation(() => undefined);
 
   await shouldSkip(guard);

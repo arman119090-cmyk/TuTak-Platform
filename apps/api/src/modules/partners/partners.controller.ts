@@ -60,9 +60,7 @@ export class PartnersController {
    */
   @Get()
   list(@CurrentUser() user: RequestUser) {
-    return isPlatformAdmin(user)
-      ? this.partnersService.list()
-      : this.partnersService.listPublic();
+    return isPlatformAdmin(user) ? this.partnersService.list() : this.partnersService.listPublic();
   }
 
   /**
@@ -276,7 +274,11 @@ export class PartnersController {
       action: AuditAction.PARTNER_UPDATED,
       entityType: 'Partner',
       entityId: partner.id,
-      metadata: { field: 'fuelTypes', sellsGas: partner.sellsGas, sellsPetrol: partner.sellsPetrol },
+      metadata: {
+        field: 'fuelTypes',
+        sellsGas: partner.sellsGas,
+        sellsPetrol: partner.sellsPetrol,
+      },
     });
     return partner;
   }

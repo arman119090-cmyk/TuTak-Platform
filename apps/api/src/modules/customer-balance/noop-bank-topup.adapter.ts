@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BankTopUpAdapter, TopUpInitiateResult, TopUpWebhookResult } from './bank-topup-adapter.interface';
+import {
+  BankTopUpAdapter,
+  TopUpInitiateResult,
+  TopUpWebhookResult,
+} from './bank-topup-adapter.interface';
 
 /**
  * No-op bank top-up adapter — active until a real bank/PSP (Idram or

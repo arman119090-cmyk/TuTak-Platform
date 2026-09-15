@@ -194,9 +194,9 @@ describe('PartnerSettlementService (integration)', () => {
       }),
     ).rejects.toThrow(/PAID and cannot be changed/i);
 
-    await expect(
-      prisma.partnerSettlement.delete({ where: { id: paid.id } }),
-    ).rejects.toThrow(/PAID and cannot be changed/i);
+    await expect(prisma.partnerSettlement.delete({ where: { id: paid.id } })).rejects.toThrow(
+      /PAID and cannot be changed/i,
+    );
   });
 
   it('will not let one bank transfer close two settlements', async () => {
@@ -324,8 +324,9 @@ describe('PartnerSettlementService (integration)', () => {
 
       // The entries are still claimed — the figure the partner was shown has
       // not changed — and the postings have not leaked back into unsettled.
-      expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } }))
-        .toBe(settlement.entryCount);
+      expect(
+        await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } }),
+      ).toBe(settlement.entryCount);
       expect((await settlements.unsettled(partnerId)).net.toFixed(2)).toBe('0.00');
       // Nothing was posted for a transfer that did not happen.
       expect(
@@ -346,9 +347,7 @@ describe('PartnerSettlementService (integration)', () => {
         include: { account: { select: { type: true } } },
       });
       expect(payouts).toHaveLength(2);
-      const discharged = payouts.find(
-        (x) => x.account.type === LedgerAccountType.PARTNER_PAYABLE,
-      );
+      const discharged = payouts.find((x) => x.account.type === LedgerAccountType.PARTNER_PAYABLE);
       expect(discharged?.direction).toBe(PostingDirection.DEBIT);
       expect(new Decimal(discharged!.amount).toFixed(2)).toBe('8000.00');
 
@@ -358,7 +357,10 @@ describe('PartnerSettlementService (integration)', () => {
         orderBy: { attemptedAt: 'asc' },
       });
       expect(attempts).toHaveLength(2);
-      expect(attempts[0]).toMatchObject({ succeeded: false, failureReason: 'Beneficiary account closed' });
+      expect(attempts[0]).toMatchObject({
+        succeeded: false,
+        failureReason: 'Beneficiary account closed',
+      });
       expect(attempts[1]).toMatchObject({ succeeded: true, bankTransferReference: 'BANK-RETRY' });
       // And the partner's payable is square: 8,000 in, 8,000 out.
       expect((await payableBalance()).toFixed(2)).toBe('0.00');

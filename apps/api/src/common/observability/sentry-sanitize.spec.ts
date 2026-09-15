@@ -98,7 +98,12 @@ describe('sanitizeSentryEvent — free text', () => {
   it('drops the exception value — the error message — while keeping the type', () => {
     const event = {
       exception: {
-        values: [{ type: 'PrismaClientKnownRequestError', value: `${PASSWORD} for ${RAW_PATH_WITH_ACCOUNT}` }],
+        values: [
+          {
+            type: 'PrismaClientKnownRequestError',
+            value: `${PASSWORD} for ${RAW_PATH_WITH_ACCOUNT}`,
+          },
+        ],
       },
     };
 
@@ -316,7 +321,9 @@ describe('sanitizeSentryEvent — what survives', () => {
         values: [
           {
             type: 'PrismaClientKnownRequestError',
-            stacktrace: { frames: [{ filename: 'users.service.ts', function: 'findOne', lineno: 42 }] },
+            stacktrace: {
+              frames: [{ filename: 'users.service.ts', function: 'findOne', lineno: 42 }],
+            },
           },
         ],
       },
@@ -367,7 +374,11 @@ describe('sanitizeBreadcrumb', () => {
   it('applies the same rules to a breadcrumb reached through an event', () => {
     const event = {
       breadcrumbs: [
-        { category: 'xhr', message: `${RAW_PATH_WITH_NAME} ${OPAQUE_TOKEN}`, data: { body: PASSWORD } },
+        {
+          category: 'xhr',
+          message: `${RAW_PATH_WITH_NAME} ${OPAQUE_TOKEN}`,
+          data: { body: PASSWORD },
+        },
       ],
     };
 

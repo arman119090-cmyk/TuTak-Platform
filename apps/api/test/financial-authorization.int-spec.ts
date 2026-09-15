@@ -116,9 +116,9 @@ describe('Financial endpoint authorization (integration)', () => {
       const partner = await createPartner(prisma);
       const { user } = await createCustomer(prisma);
 
-      await expect(
-        payoutsController.balance(actor(user.id), partner.id),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(payoutsController.balance(actor(user.id), partner.id)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('lets a platform admin read any partner’s balance', async () => {

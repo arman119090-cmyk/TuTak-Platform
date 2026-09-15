@@ -89,9 +89,7 @@ export class OtpIpRateLimitService {
       used = await this.redis.incr(key);
       if (used === 1) await this.redis.expire(key, WINDOW_SECONDS);
     } catch (err) {
-      this.logger.warn(
-        `OTP per-IP limit not enforced for this request: ${(err as Error).message}`,
-      );
+      this.logger.warn(`OTP per-IP limit not enforced for this request: ${(err as Error).message}`);
       return;
     }
 

@@ -135,7 +135,9 @@ export class IdramAdapter implements PspAdapter {
     const given = (payload.EDP_CHECKSUM ?? '').toUpperCase();
     if (!given || given !== expected) {
       // Deliberately does not say which part failed.
-      this.logger.warn(`Idram callback rejected: checksum mismatch for bill ${payload.EDP_BILL_NO}`);
+      this.logger.warn(
+        `Idram callback rejected: checksum mismatch for bill ${payload.EDP_BILL_NO}`,
+      );
       return { verified: false, reason: 'checksum mismatch', raw: body };
     }
 

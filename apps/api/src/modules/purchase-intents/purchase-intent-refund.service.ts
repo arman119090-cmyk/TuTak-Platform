@@ -143,7 +143,9 @@ export class PurchaseIntentRefundService {
     );
   }
 
-  private async executeRefund(params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
+  private async executeRefund(
+    params: PurchaseIntentRefundParams,
+  ): Promise<PurchaseIntentRefundResult> {
     // Crash-recovery: see RefundEngineService's identical check for why this
     // branch exists even though IdempotencyService normally answers first.
     const already = await this.findByKey(params.actorId, params.idempotencyKey);
@@ -212,7 +214,10 @@ export class PurchaseIntentRefundService {
     );
   }
 
-  private async postRefund(tx: Tx, params: PurchaseIntentRefundParams): Promise<PurchaseIntentRefundResult> {
+  private async postRefund(
+    tx: Tx,
+    params: PurchaseIntentRefundParams,
+  ): Promise<PurchaseIntentRefundResult> {
     const { purchaseIntentId, reason, actorId, idempotencyKey } = params;
     const intent = await tx.purchaseIntent.findUnique({ where: { id: purchaseIntentId } });
     if (!intent) throw new NotFoundException('Purchase intent not found');
@@ -304,7 +309,13 @@ export class PurchaseIntentRefundService {
     const { bonusRestored, ledgerTransactionId, shortfall } =
       intent.programVersion === ReferralProgramVersion.THREE_LEVEL_V2
         ? await this.reverseLoyaltyEffectsV2(tx, intent, cumulativeBefore, cumulativeAfter, reason)
-        : await this.reverseLoyaltyEffectsLegacy(tx, intent, cumulativeBefore, cumulativeAfter, reason);
+        : await this.reverseLoyaltyEffectsLegacy(
+            tx,
+            intent,
+            cumulativeBefore,
+            cumulativeAfter,
+            reason,
+          );
 
     const refund = await tx.purchaseIntentRefund.create({
       data: {
@@ -393,8 +404,11 @@ export class PurchaseIntentRefundService {
     const sourceTransactionId = intent.sourceTransactionId!;
 
     const shareAt = (total: Decimal, cumulative: Decimal): Decimal =>
-      total.lessThanOrEqualTo(0) ? new Decimal(0) : roundIssued(total.times(cumulative).dividedBy(grossAmount));
-    const delta = (total: Decimal): Decimal => shareAt(total, cumulativeAfter).minus(shareAt(total, cumulativeBefore));
+      total.lessThanOrEqualTo(0)
+        ? new Decimal(0)
+        : roundIssued(total.times(cumulative).dividedBy(grossAmount));
+    const delta = (total: Decimal): Decimal =>
+      shareAt(total, cumulativeAfter).minus(shareAt(total, cumulativeBefore));
 
     // Only ever null for an intent that was never confirmed, which can't
     // reach a refund — `refund()`/`postRefund` both require CONFIRMED.
@@ -449,7 +463,12 @@ export class PurchaseIntentRefundService {
           })
         : null;
       if (referralLot) {
-        const clawed = await this.bonusEngine.reverseAccrualLot(referralLot.id, reason, referrerΔ, tx);
+        const clawed = await this.bonusEngine.reverseAccrualLot(
+          referralLot.id,
+          reason,
+          referrerΔ,
+          tx,
+        );
         referrerClawed = clawed ?? zero;
       }
     }
@@ -458,7 +477,12 @@ export class PurchaseIntentRefundService {
     let deferredLiabilityToReverse = zero;
     let deferredShortfall = zero;
     if (deferredΔ.greaterThan(0)) {
-      const result = await this.deferredBonusLots.reverseForRefund(sourceTransactionId, deferredΔ, reason, tx);
+      const result = await this.deferredBonusLots.reverseForRefund(
+        sourceTransactionId,
+        deferredΔ,
+        reason,
+        tx,
+      );
       deferredLiabilityToReverse = result.liabilityToReverse;
       deferredShortfall = result.shortfall;
     }
@@ -470,8 +494,18 @@ export class PurchaseIntentRefundService {
     // relationship, unlike the legs above. Independent audit, GitHub issue
     // #28: neither used to be reversed at all.
     const rawRefundΔ = cumulativeAfter.minus(cumulativeBefore);
-    await this.deferredBonusLots.reverseExternalContributions(sourceTransactionId, rawRefundΔ, reason, tx);
-    await this.referralService.reverseChallengeContribution(sourceTransactionId, rawRefundΔ, reason, tx);
+    await this.deferredBonusLots.reverseExternalContributions(
+      sourceTransactionId,
+      rawRefundΔ,
+      reason,
+      tx,
+    );
+    await this.referralService.reverseChallengeContribution(
+      sourceTransactionId,
+      rawRefundΔ,
+      reason,
+      tx,
+    );
 
     // Unrecoverable: value the customer already spent elsewhere (whose own
     // transaction already released this liability) or that expired
@@ -491,7 +525,13 @@ export class PurchaseIntentRefundService {
 
     if (bonusRestoreΔ.greaterThan(0)) {
       const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: intent.customerId } });
-      await this.bonusEngine.restoreSpentBonus(wallet.id, bonusRestoreΔ, sourceTransactionId, reason, tx);
+      await this.bonusEngine.restoreSpentBonus(
+        wallet.id,
+        bonusRestoreΔ,
+        sourceTransactionId,
+        reason,
+        tx,
+      );
     }
 
     const ledgerTransactionId = await this.postReversalLedgerLegacy(tx, intent, {
@@ -547,7 +587,10 @@ export class PurchaseIntentRefundService {
     }
 
     const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }, tx),
+      this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId },
+        tx,
+      ),
       this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
       this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
     ]);
@@ -565,14 +608,23 @@ export class PurchaseIntentRefundService {
       const postings = [
         { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: amounts.poolΔ },
         ...(customerLiabilityΔ.greaterThan(0)
-          ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: customerLiabilityΔ }]
+          ? [
+              {
+                accountId: bonusLiabilityAccount.id,
+                direction: PostingDirection.DEBIT,
+                amount: customerLiabilityΔ,
+              },
+            ]
           : []),
         ...(amounts.referrer?.type === 'PARTNER' && amounts.referrerΔ.greaterThan(0)
           ? [
               {
                 accountId: (
                   await this.ledger.accountFor(
-                    { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: amounts.referrer.partnerId },
+                    {
+                      type: LedgerAccountType.PARTNER_PAYABLE,
+                      partnerId: amounts.referrer.partnerId,
+                    },
                     tx,
                   )
                 ).id,
@@ -582,7 +634,13 @@ export class PurchaseIntentRefundService {
             ]
           : []),
         ...(tutakRevenueΔ.greaterThan(0)
-          ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: tutakRevenueΔ }]
+          ? [
+              {
+                accountId: revenueAccount.id,
+                direction: PostingDirection.DEBIT,
+                amount: tutakRevenueΔ,
+              },
+            ]
           : []),
       ];
 
@@ -605,8 +663,16 @@ export class PurchaseIntentRefundService {
           sourceType: 'PurchaseIntent',
           sourceId: intent.id,
           postings: [
-            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: amounts.bonusRestoreΔ },
-            { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.bonusRestoreΔ },
+            {
+              accountId: bonusLiabilityAccount.id,
+              direction: PostingDirection.CREDIT,
+              amount: amounts.bonusRestoreΔ,
+            },
+            {
+              accountId: partnerAccount.id,
+              direction: PostingDirection.DEBIT,
+              amount: amounts.bonusRestoreΔ,
+            },
           ],
         },
         tx,
@@ -668,8 +734,11 @@ export class PurchaseIntentRefundService {
     const zero = new Decimal(0);
 
     const shareAt = (total: Decimal, cumulative: Decimal): Decimal =>
-      total.lessThanOrEqualTo(0) ? zero : roundIssued(total.times(cumulative).dividedBy(grossAmount));
-    const delta = (total: Decimal): Decimal => shareAt(total, cumulativeAfter).minus(shareAt(total, cumulativeBefore));
+      total.lessThanOrEqualTo(0)
+        ? zero
+        : roundIssued(total.times(cumulative).dividedBy(grossAmount));
+    const delta = (total: Decimal): Decimal =>
+      shareAt(total, cumulativeAfter).minus(shareAt(total, cumulativeBefore));
 
     // Only ever null for an intent whose snapshot was already validated
     // complete by `postRefund` before this is reached.
@@ -708,7 +777,10 @@ export class PurchaseIntentRefundService {
     // `tutak` — never independently rounded, so all six legs always sum to
     // exactly `poolΔ`.
     const poolΔ = delta(pool);
-    const tutakΔ = poolΔ.minus(greenΔ).minus(deferredΔ).minus(levels.reduce((s, l) => s.plus(l.amountΔ), zero));
+    const tutakΔ = poolΔ
+      .minus(greenΔ)
+      .minus(deferredΔ)
+      .minus(levels.reduce((s, l) => s.plus(l.amountΔ), zero));
 
     // Same reasoning as the legacy method: `reverseAccrualLot` claws back
     // only a lot's unspent remainder; whatever the theoretical share could
@@ -735,14 +807,21 @@ export class PurchaseIntentRefundService {
     const perLevelClawed: Record<1 | 2 | 3, Decimal> = { 1: zero, 2: zero, 3: zero };
     let referrerShortfall = zero;
     for (const lvl of levels) {
-      if (lvl.type !== ReferrerType.USER || !lvl.userId || lvl.amountΔ.lessThanOrEqualTo(0)) continue;
+      if (lvl.type !== ReferrerType.USER || !lvl.userId || lvl.amountΔ.lessThanOrEqualTo(0))
+        continue;
       const wallet = await tx.wallet.findUnique({ where: { userId: lvl.userId } });
       const lot = wallet
         ? await tx.bonusLot.findFirst({
-            where: { sourceTransactionId, type: BonusEntryType.ACCRUAL_REFERRAL, walletId: wallet.id },
+            where: {
+              sourceTransactionId,
+              type: BonusEntryType.ACCRUAL_REFERRAL,
+              walletId: wallet.id,
+            },
           })
         : null;
-      const clawed = lot ? ((await this.bonusEngine.reverseAccrualLot(lot.id, reason, lvl.amountΔ, tx)) ?? zero) : zero;
+      const clawed = lot
+        ? ((await this.bonusEngine.reverseAccrualLot(lot.id, reason, lvl.amountΔ, tx)) ?? zero)
+        : zero;
       perLevelClawed[lvl.level] = clawed;
       referrerShortfall = referrerShortfall.plus(lvl.amountΔ.minus(clawed));
     }
@@ -750,7 +829,12 @@ export class PurchaseIntentRefundService {
     let deferredLiabilityToReverse = zero;
     let deferredShortfall = zero;
     if (deferredΔ.greaterThan(0)) {
-      const result = await this.deferredBonusLots.reverseForRefund(sourceTransactionId, deferredΔ, reason, tx);
+      const result = await this.deferredBonusLots.reverseForRefund(
+        sourceTransactionId,
+        deferredΔ,
+        reason,
+        tx,
+      );
       deferredLiabilityToReverse = result.liabilityToReverse;
       deferredShortfall = result.shortfall;
     }
@@ -761,8 +845,18 @@ export class PurchaseIntentRefundService {
     // dollar-for-dollar relationship on the raw refunded amount, not the
     // pool split.
     const rawRefundΔ = cumulativeAfter.minus(cumulativeBefore);
-    await this.deferredBonusLots.reverseExternalContributions(sourceTransactionId, rawRefundΔ, reason, tx);
-    await this.referralService.reverseChallengeContribution(sourceTransactionId, rawRefundΔ, reason, tx);
+    await this.deferredBonusLots.reverseExternalContributions(
+      sourceTransactionId,
+      rawRefundΔ,
+      reason,
+      tx,
+    );
+    await this.referralService.reverseChallengeContribution(
+      sourceTransactionId,
+      rawRefundΔ,
+      reason,
+      tx,
+    );
 
     const shortfall = greenShortfall.plus(referrerShortfall).plus(deferredShortfall);
     if (shortfall.greaterThan(0)) {
@@ -774,7 +868,13 @@ export class PurchaseIntentRefundService {
 
     if (bonusRestoreΔ.greaterThan(0)) {
       const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: intent.customerId } });
-      await this.bonusEngine.restoreSpentBonus(wallet.id, bonusRestoreΔ, sourceTransactionId, reason, tx);
+      await this.bonusEngine.restoreSpentBonus(
+        wallet.id,
+        bonusRestoreΔ,
+        sourceTransactionId,
+        reason,
+        tx,
+      );
     }
 
     const ledgerTransactionId = await this.postReversalLedgerV2(tx, intent, {
@@ -823,7 +923,10 @@ export class PurchaseIntentRefundService {
     }
 
     const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }, tx),
+      this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId },
+        tx,
+      ),
       this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
       this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
     ]);
@@ -834,7 +937,9 @@ export class PurchaseIntentRefundService {
       const userLevelsClawed = amounts.levels
         .filter((l) => l.type === ReferrerType.USER)
         .reduce((s, l) => s.plus(amounts.perLevelClawed[l.level]), new Decimal(0));
-      const customerLiabilityΔ = amounts.greenClawed.plus(amounts.deferredLiabilityToReverse).plus(userLevelsClawed);
+      const customerLiabilityΔ = amounts.greenClawed
+        .plus(amounts.deferredLiabilityToReverse)
+        .plus(userLevelsClawed);
       const tutakRevenueΔ = amounts.tutakΔ.plus(amounts.shortfall);
 
       const partnerReferrerPostings = await Promise.all(
@@ -852,11 +957,23 @@ export class PurchaseIntentRefundService {
       const postings = [
         { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: amounts.poolΔ },
         ...(customerLiabilityΔ.greaterThan(0)
-          ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: customerLiabilityΔ }]
+          ? [
+              {
+                accountId: bonusLiabilityAccount.id,
+                direction: PostingDirection.DEBIT,
+                amount: customerLiabilityΔ,
+              },
+            ]
           : []),
         ...partnerReferrerPostings,
         ...(tutakRevenueΔ.greaterThan(0)
-          ? [{ accountId: revenueAccount.id, direction: PostingDirection.DEBIT, amount: tutakRevenueΔ }]
+          ? [
+              {
+                accountId: revenueAccount.id,
+                direction: PostingDirection.DEBIT,
+                amount: tutakRevenueΔ,
+              },
+            ]
           : []),
       ];
 
@@ -879,8 +996,16 @@ export class PurchaseIntentRefundService {
           sourceType: 'PurchaseIntent',
           sourceId: intent.id,
           postings: [
-            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: amounts.bonusRestoreΔ },
-            { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.bonusRestoreΔ },
+            {
+              accountId: bonusLiabilityAccount.id,
+              direction: PostingDirection.CREDIT,
+              amount: amounts.bonusRestoreΔ,
+            },
+            {
+              accountId: partnerAccount.id,
+              direction: PostingDirection.DEBIT,
+              amount: amounts.bonusRestoreΔ,
+            },
           ],
         },
         tx,

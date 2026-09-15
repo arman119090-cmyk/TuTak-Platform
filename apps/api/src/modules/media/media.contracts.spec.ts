@@ -71,7 +71,13 @@ describe('media contracts stay in step with @tutak/shared-types', () => {
   });
 
   it('PartnerMediaDto and the consent request are identical in both directions', () => {
-    const media: PartnerMediaDto = { partnerId: 'p', displayName: 'n', logo: null, cover: null, pending: [] };
+    const media: PartnerMediaDto = {
+      partnerId: 'p',
+      displayName: 'n',
+      logo: null,
+      cover: null,
+      pending: [],
+    };
     const sharedMedia: SharedPartnerMediaDto = media;
     const backMedia: PartnerMediaDto = sharedMedia;
     expect(backMedia).toEqual(media);

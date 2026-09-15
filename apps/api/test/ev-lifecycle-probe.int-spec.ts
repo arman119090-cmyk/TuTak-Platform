@@ -288,9 +288,9 @@ describe('EV lifecycle probe (integration)', () => {
 
       // The reservation is the product. A bay anyone can take out from under
       // the holder is not reserved.
-      await expect(
-        sessions.start({ connectorId: connector.id }, stranger.user.id),
-      ).rejects.toThrow(/not available/);
+      await expect(sessions.start({ connectorId: connector.id }, stranger.user.id)).rejects.toThrow(
+        /not available/,
+      );
     });
 
     it('consumes a reservation once, so it cannot start two sessions', async () => {

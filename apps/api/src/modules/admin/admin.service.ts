@@ -256,7 +256,9 @@ export class AdminService {
       this.prisma.user.count(),
       this.prisma.partner.count(),
       this.prisma.transaction.count(),
-      this.prisma.wallet.aggregate({ _sum: { availableBonus: true, pendingBonus: true, reservedBonus: true } }),
+      this.prisma.wallet.aggregate({
+        _sum: { availableBonus: true, pendingBonus: true, reservedBonus: true },
+      }),
     ]);
 
     return {

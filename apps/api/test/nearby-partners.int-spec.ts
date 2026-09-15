@@ -182,17 +182,17 @@ describe('Nearby partners (integration)', () => {
     });
 
     // The partner's own name…
-    expect((await controller.nearby(asCustomer(), query({ q: 'sas' }))).map((r) => r.name)).toEqual([
-      'SAS Supermarket',
-    ]);
+    expect((await controller.nearby(asCustomer(), query({ q: 'sas' }))).map((r) => r.name)).toEqual(
+      ['SAS Supermarket'],
+    );
     // …the branch…
-    expect((await controller.nearby(asCustomer(), query({ q: 'MASHTOTS' }))).map((r) => r.name)).toEqual([
-      'Yerevan City',
-    ]);
+    expect(
+      (await controller.nearby(asCustomer(), query({ q: 'MASHTOTS' }))).map((r) => r.name),
+    ).toEqual(['Yerevan City']);
     // …and the street, which is how somebody looks for the one near work.
-    expect((await controller.nearby(asCustomer(), query({ q: 'sayat' }))).map((r) => r.name)).toEqual([
-      'Yerevan City',
-    ]);
+    expect(
+      (await controller.nearby(asCustomer(), query({ q: 'sayat' }))).map((r) => r.name),
+    ).toEqual(['Yerevan City']);
   });
 
   it('gives the customer what is on the sign and nothing behind the counter', async () => {

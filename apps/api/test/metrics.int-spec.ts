@@ -76,9 +76,7 @@ describe('Metrics (integration)', () => {
 
   describe('the numbers', () => {
     const valueOf = (body: string, metric: string): number => {
-      const line = body
-        .split('\n')
-        .find((l) => l.startsWith(metric) && !l.startsWith('#'));
+      const line = body.split('\n').find((l) => l.startsWith(metric) && !l.startsWith('#'));
       if (!line) throw new Error(`${metric} is not being reported`);
       return Number(line.slice(line.lastIndexOf(' ') + 1));
     };
@@ -98,9 +96,7 @@ describe('Metrics (integration)', () => {
       expect(valueOf(body, 'tutak_ledger_imbalance_amd')).toBe(0);
       // And the individual accounts are real, not a hardcoded zero: the
       // acquirer owes us the captured amount.
-      expect(
-        valueOf(body, 'tutak_ledger_account_balance_amd{account="PSP_RECEIVABLE"'),
-      ).toBe(5000);
+      expect(valueOf(body, 'tutak_ledger_account_balance_amd{account="PSP_RECEIVABLE"')).toBe(5000);
     });
 
     it('reports a broken ledger as non-zero', async () => {

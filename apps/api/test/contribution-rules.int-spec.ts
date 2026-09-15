@@ -1,11 +1,13 @@
 import {
   ContributionRuleKind,
+  ContributionRuleStatus,
   LedgerAccountType,
   PaymentRoute,
   PostingDirection,
   PrismaClient,
   PspAttemptStatus,
   PurchaseIntentStatus,
+  UnitOfMeasure,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PartnerContributionRuleService } from '../src/modules/partners/contribution/partner-contribution-rule.service';
@@ -70,31 +72,47 @@ describe('Partner contribution rules (integration)', () => {
   let partnerId = '';
   let staffId = '';
   let adminId = '';
+  /** The second pair of eyes. Terms take two people since 15.09.2026. */
+  let checkerId = '';
 
   beforeEach(async () => {
     await truncateAll(prisma);
     partnerId = (await createPartner(prisma)).id;
     staffId = (await createStaffUser(prisma)).id;
     adminId = (await createStaffUser(prisma)).id;
+    checkerId = (await createStaffUser(prisma)).id;
   });
 
-  /** HAZE's terms: 10 AMD of every litre. */
+  /**
+   * HAZE's terms, proposed and approved — which since 15.09.2026 is two acts
+   * by two people, so every test that needs live terms goes through both.
+   */
   async function hazeTerms() {
-    return rules.open({
-      partnerId,
-      actorId: adminId,
+    return agreeTerms({
       kind: ContributionRuleKind.FIXED_PER_UNIT,
       fixedPerUnit: '10',
-      unit: 'L',
+      unit: UnitOfMeasure.LITER,
       note: 'HAZE: 300 AMD/л клиенту, 290 партнёру, 10 TuTak',
     });
+  }
+
+  /** Propose as one person, approve as another. */
+  async function agreeTerms(terms: {
+    kind: ContributionRuleKind;
+    percentBps?: number;
+    fixedPerUnit?: string;
+    unit?: UnitOfMeasure;
+    note?: string;
+  }) {
+    const proposal = await rules.propose({ partnerId, actorId: adminId, ...terms });
+    return rules.approve(proposal.id, { actorId: checkerId });
   }
 
   /** 50 litres at 300 — the brief's own example. */
   const fiftyLitres = {
     grossAmount: '15000',
     quantity: '50',
-    quantityUnit: 'L',
+    quantityUnit: UnitOfMeasure.LITER,
     unitPrice: '300',
   };
 
@@ -109,6 +127,24 @@ describe('Partner contribution rules (integration)', () => {
       });
     }
     return customer;
+  }
+
+  /**
+   * Confirm a direct purchase the way a cashier does.
+   *
+   * `confirm()` stamps the merchant approval on the way past, so for a
+   * percentage partner this is unchanged. For a per-unit partner the cashier
+   * has to type the line item back, which is the whole point of decision 3 —
+   * so this helper reads the purchase and echoes what is on it, exactly as a
+   * cashier reading the pump would.
+   */
+  async function approveAndConfirm(intentId: string) {
+    const intent = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intentId } });
+    return intents.confirm(intentId, staffId, {
+      quantity: intent.quantity?.toString(),
+      quantityUnit: intent.quantityUnit ?? undefined,
+      unitPrice: intent.unitPrice?.toString(),
+    });
   }
 
   /** Net movement on the partner's payable, credits positive. */
@@ -155,7 +191,7 @@ describe('Partner contribution rules (integration)', () => {
       expect(intent.contributionRuleKind).toBe(ContributionRuleKind.FIXED_PER_UNIT);
       expect(intent.contributionRuleVersion).toBe(1);
 
-      const confirmed = await intents.confirm(intent.id, staffId);
+      const confirmed = await approveAndConfirm(intent.id);
       // 50 × 10 = 500, exactly. Not 450 and not 525.
       expect(new Decimal(confirmed.poolAmount!).toFixed(2)).toBe('500.00');
 
@@ -175,7 +211,7 @@ describe('Partner contribution rules (integration)', () => {
       );
       expect(new Decimal(intent.ordinaryPaymentRemainder).toFixed(2)).toBe('14000.00');
 
-      const confirmed = await intents.confirm(intent.id, staffId);
+      const confirmed = await approveAndConfirm(intent.id);
       expect(new Decimal(confirmed.poolAmount!).toFixed(2)).toBe('500.00');
 
       // Entitlement 14,500, received 14,000 → +500.
@@ -198,6 +234,11 @@ describe('Partner contribution rules (integration)', () => {
         },
         customer.user.id,
       );
+      await intents.approveForPayment(intent.id, staffId, {
+        quantity: '50',
+        quantityUnit: UnitOfMeasure.LITER,
+        unitPrice: '300',
+      });
       await prisma.pspPaymentAttempt.create({
         data: {
           purchaseIntentId: intent.id,
@@ -234,7 +275,7 @@ describe('Partner contribution rules (integration)', () => {
         { partnerId, ...fiftyLitres },
         (await customerWithBonus()).user.id,
       );
-      await intents.confirm(a.id, staffId);
+      await approveAndConfirm(a.id);
       const direct = new Decimal(
         (await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: a.id } })).poolAmount!,
       );
@@ -249,6 +290,11 @@ describe('Partner contribution rules (integration)', () => {
         },
         customerB.user.id,
       );
+      await intents.approveForPayment(b.id, staffId, {
+        quantity: '50',
+        quantityUnit: UnitOfMeasure.LITER,
+        unitPrice: '300',
+      });
       await prisma.pspPaymentAttempt.create({
         data: {
           purchaseIntentId: b.id,
@@ -276,17 +322,16 @@ describe('Partner contribution rules (integration)', () => {
 
   // ── Versioning ─────────────────────────────────────────────────────────
 
-  describe('versions', () => {
+  describe('versions, proposed and approved', () => {
     it('numbers versions and keeps exactly one live', async () => {
       const first = await hazeTerms();
       expect(first.version).toBe(1);
+      expect(first.status).toBe(ContributionRuleStatus.ACTIVE);
 
-      const second = await rules.open({
-        partnerId,
-        actorId: adminId,
+      const second = await agreeTerms({
         kind: ContributionRuleKind.FIXED_PER_UNIT,
         fixedPerUnit: '12',
-        unit: 'L',
+        unit: UnitOfMeasure.LITER,
       });
       expect(second.version).toBe(2);
 
@@ -299,6 +344,7 @@ describe('Partner contribution rules (integration)', () => {
       const closed = await prisma.partnerContributionRule.findUniqueOrThrow({
         where: { id: first.id },
       });
+      expect(closed.status).toBe(ContributionRuleStatus.SUPERSEDED);
       expect(closed.effectiveUntil).not.toBeNull();
     });
 
@@ -308,52 +354,186 @@ describe('Partner contribution rules (integration)', () => {
       const intent = await intents.create({ partnerId, ...fiftyLitres }, customer.user.id);
 
       // The contract is renegotiated while the customer is still at the pump.
-      await rules.open({
-        partnerId,
-        actorId: adminId,
+      await agreeTerms({
         kind: ContributionRuleKind.FIXED_PER_UNIT,
         fixedPerUnit: '25',
-        unit: 'L',
+        unit: UnitOfMeasure.LITER,
       });
 
-      const confirmed = await intents.confirm(intent.id, staffId);
+      const confirmed = await approveAndConfirm(intent.id);
       // 500, not 1,250. The purchase named version 1 and version 1 is
       // immutable, so there is nothing for the new terms to reach.
       expect(new Decimal(confirmed.poolAmount!).toFixed(2)).toBe('500.00');
       expect(confirmed.contributionRuleVersion).toBe(1);
     });
 
-    it('lets exactly one of two concurrent version opens win', async () => {
+    // ── Maker/checker ────────────────────────────────────────────────────
+
+    it('changes nothing on a proposal alone', async () => {
       await hazeTerms();
+      const proposal = await rules.propose({
+        partnerId,
+        actorId: adminId,
+        kind: ContributionRuleKind.FIXED_PER_UNIT,
+        fixedPerUnit: '25',
+        unit: UnitOfMeasure.LITER,
+      });
+
+      expect(proposal.status).toBe(ContributionRuleStatus.PROPOSED);
+      // A proposal is inert: no number, no window, no claim to be in force.
+      // That is what stops a losing concurrent write becoming "the next
+      // version" — it never had a number to keep.
+      expect(proposal.version).toBeNull();
+      expect(proposal.liveKey).toBeNull();
+
+      const live = await rules.liveRule(partnerId);
+      expect(new Decimal(live!.fixedPerUnit!).toFixed(2)).toBe('10.00');
+
+      // And a purchase made right now is still priced at 10 AMD per litre.
+      const customer = await customerWithBonus();
+      const intent = await intents.create({ partnerId, ...fiftyLitres }, customer.user.id);
+      const confirmed = await approveAndConfirm(intent.id);
+      expect(new Decimal(confirmed.poolAmount!).toFixed(2)).toBe('500.00');
+    });
+
+    it('will not let the proposer approve their own terms', async () => {
+      const proposal = await rules.propose({
+        partnerId,
+        actorId: adminId,
+        kind: ContributionRuleKind.FIXED_PER_UNIT,
+        fixedPerUnit: '10',
+        unit: UnitOfMeasure.LITER,
+      });
+
+      await expect(rules.approve(proposal.id, { actorId: adminId })).rejects.toThrow(
+        /second person has to approve/i,
+      );
+      expect(await rules.liveRule(partnerId)).toBeNull();
+    });
+
+    it('refuses at the database level to record one person as both maker and checker', async () => {
+      const proposal = await rules.propose({
+        partnerId,
+        actorId: adminId,
+        kind: ContributionRuleKind.FIXED_PER_UNIT,
+        fixedPerUnit: '10',
+        unit: UnitOfMeasure.LITER,
+      });
+
+      await expect(
+        prisma.partnerContributionRule.update({
+          where: { id: proposal.id },
+          data: {
+            status: ContributionRuleStatus.ACTIVE,
+            version: 1,
+            liveKey: 'live',
+            approvedByUserId: adminId,
+            approvedAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    /**
+     * The failure this whole redesign exists for.
+     *
+     * `open()` used to write a live rule and retry on conflict, so two
+     * administrators changing a margin at the same moment did not collide:
+     * one won version 4 and the loser's retry re-read the state and became
+     * version 5. Both looked deliberate and audited. Nobody agreed to the
+     * combination, and the partner ended up on whichever was written second.
+     */
+    it('does not let two competing approvals both become versions', async () => {
+      await hazeTerms(); // version 1, 10 AMD/L
+
+      const a = await rules.propose({
+        partnerId,
+        actorId: adminId,
+        kind: ContributionRuleKind.FIXED_PER_UNIT,
+        fixedPerUnit: '11',
+        unit: UnitOfMeasure.LITER,
+      });
+      const b = await rules.propose({
+        partnerId,
+        actorId: adminId,
+        kind: ContributionRuleKind.FIXED_PER_UNIT,
+        fixedPerUnit: '12',
+        unit: UnitOfMeasure.LITER,
+      });
 
       const results = await Promise.allSettled([
-        rules.open({
-          partnerId,
-          actorId: adminId,
-          kind: ContributionRuleKind.FIXED_PER_UNIT,
-          fixedPerUnit: '11',
-          unit: 'L',
-        }),
-        rules.open({
-          partnerId,
-          actorId: staffId,
-          kind: ContributionRuleKind.FIXED_PER_UNIT,
-          fixedPerUnit: '12',
-          unit: 'L',
-        }),
+        rules.approve(a.id, { actorId: checkerId }),
+        rules.approve(b.id, { actorId: staffId }),
       ]);
-      // Whatever happened, the partner has one live rule and no duplicate
-      // version numbers — which is the only thing that matters.
-      const live = await prisma.partnerContributionRule.findMany({
-        where: { partnerId, liveKey: { not: null } },
+
+      // Exactly one. Not "one now and the other a moment later".
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const loser = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(String(loser.reason)).toMatch(/approved a moment ago/i);
+
+      const active = await prisma.partnerContributionRule.findMany({
+        where: { partnerId, status: ContributionRuleStatus.ACTIVE },
       });
-      expect(live).toHaveLength(1);
-      expect(results.filter((r) => r.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
+      expect(active).toHaveLength(1);
+      expect(active[0]?.version).toBe(2);
+
+      // The loser is still a proposal for a human to look at, not a silently
+      // applied second change.
+      const proposals = await rules.pendingProposals(partnerId);
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]?.version).toBeNull();
 
       const versions = (
-        await prisma.partnerContributionRule.findMany({ where: { partnerId } })
+        await prisma.partnerContributionRule.findMany({
+          where: { partnerId, version: { not: null } },
+        })
       ).map((r) => r.version);
-      expect(new Set(versions).size).toBe(versions.length);
+      expect(versions.sort()).toEqual([1, 2]);
+    });
+
+    it('lets many proposals coexist without conflicting', async () => {
+      const proposed = await Promise.all(
+        ['11', '12', '13', '14'].map((amount) =>
+          rules.propose({
+            partnerId,
+            actorId: adminId,
+            kind: ContributionRuleKind.FIXED_PER_UNIT,
+            fixedPerUnit: amount,
+            unit: UnitOfMeasure.LITER,
+          }),
+        ),
+      );
+      // Four suggestions is a normal thing for people to make. None of them
+      // prices anything, so none of them can collide.
+      expect(proposed).toHaveLength(4);
+      expect(await rules.liveRule(partnerId)).toBeNull();
+      expect(await rules.pendingProposals(partnerId)).toHaveLength(4);
+    });
+
+    it('records a rejection rather than losing it', async () => {
+      const proposal = await rules.propose({
+        partnerId,
+        actorId: adminId,
+        kind: ContributionRuleKind.FIXED_PER_UNIT,
+        fixedPerUnit: '99',
+        unit: UnitOfMeasure.LITER,
+      });
+
+      await expect(rules.reject(proposal.id, { actorId: adminId, reason: 'no' })).rejects.toThrow(
+        /somebody else has to turn them down/i,
+      );
+
+      const rejected = await rules.reject(proposal.id, {
+        actorId: checkerId,
+        reason: 'Not what was agreed with the partner',
+      });
+      expect(rejected.status).toBe(ContributionRuleStatus.REJECTED);
+      expect(rejected.version).toBeNull();
+      expect(await rules.liveRule(partnerId)).toBeNull();
+
+      await expect(rules.approve(proposal.id, { actorId: checkerId })).rejects.toThrow(
+        /only a proposal can be approved/i,
+      );
     });
 
     it('refuses to rewrite terms that have already priced money', async () => {
@@ -364,7 +544,7 @@ describe('Partner contribution rules (integration)', () => {
           where: { id: rule.id },
           data: { fixedPerUnit: new Decimal('999') },
         }),
-      ).rejects.toThrow(/immutable; open a new version/i);
+      ).rejects.toThrow(/immutable; propose a new version/i);
 
       await expect(
         prisma.partnerContributionRule.delete({ where: { id: rule.id } }),
@@ -379,6 +559,9 @@ describe('Partner contribution rules (integration)', () => {
             version: 1,
             kind: ContributionRuleKind.FIXED_PER_UNIT,
             percentBps: 350,
+            status: ContributionRuleStatus.ACTIVE,
+            approvedByUserId: checkerId,
+            approvedAt: new Date(),
             liveKey: 'live',
           },
         }),
@@ -393,15 +576,10 @@ describe('Partner contribution rules (integration)', () => {
       // 333 bps is not on the grid `partners_commission_rate_on_grid`
       // enforces, and that is the point: a rule row is the negotiated
       // contract, not a tidy headline rate.
-      await rules.open({
-        partnerId,
-        actorId: adminId,
-        kind: ContributionRuleKind.PERCENT_BPS,
-        percentBps: 333,
-      });
+      await agreeTerms({ kind: ContributionRuleKind.PERCENT_BPS, percentBps: 333 });
       const customer = await customerWithBonus();
       const intent = await intents.create({ partnerId, grossAmount: '15000' }, customer.user.id);
-      const confirmed = await intents.confirm(intent.id, staffId);
+      const confirmed = await approveAndConfirm(intent.id);
 
       // 15,000 × 333 / 10,000 = 499.50 — which is exactly why HAZE is not a
       // percentage partner.
@@ -409,17 +587,15 @@ describe('Partner contribution rules (integration)', () => {
     });
 
     it('adds both legs on a hybrid rule, rounding once at the end', async () => {
-      await rules.open({
-        partnerId,
-        actorId: adminId,
+      await agreeTerms({
         kind: ContributionRuleKind.HYBRID,
         percentBps: 100,
         fixedPerUnit: '10',
-        unit: 'L',
+        unit: UnitOfMeasure.LITER,
       });
       const customer = await customerWithBonus();
       const intent = await intents.create({ partnerId, ...fiftyLitres }, customer.user.id);
-      const confirmed = await intents.confirm(intent.id, staffId);
+      const confirmed = await approveAndConfirm(intent.id);
 
       // 1 % of 15,000 = 150, plus 50 × 10 = 500 → 650.
       expect(new Decimal(confirmed.poolAmount!).toFixed(2)).toBe('650.00');
@@ -436,18 +612,13 @@ describe('Partner contribution rules (integration)', () => {
       expect(intent.contributionRuleId).toBeNull();
       expect(intent.contributionRuleKind).toBeNull();
 
-      const confirmed = await intents.confirm(intent.id, staffId);
+      const confirmed = await approveAndConfirm(intent.id);
       expect(new Decimal(confirmed.poolAmount!).toFixed(2)).toBe('500.00');
       expect((await payable()).toFixed(2)).toBe('-500.00');
     });
 
     it('accepts a purchase with no quantity, as every percentage partner sends', async () => {
-      await rules.open({
-        partnerId,
-        actorId: adminId,
-        kind: ContributionRuleKind.PERCENT_BPS,
-        percentBps: 500,
-      });
+      await agreeTerms({ kind: ContributionRuleKind.PERCENT_BPS, percentBps: 500 });
       const customer = await customerWithBonus();
       await expect(
         intents.create({ partnerId, grossAmount: '10000' }, customer.user.id),
@@ -473,7 +644,13 @@ describe('Partner contribution rules (integration)', () => {
 
       await expect(
         intents.create(
-          { partnerId, grossAmount: '15000', quantity: '50', quantityUnit: 'kg', unitPrice: '300' },
+          {
+            partnerId,
+            grossAmount: '15000',
+            quantity: '50',
+            quantityUnit: UnitOfMeasure.KILOGRAM,
+            unitPrice: '300',
+          },
           customer.user.id,
         ),
       ).rejects.toThrow(/prices per L/i);
@@ -485,7 +662,13 @@ describe('Partner contribution rules (integration)', () => {
 
       await expect(
         intents.create(
-          { partnerId, grossAmount: '14000', quantity: '50', quantityUnit: 'L', unitPrice: '300' },
+          {
+            partnerId,
+            grossAmount: '14000',
+            quantity: '50',
+            quantityUnit: UnitOfMeasure.LITER,
+            unitPrice: '300',
+          },
           customer.user.id,
         ),
       ).rejects.toThrow(/must equal/i);
@@ -494,11 +677,79 @@ describe('Partner contribution rules (integration)', () => {
     it('refuses a half-filled line item', async () => {
       const customer = await customerWithBonus();
       await expect(
+        intents.create({ partnerId, grossAmount: '15000', quantity: '50' }, customer.user.id),
+      ).rejects.toThrow(/needs all of quantity/i);
+    });
+  });
+
+  /**
+   * A unit of measure is an identifier the arithmetic compares, not a label.
+   *
+   * It used to be a free string, and Arman's decision of 15.09.2026 names the
+   * consequence: "L", "l", "л", "litre" and "liter" are five different units
+   * to an equality check, and that check decides whether 10 AMD per litre may
+   * be multiplied by a quantity. A partner whose till sends "л" while their
+   * contract says "L" is a partner whose purchases are silently refused —
+   * or, worse, a mismatch some later helpful normalisation resolves the wrong
+   * way.
+   */
+  describe('units', () => {
+    it('refuses a unit outside the vocabulary, at the database level', async () => {
+      await hazeTerms();
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE "partner_contribution_rules" SET "unit" = 'л' WHERE "partnerId" = $1`,
+          partnerId,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('will not let a purchase be measured in a unit that does not exist', async () => {
+      await hazeTerms();
+      const customer = await customerWithBonus();
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `INSERT INTO "purchase_intents"
+             ("id","customerId","partnerId","confirmationCode","grossAmount",
+              "ordinaryPaymentRemainder","negotiatedRateBps","maxBonusPaymentPercent",
+              "quantity","quantityUnit","unitPrice","expiresAt")
+           VALUES (gen_random_uuid()::text, $1, $2, '7777', 15000, 15000, 500, 100,
+                   50, 'litre', 300, now() + interval '3 minutes')`,
+          customer.user.id,
+          partnerId,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('matches a purchase to its terms by the same value, not by spelling', async () => {
+      await hazeTerms(); // priced per LITER
+      const customer = await customerWithBonus();
+
+      // KWH is a real unit and a real mismatch, and it is caught as a
+      // mismatch rather than as a string that happens not to be equal.
+      await expect(
         intents.create(
-          { partnerId, grossAmount: '15000', quantity: '50' },
+          {
+            partnerId,
+            grossAmount: '15000',
+            quantity: '50',
+            quantityUnit: UnitOfMeasure.KWH,
+            unitPrice: '300',
+          },
           customer.user.id,
         ),
-      ).rejects.toThrow(/needs all of quantity/i);
+      ).rejects.toThrow(/prices per LITER/i);
+    });
+
+    it('carries the unit onto the purchase as the same enum the terms hold', async () => {
+      const rule = await hazeTerms();
+      const customer = await customerWithBonus();
+      const intent = await intents.create({ partnerId, ...fiftyLitres }, customer.user.id);
+
+      expect(rule.unit).toBe(UnitOfMeasure.LITER);
+      expect(intent.quantityUnit).toBe(UnitOfMeasure.LITER);
+      expect(intent.quantityUnit).toBe(rule.unit);
     });
   });
 
@@ -520,7 +771,7 @@ describe('Partner contribution rules (integration)', () => {
           negotiatedRateBps: 500,
           maxBonusPaymentPercent: 100,
           quantity: new Decimal('50'),
-          quantityUnit: 'L',
+          quantityUnit: UnitOfMeasure.LITER,
           unitPrice: new Decimal('300'),
           contributionRuleId: rule.id,
           contributionRuleVersion: rule.version,

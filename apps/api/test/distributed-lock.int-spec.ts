@@ -70,7 +70,13 @@ describe('DistributedLockService (integration)', () => {
     // second replica already claimed it before the first one's `finally`
     // runs. The first replica's release must not delete the second
     // replica's still-live lock.
-    const acquired = await redis.set('lock:cron:test:stolen', 'someone-elses-token', 'PX', 5000, 'NX');
+    const acquired = await redis.set(
+      'lock:cron:test:stolen',
+      'someone-elses-token',
+      'PX',
+      5000,
+      'NX',
+    );
     expect(acquired).toBe('OK');
 
     let ran = false;

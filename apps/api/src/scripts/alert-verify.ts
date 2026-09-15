@@ -192,10 +192,7 @@ async function main() {
      * itself was already awaited and delivered before this point), and the
      * explicit exit is what a one-shot CLI owes its caller.
      */
-    await Promise.race([
-      app.close(),
-      new Promise((resolve) => setTimeout(resolve, 2_000).unref()),
-    ]);
+    await Promise.race([app.close(), new Promise((resolve) => setTimeout(resolve, 2_000).unref())]);
     process.exit(process.exitCode ?? 0);
   }
 }

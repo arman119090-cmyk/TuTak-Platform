@@ -172,7 +172,7 @@ describe('Partner tenant isolation (integration)', () => {
   });
 
   describe('reading across the fence', () => {
-    it("gives a partner owner only the public projection of a competitor", async () => {
+    it('gives a partner owner only the public projection of a competitor', async () => {
       const mine = await createPartner(prisma, { displayName: 'Mine' });
       const rival = await createPartner(prisma, { displayName: 'Rival' });
 
@@ -219,7 +219,7 @@ describe('Partner tenant isolation (integration)', () => {
   });
 
   describe('the other permissions PARTNER_OWNER holds', () => {
-    it("refuses a partner owner creating an EV station under a competitor", async () => {
+    it('refuses a partner owner creating an EV station under a competitor', async () => {
       const mine = await createPartner(prisma, { displayName: 'Mine' });
       const rival = await createPartner(prisma, { displayName: 'Rival' });
 

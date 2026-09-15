@@ -128,7 +128,9 @@ describe('the fuel sub-filter is the same list on both sides', () => {
   // Same reasoning and the same fix as the partner-category spec above,
   // applied to the "fuel" chip's own gas/petrol sub-filter.
   it('geo.ts and FuelType agree in both directions', () => {
-    expect([...FUEL_TYPES].sort()).toEqual(typeMembers(FuelType as unknown as Record<string, string>));
+    expect([...FUEL_TYPES].sort()).toEqual(
+      typeMembers(FuelType as unknown as Record<string, string>),
+    );
   });
 });
 
@@ -174,14 +176,9 @@ describe('interpolations agree across locales', () => {
   // placeholder fixed that one; this keeps the three files from drifting
   // apart in the same way, where one locale interpolates a name the others
   // do not supply and silently renders `{{time}}`.
-  const placeholders = (value: string): string[] =>
-    (value.match(/\{\{(\w+)\}\}/g) ?? []).sort();
+  const placeholders = (value: string): string[] => (value.match(/\{\{(\w+)\}\}/g) ?? []).sort();
 
-  function walk(
-    node: unknown,
-    path: string,
-    into: Map<string, string[]>,
-  ): void {
+  function walk(node: unknown, path: string, into: Map<string, string[]>): void {
     if (typeof node === 'string') {
       into.set(path, placeholders(node));
       return;

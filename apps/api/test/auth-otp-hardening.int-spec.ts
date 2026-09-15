@@ -161,7 +161,10 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
       const code = smsSpy.mock.calls.at(-1)?.[0]?.body.match(/(\d{6})/)?.[1];
       expect(code).toBeTruthy();
 
-      const logged = spies.flatMap((s) => s.mock.calls).map(String).join(' | ');
+      const logged = spies
+        .flatMap((s) => s.mock.calls)
+        .map(String)
+        .join(' | ');
       expect(logged).not.toContain(code!);
     });
 
@@ -230,7 +233,9 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
 
       expect(first).not.toBe(second);
       await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, first)).rejects.toThrow();
-      await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, second)).resolves.toBeUndefined();
+      await expect(
+        otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, second),
+      ).resolves.toBeUndefined();
     });
 
     it('rejects the sixth attempt on one challenge', async () => {
@@ -240,7 +245,9 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
       const code = lastCode();
 
       for (let i = 0; i < 5; i += 1) {
-        await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, '000000')).rejects.toThrow();
+        await expect(
+          otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, '000000'),
+        ).rejects.toThrow();
       }
       // Burnt: even the right code no longer works.
       await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code)).rejects.toThrow();
@@ -252,7 +259,9 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
       await authService.requestRegistrationOtp({ phone });
       const code = lastCode();
 
-      await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code)).resolves.toBeUndefined();
+      await expect(
+        otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code),
+      ).resolves.toBeUndefined();
       await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code)).rejects.toThrow();
     });
 
@@ -352,7 +361,9 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
       // Spending the whole verification budget must not close the door on
       // somebody at the same address who simply wants a code.
       for (let i = 0; i < MAX_OTP_VERIFICATION_PER_IP_PER_HOUR; i += 1) {
-        await otpService.consumeCode(randomPhone(), AuthOtpPurpose.LOGIN, '000000', attacker).catch(() => undefined);
+        await otpService
+          .consumeCode(randomPhone(), AuthOtpPurpose.LOGIN, '000000', attacker)
+          .catch(() => undefined);
       }
       await expect(
         otpService.consumeCode(randomPhone(), AuthOtpPurpose.LOGIN, '000000', attacker),

@@ -63,7 +63,9 @@ describe('SettlementService (integration)', () => {
     expect(result.claimed).toBe(true);
     expect(result.bonusAccrued).toBe('500.0000');
 
-    const stored = await prisma.settlement.findUniqueOrThrow({ where: { id: result.settlementId } });
+    const stored = await prisma.settlement.findUniqueOrThrow({
+      where: { id: result.settlementId },
+    });
     expect(stored.grossAmount.toFixed(4)).toBe('10000.0000');
     expect(stored.commissionAmount.toFixed(4)).toBe('250.0000');
     expect(stored.netAmount.toFixed(4)).toBe('9750.0000');
@@ -158,9 +160,7 @@ describe('SettlementService (integration)', () => {
       settlement.settlePayment(payment.paymentId),
     ]);
 
-    const claimed = results.filter(
-      (r) => r.status === 'fulfilled' && r.value.claimed,
-    );
+    const claimed = results.filter((r) => r.status === 'fulfilled' && r.value.claimed);
     expect(claimed).toHaveLength(1);
 
     const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
@@ -183,7 +183,9 @@ describe('SettlementService (integration)', () => {
     expect(result.claimed).toBe(true);
     expect(result.bonusAccrued).toBe('0.0000');
 
-    const stored = await prisma.settlement.findUniqueOrThrow({ where: { id: result.settlementId } });
+    const stored = await prisma.settlement.findUniqueOrThrow({
+      where: { id: result.settlementId },
+    });
     expect(stored.grossAmount.toFixed(4)).toBe('10000.0000');
 
     const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });

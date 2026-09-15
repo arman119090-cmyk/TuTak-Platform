@@ -238,6 +238,28 @@ export interface AppConfig {
     pspRefundsEnabled: boolean;
   };
   /**
+   * How long an unanswered payment attempt may sit before the platform stops
+   * presenting its bill as payable, and how often it is escalated after that.
+   *
+   * Per provider, because thirty minutes was my number and not a fact. A
+   * redirect-and-callback provider, a provider whose customers finish in an
+   * app, and one that settles in overnight batches have genuinely different
+   * answers, and Arman's decision of 15.09.2026 is that this is configuration
+   * rather than a constant somebody has to read the source to find.
+   *
+   * Neither number ever decides anything. Passing `staleAfterMs` moves an
+   * attempt to `EXPIRED`, which is still in `MONEY_MAY_HAVE_MOVED` — the
+   * purchase stays blocked and the money's fate stays unknown. Time escalates;
+   * only the provider or two people reading its statement resolve.
+   */
+  psp: {
+    /** Used for any provider with no entry of its own. */
+    defaultStaleAfterMs: number;
+    defaultEscalateEveryMs: number;
+    /** Keyed by `PspAdapter.name`, e.g. `idram`. */
+    perProvider: Record<string, { staleAfterMs?: number; escalateEveryMs?: number }>;
+  };
+  /**
    * Where partner brand assets and customer avatars actually live
    * (TUTAK_V2_MEDIA_SYSTEM_SPEC.md §3.2), and how the URLs that reach them
    * are authorised.
@@ -438,10 +460,7 @@ const buildConfig = (): AppConfig => ({
   bonus: {
     pendingHours: parseInt(process.env.BONUS_PENDING_HOURS ?? '48', 10),
     expiryMonths: parseInt(process.env.BONUS_EXPIRY_MONTHS ?? '12', 10),
-    reservationHoldSeconds: parseInt(
-      process.env.BONUS_RESERVATION_HOLD_SECONDS ?? '300',
-      10,
-    ),
+    reservationHoldSeconds: parseInt(process.env.BONUS_RESERVATION_HOLD_SECONDS ?? '300', 10),
     referralRewardAmount: process.env.REFERRAL_REWARD_AMOUNT ?? '1000',
     // A goodwill credit is normally a few thousand points. A million is
     // already far beyond any plausible correction, which makes it a useful
@@ -512,14 +531,30 @@ const buildConfig = (): AppConfig => ({
     // service already carry, and a rename that silently un-configures a live
     // deployment is the sort of change that is only noticed by a customer who
     // cannot sign in.
-    endpoint: oneOf(['VIVA_API_BASE_URL', process.env.VIVA_API_BASE_URL], ['SMS_ENDPOINT', process.env.SMS_ENDPOINT]),
+    endpoint: oneOf(
+      ['VIVA_API_BASE_URL', process.env.VIVA_API_BASE_URL],
+      ['SMS_ENDPOINT', process.env.SMS_ENDPOINT],
+    ),
     authScheme: (process.env.SMS_AUTH_SCHEME as 'basic' | 'bearer') ?? 'basic',
-    username: oneOf(['VIVA_USERNAME', process.env.VIVA_USERNAME], ['SMS_USERNAME', process.env.SMS_USERNAME]),
-    token: oneOf(['VIVA_PASSWORD', process.env.VIVA_PASSWORD], ['SMS_TOKEN', process.env.SMS_TOKEN]),
-    sender: oneOf(['VIVA_SENDER_NAME', process.env.VIVA_SENDER_NAME], ['SMS_SENDER', process.env.SMS_SENDER], 'TuTak'),
+    username: oneOf(
+      ['VIVA_USERNAME', process.env.VIVA_USERNAME],
+      ['SMS_USERNAME', process.env.SMS_USERNAME],
+    ),
+    token: oneOf(
+      ['VIVA_PASSWORD', process.env.VIVA_PASSWORD],
+      ['SMS_TOKEN', process.env.SMS_TOKEN],
+    ),
+    sender: oneOf(
+      ['VIVA_SENDER_NAME', process.env.VIVA_SENDER_NAME],
+      ['SMS_SENDER', process.env.SMS_SENDER],
+      'TuTak',
+    ),
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
     viva: {
-      clientId: oneOf(['VIVA_CLIENT_ID', process.env.VIVA_CLIENT_ID], ['SMS_VIVA_CLIENT_ID', process.env.SMS_VIVA_CLIENT_ID]),
+      clientId: oneOf(
+        ['VIVA_CLIENT_ID', process.env.VIVA_CLIENT_ID],
+        ['SMS_VIVA_CLIENT_ID', process.env.SMS_VIVA_CLIENT_ID],
+      ),
       clientSecret: oneOf(
         ['VIVA_CLIENT_SECRET', process.env.VIVA_CLIENT_SECRET],
         ['SMS_VIVA_CLIENT_SECRET', process.env.SMS_VIVA_CLIENT_SECRET],
@@ -605,6 +640,14 @@ const buildConfig = (): AppConfig => ({
     // then the adapter's own capability has the last word.
     pspRefundsEnabled: process.env.PSP_REFUNDS_ENABLED === 'true',
   },
+  psp: {
+    // Thirty minutes and an hour: the same figures the code used as
+    // constants, kept as the defaults so nothing changes behaviour by being
+    // made configurable. What changed is that they can now be argued with.
+    defaultStaleAfterMs: positiveIntFromEnv('PSP_STALE_AFTER_MS', 30 * 60_000),
+    defaultEscalateEveryMs: positiveIntFromEnv('PSP_ESCALATE_EVERY_MS', 60 * 60_000),
+    perProvider: pspPerProviderPolicy(),
+  },
   media: {
     // Local disk unless told otherwise. That is the right default for a
     // developer's machine and the wrong one for production, which is exactly
@@ -624,17 +667,15 @@ const buildConfig = (): AppConfig => ({
       forcePathStyle: process.env.MEDIA_STORAGE_S3_FORCE_PATH_STYLE !== 'false',
     },
     signedUrlTtlSeconds: parseInt(process.env.MEDIA_SIGNED_URL_TTL_SECONDS ?? '43200', 10),
-    publicBaseUrl: (process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`)
-      .replace(/\/+$/, ''),
+    publicBaseUrl: (
+      process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`
+    ).replace(/\/+$/, ''),
   },
   purchasePolicy: {
     // 3 minutes, per spec §7 — long enough for a cashier mid-queue to glance
     // at their phone, short enough that a customer at the till is not left
     // standing on a stale hold.
-    intentTimeoutSeconds: parseInt(
-      process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180',
-      10,
-    ),
+    intentTimeoutSeconds: parseInt(process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180', 10),
     // 30/20/30/10/5/5 (TuTak/Green/Deferred/L1/L2/L3), per the 2026-08-22
     // 3-level referral rework (docs/NEXT_CLAUDE_TASK.md, GitHub issue #28
     // comment 5360139848) — six legs of the contribution pool in basis
@@ -651,17 +692,80 @@ const buildConfig = (): AppConfig => ({
     poolReferrerL3Bps: parseInt(process.env.PURCHASE_POOL_REFERRER_L3_BPS ?? '500', 10),
     poolTutakBps: parseInt(process.env.PURCHASE_POOL_TUTAK_BPS ?? '3000', 10),
     // 3 months / 54 000 AMD cumulative, per spec §13.
-    deferredWindowMonths: parseInt(
-      process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3',
-      10,
-    ),
+    deferredWindowMonths: parseInt(process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3', 10),
     deferredRequiredTurnover: process.env.DEFERRED_BONUS_REQUIRED_TURNOVER ?? '54000',
     // 10 000 AMD cumulative, no deadline, per spec §18.
-    challengeQualificationAmount:
-      process.env.REFERRAL_CHALLENGE_QUALIFICATION_AMOUNT ?? '10000',
+    challengeQualificationAmount: process.env.REFERRAL_CHALLENGE_QUALIFICATION_AMOUNT ?? '10000',
     // 1000 AMD to each side, per spec §18.
     challengeRewardAmount: process.env.REFERRAL_CHALLENGE_REWARD_AMOUNT ?? '1000',
     // First 3 qualified friends, per spec §18.
     challengeSlotLimit: parseInt(process.env.REFERRAL_CHALLENGE_SLOT_LIMIT ?? '3', 10),
   },
 });
+
+/**
+ * A positive whole number of milliseconds from the environment.
+ *
+ * Refuses rather than falls back on a malformed value: a timeout silently
+ * reverting to its default because somebody typed `30m` is a timeout nobody
+ * can reason about from the config they are looking at.
+ */
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive whole number of milliseconds, got "${raw}"`);
+  }
+  return value;
+}
+
+/**
+ * Per-provider overrides, as JSON:
+ *
+ *     PSP_TIMEOUT_POLICY='{"idram":{"staleAfterMs":900000}}'
+ *
+ * JSON rather than one variable per provider per setting, because the set of
+ * providers is not known here and `PSP_STALE_AFTER_MS_<NAME>` would have to
+ * guess at how a provider's name becomes an environment key. Malformed JSON
+ * throws at boot, where it is somebody's problem immediately, rather than
+ * being ignored into a default nobody chose.
+ */
+function pspPerProviderPolicy(): Record<
+  string,
+  { staleAfterMs?: number; escalateEveryMs?: number }
+> {
+  const raw = process.env.PSP_TIMEOUT_POLICY;
+  if (!raw || raw.trim() === '') return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('PSP_TIMEOUT_POLICY is not valid JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('PSP_TIMEOUT_POLICY must be a JSON object keyed by provider name');
+  }
+
+  const out: Record<string, { staleAfterMs?: number; escalateEveryMs?: number }> = {};
+  for (const [provider, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error(`PSP_TIMEOUT_POLICY.${provider} must be an object`);
+    }
+    const entry = value as Record<string, unknown>;
+    const policy: { staleAfterMs?: number; escalateEveryMs?: number } = {};
+    for (const key of ['staleAfterMs', 'escalateEveryMs'] as const) {
+      if (entry[key] === undefined) continue;
+      const n = Number(entry[key]);
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(
+          `PSP_TIMEOUT_POLICY.${provider}.${key} must be a positive whole number of milliseconds`,
+        );
+      }
+      policy[key] = n;
+    }
+    out[provider] = policy;
+  }
+  return out;
+}

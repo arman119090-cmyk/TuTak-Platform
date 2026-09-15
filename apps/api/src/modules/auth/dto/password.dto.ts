@@ -1,5 +1,8 @@
 import { IsString, Length, Matches, MinLength } from 'class-validator';
-import { ARMENIAN_PHONE_MESSAGE, ARMENIAN_PHONE_REGEX } from '../../../common/validators/armenian-phone';
+import {
+  ARMENIAN_PHONE_MESSAGE,
+  ARMENIAN_PHONE_REGEX,
+} from '../../../common/validators/armenian-phone';
 
 /**
  * Password rules live here rather than being repeated at each call site.

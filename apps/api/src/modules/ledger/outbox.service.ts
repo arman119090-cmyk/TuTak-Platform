@@ -120,7 +120,10 @@ export class OutboxService {
       // than staying invisible forever.
       await tx.outboxEvent.updateMany({
         where: { id: { in: rows.map((r) => r.id) } },
-        data: { attempts: { increment: 1 }, nextAttemptAt: new Date(now.getTime() + CLAIM_LEASE_MS) },
+        data: {
+          attempts: { increment: 1 },
+          nextAttemptAt: new Date(now.getTime() + CLAIM_LEASE_MS),
+        },
       });
 
       return rows;
@@ -181,7 +184,11 @@ export class OutboxService {
             body:
               `${event.eventType} failed ${MAX_ATTEMPTS} times and will not be retried. ` +
               'Whatever it was meant to settle has not settled.',
-            context: { eventId: event.id, eventType: event.eventType, lastError: message.slice(0, 200) },
+            context: {
+              eventId: event.id,
+              eventType: event.eventType,
+              lastError: message.slice(0, 200),
+            },
           });
         } else {
           this.logger.warn(`Outbox event ${event.id} failed, retry ${attempts}: ${message}`);

@@ -154,7 +154,10 @@ export interface SignV4Params {
  * functions of the inputs. See `s3-media-storage.spec.ts`.
  */
 export function signV4(params: SignV4Params): Record<string, string> {
-  const amzDate = params.now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const amzDate = params.now
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '');
   const dateStamp = amzDate.slice(0, 8);
   const payloadHash = createHash('sha256').update(params.payload).digest('hex');
 
@@ -188,7 +191,10 @@ export function signV4(params: SignV4Params): Record<string, string> {
     createHash('sha256').update(canonicalRequest).digest('hex'),
   ].join('\n');
 
-  const signature = createHmac('sha256', signingKey(params.secretAccessKey, dateStamp, params.region, params.service))
+  const signature = createHmac(
+    'sha256',
+    signingKey(params.secretAccessKey, dateStamp, params.region, params.service),
+  )
     .update(stringToSign)
     .digest('hex');
 

@@ -186,7 +186,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'account.anonymize-deleted',
-    why: "Scrubs the personal data of customers who deleted their account once the grace window has passed. Without it the platform keeps every phone number and name it promised to erase, and the deletion the app store required is a promise the backend never keeps.",
+    why: 'Scrubs the personal data of customers who deleted their account once the grace window has passed. Without it the platform keeps every phone number and name it promised to erase, and the deletion the app store required is a promise the backend never keeps.',
     // Hourly. The window is measured in days, so the schedule only has to be
     // fine enough that "we delete after thirty days" is true to the hour.
     repeat: { every: 60 * 60_000 },

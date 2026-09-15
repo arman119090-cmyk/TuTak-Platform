@@ -69,9 +69,11 @@ describe('Media revocation and attempt counting (integration)', () => {
       });
 
       const mayView = (viewerId: string) =>
-        (delivery as unknown as {
-          mayStillView: (a: unknown, v: string) => Promise<boolean>;
-        }).mayStillView(asset, viewerId);
+        (
+          delivery as unknown as {
+            mayStillView: (a: unknown, v: string) => Promise<boolean>;
+          }
+        ).mayStillView(asset, viewerId);
 
       // While it is live, both may see it — otherwise this test would pass
       // for the wrong reason.
@@ -84,9 +86,11 @@ describe('Media revocation and attempt counting (integration)', () => {
       });
 
       const mayViewRevoked = (viewerId: string) =>
-        (delivery as unknown as {
-          mayStillView: (a: unknown, v: string) => Promise<boolean>;
-        }).mayStillView(revoked, viewerId);
+        (
+          delivery as unknown as {
+            mayStillView: (a: unknown, v: string) => Promise<boolean>;
+          }
+        ).mayStillView(revoked, viewerId);
 
       expect(await mayViewRevoked(referrer.id)).toBe(false);
       expect(await mayViewRevoked(owner.id)).toBe(false);
@@ -107,13 +111,13 @@ describe('Media revocation and attempt counting (integration)', () => {
 
       let writes = 0;
       const realPut = harness.mediaStorage.put.bind(harness.mediaStorage);
-      jest
-        .spyOn(harness.mediaStorage, 'put')
-        .mockImplementation((async (...args: Parameters<typeof realPut>) => {
-          writes += 1;
-          if (writes === 2) throw new Error('the bucket went away mid-upload');
-          return realPut(...args);
-        }) as never);
+      jest.spyOn(harness.mediaStorage, 'put').mockImplementation((async (
+        ...args: Parameters<typeof realPut>
+      ) => {
+        writes += 1;
+        if (writes === 2) throw new Error('the bucket went away mid-upload');
+        return realPut(...args);
+      }) as never);
 
       await expect(
         media.setUserAvatar({
@@ -174,9 +178,9 @@ describe('Media revocation and attempt counting (integration)', () => {
         return row;
       }) as never);
 
-      const first = otp.consumeCode(phone, AuthOtpPurpose.REGISTER, '000000').catch(
-        () => undefined,
-      );
+      const first = otp
+        .consumeCode(phone, AuthOtpPurpose.REGISTER, '000000')
+        .catch(() => undefined);
       // Only once the first caller is demonstrably parked is there a window
       // for the second one to run inside.
       await arrived;

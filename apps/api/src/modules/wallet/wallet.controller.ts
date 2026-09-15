@@ -46,7 +46,12 @@ export class WalletController {
       throw new Error('Target user not found');
     }
     const walletId = await this.walletService.getWalletIdForUser(dto.userId);
-    const result = await this.bonusEngine.manualAdjustment(walletId, dto.amount, dto.direction, dto.reason);
+    const result = await this.bonusEngine.manualAdjustment(
+      walletId,
+      dto.amount,
+      dto.direction,
+      dto.reason,
+    );
 
     await this.auditService.record({
       actorUserId: admin.id,

@@ -733,9 +733,42 @@ model PurchaseIntent {
   /// All three are snapshots: a fuel price that changes tomorrow must not
   /// change what yesterday's receipt says. Null together for a partner who
   /// simply charges a total.
-  quantity     Decimal? @db.Decimal(18, 4)
-  quantityUnit String?
-  unitPrice    Decimal? @db.Decimal(18, 4)
+  quantity     Decimal?       @db.Decimal(18, 4)
+  quantityUnit UnitOfMeasure?
+  unitPrice    Decimal?       @db.Decimal(18, 4)
+
+  /// ── Merchant authorisation ────────────────────────────────────────────
+  ///
+  /// A payment provider confirms that money moved. It cannot confirm that a
+  /// sale happened, what was sold, or for how much — and on this platform the
+  /// *customer* supplies all three when they open a purchase.
+  ///
+  /// Without this, a customer could type 500 litres, pay the resulting bill
+  /// through Idram, and have one verified callback credit the partner's
+  /// `PARTNER_PAYABLE`, mint their own cashback and pay their referrers on a
+  /// sale that never happened. The provider would have done nothing wrong:
+  /// the money genuinely moved. Arman's decision of 15.09.2026 is that
+  /// somebody at the business has to agree the economics first.
+  ///
+  /// So a non-integrated partner's staff approve the snapshot — gross, bonus,
+  /// quantity, unit, unit price, and the terms version — **before** a bill
+  /// may be opened, and from that moment those columns are immutable at the
+  /// database level. What approval *means* then differs by route:
+  ///
+  ///  - `DIRECT_PARTNER`: the cashier's confirmation is both the approval and
+  ///    the statement that the money is in the till. One act, as it always
+  ///    was — `confirm()` stamps these columns on the way past.
+  ///  - `TUTAK_PSP`: approval only authorises the bill. The purchase is
+  ///    completed by the provider's verified callback and by nothing else.
+  ///
+  /// For an integrated POS or pump this is where an authoritative integration
+  /// event will sit instead. `PartnerIntegration` exists as a registry with
+  /// no event path yet, so that is deliberately not built.
+  merchantApprovedByUserId String?
+  merchantApprovedAt       DateTime?
+  /// What the member of staff actually keyed in to confirm the line item,
+  /// kept as evidence that they saw it rather than clicked past it.
+  merchantApprovalNote     String?
 
   /// The commercial terms this purchase was priced under, named exactly.
   ///
@@ -3218,6 +3251,7 @@ model PspPaymentAttempt {
   @@unique([provider, providerTransactionId])
   @@index([status])
   @@index([purchaseIntentId])
+  @@index([purchaseIntentId, status])
   @@map("psp_payment_attempts")
 }
 
@@ -3247,6 +3281,53 @@ enum FeePayer {
 /// everyone to accommodate one pricing shape would be fixing the wrong thing.
 /// A per-litre margin is not a percentage that happens to be awkward; it is a
 /// different kind of number.
+/// The units a per-unit commercial term may be priced in.
+///
+/// Closed on purpose, and Arman's decision of 15.09.2026 says why: `unit` was
+/// a free string, and a free string in a financial identifier means "L", "l",
+/// "л", "litre" and "liter" are five different units as far as the equality
+/// check is concerned. That check decides whether 10 AMD per litre may be
+/// multiplied by a quantity, so a partner whose till sends "л" while their
+/// contract says "L" is a partner whose purchases are silently refused — or,
+/// worse, a mismatch that some later "helpful" normalisation resolves the
+/// wrong way.
+///
+/// Two values are required by the decision (LITER, KWH); the rest are here
+/// because refusing to record a purchase measured in kilograms would push
+/// somebody towards abusing LITER. Adding a value is a migration, which is
+/// the point: a new unit is a commercial decision, not a typo.
+///
+/// Display names are **not** here. "литр" is a label, and a label belongs in
+/// the client's own translations, not in the identifier the arithmetic
+/// compares.
+enum UnitOfMeasure {
+  LITER
+  KWH
+  KILOGRAM
+  ITEM
+  HOUR
+}
+
+/// Where a version of a partner's commercial terms is in its approval.
+///
+/// Arman's decision of 15.09.2026: production changes to commercial terms go
+/// through maker/checker. Before this, `open()` wrote a live rule in one call
+/// and retried on conflict — so two administrators editing at once produced
+/// two versions applied one after the other, each looking deliberate, with
+/// nobody having agreed to the combination.
+enum ContributionRuleStatus {
+  /// Written down, agreed by nobody. Prices nothing.
+  PROPOSED
+  /// In force. At most one per partner, held by a partial unique index.
+  ACTIVE
+  /// Was in force, replaced by a later version. Still prices the purchases
+  /// that named it.
+  SUPERSEDED
+  /// Turned down before it ever priced anything. Kept, because "who proposed
+  /// what and who said no" is exactly what an audit wants.
+  REJECTED
+}
+
 enum ContributionRuleKind {
   /// A share of the sale, in basis points. What every partner used before
   /// 15.09.2026 and what most will keep using.
@@ -3283,11 +3364,20 @@ enum ContributionRuleKind {
 /// neither has been decided; inventing either now would be guessing about the
 /// commercial process rather than recording it.
 model PartnerContributionRule {
-  id        String               @id @default(uuid())
+  id        String                 @id @default(uuid())
   partnerId String
+  status    ContributionRuleStatus @default(PROPOSED)
+
   /// 1, 2, 3 — per partner, and the number a purchase's snapshot names.
-  version   Int
-  kind      ContributionRuleKind
+  ///
+  /// **Allocated at approval, not at proposal.** That is the fix for the
+  /// concurrency complaint: while the number was handed out when a rule was
+  /// written, two administrators racing produced versions 4 and 5, and the
+  /// loser's retry quietly became a second real change rather than a
+  /// conflict somebody had to look at. A proposal nobody approved has no
+  /// number because it is not a version of anything.
+  version Int?
+  kind    ContributionRuleKind
 
   /// PERCENT_BPS and HYBRID: the share of the sale. Unlike
   /// `Partner.bonusAccrualRateBps` this is **not** on the 50-point grid:
@@ -3295,12 +3385,13 @@ model PartnerContributionRule {
   /// rule row is the negotiated contract itself.
   percentBps   Int?
   /// FIXED_PER_UNIT and HYBRID: the amount per unit. 10.0000 for HAZE.
-  fixedPerUnit Decimal? @db.Decimal(18, 4)
-  /// The unit that amount is per — "L", "kWh", "kg". Must match the
-  /// purchase's own `quantityUnit`, or the multiplication is meaningless:
-  /// 10 AMD per litre against a quantity measured in kilograms is not a
-  /// rounding problem, it is a wrong invoice.
-  unit         String?
+  fixedPerUnit Decimal?       @db.Decimal(18, 4)
+  /// The unit that amount is per. Must match the purchase's own
+  /// `quantityUnit`, or the multiplication is meaningless: 10 AMD per litre
+  /// against a quantity measured in kilograms is not a rounding problem, it
+  /// is a wrong invoice. Typed rather than free text since 15.09.2026 — see
+  /// `UnitOfMeasure`.
+  unit         UnitOfMeasure?
 
   currency Currency @default(AMD)
 
@@ -3314,6 +3405,17 @@ model PartnerContributionRule {
   /// convention. Same trick as `PspPaymentAttempt.liveKey`.
   liveKey String?
 
+  /// Maker and checker. `approvedByUserId` is never the proposer — the
+  /// database refuses that, not just this codebase.
+  proposedByUserId String?
+  approvedByUserId String?
+  approvedAt       DateTime?
+  rejectedByUserId String?
+  rejectedAt       DateTime?
+  decisionNote     String?
+
+  /// Kept for the rows written before approval existed. New rows set
+  /// `proposedByUserId`; this stays so nothing had to be back-filled.
   createdByUserId String?
   createdAt       DateTime @default(now())
   note            String?
@@ -3324,6 +3426,7 @@ model PartnerContributionRule {
   @@unique([partnerId, version])
   @@unique([partnerId, liveKey])
   @@index([partnerId, effectiveFrom])
+  @@index([partnerId, status])
   @@map("partner_contribution_rules")
 }
 

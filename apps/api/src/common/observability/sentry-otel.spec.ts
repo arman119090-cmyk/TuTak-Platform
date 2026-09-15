@@ -31,7 +31,9 @@ function fakeTransport(): NonNullable<Parameters<typeof Sentry.init>[0]>['transp
   });
 }
 
-function capturingTransport(sink: unknown[]): NonNullable<Parameters<typeof Sentry.init>[0]>['transport'] {
+function capturingTransport(
+  sink: unknown[],
+): NonNullable<Parameters<typeof Sentry.init>[0]>['transport'] {
   return () => ({
     send: (envelope: unknown) => {
       sink.push(envelope);
@@ -82,7 +84,9 @@ describe('Sentry + OpenTelemetry coexistence (real SDKs, no mocks)', () => {
     // `initOpenTelemetry()` is also what sets `client.traceProvider` — its
     // absence is direct proof Sentry never built its own pipeline at all,
     // not just that the global registration was left alone.
-    expect((Sentry.getClient() as unknown as { traceProvider?: unknown })?.traceProvider).toBeUndefined();
+    expect(
+      (Sentry.getClient() as unknown as { traceProvider?: unknown })?.traceProvider,
+    ).toBeUndefined();
   });
 
   it('still captures an exception end to end with the coexistence option set', async () => {
@@ -128,7 +132,7 @@ describe('Sentry + OpenTelemetry coexistence (real SDKs, no mocks)', () => {
     expect(envelopes).not.toContain('Zx9QpLm2Vt7RhK4NsE1BgYcW');
   });
 
-  it('leaves apps/api\'s own OpenTelemetry tracing fully functional once Sentry has initialized alongside it', async () => {
+  it("leaves apps/api's own OpenTelemetry tracing fully functional once Sentry has initialized alongside it", async () => {
     startTracing({
       serviceName: 'tutak-api-test',
       serviceVersion: '0.0.0-test',

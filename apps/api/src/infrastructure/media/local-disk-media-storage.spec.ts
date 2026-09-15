@@ -49,7 +49,9 @@ describe('LocalDiskMediaStorage', () => {
     ['A/Uppercase', 'anything outside the minted alphabet'],
     ['a b', 'a space'],
   ])('refuses %s (%s)', async (key) => {
-    await expect(storage.put(key, Buffer.from('x'), 'image/webp')).rejects.toThrow(/unsafe|outside/i);
+    await expect(storage.put(key, Buffer.from('x'), 'image/webp')).rejects.toThrow(
+      /unsafe|outside/i,
+    );
     await expect(storage.get(key)).rejects.toThrow(/unsafe|outside/i);
   });
 

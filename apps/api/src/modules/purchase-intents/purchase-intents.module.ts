@@ -27,7 +27,15 @@ import { PurchaseIntentsService } from './purchase-intents.service';
     WalletModule,
   ],
   controllers: [PurchaseIntentsController, PurchaseIntentRefundRequestsController],
-  providers: [PurchaseIntentsService, PurchaseIntentRefundService, PurchaseIntentRefundRequestService],
-  exports: [PurchaseIntentsService, PurchaseIntentRefundService, PurchaseIntentRefundRequestService],
+  providers: [
+    PurchaseIntentsService,
+    PurchaseIntentRefundService,
+    PurchaseIntentRefundRequestService,
+  ],
+  exports: [
+    PurchaseIntentsService,
+    PurchaseIntentRefundService,
+    PurchaseIntentRefundRequestService,
+  ],
 })
 export class PurchaseIntentsModule {}

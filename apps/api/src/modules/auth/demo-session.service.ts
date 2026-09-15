@@ -64,7 +64,9 @@ export class DemoSessionService {
     if (!password) {
       // Deliberately explicit: this is a misconfigured demonstration, not a
       // wrong password, and whoever deployed it needs to know which.
-      this.logger.warn('DEMO_MODE is on but DEMO_PASSWORD is not set — demo sign-in is unavailable');
+      this.logger.warn(
+        'DEMO_MODE is on but DEMO_PASSWORD is not set — demo sign-in is unavailable',
+      );
       throw new NotFoundException(
         'This deployment has no demo data. Set DEMO_PASSWORD and DEMO_SEED=true, then redeploy.',
       );

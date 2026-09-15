@@ -74,7 +74,11 @@ describe('EV stations — nearby excludes non-chargeable stations (integration)'
     const { station } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
     await prisma.evStation.update({
       where: { id: station.id },
-      data: { customerChargingEnabled: true, remoteStartSupported: true, remoteStopSupported: true },
+      data: {
+        customerChargingEnabled: true,
+        remoteStartSupported: true,
+        remoteStopSupported: true,
+      },
     });
 
     const rows = await controller.nearby(CENTRE);

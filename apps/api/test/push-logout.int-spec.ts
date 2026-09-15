@@ -79,8 +79,7 @@ describe('Push registration ends with the session (integration)', () => {
       data: {},
     });
 
-  const tokensSent = (batches: PushMessage[][]) =>
-    batches.flat().map((message) => message.to);
+  const tokensSent = (batches: PushMessage[][]) => batches.flat().map((message) => message.to);
 
   it('drops the push token of the device that signed out', async () => {
     const { user } = await createCustomer(prisma);

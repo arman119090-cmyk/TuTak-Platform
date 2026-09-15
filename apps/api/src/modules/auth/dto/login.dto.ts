@@ -1,5 +1,8 @@
 import { IsOptional, IsString, Matches } from 'class-validator';
-import { ARMENIAN_PHONE_MESSAGE, ARMENIAN_PHONE_REGEX } from '../../../common/validators/armenian-phone';
+import {
+  ARMENIAN_PHONE_MESSAGE,
+  ARMENIAN_PHONE_REGEX,
+} from '../../../common/validators/armenian-phone';
 
 export class LoginDto {
   @IsString()

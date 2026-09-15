@@ -7,7 +7,12 @@ import { QrPaymentsService } from '../src/modules/qr-payments/qr-payments.servic
 import { ReferralService } from '../src/modules/referral/referral.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
-import { createCustomer, createDynamicInvoiceQr, createEvConnector, createPartner } from './setup/fixtures';
+import {
+  createCustomer,
+  createDynamicInvoiceQr,
+  createEvConnector,
+  createPartner,
+} from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
 
@@ -192,7 +197,9 @@ describe('Adversarial probe (integration)', () => {
       );
 
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).lifetimeSpent.toFixed(4),
+        (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).lifetimeSpent.toFixed(
+          4,
+        ),
       ).toBe('500.0000');
       await assertWalletIntegrity(prisma, wallet.id);
     });
@@ -204,7 +211,9 @@ describe('Adversarial probe (integration)', () => {
 
       await expect(engine.settleReservation(reservation.reservationId)).rejects.toThrow();
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).lifetimeSpent.toFixed(4),
+        (await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } })).lifetimeSpent.toFixed(
+          4,
+        ),
       ).toBe('400.0000');
     });
 
@@ -245,7 +254,11 @@ describe('Adversarial probe (integration)', () => {
         });
         await qrPayments
           .redeem(
-            { token: qr.token, bonusAmountToApply: bonus, idempotencyKey: `neg-${bonus}-${Math.random()}` },
+            {
+              token: qr.token,
+              bonusAmountToApply: bonus,
+              idempotencyKey: `neg-${bonus}-${Math.random()}`,
+            },
             user.id,
           )
           .catch(() => undefined);

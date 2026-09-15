@@ -103,7 +103,11 @@ describe('Payment idempotency key durability (integration)', () => {
     // refusing with a conflict.
     await prisma.idempotencyRecord.updateMany({
       where: { key },
-      data: { status: 'IN_FLIGHT', responseBody: undefined, createdAt: new Date(Date.now() - 60 * 60 * 1000) },
+      data: {
+        status: 'IN_FLIGHT',
+        responseBody: undefined,
+        createdAt: new Date(Date.now() - 60 * 60 * 1000),
+      },
     });
 
     const retry = await payments.capture({

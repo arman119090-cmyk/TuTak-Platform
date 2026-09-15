@@ -27,8 +27,13 @@ describe('AuthOtpService — what a delivery failure is allowed to say', () => {
         }),
       ),
     } as unknown as PrismaService;
-    const ipRateLimit = { consume: jest.fn().mockResolvedValue(undefined) } as unknown as OtpIpRateLimitService;
-    return new AuthOtpService(prisma, ipRateLimit, { name: 'stub', send } as unknown as SmsProvider);
+    const ipRateLimit = {
+      consume: jest.fn().mockResolvedValue(undefined),
+    } as unknown as OtpIpRateLimitService;
+    return new AuthOtpService(prisma, ipRateLimit, {
+      name: 'stub',
+      send,
+    } as unknown as SmsProvider);
   }
 
   afterEach(() => jest.restoreAllMocks());
@@ -98,7 +103,10 @@ describe('AuthOtpService — what requestCode reports back', () => {
     const ipRateLimit = {
       consume: jest.fn().mockResolvedValue(undefined),
     } as unknown as OtpIpRateLimitService;
-    return new AuthOtpService(prisma, ipRateLimit, { name: 'stub', send } as unknown as SmsProvider);
+    return new AuthOtpService(prisma, ipRateLimit, {
+      name: 'stub',
+      send,
+    } as unknown as SmsProvider);
   }
 
   afterEach(() => jest.restoreAllMocks());

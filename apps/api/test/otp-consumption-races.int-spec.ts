@@ -44,7 +44,9 @@ describe('OTP consumption under concurrency (integration)', () => {
     await truncateAll(prisma);
   });
 
-  const challenge = (overrides: Partial<{ attempts: number; expiresAt: Date; consumedAt: Date }> = {}) =>
+  const challenge = (
+    overrides: Partial<{ attempts: number; expiresAt: Date; consumedAt: Date }> = {},
+  ) =>
     prisma.authOtpToken.create({
       data: {
         phone: PHONE,

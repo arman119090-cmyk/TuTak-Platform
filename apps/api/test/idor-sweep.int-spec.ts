@@ -99,9 +99,9 @@ describe('IDOR sweep (integration)', () => {
 
       // The reading becomes the bill. Writing to a stranger's session is
       // writing their invoice.
-      await expect(
-        sessions.reportMeterValue(session.id, '40', attacker.user.id),
-      ).rejects.toThrow(NotFoundException);
+      await expect(sessions.reportMeterValue(session.id, '40', attacker.user.id)).rejects.toThrow(
+        NotFoundException,
+      );
 
       const after = await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } });
       expect(after.energyKwh!.toString()).toBe('0');

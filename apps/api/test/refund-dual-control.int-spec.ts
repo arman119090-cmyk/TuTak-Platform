@@ -213,7 +213,7 @@ describe('Refund dual control (integration)', () => {
     expect(await prisma.purchaseIntentRefund.count()).toBe(1);
   });
 
-  describe('the owner\'s direct refund', () => {
+  describe("the owner's direct refund", () => {
     /**
      * Why this path exists at all, and why it is not a hole.
      *

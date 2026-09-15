@@ -96,7 +96,9 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
  * carrying a tag nobody anticipated cannot slip through by being unlisted,
  * because unlisted is the default and listing is the only way in.
  */
-function sanitizeTags(tags: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+function sanitizeTags(
+  tags: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
   if (!tags) return undefined;
   const result: Record<string, unknown> = {};
   for (const key of ALLOWED_TAG_KEYS) {
@@ -182,7 +184,8 @@ function sanitizeFrame(frame: SentryLikeStackFrame): SentryLikeStackFrame {
 
 function sanitizeExceptionValue(entry: SentryLikeExceptionValue): SentryLikeExceptionValue {
   const mechanismType =
-    typeof entry.mechanism?.type === 'string' && SAFE_MECHANISM_TYPE_PATTERN.test(entry.mechanism.type)
+    typeof entry.mechanism?.type === 'string' &&
+    SAFE_MECHANISM_TYPE_PATTERN.test(entry.mechanism.type)
       ? entry.mechanism.type
       : undefined;
 
@@ -194,7 +197,8 @@ function sanitizeExceptionValue(entry: SentryLikeExceptionValue): SentryLikeExce
     mechanism: entry.mechanism
       ? withoutUndefined({
           type: mechanismType,
-          handled: typeof entry.mechanism.handled === 'boolean' ? entry.mechanism.handled : undefined,
+          handled:
+            typeof entry.mechanism.handled === 'boolean' ? entry.mechanism.handled : undefined,
         })
       : undefined,
     stacktrace: entry.stacktrace?.frames

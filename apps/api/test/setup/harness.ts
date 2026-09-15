@@ -150,7 +150,12 @@ export async function settleEvents(): Promise<void> {
 }
 
 /** Tables holding reference data that survives per-test truncation. */
-const PRESERVED_TABLES = new Set(['roles', 'permissions', 'role_permissions', '_prisma_migrations']);
+const PRESERVED_TABLES = new Set([
+  'roles',
+  'permissions',
+  'role_permissions',
+  '_prisma_migrations',
+]);
 
 /**
  * The domain module set every suite in this file boots, shared by both
@@ -164,65 +169,67 @@ function domainTestingModuleBuilder(
   emitter: SettleableEventEmitter,
   sms: RecordingSmsProvider,
 ) {
-  return Test.createTestingModule({
-    imports: [
-      ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
-      EventEmitterModule.forRoot(),
-      PrismaModule,
-      RedisModule,
-      SmsModule,
-      PushModule,
-      AlertsModule,
-      MediaStorageModule,
-      MediaModule,
-      WalletModule,
-      TransactionsModule,
-      QrPaymentsModule,
-      EvChargingModule,
-      RoamingCpoModule,
-      CustomerBalanceModule,
-      AuditModule,
-      UsersModule,
-      AdminModule,
-      ReferralModule,
-      PurchaseIntentsModule,
-      NotificationsModule,
-      AuthModule,
-      SecurityModule,
-      AnalyticsModule,
-      LedgerModule,
-      PaymentsModule,
-      PartnerSettlementsModule,
-      PspModule,
-      SettlementModule,
-      PayoutsModule,
-      ReconciliationModule,
-      RetentionModule,
-      HealthModule,
-    ],
-  })
-    .overrideProvider(PrismaService)
-    .useValue(prisma)
-    .overrideProvider(ALERT_CHANNEL)
-    .useValue(alerts)
-    .overrideProvider(MEDIA_STORAGE)
-    .useValue(mediaStorage)
-    // The recording transport goes *under* the budget wrapper, not in place
-    // of the whole chain. Replacing `SMS_PROVIDER` outright silently took
-    // the global SMS ceiling out of every integration test — the one
-    // protection standing between a loop and the carrier bill — and
-    // `sms-budget.int-spec.ts` is what noticed. This is production's own
-    // composition with only the last hop changed.
-    .overrideProvider(SMS_PROVIDER)
-    .useFactory({
-      factory: (budget: SmsBudgetService) => new BudgetedSmsProvider(sms, budget),
-      inject: [SmsBudgetService],
+  return (
+    Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
+        EventEmitterModule.forRoot(),
+        PrismaModule,
+        RedisModule,
+        SmsModule,
+        PushModule,
+        AlertsModule,
+        MediaStorageModule,
+        MediaModule,
+        WalletModule,
+        TransactionsModule,
+        QrPaymentsModule,
+        EvChargingModule,
+        RoamingCpoModule,
+        CustomerBalanceModule,
+        AuditModule,
+        UsersModule,
+        AdminModule,
+        ReferralModule,
+        PurchaseIntentsModule,
+        NotificationsModule,
+        AuthModule,
+        SecurityModule,
+        AnalyticsModule,
+        LedgerModule,
+        PaymentsModule,
+        PartnerSettlementsModule,
+        PspModule,
+        SettlementModule,
+        PayoutsModule,
+        ReconciliationModule,
+        RetentionModule,
+        HealthModule,
+      ],
     })
-    // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
-    // instance, so replacing the instance is enough — no listener needs to
-    // know it happened.
-    .overrideProvider(EventEmitter2)
-    .useValue(emitter);
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .overrideProvider(ALERT_CHANNEL)
+      .useValue(alerts)
+      .overrideProvider(MEDIA_STORAGE)
+      .useValue(mediaStorage)
+      // The recording transport goes *under* the budget wrapper, not in place
+      // of the whole chain. Replacing `SMS_PROVIDER` outright silently took
+      // the global SMS ceiling out of every integration test — the one
+      // protection standing between a loop and the carrier bill — and
+      // `sms-budget.int-spec.ts` is what noticed. This is production's own
+      // composition with only the last hop changed.
+      .overrideProvider(SMS_PROVIDER)
+      .useFactory({
+        factory: (budget: SmsBudgetService) => new BudgetedSmsProvider(sms, budget),
+        inject: [SmsBudgetService],
+      })
+      // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
+      // instance, so replacing the instance is enough — no listener needs to
+      // know it happened.
+      .overrideProvider(EventEmitter2)
+      .useValue(emitter)
+  );
 }
 
 export async function createTestHarness(): Promise<TestHarness> {

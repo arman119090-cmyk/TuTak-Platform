@@ -481,8 +481,16 @@ export class PartnerCollectionService {
           sourceId: collectionId,
           currency,
           postings: [
-            { accountId: bankAccount.id, direction: PostingDirection.DEBIT, amount: collection.amount },
-            { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: collection.amount },
+            {
+              accountId: bankAccount.id,
+              direction: PostingDirection.DEBIT,
+              amount: collection.amount,
+            },
+            {
+              accountId: partnerAccount.id,
+              direction: PostingDirection.CREDIT,
+              amount: collection.amount,
+            },
           ],
           events: [
             {
@@ -580,7 +588,9 @@ export class PartnerCollectionService {
 
     return collections.map((c) => ({
       ...c,
-      recordedByName: c.recordedByUserId ? (nameOf.get(c.recordedByUserId) ?? c.recordedByUserId) : null,
+      recordedByName: c.recordedByUserId
+        ? (nameOf.get(c.recordedByUserId) ?? c.recordedByUserId)
+        : null,
       confirmedByName: c.confirmedByUserId
         ? (nameOf.get(c.confirmedByUserId) ?? c.confirmedByUserId)
         : null,

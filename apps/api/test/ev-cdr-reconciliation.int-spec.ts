@@ -118,8 +118,7 @@ describe('Roaming CDR reconciliation (integration)', () => {
     return { user, wallet, partner, connector, session, result };
   };
 
-  const cdrFor = (sessionId: string) =>
-    prisma.evCdr.findUniqueOrThrow({ where: { sessionId } });
+  const cdrFor = (sessionId: string) => prisma.evCdr.findUniqueOrThrow({ where: { sessionId } });
 
   describe('which sessions are reconciled at all', () => {
     it('marks a roaming session as awaiting its operator', async () => {
@@ -129,7 +128,7 @@ describe('Roaming CDR reconciliation (integration)', () => {
       expect(cdr.reconciliation).toBe(EvCdrReconciliation.PENDING);
     });
 
-    it("leaves our own stations alone — there is only one meter and it is ours", async () => {
+    it('leaves our own stations alone — there is only one meter and it is ours', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
       const connector = await createEvConnector(prisma, {
@@ -247,7 +246,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
       // referrer at any level so L1/L2/L3 are all 0 and TuTak's residual is
       // 100 − 20 − 30 = 50. Partner DEBIT 100, liability CREDIT 50, revenue
       // CREDIT 50.
-      const partnerBefore = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
+      const partnerBefore = await prisma.ledgerAccount.findUniqueOrThrow({
+        where: { id: partnerAccount.id },
+      });
       expect(partnerBefore.balance.toFixed(4)).toBe('100.0000');
 
       cpoReports(15, 1500);
@@ -276,7 +277,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
       expect(revenueLeg?.direction).toBe('DEBIT');
       expect(revenueLeg?.amount.toFixed(4)).toBe('12.5000');
 
-      const partnerAfter = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
+      const partnerAfter = await prisma.ledgerAccount.findUniqueOrThrow({
+        where: { id: partnerAccount.id },
+      });
       expect(partnerAfter.balance.toFixed(4)).toBe('75.0000');
     });
 
@@ -288,7 +291,10 @@ describe('Roaming CDR reconciliation (integration)', () => {
         data: { referrerType: 'USER', referrerUserId: referrer.id, refereeUserId: referee.id },
       });
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
-      const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
+      const connector = await createEvConnector(prisma, {
+        partnerId: partner.id,
+        pricePerKwh: '100.00',
+      });
       await prisma.evConnector.update({
         where: { id: connector.id },
         data: { ocpiEvseUid: `EVSE-REMOTE-${randomUUID()}` },
@@ -308,7 +314,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
         where: { sourceTransactionId: result.transactionId! },
       });
       expect(lotBefore.amount.toFixed(4)).toBe('30.0000');
-      const referrerBefore = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
+      const referrerBefore = await prisma.wallet.findUniqueOrThrow({
+        where: { id: referrerWallet.id },
+      });
       expect(referrerBefore.availableBonus.toFixed(4)).toBe('10.0000');
 
       cpoReports(15, 1500);
@@ -317,9 +325,13 @@ describe('Roaming CDR reconciliation (integration)', () => {
       // Corrected to 75% of the original bill — every leg the pool split
       // granted is clawed back by that same fraction, not just green:
       // deferred 30→22.5 (clawback 7.5), L1 10→7.5 (clawback 2.5).
-      const lotAfter = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: lotBefore.id } });
+      const lotAfter = await prisma.deferredBonusLot.findUniqueOrThrow({
+        where: { id: lotBefore.id },
+      });
       expect(lotAfter.refundedAmount.toFixed(4)).toBe('7.5000');
-      const referrerAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
+      const referrerAfter = await prisma.wallet.findUniqueOrThrow({
+        where: { id: referrerWallet.id },
+      });
       expect(referrerAfter.availableBonus.toFixed(4)).toBe('7.5000');
 
       await assertWalletIntegrity(prisma, wallet.id);
@@ -469,7 +481,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
       const cdr = await cdrFor(session.id);
       expect(cdr.reconciliation).toBe(EvCdrReconciliation.CORRECTED);
 
-      const transaction = await prisma.transaction.findFirstOrThrow({ where: { type: 'EV_CHARGING' } });
+      const transaction = await prisma.transaction.findFirstOrThrow({
+        where: { type: 'EV_CHARGING' },
+      });
       const overchargeRefunds = await prisma.bonusLot.findMany({
         where: { type: 'ACCRUAL_MANUAL_ADJUSTMENT', sourceTransactionId: transaction.id },
       });
@@ -509,7 +523,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
 
       jest
         .spyOn(engine, 'accrue')
-        .mockImplementationOnce(() => Promise.reject(new Error('simulated failure mid-correction')));
+        .mockImplementationOnce(() =>
+          Promise.reject(new Error('simulated failure mid-correction')),
+        );
 
       // The failing pass: reconcilePending's own try/catch logs the error
       // and moves on, matching how it already treats any other reconcileOne
@@ -524,7 +540,9 @@ describe('Roaming CDR reconciliation (integration)', () => {
       // Not corrected: the whole transaction rolled back, including this
       // write, not just the wallet steps.
       expect(transactionAfterFailure.amount.toString()).toBe(transactionBefore.amount.toString());
-      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+      const walletAfterFailure = await prisma.wallet.findUniqueOrThrow({
+        where: { id: wallet.id },
+      });
       expect(walletAfterFailure.availableBonus.toString()).toBe(before.availableBonus.toString());
       const refundsAfterFailure = await prisma.bonusLot.findMany({
         where: { type: 'ACCRUAL_MANUAL_ADJUSTMENT', sourceTransactionId: transactionBefore.id },

@@ -116,9 +116,9 @@ describe('Phone verification (integration)', () => {
 
       // A fresh challenge must not buy five more guesses indefinitely.
       await verification.request(user.id);
-      await expect(
-        verification.confirm(user.id, await deliveredCode(user.id)),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(verification.confirm(user.id, await deliveredCode(user.id))).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('refuses to issue more than five codes an hour', async () => {
@@ -223,12 +223,17 @@ describe('Phone verification (integration)', () => {
       // than being claimed, so a later purchase after verification can still
       // reward it.
       await referral.advanceChallengeProgress(referee.user.id, tx.id);
-      expect((await prisma.referralChallengeParticipant.findUniqueOrThrow({ where: { id: participant.id } })).status).toBe(
-        'IN_PROGRESS',
-      );
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } }))
-          .lifetimeEarned.toFixed(4),
+        (
+          await prisma.referralChallengeParticipant.findUniqueOrThrow({
+            where: { id: participant.id },
+          })
+        ).status,
+      ).toBe('IN_PROGRESS');
+      expect(
+        (
+          await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })
+        ).lifetimeEarned.toFixed(4),
       ).toBe('0.0000');
     });
 
@@ -257,12 +262,14 @@ describe('Phone verification (integration)', () => {
       await referral.advanceChallengeProgress(referee.user.id, tx.id);
 
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } }))
-          .lifetimeEarned.toFixed(4),
+        (
+          await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })
+        ).lifetimeEarned.toFixed(4),
       ).toBe('1000.0000');
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: referee.wallet.id } }))
-          .lifetimeEarned.toFixed(4),
+        (
+          await prisma.wallet.findUniqueOrThrow({ where: { id: referee.wallet.id } })
+        ).lifetimeEarned.toFixed(4),
       ).toBe('1000.0000');
     });
 
@@ -297,5 +304,4 @@ describe('Phone verification (integration)', () => {
       }
     });
   });
-
 });

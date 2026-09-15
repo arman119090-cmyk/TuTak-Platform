@@ -423,8 +423,7 @@ export class VivaSmsProvider implements SmsProvider {
       // `{"96040790":[123456]}` — which is the payload a delivered message
       // was sent with, not a shape read off a document.
       params_data: JSON.stringify({
-        [formatVivaRecipient(message.to, this.config.numberFormat)]:
-          params.map(vivaTemplateParam),
+        [formatVivaRecipient(message.to, this.config.numberFormat)]: params.map(vivaTemplateParam),
       }),
       send_utf: this.config.sendUtf ? 1 : 0,
     };

@@ -70,10 +70,18 @@ describe('PSP payment route (integration)', () => {
     if (new Decimal(bonus).greaterThan(0)) {
       await grantBonus(customer, bonus);
     }
-    return intents.create(
+    const intent = await intents.create(
       { partnerId, grossAmount: gross, bonusAmountRequested: bonus, paymentRoute: route },
       customer.user.id,
     );
+    // A provider-routed purchase needs somebody at the business to agree the
+    // economics before a bill can exist — the database refuses an attempt
+    // otherwise. Every test here that opens an attempt therefore approves
+    // first; the tests that are *about* approval do it themselves.
+    if (route === PaymentRoute.TUTAK_PSP) {
+      await intents.approveForPayment(intent.id, staffId, {});
+    }
+    return prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
   }
 
   /**
@@ -93,7 +101,24 @@ describe('PSP payment route (integration)', () => {
     });
   }
 
+  /**
+   * Open a provider bill against a purchase, approving it first if nobody
+   * has.
+   *
+   * The approval is not incidental to these tests: since 15.09.2026 the
+   * database refuses an attempt on a purchase no merchant has agreed to, so a
+   * fixture that skipped it would be testing a state production cannot reach.
+   * The tests that are *about* approval call `approveForPayment` themselves
+   * and assert what happens without it.
+   */
   async function attemptFor(intentId: string, billId: string) {
+    const intent = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intentId } });
+    if (!intent.merchantApprovedAt) {
+      await prisma.purchaseIntent.update({
+        where: { id: intentId },
+        data: { merchantApprovedByUserId: staffId, merchantApprovedAt: new Date() },
+      });
+    }
     return prisma.pspPaymentAttempt.create({
       data: {
         purchaseIntentId: intentId,
@@ -530,21 +555,19 @@ describe('PSP payment route (integration)', () => {
       );
       const attempt = await attemptFor(first.id, 'bill-cross-1');
 
-      // The attempt times out and the purchase is swept away with it. Neither
-      // says the money did not move.
+      // The attempt times out. The purchase deliberately does **not** go with
+      // it any more — see `purchase_intent_not_abandoned_while_paying` — so
+      // what blocks the second purchase here is the live one, and the attempt
+      // guard is tested on its own below.
       await prisma.pspPaymentAttempt.update({
         where: { id: attempt.id },
         data: { status: PspAttemptStatus.EXPIRED, liveKey: null, resolvedAt: new Date() },
-      });
-      await prisma.purchaseIntent.update({
-        where: { id: first.id },
-        data: { status: PurchaseIntentStatus.EXPIRED },
       });
 
       // "Just pay the cashier in cash" — the step that costs the customer.
       await expect(
         intents.create({ partnerId, grossAmount: '15000' }, customer.user.id),
-      ).rejects.toThrow(/has not finished/i);
+      ).rejects.toThrow(/already have a purchase in progress|has not finished/i);
     });
 
     it('lets the same customer buy elsewhere, and lets others buy here', async () => {
@@ -749,27 +772,62 @@ describe('PSP payment route (integration)', () => {
       ).resolves.toBeDefined();
     });
 
-    it('keeps blocking when the purchase expired but its provider attempt did not resolve', async () => {
+    /**
+     * Defence in depth, and deliberately constructed at the table.
+     *
+     * This combination — a closed purchase with an unresolved attempt — used
+     * to be reachable by the expiry sweep, and the attempt-level guard was
+     * what caught it. Since 15.09.2026 the database refuses to close such a
+     * purchase at all, so no code path produces it any more. The guard stays,
+     * because the two checks answer different questions ("is another purchase
+     * in flight" and "might the provider hold money") and I would rather the
+     * second still work if the first is ever loosened. Written straight into
+     * the tables because that is the only way left to reach it.
+     */
+    it('still blocks on an unresolved attempt even if its purchase is somehow closed', async () => {
       const customer = await createCustomer(prisma);
       const first = await intents.create(
         { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
         customer.user.id,
       );
-      const attempt = await attemptFor(first.id, 'bill-expired-block');
-      await prisma.pspPaymentAttempt.update({
-        where: { id: attempt.id },
-        data: { status: PspAttemptStatus.EXPIRED, liveKey: null, resolvedAt: new Date() },
-      });
       await prisma.purchaseIntent.update({
         where: { id: first.id },
-        data: { status: PurchaseIntentStatus.EXPIRED },
+        data: {
+          status: PurchaseIntentStatus.EXPIRED,
+          merchantApprovedByUserId: staffId,
+          merchantApprovedAt: new Date(),
+        },
+      });
+      await prisma.pspPaymentAttempt.create({
+        data: {
+          purchaseIntentId: first.id,
+          provider: 'idram',
+          status: PspAttemptStatus.EXPIRED,
+          amount: new Decimal('15000'),
+          providerBillId: 'bill-expired-block',
+          resolvedAt: new Date(),
+        },
       });
 
-      // The purchase is over on our side; the money is not resolved on the
-      // provider's. The unique index cannot see that — the attempt check can.
       await expect(
         intents.create({ partnerId, grossAmount: '15000' }, customer.user.id),
       ).rejects.toThrow(/has not finished/i);
+    });
+
+    it('will not let a purchase be closed while its payment is unresolved', async () => {
+      const customer = await createCustomer(prisma);
+      const first = await intents.create(
+        { partnerId, grossAmount: '15000', paymentRoute: PaymentRoute.TUTAK_PSP },
+        customer.user.id,
+      );
+      await attemptFor(first.id, 'bill-no-close');
+
+      await expect(
+        prisma.purchaseIntent.update({
+          where: { id: first.id },
+          data: { status: PurchaseIntentStatus.EXPIRED },
+        }),
+      ).rejects.toThrow(/provider may hold the customer/i);
     });
 
     it('releases safely once the provider says, authoritatively, that it failed', async () => {

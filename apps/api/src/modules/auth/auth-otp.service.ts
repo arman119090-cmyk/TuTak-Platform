@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthOtpPurpose } from '@prisma/client';
 import { generateNumericCode, sha256Hex } from '../../common/utils/crypto';
 import { maskPhone } from '../../common/utils/phone-mask';
@@ -35,7 +41,10 @@ export class AuthOtpService {
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
 
-  async requestCode(phone: string, purpose: AuthOtpPurpose): Promise<{ success: true; delivered: boolean }> {
+  async requestCode(
+    phone: string,
+    purpose: AuthOtpPurpose,
+  ): Promise<{ success: true; delivered: boolean }> {
     const issued = await this.prisma.authOtpToken.count({
       where: { phone, purpose, createdAt: { gte: new Date(Date.now() - WINDOW_MS) } },
     });
@@ -53,7 +62,12 @@ export class AuthOtpService {
         data: { consumedAt: new Date() },
       });
       await tx.authOtpToken.create({
-        data: { phone, purpose, codeHash: sha256Hex(code), expiresAt: new Date(Date.now() + CODE_TTL_MS) },
+        data: {
+          phone,
+          purpose,
+          codeHash: sha256Hex(code),
+          expiresAt: new Date(Date.now() + CODE_TTL_MS),
+        },
       });
     });
 

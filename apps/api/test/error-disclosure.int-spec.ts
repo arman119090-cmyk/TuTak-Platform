@@ -105,11 +105,12 @@ describe('Error disclosure and analytics (integration)', () => {
     });
 
     it('still returns messages the application wrote for the caller', () => {
-      expect(render(new BadRequestException('Bonus applied cannot exceed the payment amount')))
-        .toMatchObject({
-          status: 400,
-          body: { message: 'Bonus applied cannot exceed the payment amount' },
-        });
+      expect(
+        render(new BadRequestException('Bonus applied cannot exceed the payment amount')),
+      ).toMatchObject({
+        status: 400,
+        body: { message: 'Bonus applied cannot exceed the payment amount' },
+      });
       expect(render(new NotFoundException('QR code not found'))).toMatchObject({
         status: 404,
         body: { message: 'QR code not found' },

@@ -47,7 +47,9 @@ describe('Referral abuse (integration)', () => {
     qrPayments = harness.app.get(QrPaymentsService);
     transactions = harness.app.get(TransactionsService);
     const config = harness.app.get<ConfigService<AppConfig, true>>(ConfigService);
-    qualificationAmount = config.get('purchasePolicy.challengeQualificationAmount', { infer: true });
+    qualificationAmount = config.get('purchasePolicy.challengeQualificationAmount', {
+      infer: true,
+    });
     rewardAmount = config.get('purchasePolicy.challengeRewardAmount', { infer: true });
   });
 
@@ -159,8 +161,9 @@ describe('Referral abuse (integration)', () => {
       expect(after.status).toBe(ReferralChallengeParticipantStatus.IN_PROGRESS);
       expect(after.progressAmount.toFixed(4)).toBe('0.0000');
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })).lifetimeEarned
-          .toFixed(4),
+        (
+          await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })
+        ).lifetimeEarned.toFixed(4),
       ).toBe('0.0000');
     });
 
@@ -240,7 +243,11 @@ describe('Referral abuse (integration)', () => {
     it('refuses a self-referral even if a participant row is forged', async () => {
       const { user, wallet } = await createCustomer(prisma);
       const participant = await prisma.referralChallengeParticipant.create({
-        data: { referrerUserId: user.id, refereeUserId: user.id, requiredAmount: qualificationAmount },
+        data: {
+          referrerUserId: user.id,
+          refereeUserId: user.id,
+          requiredAmount: qualificationAmount,
+        },
       });
 
       await purchase(user.id, qualificationAmount);
@@ -325,8 +332,9 @@ describe('Referral abuse (integration)', () => {
       });
       expect(credits).toHaveLength(1);
       expect(
-        (await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })).lifetimeEarned
-          .toFixed(4),
+        (
+          await prisma.wallet.findUniqueOrThrow({ where: { id: referrer.wallet.id } })
+        ).lifetimeEarned.toFixed(4),
       ).toBe(`${rewardAmount}.0000`);
       await assertWalletIntegrity(prisma, referrer.wallet.id);
     });
@@ -404,9 +412,7 @@ describe('Referral abuse (integration)', () => {
       const referrerWallet = await prisma.wallet.findUniqueOrThrow({
         where: { id: referrer.wallet.id },
       });
-      expect(referrerWallet.lifetimeEarned.toFixed(4)).toBe(
-        (Number(rewardAmount) * 3).toFixed(4),
-      );
+      expect(referrerWallet.lifetimeEarned.toFixed(4)).toBe((Number(rewardAmount) * 3).toFixed(4));
     });
   });
 

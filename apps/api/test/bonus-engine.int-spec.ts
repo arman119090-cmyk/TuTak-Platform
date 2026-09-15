@@ -101,24 +101,21 @@ describe('BonusEngineService (integration)', () => {
       expect(entries[0]!.balanceAfter.toFixed(4)).toBe('500.0000');
     });
 
-    it.each(['0', '-1', 'NaN', 'Infinity', '1.00005'])(
-      'refuses to accrue %p',
-      async (amount) => {
-        const { wallet } = await createCustomer(prisma);
+    it.each(['0', '-1', 'NaN', 'Infinity', '1.00005'])('refuses to accrue %p', async (amount) => {
+      const { wallet } = await createCustomer(prisma);
 
-        await expect(
-          engine.accrue({
-            walletId: wallet.id,
-            type: BonusEntryType.ACCRUAL_PURCHASE,
-            amount,
-          }),
-        ).rejects.toThrow(BadRequestException);
+      await expect(
+        engine.accrue({
+          walletId: wallet.id,
+          type: BonusEntryType.ACCRUAL_PURCHASE,
+          amount,
+        }),
+      ).rejects.toThrow(BadRequestException);
 
-        // The rejection must leave nothing behind — not a lot, not an entry.
-        expect(await prisma.bonusLot.count({ where: { walletId: wallet.id } })).toBe(0);
-        await assertWalletIntegrity(prisma, wallet.id);
-      },
-    );
+      // The rejection must leave nothing behind — not a lot, not an entry.
+      expect(await prisma.bonusLot.count({ where: { walletId: wallet.id } })).toBe(0);
+      await assertWalletIntegrity(prisma, wallet.id);
+    });
 
     it('refuses an accrual that would expire before it becomes available', async () => {
       const { wallet } = await createCustomer(prisma);
@@ -223,10 +220,16 @@ describe('BonusEngineService (integration)', () => {
       // FIFO by expiry is what makes "expiring soon" honest: taking from the
       // late lot first would quietly expire points the customer could have
       // spent.
-      expect((await prisma.bonusLot.findUniqueOrThrow({ where: { id: early.id } })).remainingAmount
-        .toFixed(4)).toBe('0.0000');
-      expect((await prisma.bonusLot.findUniqueOrThrow({ where: { id: late.id } })).remainingAmount
-        .toFixed(4)).toBe('300.0000');
+      expect(
+        (
+          await prisma.bonusLot.findUniqueOrThrow({ where: { id: early.id } })
+        ).remainingAmount.toFixed(4),
+      ).toBe('0.0000');
+      expect(
+        (
+          await prisma.bonusLot.findUniqueOrThrow({ where: { id: late.id } })
+        ).remainingAmount.toFixed(4),
+      ).toBe('300.0000');
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
@@ -247,11 +250,9 @@ describe('BonusEngineService (integration)', () => {
         where: { reservationId: reservation.reservationId },
       });
       expect(allocations).toHaveLength(3);
-      expect(
-        allocations
-          .reduce((acc, a) => acc.plus(a.amount), new Decimal(0))
-          .toFixed(4),
-      ).toBe('250.0000');
+      expect(allocations.reduce((acc, a) => acc.plus(a.amount), new Decimal(0)).toFixed(4)).toBe(
+        '250.0000',
+      );
       await assertWalletIntegrity(prisma, wallet.id);
     });
 
@@ -659,8 +660,11 @@ describe('BonusEngineService (integration)', () => {
       expect(after.availableBonus.toFixed(4)).toBe('1000.0000');
       expect(after.reservedBonus.toFixed(4)).toBe('0.0000');
       expect(
-        (await prisma.bonusReservation.findUniqueOrThrow({ where: { id: reservation.reservationId } }))
-          .status,
+        (
+          await prisma.bonusReservation.findUniqueOrThrow({
+            where: { id: reservation.reservationId },
+          })
+        ).status,
       ).toBe(BonusReservationStatus.RELEASED);
       await assertWalletIntegrity(prisma, wallet.id);
     });

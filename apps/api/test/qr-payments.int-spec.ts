@@ -48,7 +48,14 @@ describe('QR payments (integration)', () => {
   });
 
   const asRequestUser = (id: string, roles: RoleName[] = [RoleName.CUSTOMER]): RequestUser =>
-    ({ id, phone: '+37400000000', roles, permissions: [], partnerScopes: {}, mustChangePassword: false }) as RequestUser;
+    ({
+      id,
+      phone: '+37400000000',
+      roles,
+      permissions: [],
+      partnerScopes: {},
+      mustChangePassword: false,
+    }) as RequestUser;
 
   const fundedCustomer = async (available: string) => {
     const { user, wallet } = await createCustomer(prisma);
@@ -139,9 +146,9 @@ describe('QR payments (integration)', () => {
       amount: '1000',
     });
     await qrPayments.redeem({ token: dynamic.token, idempotencyKey: 'idem-d1' }, user.id);
-    expect(
-      (await prisma.qrCode.findUniqueOrThrow({ where: { id: dynamic.id } })).status,
-    ).toBe(QrCodeStatus.REDEEMED);
+    expect((await prisma.qrCode.findUniqueOrThrow({ where: { id: dynamic.id } })).status).toBe(
+      QrCodeStatus.REDEEMED,
+    );
   });
 
   it('refuses a static merchant code, which mints bonus on a payment nobody made', async () => {
@@ -322,9 +329,9 @@ describe('QR payments (integration)', () => {
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(after.pendingBonus.toFixed(4)).toBe('0.0000');
       expect(after.availableBonus.toFixed(4)).toBe('0.0000');
-      expect(
-        (await prisma.qrCode.findUniqueOrThrow({ where: { id: qr.id } })).status,
-      ).toBe(QrCodeStatus.ACTIVE);
+      expect((await prisma.qrCode.findUniqueOrThrow({ where: { id: qr.id } })).status).toBe(
+        QrCodeStatus.ACTIVE,
+      );
     });
 
     it('refuses a partner insider redeeming their own invoice, the same as any other request', async () => {
@@ -350,9 +357,9 @@ describe('QR payments (integration)', () => {
 
       const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
       expect(after.pendingBonus.toFixed(4)).toBe('0.0000');
-      expect(
-        (await prisma.qrCode.findUniqueOrThrow({ where: { id: qr.id } })).status,
-      ).toBe(QrCodeStatus.ACTIVE);
+      expect((await prisma.qrCode.findUniqueOrThrow({ where: { id: qr.id } })).status).toBe(
+        QrCodeStatus.ACTIVE,
+      );
     });
 
     it('refuses regardless of QR type, token validity, or idempotency key reuse', async () => {

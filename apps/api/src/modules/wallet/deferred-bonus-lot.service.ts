@@ -73,7 +73,9 @@ export class DeferredBonusLotService {
     // *not* excluded here purely by having gone through that once — only
     // the two running totals above ever permanently close it out
     // (independent audit, GitHub issue #28).
-    const lots = allLots.filter((lot) => lot.refundedAmount.plus(lot.forfeitedAmount).lessThan(lot.amount));
+    const lots = allLots.filter((lot) =>
+      lot.refundedAmount.plus(lot.forfeitedAmount).lessThan(lot.amount),
+    );
 
     for (const lot of lots) {
       // Atomic DB-side increment, not a read-modify-write of a JS-computed
@@ -273,7 +275,12 @@ export class DeferredBonusLotService {
     if (!lot.grantedBonusLotId) {
       return { liabilityToReverse: zero, shortfall: reduceBy.plus(ceilingGap) };
     }
-    const clawed = await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, reduceBy, tx);
+    const clawed = await this.bonusEngine.reverseAccrualLot(
+      lot.grantedBonusLotId,
+      reason,
+      reduceBy,
+      tx,
+    );
     const actual = clawed ?? zero;
 
     // If that fully drained the currently-live grant, clear the pointer to
@@ -457,7 +464,12 @@ export class DeferredBonusLotService {
     });
     if (!grantedLot) return;
 
-    const clawed = await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, undefined, tx);
+    const clawed = await this.bonusEngine.reverseAccrualLot(
+      lot.grantedBonusLotId,
+      reason,
+      undefined,
+      tx,
+    );
     const actual = clawed ?? new Decimal(0);
     const spent = Decimal.max(
       grantedLot.originalAmount.minus(actual).minus(lot.liveGrantReclaimedAmount),
@@ -491,7 +503,11 @@ export class DeferredBonusLotService {
           sourceType: 'DeferredBonusLot',
           sourceId: lot.id,
           postings: [
-            { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: spent },
+            {
+              accountId: bonusLiabilityAccount.id,
+              direction: PostingDirection.DEBIT,
+              amount: spent,
+            },
             { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: spent },
           ],
         },
@@ -551,9 +567,12 @@ export class DeferredBonusLotService {
    * debit `BONUS_LIABILITY` twice for the same AMD (independent audit,
    * GitHub issue #28).
    */
-  private async expireOne(
-    lot: { id: string; amount: Decimal; refundedAmount: Decimal; forfeitedAmount: Decimal },
-  ): Promise<boolean> {
+  private async expireOne(lot: {
+    id: string;
+    amount: Decimal;
+    refundedAmount: Decimal;
+    forfeitedAmount: Decimal;
+  }): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.deferredBonusLot.updateMany({
         where: { id: lot.id, status: DeferredBonusLotStatus.DEFERRED },
@@ -573,8 +592,16 @@ export class DeferredBonusLotService {
             sourceType: 'DeferredBonusLot',
             sourceId: lot.id,
             postings: [
-              { accountId: bonusLiabilityAccount.id, direction: PostingDirection.DEBIT, amount: releasable },
-              { accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: releasable },
+              {
+                accountId: bonusLiabilityAccount.id,
+                direction: PostingDirection.DEBIT,
+                amount: releasable,
+              },
+              {
+                accountId: revenueAccount.id,
+                direction: PostingDirection.CREDIT,
+                amount: releasable,
+              },
             ],
           },
           tx,

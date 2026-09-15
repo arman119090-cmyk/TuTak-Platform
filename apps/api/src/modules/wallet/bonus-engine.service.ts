@@ -144,7 +144,6 @@ export class BonusEngineService {
       );
     }
 
-
     return client.bonusLedgerEntry.create({
       data: {
         walletId: params.walletId,
@@ -268,71 +267,69 @@ export class BonusEngineService {
   ): Promise<ReserveResult> {
     const target = parsePositiveMoney(amount, 'reservation amount');
 
-    return this.runSerializable(
-      async (tx) => {
-        const lots = await tx.bonusLot.findMany({
-          where: { walletId, status: BonusLotStatus.AVAILABLE, remainingAmount: { gt: 0 } },
-          orderBy: { expiresAt: 'asc' },
-        });
+    return this.runSerializable(async (tx) => {
+      const lots = await tx.bonusLot.findMany({
+        where: { walletId, status: BonusLotStatus.AVAILABLE, remainingAmount: { gt: 0 } },
+        orderBy: { expiresAt: 'asc' },
+      });
 
-        const totalAvailable = lots.reduce((acc, l) => acc.plus(l.remainingAmount), ZERO);
-        if (totalAvailable.lessThan(target)) {
-          throw new BadRequestException('Insufficient available bonus balance');
+      const totalAvailable = lots.reduce((acc, l) => acc.plus(l.remainingAmount), ZERO);
+      if (totalAvailable.lessThan(target)) {
+        throw new BadRequestException('Insufficient available bonus balance');
+      }
+
+      const hold = holdSeconds ?? this.config.get('bonus', { infer: true }).reservationHoldSeconds;
+      const expiresAt = expiresAtOverride ?? new Date(Date.now() + hold * 1000);
+
+      const reservation = await tx.bonusReservation.create({
+        data: { walletId, amount: target, reasonTransactionId, expiresAt },
+      });
+
+      let remaining = target;
+      for (const lot of lots) {
+        if (remaining.lessThanOrEqualTo(0)) break;
+        const allocation = Decimal.min(remaining, lot.remainingAmount);
+
+        const updated = await tx.bonusLot.updateMany({
+          where: { id: lot.id, remainingAmount: { gte: allocation } },
+          data: { remainingAmount: { decrement: allocation } },
+        });
+        if (updated.count === 0) {
+          throw new BadRequestException('Concurrent reservation conflict, please retry');
         }
 
-        const hold = holdSeconds ?? this.config.get('bonus', { infer: true }).reservationHoldSeconds;
-        const expiresAt = expiresAtOverride ?? new Date(Date.now() + hold * 1000);
-
-        const reservation = await tx.bonusReservation.create({
-          data: { walletId, amount: target, reasonTransactionId, expiresAt },
+        await tx.bonusReservationAllocation.create({
+          data: { reservationId: reservation.id, lotId: lot.id, amount: allocation },
         });
 
-        let remaining = target;
-        for (const lot of lots) {
-          if (remaining.lessThanOrEqualTo(0)) break;
-          const allocation = Decimal.min(remaining, lot.remainingAmount);
+        remaining = remaining.minus(allocation);
+      }
 
-          const updated = await tx.bonusLot.updateMany({
-            where: { id: lot.id, remainingAmount: { gte: allocation } },
-            data: { remainingAmount: { decrement: allocation } },
-          });
-          if (updated.count === 0) {
-            throw new BadRequestException('Concurrent reservation conflict, please retry');
-          }
+      if (!remaining.isZero()) {
+        throw new Error('Reservation could not be fully allocated');
+      }
 
-          await tx.bonusReservationAllocation.create({
-            data: { reservationId: reservation.id, lotId: lot.id, amount: allocation },
-          });
+      await tx.wallet.update({
+        where: { id: walletId },
+        data: {
+          availableBonus: { decrement: target },
+          reservedBonus: { increment: target },
+          version: { increment: 1 },
+        },
+      });
 
-          remaining = remaining.minus(allocation);
-        }
+      await this.writeLedger(tx, {
+        walletId,
+        type: BonusEntryType.RESERVE_HOLD,
+        direction: LedgerDirection.NEUTRAL,
+        amount: target,
+        delta: { available: target.negated(), reserved: target },
+        relatedReservationId: reservation.id,
+        sourceTransactionId: reasonTransactionId,
+      });
 
-        if (!remaining.isZero()) {
-          throw new Error('Reservation could not be fully allocated');
-        }
-
-        await tx.wallet.update({
-          where: { id: walletId },
-          data: {
-            availableBonus: { decrement: target },
-            reservedBonus: { increment: target },
-            version: { increment: 1 },
-          },
-        });
-
-        await this.writeLedger(tx, {
-          walletId,
-          type: BonusEntryType.RESERVE_HOLD,
-          direction: LedgerDirection.NEUTRAL,
-          amount: target,
-          delta: { available: target.negated(), reserved: target },
-          relatedReservationId: reservation.id,
-          sourceTransactionId: reasonTransactionId,
-        });
-
-        return { reservationId: reservation.id, amount: target, expiresAt };
-      },
-    );
+      return { reservationId: reservation.id, amount: target, expiresAt };
+    });
   }
 
   /**
@@ -742,7 +739,9 @@ export class BonusEngineService {
 
     return tx
       ? run(tx)
-      : this.prisma.$transaction(run, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      : this.prisma.$transaction(run, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
   }
 
   // ── Scheduled maintenance ─────────────────────────────────────────────
@@ -925,9 +924,7 @@ export class BonusEngineService {
   ) {
     const target = parsePositiveMoney(amount, 'adjustment amount');
 
-    const ceiling = new Decimal(
-      this.config.get('bonus.manualAdjustmentMax', { infer: true }),
-    );
+    const ceiling = new Decimal(this.config.get('bonus.manualAdjustmentMax', { infer: true }));
     if (target.greaterThan(ceiling)) {
       throw new BadRequestException(
         `A single manual adjustment is limited to ${ceiling.toFixed(0)} points. ` +

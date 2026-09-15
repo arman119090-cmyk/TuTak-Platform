@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { CustomerBalanceService } from '../src/modules/customer-balance/customer-balance.service';
-import { BANK_TOPUP_ADAPTER, BankTopUpAdapter } from '../src/modules/customer-balance/bank-topup-adapter.interface';
+import {
+  BANK_TOPUP_ADAPTER,
+  BankTopUpAdapter,
+} from '../src/modules/customer-balance/bank-topup-adapter.interface';
 import { createCustomer } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
@@ -40,10 +43,14 @@ describe('Customer prepaid balance (integration)', () => {
   });
 
   const initiated = (providerReference = `PROVIDER-${randomUUID()}`) =>
-    jest.spyOn(adapter, 'initiateTopUp').mockResolvedValue({ outcome: 'INITIATED', providerReference });
+    jest
+      .spyOn(adapter, 'initiateTopUp')
+      .mockResolvedValue({ outcome: 'INITIATED', providerReference });
 
   const webhookCompletes = (providerReference: string) =>
-    jest.spyOn(adapter, 'verifyTopUpWebhook').mockResolvedValue({ providerReference, outcome: 'COMPLETED' });
+    jest
+      .spyOn(adapter, 'verifyTopUpWebhook')
+      .mockResolvedValue({ providerReference, outcome: 'COMPLETED' });
 
   describe('reading a balance', () => {
     it('reads zero for a customer who has never topped up', async () => {
@@ -70,7 +77,11 @@ describe('Customer prepaid balance (integration)', () => {
       const providerReference = `PROVIDER-${randomUUID()}`;
       jest
         .spyOn(adapter, 'initiateTopUp')
-        .mockResolvedValue({ outcome: 'INITIATED', providerReference, redirectUrl: 'https://bank.example/pay/123' });
+        .mockResolvedValue({
+          outcome: 'INITIATED',
+          providerReference,
+          redirectUrl: 'https://bank.example/pay/123',
+        });
 
       const result = await balance.initiateTopUp(user.id, '5000');
 
@@ -109,7 +120,9 @@ describe('Customer prepaid balance (integration)', () => {
 
       expect(await balance.getBalance(user.id)).toEqual({ balance: '5000.0000', currency: 'AMD' });
 
-      const topUp = await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: initiateResult.topUpId } });
+      const topUp = await prisma.balanceTopUp.findUniqueOrThrow({
+        where: { id: initiateResult.topUpId },
+      });
       expect(topUp.status).toBe('COMPLETED');
       expect(topUp.ledgerTransactionId).not.toBeNull();
 
@@ -119,7 +132,9 @@ describe('Customer prepaid balance (integration)', () => {
       });
       expect(posting.kind).toBe('balance.topup.completed');
       expect(posting.postings).toHaveLength(2);
-      const pspAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PSP_RECEIVABLE' } });
+      const pspAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PSP_RECEIVABLE' },
+      });
       const balanceAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'CUSTOMER_PREPAID_BALANCE', userId: user.id },
       });
@@ -172,11 +187,17 @@ describe('Customer prepaid balance (integration)', () => {
       const initiateResult = await balance.initiateTopUp(user.id, '5000');
       jest
         .spyOn(adapter, 'verifyTopUpWebhook')
-        .mockResolvedValue({ providerReference, outcome: 'DECLINED', declineReason: 'insufficient_funds' });
+        .mockResolvedValue({
+          providerReference,
+          outcome: 'DECLINED',
+          declineReason: 'insufficient_funds',
+        });
 
       await balance.confirmTopUpWebhook({ reference: providerReference }, {});
 
-      const topUp = await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: initiateResult.topUpId } });
+      const topUp = await prisma.balanceTopUp.findUniqueOrThrow({
+        where: { id: initiateResult.topUpId },
+      });
       expect(topUp.status).toBe('DECLINED');
       expect(topUp.declineReason).toBe('insufficient_funds');
       expect(topUp.ledgerTransactionId).toBeNull();
@@ -197,8 +218,12 @@ describe('Customer prepaid balance (integration)', () => {
         outcome: 'COMPLETED',
       });
 
-      await expect(balance.confirmTopUpWebhook({ reference: 'never-issued' }, {})).resolves.toBeUndefined();
-      expect(await prisma.ledgerTransaction.count({ where: { kind: 'balance.topup.completed' } })).toBe(0);
+      await expect(
+        balance.confirmTopUpWebhook({ reference: 'never-issued' }, {}),
+      ).resolves.toBeUndefined();
+      expect(
+        await prisma.ledgerTransaction.count({ where: { kind: 'balance.topup.completed' } }),
+      ).toBe(0);
     });
   });
 });

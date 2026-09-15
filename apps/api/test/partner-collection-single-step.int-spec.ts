@@ -1,5 +1,10 @@
 import { ConflictException } from '@nestjs/common';
-import { CollectionStatus, LedgerAccountType, PostingDirection, PrismaClient } from '@prisma/client';
+import {
+  CollectionStatus,
+  LedgerAccountType,
+  PostingDirection,
+  PrismaClient,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PartnerCollectionService } from '../src/modules/payouts/partner-collection.service';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
@@ -90,7 +95,9 @@ describe('PartnerCollectionService (integration, dual control off)', () => {
     expect(await balanceOf(LedgerAccountType.PARTNER_PAYABLE, partner.id)).toBe('0.0000');
     expect(await balanceOf(LedgerAccountType.PLATFORM_BANK)).toBe('1200.0000');
 
-    const stored = await prisma.partnerCollection.findUniqueOrThrow({ where: { id: result.collectionId } });
+    const stored = await prisma.partnerCollection.findUniqueOrThrow({
+      where: { id: result.collectionId },
+    });
     expect(stored.ledgerTransactionId).not.toBeNull();
     // No separate confirming admin exists in the single-step path.
     expect(stored.confirmedByUserId).toBeNull();

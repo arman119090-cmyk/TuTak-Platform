@@ -49,7 +49,11 @@ describe('A restaurant purchase names the branch it happened at (integration)', 
   });
 
   const restaurant = () =>
-    createPartner(prisma, { category: 'restaurant', displayName: 'Dolmama', bonusAccrualRateBps: 500 });
+    createPartner(prisma, {
+      category: 'restaurant',
+      displayName: 'Dolmama',
+      bonusAccrualRateBps: 500,
+    });
 
   const branch = (partnerId: string, name: string, isActive = true) =>
     prisma.partnerBranch.create({
@@ -229,7 +233,11 @@ describe('A restaurant purchase names the branch it happened at (integration)', 
     });
 
     const northCashier = await cashierAt(partner.id, north.id, 'B-001');
-    const queue = await intents.list(northCashier, partner.id, PurchaseIntentStatus.AWAITING_CONFIRMATION);
+    const queue = await intents.list(
+      northCashier,
+      partner.id,
+      PurchaseIntentStatus.AWAITING_CONFIRMATION,
+    );
 
     expect(queue.map((i) => i.id)).toEqual([atNorth.id]);
   });

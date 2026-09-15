@@ -4,25 +4,7 @@ import { PspAttemptStatus } from '@prisma/client';
 import { ALERT_CHANNEL, AlertChannel } from '../../infrastructure/alerts/alert-channel.interface';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-
-/**
- * How old an unresolved attempt has to be before it is escalated again.
- *
- * Deliberately a flat interval rather than a backoff: the thing being
- * escalated is a customer's money sitting somewhere nobody can account for,
- * and that does not become less urgent the longer it goes on.
- */
-const RE_ESCALATE_AFTER_MS = 60 * 60_000;
-
-/**
- * How long a live attempt may sit before it is declared timed out.
- *
- * Long relative to a payment: a customer switching apps, failing to find
- * their card and coming back is ordinary, and declaring a live bill EXPIRED
- * while they are still on the provider's page would be the platform creating
- * its own ambiguity.
- */
-const LIVE_ATTEMPT_TIMEOUT_MS = 30 * 60_000;
+import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
 
 /**
  * Ageing, and the one thing it is not allowed to do.
@@ -51,8 +33,27 @@ export class PspAttemptAgeingService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(ALERT_CHANNEL) private readonly alerts: AlertChannel,
+    @Inject(PSP_ADAPTER) private readonly adapter: PspAdapter,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
+
+  /**
+   * The thresholds for one provider.
+   *
+   * Per provider because thirty minutes was a number I picked, not a fact
+   * about payments: a provider whose customers finish inside an app and one
+   * that settles in overnight batches deserve different answers, and Arman's
+   * decision of 15.09.2026 is that this is configuration. Neither number ever
+   * resolves anything — see the class docblock.
+   */
+  private policyFor(provider: string): { staleAfterMs: number; escalateEveryMs: number } {
+    const psp = this.config.get('psp', { infer: true });
+    const override = psp.perProvider[provider] ?? {};
+    return {
+      staleAfterMs: override.staleAfterMs ?? psp.defaultStaleAfterMs,
+      escalateEveryMs: override.escalateEveryMs ?? psp.defaultEscalateEveryMs,
+    };
+  }
 
   async escalateStaleAttempts(): Promise<{ expired: number; escalated: number }> {
     if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
@@ -60,6 +61,10 @@ export class PspAttemptAgeingService {
     }
 
     const now = Date.now();
+    // The adapter's own name is the key, so a second provider is a second
+    // entry in the config rather than a branch in here.
+    const providerName = this.adapter.name;
+    const { staleAfterMs, escalateEveryMs } = this.policyFor(providerName);
 
     /*
      * Step 1. A live bill nobody came back to.
@@ -72,7 +77,7 @@ export class PspAttemptAgeingService {
     const stale = await this.prisma.pspPaymentAttempt.findMany({
       where: {
         status: { in: [PspAttemptStatus.INITIATED, PspAttemptStatus.PENDING_CONFIRMATION] },
-        createdAt: { lt: new Date(now - LIVE_ATTEMPT_TIMEOUT_MS) },
+        createdAt: { lt: new Date(now - staleAfterMs) },
       },
       select: { id: true, purchaseIntentId: true, amount: true, providerBillId: true },
     });
@@ -114,8 +119,8 @@ export class PspAttemptAgeingService {
             PspAttemptStatus.REQUIRES_RECONCILIATION,
           ],
         },
-        createdAt: { lt: new Date(now - LIVE_ATTEMPT_TIMEOUT_MS) },
-        OR: [{ escalatedAt: null }, { escalatedAt: { lt: new Date(now - RE_ESCALATE_AFTER_MS) } }],
+        createdAt: { lt: new Date(now - staleAfterMs) },
+        OR: [{ escalatedAt: null }, { escalatedAt: { lt: new Date(now - escalateEveryMs) } }],
       },
       select: {
         id: true,

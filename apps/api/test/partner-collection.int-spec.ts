@@ -251,9 +251,9 @@ describe('PartnerCollectionService (integration, dual control on)', () => {
         }),
       ).rejects.toThrow(ConflictException);
 
-      expect(await prisma.partnerCollection.count({ where: { bankReference: 'SWIFT-DRAIN-3' } })).toBe(
-        0,
-      );
+      expect(
+        await prisma.partnerCollection.count({ where: { bankReference: 'SWIFT-DRAIN-3' } }),
+      ).toBe(0);
       await assertLedgerIntegrity();
     });
   });
@@ -294,7 +294,7 @@ describe('PartnerCollectionService (integration, dual control on)', () => {
     ).rejects.toThrow(ConflictException);
   });
 
-  it("refuses a collection against a partner whose balance is actually in their own favor", async () => {
+  it('refuses a collection against a partner whose balance is actually in their own favor', async () => {
     const partner = await createPartner(prisma);
     // TuTak owes the partner (the ordinary case) — a raw negative balance,
     // the mirror image of `oweUs`.
@@ -357,7 +357,10 @@ describe('PartnerCollectionService (integration, dual control on)', () => {
     expect(stored.confirmedByUserId).toBeNull();
     expect(
       await prisma.auditLog.count({
-        where: { action: AuditAction.PARTNER_COLLECTION_CONFIRMED, entityId: recorded.collectionId },
+        where: {
+          action: AuditAction.PARTNER_COLLECTION_CONFIRMED,
+          entityId: recorded.collectionId,
+        },
       }),
     ).toBe(0);
     // And the balance itself is exactly what the credit left it at — the
@@ -693,7 +696,10 @@ describe('PartnerCollectionService (integration, dual control on)', () => {
       await collections.confirm(recorded.collectionId, admin3).catch(() => undefined);
 
       const events = await prisma.auditLog.findMany({
-        where: { action: AuditAction.PARTNER_COLLECTION_CONFIRMED, entityId: recorded.collectionId },
+        where: {
+          action: AuditAction.PARTNER_COLLECTION_CONFIRMED,
+          entityId: recorded.collectionId,
+        },
       });
       expect(events).toHaveLength(1);
       expect(events[0]!.actorUserId).toBe(admin2);

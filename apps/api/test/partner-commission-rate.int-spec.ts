@@ -52,11 +52,14 @@ describe('Partner commission rate grid (integration)', () => {
       },
     );
 
-    it.each([50, 300, 1000, 2000])('accepts the grid boundary/typical value %p bps', async (bps) => {
-      const { user } = await createCustomer(prisma);
-      const partner = await partners.create({ ...basePartner(bps), ownerUserId: user.id });
-      expect(partner.bonusAccrualRateBps).toBe(bps);
-    });
+    it.each([50, 300, 1000, 2000])(
+      'accepts the grid boundary/typical value %p bps',
+      async (bps) => {
+        const { user } = await createCustomer(prisma);
+        const partner = await partners.create({ ...basePartner(bps), ownerUserId: user.id });
+        expect(partner.bonusAccrualRateBps).toBe(bps);
+      },
+    );
   });
 
   describe('PartnersService.apply (self-service path)', () => {

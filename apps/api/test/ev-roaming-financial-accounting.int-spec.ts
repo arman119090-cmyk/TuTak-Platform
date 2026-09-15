@@ -5,7 +5,10 @@ import { EvCdrReconciliationService } from '../src/modules/ev-charging/ev-cdr-re
 import { EvSessionsService } from '../src/modules/ev-charging/ev-sessions.service';
 import { OCPI_ADAPTER, OcpiAdapter } from '../src/modules/ev-charging/ocpi/ocpi-adapter.interface';
 import { CustomerBalanceService } from '../src/modules/customer-balance/customer-balance.service';
-import { BANK_TOPUP_ADAPTER, BankTopUpAdapter } from '../src/modules/customer-balance/bank-topup-adapter.interface';
+import {
+  BANK_TOPUP_ADAPTER,
+  BankTopUpAdapter,
+} from '../src/modules/customer-balance/bank-topup-adapter.interface';
 import { createCustomer, createPartner, createRoamingCpoStation } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
@@ -74,7 +77,9 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
   /** Funds a customer's prepaid balance through the real top-up flow, not a direct DB write. */
   const fundBalance = async (userId: string, amount: string) => {
     const providerReference = `PROVIDER-${randomUUID()}`;
-    jest.spyOn(bankAdapter, 'initiateTopUp').mockResolvedValueOnce({ outcome: 'INITIATED', providerReference });
+    jest
+      .spyOn(bankAdapter, 'initiateTopUp')
+      .mockResolvedValueOnce({ outcome: 'INITIATED', providerReference });
     await customerBalance.initiateTopUp(userId, amount);
     jest
       .spyOn(bankAdapter, 'verifyTopUpWebhook')
@@ -86,7 +91,11 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
   const enableAppCharging = async (stationId: string, connectorId: string) => {
     await prisma.evStation.update({
       where: { id: stationId },
-      data: { customerChargingEnabled: true, remoteStartSupported: true, remoteStopSupported: true },
+      data: {
+        customerChargingEnabled: true,
+        remoteStartSupported: true,
+        remoteStopSupported: true,
+      },
     });
     await prisma.evConnector.update({
       where: { id: connectorId },
@@ -120,7 +129,10 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
 
       // A later change to either the station's tariff or the partner's
       // contract must never reach back into a session already in flight.
-      await prisma.evStation.update({ where: { id: station.id }, data: { standardRetailRatePerKwh: '999' } });
+      await prisma.evStation.update({
+        where: { id: station.id },
+        data: { standardRetailRatePerKwh: '999' },
+      });
       await prisma.partner.update({
         where: { id: partner.id },
         data: { evWholesaleRatePerKwh: '1', evMarginReferralCapPerKwh: '1' },
@@ -135,9 +147,14 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
     it('refuses to start when the station has no retail rate configured yet, rather than freezing a null it could never bill with', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+      });
       await enableAppCharging(station.id, connector.id);
-      await prisma.evStation.update({ where: { id: station.id }, data: { standardRetailRatePerKwh: null } });
+      await prisma.evStation.update({
+        where: { id: station.id },
+        data: { standardRetailRatePerKwh: null },
+      });
 
       await expect(sessions.start({ connectorId: connector.id }, user.id)).rejects.toThrow(
         /no retail rate configured yet/,
@@ -178,7 +195,9 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       expect(cdr.totalEnergy.toString()).toBe('10');
       expect(cdr.totalCost.toFixed(4)).toBe('1000.0000');
 
-      const transaction = await prisma.transaction.findUniqueOrThrow({ where: { id: session.transactionId! } });
+      const transaction = await prisma.transaction.findUniqueOrThrow({
+        where: { id: session.transactionId! },
+      });
       expect(transaction.status).toBe('COMPLETED');
       expect(transaction.amount.toFixed(4)).toBe('1000.0000');
 
@@ -197,14 +216,22 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
       });
-      const liabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+      const liabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'BONUS_LIABILITY' },
+      });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PLATFORM_REVENUE' },
+      });
       const receivableAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'EV_ROAMING_RECEIVABLE' },
       });
 
       const posting = await prisma.ledgerTransaction.findFirstOrThrow({
-        where: { kind: 'ev.roaming.app_settlement', sourceType: 'Transaction', sourceId: session.transactionId! },
+        where: {
+          kind: 'ev.roaming.app_settlement',
+          sourceType: 'Transaction',
+          sourceId: session.transactionId!,
+        },
         include: { postings: true },
       });
       const partnerLeg = posting.postings.find((p) => p.accountId === partnerAccount.id);
@@ -228,7 +255,9 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       // (`LedgerService`'s own convention, shared by every account type) —
       // so a partner CREDITED for wholesale owed goes negative, the mirror
       // image of the commission model's positive "partner owes TuTak" balance.
-      const partnerBalance = await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: partnerAccount.id } });
+      const partnerBalance = await prisma.ledgerAccount.findUniqueOrThrow({
+        where: { id: partnerAccount.id },
+      });
       expect(partnerBalance.balance.toFixed(4)).toBe('-600.0000');
     });
 
@@ -256,12 +285,20 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
       });
-      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
-      const liabilityBefore = await prisma.ledgerAccount.findFirst({ where: { type: 'BONUS_LIABILITY' } });
+      const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PLATFORM_REVENUE' },
+      });
+      const liabilityBefore = await prisma.ledgerAccount.findFirst({
+        where: { type: 'BONUS_LIABILITY' },
+      });
 
       const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
       const posting = await prisma.ledgerTransaction.findFirstOrThrow({
-        where: { kind: 'ev.roaming.app_settlement', sourceType: 'Transaction', sourceId: session.transactionId! },
+        where: {
+          kind: 'ev.roaming.app_settlement',
+          sourceType: 'Transaction',
+          sourceId: session.transactionId!,
+        },
         include: { postings: true },
       });
       const partnerLeg = posting.postings.find((p) => p.accountId === partnerAccount.id);
@@ -284,7 +321,9 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
     it('keeps the session AWAITING_SETTLEMENT while the CDR is merely late', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+      });
       await enableAppCharging(station.id, connector.id);
       const { started } = await startAndStop(user.id, connector.id);
       jest.spyOn(adapter, 'fetchCdr').mockResolvedValue(null);
@@ -300,7 +339,9 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
     it('gives up after enough tries, alerts a human, and never bills a figure nothing corroborates', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+      });
       await enableAppCharging(station.id, connector.id);
       const { started } = await startAndStop(user.id, connector.id);
       jest.spyOn(adapter, 'fetchCdr').mockResolvedValue(null);
@@ -331,7 +372,9 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
     it('never bills the same AWAITING_SETTLEMENT session twice when two sweeps race on it', async () => {
       const { user } = await createCustomer(prisma);
       const partner = await createPartner(prisma);
-      const { station, connector } = await createRoamingCpoStation(prisma, { partnerId: partner.id });
+      const { station, connector } = await createRoamingCpoStation(prisma, {
+        partnerId: partner.id,
+      });
       await enableAppCharging(station.id, connector.id);
       const { started } = await startAndStop(user.id, connector.id);
       cpoReports(10);
@@ -340,11 +383,17 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
 
       const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
       expect(session.status).toBe('COMPLETED');
-      expect(await prisma.transaction.count({ where: { userId: user.id, type: 'EV_CHARGING' } })).toBe(1);
+      expect(
+        await prisma.transaction.count({ where: { userId: user.id, type: 'EV_CHARGING' } }),
+      ).toBe(1);
       expect(await prisma.evCdr.count({ where: { sessionId: started.id } })).toBe(1);
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'ev.roaming.app_settlement', sourceType: 'Transaction', sourceId: session.transactionId! },
+          where: {
+            kind: 'ev.roaming.app_settlement',
+            sourceType: 'Transaction',
+            sourceId: session.transactionId!,
+          },
         }),
       ).toBe(1);
     });
@@ -366,7 +415,10 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       expect(await reconciler.reconcilePending()).toBe(1);
 
       // 2000 funded, 1000 collected -> 1000 left on the customer's own balance.
-      expect(await customerBalance.getBalance(user.id)).toEqual({ balance: '1000.0000', currency: 'AMD' });
+      expect(await customerBalance.getBalance(user.id)).toEqual({
+        balance: '1000.0000',
+        currency: 'AMD',
+      });
 
       const receivableAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'EV_ROAMING_RECEIVABLE' },
@@ -377,7 +429,11 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
 
       const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
       const collection = await prisma.ledgerTransaction.findFirstOrThrow({
-        where: { kind: 'ev.roaming.balance_collection', sourceType: 'Transaction', sourceId: session.transactionId! },
+        where: {
+          kind: 'ev.roaming.balance_collection',
+          sourceType: 'Transaction',
+          sourceId: session.transactionId!,
+        },
         include: { postings: true },
       });
       expect(collection.postings).toHaveLength(2);
@@ -407,7 +463,10 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       expect(await reconciler.reconcilePending()).toBe(1);
 
       // Untouched — this method is all-or-nothing, not a partial draw.
-      expect(await customerBalance.getBalance(user.id)).toEqual({ balance: '500.0000', currency: 'AMD' });
+      expect(await customerBalance.getBalance(user.id)).toEqual({
+        balance: '500.0000',
+        currency: 'AMD',
+      });
       const receivableAccount = await prisma.ledgerAccount.findFirstOrThrow({
         where: { type: 'EV_ROAMING_RECEIVABLE' },
       });
@@ -416,7 +475,11 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       const session = await prisma.evSession.findUniqueOrThrow({ where: { id: started.id } });
       expect(
         await prisma.ledgerTransaction.count({
-          where: { kind: 'ev.roaming.balance_collection', sourceType: 'Transaction', sourceId: session.transactionId! },
+          where: {
+            kind: 'ev.roaming.balance_collection',
+            sourceType: 'Transaction',
+            sourceId: session.transactionId!,
+          },
         }),
       ).toBe(0);
     });
@@ -443,7 +506,10 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
       );
 
       expect(collectedAgain).toBe(false);
-      expect(await customerBalance.getBalance(user.id)).toEqual({ balance: '1000.0000', currency: 'AMD' });
+      expect(await customerBalance.getBalance(user.id)).toEqual({
+        balance: '1000.0000',
+        currency: 'AMD',
+      });
       expect(
         await prisma.ledgerTransaction.count({ where: { kind: 'ev.roaming.balance_collection' } }),
       ).toBe(1);

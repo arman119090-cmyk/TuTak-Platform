@@ -7,5 +7,4 @@ export const ALLOWS_PENDING_PASSWORD_CHANGE = 'allowsPendingPasswordChange';
  * Everything else is refused, so a bootstrap credential can log in and change
  * itself but can never be used to operate the platform.
  */
-export const AllowsPendingPasswordChange = () =>
-  SetMetadata(ALLOWS_PENDING_PASSWORD_CHANGE, true);
+export const AllowsPendingPasswordChange = () => SetMetadata(ALLOWS_PENDING_PASSWORD_CHANGE, true);

@@ -1,4 +1,4 @@
-import { ContributionRuleKind } from '@prisma/client';
+import { ContributionRuleKind, UnitOfMeasure } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { roundIssued } from '../../../common/utils/money';
 
@@ -32,13 +32,13 @@ export interface ContributionTerms {
   kind: ContributionRuleKind;
   percentBps: number | null;
   fixedPerUnit: Decimal | null;
-  unit: string | null;
+  unit: UnitOfMeasure | null;
 }
 
 export interface ContributionBasis {
   grossAmount: Decimal;
   quantity: Decimal | null;
-  quantityUnit: string | null;
+  quantityUnit: UnitOfMeasure | null;
 }
 
 export class ContributionRuleError extends Error {}
@@ -53,10 +53,7 @@ export class ContributionRuleError extends Error {}
  * means a caller skipped the create path, not that a customer did something
  * unusual.
  */
-export function contributionUnderRule(
-  terms: ContributionTerms,
-  basis: ContributionBasis,
-): Decimal {
+export function contributionUnderRule(terms: ContributionTerms, basis: ContributionBasis): Decimal {
   const percentPart = (): Decimal => {
     if (terms.percentBps === null) {
       throw new ContributionRuleError(`${terms.kind} terms carry no percentage`);
@@ -112,7 +109,7 @@ export function contributionForPurchase(
   purchase: {
     grossAmount: Decimal;
     quantity: Decimal | null;
-    quantityUnit: string | null;
+    quantityUnit: UnitOfMeasure | null;
     negotiatedRateBps: number;
     contributionRuleKind: ContributionRuleKind | null;
   },

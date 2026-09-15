@@ -124,7 +124,9 @@ export class PartnerStaffController {
     await this.staffService.setAllBranches(partnerId, dto.userId, dto.allBranches);
     await this.auditService.record({
       actorUserId: user.id,
-      action: dto.allBranches ? AuditAction.BRANCH_STAFF_ASSIGNED : AuditAction.BRANCH_STAFF_DEACTIVATED,
+      action: dto.allBranches
+        ? AuditAction.BRANCH_STAFF_ASSIGNED
+        : AuditAction.BRANCH_STAFF_DEACTIVATED,
       entityType: 'UserRole',
       entityId: dto.userId,
       metadata: { partnerId, allBranches: dto.allBranches },

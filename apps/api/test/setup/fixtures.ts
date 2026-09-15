@@ -1,11 +1,4 @@
-import {
-  EvConnectorType,
-  Partner,
-  PrismaClient,
-  QrCodeType,
-  User,
-  Wallet,
-} from '@prisma/client';
+import { EvConnectorType, Partner, PrismaClient, QrCodeType, User, Wallet } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 
 /**

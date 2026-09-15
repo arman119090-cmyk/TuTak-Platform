@@ -37,8 +37,17 @@ describe('what every OTP request records, and what it answers (unit, stubbed dep
 
     const stub = {} as never;
     return new AuthService(
-      stub, usersService, stub, stub, stub, stub, stub, stub,
-      authOtpService, otpIpRateLimit, stub,
+      stub,
+      usersService,
+      stub,
+      stub,
+      stub,
+      stub,
+      stub,
+      stub,
+      authOtpService,
+      otpIpRateLimit,
+      stub,
     );
   };
 
@@ -92,7 +101,9 @@ describe('what every OTP request records, and what it answers (unit, stubbed dep
      */
     it('tells a number rate limit apart from a carrier refusal', async () => {
       const service = buildService({
-        requestCode: jest.fn().mockRejectedValue(new BadRequestException('Too many codes requested')),
+        requestCode: jest
+          .fn()
+          .mockRejectedValue(new BadRequestException('Too many codes requested')),
       });
 
       await expect(request(service)).resolves.toEqual({ success: true });
@@ -173,7 +184,9 @@ describe('what every OTP request records, and what it answers (unit, stubbed dep
     it('tells a number rate limit apart from a carrier refusal', async () => {
       const service = buildService({
         findByPhone: jest.fn().mockResolvedValue(active),
-        requestCode: jest.fn().mockRejectedValue(new BadRequestException('Too many codes requested')),
+        requestCode: jest
+          .fn()
+          .mockRejectedValue(new BadRequestException('Too many codes requested')),
       });
 
       await expect(request(service)).resolves.toEqual({ success: true });
@@ -199,7 +212,9 @@ describe('what every OTP request records, and what it answers (unit, stubbed dep
     const cases = [
       buildService({}),
       buildService({ findByPhone: jest.fn().mockResolvedValue({ id: 'u1' }) }),
-      buildService({ requestCode: jest.fn().mockResolvedValue({ success: true, delivered: false }) }),
+      buildService({
+        requestCode: jest.fn().mockResolvedValue({ success: true, delivered: false }),
+      }),
     ];
 
     for (const service of cases) {

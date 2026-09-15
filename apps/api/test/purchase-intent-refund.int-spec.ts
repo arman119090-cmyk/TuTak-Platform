@@ -124,15 +124,21 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(lot.refundedAmount.toFixed(4)).toBe('150.0000'); // fully reversed
     expect(lot.status).toBe(DeferredBonusLotStatus.DEFERRED); // never reduced to zero via expiry — still open
 
-    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({
+      where: { id: intent.id },
+    });
     expect(refreshedIntent.refundedAmount.toFixed(4)).toBe('10000.0000');
 
     // The ledger nets exactly back to zero — nothing left over from either side.
     const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
       where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
     });
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
-    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
+    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PLATFORM_REVENUE' },
+    });
     expect(partnerAccount.balance.toFixed(4)).toBe('0.0000');
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('0.0000');
     expect(revenueAccount.balance.toFixed(4)).toBe('0.0000');
@@ -167,7 +173,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
   });
 
   it('restores the customer-spent bonus (the discount) on a full refund', async () => {
-    const { wallet, partner, staff, intent } = await confirmedPurchase({ bonusAmountRequested: '4000' });
+    const { wallet, partner, staff, intent } = await confirmedPurchase({
+      bonusAmountRequested: '4000',
+    });
 
     const before = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
     // 4000 spent, green 100 earned back on the cash portion's own pool math
@@ -190,7 +198,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
       where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
     });
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
     expect(partnerAccount.balance.toFixed(4)).toBe('0.0000');
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('0.0000');
 
@@ -218,9 +228,13 @@ describe('PurchaseIntentRefundService (integration)', () => {
     });
 
     expect(second).toEqual(first);
-    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    expect(
+      await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } }),
+    ).toBe(1);
 
-    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({
+      where: { id: intent.id },
+    });
     expect(refreshedIntent.refundedAmount.toFixed(4)).toBe('3000.0000'); // not 6000
 
     const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
@@ -292,7 +306,10 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const { user } = await createCustomer(prisma);
     const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
     const staff = await staffMember(partner.id);
-    const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, user.id);
+    const intent = await purchaseIntents.create(
+      { partnerId: partner.id, grossAmount: '10000' },
+      user.id,
+    );
 
     await expect(
       refunds.refund({
@@ -331,7 +348,10 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(after.availableBonus.toFixed(4)).toBe('0.0000');
 
     const greenLot = await prisma.bonusLot.findFirstOrThrow({
-      where: { sourceTransactionId: intent.sourceTransactionId!, type: BonusEntryType.ACCRUAL_PURCHASE },
+      where: {
+        sourceTransactionId: intent.sourceTransactionId!,
+        type: BonusEntryType.ACCRUAL_PURCHASE,
+      },
     });
     expect(greenLot.remainingAmount.toFixed(4)).toBe('0.0000');
     expect(greenLot.status).toBe(BonusLotStatus.CONSUMED);
@@ -351,10 +371,15 @@ describe('PurchaseIntentRefundService (integration)', () => {
 
     const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
     const staff = await staffMember(partner.id);
-    const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, referee.id);
+    const intent = await purchaseIntents.create(
+      { partnerId: partner.id, grossAmount: '10000' },
+      referee.id,
+    );
     const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
 
-    const referrerWalletBefore = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
+    const referrerWalletBefore = await prisma.wallet.findUniqueOrThrow({
+      where: { userId: referrer.user.id },
+    });
     expect(referrerWalletBefore.availableBonus.toFixed(4)).toBe('50.0000'); // L1, 10% of 500
 
     await refunds.refund({
@@ -364,10 +389,14 @@ describe('PurchaseIntentRefundService (integration)', () => {
       idempotencyKey: 'referral-deferred-1',
     });
 
-    const referrerWalletAfter = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrer.user.id } });
+    const referrerWalletAfter = await prisma.wallet.findUniqueOrThrow({
+      where: { userId: referrer.user.id },
+    });
     expect(referrerWalletAfter.availableBonus.toFixed(4)).toBe('0.0000');
 
-    const refereeWalletAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: refereeWallet.id } });
+    const refereeWalletAfter = await prisma.wallet.findUniqueOrThrow({
+      where: { id: refereeWallet.id },
+    });
     expect(refereeWalletAfter.availableBonus.toFixed(4)).toBe('0.0000');
 
     const lot = await prisma.deferredBonusLot.findFirstOrThrow({
@@ -378,8 +407,12 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // customerLiability (green 100 + deferred 150 + L1 50) is fully
     // reversed; L2/L3 never existed here (chain length 1), so revenue
     // (tutak residual 200) also nets back to zero.
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
-    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
+    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PLATFORM_REVENUE' },
+    });
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('0.0000');
     expect(revenueAccount.balance.toFixed(4)).toBe('0.0000');
 
@@ -396,10 +429,15 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // Force the lot past its deadline and let it expire the way
     // `expireOverdueLots` normally would — releasing its BONUS_LIABILITY
     // share to PLATFORM_REVENUE.
-    await prisma.deferredBonusLot.update({ where: { id: lot.id }, data: { deadline: new Date(Date.now() - 1000) } });
+    await prisma.deferredBonusLot.update({
+      where: { id: lot.id },
+      data: { deadline: new Date(Date.now() - 1000) },
+    });
     await deferredLots.expireOverdueLots();
 
-    const revenueBeforeRefund = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+    const revenueBeforeRefund = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PLATFORM_REVENUE' },
+    });
     // No referrer, so confirmation already routed the 100 referrer share to
     // revenue alongside the 150 tutak base (-250); expiry adds the 150
     // deferred share on top: -400.
@@ -412,7 +450,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
       idempotencyKey: 'expired-deferred-1',
     });
 
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
     // Only green (100) was ever an outstanding liability by refund time —
     // debiting it fully back to zero proves the expired deferred share was
     // excluded rather than debited a second time.
@@ -444,7 +484,11 @@ describe('PurchaseIntentRefundService (integration)', () => {
     });
 
     const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
-      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntent', sourceId: intent.id },
+      where: {
+        kind: 'partner.contribution_refund',
+        sourceType: 'PurchaseIntent',
+        sourceId: intent.id,
+      },
       include: { postings: true },
     });
     const compensationRefund = await prisma.ledgerTransaction.findFirstOrThrow({
@@ -498,11 +542,19 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // brings the balance to a deceptively "clean" 0 even though the green
     // 100 was never actually reclaimed — the bug this test catches.
     const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
-      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntent', sourceId: intent.id },
+      where: {
+        kind: 'partner.contribution_refund',
+        sourceType: 'PurchaseIntent',
+        sourceId: intent.id,
+      },
       include: { postings: true },
     });
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
-    const liabilityLeg = contributionRefund.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
+    const liabilityLeg = contributionRefund.postings.find(
+      (p) => p.accountId === bonusLiabilityAccount.id,
+    );
     expect(liabilityLeg?.amount.toFixed(4)).toBe('150.0000');
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('-100.0000');
 
@@ -524,12 +576,20 @@ describe('PurchaseIntentRefundService (integration)', () => {
       idempotencyKey: 'liability-actual-partial-spend-1',
     });
 
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
     const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
-      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntent', sourceId: intent.id },
+      where: {
+        kind: 'partner.contribution_refund',
+        sourceType: 'PurchaseIntent',
+        sourceId: intent.id,
+      },
       include: { postings: true },
     });
-    const liabilityLeg = contributionRefund.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
+    const liabilityLeg = contributionRefund.postings.find(
+      (p) => p.accountId === bonusLiabilityAccount.id,
+    );
     // Confirmation credited BONUS_LIABILITY 250 (green 100 + deferred 150).
     // Only 60 of the green 100 was reclaimable (40 already spent) plus the
     // full untouched deferred 150 — 210, not the full theoretical 250 — so
@@ -577,13 +637,19 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const partnerAccount = await prisma.ledgerAccount.findFirstOrThrow({
       where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
     });
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
-    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PLATFORM_REVENUE' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
+    const revenueAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'PLATFORM_REVENUE' },
+    });
     expect(partnerAccount.balance.toFixed(4)).toBe('0.0000');
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('0.0000');
     expect(revenueAccount.balance.toFixed(4)).toBe('0.0000');
 
-    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    const refreshedIntent = await prisma.purchaseIntent.findUniqueOrThrow({
+      where: { id: intent.id },
+    });
     // The stored snapshot itself is untouched by the later config change.
     expect(refreshedIntent.greenAmount?.toFixed(4)).toBe('100.0000');
 
@@ -608,7 +674,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
 
     const { intent } = await confirmedPurchaseFor(user.id, '6000');
 
-    const afterPurchase = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    const afterPurchase = await prisma.deferredBonusLot.findUniqueOrThrow({
+      where: { id: seedLot.id },
+    });
     expect(afterPurchase.progressTurnover.toFixed(4)).toBe('10000.0000'); // 4000 + 6000
     expect(afterPurchase.status).toBe(DeferredBonusLotStatus.DEFERRED);
 
@@ -624,7 +692,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // without this, buying just enough to push a stuck lot over its
     // threshold and then refunding kept the inflated progress forever
     // (independent audit, GitHub issue #28).
-    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
+      where: { id: seedLot.id },
+    });
     expect(afterRefund.progressTurnover.toFixed(4)).toBe('4000.0000');
     expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
 
@@ -652,7 +722,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // is what pushes the *other* lot over its threshold and unlocks it.
     const { intent } = await confirmedPurchaseFor(user.id, '200');
 
-    const unlockedLot = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    const unlockedLot = await prisma.deferredBonusLot.findUniqueOrThrow({
+      where: { id: seedLot.id },
+    });
     expect(unlockedLot.status).toBe(DeferredBonusLotStatus.AVAILABLE);
     expect(unlockedLot.progressTurnover.toFixed(4)).toBe('5100.0000');
     // The 500 AMD this lot granted, as its own distinct wallet-side lot —
@@ -679,14 +751,18 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // zero (nothing was spent, all 500 reclaimed), ready to accumulate
     // genuine turnover and unlock again (independent audit, GitHub issue
     // #28).
-    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
+      where: { id: seedLot.id },
+    });
     expect(afterRefund.status).toBe(DeferredBonusLotStatus.DEFERRED);
     expect(afterRefund.progressTurnover.toFixed(4)).toBe('4900.0000');
     expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
     expect(afterRefund.forfeitedAmount.toFixed(4)).toBe('0.0000');
     expect(afterRefund.grantedBonusLotId).toBeNull();
 
-    const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLot.id } });
+    const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: grantedLot.id },
+    });
     expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('0.0000');
     expect(grantedLotAfter.status).toBe(BonusLotStatus.CONSUMED);
 
@@ -696,7 +772,11 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // first place; see the class docblock), not written off to revenue.
     expect(
       await prisma.ledgerTransaction.count({
-        where: { kind: 'deferred_bonus.unlock_reversed', sourceType: 'DeferredBonusLot', sourceId: seedLot.id },
+        where: {
+          kind: 'deferred_bonus.unlock_reversed',
+          sourceType: 'DeferredBonusLot',
+          sourceId: seedLot.id,
+        },
       }),
     ).toBe(0);
 
@@ -732,13 +812,17 @@ describe('PurchaseIntentRefundService (integration)', () => {
       idempotencyKey: 'external-lot-still-qualified-1',
     });
 
-    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({ where: { id: seedLot.id } });
+    const afterRefund = await prisma.deferredBonusLot.findUniqueOrThrow({
+      where: { id: seedLot.id },
+    });
     expect(afterRefund.status).toBe(DeferredBonusLotStatus.AVAILABLE);
     expect(afterRefund.progressTurnover.toFixed(4)).toBe('5400.0000');
     // Nothing clawed: the unlock is still fully backed by real turnover.
     expect(afterRefund.refundedAmount.toFixed(4)).toBe('0.0000');
 
-    const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({ where: { id: grantedLotId } });
+    const grantedLotAfter = await prisma.bonusLot.findUniqueOrThrow({
+      where: { id: grantedLotId },
+    });
     expect(grantedLotAfter.remainingAmount.toFixed(4)).toBe('500.0000');
     expect(
       await prisma.ledgerTransaction.count({ where: { kind: 'deferred_bonus.unlock_reversed' } }),
@@ -867,8 +951,12 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(rewarded.referrerBonusLotId).not.toBeNull();
     expect(rewarded.refereeBonusLotId).not.toBeNull();
 
-    const referrerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: referrerUser.id } });
-    const refereeWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: refereeUser.id } });
+    const referrerWallet = await prisma.wallet.findUniqueOrThrow({
+      where: { userId: referrerUser.id },
+    });
+    const refereeWallet = await prisma.wallet.findUniqueOrThrow({
+      where: { userId: refereeUser.id },
+    });
     const referrerRewardLot = await prisma.bonusLot.findUniqueOrThrow({
       where: { id: rewarded.referrerBonusLotId! },
     });
@@ -910,7 +998,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
       where: { kind: 'referral.challenge_reward_reversed' },
       include: { postings: true },
     });
-    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const bonusLiabilityAccount = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { type: 'BONUS_LIABILITY' },
+    });
     const liabilityLeg = ledgerTx.postings.find((p) => p.accountId === bonusLiabilityAccount.id);
     expect(liabilityLeg?.direction).toBe('DEBIT');
     expect(liabilityLeg?.amount.toFixed(4)).toBe('2000.0000');
@@ -951,7 +1041,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     });
     expect(refereeRewardLotAfter.remainingAmount.toFixed(4)).toBe('1000.0000');
     expect(
-      await prisma.ledgerTransaction.count({ where: { kind: 'referral.challenge_reward_reversed' } }),
+      await prisma.ledgerTransaction.count({
+        where: { kind: 'referral.challenge_reward_reversed' },
+      }),
     ).toBe(0);
   });
 
@@ -979,7 +1071,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const second = await refunds.refund(params);
 
     expect(second).toEqual(first);
-    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    expect(
+      await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } }),
+    ).toBe(1);
     const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(refreshed.refundedAmount.toFixed(4)).toBe('10000.0000'); // not 20000
   });
@@ -1001,7 +1095,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const second = await refunds.refund(params);
 
     expect(second).toEqual(first);
-    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    expect(
+      await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } }),
+    ).toBe(1);
     const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(refreshed.refundedAmount.toFixed(4)).toBe('6000.0000'); // not 12000
   });
@@ -1043,7 +1139,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
     ).rejects.toThrow(/already used with a different request/);
 
     // Neither conflicting attempt created a second refund.
-    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(2);
+    expect(
+      await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } }),
+    ).toBe(2);
   });
 
   it('creates exactly one financial refund when concurrent identical retries race on the same key', async () => {
@@ -1065,7 +1163,8 @@ describe('PurchaseIntentRefundService (integration)', () => {
     // resolves.
     const settled = await Promise.allSettled([refunds.refund(params), refunds.refund(params)]);
     const fulfilled = settled.filter(
-      (r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof refunds.refund>>> => r.status === 'fulfilled',
+      (r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof refunds.refund>>> =>
+        r.status === 'fulfilled',
     );
     const rejected = settled.filter((r) => r.status === 'rejected');
     // At least one side always succeeds; if both do, they agree on the
@@ -1076,7 +1175,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
       expect(fulfilled[1]!.value).toEqual(fulfilled[0]!.value);
     }
 
-    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(1);
+    expect(
+      await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } }),
+    ).toBe(1);
     const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(refreshed.refundedAmount.toFixed(4)).toBe('5000.0000'); // not 10000
     await assertWalletIntegrity(prisma, wallet.id);
@@ -1111,7 +1212,9 @@ describe('PurchaseIntentRefundService (integration)', () => {
 
     // Nothing was touched: no refund row, no reversing ledger transaction,
     // the purchase's own refundedAmount untouched.
-    expect(await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } })).toBe(0);
+    expect(
+      await prisma.purchaseIntentRefund.count({ where: { purchaseIntentId: intent.id } }),
+    ).toBe(0);
     const untouched = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(untouched.refundedAmount.toFixed(4)).toBe('0.0000');
   });
@@ -1138,17 +1241,28 @@ describe('PurchaseIntentRefundService (integration)', () => {
       const l2User = await createCustomer(prisma);
       await prisma.referralCode.create({ data: { userId: l2User.user.id, code: 'TT-LEGACY-L2' } });
       await prisma.referralInvite.create({
-        data: { referrerType: 'USER', referrerUserId: l2User.user.id, refereeUserId: l1User.user.id },
+        data: {
+          referrerType: 'USER',
+          referrerUserId: l2User.user.id,
+          refereeUserId: l1User.user.id,
+        },
       });
       const l3User = await createCustomer(prisma);
       await prisma.referralCode.create({ data: { userId: l3User.user.id, code: 'TT-LEGACY-L3' } });
       await prisma.referralInvite.create({
-        data: { referrerType: 'USER', referrerUserId: l3User.user.id, refereeUserId: l2User.user.id },
+        data: {
+          referrerType: 'USER',
+          referrerUserId: l3User.user.id,
+          refereeUserId: l2User.user.id,
+        },
       });
 
       const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
       const staff = await staffMember(partner.id);
-      const intent = await purchaseIntents.create({ partnerId: partner.id, grossAmount: '10000' }, referee.id);
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '10000' },
+        referee.id,
+      );
       const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
 
       // This purchase actually confirmed under THREE_LEVEL_V2 (there's no

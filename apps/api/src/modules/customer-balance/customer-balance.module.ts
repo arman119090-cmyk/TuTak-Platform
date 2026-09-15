@@ -17,7 +17,10 @@ import { NoopBankTopUpAdapter } from './noop-bank-topup.adapter';
 @Module({
   imports: [LedgerModule],
   controllers: [CustomerBalanceController],
-  providers: [CustomerBalanceService, { provide: BANK_TOPUP_ADAPTER, useClass: NoopBankTopUpAdapter }],
+  providers: [
+    CustomerBalanceService,
+    { provide: BANK_TOPUP_ADAPTER, useClass: NoopBankTopUpAdapter },
+  ],
   exports: [CustomerBalanceService],
 })
 export class CustomerBalanceModule {}

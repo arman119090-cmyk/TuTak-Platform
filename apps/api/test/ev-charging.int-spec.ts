@@ -184,7 +184,10 @@ describe('EV charging (integration)', () => {
       data: { referrerType: 'USER', referrerUserId: referrer.id, refereeUserId: referee.id },
     });
     const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
-    const connector = await createEvConnector(prisma, { partnerId: partner.id, pricePerKwh: '100.00' });
+    const connector = await createEvConnector(prisma, {
+      partnerId: partner.id,
+      pricePerKwh: '100.00',
+    });
 
     const session = await sessions.start({ connectorId: connector.id }, referee.id);
     await backdate(session.id);
@@ -195,11 +198,17 @@ describe('EV charging (integration)', () => {
     // 10% of 125 = 12.5, exactly like ReferralService.creditChainShares's
     // recurring share on a confirmed PurchaseIntent — straight into GREEN,
     // no cooling-off.
-    const referrerAfter = await prisma.wallet.findUniqueOrThrow({ where: { id: referrerWallet.id } });
+    const referrerAfter = await prisma.wallet.findUniqueOrThrow({
+      where: { id: referrerWallet.id },
+    });
     expect(referrerAfter.availableBonus.toFixed(4)).toBe('12.5000');
 
     const referralLot = await prisma.bonusLot.findFirstOrThrow({
-      where: { walletId: referrerWallet.id, type: 'ACCRUAL_REFERRAL', sourceTransactionId: result.transactionId },
+      where: {
+        walletId: referrerWallet.id,
+        type: 'ACCRUAL_REFERRAL',
+        sourceTransactionId: result.transactionId,
+      },
     });
     expect(referralLot.originalAmount.toFixed(4)).toBe('12.5000');
   });
@@ -221,7 +230,9 @@ describe('EV charging (integration)', () => {
 
     const postSpy = jest
       .spyOn(ledger, 'post')
-      .mockImplementationOnce(() => Promise.reject(new Error('ledger post transiently unavailable')));
+      .mockImplementationOnce(() =>
+        Promise.reject(new Error('ledger post transiently unavailable')),
+      );
 
     // The session must still complete and credit the wallet even though the
     // fast-path ledger post is about to fail — the accrual is real money the
@@ -355,9 +366,9 @@ describe('EV charging (integration)', () => {
       );
 
       expect(
-        (await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).energyKwh?.toFixed(
-          4,
-        ),
+        (
+          await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })
+        ).energyKwh?.toFixed(4),
       ).toBe('50.0000');
     });
 
@@ -405,9 +416,9 @@ describe('EV charging (integration)', () => {
 
       // Direct object reference: the session id alone must not be authority.
       await expect(sessions.stop(session.id, attacker.id, {})).rejects.toThrow(/not found/);
-      expect(
-        (await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status,
-      ).toBe(EvSessionStatus.CHARGING);
+      expect((await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status).toBe(
+        EvSessionStatus.CHARGING,
+      );
     });
 
     it('refuses to stop the same session twice', async () => {
@@ -461,8 +472,7 @@ describe('EV charging (integration)', () => {
       // Fail while writing the completion/CDR — after the points were settled.
       const spy = jest
         .spyOn(prisma, '$transaction')
-        .mockImplementationOnce((() =>
-          Promise.reject(new Error('cdr write failed'))) as never);
+        .mockImplementationOnce((() => Promise.reject(new Error('cdr write failed'))) as never);
 
       await expect(
         sessions.stop(session.id, user.id, { bonusAmountToApply: '1000' }),
@@ -479,9 +489,9 @@ describe('EV charging (integration)', () => {
       expect(
         (await prisma.evConnector.findUniqueOrThrow({ where: { id: connector.id } })).status,
       ).toBe(EvConnectorStatus.AVAILABLE);
-      expect(
-        (await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status,
-      ).toBe(EvSessionStatus.INVALID);
+      expect((await prisma.evSession.findUniqueOrThrow({ where: { id: session.id } })).status).toBe(
+        EvSessionStatus.INVALID,
+      );
 
       const transaction = await prisma.transaction.findFirstOrThrow({
         where: { userId: user.id, type: 'EV_CHARGING' },

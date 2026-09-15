@@ -163,7 +163,13 @@ export class MediaDeliveryController {
    * possible without publishing what is in it.
    */
   private async mayStillView(
-    asset: { id: string; kind: MediaAssetKind; status: MediaAssetStatus; userId: string | null; partnerId: string | null },
+    asset: {
+      id: string;
+      kind: MediaAssetKind;
+      status: MediaAssetStatus;
+      userId: string | null;
+      partnerId: string | null;
+    },
     viewerId: string,
   ): Promise<boolean> {
     if (asset.kind === MediaAssetKind.USER_AVATAR) {

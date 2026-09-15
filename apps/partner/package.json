@@ -21,7 +21,8 @@
     "qrcode.react": "^4.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "@tutak/i18n": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

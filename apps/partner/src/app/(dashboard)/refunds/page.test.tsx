@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  PaymentRoute,
   PurchaseIntentStatus,
   RefundRequestStatus,
   Role,
@@ -91,6 +92,17 @@ function purchaseFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIn
     cancelledAt: null,
     negotiatedRateBps: 500,
     maxBonusPaymentPercent: 50,
+    // The hybrid money flow (15.09.2026). A refunded purchase is a settled
+    // one, so the ordinary till route with the economics already agreed is
+    // the honest default here; the provider route has its own tests.
+    paymentRoute: PaymentRoute.DIRECT_PARTNER,
+    quantity: null,
+    quantityUnit: null,
+    unitPrice: null,
+    contributionRuleKind: null,
+    contributionRuleVersion: null,
+    merchantApprovedAt: new Date('2026-09-12T09:01:00Z').toISOString(),
+    merchantApprovedByUserId: 'owner-1',
     partnerBrand: { partnerId: 'partner-1', displayName: 'Verified Shop', logo: null },
     confirmedByUserId: 'owner-1',
     rejectionReason: null,

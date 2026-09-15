@@ -1,6 +1,12 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
-import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
+import {
+  EvSessionStatus,
+  PaymentRoute,
+  PurchaseIntentStatus,
+  QrCodeStatus,
+  QrCodeType,
+} from '@tutak/shared-types';
 import { isSupportedLocale } from '@tutak/i18n';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
@@ -35,6 +41,32 @@ const LATENCY_MS = 140;
 let state: MockState = freshMockState();
 
 /** Exposed for tests; the app never calls it. */
+/**
+ * The hybrid-money-flow half of `PurchaseIntentDto` (15.09.2026), as it
+ * looks for the offline demo.
+ *
+ * The demo takes the partner-direct route throughout: the customer hands the
+ * money over at the till, which is the one route that finishes without a
+ * payment provider. Mocking the in-TuTak route would demonstrate a flow
+ * nobody can complete here — there is no Idram to answer, so the purchase
+ * would sit waiting for a callback for ever.
+ *
+ * Everything else is null because it is genuinely absent, not because null
+ * is convenient. Per-unit pricing is a negotiated commercial rule and no mock
+ * partner has one; merchant approval is only demanded before a provider bill
+ * is opened, and a direct purchase is confirmed at the till instead.
+ */
+const DIRECT_TILL_PURCHASE = {
+  paymentRoute: PaymentRoute.DIRECT_PARTNER,
+  quantity: null,
+  quantityUnit: null,
+  unitPrice: null,
+  contributionRuleKind: null,
+  contributionRuleVersion: null,
+  merchantApprovedAt: null,
+  merchantApprovedByUserId: null,
+} as const;
+
 export function resetMockState(): void {
   state = freshMockState();
 }
@@ -459,6 +491,7 @@ function handle(
         confirmedByUserId: null,
         rejectedByUserId: null,
         rejectionReason: null,
+        ...DIRECT_TILL_PURCHASE,
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
         confirmedAt: null,
@@ -545,6 +578,7 @@ function handle(
         confirmedByUserId: null,
         rejectedByUserId: null,
         rejectionReason: null,
+        ...DIRECT_TILL_PURCHASE,
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
         confirmedAt: null,
@@ -587,6 +621,7 @@ function handle(
       confirmedByUserId: null,
       rejectedByUserId: null,
       rejectionReason: null,
+      ...DIRECT_TILL_PURCHASE,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
       confirmedAt: null,

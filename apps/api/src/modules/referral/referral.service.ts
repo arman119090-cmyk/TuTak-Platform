@@ -214,15 +214,36 @@ export class ReferralService {
    * that uses it.
    */
   /** Explicit return type so the loop below doesn't ask TS to infer a recursive type for `invite`. */
-  private findInviteFor(refereeUserId: string): Promise<{
+  private findInviteFor(
+    refereeUserId: string,
+    client: Tx | PrismaService = this.prisma,
+  ): Promise<{
     referrerType: ReferrerType;
     referrerUserId: string | null;
     referrerPartnerId: string | null;
   } | null> {
-    return this.prisma.referralInvite.findUnique({ where: { refereeUserId } });
+    return client.referralInvite.findUnique({ where: { refereeUserId } });
   }
 
-  async resolveReferralChain(refereeUserId: string): Promise<ReferralChainLevel[]> {
+  /**
+   * `client` exists so a caller already inside a transaction can walk the
+   * chain on that transaction's own connection.
+   *
+   * Without it this walk issues up to three queries on the pooled client
+   * while the caller's transaction holds a connection of its own, and each
+   * one has to wait for a free connection that a busy pool does not have.
+   * That is what made five concurrent provider callbacks settle nothing at
+   * all instead of exactly once (CI run #735) — see the long note in
+   * `PurchaseIntentsService.postContributionLedger`.
+   *
+   * Reading attribution on the caller's transaction is also the more correct
+   * of the two: the chain is then read in the same snapshot as the postings
+   * that pay it out.
+   */
+  async resolveReferralChain(
+    refereeUserId: string,
+    client: Tx | PrismaService = this.prisma,
+  ): Promise<ReferralChainLevel[]> {
     const chain: ReferralChainLevel[] = [];
     const seen = new Set<string>([`user:${refereeUserId}`]);
     let currentUserId: string | null = refereeUserId;
@@ -230,7 +251,7 @@ export class ReferralService {
     for (let level = 1; level <= 3; level += 1) {
       const lookupUserId: string | null = currentUserId;
       if (!lookupUserId) break;
-      const invite = await this.findInviteFor(lookupUserId);
+      const invite = await this.findInviteFor(lookupUserId, client);
       if (!invite) break;
 
       if (invite.referrerType === ReferrerType.PARTNER && invite.referrerPartnerId) {

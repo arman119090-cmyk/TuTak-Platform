@@ -7,6 +7,7 @@ import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertPartnerApprover, assertPartnerScope } from '../../common/auth/partner-scope';
 import { assertResourceBranchScope, branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
+import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { FindPurchaseIntentByCodeDto } from './dto/find-by-code.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
@@ -92,7 +93,11 @@ export class PurchaseIntentsController {
   @Get('activity/daily')
   async dailyActivity(@CurrentUser() user: RequestUser, @Query('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
-    return this.purchaseIntents.dailyActivityForPartner(partnerId, 30, branchFilterFor(user, partnerId));
+    return this.purchaseIntents.dailyActivityForPartner(
+      partnerId,
+      30,
+      branchFilterFor(user, partnerId),
+    );
   }
 
   /**
@@ -112,12 +117,52 @@ export class PurchaseIntentsController {
     return this.purchaseIntents.toDto(await this.purchaseIntents.cancel(id, customer.id));
   }
 
+  /**
+   * The cashier takes the money and confirms the sale.
+   *
+   * The body carries what they read off the pump or the till. Empty for a
+   * percentage partner; required for one paid per unit, where the quantity is
+   * what the platform's own share is calculated from and a confirm button
+   * next to a number nobody read is not approval of that number.
+   */
   @Post(':id/confirm')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
-  async confirm(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+  async confirm(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('id') id: string,
+    // Defaulted so a percentage partner's till can post an empty body, and
+    // so the many suites that drive this controller directly stay honest
+    // about what they are testing rather than passing `{}` everywhere.
+    @Body() dto: ApprovePurchaseIntentDto = {},
+  ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
-    return this.purchaseIntents.toDto(await this.purchaseIntents.confirm(id, staff.id));
+    return this.purchaseIntents.toDto(await this.purchaseIntents.confirm(id, staff.id, dto));
+  }
+
+  /**
+   * Staff agree what is being sold, so the customer may pay for it inside
+   * TuTak.
+   *
+   * Only for `TUTAK_PSP` purchases: a provider confirms that money moved and
+   * cannot confirm that a sale happened, and on this platform the customer
+   * typed the gross and the quantity. Without this step one verified callback
+   * would credit the partner, mint the customer's own cashback and pay their
+   * referrers for a sale that never took place. A direct purchase needs no
+   * separate call — confirming it at the till is the same act.
+   */
+  @Post(':id/approve-for-payment')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async approveForPayment(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: ApprovePurchaseIntentDto = {},
+  ) {
+    const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
+    return this.purchaseIntents.toDto(
+      await this.purchaseIntents.approveForPayment(id, staff.id, dto),
+    );
   }
 
   @Post(':id/reject')

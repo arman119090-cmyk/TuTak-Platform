@@ -40,6 +40,9 @@ import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SecurityModule } from './modules/security/security.module';
+import { PartnerSettlementsModule } from './modules/partner-settlements/partner-settlements.module';
+import { PspModule } from './modules/psp/psp.module';
+import { TreasuryModule } from './modules/treasury/treasury.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SettlementModule } from './modules/settlement/settlement.module';
@@ -104,6 +107,9 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     SecurityModule,
     LedgerModule,
     ...(cardPaymentsEnabled ? [PaymentsModule] : []),
+    PartnerSettlementsModule,
+    PspModule,
+    TreasuryModule,
     SettlementModule,
     PayoutsModule,
     ReconciliationModule,

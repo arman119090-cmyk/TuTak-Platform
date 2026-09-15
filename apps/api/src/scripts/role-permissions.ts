@@ -37,6 +37,16 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.PARTNER_MANAGE,
     PermissionName.EV_STATION_MANAGE,
     PermissionName.ANALYTICS_READ,
+    // Reads their own statements, itemised to the purchase that produced
+    // each line — a partner disputing a figure needs to be able to check it.
+    // The partner-facing routes scope every read to their own partner id on
+    // top of this; the permission alone grants nothing cross-partner.
+    //
+    // `SETTLEMENT_MANAGE` is deliberately absent, and so is
+    // `CONTRIBUTION_RULE_APPROVE`: a payee who can move their own Net
+    // Position is not a payee, and a counterparty who can approve their own
+    // rate sets it.
+    PermissionName.SETTLEMENT_READ,
   ],
   ADMIN: [
     PermissionName.USER_MANAGE,
@@ -48,9 +58,25 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.WALLET_WRITE,
     PermissionName.PAYMENT_REFUND,
     PermissionName.LEDGER_READ,
+    // The finance desk's day job: watching payments that did not resolve,
+    // reading settlements, and proposing terms.
+    PermissionName.PSP_READ,
+    PermissionName.PSP_RECONCILE,
+    PermissionName.SETTLEMENT_READ,
+    PermissionName.SETTLEMENT_MANAGE,
+    PermissionName.CONTRIBUTION_RULE_PROPOSE,
+    PermissionName.TREASURY_READ,
     // PAYOUT_MANAGE is deliberately absent. Wiring money to an external bank
     // account is the least reversible action on this platform; it stays with
     // SUPER_ADMIN until there is a maker-checker flow to hand it out safely.
+    //
+    // `CONTRIBUTION_RULE_APPROVE` and `ACQUIRER_SETTLEMENT_MANAGE` are
+    // absent for a related but distinct reason: both are the *second* half
+    // of a two-person act. Granting an ADMIN both halves would leave the
+    // maker/checker rule resting entirely on comparing two user ids, and a
+    // rule that expensive to get wrong should be arranged by role as well.
+    // An organisation that wants one person to do both gives them
+    // SUPER_ADMIN and accepts that on the record.
   ],
   SUPER_ADMIN: Object.values(PermissionName),
 };

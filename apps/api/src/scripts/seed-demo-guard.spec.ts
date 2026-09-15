@@ -29,7 +29,11 @@ describe('assertDemoSeedNotProduction', () => {
 
   it('refuses even with TUTAK_DEMO=1 present, which the entrypoint always sets', () => {
     expect(() =>
-      assertDemoSeedNotProduction({ APP_ENV: 'production', NODE_ENV: 'production', TUTAK_DEMO: '1' }),
+      assertDemoSeedNotProduction({
+        APP_ENV: 'production',
+        NODE_ENV: 'production',
+        TUTAK_DEMO: '1',
+      }),
     ).toThrow(/Refusing to run the demonstration seeder/);
   });
 

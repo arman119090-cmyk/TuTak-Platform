@@ -252,3 +252,97 @@ export const financeApi = {
     return data.data;
   },
 };
+
+// ── Provider payments nobody can account for ────────────────────────────
+
+export interface UnresolvedPspAttempt {
+  id: string;
+  provider: string;
+  status: string;
+  amount: string;
+  currency: string;
+  providerBillId: string | null;
+  providerTransactionId: string | null;
+  createdAt: string;
+  escalationCount: number;
+  /** Set once somebody has read the provider's record and said what it shows. */
+  reconciledByUserId: string | null;
+  reconciliationEvidence: string | null;
+  reconciliationProposedAt: string | null;
+  purchaseIntent: {
+    id: string;
+    partnerId: string;
+    customerId: string;
+    grossAmount: string;
+    status: string;
+  };
+}
+
+export interface DeadLetteredCallback {
+  id: string;
+  provider: string;
+  billId: string | null;
+  providerTransactionId: string | null;
+  receivedAt: string;
+  attempts: number;
+  lastError: string | null;
+}
+
+export interface LiquidityPosition {
+  currency: string;
+  platformBank: string;
+  pspReceivable: string;
+  unsettledAcquirerAmount: string;
+  partnerPayable: string;
+  partnerReceivable: string;
+  pendingPspExposure: string;
+  pendingRefunds: string;
+  safeToPay: string;
+  paymentsWithUnknownFee: number;
+}
+
+export const pspApi = {
+  async unresolved() {
+    const { data } = await httpClient.get<{ data: UnresolvedPspAttempt[] }>(
+      '/admin/psp/attempts/unresolved',
+    );
+    return data.data;
+  },
+
+  async deadLettered() {
+    const { data } = await httpClient.get<{ data: DeadLetteredCallback[] }>(
+      '/admin/psp/callbacks/dead-lettered',
+    );
+    return data.data;
+  },
+
+  /**
+   * "I have read the provider's record and it shows no payment."
+   *
+   * Moves nothing. The actor is whoever is signed in — there is no field for
+   * it, deliberately, because one caller naming the second person is not two
+   * people.
+   */
+  async proposeReconciliation(attemptId: string, evidence: string) {
+    const { data } = await httpClient.post<{ data: UnresolvedPspAttempt }>(
+      `/admin/psp/attempts/${attemptId}/reconciliation/propose`,
+      { evidence },
+    );
+    return data.data;
+  },
+
+  /** A second person agrees, and the payment is released. */
+  async confirmReconciliation(attemptId: string) {
+    const { data } = await httpClient.post<{ data: UnresolvedPspAttempt }>(
+      `/admin/psp/attempts/${attemptId}/reconciliation/confirm`,
+    );
+    return data.data;
+  },
+};
+
+export const treasuryApi = {
+  async position() {
+    const { data } = await httpClient.get<{ data: LiquidityPosition }>('/admin/treasury/position');
+    return data.data;
+  },
+};

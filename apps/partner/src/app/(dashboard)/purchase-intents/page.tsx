@@ -150,7 +150,7 @@ function LineItem({
  * control here would credit the partner on a guess made by somebody who
  * cannot see the provider's ledger.
  */
-function AwaitingProvider({ intent }: { intent: PurchaseIntentDto }) {
+function AwaitingProvider() {
   return (
     <div className="flex flex-col items-end gap-1">
       <Badge tone="pending">Waiting for payment</Badge>
@@ -278,7 +278,7 @@ function IntentRow({
           </div>
         )}
         {viaProvider && approved ? (
-          <AwaitingProvider intent={intent} />
+          <AwaitingProvider />
         ) : expired ? (
           <span className="text-[12px] text-faint">Expiring…</span>
         ) : rejecting ? (

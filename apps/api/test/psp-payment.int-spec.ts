@@ -411,6 +411,52 @@ describe('PSP payment route (integration)', () => {
   });
 
   /**
+   * The same burst, asked a sharper question: *how* did the other four end?
+   *
+   * The test above proves the money moved once. It cannot distinguish
+   * "one settled and four replayed" from "one settled and four died", and
+   * that difference is the whole of CI run #735. There, all five died —
+   * every one of them borrowed a second pool connection while holding one,
+   * the pool had five, and all five sat until Prisma's 5s transaction
+   * timeout killed them. The count of settlements was 0 and the assertion
+   * above caught it, but only by accident of arithmetic: had one survived,
+   * four silent deaths would have passed.
+   *
+   * So this asserts the outcome of every caller. Exactly one does the work;
+   * the rest are told, truthfully, that it was already done. None of them
+   * fails.
+   */
+  it('answers every duplicate caller — one settles, the rest replay, none fails', async () => {
+    const intent = await purchase(PaymentRoute.TUTAK_PSP);
+    await attemptFor(intent.id, 'bill-replay');
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        psp.settleVerifiedConfirmation(confirmation('bill-replay', 'IDRAM-REPLAY', '14000')),
+      ),
+    );
+
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(rejected.map((r) => String((r as PromiseRejectedResult).reason))).toEqual([]);
+
+    const values = results.map((r) => (r as PromiseFulfilledResult<{ alreadySettled: boolean }>).value);
+    expect(values.filter((v) => !v.alreadySettled)).toHaveLength(1);
+    expect(values.filter((v) => v.alreadySettled)).toHaveLength(4);
+
+    // Every caller names the same attempt, and the money moved once.
+    const attemptIds = new Set(
+      results.map((r) => (r as PromiseFulfilledResult<{ attemptId: string }>).value.attemptId),
+    );
+    expect(attemptIds.size).toBe(1);
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } })).toBe(
+      1,
+    );
+    expect(
+      (await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } })).status,
+    ).toBe(PurchaseIntentStatus.CONFIRMED);
+  });
+
+  /**
    * Finding 2: an amount mismatch parks the attempt in
    * `REQUIRES_RECONCILIATION` and clears `liveKey`. The unique index on
    * `(purchaseIntentId, liveKey)` therefore no longer blocks anything — and

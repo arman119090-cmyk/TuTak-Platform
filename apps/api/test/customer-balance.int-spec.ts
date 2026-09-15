@@ -23,7 +23,18 @@ describe('Customer prepaid balance (integration)', () => {
   let balance: CustomerBalanceService;
   let adapter: BankTopUpAdapter;
 
+  const savedTopUpFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+
   beforeAll(async () => {
+    // These tests are about the top-up *mechanism*, so they turn the feature
+    // on explicitly. It is off by default as of 15.09.2026 — crediting a
+    // customer's stored balance is deposit-taking, and whether TuTak may do
+    // that is an open legal question, not a technical one. What happens with
+    // the flag off is a suite of its own: `customer-balance-disabled`.
+    //
+    // Set before the harness is built, not after: `@Module()` metadata and
+    // `ConfigService` both read the environment at boot.
+    process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = 'true';
     harness = await createTestHarness();
     prisma = harness.prisma;
     balance = harness.app.get(CustomerBalanceService);
@@ -31,6 +42,8 @@ describe('Customer prepaid balance (integration)', () => {
   });
 
   afterAll(async () => {
+    if (savedTopUpFlag === undefined) delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+    else process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = savedTopUpFlag;
     await harness.close();
   });
 

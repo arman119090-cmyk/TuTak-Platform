@@ -214,6 +214,30 @@ export interface AppConfig {
      */
     tutakPspEnabled: boolean;
     /**
+     * Whether TuTak may **credit** a customer's own stored-value balance —
+     * `/balance/topup`, its provider webhook, and anything else that turns
+     * real money into `CUSTOMER_PREPAID_BALANCE`.
+     *
+     * Off by default, and the default is the decision rather than caution.
+     * Holding customers' money as a balance they top up in advance is
+     * issuing electronic money: who may legally hold it — a licensed issuer
+     * or TuTak on its own merchant account — is exactly the question
+     * `cardPaymentsEnabled`'s note above records as unresolved. A platform
+     * that ships the button first and asks afterwards has already taken the
+     * deposits.
+     *
+     * What the flag does **not** gate is reading a balance or spending one
+     * that already exists: `collectFromBalance` remains available to the EV
+     * roaming path, because a customer who has a balance must be able to use
+     * it and see it even after top-ups are closed. Stranding somebody's
+     * money is not the safe direction.
+     *
+     * No provider is wired to this either way. The bank adapter is the
+     * no-op; Idram is deliberately **not** connected to this circuit, and
+     * turning this flag on alone still credits nobody.
+     */
+    customerPrepaidTopUpEnabled: boolean;
+    /**
      * Whether a purchase collected through the provider may be refunded
      * through this platform at all.
      *
@@ -650,6 +674,11 @@ const buildConfig = (): AppConfig => ({
     // Off until the provider's refund API is confirmed to exist — and even
     // then the adapter's own capability has the last word.
     pspRefundsEnabled: process.env.PSP_REFUNDS_ENABLED === 'true',
+    // Off unless explicitly turned on, and it stays off in production until
+    // the e-money question in its docblock has a legal answer. The route is
+    // not merely refused when off — the controller carrying it is not
+    // registered at all, so there is no top-up surface to find.
+    customerPrepaidTopUpEnabled: process.env.CUSTOMER_PREPAID_TOPUP_ENABLED === 'true',
   },
   psp: {
     // Thirty minutes and an hour: the same figures the code used as

@@ -204,8 +204,14 @@ export class PurchaseIntentsService {
     private readonly media: MediaViewService,
   ) {}
 
-  async findByIdOrThrow(id: string) {
-    const intent = await this.prisma.purchaseIntent.findUnique({ where: { id } });
+  /**
+   * `client` lets a caller already inside a transaction read on that
+   * transaction's own connection instead of borrowing a second one from the
+   * pool — see `postContributionLedger` for what borrowing costs under a
+   * burst of duplicate provider callbacks.
+   */
+  async findByIdOrThrow(id: string, client: Tx | PrismaService = this.prisma) {
+    const intent = await client.purchaseIntent.findUnique({ where: { id } });
     if (!intent) throw new NotFoundException('Purchase intent not found');
     return intent;
   }
@@ -1074,7 +1080,7 @@ export class PurchaseIntentsService {
     intentId: string,
     tx: Prisma.TransactionClient,
   ): Promise<'settled' | 'already-resolved'> {
-    const intent = await this.findByIdOrThrow(intentId);
+    const intent = await this.findByIdOrThrow(intentId, tx);
     if (intent.status === PurchaseIntentStatus.CONFIRMED) {
       return 'already-resolved';
     }
@@ -1135,7 +1141,20 @@ export class PurchaseIntentsService {
     // refund reversal — takes `pool` and never asks how it was arrived at.
     // That was Arman's explicit instruction: a new pricing shape must not
     // duplicate the ledger economics.
-    const pool = await this.contributionFor(intent);
+    /*
+     * Everything this method reads before opening (or joining) a transaction
+     * goes through `reader`, which is the caller's transaction when there is
+     * one. A provider settlement calls this from *inside* an already-open
+     * transaction, and a read on `this.prisma` there takes a second
+     * connection out of the same pool while the first is still held. Five
+     * duplicate callbacks did that at once, the pool had five connections,
+     * and all five transactions sat waiting for a sixth until Prisma's 5s
+     * interactive-transaction timeout killed every one of them — nothing
+     * settled, where exactly one settlement was required.
+     */
+    const reader: Tx | PrismaService = externalTx ?? this.prisma;
+
+    const pool = await this.contributionFor(intent, reader);
 
     // Read-only, and safe to resolve before the transaction: attribution is
     // immutable once created (spec §5) at every level, so the chain cannot
@@ -1144,7 +1163,7 @@ export class PurchaseIntentsService {
     // see `ReferralService.computePoolSplit`'s docblock for why `tutak` is
     // always the residual, never independently rounded, so all six legs
     // always sum to exactly `pool`.
-    const chain = await this.referralService.resolveReferralChain(intent.customerId);
+    const chain = await this.referralService.resolveReferralChain(intent.customerId, reader);
     const split = this.referralService.computePoolSplit(pool, chain);
     const { green, deferred, l1, l2, l3, tutak } = split;
     const l1Entry = chain.find((c) => c.level === 1) ?? null;
@@ -1282,16 +1301,19 @@ export class PurchaseIntentsService {
    * always used. Arman's decision is explicit that existing percentage
    * partners are not to be broken.
    */
-  private async contributionFor(intent: {
-    grossAmount: Decimal;
-    quantity: Decimal | null;
-    quantityUnit: UnitOfMeasure | null;
-    negotiatedRateBps: number;
-    contributionRuleId: string | null;
-    contributionRuleKind: ContributionRuleKind | null;
-  }): Promise<Decimal> {
+  private async contributionFor(
+    intent: {
+      grossAmount: Decimal;
+      quantity: Decimal | null;
+      quantityUnit: UnitOfMeasure | null;
+      negotiatedRateBps: number;
+      contributionRuleId: string | null;
+      contributionRuleKind: ContributionRuleKind | null;
+    },
+    client: Tx | PrismaService = this.prisma,
+  ): Promise<Decimal> {
     const rule = intent.contributionRuleId
-      ? await this.prisma.partnerContributionRule.findUnique({
+      ? await client.partnerContributionRule.findUnique({
           where: { id: intent.contributionRuleId },
         })
       : null;
@@ -1335,27 +1357,48 @@ export class PurchaseIntentsService {
   ): Promise<void> {
     if (amounts.pool.lessThanOrEqualTo(0)) return;
 
-    // Deliberately *not* passing `tx` to any `accountFor` call below — same
-    // as this method always did, and same as the sibling
-    // `postRedemptionCompensation` still does: `settlePurchase`'s own
-    // transaction is Read Committed (not Serializable), so a find/create
-    // outside it commits immediately and is visible to the next statement
-    // either way (see `LedgerService.accountFor`'s own docblock on this).
-    // Passing `tx` here once caused a same-process self-deadlock instead: an
-    // account created *inside* this still-open transaction is invisible to
-    // `postRedemptionCompensation`'s own (tx-less) lookup moments later,
-    // whose insert then blocks on this transaction's own uncommitted row —
-    // a lock wait this transaction can never resolve because it is itself
-    // waiting on that query to return. Caught by the integration suite
-    // timing out at Prisma's 5s interactive-transaction default.
-    const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor({
-        type: LedgerAccountType.PARTNER_PAYABLE,
-        partnerId: intent.partnerId,
-      }),
-      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
-      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }),
-    ]);
+    /*
+     * Every `accountFor` below takes `tx`, and so does every one in the
+     * sibling `postRedemptionCompensation`. Uniformly — that is the whole
+     * point, and it is the correction of an earlier fix that got the
+     * diagnosis half right.
+     *
+     * The earlier note here said passing `tx` caused a self-deadlock. What
+     * actually caused it was *mixing*: this method looked accounts up inside
+     * the transaction while `postRedemptionCompensation` looked the same ones
+     * up outside it, on a second connection. The outside lookup could not see
+     * the account this transaction had just created and not yet committed, so
+     * its own insert blocked on this transaction's uncommitted row — a wait
+     * this transaction could never clear, because it was the one waiting for
+     * the query to return. Making both tx-less hid it; making both take `tx`
+     * removes it, because neither can then be looking at a different
+     * snapshot from the other.
+     *
+     * Not passing `tx` has its own, worse failure, and it is the one that
+     * turned CI red (run #735). A tx-less call borrows a *second* connection
+     * from the pool while this transaction already holds one. Five concurrent
+     * settlements hold all five connections in a default CI-sized pool, each
+     * waits for a sixth that cannot exist, and every one of them dies at
+     * Prisma's 5s interactive-transaction timeout — so a duplicate callback
+     * burst settled nothing at all rather than settling exactly once.
+     * Reproduced by pinning `connection_limit=5` locally.
+     *
+     * Sequential rather than `Promise.all`: an interactive transaction is one
+     * connection, so concurrent calls on it are serialised anyway, and doing
+     * it in writing keeps the lock order identical between transactions.
+     */
+    const partnerAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId },
+      tx,
+    );
+    const bonusLiabilityAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.BONUS_LIABILITY },
+      tx,
+    );
+    const revenueAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.PLATFORM_REVENUE },
+      tx,
+    );
 
     const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
     const userLiability = amounts.chain
@@ -1369,10 +1412,10 @@ export class PurchaseIntentsService {
         .map(async (c) => {
           const share = byLevel[c.level];
           if (share.lessThanOrEqualTo(0)) return null;
-          const account = await this.ledger.accountFor({
-            type: LedgerAccountType.PARTNER_PAYABLE,
-            partnerId: c.partnerId,
-          });
+          const account = await this.ledger.accountFor(
+            { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: c.partnerId },
+            tx,
+          );
           return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
         }),
     );
@@ -1423,13 +1466,18 @@ export class PurchaseIntentsService {
     },
     tx: Tx,
   ): Promise<void> {
-    const [partnerAccount, bonusLiabilityAccount] = await Promise.all([
-      this.ledger.accountFor({
-        type: LedgerAccountType.PARTNER_PAYABLE,
-        partnerId: intent.partnerId,
-      }),
-      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
-    ]);
+    // Both take `tx`, for the reason set out at length in
+    // `postContributionLedger`: these two methods run inside the same
+    // transaction and must resolve accounts through the same client, or each
+    // waits on a row the other has not committed. Same order as there, too.
+    const partnerAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId },
+      tx,
+    );
+    const bonusLiabilityAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.BONUS_LIABILITY },
+      tx,
+    );
 
     await this.ledger.post(
       {

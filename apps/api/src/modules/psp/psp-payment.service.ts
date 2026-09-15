@@ -434,6 +434,36 @@ export class PspPaymentService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      /*
+       * Take the attempt row's lock before doing anything expensive.
+       *
+       * `SELECT ... FOR UPDATE` is what turns N duplicate deliveries of one
+       * callback into one worker and N-1 cheap replays. Without it all N
+       * raced through the whole settlement — ledger postings, bonus lots,
+       * referral legs — and then N-1 discovered at the very last statement
+       * that somebody else had claimed the attempt, and threw away all of
+       * that work. That is not merely wasteful: N transactions each holding
+       * locks on the same wallet, accounts and purchase, acquired in whatever
+       * order they happened to get there, is how a deadlock is built.
+       *
+       * Here the only contention is this one row. The winner settles; the
+       * others wait on the lock, see `SUCCEEDED` the moment it commits, and
+       * return the replay answer without touching money. It is the same
+       * claim-then-act shape the rest of this codebase uses, moved to the
+       * front where it belongs.
+       *
+       * The conditional claim at the end of the transaction is *not* removed
+       * on the strength of this lock. It stays as the authority on who won,
+       * because it also guards `resolutionBasis` — a human reconciliation may
+       * have answered this attempt between the lock and the claim.
+       */
+      await tx.$queryRaw`
+        SELECT id FROM "psp_payment_attempts"
+         WHERE provider = ${this.adapter.name}
+           AND "providerBillId" = ${confirmation.billId}
+           FOR UPDATE
+      `;
+
       const attempt = await tx.pspPaymentAttempt.findFirst({
         where: { provider: this.adapter.name, providerBillId: confirmation.billId },
         include: { purchaseIntent: { select: { id: true, partnerId: true } } },
@@ -459,13 +489,18 @@ export class PspPaymentService {
         throw new ConflictException('Amount mismatch — held for reconciliation');
       }
 
-      const [receivable, payable] = await Promise.all([
-        this.ledger.accountFor({ type: LedgerAccountType.PSP_RECEIVABLE }),
-        this.ledger.accountFor({
-          type: LedgerAccountType.PARTNER_PAYABLE,
-          partnerId: attempt.purchaseIntent.partnerId,
-        }),
-      ]);
+      // Both on `tx`, like every other account lookup in this settlement.
+      // A tx-less lookup here borrows a second pool connection while this
+      // transaction holds one, which is exactly how a burst of duplicate
+      // callbacks used to exhaust the pool and roll every settlement back.
+      const receivable = await this.ledger.accountFor(
+        { type: LedgerAccountType.PSP_RECEIVABLE },
+        tx,
+      );
+      const payable = await this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: attempt.purchaseIntent.partnerId },
+        tx,
+      );
 
       const posted = await this.ledger.post(
         {

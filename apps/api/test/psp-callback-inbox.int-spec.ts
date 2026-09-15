@@ -201,6 +201,57 @@ describe('PSP callback inbox (integration)', () => {
     60_000,
   );
 
+  /**
+   * The same 50-callback burst, drained by several workers at once.
+   *
+   * The burst test above drains with a single `processPending()`, so it
+   * proves the inbox dedupes and that one drain settles once. It says
+   * nothing about two replicas draining the same table at the same moment,
+   * which is the arrangement production actually runs.
+   *
+   * Worth its own test because the two failure modes it rules out are
+   * different. Settling twice would pay a partner twice for one sale.
+   * Settling *none* is what CI run #735 did: every concurrent settlement
+   * borrowed a second pool connection while holding one, and all of them
+   * timed out together — so this asserts the positive fact (one capture,
+   * one contribution, purchase CONFIRMED) and not merely the absence of a
+   * second one.
+   */
+  it('settles once when 50 duplicates are drained by concurrent workers', async () => {
+    const billId = 'bill-burst-concurrent';
+    const { intent } = await billedPurchase(billId);
+    const body = finalCallback(billId, '14000', 'IDRAM-BURST-CONCURRENT');
+
+    const responses = await Promise.all(Array.from({ length: 50 }, () => post(body)));
+    expect(responses.every((r) => r.status === 200)).toBe(true);
+    expect(await prisma.pspCallbackInbox.count({ where: { billId } })).toBe(1);
+
+    // Four drains racing each other over the one inbox row. `FOR UPDATE SKIP
+    // LOCKED` plus the per-bill lock means at most one of them does the work;
+    // the others find nothing to claim, which is success, not failure.
+    const drains = await Promise.all(Array.from({ length: 4 }, () => worker.processPending()));
+    expect(drains.reduce((n, d) => n + d.processed, 0)).toBe(1);
+    expect(drains.reduce((n, d) => n + d.failed, 0)).toBe(0);
+
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } })).toBe(
+      1,
+    );
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(
+      1,
+    );
+    expect(
+      await prisma.ledgerTransaction.count({
+        where: { kind: 'partner.bonus_redemption_compensation' },
+      }),
+    ).toBe(1);
+    expect(
+      (await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } })).status,
+    ).toBe(PurchaseIntentStatus.CONFIRMED);
+    expect(
+      (await prisma.pspCallbackInbox.findFirstOrThrow({ where: { billId } })).status,
+    ).toBe(PspInboxStatus.PROCESSED);
+  }, 60_000);
+
   it('answers a burst of distinct callbacks without starving the pool', async () => {
     // Twenty different bills arriving together — the case where the dedupe
     // key cannot help, because every one of them is real work.

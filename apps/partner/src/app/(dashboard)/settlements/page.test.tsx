@@ -44,10 +44,12 @@ function statementFixture(overrides: Partial<PartnerSettlementRow> = {}): Partne
     periodStart: '2026-09-01T00:00:00.000Z',
     periodEnd: '2026-09-15T00:00:00.000Z',
     accruedAmount: '20000.0000',
-    deductionsAmount: '1500.0000',
-    netAmount: '18500.0000',
+    deductionAmount: '1500.0000',
+    netPayableAmount: '18500.0000',
     currency: 'AMD',
-    transferReference: 'TRF-77',
+    bankTransferReference: 'TRF-77',
+    createdByUserId: 'admin-1',
+    approvedByUserId: 'admin-2',
     paidAt: '2026-09-15T10:00:00.000Z',
     createdAt: '2026-09-15T09:00:00.000Z',
     ...overrides,
@@ -118,7 +120,7 @@ describe('SettlementsPage', () => {
 
   it('offers no dispute on a settlement still being assembled', async () => {
     (settlementApi.statements as jest.Mock).mockResolvedValue([
-      statementFixture({ status: 'DRAFT', paidAt: null, transferReference: null }),
+      statementFixture({ status: 'DRAFT', paidAt: null, bankTransferReference: null }),
     ]);
     renderPage();
     await screen.findByText(/being prepared/i);

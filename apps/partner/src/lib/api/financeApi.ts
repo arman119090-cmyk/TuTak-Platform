@@ -87,11 +87,18 @@ export interface PartnerSettlementRow {
   status: string;
   periodStart: string;
   periodEnd: string;
+  // Named exactly as the Prisma model, because these rows come straight from
+  // `PartnerSettlementService.list()` with no mapping layer in between. Got
+  // this wrong once (`deductionsAmount`/`netAmount`) and the test passed
+  // anyway, because the fixture repeated the same invented names — a fixture
+  // that agrees with the client instead of with the server proves nothing.
   accruedAmount: string;
-  deductionsAmount: string;
-  netAmount: string;
+  deductionAmount: string;
+  netPayableAmount: string;
   currency: string;
-  transferReference: string | null;
+  bankTransferReference: string | null;
+  createdByUserId: string | null;
+  approvedByUserId: string | null;
   paidAt: string | null;
   createdAt: string;
   _count?: { entries: number };

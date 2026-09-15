@@ -154,13 +154,13 @@ export default function SettlementsPage() {
                 <Td>
                   {day(s.periodStart)} — {day(s.periodEnd)}
                 </Td>
-                <Td>{money(s.netAmount)}</Td>
+                <Td>{money(s.netPayableAmount)}</Td>
                 <Td>
                   <Badge tone={STATUS_TONE[s.status] ?? 'neutral'}>
                     {STATUS_TEXT[s.status] ?? s.status}
                   </Badge>
                 </Td>
-                <Td>{s.transferReference ?? '—'}</Td>
+                <Td>{s.bankTransferReference ?? '—'}</Td>
                 <Td>{s.paidAt ? day(s.paidAt) : '—'}</Td>
                 <Td>
                   {/*

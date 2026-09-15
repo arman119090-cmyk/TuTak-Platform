@@ -96,6 +96,23 @@ describe('PSP timeouts and refunds (integration)', () => {
     return { intent, attempt };
   }
 
+  /**
+   * The two-person release, as two authenticated acts.
+   *
+   * Since 15.09.2026 this is deliberately not one call: one caller passing
+   * two user ids is one person asserting who the second person was. Tests go
+   * through both steps so they exercise the shape production uses.
+   */
+  async function reconcileWithTwoPeople(
+    attemptId: string,
+    proposer: string,
+    checker: string,
+    evidence: string,
+  ) {
+    await psp.proposeManualReconciliation({ attemptId, actorId: proposer, evidence });
+    return psp.confirmManualReconciliation({ attemptId, actorId: checker });
+  }
+
   // ── Time never resolves ────────────────────────────────────────────────
 
   describe('ageing', () => {
@@ -238,20 +255,21 @@ describe('PSP timeouts and refunds (integration)', () => {
       const { intent, attempt } = await attemptAged(90, 'bill-release');
       await ageing.escalateStaleAttempts();
 
+      // The proposer cannot be the confirmer, and the refusal happens on the
+      // second request — there is no single call that could take both names.
+      await psp.proposeManualReconciliation({
+        attemptId: attempt.id,
+        actorId: financeA,
+        evidence: 'Idram portal shows no transaction for this bill',
+      });
       await expect(
-        psp.reconcileAttemptManually({
-          attemptId: attempt.id,
-          reconciledByUserId: financeA,
-          checkedByUserId: financeA,
-          evidence: 'Idram portal shows no transaction for this bill',
-        }),
-      ).rejects.toThrow(/two different people/i);
+        psp.confirmManualReconciliation({ attemptId: attempt.id, actorId: financeA }),
+      ).rejects.toThrow(/second person has to confirm/i);
 
       await expect(
-        psp.reconcileAttemptManually({
+        psp.proposeManualReconciliation({
           attemptId: attempt.id,
-          reconciledByUserId: financeA,
-          checkedByUserId: financeB,
+          actorId: financeA,
           evidence: '   ',
         }),
       ).rejects.toThrow(/evidence is required/i);
@@ -264,12 +282,12 @@ describe('PSP timeouts and refunds (integration)', () => {
       const { intent, attempt } = await attemptAged(90, 'bill-released');
       await ageing.escalateStaleAttempts();
 
-      const released = await psp.reconcileAttemptManually({
-        attemptId: attempt.id,
-        reconciledByUserId: financeA,
-        checkedByUserId: financeB,
-        evidence: 'Idram portal, 2026-09-15: no transaction exists for bill-released',
-      });
+      const released = await reconcileWithTwoPeople(
+        attempt.id,
+        financeA,
+        financeB,
+        'Idram portal, 2026-09-15: no transaction exists for bill-released',
+      );
 
       expect(released.status).toBe(PspAttemptStatus.FAILED);
       expect(released.resolutionBasis).toBe(PspResolutionBasis.MANUAL_RECONCILIATION);
@@ -312,10 +330,9 @@ describe('PSP timeouts and refunds (integration)', () => {
       const { attempt } = await attemptAged(5, 'bill-still-live');
 
       await expect(
-        psp.reconcileAttemptManually({
+        psp.proposeManualReconciliation({
           attemptId: attempt.id,
-          reconciledByUserId: financeA,
-          checkedByUserId: financeB,
+          actorId: financeA,
           evidence: 'looks stuck',
         }),
       ).rejects.toThrow(/only a timed-out or disputed attempt/i);

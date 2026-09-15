@@ -294,6 +294,14 @@ export interface HttpTestHarness {
   /** `http://127.0.0.1:<port>` of the listening instance — build request URLs off this. */
   baseUrl: string;
   prisma: PrismaClient;
+  /**
+   * Alerts raised during the test, same as `TestHarness`.
+   *
+   * Added for the callback-inbox suite: a dead-lettered payment callback is
+   * a customer who may have paid for a purchase that never completed, and
+   * "somebody is told" is the property worth asserting, not an incidental.
+   */
+  alerts: RecordingAlertChannel;
   close(): Promise<void>;
 }
 
@@ -370,6 +378,7 @@ export async function createHttpTestHarness(): Promise<HttpTestHarness> {
 
   return {
     app,
+    alerts,
     baseUrl,
     prisma,
     async close() {

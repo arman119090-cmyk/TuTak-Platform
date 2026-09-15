@@ -258,6 +258,17 @@ export interface AppConfig {
     defaultEscalateEveryMs: number;
     /** Keyed by `PspAdapter.name`, e.g. `idram`. */
     perProvider: Record<string, { staleAfterMs?: number; escalateEveryMs?: number }>;
+    /**
+     * Where Idram's payment form posts, and the language it renders in.
+     *
+     * Configuration rather than a constant because the sandbox and the live
+     * endpoint differ, and hard-coding either one is how a test payment ends
+     * up somewhere real. No default that points at production: an unset
+     * value leaves the sandbox host, and activating the live one is a
+     * deliberate change somebody makes.
+     */
+    idramFormAction: string;
+    idramLanguage: string;
   };
   /**
    * Where partner brand assets and customer avatars actually live
@@ -647,6 +658,8 @@ const buildConfig = (): AppConfig => ({
     defaultStaleAfterMs: positiveIntFromEnv('PSP_STALE_AFTER_MS', 30 * 60_000),
     defaultEscalateEveryMs: positiveIntFromEnv('PSP_ESCALATE_EVERY_MS', 60 * 60_000),
     perProvider: pspPerProviderPolicy(),
+    idramFormAction: process.env.IDRAM_FORM_ACTION ?? 'https://banking.idram.am/Payment/GetPayment',
+    idramLanguage: process.env.IDRAM_LANGUAGE ?? 'AM',
   },
   media: {
     // Local disk unless told otherwise. That is the right default for a

@@ -16,6 +16,10 @@ import {
   PartnerBranchQrResolveController,
 } from './partner-branch-qr.controller';
 import { PartnerBranchQrService } from './partner-branch-qr.service';
+import {
+  PartnerContributionRuleController,
+  PartnerOwnContributionRuleController,
+} from './contribution/partner-contribution-rule.controller';
 import { PartnerContributionRuleService } from './contribution/partner-contribution-rule.service';
 
 @Module({
@@ -27,6 +31,8 @@ import { PartnerContributionRuleService } from './contribution/partner-contribut
     PartnerStaffController,
     PartnerBranchQrController,
     PartnerBranchQrResolveController,
+    PartnerContributionRuleController,
+    PartnerOwnContributionRuleController,
   ],
   providers: [
     PartnersService,

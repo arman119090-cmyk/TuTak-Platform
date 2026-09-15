@@ -10,6 +10,8 @@ import {
 import {
   LedgerAccountType,
   PaymentRoute,
+  PspCallbackKind,
+  PspInboxStatus,
   PostingDirection,
   Prisma,
   PspAttemptStatus,
@@ -24,6 +26,26 @@ import { MONEY_MAY_HAVE_MOVED } from './psp-attempt-safety';
 import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
 
 type Tx = Prisma.TransactionClient;
+
+/**
+ * What a customer may be told about their own payment.
+ *
+ * Every value here is derived from this platform's own records. None of it
+ * comes from a redirect: `SUCCESS_URL` and `FAIL_URL` move a browser, and a
+ * browser arriving somewhere is not evidence that money did.
+ */
+export type CustomerPaymentStatus =
+  | { state: 'NOT_APPLICABLE' }
+  | { state: 'NOT_STARTED' }
+  /** A bill is open and the provider has told us nothing yet. */
+  | { state: 'WAITING_PROVIDER'; attemptId: string }
+  /** A verified confirmation is in hand; its effects are being applied. */
+  | { state: 'PROCESSING'; attemptId: string }
+  | { state: 'SUCCEEDED'; attemptId: string }
+  /** The provider said, authoritatively, that no money moved. */
+  | { state: 'FAILED'; attemptId: string }
+  /** Nobody can say yet. A human is looking. */
+  | { state: 'REQUIRES_RECONCILIATION'; attemptId: string };
 
 /**
  * The states a verified provider confirmation may still settle from.
@@ -232,7 +254,122 @@ export class PspPaymentService {
       });
     }
 
-    return { attemptId: attempt.id, redirectUrl: bill.redirectUrl, billId };
+    // The handoff is passed outwards, which it previously was not: the form
+    // fields Idram's documented flow needs were computed and then dropped,
+    // so no client could actually perform the flow. Returned as a typed
+    // `ProviderHandoff` rather than as `raw`, so a redirect provider and a
+    // form-post provider are the same contract to the caller.
+    return { attemptId: attempt.id, billId, handoff: bill.handoff };
+  }
+
+  /**
+   * Answer a provider's pre-check: "does this bill exist and may it be paid?"
+   *
+   * **Nothing here touches the ledger, and nothing may.** A pre-check is the
+   * provider asking before it takes money; treating it as a payment would
+   * credit a partner for a sale the customer has not yet made, and answering
+   * it ten times must therefore cost exactly nothing ten times.
+   *
+   * What it does check is everything that would make the payment wrong:
+   * that the bill is one we opened, that the merchant account is ours, that
+   * the amount is the amount we asked for, and that the purchase is still in
+   * a state that may be paid. A pre-check on an expired attempt or a
+   * cancelled purchase is refused here rather than being allowed to become a
+   * payment we then have to reverse.
+   */
+  async answerPrecheck(body: unknown): Promise<{ ok: boolean; reason?: string }> {
+    const request = this.adapter.readPrecheck(body);
+
+    if (!request.billId) return { ok: false, reason: 'no bill' };
+
+    const attempt = await this.prisma.pspPaymentAttempt.findFirst({
+      where: { provider: this.adapter.name, providerBillId: request.billId },
+      include: {
+        purchaseIntent: {
+          select: { id: true, status: true, merchantApprovedAt: true, expiresAt: true },
+        },
+      },
+    });
+    if (!attempt) return { ok: false, reason: 'unknown bill' };
+
+    if (!CONFIRMABLE.includes(attempt.status)) {
+      return { ok: false, reason: `attempt is ${attempt.status}` };
+    }
+    if (request.amount === null || !request.amount.equals(attempt.amount)) {
+      this.logger.warn(
+        `Idram pre-check for bill ${request.billId} quoted ${request.amount?.toFixed(2) ?? '—'}, ` +
+          `bill is ${attempt.amount.toFixed(2)} — refused`,
+      );
+      return { ok: false, reason: 'amount mismatch' };
+    }
+    if (attempt.purchaseIntent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
+      return { ok: false, reason: `purchase is ${attempt.purchaseIntent.status}` };
+    }
+    if (!attempt.purchaseIntent.merchantApprovedAt) {
+      return { ok: false, reason: 'purchase not approved by the merchant' };
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * What the customer's app should show about their payment.
+   *
+   * Deliberately derived from the attempt and the purchase, never from where
+   * the provider's browser redirect landed. A customer arriving at a success
+   * URL proves that a browser followed a redirect and nothing about money;
+   * this is the only thing the app is allowed to believe.
+   */
+  async customerPaymentStatus(
+    purchaseIntentId: string,
+    customerId: string,
+  ): Promise<CustomerPaymentStatus> {
+    const intent = await this.prisma.purchaseIntent.findUnique({
+      where: { id: purchaseIntentId },
+      select: { id: true, customerId: true, status: true, paymentRoute: true },
+    });
+    if (!intent || intent.customerId !== customerId) {
+      throw new NotFoundException('Purchase not found');
+    }
+    if (intent.paymentRoute !== PaymentRoute.TUTAK_PSP) {
+      return { state: 'NOT_APPLICABLE' };
+    }
+
+    const attempt = await this.prisma.pspPaymentAttempt.findFirst({
+      where: { purchaseIntentId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true, providerBillId: true },
+    });
+    if (!attempt) return { state: 'NOT_STARTED' };
+
+    if (attempt.status === PspAttemptStatus.SUCCEEDED) {
+      // Only once the purchase itself is confirmed. The two commit together,
+      // so a gap here means something is wrong, not that it is nearly done.
+      return intent.status === PurchaseIntentStatus.CONFIRMED
+        ? { state: 'SUCCEEDED', attemptId: attempt.id }
+        : { state: 'PROCESSING', attemptId: attempt.id };
+    }
+    if (attempt.status === PspAttemptStatus.FAILED) {
+      return { state: 'FAILED', attemptId: attempt.id };
+    }
+    if (attempt.status === PspAttemptStatus.REQUIRES_RECONCILIATION) {
+      return { state: 'REQUIRES_RECONCILIATION', attemptId: attempt.id };
+    }
+
+    // A verified callback is in the inbox but its money has not moved yet.
+    // Worth distinguishing: "we have your payment and are finishing up" is a
+    // different thing to tell somebody than "we are still waiting for you".
+    const queued = await this.prisma.pspCallbackInbox.count({
+      where: {
+        billId: attempt.providerBillId,
+        kind: PspCallbackKind.FINAL,
+        verified: true,
+        status: { in: [PspInboxStatus.RECEIVED, PspInboxStatus.PROCESSING] },
+      },
+    });
+    if (queued > 0) return { state: 'PROCESSING', attemptId: attempt.id };
+
+    return { state: 'WAITING_PROVIDER', attemptId: attempt.id };
   }
 
   /**
@@ -391,39 +528,29 @@ export class PspPaymentService {
   }
 
   /**
-   * Two people have read the provider's statement and agree no money moved.
+   * One person reads the provider's record and says what it shows. Changes
+   * nothing.
    *
    * The only way an `EXPIRED` or `REQUIRES_RECONCILIATION` attempt is ever
-   * released, short of the provider itself answering. Arman's decision of
-   * 15.09.2026: a timeout is not a provider saying no, so nothing about the
-   * passage of time can do this — not a sweep, not an operator clicking
-   * "give up", not a retention job. Only a reading of the provider's own
-   * record, by two people who are not the same person.
+   * released, short of the provider itself answering — and it takes two
+   * people to finish, in two separate authenticated calls.
    *
-   * Once this lands the purchase is genuinely free: `hasUnsafeAttempt` goes
-   * false, a new attempt may be started and the customer may buy again at
-   * that business. That is the entire consequence, and it is why the bar is
-   * two people and a written reason rather than a confirmation dialog.
-   *
-   * Note what this does **not** do: it never marks an attempt `SUCCEEDED`.
-   * Money arriving is settled by a verified provider confirmation and by
-   * nothing else — a human asserting that a payment worked would post to the
-   * ledger on somebody's word, which is the one thing this whole module is
-   * built to prevent.
+   * It used to be one call taking two user ids, which is not dual control:
+   * the second person existed only as a string the first one typed. Arman's
+   * decision of 15.09.2026 is explicit that one HTTP caller cannot supply the
+   * identity of the second human, so the proposal is persisted on its own and
+   * `confirmManualReconciliation` is a separate request by a separate
+   * authenticated actor.
    */
-  async reconcileAttemptManually(params: {
+  async proposeManualReconciliation(params: {
     attemptId: string;
-    reconciledByUserId: string;
-    checkedByUserId: string;
+    actorId: string;
     evidence: string;
   }) {
     const evidence = params.evidence.trim();
     if (!evidence) {
-      throw new BadRequestException('Say what the provider’s record shows — evidence is required');
-    }
-    if (params.reconciledByUserId === params.checkedByUserId) {
-      throw new ForbiddenException(
-        'Releasing a payment nobody can account for takes two different people',
+      throw new BadRequestException(
+        'Say what the provider\u2019s record shows \u2014 evidence is required',
       );
     }
 
@@ -440,28 +567,107 @@ export class PspPaymentService {
       );
     }
 
+    await this.prisma.pspPaymentAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        reconciledByUserId: params.actorId,
+        reconciliationEvidence: evidence,
+        reconciliationProposedAt: new Date(),
+        // A fresh proposal clears any earlier confirmation attempt's mark:
+        // nothing may be confirmed that has not been proposed since.
+        reconciliationCheckedByUserId: null,
+      },
+    });
+
+    this.logger.warn(
+      `Manual reconciliation proposed for attempt ${attempt.id} by ${params.actorId}: ${evidence}`,
+    );
+    return this.prisma.pspPaymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+  }
+
+  /**
+   * A second person agrees, and only now is the payment released.
+   *
+   * This is the act that makes the purchase free again: `hasUnsafeAttempt`
+   * goes false, a new payment may be started, and the customer may buy at
+   * that business again. That is why the bar is two authenticated people and
+   * a written reason rather than a confirmation dialog.
+   *
+   * What it never does is mark an attempt `SUCCEEDED`. Money arriving is
+   * established by a verified provider callback and by nothing else — a
+   * human asserting that a payment worked would post to the ledger on
+   * somebody’s word, which is the one thing this module exists to prevent.
+   * There is no method for it and the table refuses the shape.
+   */
+  async confirmManualReconciliation(params: { attemptId: string; actorId: string }) {
+    const attempt = await this.prisma.pspPaymentAttempt.findUnique({
+      where: { id: params.attemptId },
+    });
+    if (!attempt) throw new NotFoundException('Payment attempt not found');
+    if (!attempt.reconciliationProposedAt || !attempt.reconciledByUserId) {
+      throw new ConflictException('Nobody has proposed what the provider\u2019s record shows yet');
+    }
+    if (attempt.reconciledByUserId === params.actorId) {
+      throw new ForbiddenException(
+        'You proposed this reconciliation; a second person has to confirm it',
+      );
+    }
+    if (
+      attempt.status !== PspAttemptStatus.EXPIRED &&
+      attempt.status !== PspAttemptStatus.REQUIRES_RECONCILIATION
+    ) {
+      throw new ConflictException(`Attempt is ${attempt.status}; it is already resolved`);
+    }
+
     const claimed = await this.prisma.pspPaymentAttempt.updateMany({
-      where: { id: attempt.id, status: attempt.status },
+      where: {
+        id: attempt.id,
+        status: attempt.status,
+        // Pinned to the proposal that was read: if somebody re-proposed in
+        // between, this confirmation is of a reading nobody made.
+        reconciliationProposedAt: attempt.reconciliationProposedAt,
+      },
       data: {
         status: PspAttemptStatus.FAILED,
         resolutionBasis: PspResolutionBasis.MANUAL_RECONCILIATION,
-        reconciledByUserId: params.reconciledByUserId,
-        reconciliationCheckedByUserId: params.checkedByUserId,
-        reconciliationEvidence: evidence,
-        failureReason: `Reconciled by hand: ${evidence}`,
+        reconciliationCheckedByUserId: params.actorId,
+        failureReason: `Reconciled by hand: ${attempt.reconciliationEvidence}`,
         liveKey: null,
         resolvedAt: new Date(),
       },
     });
     if (claimed.count === 0) {
-      throw new ConflictException('Attempt was resolved by someone else');
+      throw new ConflictException('Attempt was resolved or re-proposed by someone else');
     }
 
     this.logger.warn(
       `PSP attempt ${attempt.id} released by manual reconciliation ` +
-        `(${params.reconciledByUserId} / ${params.checkedByUserId}): ${evidence}`,
+        `(${attempt.reconciledByUserId} / ${params.actorId}): ${attempt.reconciliationEvidence}`,
     );
     return this.prisma.pspPaymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+  }
+
+  /** Attempts nobody can account for, for the finance queue. */
+  async unresolvedAttempts() {
+    return this.prisma.pspPaymentAttempt.findMany({
+      where: {
+        status: {
+          in: [
+            PspAttemptStatus.INITIATED,
+            PspAttemptStatus.PENDING_CONFIRMATION,
+            PspAttemptStatus.EXPIRED,
+            PspAttemptStatus.REQUIRES_RECONCILIATION,
+          ],
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+      include: {
+        purchaseIntent: {
+          select: { id: true, partnerId: true, customerId: true, grossAmount: true, status: true },
+        },
+      },
+    });
   }
 
   /**

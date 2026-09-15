@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import {
+  PartnerSettlementAdminController,
+  PartnerSettlementPartnerController,
+} from './partner-settlement.controller';
 import { PartnerSettlementService } from './partner-settlement.service';
 
 /**
@@ -13,6 +17,7 @@ import { PartnerSettlementService } from './partner-settlement.service';
  */
 @Module({
   imports: [LedgerModule, AuditModule],
+  controllers: [PartnerSettlementAdminController, PartnerSettlementPartnerController],
   providers: [PartnerSettlementService],
   exports: [PartnerSettlementService],
 })

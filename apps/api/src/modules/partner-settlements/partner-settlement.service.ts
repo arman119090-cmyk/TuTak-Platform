@@ -986,6 +986,100 @@ export class PartnerSettlementService {
     });
   }
 
+  // ── Reads ───────────────────────────────────────────────────────────────
+
+  async list(filter: { partnerId?: string } = {}) {
+    return this.prisma.partnerSettlement.findMany({
+      where: filter.partnerId ? { partnerId: filter.partnerId } : {},
+      orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
+      take: 200,
+      include: { _count: { select: { entries: true } } },
+    });
+  }
+
+  async detail(id: string) {
+    const settlement = await this.prisma.partnerSettlement.findUnique({
+      where: { id },
+      include: {
+        entries: { orderBy: { occurredAt: 'asc' } },
+        transferAttempts: { orderBy: { attemptedAt: 'asc' } },
+        bankAccount: true,
+      },
+    });
+    if (!settlement) throw new NotFoundException('Settlement not found');
+    return settlement;
+  }
+
+  /**
+   * A partner's own statement: opening, what moved, closing, itemised.
+   *
+   * The itemisation is the point. A partner told "we owe you 14,500" has no
+   * way to agree or disagree; a partner shown the purchases, the refunds and
+   * the commission that make up 14,500 can check it against their till. Each
+   * line keeps the `kind` and the source row it came from, so "why" is
+   * answerable down to the individual sale.
+   *
+   * Opening and closing are derived from the claimed postings rather than
+   * stored: a stored balance is a second source of truth, and the whole
+   * design rests on the ledger being the only one.
+   */
+  async partnerStatement(id: string, partnerId: string) {
+    const settlement = await this.prisma.partnerSettlement.findUnique({
+      where: { id },
+      include: {
+        entries: { orderBy: { occurredAt: 'asc' } },
+        transferAttempts: { orderBy: { attemptedAt: 'asc' } },
+      },
+    });
+    // Not "forbidden": a partner should not learn that another partner's
+    // settlement exists by being told they may not see it.
+    if (!settlement || settlement.partnerId !== partnerId) {
+      throw new NotFoundException('Settlement not found');
+    }
+
+    const accrued = settlement.entries
+      .filter((e) => e.direction === PostingDirection.CREDIT)
+      .reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
+    const deducted = settlement.entries
+      .filter((e) => e.direction === PostingDirection.DEBIT)
+      .reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
+
+    return {
+      id: settlement.id,
+      status: settlement.status,
+      currency: settlement.currency,
+      periodStart: settlement.periodStart,
+      periodEnd: settlement.periodEnd,
+      /** What the platform owed for in this period. */
+      accrued: accrued.toFixed(4),
+      /** Commission, refund reversals, and debt carried in. */
+      deducted: deducted.toFixed(4),
+      /** accrued − deducted. What the transfer is for. */
+      netPayable: settlement.netPayableAmount.toFixed(4),
+      documentNumber: settlement.documentNumber,
+      paidAt: settlement.paidAt,
+      bankTransferReference: settlement.bankTransferReference,
+      /** Every line, with what produced it. */
+      entries: settlement.entries.map((entry) => ({
+        occurredAt: entry.occurredAt,
+        kind: entry.kind,
+        direction: entry.direction,
+        amount: entry.amount.toFixed(4),
+        sourceType: entry.sourceType,
+        sourceId: entry.sourceId,
+      })),
+      /** Every try at moving it, including the ones that bounced. */
+      transferAttempts: settlement.transferAttempts.map((attempt) => ({
+        attemptedAt: attempt.attemptedAt,
+        succeeded: attempt.succeeded,
+        bankTransferReference: attempt.bankTransferReference,
+        failureReason: attempt.failureReason,
+        /** Null while nobody knows — an ambiguous result, not a failure. */
+        resolvedAt: attempt.resolvedAt,
+      })),
+    };
+  }
+
   /** The shared shape of the simple status moves. */
   private async transition(
     id: string,

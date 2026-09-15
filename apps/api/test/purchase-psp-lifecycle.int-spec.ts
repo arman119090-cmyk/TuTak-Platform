@@ -120,6 +120,23 @@ describe('Purchase and PSP lifecycle (integration)', () => {
     raw: { EDP_BILL_NO: billId },
   });
 
+  /**
+   * The two-person release, as two authenticated acts.
+   *
+   * Since 15.09.2026 this is deliberately not one call: one caller passing
+   * two user ids is one person asserting who the second person was. Tests go
+   * through both steps so they exercise the shape production uses.
+   */
+  async function reconcileWithTwoPeople(
+    attemptId: string,
+    proposer: string,
+    checker: string,
+    evidence: string,
+  ) {
+    await psp.proposeManualReconciliation({ attemptId, actorId: proposer, evidence });
+    return psp.confirmManualReconciliation({ attemptId, actorId: checker });
+  }
+
   // ── 1. The expiry sweep ────────────────────────────────────────────────
 
   it('leaves a paying purchase alone when the expiry sweep runs', async () => {
@@ -310,12 +327,12 @@ describe('Purchase and PSP lifecycle (integration)', () => {
       /still being processed/i,
     );
 
-    await psp.reconcileAttemptManually({
-      attemptId: attempt.id,
-      reconciledByUserId: financeA,
-      checkedByUserId: financeB,
-      evidence: 'Idram portal shows no transaction for bill-manual-no',
-    });
+    await reconcileWithTwoPeople(
+      attempt.id,
+      financeA,
+      financeB,
+      'Idram portal shows no transaction for bill-manual-no',
+    );
 
     const cancelled = await intents.cancel(intent.id, customer.user.id);
     expect(cancelled.status).toBe(PurchaseIntentStatus.CANCELLED);
@@ -432,12 +449,12 @@ describe('Purchase and PSP lifecycle (integration)', () => {
         where: { id: attempt.id },
         data: { status: PspAttemptStatus.EXPIRED, liveKey: null, resolvedAt: new Date() },
       });
-      await psp.reconcileAttemptManually({
-        attemptId: attempt.id,
-        reconciledByUserId: financeA,
-        checkedByUserId: financeB,
-        evidence: 'No transaction on the provider portal',
-      });
+      await reconcileWithTwoPeople(
+        attempt.id,
+        financeA,
+        financeB,
+        'No transaction on the provider portal',
+      );
 
       // An answer outranks a later callback. Refusing is what stops the
       // purchase being accounted for twice — once by the people who released
@@ -463,12 +480,7 @@ describe('Purchase and PSP lifecycle (integration)', () => {
 
       const [callback, manual] = await Promise.allSettled([
         psp.settleVerifiedConfirmation(confirmation('bill-race')),
-        psp.reconcileAttemptManually({
-          attemptId: attempt.id,
-          reconciledByUserId: financeA,
-          checkedByUserId: financeB,
-          evidence: 'Nothing on the portal',
-        }),
+        reconcileWithTwoPeople(attempt.id, financeA, financeB, 'Nothing on the portal'),
       ]);
 
       const winners = [callback, manual].filter((r) => r.status === 'fulfilled');

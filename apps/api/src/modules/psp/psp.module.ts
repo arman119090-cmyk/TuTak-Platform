@@ -4,6 +4,10 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { PurchaseIntentsModule } from '../purchase-intents/purchase-intents.module';
 import { PspAdapterModule } from './psp-adapter.module';
 import { PspAttemptAgeingService } from './psp-attempt-ageing.service';
+import { PspAdminController, PspController } from './psp.controller';
+import { PspCallbackController } from './psp-callback.controller';
+import { PspCallbackInboxService } from './psp-callback-inbox.service';
+import { PspCallbackWorkerService } from './psp-callback-worker.service';
 import { PspPaymentService } from './psp-payment.service';
 
 /**
@@ -14,9 +18,21 @@ import { PspPaymentService } from './psp-payment.service';
  */
 @Module({
   imports: [AlertsModule, LedgerModule, PurchaseIntentsModule, PspAdapterModule],
-  providers: [PspPaymentService, PspAttemptAgeingService],
+  controllers: [PspCallbackController, PspController, PspAdminController],
+  providers: [
+    PspPaymentService,
+    PspAttemptAgeingService,
+    PspCallbackInboxService,
+    PspCallbackWorkerService,
+  ],
   // Re-exports the adapter module rather than the token: the token now lives
   // in `PspAdapterModule`, and Nest may only export what it provides itself.
-  exports: [PspPaymentService, PspAttemptAgeingService, PspAdapterModule],
+  exports: [
+    PspPaymentService,
+    PspAttemptAgeingService,
+    PspCallbackInboxService,
+    PspCallbackWorkerService,
+    PspAdapterModule,
+  ],
 })
 export class PspModule {}

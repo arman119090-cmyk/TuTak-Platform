@@ -25,6 +25,7 @@ import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { SweepsHeartbeatService } from './sweeps.heartbeat.service';
 import { PspAttemptAgeingService } from '../psp/psp-attempt-ageing.service';
+import { PspCallbackWorkerService } from '../psp/psp-callback-worker.service';
 import { PspModule } from '../psp/psp.module';
 import { SWEEPS_QUEUE, SWEEP_DEPENDENCIES, SweepDependencies } from './sweeps.jobs';
 import { SweepsProcessor } from './sweeps.processor';
@@ -87,6 +88,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         PurchaseIntentsService,
         PartnerSettlementCheckService,
         PspAttemptAgeingService,
+        PspCallbackWorkerService,
         // Only resolvable when PaymentsModule was actually imported above —
         // Nest calls useFactory with exactly as many arguments as `inject`
         // has entries, so `refunds` below is simply never passed (and stays
@@ -107,6 +109,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         purchaseIntents: PurchaseIntentsService,
         partnerSettlement: PartnerSettlementCheckService,
         pspAgeing: PspAttemptAgeingService,
+        pspCallbacks: PspCallbackWorkerService,
         refunds?: RefundEngineService,
       ): SweepDependencies => ({
         bonus,
@@ -121,6 +124,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         purchaseIntents,
         partnerSettlement,
         pspAgeing,
+        pspCallbacks,
         refunds,
       }),
     },

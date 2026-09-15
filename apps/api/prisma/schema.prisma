@@ -62,6 +62,29 @@ enum PermissionName {
   /// cashier) does this as their ordinary job, while only PARTNER_MANAGE
   /// reaches the negotiated rate and the bonus-payment cap.
   PURCHASE_INTENT_CONFIRM
+  /// Start and inspect provider payments, and read their state. Held by the
+  /// customer's own routes implicitly (ownership is checked in the service);
+  /// this one is for staff and admin surfaces.
+  PSP_READ
+  /// Resolve a payment nobody can account for: propose or confirm a manual
+  /// reconciliation. Finance only — the two halves are separate acts by
+  /// separate people, and this permission gates both.
+  PSP_RECONCILE
+  /// Draft, ready, approve and record transfers on a partner settlement.
+  SETTLEMENT_MANAGE
+  /// Read a settlement and its itemisation. A partner holds this for their
+  /// own settlements; finance holds it for everyone's.
+  SETTLEMENT_READ
+  /// Propose a change to a partner's commercial terms.
+  CONTRIBUTION_RULE_PROPOSE
+  /// Approve or reject somebody else's proposal. Deliberately a different
+  /// permission from proposing, so "two people" can be enforced by role and
+  /// not only by comparing user ids.
+  CONTRIBUTION_RULE_APPROVE
+  /// Record that the acquirer actually settled money into the bank.
+  ACQUIRER_SETTLEMENT_MANAGE
+  /// Read the liquidity position: cash, receivables, payables, exposure.
+  TREASURY_READ
 }
 
 model Role {
@@ -3190,6 +3213,114 @@ enum PspAttemptStatus {
 ///
 /// `@@unique([provider, providerTransactionId])` makes a replayed callback a
 /// no-op: the second one cannot create a second payment record.
+/// What a provider callback was asking for.
+enum PspCallbackKind {
+  /// "Does this bill exist and may it be paid?" Answered synchronously and
+  /// never touches the ledger.
+  PRECHECK
+  /// "This bill was paid." The only kind that can move money.
+  FINAL
+}
+
+/// Where an inbound callback is in its durable processing.
+enum PspInboxStatus {
+  /// Written down, provider acknowledged, not yet acted on.
+  RECEIVED
+  /// A worker holds a lease on it.
+  PROCESSING
+  /// Its financial effect has happened, or was found to have happened
+  /// already. Terminal and successful.
+  PROCESSED
+  /// A duplicate of a callback already recorded. Terminal, and not a
+  /// failure: the provider retrying is normal.
+  DUPLICATE
+  /// Verification failed — bad checksum, wrong merchant, unknown bill. Kept
+  /// rather than discarded, because a forged callback is evidence.
+  REJECTED
+  /// Retried to exhaustion. Alerted on, never retried again silently.
+  DEAD
+}
+
+/// Every callback a payment provider has sent us, written down before
+/// anything is done about it.
+///
+/// ## Why this exists
+///
+/// A verified callback used to be processed inside the HTTP request that
+/// delivered it. That meant one settlement transaction per callback, held for
+/// the whole of a heavy write, and a burst of twenty duplicate retries took
+/// twenty connections from a pool of five. Measured, not theorised: ten
+/// concurrent callbacks for one bill all failed with "Unable to start a
+/// transaction in the given time", and the provider — seeing errors — would
+/// have retried harder. Nothing was double-counted, because nothing happened
+/// at all, which is its own kind of wrong: the customer had paid.
+///
+/// Raising the pool would have moved the cliff, not removed it. So the HTTP
+/// boundary now does the one thing it must do synchronously — prove the
+/// callback genuine and write it down — and answers. The money moves later,
+/// once, in a worker.
+///
+/// ## What makes it safe
+///
+/// `dedupeKey` is the provider's own identity for the event, so a retry
+/// collides with the row it is a retry of and is recorded as DUPLICATE
+/// instead of becoming a second unit of work. Processing is claimed with a
+/// lease, so a worker that dies mid-flight releases its claim rather than
+/// stranding the row; and because the financial step is itself idempotent, a
+/// crash between committing the ledger and marking the row processed costs a
+/// repeat that finds the work already done.
+model PspCallbackInbox {
+  id       String          @id @default(uuid())
+  provider String
+  kind     PspCallbackKind
+  status   PspInboxStatus  @default(RECEIVED)
+
+  /// The provider's identity for this event: provider, bill, and its own
+  /// transaction id. Unique, and that uniqueness is the whole duplicate
+  /// defence — a retry cannot become a second unit of work.
+  dedupeKey String @unique
+
+  billId                String?
+  providerTransactionId String?
+  /// What the provider said the amount was. Never trusted on its own; the
+  /// attempt's own amount is what settlement checks against.
+  reportedAmount        Decimal? @db.Decimal(18, 4)
+
+  /// Whether the signature/checksum proved genuine. A false here is why the
+  /// row is REJECTED, and the row is kept: a forged callback is evidence.
+  verified       Boolean @default(false)
+  rejectedReason String?
+
+  /// Everything the provider sent, verbatim, for disputes.
+  ///
+  /// Kept whole rather than filtered: a dispute is argued on what arrived,
+  /// and a redacted copy proves nothing. It contains no secret — Idram's
+  /// `EDP_CHECKSUM` is a digest, and the key that produced it lives only in
+  /// the environment and is never written here or logged.
+  rawPayload Json
+
+  /// Set while unprocessed and nulled once terminal, so "one live inbox row
+  /// per dedupe key" needs no coordination. Same trick as
+  /// `PspPaymentAttempt.liveKey`.
+  pendingKey String?
+
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  leaseUntil    DateTime?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  /// The attempt this callback settled, once it has.
+  pspPaymentAttemptId String?
+
+  @@index([status, nextAttemptAt])
+  @@index([billId])
+  @@index([receivedAt])
+  @@map("psp_callback_inbox")
+}
+
 model PspPaymentAttempt {
   id               String           @id @default(uuid())
   purchaseIntentId String
@@ -3229,9 +3360,17 @@ model PspPaymentAttempt {
   /// table rather than a habit of the code.
   resolutionBasis               PspResolutionBasis?
   /// MANUAL_RECONCILIATION only: two different people, and what they read.
+  ///
+  /// Filled in two separate authenticated calls, never one. A single caller
+  /// passing both user ids is one person asserting who the second person
+  /// was, which is not dual control — it is dual control's paperwork.
   reconciledByUserId            String?
   reconciliationCheckedByUserId String?
   reconciliationEvidence        String?
+  /// Set when the first person proposes, cleared when the second confirms or
+  /// the proposal is withdrawn. While it is set the attempt is unchanged:
+  /// a proposal moves no money and resolves nothing.
+  reconciliationProposedAt      DateTime?
 
   /// Ageing. Raised by the sweep so an unresolved attempt gets louder rather
   /// than being quietly decided; neither column ever changes `status`.

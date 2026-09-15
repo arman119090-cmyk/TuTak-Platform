@@ -51,12 +51,57 @@ export interface CreateBillParams {
   description: string;
 }
 
+/**
+ * How a customer is sent to the provider to pay.
+ *
+ * Two shapes, because providers genuinely differ and pretending otherwise
+ * pushes the difference into the client. A redirect provider hands back a
+ * URL; Idram's documented flow is an HTML form the customer's browser or app
+ * posts, so it hands back a method, a target and the exact fields to post.
+ *
+ * This used to be `raw: unknown` with the form fields buried inside, and
+ * `beginAttempt` never passed them out at all — so the documented flow could
+ * not actually be performed by any client. Making the shape explicit is the
+ * fix; special-casing Idram inside the caller would have been the bug.
+ */
+export type ProviderHandoff =
+  | { type: 'REDIRECT'; url: string }
+  | {
+      type: 'FORM_POST';
+      method: 'POST';
+      action: string;
+      /** Posted verbatim, in this order. Never re-derived by the client. */
+      fields: Record<string, string>;
+    };
+
 export interface CreateBillResult {
-  /** Where to send the customer, when the provider works by redirect. */
-  redirectUrl?: string;
+  /** What the client must do to let the customer pay. */
+  handoff: ProviderHandoff;
   /** The provider's identifier for the bill, if it issues one now. */
   providerBillId?: string;
   raw: unknown;
+}
+
+/**
+ * A provider's pre-check: "does this bill exist and may it be paid?"
+ *
+ * Idram sends this before taking money. It is **not** a payment and must
+ * never touch the ledger — answering it is purely a lookup. The reply shape
+ * is the provider's, so the adapter owns it.
+ */
+export interface PrecheckRequest {
+  billId: string | null;
+  merchantAccount: string | null;
+  amount: Decimal | null;
+  raw: unknown;
+}
+
+export interface PrecheckVerdict {
+  /** Whether the request itself was well formed and for us. */
+  recognised: boolean;
+  billId: string | null;
+  amount: Decimal | null;
+  reason?: string;
 }
 
 /**
@@ -126,6 +171,21 @@ export interface PspAdapter {
 
   /** Only defined where `capabilities.statusQuery` is true. */
   queryStatus?(providerBillId: string): Promise<ConfirmationResult>;
+
+  /**
+   * Reads a pre-check request. Does not decide it: whether the bill may be
+   * paid is a domain question, and the adapter only speaks the protocol.
+   */
+  readPrecheck(body: unknown): PrecheckRequest;
+
+  /** Whether this body is a pre-check rather than a final callback. */
+  isPrecheck(body: unknown): boolean;
+
+  /** The provider's own wire format for "yes, proceed" and "no". */
+  precheckResponse(verdict: { ok: boolean }): { body: string; contentType: string };
+
+  /** What the provider expects to receive after a final callback. */
+  finalResponse(): { body: string; contentType: string };
 }
 
 export const PSP_ADAPTER = Symbol('PSP_ADAPTER');

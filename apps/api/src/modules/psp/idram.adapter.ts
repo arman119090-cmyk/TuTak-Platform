@@ -7,6 +7,7 @@ import {
   ConfirmationResult,
   CreateBillParams,
   CreateBillResult,
+  PrecheckRequest,
   PspAdapter,
   PspCapabilities,
 } from './psp-adapter.interface';
@@ -87,16 +88,67 @@ export class IdramAdapter implements PspAdapter {
     // Idram's flow is a form post the customer's browser makes; there is no
     // server-to-server bill creation in the documentation supplied. The
     // caller redirects with these fields.
+    const fields: Record<string, string> = {
+      EDP_LANGUAGE: this.config.get('psp', { infer: true }).idramLanguage,
+      EDP_REC_ACCOUNT: this.merchantId,
+      EDP_DESCRIPTION: params.description,
+      EDP_AMOUNT: params.amount.toFixed(2),
+      EDP_BILL_NO: params.billId,
+    };
+
     return {
       providerBillId: params.billId,
-      raw: {
-        EDP_LANGUAGE: 'AM',
-        EDP_REC_ACCOUNT: this.merchantId,
-        EDP_DESCRIPTION: params.description,
-        EDP_AMOUNT: params.amount.toFixed(2),
-        EDP_BILL_NO: params.billId,
-      },
+      // The documented flow is a form the customer's browser posts. Handed
+      // back as a form the client can actually perform, rather than buried
+      // in `raw` where — until this was fixed — nothing passed it outwards
+      // and the documented flow could not be carried out at all.
+      handoff: { type: 'FORM_POST', method: 'POST', action: this.formAction, fields },
+      raw: fields,
     };
+  }
+
+  private get formAction(): string {
+    return this.config.get('psp', { infer: true }).idramFormAction;
+  }
+
+  /**
+   * Idram announces a pre-check with `EDP_PRECHECK=YES`.
+   *
+   * Read from the body rather than from a header or a separate URL because
+   * that is what the documentation establishes. If Idram later confirms a
+   * distinct endpoint, this is the one place that changes.
+   */
+  isPrecheck(body: unknown): boolean {
+    const payload = (body ?? {}) as Record<string, string>;
+    return payload.EDP_PRECHECK === 'YES';
+  }
+
+  readPrecheck(body: unknown): PrecheckRequest {
+    const payload = (body ?? {}) as Record<string, string>;
+    const rawAmount = payload.EDP_AMOUNT;
+    const amount = rawAmount === undefined ? null : new Decimal(rawAmount);
+    return {
+      billId: payload.EDP_BILL_NO ?? null,
+      merchantAccount: payload.EDP_REC_ACCOUNT ?? null,
+      amount: amount !== null && amount.isFinite() ? amount : null,
+      raw: body,
+    };
+  }
+
+  /**
+   * Idram's documented pre-check reply: the literal string `OK` to proceed.
+   *
+   * Anything else is a refusal. Deliberately not JSON and not a status code
+   * alone — the documentation specifies a body, and a verifier that answers
+   * in a shape the provider does not parse is a verifier that says nothing.
+   */
+  precheckResponse(verdict: { ok: boolean }): { body: string; contentType: string } {
+    return { body: verdict.ok ? 'OK' : 'NO', contentType: 'text/plain' };
+  }
+
+  /** Idram expects `OK` acknowledged for a final callback it delivered. */
+  finalResponse(): { body: string; contentType: string } {
+    return { body: 'OK', contentType: 'text/plain' };
   }
 
   // Same reason as `createBill` above: the checksum is computed locally, but

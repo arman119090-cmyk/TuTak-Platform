@@ -15,6 +15,7 @@ const NAV: NavItem[] = [
   { href: '/roaming-cpo-stations', label: 'Roaming-CPO stations', icon: <NavIcon d="M13 2 4 14h7l-1 8 10-13h-7l0-7Z" /> },
   { href: '/bonus', label: 'Bonus adjustments', icon: <NavIcon d="M12 3v18M5 8h9a3 3 0 0 1 0 6H5m0 0h10" /> },
   { href: '/refunds', label: 'Refunds', icon: <NavIcon d="M3 10h13a5 5 0 0 1 0 10h-3M3 10l4-4M3 10l4 4" /> },
+  { href: '/payments', label: 'Payments', icon: <NavIcon d="M3 7h18v11H3zM3 11h18M7 15h3M17 15h.01" /> },
   { href: '/payouts', label: 'Payouts', icon: <NavIcon d="M3 7h18v11H3zM3 11h18M7 15h3" /> },
   { href: '/ledger', label: 'Ledger', icon: <NavIcon d="M4 4h13l3 3v13H4zM8 9h8M8 13h8M8 17h5" /> },
   { href: '/reconciliation', label: 'Reconciliation', icon: <NavIcon d="M4 7h10M4 7l3-3M4 7l3 3M20 17H10m10 0-3-3m3 3-3 3" /> },

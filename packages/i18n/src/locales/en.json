@@ -453,5 +453,12 @@
     "body": "So the app can address you by name. You can skip this and fill it in later.",
     "continue": "Continue",
     "skip": "Skip"
+  },
+  "unitOfMeasure": {
+    "LITER": "L",
+    "KWH": "kWh",
+    "KILOGRAM": "kg",
+    "ITEM": "pcs",
+    "HOUR": "h"
   }
 }

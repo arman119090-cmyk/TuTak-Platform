@@ -76,7 +76,9 @@ export async function seedBaseline(prisma: PrismaClient): Promise<void> {
     await prisma.userRole.create({ data: { userId: admin.id, roleId: superAdminRole.id } });
   }
 
-  console.log('Baseline seed complete. Disable SEED_BASELINE after the first successful login and password rotation.');
+  console.log(
+    'Baseline seed complete. Disable SEED_BASELINE after the first successful login and password rotation.',
+  );
 }
 
 /** Entry point when run directly: `node dist/scripts/seed-baseline.js`. */

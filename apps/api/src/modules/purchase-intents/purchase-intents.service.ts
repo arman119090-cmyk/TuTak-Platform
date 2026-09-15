@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -9,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  PaymentRoute,
   BonusEntryType,
   LedgerAccountType,
   PostingDirection,
@@ -562,6 +564,27 @@ export class PurchaseIntentsService {
 
     if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
       return intent; // already resolved — idempotent, not an error
+    }
+
+    /*
+     * One purchase, one money route.
+     *
+     * A purchase routed through a payment provider is never collected at the
+     * till, however plausible the reason looks to the person standing there:
+     * "the app is stuck, just pay me cash" is exactly the sequence that ends
+     * with the provider's callback arriving ten minutes later and the
+     * customer having paid twice.
+     *
+     * Checked here rather than only in `PspPaymentService` because this is
+     * the path a human actually takes. The database enforces the other half —
+     * a provider attempt cannot exist on a direct purchase at all.
+     */
+    if (intent.paymentRoute !== PaymentRoute.DIRECT_PARTNER) {
+      throw new ConflictException(
+        'This purchase is being paid through a payment provider and must not be ' +
+          'collected at the till. If the provider payment failed, the customer starts ' +
+          'a new purchase.',
+      );
     }
     if (intent.expiresAt < new Date()) {
       await this.expireOne(intent);

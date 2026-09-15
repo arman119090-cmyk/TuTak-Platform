@@ -71,7 +71,7 @@ function IntentRow({
         {intent.confirmationCode ?? '—'}
       </Td>
       <Td className="font-mono text-[12px] text-faint">{intent.id.slice(-8).toUpperCase()}</Td>
-      <Td align="right" className="tabular font-medium">
+      <Td align="right" className="tabular text-faint">
         {num(intent.grossAmount)} ֏
       </Td>
       <Td align="right" className="tabular">
@@ -80,6 +80,23 @@ function IntentRow({
         ) : (
           <span className="text-faint">—</span>
         )}
+      </Td>
+      {/*
+        The amount to actually take from the customer, stated rather than
+        implied.
+
+        This column did not exist: the cashier was shown the gross and the
+        bonus in separate columns and left to subtract. On a 15,000 purchase
+        with 1,000 in points that is a 1,000 error waiting for a queue and a
+        distraction, and it is the customer who pays it. The server has
+        already computed the figure — `ordinaryPaymentRemainder` — so nothing
+        here is derived in the browser either.
+
+        Deliberately the loudest number in the row; the gross is now muted,
+        because it is context, not an instruction.
+      */}
+      <Td align="right" className="tabular text-[16px] font-semibold text-ink">
+        {num(intent.ordinaryPaymentRemainder)} ֏
       </Td>
       <Td>
         <Countdown expiresAt={intent.expiresAt} />
@@ -229,8 +246,9 @@ export default function PurchaseIntentsPage() {
               */}
               <Th>Code</Th>
               <Th>ID</Th>
-              <Th align="right">Amount</Th>
+              <Th align="right">Purchase</Th>
               <Th align="right">Bonus requested</Th>
+              <Th align="right">To collect</Th>
               <Th>Expires in</Th>
               <Th align="right">Action</Th>
             </tr>

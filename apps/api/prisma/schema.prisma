@@ -714,6 +714,29 @@ model PurchaseIntent {
   /// `PurchaseIntentRefundService`.
   refundedAmount           Decimal @default(0) @db.Decimal(18, 4)
 
+  /// How the real-money remainder is settled. Fixed when the purchase is
+  /// created and never changed: see `PaymentRoute`'s own docblock for why
+  /// immutability here is what makes double payment structurally impossible
+  /// rather than merely unlikely.
+  ///
+  /// Defaults to DIRECT_PARTNER so every purchase that existed before this
+  /// column did is described correctly — they were all direct, because
+  /// nothing else existed.
+  paymentRoute PaymentRoute @default(DIRECT_PARTNER)
+
+  /// What the customer handed over on a DIRECT purchase, recorded by the
+  /// cashier at confirmation. Null until confirmed, and always null on a
+  /// TUTAK_PSP purchase.
+  directTender DirectTender?
+
+  /// Quantity sold, for partners who price per unit — 50 litres at 300 AMD.
+  /// All three are snapshots: a fuel price that changes tomorrow must not
+  /// change what yesterday's receipt says. Null together for a partner who
+  /// simply charges a total.
+  quantity     Decimal? @db.Decimal(18, 4)
+  quantityUnit String?
+  unitPrice    Decimal? @db.Decimal(18, 4)
+
   negotiatedRateBps      Int
   maxBonusPaymentPercent Int
 
@@ -823,13 +846,14 @@ model PurchaseIntent {
 
   brandLogoAsset MediaAsset? @relation("PurchaseIntentBrandLogo", fields: [brandLogoAssetId], references: [id])
 
-  customer       User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
-  partner        Partner                       @relation(fields: [partnerId], references: [id])
-  branch         PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
-  confirmedBy    User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
-  rejectedBy     User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
-  refunds        PurchaseIntentRefund[]
-  refundRequests PurchaseIntentRefundRequest[]
+  customer           User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
+  partner            Partner                       @relation(fields: [partnerId], references: [id])
+  branch             PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
+  confirmedBy        User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  rejectedBy         User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
+  refunds            PurchaseIntentRefund[]
+  refundRequests     PurchaseIntentRefundRequest[]
+  pspPaymentAttempts PspPaymentAttempt[]
 
   @@index([partnerId, status])
   @@index([status, expiresAt])
@@ -2284,6 +2308,7 @@ model LedgerTransaction {
   partnerCollection    PartnerCollection?
   balanceTopUp         BalanceTopUp?
   partnerSettlement    PartnerSettlement?
+  pspPaymentAttempt    PspPaymentAttempt?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -2949,6 +2974,157 @@ model PartnerSettlementEntry {
   @@index([settlementId])
   @@index([partnerId, occurredAt])
   @@map("partner_settlement_entries")
+}
+
+/// How the real-money part of a purchase is settled.
+///
+/// Chosen when the purchase is created and never changed afterwards. That
+/// immutability is the whole defence against the double-payment hazard: a
+/// customer cannot start paying through the provider, have the callback
+/// arrive late, and meanwhile hand the cashier cash for the same purchase.
+/// Changing your mind means cancelling and starting again — and cancelling is
+/// refused while a provider attempt might still take the money.
+enum PaymentRoute {
+  /// The customer pays the partner directly, outside TuTak. The original
+  /// model, still fully supported.
+  DIRECT_PARTNER
+  /// The customer pays TuTak through a payment provider.
+  TUTAK_PSP
+}
+
+/// What the customer physically handed the partner on a DIRECT purchase.
+///
+/// Recorded because "who actually received the cash" has to be answerable
+/// from history, and because a partner's own card terminal and a banknote
+/// are different facts even though TuTak sees neither.
+enum DirectTender {
+  CASH
+  PARTNER_CARD
+  OTHER
+}
+
+/// Where a provider payment attempt has got to.
+///
+/// The ordering matters more than the names: everything from `INITIATED`
+/// onwards is a state in which the provider **may already have taken the
+/// customer's money**, and while a purchase sits in one of them no cash may
+/// be collected for it by any other route.
+enum PspAttemptStatus {
+  /// A bill exists at the provider. The customer may be paying right now.
+  INITIATED
+  /// The customer came back, or a pre-check arrived, but the authoritative
+  /// server confirmation has not. Deliberately not "paid": a customer
+  /// returning to a success URL proves nothing.
+  PENDING_CONFIRMATION
+  /// A verified server-side confirmation arrived. Only here does money move
+  /// in the ledger.
+  SUCCEEDED
+  /// The provider said, authoritatively, that no payment happened. The only
+  /// state from which another route may be attempted.
+  FAILED
+  /// Nothing conclusive arrived in time. **Not** a synonym for failed:
+  /// until the provider confirms otherwise the money may have moved, so this
+  /// is as unsafe as INITIATED.
+  EXPIRED
+  /// The provider and this platform disagree, or a confirmation arrived that
+  /// cannot be matched. A human has to look; nothing is settled meanwhile.
+  REQUIRES_RECONCILIATION
+}
+
+/// One attempt to collect the real-money remainder through a provider.
+///
+/// Separate from `PurchaseIntent` because a purchase has one economic
+/// identity but may legitimately be attempted more than once — a declined
+/// card, an abandoned redirect. The purchase's snapshot never changes; each
+/// attempt is its own row with its own provider references.
+///
+/// ## Why the unique indexes are the real design
+///
+/// `@@unique([purchaseIntentId, liveKey])` with `liveKey` set only while an
+/// attempt is unresolved allows **at most one live attempt per purchase**.
+/// Two taps on "pay" cannot open two bills at the provider, and that is
+/// enforced by the database rather than by a disabled button.
+///
+/// `@@unique([provider, providerTransactionId])` makes a replayed callback a
+/// no-op: the second one cannot create a second payment record.
+model PspPaymentAttempt {
+  id               String           @id @default(uuid())
+  purchaseIntentId String
+  provider         String
+  status           PspAttemptStatus @default(INITIATED)
+  amount           Decimal          @db.Decimal(18, 4)
+  currency         Currency         @default(AMD)
+
+  /// The bill/order identifier this platform gave the provider.
+  providerBillId        String?
+  /// The provider's own transaction identifier, known once it confirms.
+  providerTransactionId String?
+  /// Provider fee for this attempt, when the provider tells us. Null means
+  /// "not known yet", never "zero".
+  providerFeeAmount     Decimal? @db.Decimal(18, 4)
+  /// Which fee rule was in force, so the figure can be re-derived.
+  feeRuleId             String?
+
+  /// Set to a constant while the attempt is unresolved and nulled once it
+  /// reaches a terminal state — the trick that makes "one live attempt per
+  /// purchase" expressible as a unique index. See the docblock above.
+  liveKey String?
+
+  /// The ledger transaction written when this attempt succeeded.
+  ledgerTransactionId String? @unique
+
+  failureReason   String?
+  /// Everything the provider sent, kept verbatim for disputes.
+  providerPayload Json?
+
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime?
+  resolvedAt  DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  feeRule           PspFeeRule?        @relation(fields: [feeRuleId], references: [id])
+
+  @@unique([purchaseIntentId, liveKey])
+  @@unique([provider, providerTransactionId])
+  @@index([status])
+  @@index([purchaseIntentId])
+  @@map("psp_payment_attempts")
+}
+
+/// Who bears a provider's fee. Contractual, so configurable rather than
+/// assumed — the brief is explicit that nobody may decide this in code.
+enum FeePayer {
+  PLATFORM
+  PARTNER
+  SPLIT
+}
+
+/// A provider's fee, as it stood over a period of time.
+///
+/// Versioned rather than edited: a purchase made in March must still be
+/// explainable by March's rate after the contract changes in June. Rules are
+/// never updated in place — a change closes the old row and opens a new one.
+model PspFeeRule {
+  id              String    @id @default(uuid())
+  provider        String
+  /// Null matches any method; a more specific row wins.
+  paymentMethod   String?
+  percentBps      Int       @default(0)
+  fixedAmount     Decimal   @default(0) @db.Decimal(18, 4)
+  currency        Currency  @default(AMD)
+  payer           FeePayer  @default(PLATFORM)
+  effectiveFrom   DateTime
+  effectiveUntil  DateTime?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  note            String?
+
+  attempts PspPaymentAttempt[]
+
+  @@index([provider, effectiveFrom])
+  @@map("psp_fee_rules")
 }
 
 model ReconciliationRun {

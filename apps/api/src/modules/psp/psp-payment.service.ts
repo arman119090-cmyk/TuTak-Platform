@@ -199,6 +199,51 @@ export class PspPaymentService {
     feeAmount?: Prisma.Decimal;
     raw: unknown;
   }) {
+    /*
+     * The checks that can *refuse* happen before the transaction that can
+     * *pay*, and that ordering is a bug fix rather than a style.
+     *
+     * Holding a mismatched confirmation used to be written inside the money
+     * transaction and followed by a throw — so the hold rolled back with the
+     * throw, the attempt stayed INITIATED, and a callback claiming a
+     * different amount than the bill left no trace at all. That is precisely
+     * the event most worth keeping: it is either a partial payment this
+     * platform does not support, or somebody editing an amount.
+     *
+     * Caught by `psp-payment.int-spec.ts`, which asserts the attempt is held
+     * rather than merely that settlement was refused.
+     */
+    const found = await this.prisma.pspPaymentAttempt.findFirst({
+      where: { provider: this.adapter.name, providerBillId: confirmation.billId },
+      select: { id: true, status: true, amount: true },
+    });
+    if (!found) {
+      this.logger.error(
+        `PSP confirmation for unknown bill ${confirmation.billId} — not settled, needs investigation`,
+      );
+      throw new NotFoundException('Unknown bill');
+    }
+    if (found.status === PspAttemptStatus.SUCCEEDED) {
+      return { alreadySettled: true, attemptId: found.id };
+    }
+    if (!confirmation.amount.equals(found.amount)) {
+      await this.prisma.pspPaymentAttempt.updateMany({
+        where: { id: found.id, status: { in: [PspAttemptStatus.INITIATED, PspAttemptStatus.PENDING_CONFIRMATION] } },
+        data: {
+          status: PspAttemptStatus.REQUIRES_RECONCILIATION,
+          liveKey: null,
+          failureReason: `Amount mismatch: expected ${found.amount.toFixed(4)}, provider said ${confirmation.amount.toFixed(4)}`,
+          providerPayload: confirmation.raw as Prisma.InputJsonValue,
+          resolvedAt: new Date(),
+        },
+      });
+      this.logger.error(
+        `PSP amount mismatch on bill ${confirmation.billId}: expected ${found.amount.toFixed(4)}, ` +
+          `provider said ${confirmation.amount.toFixed(4)} — held for reconciliation`,
+      );
+      throw new ConflictException('Amount mismatch — held for reconciliation');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const attempt = await tx.pspPaymentAttempt.findFirst({
         where: { provider: this.adapter.name, providerBillId: confirmation.billId },
@@ -219,20 +264,9 @@ export class PspPaymentService {
         return { alreadySettled: true, attemptId: attempt.id };
       }
 
+      // Re-checked inside the transaction: the pre-check above rejects the
+      // common case, this closes the window where the row changed between.
       if (!confirmation.amount.equals(attempt.amount)) {
-        // The provider says a different number than the bill asked for.
-        // Never reconciled automatically: an amount mismatch is either a
-        // partial payment the platform does not support or tampering.
-        await tx.pspPaymentAttempt.update({
-          where: { id: attempt.id },
-          data: {
-            status: PspAttemptStatus.REQUIRES_RECONCILIATION,
-            liveKey: null,
-            failureReason: `Amount mismatch: expected ${attempt.amount.toFixed(4)}, provider said ${confirmation.amount.toFixed(4)}`,
-            providerPayload: confirmation.raw as Prisma.InputJsonValue,
-            resolvedAt: new Date(),
-          },
-        });
         throw new ConflictException('Amount mismatch — held for reconciliation');
       }
 

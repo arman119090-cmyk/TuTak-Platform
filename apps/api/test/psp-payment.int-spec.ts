@@ -5,6 +5,7 @@ import {
   PostingDirection,
   PrismaClient,
   PspAttemptStatus,
+  PspResolutionBasis,
   PurchaseIntentStatus,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -152,7 +153,9 @@ describe('PSP payment route (integration)', () => {
       expect(again.alreadySettled).toBe(true);
     }
 
-    const posted = await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } });
+    const posted = await prisma.ledgerTransaction.count({
+      where: { kind: 'psp.payment.captured' },
+    });
     expect(posted).toBe(1);
   });
 
@@ -188,7 +191,9 @@ describe('PSP payment route (integration)', () => {
       where: { providerBillId: 'bill-7' },
     });
     expect(held.status).toBe(PspAttemptStatus.REQUIRES_RECONCILIATION);
-    expect(await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } })).toBe(0);
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } })).toBe(
+      0,
+    );
   });
 
   it('refuses a confirmation for a bill it never opened', async () => {
@@ -228,7 +233,16 @@ describe('PSP payment route (integration)', () => {
     const attempt = await attemptFor(intent.id, 'bill-10');
     await prisma.pspPaymentAttempt.update({
       where: { id: attempt.id },
-      data: { status: PspAttemptStatus.FAILED, liveKey: null, resolvedAt: new Date() },
+      data: {
+        status: PspAttemptStatus.FAILED,
+        // The basis is not decoration. Since 15.09.2026 the database
+        // refuses FAILED without one, because "we waited" is not a
+        // provider saying no — and these tests are modelling a provider
+        // that did say no, so this is what they always meant.
+        resolutionBasis: PspResolutionBasis.PROVIDER_CALLBACK,
+        liveKey: null,
+        resolvedAt: new Date(),
+      },
     });
 
     expect(await psp.hasUnsafeAttempt(intent.id)).toBe(false);
@@ -358,10 +372,16 @@ describe('PSP payment route (integration)', () => {
       ),
     );
 
-    expect(await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } })).toBe(1);
-    expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(1);
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'psp.payment.captured' } })).toBe(
+      1,
+    );
+    expect(await prisma.ledgerTransaction.count({ where: { kind: 'partner.contribution' } })).toBe(
+      1,
+    );
     expect(
-      await prisma.ledgerTransaction.count({ where: { kind: 'partner.bonus_redemption_compensation' } }),
+      await prisma.ledgerTransaction.count({
+        where: { kind: 'partner.bonus_redemption_compensation' },
+      }),
     ).toBe(1);
   });
 
@@ -396,9 +416,16 @@ describe('PSP payment route (integration)', () => {
    * the database refuses several of these combinations outright, which is
    * itself part of the guarantee.
    */
-  const unsafeStates: Array<[PspAttemptStatus, (intentId: string, billId: string) => Promise<void>]> = [
+  const unsafeStates: Array<
+    [PspAttemptStatus, (intentId: string, billId: string) => Promise<void>]
+  > = [
     // Still live: the bill is open and the customer may be paying right now.
-    [PspAttemptStatus.INITIATED, async (intentId, billId) => { await attemptFor(intentId, billId); }],
+    [
+      PspAttemptStatus.INITIATED,
+      async (intentId, billId) => {
+        await attemptFor(intentId, billId);
+      },
+    ],
     [
       PspAttemptStatus.PENDING_CONFIRMATION,
       async (intentId, billId) => {
@@ -440,25 +467,42 @@ describe('PSP payment route (integration)', () => {
     ],
   ];
 
-  it.each(unsafeStates)('refuses a new attempt while an earlier one is %s', async (status, reach) => {
-    const intent = await purchase(PaymentRoute.TUTAK_PSP);
-    await reach(intent.id, `bill-${status}`);
+  it.each(unsafeStates)(
+    'refuses a new attempt while an earlier one is %s',
+    async (status, reach) => {
+      const intent = await purchase(PaymentRoute.TUTAK_PSP);
+      await reach(intent.id, `bill-${status}`);
 
-    expect(
-      (await prisma.pspPaymentAttempt.findFirstOrThrow({ where: { purchaseIntentId: intent.id } }))
-        .status,
-    ).toBe(status);
-    await expect(
-      psp.beginAttempt({ purchaseIntentId: intent.id, customerId: intent.customerId }),
-    ).rejects.toThrow(status === PspAttemptStatus.SUCCEEDED ? /is CONFIRMED|unresolved/ : /unresolved/i);
-  });
+      expect(
+        (
+          await prisma.pspPaymentAttempt.findFirstOrThrow({
+            where: { purchaseIntentId: intent.id },
+          })
+        ).status,
+      ).toBe(status);
+      await expect(
+        psp.beginAttempt({ purchaseIntentId: intent.id, customerId: intent.customerId }),
+      ).rejects.toThrow(
+        status === PspAttemptStatus.SUCCEEDED ? /is CONFIRMED|unresolved/ : /unresolved/i,
+      );
+    },
+  );
 
   it('allows a new attempt once the provider has said, authoritatively, that it failed', async () => {
     const intent = await purchase(PaymentRoute.TUTAK_PSP);
     const attempt = await attemptFor(intent.id, 'bill-failed');
     await prisma.pspPaymentAttempt.update({
       where: { id: attempt.id },
-      data: { status: PspAttemptStatus.FAILED, liveKey: null, resolvedAt: new Date() },
+      data: {
+        status: PspAttemptStatus.FAILED,
+        // The basis is not decoration. Since 15.09.2026 the database
+        // refuses FAILED without one, because "we waited" is not a
+        // provider saying no — and these tests are modelling a provider
+        // that did say no, so this is what they always meant.
+        resolutionBasis: PspResolutionBasis.PROVIDER_CALLBACK,
+        liveKey: null,
+        resolvedAt: new Date(),
+      },
     });
 
     // No provider credentials in the test environment, so the adapter refuses
@@ -531,7 +575,16 @@ describe('PSP payment route (integration)', () => {
       const attempt = await attemptFor(first.id, 'bill-cross-3');
       await prisma.pspPaymentAttempt.update({
         where: { id: attempt.id },
-        data: { status: PspAttemptStatus.FAILED, liveKey: null, resolvedAt: new Date() },
+        data: {
+          status: PspAttemptStatus.FAILED,
+          // The basis is not decoration. Since 15.09.2026 the database
+          // refuses FAILED without one, because "we waited" is not a
+          // provider saying no — and these tests are modelling a provider
+          // that did say no, so this is what they always meant.
+          resolutionBasis: PspResolutionBasis.PROVIDER_CALLBACK,
+          liveKey: null,
+          resolvedAt: new Date(),
+        },
       });
       await prisma.purchaseIntent.update({
         where: { id: first.id },
@@ -594,8 +647,9 @@ describe('PSP payment route (integration)', () => {
         customer.user.id,
       );
       // The exact state the race needs: a live PSP purchase and no attempt.
-      expect(await prisma.pspPaymentAttempt.count({ where: { purchaseIntentId: psPending.id } }))
-        .toBe(0);
+      expect(
+        await prisma.pspPaymentAttempt.count({ where: { purchaseIntentId: psPending.id } }),
+      ).toBe(0);
 
       await expect(
         intents.create({ partnerId, grossAmount: '15000' }, customer.user.id),
@@ -727,7 +781,16 @@ describe('PSP payment route (integration)', () => {
       const attempt = await attemptFor(first.id, 'bill-auth-failed');
       await prisma.pspPaymentAttempt.update({
         where: { id: attempt.id },
-        data: { status: PspAttemptStatus.FAILED, liveKey: null, resolvedAt: new Date() },
+        data: {
+          status: PspAttemptStatus.FAILED,
+          // The basis is not decoration. Since 15.09.2026 the database
+          // refuses FAILED without one, because "we waited" is not a
+          // provider saying no — and these tests are modelling a provider
+          // that did say no, so this is what they always meant.
+          resolutionBasis: PspResolutionBasis.PROVIDER_CALLBACK,
+          liveKey: null,
+          resolvedAt: new Date(),
+        },
       });
       await prisma.purchaseIntent.update({
         where: { id: first.id },
@@ -797,7 +860,9 @@ describe('PSP payment route (integration)', () => {
     const out = new Map<string, Decimal>();
     for (const p of postings) {
       const signed =
-        p.direction === PostingDirection.CREDIT ? new Decimal(p.amount) : new Decimal(p.amount).negated();
+        p.direction === PostingDirection.CREDIT
+          ? new Decimal(p.amount)
+          : new Decimal(p.amount).negated();
       out.set(p.transaction.kind, (out.get(p.transaction.kind) ?? new Decimal(0)).plus(signed));
     }
     return out;

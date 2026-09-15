@@ -68,6 +68,15 @@ export class IdramAdapter implements PspAdapter {
     return process.env.IDRAM_SECRET_KEY ?? '';
   }
 
+  /*
+   * Returns a promise without awaiting anything, and that is not an
+   * oversight. Idram's documented flow is a form the customer's browser
+   * posts — there is no server-to-server call to make here. The signature
+   * stays asynchronous because the *interface* must suit providers that do
+   * make one, and narrowing it to synchronous would force the next adapter
+   * to widen it again.
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async createBill(params: CreateBillParams): Promise<CreateBillResult> {
     if (!this.merchantId || !this.secret) {
       throw new Error(
@@ -90,6 +99,9 @@ export class IdramAdapter implements PspAdapter {
     };
   }
 
+  // Same reason as `createBill` above: the checksum is computed locally, but
+  // a provider that verifies by calling home needs the async signature.
+  // eslint-disable-next-line @typescript-eslint/require-await
   async verifyCallback(
     _headers: Record<string, string>,
     body: unknown,

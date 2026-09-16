@@ -30,16 +30,48 @@ import {
  *
  * ## The checksum
  *
- * Idram's documented scheme is an MD5 over a colon-joined field list ending
- * with the merchant secret. MD5 is not a choice made here — it is what the
- * provider specifies, and a verifier must match the provider. It is still
- * real verification: an attacker without the secret cannot produce it.
+ * Idram documents MD5 over these colon-joined values in this exact order:
+ * REC_ACCOUNT, AMOUNT, SECRET_KEY, BILL_NO, PAYER_ACCOUNT, TRANS_ID,
+ * TRANS_DATE. MD5 is not a choice made here — it is what the provider
+ * specifies, and a verifier must match the provider.
  *
  * What makes it safe is not the hash alone but what is compared afterwards:
- * `verifyCallback` checks the bill identifier and the amount against what
- * this platform asked for, so a genuine callback for a different, smaller
- * bill cannot settle a larger one.
+ * `verifyCallback` checks the merchant, bill identifier and amount against
+ * what this platform asked for, so a genuine callback for a different,
+ * smaller bill cannot settle a larger one.
  */
+
+export interface IdramChecksumFields {
+  recAccount: string;
+  amount: string;
+  billNo: string;
+  payerAccount: string;
+  transId: string;
+  transDate: string;
+}
+
+/**
+ * Provider-contract helper kept pure so the exact Idram field order can be
+ * pinned by a hard-coded regression vector instead of a test that repeats the
+ * implementation's own mistake.
+ */
+export function idramPaymentChecksum(fields: IdramChecksumFields, secret: string): string {
+  return createHash('md5')
+    .update(
+      [
+        fields.recAccount,
+        fields.amount,
+        secret,
+        fields.billNo,
+        fields.payerAccount,
+        fields.transId,
+        fields.transDate,
+      ].join(':'),
+    )
+    .digest('hex')
+    .toUpperCase();
+}
+
 @Injectable()
 export class IdramAdapter implements PspAdapter {
   readonly name = 'idram';
@@ -169,20 +201,17 @@ export class IdramAdapter implements PspAdapter {
       return { verified: false, reason: 'precheck', raw: body };
     }
 
-    const expected = createHash('md5')
-      .update(
-        [
-          payload.EDP_REC_ACCOUNT ?? '',
-          payload.EDP_AMOUNT ?? '',
-          payload.EDP_BILL_NO ?? '',
-          payload.EDP_PAYER_ACCOUNT ?? '',
-          payload.EDP_TRANS_ID ?? '',
-          payload.EDP_TRANS_DATE ?? '',
-          this.secret,
-        ].join(':'),
-      )
-      .digest('hex')
-      .toUpperCase();
+    const expected = idramPaymentChecksum(
+      {
+        recAccount: payload.EDP_REC_ACCOUNT ?? '',
+        amount: payload.EDP_AMOUNT ?? '',
+        billNo: payload.EDP_BILL_NO ?? '',
+        payerAccount: payload.EDP_PAYER_ACCOUNT ?? '',
+        transId: payload.EDP_TRANS_ID ?? '',
+        transDate: payload.EDP_TRANS_DATE ?? '',
+      },
+      this.secret,
+    );
 
     const given = (payload.EDP_CHECKSUM ?? '').toUpperCase();
     if (!given || given !== expected) {

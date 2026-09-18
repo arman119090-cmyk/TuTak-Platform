@@ -1,3 +1,9 @@
+import {
+  ReconciliationOutcome,
+  type PartnerSettlementDto,
+  type PartnerStatementDto,
+  type UnsettledPositionDto,
+} from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
 
 export interface AcquirerSettlement {
@@ -344,5 +350,101 @@ export const treasuryApi = {
   async position() {
     const { data } = await httpClient.get<{ data: LiquidityPosition }>('/admin/treasury/position');
     return data.data;
+  },
+};
+
+/**
+ * Partner settlements from the TuTak side: drafting one, and the two-person
+ * path that gets it paid.
+ *
+ * Every write here is `SETTLEMENT_MANAGE`. The maker/checker split is not a
+ * permission split — both halves need the same permission — it is an
+ * *identity* split enforced by the service: whoever created a settlement
+ * cannot approve it. The screen mirrors that so an admin is told before the
+ * request rather than by a 409.
+ */
+export const settlementAdminApi = {
+  async list(partnerId?: string): Promise<PartnerSettlementDto[]> {
+    const { data } = await httpClient.get('/admin/partner-settlements', {
+      params: partnerId ? { partnerId } : undefined,
+    });
+    return data.data;
+  },
+
+  async detail(id: string): Promise<PartnerStatementDto> {
+    const { data } = await httpClient.get(`/admin/partner-settlements/${id}`);
+    return data.data;
+  },
+
+  async unsettled(partnerId: string): Promise<UnsettledPositionDto> {
+    const { data } = await httpClient.get(`/admin/partner-settlements/unsettled/${partnerId}`);
+    return data.data;
+  },
+
+  async draft(partnerId: string, periodStart: string, periodEnd: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/drafts/${partnerId}`, {
+      periodStart,
+      periodEnd,
+    });
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markReady(id: string, documentNumber?: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/ready`, {
+      ...(documentNumber ? { documentNumber } : {}),
+    });
+    return data.data as PartnerSettlementDto;
+  },
+
+  /** The checker half. Refused by the server if you are the maker. */
+  async approve(id: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/approve`);
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markPaymentPending(id: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/payment-pending`);
+    return data.data as PartnerSettlementDto;
+  },
+
+  /** The only call that posts to the ledger. Needs the bank's own reference. */
+  async markPaid(id: string, bankTransferReference: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/paid`, {
+      bankTransferReference,
+    });
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markFailed(id: string, reason: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/failed`, { reason });
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markAmbiguous(id: string, reason: string) {
+    const { data } = await httpClient.post(
+      `/admin/partner-settlements/${id}/requires-reconciliation`,
+      { reason },
+    );
+    return data.data as PartnerSettlementDto;
+  },
+
+  async proposeReconciliation(id: string, outcome: ReconciliationOutcome, evidence: string) {
+    const { data } = await httpClient.post(
+      `/admin/partner-settlements/${id}/reconciliation/propose`,
+      { outcome, evidence },
+    );
+    return data.data as PartnerSettlementDto;
+  },
+
+  async confirmReconciliation(id: string) {
+    const { data } = await httpClient.post(
+      `/admin/partner-settlements/${id}/reconciliation/confirm`,
+    );
+    return data.data as PartnerSettlementDto;
+  },
+
+  async cancel(id: string, reason: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/cancel`, { reason });
+    return data.data as PartnerSettlementDto;
   },
 };

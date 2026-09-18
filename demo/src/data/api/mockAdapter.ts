@@ -1,6 +1,7 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import {
+  CustomerPaymentState,
   EvSessionStatus,
   PaymentRoute,
   PurchaseIntentStatus,
@@ -548,6 +549,31 @@ function handle(
       updatedAt: new Date().toISOString(),
     };
     return envelope(stopped);
+  }
+
+  /*
+   * Paying through the provider, in the offline demo.
+   *
+   * The demo has no provider and never will: there is no Idram to answer, so
+   * a mock that reported SUCCEEDED would be demonstrating money moving when
+   * none did — in the one part of the app whose entire purpose is to refuse
+   * exactly that claim.
+   *
+   * So `begin` is refused rather than faked. `NOT_APPLICABLE` is the honest
+   * status for a demo purchase: the demo settles at the till, which is the
+   * route it can actually complete.
+   */
+  const beginPspPayment = /^\/psp\/purchases\/([^/]+)\/begin$/.exec(path);
+  if (method === 'POST' && beginPspPayment) {
+    return envelope(
+      { message: 'The demo has no payment provider. Purchases here settle at the till.' },
+      409,
+    );
+  }
+
+  const pspStatus = /^\/psp\/purchases\/([^/]+)\/status$/.exec(path);
+  if (method === 'GET' && pspStatus) {
+    return envelope({ state: CustomerPaymentState.NOT_APPLICABLE });
   }
 
   // The customer's own way out, offline as well as online: the demo's

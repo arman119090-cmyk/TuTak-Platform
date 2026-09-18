@@ -13,7 +13,8 @@ import {
   Th,
   Tr,
 } from '@tutak/design/web';
-import { settlementApi, type PartnerSettlementRow } from '@/lib/api/financeApi';
+import { settlementApi } from '@/lib/api/financeApi';
+import type { PartnerSettlementDto } from '@tutak/shared-types';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 
 const money = (v: string) =>
@@ -82,7 +83,7 @@ export default function SettlementsPage() {
     enabled: !!partnerId,
   });
 
-  const [reporting, setReporting] = useState<PartnerSettlementRow | null>(null);
+  const [reporting, setReporting] = useState<PartnerSettlementDto | null>(null);
   const [reason, setReason] = useState('');
 
   const report = useMutation({

@@ -1,3 +1,8 @@
+import type {
+  PartnerSettlementDto,
+  PartnerStatementDto,
+  UnsettledPositionDto,
+} from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
 
 export interface Settlement {
@@ -73,90 +78,33 @@ export const financeApi = {
   },
 };
 
-/**
- * A settlement TuTak has drafted for this partner: one period, one net
- * figure, one bank transfer somebody makes by hand.
- *
- * Typed here rather than in `@tutak/shared-types` to match the rest of this
- * file — the dashboard's settlement DTOs have no second consumer yet, and
- * moving them is a change worth making when one appears, not before.
+/*
+ * Settlement types now live in `@tutak/shared-types` — see
+ * `PartnerSettlementDto`'s own docblock for why. They were typed here, they
+ * were typed *wrong*, and the tests agreed with the mistake because the
+ * fixture repeated it. A shared type makes the same mistake a `tsc` error in
+ * every consumer instead of a NaN a partner has to notice.
  */
-export interface PartnerSettlementRow {
-  id: string;
-  partnerId: string;
-  status: string;
-  periodStart: string;
-  periodEnd: string;
-  // Named exactly as the Prisma model, because these rows come straight from
-  // `PartnerSettlementService.list()` with no mapping layer in between. Got
-  // this wrong once (`deductionsAmount`/`netAmount`) and the test passed
-  // anyway, because the fixture repeated the same invented names — a fixture
-  // that agrees with the client instead of with the server proves nothing.
-  accruedAmount: string;
-  deductionAmount: string;
-  netPayableAmount: string;
-  currency: string;
-  bankTransferReference: string | null;
-  createdByUserId: string | null;
-  approvedByUserId: string | null;
-  paidAt: string | null;
-  createdAt: string;
-  _count?: { entries: number };
-}
 
-/** One line of a statement, traced to the posting that produced it. */
-export interface PartnerSettlementEntryRow {
-  id: string;
-  kind: string;
-  amount: string;
-  occurredAt: string;
-  sourceType: string | null;
-  sourceId: string | null;
-}
-
-export interface PartnerStatement {
-  settlement: PartnerSettlementRow;
-  entries: PartnerSettlementEntryRow[];
-}
-
-/** What has accrued since the last settlement and nobody has drafted yet. */
-export interface UnsettledPosition {
-  partnerId: string;
-  accrued: string;
-  deductions: string;
-  net: string;
-  entries: PartnerSettlementEntryRow[];
-  /** Posting kinds nobody has classified. Shown, never silently dropped. */
-  unrecognised: string[];
-}
-
-/**
- * The partner's own view of what TuTak owes them.
- *
- * Read-only, and that is the design rather than an omission: a payee who can
- * adjust what they are owed is not a payee. The one write a partner has is
- * reporting a problem with a transfer, which asserts nothing about whether
- * money moved — deciding that takes two people on the TuTak side.
- */
 export const settlementApi = {
-  async statements(partnerId: string): Promise<PartnerSettlementRow[]> {
+  async statements(partnerId: string): Promise<PartnerSettlementDto[]> {
     const { data } = await httpClient.get(`/partner/settlements/${partnerId}`);
     return data.data;
   },
 
-  async statement(partnerId: string, id: string): Promise<PartnerStatement> {
+  async statement(partnerId: string, id: string): Promise<PartnerStatementDto> {
     const { data } = await httpClient.get(`/partner/settlements/${partnerId}/statement/${id}`);
     return data.data;
   },
 
-  async position(partnerId: string): Promise<UnsettledPosition> {
+  async position(partnerId: string): Promise<UnsettledPositionDto> {
     const { data } = await httpClient.get(`/partner/settlements/${partnerId}/position`);
     return data.data;
   },
 
   // `reason`, matching `ReportTransferProblemDto` — the server validates it
   // at 3-500 characters, so an empty complaint is refused there too.
-  async reportProblem(partnerId: string, id: string, reason: string): Promise<PartnerSettlementRow> {
+  async reportProblem(partnerId: string, id: string, reason: string): Promise<PartnerSettlementDto> {
     const { data } = await httpClient.post(
       `/partner/settlements/${partnerId}/statement/${id}/report-problem`,
       { reason },

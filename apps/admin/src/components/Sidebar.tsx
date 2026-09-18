@@ -17,6 +17,13 @@ const NAV: NavItem[] = [
   { href: '/refunds', label: 'Refunds', icon: <NavIcon d="M3 10h13a5 5 0 0 1 0 10h-3M3 10l4-4M3 10l4 4" /> },
   { href: '/payments', label: 'Payments', icon: <NavIcon d="M3 7h18v11H3zM3 11h18M7 15h3M17 15h.01" /> },
   { href: '/payouts', label: 'Payouts', icon: <NavIcon d="M3 7h18v11H3zM3 11h18M7 15h3" /> },
+  // Beside Payouts: that is money leaving, this is the statement it leaves
+  // against, and the two-person path that authorises it.
+  {
+    href: '/settlements',
+    label: 'Settlements',
+    icon: <NavIcon d="M4 7h16M4 12h16M4 17h10" />,
+  },
   { href: '/ledger', label: 'Ledger', icon: <NavIcon d="M4 4h13l3 3v13H4zM8 9h8M8 13h8M8 17h5" /> },
   { href: '/reconciliation', label: 'Reconciliation', icon: <NavIcon d="M4 7h10M4 7l3-3M4 7l3 3M20 17H10m10 0-3-3m3 3-3 3" /> },
   { href: '/fraud-signals', label: 'Fraud signals', icon: <NavIcon d="M12 3 4 6.5v5c0 4.6 3.2 8.7 8 9.5 4.8-.8 8-4.9 8-9.5v-5L12 3ZM12 9v4M12 16.5h.01" /> },

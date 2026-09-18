@@ -3,7 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Role, type AuthenticatedUserDto } from '@tutak/shared-types';
 import SettlementsPage from './page';
 import { useAuthStore } from '@/lib/stores/authStore';
-import { settlementApi, type PartnerSettlementRow } from '@/lib/api/financeApi';
+import { settlementApi } from '@/lib/api/financeApi';
+import {
+  PartnerSettlementStatus,
+  type PartnerSettlementDto,
+} from '@tutak/shared-types';
 
 /**
  * A partner reads their own money and cannot move it.
@@ -36,11 +40,16 @@ function buildUser(): AuthenticatedUserDto {
   };
 }
 
-function statementFixture(overrides: Partial<PartnerSettlementRow> = {}): PartnerSettlementRow {
+/**
+ * Typed as the shared DTO on purpose. `tsc` now refuses a fixture that
+ * invents a field name — which is exactly how the `netAmount` bug got past
+ * eight green tests before these types were shared.
+ */
+function statementFixture(overrides: Partial<PartnerSettlementDto> = {}): PartnerSettlementDto {
   return {
     id: 'settlement-1',
     partnerId: 'partner-1',
-    status: 'PAID',
+    status: PartnerSettlementStatus.PAID,
     periodStart: '2026-09-01T00:00:00.000Z',
     periodEnd: '2026-09-15T00:00:00.000Z',
     accruedAmount: '20000.0000',
@@ -48,10 +57,28 @@ function statementFixture(overrides: Partial<PartnerSettlementRow> = {}): Partne
     netPayableAmount: '18500.0000',
     currency: 'AMD',
     bankTransferReference: 'TRF-77',
+    entryCount: 2,
+    documentNumber: 'DOC-1',
+    bankAccountId: 'ba-1',
     createdByUserId: 'admin-1',
-    approvedByUserId: 'admin-2',
-    paidAt: '2026-09-15T10:00:00.000Z',
     createdAt: '2026-09-15T09:00:00.000Z',
+    approvedByUserId: 'admin-2',
+    approvedAt: '2026-09-15T09:30:00.000Z',
+    paidByUserId: 'admin-2',
+    paidAt: '2026-09-15T10:00:00.000Z',
+    failedReason: null,
+    cancelledByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    reconciliationSource: null,
+    reconciliationReportedByUserId: null,
+    reconciliationReportedAt: null,
+    reconciliationOutcome: null,
+    reconciliationEvidence: null,
+    reconciliationProposedByUserId: null,
+    reconciliationProposedAt: null,
+    reconciliationConfirmedByUserId: null,
+    reconciliationConfirmedAt: null,
     ...overrides,
   };
 }
@@ -112,7 +139,7 @@ describe('SettlementsPage', () => {
    */
   it('tells a partner a bounced transfer is still owed', async () => {
     (settlementApi.statements as jest.Mock).mockResolvedValue([
-      statementFixture({ status: 'FAILED', paidAt: null }),
+      statementFixture({ status: PartnerSettlementStatus.FAILED, paidAt: null }),
     ]);
     renderPage();
     expect(await screen.findByText(/still owed/i)).toBeTruthy();
@@ -120,7 +147,11 @@ describe('SettlementsPage', () => {
 
   it('offers no dispute on a settlement still being assembled', async () => {
     (settlementApi.statements as jest.Mock).mockResolvedValue([
-      statementFixture({ status: 'DRAFT', paidAt: null, bankTransferReference: null }),
+      statementFixture({
+        status: PartnerSettlementStatus.DRAFT,
+        paidAt: null,
+        bankTransferReference: null,
+      }),
     ]);
     renderPage();
     await screen.findByText(/being prepared/i);

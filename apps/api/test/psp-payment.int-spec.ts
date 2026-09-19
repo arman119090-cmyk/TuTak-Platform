@@ -576,13 +576,28 @@ describe('PSP payment route (integration)', () => {
       },
     });
 
-    // No provider credentials in the test environment, so the adapter refuses
-    // at the point of opening a bill — *after* the safety check this test is
-    // about. Reaching that refusal is the assertion: a different error here
-    // would mean the unresolved-attempt guard fired when it should not have.
-    await expect(
-      psp.beginAttempt({ purchaseIntentId: intent.id, customerId: intent.customerId }),
-    ).rejects.toThrow(/IDRAM_MERCHANT_ID/);
+    // The integration setup supplies a coherent (fake) provider config, so a
+    // customer whose previous attempt the provider authoritatively refused
+    // gets a genuine second chance: a fresh INITIATED attempt and the form
+    // handoff to post. An error here would mean the unresolved-attempt guard
+    // fired when it should not have.
+    const second = await psp.beginAttempt({
+      purchaseIntentId: intent.id,
+      customerId: intent.customerId,
+    });
+    expect(second.handoff.type).toBe('FORM_POST');
+    expect(second.attemptId).not.toBe(attempt.id);
+
+    const attempts = await prisma.pspPaymentAttempt.findMany({
+      where: { purchaseIntentId: intent.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(attempts.map((a) => a.status)).toEqual([
+      PspAttemptStatus.FAILED,
+      PspAttemptStatus.INITIATED,
+    ]);
+    expect(attempts.map((a) => a.id)).toEqual([attempt.id, second.attemptId]);
+    expect(attempts.map((a) => a.liveKey)).toEqual([null, 'live']);
   });
 
   /**

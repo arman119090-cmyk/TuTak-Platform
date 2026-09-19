@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { useBiometricStore } from './stores/biometricStore';
 import { useAuthStore } from './stores/authStore';
 
 /**
@@ -45,4 +46,9 @@ useAuthStore.subscribe((state) => {
     lastSessionEpoch = state.sessionEpoch;
     queryClient.clear();
   }
+});
+
+// Cancel pending reads when locking. Unlocking remounts and refetches.
+useBiometricStore.subscribe((state, previous) => {
+  if (state.locked && !previous.locked) void queryClient.cancelQueries();
 });

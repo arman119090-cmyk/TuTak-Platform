@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { DemoOnly } from '../../components/DemoOnly';
 import { JakoWingMark } from '../../components/V2NavIcon';
@@ -87,7 +86,7 @@ export function ScanQrScreen() {
   if (!permission.granted) {
     return (
       <Screen title={t('qr.scanQr')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <View
             style={[
               styles.permIcon,
@@ -114,7 +113,7 @@ export function ScanQrScreen() {
             fullWidth={false}
             icon={<JakoWingMark size={16} color={color.textInverse} />}
           />
-        </Surface>
+        </View>
       </Screen>
     );
   }
@@ -122,7 +121,7 @@ export function ScanQrScreen() {
   if (invalid) {
     return (
       <Screen title={t('qr.scanQr')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <Ionicons name="alert-circle-outline" size={32} color={color.dangerText} />
           <Text
             style={[
@@ -132,7 +131,7 @@ export function ScanQrScreen() {
           >
             {t('qr.invalidCode')}
           </Text>
-        </Surface>
+        </View>
         <View style={{ marginTop: space[5] }}>
           <Button
             label={t('common.retry')}

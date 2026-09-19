@@ -7,7 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
@@ -122,7 +121,7 @@ export function EvSessionScreen() {
     // from another device, or a back-navigation into a stale route.
     return (
       <Screen title={t('ev.sessionTitle')}>
-        <Surface>
+        <View>
           <Text style={[text.body, { color: color.textSecondary }]}>{t('ev.noActiveSession')}</Text>
           <View style={{ marginTop: space[4] }}>
             <Button
@@ -132,14 +131,14 @@ export function EvSessionScreen() {
               icon={<JakoWingMark size={16} color={color.textPrimary} />}
             />
           </View>
-        </Surface>
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen title={t('ev.sessionTitle')} subtitle={session.connector?.station.name}>
-      <Surface>
+      <View>
         <View style={styles.headerRow}>
           {/* `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §1.3 names charging-session
               *detail* alongside history. The operator is a partner like any
@@ -202,11 +201,11 @@ export function EvSessionScreen() {
         <Text style={[text.caption, { color: color.textTertiary, marginTop: space[4] }]}>
           {t('ev.estimateNote')}
         </Text>
-      </Surface>
+      </View>
 
       {available > 0 ? (
-        <Surface style={{ marginTop: space[3] }}>
-          <View style={{ marginTop: space[3] }}>
+        <View style={{ marginTop: space[5] }}>
+          <View>
             <TextField
               label={t('ev.payWithPoints')}
               hint={t('ev.pointsAvailable', { points: formatPoints(available) })}
@@ -217,7 +216,7 @@ export function EvSessionScreen() {
               error={bonusTooLarge ? t('ev.notEnoughPoints') : undefined}
             />
           </View>
-        </Surface>
+        </View>
       ) : null}
 
       <View style={{ marginTop: space[5] }}>

@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { TextField } from '../../components/TextField';
 import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
@@ -79,7 +78,7 @@ export function DeleteAccountScreen({ navigation }: Props) {
 
   return (
       <Screen title={t('settings.deleteAccount')}>
-        <Surface>
+        <View>
           <View style={styles.heading}>
             <View
               style={[
@@ -108,7 +107,7 @@ export function DeleteAccountScreen({ navigation }: Props) {
                 know the financial history is kept, and why. */}
             <Consequence text={t('settings.deleteAccountPointLedger')} />
           </View>
-        </Surface>
+        </View>
 
         <View style={{ marginTop: space[5] }}>
           <TextField

@@ -99,26 +99,19 @@ export function BonusComposition({
       </View>
 
       {compact ? null : (
-        <View style={[styles.legend, { marginTop: space[4], gap: onBrand ? undefined : space[5] }]}>
+        // One inline item per state — "● label value" — wrapping onto a
+        // second line when the language needs it ("Зарезервировано",
+        // Armenian). Nothing shrinks and nothing is cut short:
+        // `adjustsFontSizeToFit` is not honoured on every platform and an
+        // ellipsis in a balance legend is a defect, not a compromise. The
+        // same shape on the hero and on the wallet, so the three states are
+        // learned once.
+        <View style={[styles.legend, { marginTop: space[4], columnGap: space[4], rowGap: space[2] }]}>
           {segments.map((s) => (
-            <View key={s.key} style={styles.legendItem}>
-              <View
-                style={[styles.legendHeader, { gap: onBrand ? space[2] - 2 : space[2] }]}
-              >
-                <View
-                  style={[
-                    onBrand ? styles.dotOnBrand : styles.dot,
-                    { backgroundColor: s.fill },
-                  ]}
-                />
-                <Text style={[text.caption, { color: labelColor }]}>{s.label}</Text>
-              </View>
-              <Text
-                style={[
-                  onBrand ? text.label : text.headline,
-                  { color: valueColor, marginTop: space[1] },
-                ]}
-              >
+            <View key={s.key} style={[styles.legendInline, { gap: space[2] - 2 }]}>
+              <View style={[onBrand ? styles.dotOnBrand : styles.dot, { backgroundColor: s.fill }]} />
+              <Text style={[onBrand ? text.caption : text.bodySm, { color: labelColor }]}>{s.label}</Text>
+              <Text style={[onBrand ? text.label : text.headline, styles.tabular, { color: valueColor }]}>
                 {formatPoints(s.value)}
               </Text>
             </View>
@@ -144,9 +137,9 @@ const styles = StyleSheet.create({
   track: { height: 10, overflow: 'hidden', width: '100%' },
   trackOnBrand: { height: 8, overflow: 'hidden', width: '100%' },
   trackInner: { flexDirection: 'row', height: '100%', width: '100%' },
-  legend: { flexDirection: 'row' },
-  legendItem: { flex: 1 },
-  legendHeader: { flexDirection: 'row', alignItems: 'center' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
+  legendInline: { flexDirection: 'row', alignItems: 'center' },
+  tabular: { fontVariant: ['tabular-nums'] },
   dot: { width: 8, height: 8, borderRadius: 4 },
   dotOnBrand: { width: 6, height: 6, borderRadius: 3 },
 });

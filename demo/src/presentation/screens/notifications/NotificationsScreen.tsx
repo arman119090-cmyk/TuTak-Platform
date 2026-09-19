@@ -2,10 +2,8 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { notificationsApi } from '../../../data/api/notificationsApi';
@@ -13,7 +11,7 @@ import { formatDateTime } from '../../utils/format';
 
 export function NotificationsScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text, radius, palette } = useTheme();
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -50,63 +48,50 @@ export function NotificationsScreen() {
       {isLoading ? (
         <View style={{ gap: space[3] }}>
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} width="100%" height={76} style={{ borderRadius: radius.xl }} />
+            <Skeleton key={i} width="100%" height={64} style={{ borderRadius: radius.md }} />
           ))}
         </View>
       ) : items.length === 0 ? (
-        <Surface>
-          <EmptyState title={t('notifications.empty')} message={t('notifications.emptyMessage')} />
-        </Surface>
+        <EmptyState title={t('notifications.empty')} message={t('notifications.emptyMessage')} />
       ) : (
-        items.map((n) => (
-          <Pressable key={n.id} onPress={() => (n.isRead ? undefined : markRead(n.id))}>
-            <Surface style={{ marginBottom: space[3] }}>
-              <View style={styles.row}>
-                {/* Unread is signalled by a brand dot, not a tinted card —
-                    the list stays calm and the dot does the work. */}
-                <View
-                  style={[
-                    styles.iconWrap,
-                    {
-                      backgroundColor: n.isRead ? color.surfaceSunken : color.primarySurface,
-                      borderRadius: radius.md,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name="notifications"
-                    size={18}
-                    color={n.isRead ? color.textTertiary : color.primary}
-                  />
-                </View>
-
-                <View style={[styles.flex, { marginLeft: space[3] }]}>
-                  <View style={styles.titleRow}>
-                    <Text
-                      style={[
-                        n.isRead ? text.body : text.headline,
-                        { color: color.textPrimary, flex: 1 },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {t(n.titleKey, { defaultValue: n.titleKey })}
-                    </Text>
-                    {!n.isRead ? (
-                      <View style={[styles.unreadDot, { backgroundColor: color.primary }]} />
-                    ) : null}
-                  </View>
+        items.map((n, i) => (
+          <Pressable
+            key={n.id}
+            onPress={() => (n.isRead ? undefined : markRead(n.id))}
+            accessibilityRole="button"
+            style={({ pressed }) => ({ opacity: pressed && !n.isRead ? 0.7 : 1 })}
+          >
+            {/* One row per notification, straight on the page. Unread is the
+                heavier title and a brand dot; read is the lighter title. No
+                card and no icon tile — the list is the calm part of the app,
+                and every row carrying the same bell said nothing. */}
+            <View style={[styles.row, { paddingVertical: space[4] }]}>
+              <View style={styles.flex}>
+                <View style={styles.titleRow}>
                   <Text
-                    style={[text.bodySm, { color: color.textSecondary, marginTop: space[1] }]}
+                    style={[n.isRead ? text.body : text.headline, { color: color.textPrimary, flex: 1 }]}
                     numberOfLines={2}
                   >
-                    {t(n.bodyKey, { ...(n.params ?? {}), defaultValue: n.bodyKey })}
+                    {t(n.titleKey, { defaultValue: n.titleKey })}
                   </Text>
-                  <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
-                    {formatDateTime(n.createdAt)}
-                  </Text>
+                  {!n.isRead ? (
+                    <View style={[styles.unreadDot, { backgroundColor: color.primary }]} />
+                  ) : null}
                 </View>
+                <Text
+                  style={[text.bodySm, { color: color.textSecondary, marginTop: space[1] }]}
+                  numberOfLines={2}
+                >
+                  {t(n.bodyKey, { ...(n.params ?? {}), defaultValue: n.bodyKey })}
+                </Text>
+                <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
+                  {formatDateTime(n.createdAt)}
+                </Text>
               </View>
-            </Surface>
+            </View>
+            {i === items.length - 1 ? null : (
+              <View style={[styles.separator, { backgroundColor: palette.neutral[100] }]} />
+            )}
           </Pressable>
         ))
       )}
@@ -118,6 +103,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   row: { flexDirection: 'row' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconWrap: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  separator: { height: StyleSheet.hairlineWidth },
   unreadDot: { width: 8, height: 8, borderRadius: 4 },
 });

@@ -7,7 +7,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
@@ -83,9 +82,9 @@ export function CreatePurchaseIntentScreen() {
   if (partnerLoading) {
     return (
       <Screen title={t('purchaseIntent.createTitle')} subtitle={partnerName}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <ActivityIndicator color={color.primary} />
-        </Surface>
+        </View>
       </Screen>
     );
   }
@@ -93,11 +92,11 @@ export function CreatePurchaseIntentScreen() {
   if (partnerFailed) {
     return (
       <Screen title={t('purchaseIntent.createTitle')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <Text style={[text.bodySm, { color: color.dangerText, textAlign: 'center' }]}>
             {t('purchaseIntent.partnerLoadFailed')}
           </Text>
-        </Surface>
+        </View>
         <View style={{ marginTop: space[5] }}>
           <Button
             label={t('common.retry')}
@@ -126,11 +125,11 @@ export function CreatePurchaseIntentScreen() {
   if (!partner.isActive) {
     return (
       <Screen title={t('purchaseIntent.createTitle')} subtitle={partner.displayName}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
             {t('purchaseIntent.partnerInactive')}
           </Text>
-        </Surface>
+        </View>
       </Screen>
     );
   }
@@ -148,7 +147,7 @@ export function CreatePurchaseIntentScreen() {
           server read this screen already does — never the scanned code's
           claim). The snapshot only becomes authoritative once the intent
           exists; see `PurchaseIntentStatusScreen`. */}
-      <Surface style={{ marginBottom: space[4] }}>
+      <View style={{ marginBottom: space[5], paddingVertical: space[3] }}>
         {/* Centred on an inner view, not via `alignItems` on the Surface:
             `Surface` nests its children under a full-width fill, so alignment
             set on the outer element centres that fill rather than anything in
@@ -167,7 +166,7 @@ export function CreatePurchaseIntentScreen() {
             })}
           </Text>
         </View>
-      </Surface>
+      </View>
 
       <TextField
         label={t('purchaseIntent.grossAmount')}
@@ -191,7 +190,7 @@ export function CreatePurchaseIntentScreen() {
       ) : null}
 
       {grossValid ? (
-        <Surface style={{ marginTop: space[4] }}>
+        <View style={{ marginTop: space[4] }}>
           <View
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
@@ -202,14 +201,14 @@ export function CreatePurchaseIntentScreen() {
               {formatAmd(Math.max(0, Number(grossAmount || 0) - Number(bonusAmount || 0)))}
             </Text>
           </View>
-        </Surface>
+        </View>
       ) : null}
 
-      <Surface style={{ marginTop: space[4] }}>
+      <View style={{ marginTop: space[4] }}>
         <Text style={[text.bodySm, { color: color.textSecondary }]}>
           {t('purchaseIntent.expiryNotice')}
         </Text>
-      </Surface>
+      </View>
 
       <View style={{ marginTop: space[7] }}>
         <Button

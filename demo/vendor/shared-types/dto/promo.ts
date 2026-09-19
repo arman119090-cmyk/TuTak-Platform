@@ -12,12 +12,29 @@ import type { MediaImageDto } from './media';
 /** Where a tap lands. Into the product only — never a free URL. */
 export type PartnerPromoDestination = 'PARTNER' | 'PARTNERS_MAP';
 
-/** What the app shows. No counters, no schedule — only what a card needs. */
+/** The interface languages a card can be written in. */
+export type PartnerPromoLocale = 'hy' | 'ru' | 'en';
+
+/** One language of a card. A locale counts as filled when title and benefit are present. */
+export interface PartnerPromoCopyDto {
+  title: string;
+  subtitle?: string | null;
+  benefitLabel: string;
+}
+
+export type PartnerPromoTranslationsDto = Partial<Record<PartnerPromoLocale, PartnerPromoCopyDto>>;
+
+/**
+ * What the app shows, already in one language. The app asks with
+ * `?locale=`; the API answers in that language, or falls back
+ * requested → ru → first filled, and says which in `locale`.
+ */
 export interface PartnerPromoPublicDto {
   id: string;
   partnerId: string;
   partnerName: string;
   partnerLogo: MediaImageDto | null;
+  locale: PartnerPromoLocale;
   title: string;
   subtitle: string | null;
   /** The concrete benefit the card leads with: "10% кешбэк", "−15%". */
@@ -30,6 +47,9 @@ export interface PartnerPromoPublicDto {
 
 /** The management view: everything, including what is not live and why. */
 export interface PartnerPromoAdminDto extends PartnerPromoPublicDto {
+  translations: PartnerPromoTranslationsDto;
+  /** Locales with a title and a benefit label — what the app can show. */
+  availableLocales: PartnerPromoLocale[];
   active: boolean;
   priority: number;
   startAt: string | null;
@@ -44,9 +64,8 @@ export interface PartnerPromoAdminDto extends PartnerPromoPublicDto {
 
 export interface CreatePartnerPromoRequestDto {
   partnerId: string;
-  title: string;
-  subtitle?: string | null;
-  benefitLabel: string;
+  /** At least one locale must be complete. */
+  translations: PartnerPromoTranslationsDto;
   destination?: PartnerPromoDestination;
   sponsored?: boolean;
   active?: boolean;

@@ -3,19 +3,37 @@
 Задача владельца: «Ищи премиальные сайты и приложения, с которых можно взять
 пример, и сделай наш таким же — красиво, гармонично, ровно, премиально».
 
-Ниже — референсы, вытащенные из открытых разборов их дизайн-систем, семь
+Ниже — референсы, вытащенные из открытых разборов их дизайн-систем
+(классификация источников — раздел 0), семь
 правил, которые они разделяют, и построчно, что из этого уже стоит в
 TuTak (pass 1–3) и что нет.
 
+## 0. Статус источников
+
+Ни один из референсов ниже не взят из закрытой документации компаний.
+Чтобы не выдавать чужие разборы за официальные материалы, каждая ссылка
+из раздела 1 отнесена к одному из трёх классов:
+
+| Класс | Что это | Ссылки |
+|---|---|---|
+| **OFFICIAL SOURCE** — материал самой компании | Блог Revolut о принципах дизайна (при подготовке документа сеть не пропустила запрос, содержание известно по цитатам в сторонних разборах — помечено ниже); анонс Airbnb 2025 summer release в newsroom | revolut.com/blog (UNVERIFIED напрямую), news.airbnb.com |
+| **COMMUNITY REFERENCE** — сообщество, не компания | `awesome-design-md` (VoltAgent) — DESIGN.md для Revolut и Airbnb собраны энтузиастами по скриншотам и CSS; «токены» на oh-my-design.kr и open-design.ai — реконструкции; Wise UI kit в Figma Community — файл сообщества, не официальный кит Wise | github.com/VoltAgent/awesome-design-md, oh-my-design.kr, open-design.ai, figma.com/community |
+| **DESIGN ANALYSIS** — обзорные статьи агентств/медиа | Creole Studios, Lollypop, Wavespace, adjoe, Voucherify, 9to5Mac | см. таблицу |
+
+Важно: **DESIGN.md Revolut и Airbnb — это COMMUNITY REFERENCE**, а не
+дизайн-системы этих компаний. Все конкретные числа из них (радиусы,
+трекинг, padding) в TuTak перепроверены глазами на скриншотах и приняты
+как ориентиры, а не как «так делает Revolut».
+
 ## 1. Референсы
 
-| Продукт | Что в нём премиального | Источник |
+| Продукт | Что в нём премиального | Источник (класс) |
 |---|---|---|
-| **Revolut** | «Zero shadows» — глубина только контрастом поверхностей и воздухом; нейтральная палитра, фирменный цвет почти не используется (только штамп); крупная типографика display 500 c отрицательным трекингом, body 400 с положительным; радиусы: кнопки pill, карточки 20, поля 12; карточки — 32 pt padding, hairline-разделители, без теней | [Revolut DESIGN.md (awesome-design-md)](https://github.com/VoltAgent/awesome-design-md/blob/main/design-md/revolut/DESIGN.md), [Revolut design system tokens](https://oh-my-design.kr/design-systems/revolut), [Our top 5 design principles at Revolut](https://www.revolut.com/blog/post/our-top-5-design-principles-at-revolut/) |
-| **Wise** | Один акцент (лайм) на нейтральной базе; заголовки очень тяжёлые и плотные, body 600 для акцента; «money without borders» читается за счёт масштаба цифр и воздуха, а не декора | [Wise Design System 2025 UI kit](https://www.figma.com/community/file/1550593868236678646/wise-design-system-2025-ui-kit), [Wise design system tokens](https://open-design.ai/plugins/design-system-wise/) |
-| **Monzo / N26 / Nubank** | Транзакции сгруппированы по датам с логотипами мерчантов; «summary» через простые кольца/бары; 3–5 главных действий на экран, остальное — списки; тёплая минималистичная база | [Top fintech apps 2025 (Creole)](https://www.creolestudios.com/top-fintech-apps/), [Banking app UI design (Lollypop)](https://lollypop.design/blog/2026/june/banking-app-ui-design/), [Top banking apps UX (Wavespace)](https://www.wavespace.agency/blog/banking-app-ux) |
-| **Airbnb (2025)** | Фотография — источник глубины: карточки без рамки и тени, радиус 14, текст под фото; одна тень на всю систему (только hover/модалки); ink #222, muted #6a6a6a, hairline #ddd; шкала 4/8/12/16/24/32 | [Airbnb DESIGN.md](https://github.com/VoltAgent/awesome-design-md/blob/main/design-md/airbnb/DESIGN.md), [Airbnb 2025 summer release](https://news.airbnb.com/airbnb-2025-summer-release), [9to5Mac о редизайне](https://9to5mac.com/2025/05/13/airbnb-app-redesign-services-experiences-originals/) |
-| **Starbucks Rewards** | Лояльность как прогресс: одна шкала, одна цифра, ясные уровни; приложение напоминает о выгоде, не кричит | [Loyalty program examples 2026](https://adjoe.io/blog/loyalty-program-examples/), [Loyalty UX checklist (Voucherify)](https://www.voucherify.io/blog/loyalty-programs-ux-and-ui-best-practices) |
+| **Revolut** | «Zero shadows» — глубина только контрастом поверхностей и воздухом; нейтральная палитра, фирменный цвет почти не используется (только штамп); крупная типографика display 500 c отрицательным трекингом, body 400 с положительным; радиусы: кнопки pill, карточки 20, поля 12; карточки — 32 pt padding, hairline-разделители, без теней | COMMUNITY: [Revolut DESIGN.md (awesome-design-md)](https://github.com/VoltAgent/awesome-design-md/blob/main/design-md/revolut/DESIGN.md), [реконструкция токенов](https://oh-my-design.kr/design-systems/revolut); OFFICIAL (UNVERIFIED, сеть не пропустила): [Our top 5 design principles at Revolut](https://www.revolut.com/blog/post/our-top-5-design-principles-at-revolut/) |
+| **Wise** | Один акцент (лайм) на нейтральной базе; заголовки очень тяжёлые и плотные, body 600 для акцента; «money without borders» читается за счёт масштаба цифр и воздуха, а не декора | COMMUNITY: [Wise Design System 2025 UI kit, Figma Community](https://www.figma.com/community/file/1550593868236678646/wise-design-system-2025-ui-kit), [реконструкция токенов](https://open-design.ai/plugins/design-system-wise/) |
+| **Monzo / N26 / Nubank** | Транзакции сгруппированы по датам с логотипами мерчантов; «summary» через простые кольца/бары; 3–5 главных действий на экран, остальное — списки; тёплая минималистичная база | ANALYSIS: [Top fintech apps 2025 (Creole)](https://www.creolestudios.com/top-fintech-apps/), [Banking app UI design (Lollypop)](https://lollypop.design/blog/2026/june/banking-app-ui-design/), [Top banking apps UX (Wavespace)](https://www.wavespace.agency/blog/banking-app-ux) |
+| **Airbnb (2025)** | Фотография — источник глубины: карточки без рамки и тени, радиус 14, текст под фото; одна тень на всю систему (только hover/модалки); ink #222, muted #6a6a6a, hairline #ddd; шкала 4/8/12/16/24/32 | COMMUNITY: [Airbnb DESIGN.md (awesome-design-md)](https://github.com/VoltAgent/awesome-design-md/blob/main/design-md/airbnb/DESIGN.md); OFFICIAL: [Airbnb 2025 summer release](https://news.airbnb.com/airbnb-2025-summer-release); ANALYSIS: [9to5Mac о редизайне](https://9to5mac.com/2025/05/13/airbnb-app-redesign-services-experiences-originals/) |
+| **Starbucks Rewards** | Лояльность как прогресс: одна шкала, одна цифра, ясные уровни; приложение напоминает о выгоде, не кричит | ANALYSIS: [Loyalty program examples 2026](https://adjoe.io/blog/loyalty-program-examples/), [Loyalty UX checklist (Voucherify)](https://www.voucherify.io/blog/loyalty-programs-ux-and-ui-best-practices) |
 
 ## 2. Семь правил, общих для всех референсов
 

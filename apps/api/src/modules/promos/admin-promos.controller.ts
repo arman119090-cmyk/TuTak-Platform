@@ -5,6 +5,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UploadedFile,
   UseInterceptors,
@@ -22,6 +23,7 @@ import { MAX_UPLOAD_BYTES } from '../../infrastructure/media/media-image.service
 import { RequestUser } from '../auth/types/request-user.type';
 import { actorFrom, uploadPipe, type UploadedImage } from '../media/partner-media.controller';
 import { CreatePromoDto } from './dto/create-promo.dto';
+import { PromoLocaleQueryDto } from './dto/promo-locale.query.dto';
 import { UpdatePromoDto } from './dto/update-promo.dto';
 import { PromosService, type PartnerPromoAdminDto } from './promos.service';
 
@@ -41,9 +43,12 @@ export class AdminPromosController {
 
   @Get()
   @RequirePermissions(PermissionName.PARTNER_MANAGE)
-  list(@CurrentUser() user: RequestUser): Promise<PartnerPromoAdminDto[]> {
+  list(
+    @CurrentUser() user: RequestUser,
+    @Query() query: PromoLocaleQueryDto,
+  ): Promise<PartnerPromoAdminDto[]> {
     assertPlatformAdmin(user, 'Managing partner promos');
-    return this.promos.list();
+    return this.promos.list(query.locale);
   }
 
   @Post()

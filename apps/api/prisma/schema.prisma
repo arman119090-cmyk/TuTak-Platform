@@ -1252,34 +1252,38 @@ enum PartnerPromoDestination {
 /// inactive placement is never served, whatever `active` says — see
 /// `PromosService.featured`.
 model PartnerPromo {
-  id             String                  @id @default(uuid())
-  partnerId      String
-  /// The card's one line, e.g. "Кофе с собой — 10% обратно".
-  title          String
-  /// Optional second, quieter line.
-  subtitle       String?
-  /// The concrete benefit the card leads with: "10% кешбэк", "−15%".
-  benefitLabel   String
+  id              String                  @id @default(uuid())
+  partnerId       String
+  /// The card's words, per interface language:
+  /// `{ hy?: { title, subtitle?, benefitLabel }, ru?: {...}, en?: {...} }`.
+  /// A locale counts as filled when it has a title and a benefit label.
+  /// The app asks for its own language; the API falls back
+  /// requested → ru → first filled locale (`promo-translations.ts`), and a
+  /// card with no filled locale at all is never served — an Armenian
+  /// interface must not show Russian copy just because that is what the
+  /// administrator typed first, and an empty translation must never render
+  /// as an empty card.
+  translations    Json                    @default("{}")
   /// A `PROMO_ARTWORK` asset, or null while the administrator has not yet
   /// uploaded one — the card then renders the partner's cover/logo fallback.
-  artworkAssetId String?
-  destination    PartnerPromoDestination @default(PARTNER)
+  artworkAssetId  String?
+  destination     PartnerPromoDestination @default(PARTNER)
   /// A paid placement carries a small "Promo" mark on the card. Off for an
   /// editorial pick the platform simply wants to show.
-  sponsored      Boolean                 @default(false)
-  active         Boolean                 @default(false)
+  sponsored       Boolean                 @default(false)
+  active          Boolean                 @default(false)
   /// Higher first. Ties break on `createdAt` desc.
-  priority       Int                     @default(0)
-  startAt        DateTime?
-  endAt          DateTime?
+  priority        Int                     @default(0)
+  startAt         DateTime?
+  endAt           DateTime?
   /// Counted by the app only when the card was actually on screen — see
   /// `PartnerSpotlight`'s viewability rule — not when the API returned it.
   /// Plain counters, no per-person rows: nothing here identifies anyone.
-  impressionCount Int                    @default(0)
-  openCount       Int                    @default(0)
+  impressionCount Int                     @default(0)
+  openCount       Int                     @default(0)
   createdByUserId String?
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   partner      Partner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   artworkAsset MediaAsset? @relation("PartnerPromoArtwork", fields: [artworkAssetId], references: [id])

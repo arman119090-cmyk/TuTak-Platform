@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { PromoEventDto } from './dto/promo-event.dto';
+import { PromoLocaleQueryDto } from './dto/promo-locale.query.dto';
 import { PromosService, type PartnerPromoPublicDto } from './promos.service';
 
 /**
@@ -18,9 +19,10 @@ import { PromosService, type PartnerPromoPublicDto } from './promos.service';
 export class PromosController {
   constructor(private readonly promos: PromosService) {}
 
+  /** `?locale=hy|ru|en` — the app's current interface language. */
   @Get('featured')
-  featured(): Promise<PartnerPromoPublicDto[]> {
-    return this.promos.featured();
+  featured(@Query() query: PromoLocaleQueryDto): Promise<PartnerPromoPublicDto[]> {
+    return this.promos.featured(query.locale);
   }
 
   /**

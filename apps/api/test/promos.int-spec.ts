@@ -45,22 +45,21 @@ describe('Partner promos (integration)', () => {
     const hour = 3_600_000;
 
     const live = await promos.create(
-      { partnerId: trading.id, title: 'Coffee to go', benefitLabel: '10%', active: true, priority: 1 },
+      { partnerId: trading.id, translations: { ru: { title: 'Coffee to go', benefitLabel: '10%' } }, active: true, priority: 1 },
       actor,
     );
     const priority = await promos.create(
-      { partnerId: trading.id, title: 'Lunch', benefitLabel: '5%', active: true, priority: 9 },
+      { partnerId: trading.id, translations: { ru: { title: 'Lunch', benefitLabel: '5%' } }, active: true, priority: 9 },
       actor,
     );
     await promos.create(
-      { partnerId: trading.id, title: 'Switched off', benefitLabel: '1%', active: false, priority: 99 },
+      { partnerId: trading.id, translations: { ru: { title: 'Switched off', benefitLabel: '1%' } }, active: false, priority: 99 },
       actor,
     );
     await promos.create(
       {
         partnerId: trading.id,
-        title: 'Expired',
-        benefitLabel: '1%',
+        translations: { ru: { title: 'Expired', benefitLabel: '1%' } },
         active: true,
         priority: 99,
         startAt: new Date(now.getTime() - 2 * hour).toISOString(),
@@ -71,8 +70,7 @@ describe('Partner promos (integration)', () => {
     await promos.create(
       {
         partnerId: trading.id,
-        title: 'Not yet',
-        benefitLabel: '1%',
+        translations: { ru: { title: 'Not yet', benefitLabel: '1%' } },
         active: true,
         priority: 99,
         startAt: new Date(now.getTime() + hour).toISOString(),
@@ -80,12 +78,13 @@ describe('Partner promos (integration)', () => {
       actor,
     );
     await promos.create(
-      { partnerId: suspended.id, title: 'Suspended partner', benefitLabel: '1%', active: true, priority: 99 },
+      { partnerId: suspended.id, translations: { ru: { title: 'Suspended partner', benefitLabel: '1%' } }, active: true, priority: 99 },
       actor,
     );
 
-    const featured = await promos.featured();
+    const featured = await promos.featured('ru');
     expect(featured.map((p) => p.title)).toEqual(['Lunch', 'Coffee to go']);
+    expect(featured.every((p) => p.locale === 'ru')).toBe(true);
     expect(featured[0]).toMatchObject({
       id: priority.id,
       partnerName: 'Coffee House',
@@ -104,7 +103,7 @@ describe('Partner promos (integration)', () => {
   it('counts impressions and opens as increments and says nothing about who', async () => {
     const partner = await createPartner(prisma);
     const promo = await promos.create(
-      { partnerId: partner.id, title: 'Counted', benefitLabel: '10%', active: true },
+      { partnerId: partner.id, translations: { ru: { title: 'Counted', benefitLabel: '10%' } }, active: true },
       actor,
     );
 
@@ -131,8 +130,7 @@ describe('Partner promos (integration)', () => {
       promos.create(
         {
           partnerId: partner.id,
-          title: 'Backwards',
-          benefitLabel: '1%',
+          translations: { ru: { title: 'Backwards', benefitLabel: '1%' } },
           startAt: new Date(now + 3_600_000).toISOString(),
           endAt: new Date(now).toISOString(),
         },
@@ -144,8 +142,7 @@ describe('Partner promos (integration)', () => {
       prisma.partnerPromo.create({
         data: {
           partnerId: partner.id,
-          title: 'Backwards',
-          benefitLabel: '1%',
+          translations: { ru: { title: 'Backwards', benefitLabel: '1%' } },
           startAt: new Date(now + 3_600_000),
           endAt: new Date(now),
         },
@@ -171,5 +168,47 @@ describe('Partner promos (integration)', () => {
     });
     await prisma.mediaAsset.create({ data: asset(1) });
     await expect(prisma.mediaAsset.create({ data: asset(2) })).resolves.toBeTruthy();
+  });
+
+  it('answers in the interface language, falls back to ru, and never serves an empty card', async () => {
+    const partner = await createPartner(prisma, { displayName: 'Trilingual' });
+    await promos.create(
+      {
+        partnerId: partner.id,
+        active: true,
+        priority: 2,
+        translations: {
+          hy: { title: 'Սուրճ', benefitLabel: '10%' },
+          ru: { title: 'Кофе', subtitle: 'до 12:00', benefitLabel: '10%' },
+        },
+      },
+      actor,
+    );
+    await promos.create(
+      { partnerId: partner.id, active: true, priority: 1, translations: { en: { title: 'English only', benefitLabel: '5%' } } },
+      actor,
+    );
+    // No complete language at all: refused at the boundary, and — should a
+    // row ever get there another way — dropped by the featured query.
+    await expect(
+      promos.create({ partnerId: partner.id, active: true, translations: { hy: { title: '', benefitLabel: '' } } }, actor),
+    ).rejects.toThrow('At least one language');
+    await prisma.partnerPromo.create({
+      data: { partnerId: partner.id, active: true, priority: 99, translations: {} },
+    });
+
+    const hy = await promos.featured('hy');
+    expect(hy.map((p) => [p.title, p.locale])).toEqual([
+      ['Սուրճ', 'hy'],
+      ['English only', 'en'],
+    ]);
+    const en = await promos.featured('en');
+    expect(en.map((p) => [p.title, p.locale])).toEqual([
+      ['Кофе', 'ru'],
+      ['English only', 'en'],
+    ]);
+    const admin = await promos.list('hy');
+    expect(admin.find((p) => p.priority === 99)).toMatchObject({ live: false, availableLocales: [], title: '' });
+    expect(admin.find((p) => p.priority === 2)).toMatchObject({ availableLocales: ['hy', 'ru'], title: 'Սուրճ' });
   });
 });

@@ -13,7 +13,8 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import type { PartnerPromoPublicDto } from '@tutak/shared-types';
+import type { PartnerPromoLocale, PartnerPromoPublicDto } from '@tutak/shared-types';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@tutak/i18n';
 import { useTheme } from '../../app/theme/ThemeProvider';
 import { promosApi } from '../../data/api/promosApi';
 import { PartnerMark } from './PartnerMark';
@@ -61,13 +62,17 @@ import { SectionHeader } from './SectionHeader';
 const reportedImpressions = new Set<string>();
 
 export function PartnerSpotlight({ onOpen }: { onOpen: (promo: PartnerPromoPublicDto) => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { space, layout } = useTheme();
   const { width } = useWindowDimensions();
 
+  // The interface language is part of the key: switching languages in
+  // Settings refetches the strip in the new one rather than showing stale
+  // copy until the cache expires.
+  const locale = (isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE) as PartnerPromoLocale;
   const { data } = useQuery({
-    queryKey: ['promos', 'featured'],
-    queryFn: promosApi.featured,
+    queryKey: ['promos', 'featured', locale],
+    queryFn: () => promosApi.featured(locale),
     staleTime: 5 * 60_000,
     retry: 1,
   });

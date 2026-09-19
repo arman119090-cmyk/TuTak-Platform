@@ -8,6 +8,15 @@ import type { MediaImageDto } from '../media/media.contracts';
 import { CreatePromoDto } from './dto/create-promo.dto';
 import { UpdatePromoDto } from './dto/update-promo.dto';
 import type { PromoEventType } from './dto/promo-event.dto';
+import {
+  availableLocales,
+  normaliseTranslations,
+  PROMO_FALLBACK_LOCALE,
+  readTranslations,
+  resolvePromoCopy,
+  type PromoLocale,
+  type PromoTranslations,
+} from './promo-translations';
 import { FEATURED_PROMO_LIMIT, isPromoLive, isWindowOrdered, livePromoWhere } from './promo-window';
 
 /**
@@ -19,6 +28,8 @@ export interface PartnerPromoPublicDto {
   partnerId: string;
   partnerName: string;
   partnerLogo: MediaImageDto | null;
+  /** The interface language this copy came from — requested, or a fallback. */
+  locale: PromoLocale;
   title: string;
   subtitle: string | null;
   benefitLabel: string;
@@ -28,6 +39,9 @@ export interface PartnerPromoPublicDto {
 }
 
 export interface PartnerPromoAdminDto extends PartnerPromoPublicDto {
+  translations: PromoTranslations;
+  /** Locales with a title and a benefit label — what the app can show. */
+  availableLocales: PromoLocale[];
   active: boolean;
   priority: number;
   startAt: string | null;
@@ -68,23 +82,31 @@ export class PromosService {
     private readonly audit: AuditService,
   ) {}
 
-  /** What the app shows. Ordered by priority, then newest first. */
-  async featured(now: Date = new Date()): Promise<PartnerPromoPublicDto[]> {
+  /**
+   * What the app shows, in its own language. Ordered by priority, then
+   * newest first. A card with no complete translation at all is dropped
+   * here rather than served empty — so the take is over-fetched and cut
+   * after the language check.
+   */
+  async featured(locale?: PromoLocale, now: Date = new Date()): Promise<PartnerPromoPublicDto[]> {
     const rows = await this.prisma.partnerPromo.findMany({
       where: livePromoWhere(now),
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
-      take: FEATURED_PROMO_LIMIT,
+      take: FEATURED_PROMO_LIMIT * 2,
       include: withRelations,
     });
-    return rows.map((row) => this.toPublic(row));
+    return rows
+      .map((row) => this.toPublic(row, locale))
+      .filter((dto): dto is PartnerPromoPublicDto => dto !== null)
+      .slice(0, FEATURED_PROMO_LIMIT);
   }
 
-  async list(now: Date = new Date()): Promise<PartnerPromoAdminDto[]> {
+  async list(locale?: PromoLocale, now: Date = new Date()): Promise<PartnerPromoAdminDto[]> {
     const rows = await this.prisma.partnerPromo.findMany({
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
       include: withRelations,
     });
-    return rows.map((row) => this.toAdmin(row, now));
+    return rows.map((row) => this.toAdmin(row, locale, now));
   }
 
   async create(dto: CreatePromoDto, actor: ActorContext): Promise<PartnerPromoAdminDto> {
@@ -99,13 +121,15 @@ export class PromosService {
     if (!isWindowOrdered(startAt, endAt)) {
       throw new BadRequestException('endAt must be after startAt');
     }
+    const translations = normaliseTranslations(dto.translations as PromoTranslations);
+    if (availableLocales(translations).length === 0) {
+      throw new BadRequestException('At least one language needs a title and a benefit label');
+    }
 
     const row = await this.prisma.partnerPromo.create({
       data: {
         partnerId: dto.partnerId,
-        title: dto.title.trim(),
-        subtitle: dto.subtitle?.trim() || null,
-        benefitLabel: dto.benefitLabel.trim(),
+        translations: translations as Prisma.InputJsonValue,
         destination: dto.destination ?? PartnerPromoDestination.PARTNER,
         sponsored: dto.sponsored ?? false,
         active: dto.active ?? false,
@@ -127,7 +151,7 @@ export class PromosService {
       userAgent: actor.userAgent,
     });
 
-    return this.toAdmin(row, new Date());
+    return this.toAdmin(row, undefined, new Date());
   }
 
   async update(id: string, dto: UpdatePromoDto, actor: ActorContext): Promise<PartnerPromoAdminDto> {
@@ -143,12 +167,18 @@ export class PromosService {
       throw new BadRequestException('endAt must be after startAt');
     }
 
+    let translations: PromoTranslations | undefined;
+    if (dto.translations !== undefined) {
+      translations = normaliseTranslations(dto.translations as PromoTranslations);
+      if (availableLocales(translations).length === 0) {
+        throw new BadRequestException('At least one language needs a title and a benefit label');
+      }
+    }
+
     const row = await this.prisma.partnerPromo.update({
       where: { id },
       data: {
-        ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
-        ...(dto.subtitle !== undefined ? { subtitle: dto.subtitle?.trim() || null } : {}),
-        ...(dto.benefitLabel !== undefined ? { benefitLabel: dto.benefitLabel.trim() } : {}),
+        ...(translations !== undefined ? { translations: translations as Prisma.InputJsonValue } : {}),
         ...(dto.destination !== undefined ? { destination: dto.destination } : {}),
         ...(dto.sponsored !== undefined ? { sponsored: dto.sponsored } : {}),
         ...(dto.active !== undefined ? { active: dto.active } : {}),
@@ -169,7 +199,7 @@ export class PromosService {
       userAgent: actor.userAgent,
     });
 
-    return this.toAdmin(row, new Date());
+    return this.toAdmin(row, undefined, new Date());
   }
 
   /**
@@ -207,7 +237,7 @@ export class PromosService {
       userAgent: actor.userAgent,
     });
 
-    return this.toAdmin(row, new Date());
+    return this.toAdmin(row, undefined, new Date());
   }
 
   /**
@@ -222,29 +252,54 @@ export class PromosService {
     });
   }
 
-  private toPublic(row: PromoRow): PartnerPromoPublicDto {
+  private toPublic(row: PromoRow, locale?: PromoLocale): PartnerPromoPublicDto | null {
+    const copy = resolvePromoCopy(readTranslations(row.translations), locale);
+    if (!copy) return null;
     return {
       id: row.id,
       partnerId: row.partnerId,
       partnerName: row.partner.displayName,
       partnerLogo: this.view.publicImage(row.partner.logoAsset),
-      title: row.title,
-      subtitle: row.subtitle,
-      benefitLabel: row.benefitLabel,
+      locale: copy.locale,
+      title: copy.title,
+      subtitle: copy.subtitle ?? null,
+      benefitLabel: copy.benefitLabel,
       artwork: this.view.publicImage(row.artworkAsset),
       destination: row.destination,
       sponsored: row.sponsored,
     };
   }
 
-  private toAdmin(row: PromoRow, now: Date): PartnerPromoAdminDto {
+  /**
+   * The management view never drops a card: a row with no complete language
+   * is exactly the row an administrator needs to see, so its copy falls back
+   * to empty strings and `availableLocales` says why it is not live.
+   */
+  private toAdmin(row: PromoRow, locale: PromoLocale | undefined, now: Date): PartnerPromoAdminDto {
+    const translations = readTranslations(row.translations);
+    const locales = availableLocales(translations);
+    const resolved = this.toPublic(row, locale ?? PROMO_FALLBACK_LOCALE) ?? {
+      id: row.id,
+      partnerId: row.partnerId,
+      partnerName: row.partner.displayName,
+      partnerLogo: this.view.publicImage(row.partner.logoAsset),
+      locale: locale ?? PROMO_FALLBACK_LOCALE,
+      title: '',
+      subtitle: null,
+      benefitLabel: '',
+      artwork: this.view.publicImage(row.artworkAsset),
+      destination: row.destination,
+      sponsored: row.sponsored,
+    };
     return {
-      ...this.toPublic(row),
+      ...resolved,
+      translations,
+      availableLocales: locales,
       active: row.active,
       priority: row.priority,
       startAt: row.startAt?.toISOString() ?? null,
       endAt: row.endAt?.toISOString() ?? null,
-      live: isPromoLive(row, now),
+      live: isPromoLive(row, now) && locales.length > 0,
       impressionCount: row.impressionCount,
       openCount: row.openCount,
       createdAt: row.createdAt.toISOString(),

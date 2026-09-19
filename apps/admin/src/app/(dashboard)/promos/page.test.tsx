@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PartnerPromoAdminDto } from '@tutak/shared-types';
-import PromosPage, { statusOf } from './page';
+import PromosPage, { openRate, statusOf, translationsFrom } from './page';
 import { promosApi } from '@/lib/api/promosApi';
 import { partnersApi } from '@/lib/api/partnersApi';
 
@@ -25,9 +25,12 @@ function promo(overrides: Partial<PartnerPromoAdminDto> = {}): PartnerPromoAdmin
     partnerId: 'partner-1',
     partnerName: 'Coffee House',
     partnerLogo: null,
+    locale: 'ru',
     title: 'Coffee to go',
     subtitle: null,
     benefitLabel: '10% cashback',
+    translations: { ru: { title: 'Coffee to go', subtitle: null, benefitLabel: '10% cashback' } },
+    availableLocales: ['ru'],
     artwork: null,
     destination: 'PARTNER',
     sponsored: false,
@@ -66,6 +69,24 @@ describe('statusOf', () => {
     expect(statusOf(promo({ live: false, startAt: '2026-09-20T00:00:00Z' }), now).label).toBe('Scheduled');
     expect(statusOf(promo({ live: false, endAt: '2026-09-18T00:00:00Z' }), now).label).toBe('Expired');
     expect(statusOf(promo({ live: false }), now).label).toBe('Partner not trading');
+    expect(statusOf(promo({ live: false, availableLocales: [] }), now).label).toBe('No language filled');
+  });
+});
+
+describe('openRate / translationsFrom', () => {
+  it('is a plain ratio of two counters, and nothing when nothing was seen', () => {
+    expect(openRate({ impressionCount: 0, openCount: 0 })).toBe('—');
+    expect(openRate({ impressionCount: 200, openCount: 7 })).toBe('3.5%');
+  });
+
+  it('sends only the languages that are complete, trimmed', () => {
+    expect(
+      translationsFrom({
+        hy: { title: ' Սուրճ ', subtitle: '', benefitLabel: '10%' },
+        ru: { title: 'Кофе', subtitle: 'до 12', benefitLabel: '' },
+        en: { title: '', subtitle: '', benefitLabel: '' },
+      }),
+    ).toEqual({ hy: { title: 'Սուրճ', subtitle: null, benefitLabel: '10%' } });
   });
 });
 
@@ -89,12 +110,14 @@ describe('PromosPage', () => {
     jest.clearAllMocks();
   });
 
-  it('lists every placement with its live state and counters', async () => {
+  it('lists every placement with its live state, languages and counters', async () => {
     renderPage();
     expect(await screen.findByText('Coffee to go')).toBeTruthy();
     expect(screen.getByText('Live')).toBeTruthy();
     expect(screen.getByText('Expired')).toBeTruthy();
-    expect(screen.getByText('12 / 3')).toBeTruthy();
+    expect(screen.getByText('Impressions')).toBeTruthy();
+    expect(screen.getByText('Opens')).toBeTruthy();
+    expect(screen.getByText('25.0%')).toBeTruthy();
   });
 
   it('creates a placement with the fields the API expects, offering only trading partners', async () => {
@@ -109,17 +132,20 @@ describe('PromosPage', () => {
     ]);
 
     fireEvent.change(partnerSelect, { target: { value: 'partner-1' } });
-    fireEvent.change(screen.getByLabelText(/^Benefit/), { target: { value: ' −15% ' } });
-    fireEvent.change(screen.getByLabelText(/^Title/), { target: { value: 'Night charging' } });
+    fireEvent.change(screen.getByLabelText(/^Benefit \(RU\)/), { target: { value: ' −15% ' } });
+    fireEvent.change(screen.getByLabelText(/^Title \(RU\)/), { target: { value: 'Ночная зарядка' } });
+    fireEvent.change(screen.getByLabelText(/^Title \(HY\)/), { target: { value: 'Գիշերային լիցքավորում' } });
+    fireEvent.change(screen.getByLabelText(/^Benefit \(HY\)/), { target: { value: '−15%' } });
     fireEvent.click(screen.getByLabelText('Active'));
     fireEvent.click(screen.getByText('Create placement'));
 
     await waitFor(() => expect(promosApi.create).toHaveBeenCalledTimes(1));
     expect((promosApi.create as jest.Mock).mock.calls[0][0]).toEqual({
       partnerId: 'partner-1',
-      title: 'Night charging',
-      subtitle: null,
-      benefitLabel: '−15%',
+      translations: {
+        hy: { title: 'Գիշերային լիցքավորում', subtitle: null, benefitLabel: '−15%' },
+        ru: { title: 'Ночная зарядка', subtitle: null, benefitLabel: '−15%' },
+      },
       destination: 'PARTNER',
       sponsored: false,
       active: true,
@@ -127,6 +153,17 @@ describe('PromosPage', () => {
       startAt: null,
       endAt: null,
     });
+  });
+
+  it('refuses a half-filled language instead of sending it', async () => {
+    renderPage();
+    await screen.findByText('Coffee to go');
+    fireEvent.click(screen.getByText('New placement'));
+    fireEvent.change(screen.getByLabelText(/^Partner$/), { target: { value: 'partner-1' } });
+    fireEvent.change(screen.getByLabelText(/^Title \(EN\)/), { target: { value: 'Only a title' } });
+    fireEvent.click(screen.getByText('Create placement'));
+    expect(await screen.findByText(/Finish or clear: EN/)).toBeTruthy();
+    expect(promosApi.create).not.toHaveBeenCalled();
   });
 
   it('switches a placement off with a single field', async () => {

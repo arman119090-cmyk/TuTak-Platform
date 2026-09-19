@@ -4,38 +4,25 @@ import {
   IsEnum,
   IsInt,
   IsOptional,
-  IsString,
-  Length,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
 import { PartnerPromoDestination } from '@prisma/client';
+import { PromoTranslationsDto, TranslationsField } from './promo-copy.dto';
 
 /**
  * Everything but the partner: a card that should belong to another business
  * is a different card, not an edit — its artwork is scoped to the partner it
  * was uploaded for, and moving the card would orphan that.
  *
- * Spelled out rather than derived with a mapped type so that the caps stay
- * visibly the same as `CreatePromoDto`'s; a drift between the two would be a
- * card that can be edited into a shape it could not have been created in.
+ * `translations`, when sent, replaces the whole object: the admin form
+ * always shows and submits all three languages together, so a partial merge
+ * would only make "I cleared the English" impossible to express.
  */
 export class UpdatePromoDto {
   @IsOptional()
-  @IsString()
-  @Length(1, 80)
-  title?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  subtitle?: string | null;
-
-  @IsOptional()
-  @IsString()
-  @Length(1, 24)
-  benefitLabel?: string;
+  @TranslationsField()
+  translations?: PromoTranslationsDto;
 
   @IsOptional()
   @IsEnum(PartnerPromoDestination)

@@ -72,17 +72,22 @@ export function MainTabNavigator() {
         // it, the outline icons centre in it — so all five labels share one
         // baseline. No horizontal padding on the item: the Armenian labels
         // need every point of the 72–78 pt a fifth of a phone gives them.
-        tabBarItemStyle: { gap: 2, paddingHorizontal: 0 },
+        tabBarItemStyle: { gap: 2, paddingHorizontal: 0, overflow: 'visible' },
         tabBarIconStyle: { width: 36, height: 36 },
         tabBarLabel: ({ color: c, children }) => (
           <Text
             style={[styles.label, { color: c, fontWeight: text.label.fontWeight }]}
             numberOfLines={1}
-            // Shrinks a long label (Armenian "Դրամապանակ") to fit rather than
-            // cutting it with an ellipsis or abbreviating the language. On
-            // native this is honoured; on the web export it is a no-op.
+            // "Դրամապանակ" needs ~90 pt at 11 pt and a fifth of a 390 pt
+            // phone is 78: the word is measured, not guessed. So the label
+            // may overhang its tab by a few points on each side (`overflow:
+            // visible` on the item; the neighbours are short words) and, on
+            // native, shrinks by at most 10 % before that. Same size for all
+            // five — one tab a different size is worse than a tight fit.
+            // Below 360 pt the word still cannot fit without a translation
+            // decision, which is the owner's, not this file's.
             adjustsFontSizeToFit
-            minimumFontScale={0.8}
+            minimumFontScale={0.9}
             maxFontSizeMultiplier={1.2}
           >
             {children}
@@ -155,5 +160,5 @@ function PayTabIcon({ focused }: { focused: boolean }) {
 
 const styles = StyleSheet.create({
   payDisc: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 11, lineHeight: 14, letterSpacing: 0, textAlign: 'center' },
+  label: { fontSize: 11, lineHeight: 14, letterSpacing: -0.2, textAlign: 'center', minWidth: 88 },
 });

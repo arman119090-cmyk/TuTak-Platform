@@ -9,7 +9,7 @@ import {
   QrCodeType,
 } from '@tutak/shared-types';
 import { isSupportedLocale } from '@tutak/i18n';
-import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
+import { MOCK_PROMO_COPY, MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
 /**
  * Serves the app from memory instead of from a server.
@@ -504,8 +504,21 @@ function handle(
     }
 
     // ── Home "Partner Spotlight" ────────────────────────────────────────
-    case 'GET /promos/featured':
-      return envelope(state.promos);
+    case 'GET /promos/featured': {
+      // The same fallback the API applies: requested → ru → first filled.
+      const requested = String((config.params as { locale?: string } | undefined)?.locale ?? '');
+      return envelope(
+        state.promos.map((promo) => {
+          const copy = MOCK_PROMO_COPY[promo.id] ?? {};
+          const order = [requested, 'ru', 'hy', 'en'] as const;
+          for (const locale of order) {
+            const c = copy[locale as 'hy' | 'ru' | 'en'];
+            if (c) return { ...promo, locale: locale as 'hy' | 'ru' | 'en', ...c };
+          }
+          return promo;
+        }),
+      );
+    }
 
     default:
       break;

@@ -1,4 +1,4 @@
-import type { PartnerPromoEventType, PartnerPromoPublicDto } from '@tutak/shared-types';
+import type { PartnerPromoEventType, PartnerPromoLocale, PartnerPromoPublicDto } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 /**
@@ -9,9 +9,15 @@ import { httpClient, ApiEnvelope } from './httpClient';
  * a card, not a person.
  */
 export const promosApi = {
-  /** The cards to show now, in order. Empty means the strip is not drawn. */
-  async featured() {
-    const { data } = await httpClient.get<ApiEnvelope<PartnerPromoPublicDto[]>>('/promos/featured');
+  /**
+   * The cards to show now, in order, in the interface language. Empty means
+   * the strip is not drawn. The API falls back requested → ru → first
+   * filled language and reports which one it used in `locale`.
+   */
+  async featured(locale: PartnerPromoLocale) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerPromoPublicDto[]>>('/promos/featured', {
+      params: { locale },
+    });
     return data.data;
   },
 

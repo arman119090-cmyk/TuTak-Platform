@@ -179,18 +179,15 @@ export function HomeScreen({ navigation }: Props) {
 
         {/* Partner Spotlight — after the customer's own actions, never above
             the QR button. Absent entirely when there is nothing to show. A
-            card lands on the map narrowed to that partner (its branches,
-            nearest first) or on the whole map, per the placement's own
-            destination; never outside the app. */}
+            card opens that partner's own page (which offers the map for its
+            branches — a chain's nearest shop is the customer's choice, not a
+            guess) or the whole map, per the placement's destination; never
+            outside the app. */}
         <PartnerSpotlight
           onOpen={(promo) =>
-            navigation.navigate(
-              'Main',
-              {
-                screen: 'Partners',
-                params: promo.destination === 'PARTNER' ? { q: promo.partnerName } : undefined,
-              } as never,
-            )
+            promo.destination === 'PARTNER'
+              ? navigation.navigate('PartnerDetail', { partnerId: promo.partnerId })
+              : navigation.navigate('Main', { screen: 'Partners' } as never)
           }
         />
 

@@ -117,9 +117,37 @@ export interface MockState {
   referralCode: ReferralCodeDto;
   invites: ReferralInviteDto[];
   purchaseIntents: PurchaseIntentDto[];
-  /** The Home "Partner Spotlight" strip, as `GET /promos/featured` returns it. */
+  /**
+   * The Home "Partner Spotlight" strip, as `GET /promos/featured` returns it
+   * for `ru`. The other two languages live in `MOCK_PROMO_COPY`; the adapter
+   * swaps the copy for the `locale` the app asks for, falling back exactly
+   * as the API does (requested → ru → first filled).
+   */
   promos: PartnerPromoPublicDto[];
 }
+
+/**
+ * The three cards' words per interface language. The third card has no
+ * Armenian on purpose: the Armenian interface then shows its Russian copy,
+ * which is the fallback the API applies and the thing a reviewer should be
+ * able to see happen.
+ */
+export const MOCK_PROMO_COPY: Record<string, Partial<Record<'hy' | 'ru' | 'en', { title: string; subtitle: string | null; benefitLabel: string }>>> = {
+  'promo-1': {
+    hy: { title: 'Սուրճ տանելու՝ 10% հետ', subtitle: 'Ամեն օր մինչև 12:00', benefitLabel: '10% քեշբեք' },
+    ru: { title: 'Кофе с собой — 10% обратно', subtitle: 'Каждый день до 12:00', benefitLabel: '10% кешбэк' },
+    en: { title: 'Coffee to go — 10% back', subtitle: 'Every day until 12:00', benefitLabel: '10% cashback' },
+  },
+  'promo-2': {
+    hy: { title: 'Շաբաթվա մթերքը՝ բոնուսներով', subtitle: 'Ցանցի բոլոր խանութներում', benefitLabel: '5% քեշբեք' },
+    ru: { title: 'Продукты на неделю — с бонусами', subtitle: 'Во всех магазинах сети', benefitLabel: '5% кешбэк' },
+    en: { title: 'A week of groceries — with bonus', subtitle: 'In every store of the chain', benefitLabel: '5% cashback' },
+  },
+  'promo-3': {
+    ru: { title: 'Ночная зарядка дешевле', subtitle: 'С 23:00 до 07:00 на всех станциях', benefitLabel: '−15%' },
+    en: { title: 'Night charging costs less', subtitle: '23:00–07:00 at every station', benefitLabel: '−15%' },
+  },
+};
 
 const WALLET_ID = 'mock-wallet-1';
 
@@ -823,6 +851,7 @@ export function freshMockState(): MockState {
         partnerId: 'partner-coffeeshop',
         partnerName: 'Coffeeshop Company',
         partnerLogo: null,
+        locale: 'ru',
         title: 'Кофе с собой — 10% обратно',
         subtitle: 'Каждый день до 12:00',
         benefitLabel: '10% кешбэк',
@@ -835,6 +864,7 @@ export function freshMockState(): MockState {
         partnerId: 'partner-sas',
         partnerName: 'SAS Supermarket',
         partnerLogo: null,
+        locale: 'ru',
         title: 'Продукты на неделю — с бонусами',
         subtitle: 'Во всех магазинах сети',
         benefitLabel: '5% кешбэк',
@@ -847,6 +877,7 @@ export function freshMockState(): MockState {
         partnerId: 'partner-3',
         partnerName: 'TuTak Charge',
         partnerLogo: null,
+        locale: 'ru',
         title: 'Ночная зарядка дешевле',
         subtitle: 'С 23:00 до 07:00 на всех станциях',
         benefitLabel: '−15%',

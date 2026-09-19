@@ -59,8 +59,13 @@ export type RootStackParamList = {
       record travels through nav params rather than a fresh fetch — it came
       from `/partners/nearby` moments earlier in this same session, and this
       screen moves no money itself; `CreatePurchaseIntent` re-verifies the
-      partner by id from its own params before any amount is entered. */
-  PartnerDetail: { partner: NearbyPartnerDto };
+      partner by id from its own params before any amount is entered.
+
+      `{ partnerId }` alone is the other way in — a Home "Partner Spotlight"
+      card, which knows the business but not a branch. The screen then reads
+      `GET /partners/:id` for the identity and offers the map for the
+      branches, never picking one on the customer's behalf. */
+  PartnerDetail: { partner: NearbyPartnerDto } | { partnerId: string };
   /** The intent already exists; this screen only tracks it to a terminal
       state. Passed through so the screen renders instantly, the same way
       `EvSession` receives its session — it re-polls for the authoritative

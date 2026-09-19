@@ -144,6 +144,15 @@ export interface AppConfig {
      */
     graceDays: number;
   };
+  otpIpLimits: {
+    /**
+     * Ceilings per source address per hour on OTP issuance and verification
+     * (`OtpIpRateLimitService`). Raised, not lowered, for a launch event where
+     * a whole venue shares one address; never disabled.
+     */
+    issuancePerHour: number;
+    verificationPerHour: number;
+  };
   /**
    * How long non-financial records are kept. Nothing financial appears here
    * — see `RetentionService` for what is deliberately excluded and why.
@@ -470,6 +479,13 @@ function oneOf(
   return preferredValue ?? fallbackValue ?? defaultValue;
 }
 
+/** A whole number above zero from the environment, else `fallback`. */
+export function positiveIntEnv(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
@@ -534,6 +550,18 @@ const buildConfig = (): AppConfig => ({
     // Access ends the moment they press the button — this window is about
     // the data, not the account.
     graceDays: parseInt(process.env.ACCOUNT_DELETION_GRACE_DAYS ?? '30', 10),
+  },
+  otpIpLimits: {
+    // Defaults sit above what carrier-grade NAT puts behind one address in an
+    // hour and far below what a credential attack needs (see the service).
+    // The first day of a pilot at one venue on one wifi is the case the
+    // defaults were not tuned for: a hundred sign-ups behind one address
+    // would spend the issuance budget in the first hour. Overridable without
+    // a deploy; `positiveIntEnv` ignores anything that is not a whole number
+    // above zero, so a typo restores the default rather than disabling the
+    // ceiling.
+    issuancePerHour: positiveIntEnv(process.env.OTP_IP_ISSUANCE_PER_HOUR, 60),
+    verificationPerHour: positiveIntEnv(process.env.OTP_IP_VERIFICATION_PER_HOUR, 120),
   },
   retention: {
     // Ninety days of read notifications is enough for a customer to scroll

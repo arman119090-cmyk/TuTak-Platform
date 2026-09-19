@@ -337,6 +337,8 @@ BONUS_PENDING_HOURS=                # cooling-off before points become spendable
 BONUS_EXPIRY_MONTHS=
 RATE_LIMIT_TTL_SECONDS=
 RATE_LIMIT_MAX_REQUESTS=
+OTP_IP_ISSUANCE_PER_HOUR=60         # per source address; raise for a launch venue on one wifi
+OTP_IP_VERIFICATION_PER_HOUR=120    # same; a typo restores the default, never disables the ceiling
 OTEL_EXPORTER_OTLP_ENDPOINT=       # e.g. https://otlp.your-collector.io
 OTEL_EXPORTER_OTLP_HEADERS=        # e.g. api-key=...
 OTEL_SERVICE_NAME=tutak-api

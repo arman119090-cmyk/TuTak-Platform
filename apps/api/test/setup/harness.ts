@@ -31,6 +31,7 @@ import { AuthModule } from '../../src/modules/auth/auth.module';
 import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
 import { PurchaseIntentsModule } from '../../src/modules/purchase-intents/purchase-intents.module';
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
+import { PromosModule } from '../../src/modules/promos/promos.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
 import { PaymentsModule } from '../../src/modules/payments/payments.module';
 import { PartnerSettlementsModule } from '../../src/modules/partner-settlements/partner-settlements.module';
@@ -200,6 +201,7 @@ function domainTestingModuleBuilder(
         AuthModule,
         SecurityModule,
         AnalyticsModule,
+        PromosModule,
         LedgerModule,
         PaymentsModule,
         PartnerSettlementsModule,

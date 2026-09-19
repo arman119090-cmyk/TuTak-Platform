@@ -1,6 +1,6 @@
 import { PartnerStatus, PrismaClient } from '@prisma/client';
 import { PromosService } from '../src/modules/promos/promos.service';
-import { createPartner } from './setup/fixtures';
+import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
@@ -16,7 +16,9 @@ describe('Partner promos (integration)', () => {
   let prisma: PrismaClient;
   let promos: PromosService;
 
-  const actor = { userId: 'admin-1', ipAddress: null, userAgent: null };
+  // The audit log's actor is a foreign key to a real user, so the acting
+  // administrator has to exist — created afresh after every truncate.
+  let actor: { userId: string; ipAddress: null; userAgent: null };
 
   beforeAll(async () => {
     harness = await createTestHarness();
@@ -30,6 +32,8 @@ describe('Partner promos (integration)', () => {
 
   beforeEach(async () => {
     await truncateAll(prisma);
+    const { user } = await createCustomer(prisma);
+    actor = { userId: user.id, ipAddress: null, userAgent: null };
   });
 
   it('serves only live placements, highest priority first, and never an expired or inactive one', async () => {

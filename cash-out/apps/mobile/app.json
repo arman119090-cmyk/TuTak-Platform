@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Cash Out",
+    "slug": "cash-out",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "cashout",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0B7557",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.cashout.driver"
+    },
+    "android": {
+      "package": "com.cashout.driver",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B7557"
+      }
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-localization"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:3000"
+    }
+  }
+}

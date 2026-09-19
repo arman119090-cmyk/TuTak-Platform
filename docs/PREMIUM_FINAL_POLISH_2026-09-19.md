@@ -188,7 +188,22 @@ APK по pass 2 (`apk-preview-59`, `172e4c3`) **устарел**: в нём не
 
 ### Результат сборки
 
-_Заполняется после завершения workflow — см. конец отчёта._
+Workflow `Build demo APK` #12 — **success** (13:08 → 13:28 UTC).
+
+| Поле | Значение |
+|---|---|
+| Commit | `8d07936a3522f223134179736d3415bd3e3f354f` |
+| Релиз | https://github.com/arman119090-cmyk/TuTak-Platform/releases/tag/demo-latest |
+| Скачать (без входа) | https://github.com/arman119090-cmyk/TuTak-Platform/releases/download/demo-latest/tutak-demo.apk |
+| Размер | 127 165 807 байт |
+| SHA-256 | `db76fcd7b35450f0a1171e04f3554c0b3addfda876fff9da7070bf74003fc47b` (посчитан локально после скачивания; совпадает с digest ассета на GitHub) |
+| Пакет / версия | `am.tutak.demo` / `0.1.0` (строки найдены в AndroidManifest APK) |
+| versionCode | назначен EAS (`appVersionSource: remote`); в этой среде не прочитан — UNVERIFIED, виден на странице сборки EAS |
+| Профиль / источник данных | `preview` / **mock** (демо без сервера: 3 промо HY/RU/EN, artwork, fallback, все состояния) |
+
+Что показывает: Spotlight на Home, языки промо, даты HY/RU/EN, переход на
+партнёра, все экраны pass 1–3. Что **не** показывает: реальный API,
+реальные artwork из админки, счётчики, СМС.
 
 ## H. 360 / 390 + FONT SCALE
 
@@ -383,7 +398,7 @@ tests 1/3, 2/3, 3/3; Build the container images — 10 из 10 check runs
   только integration-тесты и mock.
 - Взаимный merge PR #58 ↔ PR #59 (оба меняют SettingsScreen).
 - Страница блога Revolut (OFFICIAL) — не открылась из сети.
-- Результат CI и EAS-сборки на `8d07936` — см. конец отчёта.
+- versionCode APK (назначает EAS; страница сборки не читалась).
 
 ## Вопросы владельцу
 
@@ -400,4 +415,15 @@ tests 1/3, 2/3, 3/3; Build the container images — 10 из 10 check runs
 
 ## FINAL VERDICT
 
-_Заполняется после результата CI и сборки — см. ниже._
+**READY FOR OWNER DEVICE REVIEW** — с оговорками, которые не блокируют
+установку и просмотр, но должны быть закрыты по чек-листу M:
+
+- APK `demo-latest` (`8d07936`, mock-данные) собран, SHA-256 сверен,
+  CI PR #59 зелёный 10/10, миграции и schema diff чистые.
+- Открыто и проверяется только на устройстве: армянская подпись tab bar
+  на 360 dp, fontScale 1.3, ScanQr permission-state, HY-даты в Hermes.
+- Без ответа владельца: перевод «Դրամապանակ» на случай FAIL, судьба
+  `EvHistoryScreen` без точки входа, порядок мержа PR #58/#59.
+
+Визуальная доводка на этом остановлена; следующий шаг — установка
+`tutak-demo.apk` и прогон чек-листа M на Samsung и Xiaomi.

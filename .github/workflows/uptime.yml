@@ -7,17 +7,21 @@
 #
 # This workflow is the outside observer: every ten minutes it runs
 # scripts/uptime-probe.sh, which asks `/health/ready` and, with METRICS_TOKEN,
-# reads `tutak_ledger_imbalance_amd`, and pages the same webhook the API uses
-# (`ALERT_WEBHOOK_URL`) in the same JSON shape. The script's logic is proven
-# by scripts/uptime-probe.test.sh, which CI runs on every push.
+# reads `tutak_ledger_imbalance_amd`, and pages the same channels the API
+# uses — the webhook (`ALERT_WEBHOOK_URL`) in the same JSON shape and/or the
+# Telegram chat (`ALERT_TELEGRAM_BOT_TOKEN` + `ALERT_TELEGRAM_CHAT_ID`) —
+# through scripts/page-human.sh. The script's logic is proven by
+# scripts/uptime-probe.test.sh, which CI runs on every push.
 #
 # Paging is transition-based: a long outage pages once when it starts and
 # then once an hour, not every ten minutes. The previous run's conclusion
 # comes from the Actions API (hence `actions: read`).
 #
 # Secrets (Settings → Secrets and variables → Actions):
-#   ALERT_WEBHOOK_URL  required for a page; without it the run only fails
-#                      visibly in the Actions tab (still a signal, weaker).
+#   ALERT_WEBHOOK_URL  one channel for a page. ALERT_TELEGRAM_BOT_TOKEN +
+#   ALERT_TELEGRAM_CHAT_ID  the other. Either or both; with none set the run
+#                      only fails visibly in the Actions tab (still a signal,
+#                      weaker).
 #   METRICS_TOKEN      optional; same value as the API's METRICS_TOKEN.
 # Variables:
 #   API_BASE_URL       optional; defaults to the production API below.
@@ -50,6 +54,8 @@ jobs:
     env:
       API_BASE_URL: ${{ vars.API_BASE_URL || 'https://tutak-api-production.up.railway.app' }}
       ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      ALERT_TELEGRAM_BOT_TOKEN: ${{ secrets.ALERT_TELEGRAM_BOT_TOKEN }}
+      ALERT_TELEGRAM_CHAT_ID: ${{ secrets.ALERT_TELEGRAM_CHAT_ID }}
       METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:

@@ -83,11 +83,15 @@ jobs:
         run: pnpm test:sentry-parity
 
       # The external uptime probe (.github/workflows/uptime.yml) is a shell
-      # script; this is its test: a fake API and a fake webhook, fifteen
-      # cases of healthy/unhealthy/paging/not-paging. It fails the build if
-      # the observer would page wrongly or stay silent.
+      # script; this is its test: a fake API, a fake webhook and a fake
+      # Telegram Bot API, two dozen cases of healthy/unhealthy/paging/
+      # not-paging. It fails the build if the observer would page wrongly or
+      # stay silent. page-human.sh is what both uptime.yml and backup.yml
+      # page through; its test proves "delivered" means the receiver said so.
       - name: Uptime probe self-test
         run: bash scripts/uptime-probe.test.sh
+      - name: Page-human (webhook / Telegram) self-test
+        run: bash scripts/page-human.test.sh
 
       # The Railway backup workflow is a shell script talking GraphQL; this is
       # its contract test against a mock that speaks the published schema and

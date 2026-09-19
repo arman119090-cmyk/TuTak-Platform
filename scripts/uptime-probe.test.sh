@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Self-test for scripts/uptime-probe.sh against a local fake API and a fake
-# webhook, so the paging logic is proven before it is trusted at 3am.
+# Self-test for scripts/uptime-probe.sh against a local fake API, a fake
+# webhook and a fake Telegram Bot API, so the paging logic is proven before
+# it is trusted at 3am. (scripts/page-human.test.sh covers the pager itself.)
 # Needs bash, curl, jq, python3. Run: scripts/uptime-probe.test.sh
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +37,9 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get('Content-Length', 0)); body = self.rfile.read(n).decode()
         with open(os.path.join(TMP, 'pages.log'), 'a') as f: f.write(body + '\n')
+        if self.path.startswith('/bot'):
+            ok = read('telegram', 'ok') == 'ok'
+            self._send(200, json.dumps({"ok": ok, "description": None if ok else "Bad Request: chat not found"})); return
         self._send(int(read('webhook', '200')), 'ok', 'text/plain')
 http.server.HTTPServer(('127.0.0.1', int(sys.argv[2])), H).serve_forever()
 PY
@@ -53,6 +57,7 @@ check() { # name expected_exit expected_pages [env...]
   else echo "FAIL $name: exit $got (want $want), pages $sent (want $pages)"; sed 's/^/     /' "$TMP/out.log"; fails=$((fails+1)); fi
 }
 W="ALERT_WEBHOOK_URL=http://127.0.0.1:$PORT/hook"
+T="ALERT_TELEGRAM_BOT_TOKEN=123:tg-secret ALERT_TELEGRAM_CHAT_ID=-100999 TELEGRAM_API_BASE=http://127.0.0.1:$PORT"
 
 echo ok > "$TMP/ready"; echo 0 > "$TMP/imbalance"; echo 200 > "$TMP/webhook"
 check "healthy, no token"                     0 0 $W
@@ -73,6 +78,16 @@ check "503, transition, prev success -> page" 1 1 $W PAGE_MODE=transition PREVIO
 echo 500 > "$TMP/webhook"
 check "503, webhook refuses -> exit 2"        2 1 $W
 echo 200 > "$TMP/webhook"
+# Telegram is a channel of its own, as it is for the API.
+echo ok > "$TMP/telegram"
+check "503, telegram only -> pages"           1 1 $T
+check "503, webhook + telegram -> both paged" 1 2 $W $T
+echo notok > "$TMP/telegram"
+check "503, telegram says ok:false -> exit 2" 2 1 $T
+check "503, webhook ok, telegram ok:false -> delivered" 1 2 $W $T
+echo ok > "$TMP/telegram"; echo ok > "$TMP/ready"
+check "healthy after failure, telegram only -> recovery notice" 0 1 $T PAGE_MODE=transition PREVIOUS_CONCLUSION=failure
+echo 503 > "$TMP/ready"
 echo html > "$TMP/ready"
 check "200 but not health JSON -> pages"      1 1 $W
 echo ok > "$TMP/ready"
@@ -91,7 +106,7 @@ check "healthy, always mode, prev failure -> silent (dispatch runs never notify 
 check "healthy after failure, no webhook -> silent exit 0" 0 0 PAGE_MODE=transition PREVIOUS_CONCLUSION=failure
 # secrets never printed
 echo 503 > "$TMP/ready"; : > "$TMP/pages.log"
-env API_BASE_URL="http://127.0.0.1:$PORT" CURL_MAX_TIME=5 $W METRICS_TOKEN=good bash "$PROBE" > "$TMP/out.log" 2>&1
-n=$((n+1)); if grep -q "good\|/hook" "$TMP/out.log"; then echo "FAIL secret or webhook URL printed"; fails=$((fails+1)); else echo "ok   no secret in output"; fi
+env API_BASE_URL="http://127.0.0.1:$PORT" CURL_MAX_TIME=5 $W $T METRICS_TOKEN=good bash "$PROBE" > "$TMP/out.log" 2>&1
+n=$((n+1)); if grep -q "good\|/hook\|tg-secret" "$TMP/out.log"; then echo "FAIL secret or webhook URL printed"; fails=$((fails+1)); else echo "ok   no secret in output"; fi
 echo "$((n-fails))/$n passed"
 [ "$fails" -eq 0 ]

@@ -17,7 +17,10 @@
 #   RAILWAY_PROJECT_TOKEN  Railway → project → Settings → Tokens, scoped to the
 #                          production environment (preferred).
 #   RAILWAY_API_TOKEN      account/workspace token (Railway → Account → Tokens).
-#   ALERT_WEBHOOK_URL      optional; same channel as the API's alerts.
+#   ALERT_WEBHOOK_URL      optional; same webhook as the API's alerts.
+#   ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID
+#                          optional; same Telegram chat as the API's alerts.
+#                          Paging goes through scripts/page-human.sh.
 # Variables (optional):
 #   RAILWAY_VOLUME_ID, RAILWAY_ENVIRONMENT_ID  default to production's.
 #   BACKUP_ENSURE_SCHEDULE  e.g. "DAILY,WEEKLY": if the volume has NO schedule
@@ -53,6 +56,8 @@ jobs:
       RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      ALERT_TELEGRAM_BOT_TOKEN: ${{ secrets.ALERT_TELEGRAM_BOT_TOKEN }}
+      ALERT_TELEGRAM_CHAT_ID: ${{ secrets.ALERT_TELEGRAM_CHAT_ID }}
       VOLUME_ID: ${{ vars.RAILWAY_VOLUME_ID || '75413fb2-7af3-40f5-a534-0d1f48b5217e' }}
       ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID || 'aebe04da-ba8f-44b5-9a7f-3d4d43284966' }}
       ENSURE_SCHEDULE: ${{ vars.BACKUP_ENSURE_SCHEDULE }}
@@ -75,8 +80,6 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           echo "::error::$PROBLEM"
-          [ -n "$ALERT_WEBHOOK_URL" ] || { echo "::warning::ALERT_WEBHOOK_URL not set — visible only here"; exit 1; }
           payload=$(jq -cn --arg b "$PROBLEM" --arg r "$RUN_URL" '{text: ("🔴 *TuTak production: backup problem* — production\n" + $b + "\n• run: " + $r), severity: "critical", title: "TuTak production: backup problem", body: $b, key: "backup.volume", environment: "production", context: {run: $r}, firedAt: (now|todate)}')
-          code=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "$payload" "$ALERT_WEBHOOK_URL")
-          echo "webhook answered $code"
+          printf '%s' "$payload" | bash scripts/page-human.sh || true
           exit 1

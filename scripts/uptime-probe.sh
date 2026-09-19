@@ -7,8 +7,12 @@
 #
 # Inputs (environment):
 #   API_BASE_URL        required
-#   ALERT_WEBHOOK_URL   optional — without it a problem is only visible in the
-#                       exit status (and the Actions tab)
+#   ALERT_WEBHOOK_URL   optional — a JSON webhook, as the API uses
+#   ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID
+#                       optional — a Telegram chat, as the API uses. Any
+#                       channel that is set is paged (scripts/page-human.sh);
+#                       with none set a problem is only visible in the exit
+#                       status (and the Actions tab)
 #   METRICS_TOKEN       optional — enables the ledger check; its absence never
 #                       affects the readiness check
 #   PAGE_MODE           "always" (default) or "transition": in transition mode
@@ -21,10 +25,14 @@
 #   CURL_MAX_TIME       seconds per request (default 20)
 #
 # Exit: 0 = healthy, 1 = a problem was found (whether or not a page went out),
-# 2 = a page was needed but the webhook refused it (on top of the problem).
+# 2 = a page was needed but no receiver accepted it (on top of the problem).
 set -u
 API_BASE_URL="${API_BASE_URL:?API_BASE_URL is required}"
 ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
+ALERT_TELEGRAM_BOT_TOKEN="${ALERT_TELEGRAM_BOT_TOKEN:-}"
+ALERT_TELEGRAM_CHAT_ID="${ALERT_TELEGRAM_CHAT_ID:-}"
+PAGER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/page-human.sh"
+channel_set() { [ -n "$ALERT_WEBHOOK_URL" ] || { [ -n "$ALERT_TELEGRAM_BOT_TOKEN" ] && [ -n "$ALERT_TELEGRAM_CHAT_ID" ]; }; }
 METRICS_TOKEN="${METRICS_TOKEN:-}"
 PAGE_MODE="${PAGE_MODE:-always}"
 PREVIOUS_CONCLUSION="${PREVIOUS_CONCLUSION:-}"
@@ -79,15 +87,15 @@ if [ "${#problems[@]}" -eq 0 ]; then
   echo "OK"
   # Recovery: the previous run had paged (or failed) and this one is healthy —
   # say so once, so the person who was paged knows it is over without
-  # opening GitHub. Only in transition mode, only with a webhook.
-  if [ "$PAGE_MODE" = "transition" ] && [ "$PREVIOUS_CONCLUSION" = "failure" ] && [ -n "$ALERT_WEBHOOK_URL" ]; then
+  # opening GitHub. Only in transition mode, only with a channel set.
+  if [ "$PAGE_MODE" = "transition" ] && [ "$PREVIOUS_CONCLUSION" = "failure" ] && channel_set; then
     title="TuTak production: external probe recovered"
     payload=$(jq -cn --arg t "$title" --arg u "$API_BASE_URL" --arg r "$RUN_URL" \
       '{text: ("🟢 *" + $t + "* — production\n/health/ready answers 200 with every check ok again.\n• api: " + $u + (if $r != "" then "\n• run: " + $r else "" end)),
         severity: "warning", title: $t, body: "/health/ready answers 200 with every check ok again", key: "uptime.probe.recovered", environment: "production",
         context: {api: $u, run: $r}, firedAt: (now | todate)}')
-    rcode=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "$payload" "$ALERT_WEBHOOK_URL")
-    echo "recovery notice: webhook answered ${rcode:-none}"
+    echo "recovery notice:"
+    printf '%s' "$payload" | bash "$PAGER" || true
   fi
   exit 0
 fi
@@ -102,17 +110,16 @@ if [ "$PAGE_MODE" = "transition" ] && [ "$PREVIOUS_CONCLUSION" = "failure" ] && 
 fi
 
 if [ "$should_page" = "1" ]; then
-  if [ -z "$ALERT_WEBHOOK_URL" ]; then
-    echo "::warning::ALERT_WEBHOOK_URL is not set — this failure is visible only here."
+  if ! channel_set; then
+    echo "::warning::no alert channel is set (ALERT_WEBHOOK_URL, or ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID) — this failure is visible only here."
   else
     title="TuTak production: external probe failed"
     payload=$(jq -cn --arg t "$title" --arg b "$problem" --arg u "$API_BASE_URL" --arg r "$RUN_URL" \
       '{text: ("🔴 *" + $t + "* — production\n" + $b + "\n• api: " + $u + (if $r != "" then "\n• run: " + $r else "" end)),
         severity: "critical", title: $t, body: $b, key: "uptime.probe", environment: "production",
         context: {api: $u, run: $r}, firedAt: (now | todate)}')
-    wcode=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "$payload" "$ALERT_WEBHOOK_URL")
-    echo "webhook answered ${wcode:-none}"
-    case "$wcode" in 2*) ;; *) echo "::error::webhook did not accept the page (HTTP ${wcode:-none})"; exit 2;; esac
+    # page-human.sh already explains which receiver refused; exit 2 is ours.
+    printf '%s' "$payload" | bash "$PAGER" || exit 2
   fi
 fi
 exit 1

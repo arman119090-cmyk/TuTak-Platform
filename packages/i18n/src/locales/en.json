@@ -416,7 +416,7 @@
     "displayName": "Shop name",
     "displayNamePlaceholder": "Nairi",
     "displayNameHint": "What your customers call you — this is the name they will see in the app.",
-    "taxId": "ՀՎՀՀ",
+    "taxId": "Tax ID (ՀՎՀՀ)",
     "taxIdPlaceholder": "8 digits",
     "category": "Category",
     "rate": "Cashback for customers",
@@ -434,7 +434,7 @@
     "sentTitle": "Application under review",
     "sentBody": "We have received the application from \"{{name}}\". We will be in touch in the next few days to agree terms.",
     "taxIdMissing": "not given",
-    "taxIdLater": "You can add your ՀՎՀՀ later, from your partner panel.",
+    "taxIdLater": "You can add your tax ID later, from your partner panel.",
     "backHome": "Back to home"
   },
   "editProfile": {

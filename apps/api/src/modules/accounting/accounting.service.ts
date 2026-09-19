@@ -1,6 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { csvDocument } from './csv';
+import { csvDocument, csvRow } from './csv';
+
+/**
+ * Rows fetched per round trip while streaming an export.
+ *
+ * Small enough that one batch is never a memory problem, large enough that a
+ * year of postings is not a million round trips.
+ */
+const EXPORT_BATCH = 1_000;
 
 /** A period the caller asked for, already validated. */
 export interface ExportPeriod {
@@ -60,6 +68,85 @@ export class AccountingService {
    * `debit` and `credit` columns of a whole period must get the same number
    * twice, and can only do that if both sides are present.
    */
+  static readonly LEDGER_HEADER = [
+    'posted_at',
+    'transaction_id',
+    'kind',
+    'source_type',
+    'source_id',
+    'account_type',
+    'partner_id',
+    'user_id',
+    'debit',
+    'credit',
+    'currency',
+  ];
+
+  /**
+   * The ledger export, a batch at a time.
+   *
+   * ## Why this is not one `findMany`
+   *
+   * It was, and that was a defect I shipped. A year of postings is hundreds
+   * of thousands of rows; loading them into one array and joining them into
+   * one string holds the whole export in memory twice over, in a process
+   * that is also serving customers. It never showed on test data, which is
+   * exactly the shape of bug that reaches production — the code was written
+   * as though the volume were always small, and nowhere said so.
+   *
+   * Keyset pagination on `id`, not `skip`/`take`: an offset walk re-reads
+   * everything it has already passed, so the last page of a large export
+   * costs the most, and rows inserted mid-walk shift the window and can
+   * duplicate or drop a row. A cursor on a unique, ordered column has
+   * neither problem.
+   *
+   * `id` is also the tiebreaker in the sort, which is what makes the order
+   * total and the export byte-identical between two runs over unchanged data.
+   */
+  async *ledgerRows(period: ExportPeriod): AsyncGenerator<string> {
+    yield csvRow(AccountingService.LEDGER_HEADER);
+
+    let cursor: string | undefined;
+    for (;;) {
+      const batch = await this.prisma.ledgerPosting.findMany({
+        where: { transaction: { postedAt: { gte: period.from, lt: period.until } } },
+        include: {
+          transaction: { select: { kind: true, sourceType: true, sourceId: true, postedAt: true } },
+          account: { select: { type: true, partnerId: true, userId: true, currency: true } },
+        },
+        orderBy: { id: 'asc' },
+        take: EXPORT_BATCH,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      if (batch.length === 0) return;
+
+      for (const p of batch) {
+        yield csvRow([
+          p.transaction.postedAt.toISOString(),
+          p.transactionId,
+          p.transaction.kind,
+          p.transaction.sourceType,
+          p.transaction.sourceId,
+          p.account.type,
+          p.account.partnerId,
+          p.account.userId,
+          p.direction === 'DEBIT' ? p.amount.toFixed(4) : '',
+          p.direction === 'CREDIT' ? p.amount.toFixed(4) : '',
+          p.currency,
+        ]);
+      }
+
+      cursor = batch[batch.length - 1]!.id;
+      if (batch.length < EXPORT_BATCH) return;
+    }
+  }
+
+  /**
+   * The whole ledger export as one string.
+   *
+   * Kept for tests and for callers that genuinely want the document in hand.
+   * The HTTP route streams `ledgerRows` instead — see its note on memory.
+   */
   async ledgerCsv(period: ExportPeriod): Promise<string> {
     const postings = await this.prisma.ledgerPosting.findMany({
       where: { transaction: { postedAt: { gte: period.from, lt: period.until } } },
@@ -67,26 +154,13 @@ export class AccountingService {
         transaction: { select: { kind: true, sourceType: true, sourceId: true, postedAt: true } },
         account: { select: { type: true, partnerId: true, userId: true, currency: true } },
       },
-      // Deterministic: the same period exported twice produces byte-identical
-      // files, so a diff between two exports means the data changed rather
-      // than the order did.
-      orderBy: [{ transaction: { postedAt: 'asc' } }, { id: 'asc' }],
+      // Same total order as the streaming path, so the two produce identical
+      // files — asserted in the integration suite.
+      orderBy: { id: 'asc' },
     });
 
     return csvDocument(
-      [
-        'posted_at',
-        'transaction_id',
-        'kind',
-        'source_type',
-        'source_id',
-        'account_type',
-        'partner_id',
-        'user_id',
-        'debit',
-        'credit',
-        'currency',
-      ],
+      AccountingService.LEDGER_HEADER,
       postings.map((p) => [
         p.transaction.postedAt.toISOString(),
         p.transactionId,

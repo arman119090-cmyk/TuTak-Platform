@@ -158,6 +158,81 @@ describe('assertProductionJwtSecretsAreStrong', () => {
  * actually calls at boot — proves the guard is wired in, not just present
  * as a standalone function nothing calls.
  */
+/**
+ * The retiring key during a rotation, and the secret that never did anything.
+ *
+ * Both were gaps in the rotation work: `JWT_ACCESS_SECRET_PREVIOUS` was added
+ * as a feature and never validated, so a weak retiring key would have been
+ * accepted for the length of a rotation window; and `JWT_REFRESH_SECRET` was
+ * found to be unused but left required, which is a deployment obligation that
+ * buys nothing and implies something false.
+ */
+describe('rotation and the deprecated refresh secret', () => {
+  const strongSecret = () => randomBytes(32).toString('hex');
+
+  const prodEnv = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    NODE_ENV: 'production' as const,
+    PORT: 4000,
+    DATABASE_URL: 'postgresql://x:y@localhost:5432/db',
+    JWT_ACCESS_SECRET: strongSecret(),
+    ...overrides,
+  });
+
+  it('accepts a deployment that sets no refresh secret at all', () => {
+    // It is read by nothing. Requiring it made deployments carry a secret
+    // that does not exist as far as the running system is concerned.
+    expect(() => assertProductionJwtSecretsAreStrong(prodEnv() as never)).not.toThrow();
+  });
+
+  it('still refuses a weak refresh secret when one is supplied', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(prodEnv({ JWT_REFRESH_SECRET: 'aaaaaaaa'.repeat(8) }) as never),
+    ).toThrow(/JWT_REFRESH_SECRET/);
+  });
+
+  it('accepts a genuine rotation: a strong, different retiring key', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        prodEnv({ JWT_ACCESS_SECRET_PREVIOUS: strongSecret() }) as never,
+      ),
+    ).not.toThrow();
+  });
+
+  /**
+   * A retiring key verifies real tokens for the length of the window. A
+   * rotation is not an excuse to accept a weak one for fifteen minutes.
+   */
+  it('refuses a weak retiring key', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        prodEnv({ JWT_ACCESS_SECRET_PREVIOUS: 'bbbbbbbb'.repeat(8) }) as never,
+      ),
+    ).toThrow(/JWT_ACCESS_SECRET_PREVIOUS/);
+  });
+
+  it('refuses a placeholder as the retiring key', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        prodEnv({ JWT_ACCESS_SECRET_PREVIOUS: 'change-me-example-secret-min-32-chars-x' }) as never,
+      ),
+    ).toThrow(/JWT_ACCESS_SECRET_PREVIOUS/);
+  });
+
+  /**
+   * Setting the retiring key to the live one is the mistake that looks like
+   * a rotation and is not one: nothing has changed, and the deployment now
+   * believes it is mid-rotation.
+   */
+  it('refuses a "rotation" to the same value', () => {
+    const same = strongSecret();
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        { ...prodEnv({ JWT_ACCESS_SECRET: same }), JWT_ACCESS_SECRET_PREVIOUS: same } as never,
+      ),
+    ).toThrow(/nothing is being rotated/i);
+  });
+});
+
 describe('validate() — production boot integration', () => {
   const strongSecret = () => randomBytes(32).toString('hex');
 

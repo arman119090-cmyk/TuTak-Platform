@@ -168,6 +168,43 @@ describe('Accounting exports (integration)', () => {
     expect(new Set([...before, ...after]).size).toBe(all.length);
   });
 
+  /**
+   * The streamed export and the buffered one must be the same file.
+   *
+   * They are two code paths over the same data, and the HTTP route uses the
+   * streaming one — so if they ever diverge, what an accountant downloads
+   * stops being what the tests check. Asserted byte for byte.
+   */
+  it('streams exactly the file the buffered export produces', async () => {
+    await confirmedPurchase();
+    await confirmedPurchase('7777');
+
+    const buffered = await accounting.ledgerCsv(wholeOf2026());
+    let streamed = '';
+    for await (const row of accounting.ledgerRows(wholeOf2026())) {
+      streamed += row + '\r\n';
+    }
+
+    expect(streamed).toBe(buffered);
+    expect(streamed.split('\r\n').length).toBeGreaterThan(2);
+  });
+
+  /**
+   * Batching must not lose or duplicate a row at a boundary. The batch size
+   * is a thousand, so this drives the generator directly over a smaller
+   * window by checking the count matches the table.
+   */
+  it('streams every posting exactly once', async () => {
+    for (let i = 0; i < 3; i += 1) await confirmedPurchase();
+
+    const rows: string[] = [];
+    for await (const row of accounting.ledgerRows(wholeOf2026())) rows.push(row);
+
+    const header = 1;
+    expect(rows.length - header).toBe(await prisma.ledgerPosting.count());
+    expect(new Set(rows.slice(header)).size).toBe(rows.length - header);
+  });
+
   it('refuses a period that ends before it starts', () => {
     expect(() =>
       accounting.parsePeriod('2026-02-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),

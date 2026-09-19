@@ -448,3 +448,30 @@ export const settlementAdminApi = {
     return data.data as PartnerSettlementDto;
   },
 };
+
+/**
+ * Bookkeeping exports.
+ *
+ * Fetched through the authenticated client and handed to the browser as a
+ * blob, rather than pointed at with a plain `<a href>`: the endpoint needs a
+ * bearer token, and a link cannot carry one. Putting the token in a query
+ * string to make a link work would write it into server logs, browser
+ * history and any referrer — for a file that is the whole ledger.
+ */
+export const accountingApi = {
+  async ledgerCsv(from: string, until: string): Promise<Blob> {
+    const { data } = await httpClient.get('/admin/accounting/ledger.csv', {
+      params: { from, until },
+      responseType: 'blob',
+    });
+    return data as Blob;
+  },
+
+  async settlementsCsv(from: string, until: string): Promise<Blob> {
+    const { data } = await httpClient.get('/admin/accounting/settlements.csv', {
+      params: { from, until },
+      responseType: 'blob',
+    });
+    return data as Blob;
+  },
+};

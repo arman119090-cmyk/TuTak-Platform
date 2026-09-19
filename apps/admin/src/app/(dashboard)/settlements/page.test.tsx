@@ -9,6 +9,7 @@ import {
 import AdminSettlementsPage from './page';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { settlementAdminApi } from '@/lib/api/financeApi';
+import { partnersApi } from '@/lib/api/partnersApi';
 
 /**
  * Maker/checker, made visible rather than merely enforced.
@@ -21,9 +22,16 @@ import { settlementAdminApi } from '@/lib/api/financeApi';
  * one — are the ones worth having.
  */
 
+jest.mock('@/lib/api/partnersApi', () => ({
+  partnersApi: { list: jest.fn() },
+}));
 jest.mock('@/lib/api/financeApi', () => ({
   settlementAdminApi: {
     list: jest.fn(),
+    draft: jest.fn(),
+    unsettled: jest.fn(),
+    proposeReconciliation: jest.fn(),
+    confirmReconciliation: jest.fn(),
     approve: jest.fn(),
     markReady: jest.fn(),
     markPaid: jest.fn(),
@@ -118,6 +126,22 @@ describe('AdminSettlementsPage', () => {
     (settlementAdminApi.markFailed as jest.Mock).mockResolvedValue(
       fixture({ status: PartnerSettlementStatus.FAILED }),
     );
+    (partnersApi.list as jest.Mock).mockResolvedValue([
+      { id: 'partner-1', displayName: 'Coffee House' },
+    ]);
+    (settlementAdminApi.unsettled as jest.Mock).mockResolvedValue({
+      partnerId: 'partner-1',
+      accrued: '20000.0000',
+      deductions: '1500.0000',
+      net: '18500.0000',
+      entries: [],
+      unrecognised: [],
+    });
+    (settlementAdminApi.draft as jest.Mock).mockResolvedValue(
+      fixture({ status: PartnerSettlementStatus.DRAFT }),
+    );
+    (settlementAdminApi.proposeReconciliation as jest.Mock).mockResolvedValue(fixture());
+    (settlementAdminApi.confirmReconciliation as jest.Mock).mockResolvedValue(fixture());
   });
 
   afterEach(() => {
@@ -181,6 +205,91 @@ describe('AdminSettlementsPage', () => {
     expect(await screen.findByRole('button', { name: /transfer sent/i })).toBeTruthy();
   });
 
+  /**
+   * The start of the cycle. Without it the screen could move settlements
+   * along and never create one, so the only way a settlement could exist was
+   * an API call by hand — half a lifecycle with a full interface over it.
+   */
+  it('drafts a settlement for a chosen partner and period', async () => {
+    renderPage();
+    // Wait for the options, not just the select: the partner list arrives
+    // from its own query, and changing a select before its options exist
+    // sets nothing — which is how the first version of this test passed a
+    // value the component never saw.
+    await screen.findByRole('option', { name: 'Coffee House' });
+    fireEvent.change(screen.getByLabelText(/^partner$/i), { target: { value: 'partner-1' } });
+    fireEvent.change(screen.getByLabelText(/period start/i), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText(/period end/i), { target: { value: '2026-09-30' } });
+    fireEvent.click(screen.getByRole('button', { name: /^draft$/i }));
+
+    await waitFor(() =>
+      expect(settlementAdminApi.draft).toHaveBeenCalledWith('partner-1', '2026-09-01', '2026-09-30'),
+    );
+  });
+
+  /**
+   * Drafting claims postings. An admin who cannot see what they are about to
+   * claim is pressing a button on trust, so the figure is shown first.
+   */
+  it('shows what is unclaimed before anything is drafted', async () => {
+    renderPage();
+    await screen.findByRole('option', { name: 'Coffee House' });
+    fireEvent.change(screen.getByLabelText(/^partner$/i), { target: { value: 'partner-1' } });
+    expect(await screen.findByText(/18,500\.00 net/)).toBeTruthy();
+  });
+
+  it('will not draft without a partner and both dates', async () => {
+    renderPage();
+    const button = (await screen.findByRole('button', { name: /^draft$/i })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  /**
+   * The state the screen used to describe and not offer. A settlement could
+   * enter it and the interface had no way out.
+   */
+  it('lets somebody propose an outcome on an ambiguous settlement', async () => {
+    (settlementAdminApi.list as jest.Mock).mockResolvedValue([
+      fixture({ status: PartnerSettlementStatus.REQUIRES_RECONCILIATION }),
+    ]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /money did move/i }));
+    fireEvent.change(screen.getByLabelText(/why/i), {
+      target: { value: 'Bank statement line 42 shows the transfer' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /money did move/i }).pop()!);
+
+    await waitFor(() =>
+      expect(settlementAdminApi.proposeReconciliation).toHaveBeenCalledWith(
+        'settlement-1',
+        'MONEY_MOVED',
+        'Bank statement line 42 shows the transfer',
+      ),
+    );
+  });
+
+  it('refuses the proposer their own confirmation', async () => {
+    useAuthStore.setState({ user: buildUser('proposer-1') });
+    (settlementAdminApi.list as jest.Mock).mockResolvedValue([
+      fixture({
+        status: PartnerSettlementStatus.REQUIRES_RECONCILIATION,
+        reconciliationProposedByUserId: 'proposer-1',
+        reconciliationProposedAt: '2026-09-18T10:00:00.000Z',
+      }),
+    ]);
+    renderPage();
+    expect(await screen.findByText(/you proposed this/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /confirm the proposal/i })).toBeNull();
+  });
+
+  it('offers no confirmation when nothing has been proposed', async () => {
+    (settlementAdminApi.list as jest.Mock).mockResolvedValue([
+      fixture({ status: PartnerSettlementStatus.REQUIRES_RECONCILIATION }),
+    ]);
+    renderPage();
+    expect(await screen.findByText(/nothing proposed yet/i)).toBeTruthy();
+  });
+
   it('offers nothing at all on a paid settlement', async () => {
     (settlementAdminApi.list as jest.Mock).mockResolvedValue([
       fixture({
@@ -191,7 +300,9 @@ describe('AdminSettlementsPage', () => {
     ]);
     renderPage();
     expect(await screen.findByText(/paid and immutable/i)).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
+    // The drafting panel has its own button, so this asks about the row's
+    // actions specifically rather than the whole page.
+    expect(screen.queryByRole('button', { name: /approve|transfer|cancel|mark/i })).toBeNull();
   });
 
   /**
@@ -204,7 +315,8 @@ describe('AdminSettlementsPage', () => {
       fixture({ status: PartnerSettlementStatus.REQUIRES_RECONCILIATION }),
     ]);
     renderPage();
-    expect(await screen.findByText(/two-person reconciliation/i)).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
+    // Superseded: this state now has the two-person actions the screen
+    // always claimed it had. Covered by the propose/confirm tests above.
+    expect(await screen.findByRole('button', { name: /money did move/i })).toBeTruthy();
   });
 });

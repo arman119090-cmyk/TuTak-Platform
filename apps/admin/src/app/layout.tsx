@@ -21,7 +21,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Providers>
           {children}
-          <StorageNotice />
+          {/*
+            Configured, not hard-coded: the policy exists in `public/
+            privacy.html` but is not yet served at a permanent address, and a
+            link to a page that 404s is worse than no link. When it is
+            published, set NEXT_PUBLIC_PRIVACY_URL and the link appears.
+          */}
+          <StorageNotice privacyUrl={process.env.NEXT_PUBLIC_PRIVACY_URL} />
         </Providers>
       </body>
     </html>

@@ -83,6 +83,23 @@ export default function SettlementsPage() {
     enabled: !!partnerId,
   });
 
+  /*
+   * The itemisation, opened one settlement at a time.
+   *
+   * This was missing, and its absence made the rest of the screen weaker
+   * than it looked: a partner could see the figure they were paid and had no
+   * way to see what it was made of. A number with no breakdown is a number
+   * you can only argue with — which is exactly what the API's own note said
+   * the itemisation exists to prevent.
+   */
+  const [openStatement, setOpenStatement] = useState<string | null>(null);
+
+  const { data: statement, isFetching: statementLoading } = useQuery({
+    queryKey: ['partner-statement', partnerId, openStatement],
+    queryFn: () => settlementApi.statement(partnerId!, openStatement!),
+    enabled: !!partnerId && !!openStatement,
+  });
+
   const [reporting, setReporting] = useState<PartnerSettlementDto | null>(null);
   const [reason, setReason] = useState('');
 
@@ -164,23 +181,69 @@ export default function SettlementsPage() {
                 <Td>{s.bankTransferReference ?? '—'}</Td>
                 <Td>{s.paidAt ? day(s.paidAt) : '—'}</Td>
                 <Td>
-                  {/*
-                    Only once a transfer has been claimed to have gone out.
-                    There is nothing to dispute about a settlement still being
-                    assembled, and offering the control anyway would invite a
-                    complaint the server would only refuse.
-                  */}
-                  {s.status === 'PAYMENT_PENDING' || s.status === 'PAID' ? (
-                    <Button variant="secondary" onClick={() => setReporting(s)}>
-                      Report a problem
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setOpenStatement(openStatement === s.id ? null : s.id)}
+                    >
+                      {openStatement === s.id ? 'Hide detail' : 'What is this made of?'}
                     </Button>
-                  ) : null}
+                    {/*
+                      Only once a transfer has been claimed to have gone out.
+                      There is nothing to dispute about a settlement still being
+                      assembled, and offering the control anyway would invite a
+                      complaint the server would only refuse.
+                    */}
+                    {s.status === 'PAYMENT_PENDING' || s.status === 'PAID' ? (
+                      <Button variant="secondary" onClick={() => setReporting(s)}>
+                        Report a problem
+                      </Button>
+                    ) : null}
+                  </div>
                 </Td>
               </Tr>
             ))}
           </tbody>
         </Table>
       )}
+
+      {openStatement ? (
+        <div className="space-y-2 rounded-lg border border-subtle p-4">
+          <h2 className="text-[14px] font-medium">What this settlement is made of</h2>
+          {statementLoading && !statement ? (
+            <p className="text-[12px] text-faint">Loading…</p>
+          ) : statement && statement.entries.length > 0 ? (
+            <Table>
+              <thead>
+                <Tr>
+                  <Th>When</Th>
+                  <Th>What</Th>
+                  <Th>Amount</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {statement.entries.map((e) => (
+                  <Tr key={e.id}>
+                    <Td>{day(e.occurredAt)}</Td>
+                    {/*
+                      The posting kind as stored, not a friendlier label
+                      invented here: a partner querying a line needs to quote
+                      something TuTak can look up, and a translated name is
+                      not that.
+                    */}
+                    <Td>{e.kind}</Td>
+                    <Td>{money(e.amount)}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="text-[12px] text-faint">
+              This settlement has no itemised lines recorded.
+            </p>
+          )}
+        </div>
+      ) : null}
 
       {reporting ? (
         <Surfaceless>

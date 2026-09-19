@@ -19,7 +19,12 @@ import {
  */
 
 jest.mock('@/lib/api/financeApi', () => ({
-  settlementApi: { statements: jest.fn(), position: jest.fn(), reportProblem: jest.fn() },
+  settlementApi: {
+    statements: jest.fn(),
+    statement: jest.fn(),
+    position: jest.fn(),
+    reportProblem: jest.fn(),
+  },
 }));
 
 function buildUser(): AuthenticatedUserDto {
@@ -111,6 +116,23 @@ describe('SettlementsPage', () => {
       unrecognised: [],
     });
     (settlementApi.reportProblem as jest.Mock).mockResolvedValue(statementFixture());
+    (settlementApi.statement as jest.Mock).mockResolvedValue({
+      settlement: statementFixture(),
+      entries: [
+        {
+          id: 'entry-1',
+          settlementId: 'settlement-1',
+          ledgerPostingId: 'posting-1',
+          partnerId: 'partner-1',
+          amount: '14000.0000',
+          direction: 'CREDIT',
+          kind: 'psp.payment.captured',
+          sourceType: 'PspPaymentAttempt',
+          sourceId: 'attempt-1',
+          occurredAt: '2026-09-10T12:00:00.000Z',
+        },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -156,6 +178,52 @@ describe('SettlementsPage', () => {
     renderPage();
     await screen.findByText(/being prepared/i);
     expect(screen.queryByRole('button', { name: /report a problem/i })).toBeNull();
+  });
+
+  /**
+   * The breakdown behind the figure.
+   *
+   * Its absence was the quiet failure of this screen: the partner could see
+   * what they were paid and nothing about what it was made of, so the only
+   * response available to a figure they disagreed with was to argue with it.
+   */
+  it('shows what a settlement is made of when asked', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
+
+    await waitFor(() =>
+      expect(settlementApi.statement).toHaveBeenCalledWith('partner-1', 'settlement-1'),
+    );
+    expect(await screen.findByText('psp.payment.captured')).toBeTruthy();
+    expect(screen.getByText('14,000.00')).toBeTruthy();
+  });
+
+  /**
+   * The posting kind is shown as stored rather than translated: a partner
+   * querying a line has to quote something TuTak can look up.
+   */
+  it('shows the kind TuTak records, not a friendlier invention', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
+    expect(await screen.findByText('psp.payment.captured')).toBeTruthy();
+  });
+
+  it('closes the detail again', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
+    await screen.findByText('psp.payment.captured');
+    fireEvent.click(screen.getByRole('button', { name: /hide detail/i }));
+    await waitFor(() => expect(screen.queryByText('psp.payment.captured')).toBeNull());
+  });
+
+  it('says so when a settlement has no lines rather than showing an empty table', async () => {
+    (settlementApi.statement as jest.Mock).mockResolvedValue({
+      settlement: statementFixture(),
+      entries: [],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
+    expect(await screen.findByText(/no itemised lines/i)).toBeTruthy();
   });
 
   it('sends a problem report with the reason, as `reason`', async () => {

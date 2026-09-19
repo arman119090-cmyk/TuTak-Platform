@@ -19,6 +19,13 @@ const NAV: NavItem[] = [
   { href: '/payouts', label: 'Payouts', icon: <NavIcon d="M3 7h18v11H3zM3 11h18M7 15h3" /> },
   // Beside Payouts: that is money leaving, this is the statement it leaves
   // against, and the two-person path that authorises it.
+  // Beside Settlements: same money, one view for working it and one for
+  // handing it to the bookkeeper.
+  {
+    href: '/accounting',
+    label: 'Accounting',
+    icon: <NavIcon d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" />,
+  },
   {
     href: '/settlements',
     label: 'Settlements',

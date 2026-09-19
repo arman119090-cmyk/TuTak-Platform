@@ -12,8 +12,13 @@ import {
   Th,
   Tr,
 } from '@tutak/design/web';
-import { PartnerSettlementStatus, type PartnerSettlementDto } from '@tutak/shared-types';
+import {
+  PartnerSettlementStatus,
+  ReconciliationOutcome,
+  type PartnerSettlementDto,
+} from '@tutak/shared-types';
 import { settlementAdminApi } from '@/lib/api/financeApi';
+import { partnersApi } from '@/lib/api/partnersApi';
 import { useAuthStore } from '@/lib/stores/authStore';
 
 const money = (v: string) =>
@@ -41,7 +46,17 @@ const STATUS_TONE: Record<PartnerSettlementStatus, 'pending' | 'available' | 'da
  * that "what may be done to a settlement in this state" is a list somebody
  * can read against the service, instead of being spread across the render.
  */
-type Action = 'ready' | 'approve' | 'payment-pending' | 'paid' | 'failed' | 'ambiguous' | 'cancel';
+type Action =
+  | 'ready'
+  | 'approve'
+  | 'payment-pending'
+  | 'paid'
+  | 'failed'
+  | 'ambiguous'
+  | 'cancel'
+  | 'propose-moved'
+  | 'propose-not-moved'
+  | 'confirm';
 
 const ACTIONS: Record<PartnerSettlementStatus, Action[]> = {
   [PartnerSettlementStatus.DRAFT]: ['ready', 'cancel'],
@@ -52,7 +67,14 @@ const ACTIONS: Record<PartnerSettlementStatus, Action[]> = {
   // two-person reconciliation flow, not by a status button here.
   [PartnerSettlementStatus.PAID]: [],
   [PartnerSettlementStatus.FAILED]: ['payment-pending', 'cancel'],
-  [PartnerSettlementStatus.REQUIRES_RECONCILIATION]: [],
+  /*
+   * Not empty, and the empty version was a defect: the screen told people
+   * this state was "resolved by two-person reconciliation" and then offered
+   * no way to do it, so a settlement could enter a state the interface could
+   * not leave. Proposing an outcome and confirming it are two entries
+   * because they are two acts by two different people.
+   */
+  [PartnerSettlementStatus.REQUIRES_RECONCILIATION]: ['propose-moved', 'propose-not-moved', 'confirm'],
   [PartnerSettlementStatus.CANCELLED]: [],
 };
 
@@ -64,10 +86,21 @@ const ACTION_LABEL: Record<Action, string> = {
   failed: 'Transfer bounced',
   ambiguous: 'Bank answer unclear',
   cancel: 'Cancel',
+  'propose-moved': 'Propose: money did move',
+  'propose-not-moved': 'Propose: money did not move',
+  confirm: 'Confirm the proposal',
 };
 
 /** Actions that must say why. The server enforces 3-500 characters. */
-const NEEDS_REASON: Action[] = ['failed', 'ambiguous', 'cancel'];
+const NEEDS_REASON: Action[] = [
+  'failed',
+  'ambiguous',
+  'cancel',
+  // A proposal about whether money moved is worthless without the evidence
+  // it rests on — the server demands 3-1000 characters of it.
+  'propose-moved',
+  'propose-not-moved',
+];
 
 /**
  * Partner settlements, from drafting one to recording that the bank paid it.
@@ -108,6 +141,45 @@ export default function AdminSettlementsPage() {
   );
   const [text, setText] = useState('');
 
+  /*
+   * Drafting: the start of the cycle, and it was missing.
+   *
+   * Without it this screen could move settlements along and never create
+   * one, so the only way a settlement could exist was an API call by hand.
+   * A screen that manages a lifecycle it cannot begin is half a screen.
+   */
+  const [draftPartnerId, setDraftPartnerId] = useState('');
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftUntil, setDraftUntil] = useState('');
+
+  const { data: partners = [] } = useQuery({
+    queryKey: ['partners-for-settlement'],
+    queryFn: () => partnersApi.list(),
+  });
+
+  /*
+   * What has accrued for the chosen partner and nobody has claimed yet.
+   *
+   * Shown before drafting rather than after, because the figure is the whole
+   * decision: drafting a settlement claims postings, and an admin who cannot
+   * see what they are about to claim is pressing a button on trust.
+   */
+  const { data: position } = useQuery({
+    queryKey: ['unsettled', draftPartnerId],
+    queryFn: () => settlementAdminApi.unsettled(draftPartnerId),
+    enabled: !!draftPartnerId,
+  });
+
+  const draft = useMutation({
+    mutationFn: () => settlementAdminApi.draft(draftPartnerId, draftFrom, draftUntil),
+    onSuccess: () => {
+      setDraftPartnerId('');
+      setDraftFrom('');
+      setDraftUntil('');
+      queryClient.invalidateQueries({ queryKey: ['admin-settlements'] });
+    },
+  });
+
   const act = useMutation({
     mutationFn: async ({ row, action }: { row: PartnerSettlementDto; action: Action }) => {
       const value = text.trim();
@@ -126,6 +198,20 @@ export default function AdminSettlementsPage() {
           return settlementAdminApi.markAmbiguous(row.id, value);
         case 'cancel':
           return settlementAdminApi.cancel(row.id, value);
+        case 'propose-moved':
+          return settlementAdminApi.proposeReconciliation(
+            row.id,
+            ReconciliationOutcome.MONEY_MOVED,
+            value,
+          );
+        case 'propose-not-moved':
+          return settlementAdminApi.proposeReconciliation(
+            row.id,
+            ReconciliationOutcome.MONEY_DID_NOT_MOVE,
+            value,
+          );
+        case 'confirm':
+          return settlementAdminApi.confirmReconciliation(row.id);
       }
     },
     onSuccess: () => {
@@ -146,6 +232,20 @@ export default function AdminSettlementsPage() {
   const canApprove = (row: PartnerSettlementDto) =>
     !row.createdByUserId || !user || row.createdByUserId !== user.id;
 
+  /**
+   * Whoever proposed an outcome cannot confirm it.
+   *
+   * Same rule as approval and the same reason: "the money did move" is a
+   * claim about the world, and one person asserting it twice is one person,
+   * not two. Also hidden when there is no proposal yet — confirming nothing
+   * is not an act.
+   */
+  const canConfirmReconciliation = (row: PartnerSettlementDto) =>
+    !!row.reconciliationProposedAt &&
+    (!row.reconciliationProposedByUserId ||
+      !user ||
+      row.reconciliationProposedByUserId !== user.id);
+
   const start = (row: PartnerSettlementDto, action: Action) => {
     if (NEEDS_REASON.includes(action) || action === 'paid' || action === 'ready') {
       setPending({ row, action });
@@ -161,6 +261,73 @@ export default function AdminSettlementsPage() {
         title="Partner settlements"
         description="Drafting, approval by a second person, and what the bank did."
       />
+
+      <div className="space-y-3 rounded-lg border border-subtle p-4">
+        <h2 className="text-[14px] font-medium">Draft a settlement</h2>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <label className="flex flex-col gap-1 text-[12px]">
+            Partner
+            <select
+              aria-label="Partner"
+              className="rounded-md border border-subtle p-2 text-[13px]"
+              value={draftPartnerId}
+              onChange={(e) => setDraftPartnerId(e.target.value)}
+            >
+              <option value="">Choose…</option>
+              {partners.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[12px]">
+            Period start
+            <input
+              aria-label="Period start"
+              type="date"
+              className="rounded-md border border-subtle p-2 text-[13px]"
+              value={draftFrom}
+              onChange={(e) => setDraftFrom(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-[12px]">
+            Period end
+            <input
+              aria-label="Period end"
+              type="date"
+              className="rounded-md border border-subtle p-2 text-[13px]"
+              value={draftUntil}
+              onChange={(e) => setDraftUntil(e.target.value)}
+            />
+          </label>
+          <div className="flex items-end">
+            <Button
+              disabled={!draftPartnerId || !draftFrom || !draftUntil || draft.isPending}
+              onClick={() => draft.mutate()}
+            >
+              Draft
+            </Button>
+          </div>
+        </div>
+
+        {position ? (
+          <p className="text-[12px] text-faint">
+            Unclaimed for this partner right now: {money(position.net)} net (
+            {money(position.accrued)} earned less {money(position.deductions)} deducted).
+            {position.unrecognised.length > 0
+              ? ` Not classified, and therefore excluded: ${position.unrecognised.join(', ')}.`
+              : ''}
+          </p>
+        ) : null}
+
+        {draft.isError ? (
+          <p className="text-[12px] text-danger">
+            That period could not be drafted. It may overlap a settlement that already
+            claims those postings.
+          </p>
+        ) : null}
+      </div>
 
       {isLoading ? null : settlements.length === 0 ? (
         <EmptyState
@@ -200,6 +367,12 @@ export default function AdminSettlementsPage() {
                         <span key={action} className="text-[12px] text-faint">
                           You prepared this — approval is somebody else&apos;s
                         </span>
+                      ) : action === 'confirm' && !canConfirmReconciliation(s) ? (
+                        <span key={action} className="text-[12px] text-faint">
+                          {s.reconciliationProposedAt
+                            ? 'You proposed this — confirming is somebody else’s'
+                            : 'Nothing proposed yet'}
+                        </span>
                       ) : (
                         <Button
                           key={action}
@@ -215,9 +388,7 @@ export default function AdminSettlementsPage() {
                       <span className="text-[12px] text-faint">
                         {s.status === PartnerSettlementStatus.PAID
                           ? 'Paid and immutable'
-                          : s.status === PartnerSettlementStatus.REQUIRES_RECONCILIATION
-                            ? 'Resolved by two-person reconciliation'
-                            : '—'}
+                          : '—'}
                       </span>
                     ) : null}
                   </div>

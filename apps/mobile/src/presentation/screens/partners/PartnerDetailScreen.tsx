@@ -60,7 +60,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  */
 export function PartnerDetailScreen() {
   const { t } = useTranslation();
-  const { color, space, text } = useTheme();
+  const { color, space, text, palette } = useTheme();
   const { params } = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const { partner } = params;
@@ -84,31 +84,45 @@ export function PartnerDetailScreen() {
         // alignment set on the outer element centres that fill and leaves the
         // content flush left. Invisible while the mark was a placeholder;
         // obvious the moment a real logo landed in it.
-        <Surface style={{ paddingVertical: space[6] }}>
+        <View style={{ paddingVertical: space[4] }}>
           <LogoBlock partner={partner} size={72} />
-        </Surface>
+        </View>
       )}
 
-      <View style={[styles.statsRow, { marginTop: space[3], gap: space[3] }]}>
-        <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
+      {/* The two numbers a customer came for, as a line under a rule —
+          the same statement shape as the wallet totals, not two tiles. */}
+      <View
+        style={[
+          styles.statsRow,
+          {
+            marginTop: space[4],
+            paddingVertical: space[4],
+            gap: space[4],
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderColor: palette.neutral[100],
+          },
+        ]}
+      >
+        <View style={{ flex: 1 }}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('partners.cashback')}
           </Text>
-          <Text style={[text.titleLg, { color: color.availableText, marginTop: space[1] }]}>
+          <Text style={[text.title, { color: color.availableText, marginTop: 2 }]}>
             {partner.cashbackPercent}%
           </Text>
-        </Surface>
-        <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
+        </View>
+        <View style={{ flex: 1 }}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('partners.distance')}
           </Text>
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[1] }]}>
+          <Text style={[text.title, { color: color.textPrimary, marginTop: 2 }]}>
             {formatDistance(partner.distanceKm)}
           </Text>
-        </Surface>
+        </View>
       </View>
 
-      <View style={{ marginTop: space[3] }}>
+      <View style={{ marginTop: space[4] }}>
         <TileMap
           markers={[
             {
@@ -132,17 +146,17 @@ export function PartnerDetailScreen() {
         />
       </View>
 
-      <Surface style={{ marginTop: space[3] }}>
+      <View style={{ marginTop: space[3] }}>
         <ListRow
           title={t('partners.address')}
           subtitle={`${partner.address}, ${partner.city}`}
           leading={<InfoIcon name="location-outline" />}
           last
         />
-      </Surface>
+      </View>
 
       {detail?.about ? (
-        <Surface style={{ marginTop: space[3] }}>
+        <View style={{ marginTop: space[5] }}>
           <Text style={[text.headline, { color: color.textPrimary }]}>
             {t('partners.about')}
           </Text>
@@ -152,12 +166,12 @@ export function PartnerDetailScreen() {
           <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2] }]}>
             {detail.about}
           </Text>
-        </Surface>
+        </View>
       ) : null}
 
       {detail?.offerings && detail.offerings.length > 0 ? (
-        <Surface style={{ marginTop: space[3] }} padded={false}>
-          <View style={{ paddingHorizontal: space[4], paddingTop: space[4] }}>
+        <View style={{ marginTop: space[5] }}>
+          <View style={{ paddingBottom: space[2] }}>
             <Text style={[text.headline, { color: color.textPrimary }]}>
               {t('partners.offerings')}
             </Text>
@@ -169,7 +183,7 @@ export function PartnerDetailScreen() {
               last={index === detail.offerings.length - 1}
             />
           ))}
-        </Surface>
+        </View>
       ) : null}
 
       <Text
@@ -215,13 +229,13 @@ export function PartnerDetailScreen() {
         never be the reason a customer cannot pay.
       */}
       {detail && (detail.isActive === false || (detail.status && detail.status !== 'ACTIVE')) ? (
-        <Surface style={{ marginTop: space[4] }}>
+        <View style={{ marginTop: space[4], paddingVertical: space[4] }}>
           <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
             {detail.status === 'PENDING_APPROVAL'
               ? t('partners.notTradingYet')
               : t('partners.notTrading')}
           </Text>
-        </Surface>
+        </View>
       ) : (
         <View style={{ marginTop: space[4] }}>
           <Button
@@ -287,9 +301,8 @@ function CoverImage({
  * explicit "полноценный маркетплейс сейчас НЕ строим".
  */
 function OfferingRow({ offering, last }: { offering: PartnerOfferingDto; last: boolean }) {
-  const { space } = useTheme();
   return (
-    <View style={{ paddingHorizontal: space[4] }}>
+    <View>
       <ListRow
         title={offering.name}
         subtitle={offering.description ?? undefined}

@@ -222,13 +222,25 @@
   },
   "notifications": {
     "title": "Notifications",
-    "markAllRead": "Mark all as read",
+    "markAllRead": "Mark all read",
     "empty": "You're all caught up",
     "welcomeTitle": "Welcome to TuTak!",
     "welcomeBody": "Your account is ready. Start earning bonus points today.",
     "transactionCompletedTitle": "Payment completed",
     "transactionCompletedBody": "Your {{type}} transaction of {{amount}} was completed.",
-    "emptyMessage": "We will let you know when something happens in your wallet."
+    "emptyMessage": "We will let you know when something happens in your wallet.",
+    "bonusEarned": {
+      "title": "Bonus earned",
+      "body": "{{amount}} points were added to your balance."
+    },
+    "chargingStarted": {
+      "title": "Charging started",
+      "body": "{{station}} has started your session."
+    },
+    "bonusExpiring": {
+      "title": "Points expiring soon",
+      "body": "{{amount}} points expire in {{days}} days."
+    }
   },
   "settings": {
     "title": "Settings",

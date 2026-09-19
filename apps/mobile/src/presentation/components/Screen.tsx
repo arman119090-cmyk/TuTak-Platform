@@ -100,14 +100,16 @@ export function Screen({
             ) : null}
 
             <View style={styles.flex}>
-              <Text style={[text.titleLg, { color: color.textPrimary }]}>{title}</Text>
+              <Text style={[text.titleLg, { color: color.textPrimary }]} numberOfLines={2}>{title}</Text>
               {subtitle ? (
                 <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[1] }]}>
                   {subtitle}
                 </Text>
               ) : null}
             </View>
-            {headerAccessory}
+            {headerAccessory ? (
+              <View style={{ marginLeft: space[3], flexShrink: 0, alignSelf: 'center' }}>{headerAccessory}</View>
+            ) : null}
           </View>
         ) : null}
 

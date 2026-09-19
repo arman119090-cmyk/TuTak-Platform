@@ -40,7 +40,7 @@ import { formatDate, formatPoints } from '../../utils/format';
  */
 export function ReferralScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, glow } = useTheme();
+  const { color, space, text, radius, glow, palette } = useTheme();
 
   const { data: code } = useQuery({ queryKey: ['referral-code'], queryFn: referralApi.getMyCode });
   const {
@@ -128,23 +128,35 @@ export function ReferralScreen() {
 
       {/* Rewarded-to-date figure — Level-1 only, from data this screen
           already holds; never a fabricated L2/L3 contribution. */}
-      <View style={[styles.stats, { marginTop: space[4], gap: space[3] }]}>
-        <Surface tone="subtle" style={styles.flex}>
+      <View
+        style={[
+          styles.stats,
+          {
+            marginTop: space[5],
+            paddingVertical: space[4],
+            gap: space[4],
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderColor: palette.neutral[100],
+          },
+        ]}
+      >
+        <View style={styles.flex}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('referral.totalInvites')}
           </Text>
-          <Text style={[text.title, { color: color.textPrimary, marginTop: space[1] }]}>
+          <Text style={[text.title, styles.tabular, { color: color.textPrimary, marginTop: 2 }]}>
             {list.length}
           </Text>
-        </Surface>
-        <Surface tone="subtle" style={styles.flex}>
+        </View>
+        <View style={styles.flex}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('referral.rewardEarned')}
           </Text>
-          <Text style={[text.title, { color: color.availableText, marginTop: space[1] }]}>
+          <Text style={[text.title, styles.tabular, { color: color.availableText, marginTop: 2 }]}>
             {formatPoints(totalEarned)}
           </Text>
-        </Surface>
+        </View>
       </View>
 
       {/* 3. Level-1 list — the only level with identities. */}
@@ -257,12 +269,7 @@ function LevelCard({
 
       <View style={{ marginTop: space[3] }}>
         {count === null ? (
-          <View
-            style={[
-              styles.unavailable,
-              { backgroundColor: color.surface, borderRadius: radius.md, padding: space[3], gap: space[1] },
-            ]}
-          >
+          <View style={[styles.unavailable, { gap: space[1] }]}>
             <Text style={[text.label, { color: color.textSecondary }]}>
               {t('referral.levelUnavailableTitle')}
             </Text>
@@ -288,6 +295,7 @@ const styles = StyleSheet.create({
   watermark: { position: 'absolute', right: -50, top: -40 },
   watermarkImage: { width: 200, height: 200, opacity: 0.08 },
   stats: { flexDirection: 'row' },
+  tabular: { fontVariant: ['tabular-nums'] },
   levelRow: { flexDirection: 'row', alignItems: 'flex-start' },
   ratePill: { paddingVertical: 4, alignSelf: 'flex-start' },
   unavailable: {},

@@ -222,13 +222,25 @@
   },
   "notifications": {
     "title": "Уведомления",
-    "markAllRead": "Отметить всё как прочитанное",
+    "markAllRead": "Прочитать всё",
     "empty": "Новых уведомлений нет",
     "welcomeTitle": "Добро пожаловать в TuTak!",
     "welcomeBody": "Ваш аккаунт готов. Начните зарабатывать бонусные баллы уже сегодня.",
     "transactionCompletedTitle": "Платёж выполнен",
     "transactionCompletedBody": "Операция {{type}} на сумму {{amount}} выполнена.",
-    "emptyMessage": "Мы сообщим, когда в вашем кошельке что-то произойдёт."
+    "emptyMessage": "Мы сообщим, когда в вашем кошельке что-то произойдёт.",
+    "bonusEarned": {
+      "title": "Начислены бонусы",
+      "body": "На ваш счёт поступило {{amount}} баллов."
+    },
+    "chargingStarted": {
+      "title": "Зарядка началась",
+      "body": "Станция {{station}} начала сессию."
+    },
+    "bonusExpiring": {
+      "title": "Бонусы скоро сгорят",
+      "body": "{{amount}} баллов истекают через {{days}} дней."
+    }
   },
   "settings": {
     "title": "Настройки",

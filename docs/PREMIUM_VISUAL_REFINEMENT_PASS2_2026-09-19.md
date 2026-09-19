@@ -226,10 +226,12 @@ artwork, Edit, Switch on/off. Партнёрская панель не полу�
 
 ## ANDROID REALITY
 
-- APK из ветки: workflow `Build Android APK`, run **59**
-  (https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35441688635),
-  профиль `preview` (помеченная сборка, не production), builder `local`,
-  API `https://tutak-api-production.up.railway.app/v1`. На проде нет
+- APK из ветки: workflow `Build Android APK`, run **59** — **собран
+  успешно**, релиз https://github.com/arman119090-cmyk/TuTak-Platform/releases/tag/apk-preview-59
+  (файл `tutak.apk` в assets релиза), профиль `preview` (помеченная
+  сборка, не production), builder `local`, API
+  `https://tutak-api-production.up.railway.app/v1`. Сборка сделана с
+  коммита `172e4c3` (pass 2); правки pass 3 и ИНН в неё не вошли. На проде нет
   `/promos/featured` до merge/deploy → в этой сборке Spotlight будет
   скрыт (404 → секция отсутствует); остальные экраны — как в pass 2.
 - **Устройства нет.** Elevation, шрифты, switch, sharpness иконок на
@@ -346,7 +348,7 @@ Demo регенерирован.
    integration-шарды).
 5. Поведение `FlatList` snap на web — проверено визуально только
    статикой.
-6. Результат APK run 59 на момент отчёта (см. TESTS/ANDROID REALITY).
+6. ~~Результат APK run 59~~ — собран, см. ANDROID REALITY; сам APK на устройстве не запускался.
 
 ## Вопросы владельцу
 

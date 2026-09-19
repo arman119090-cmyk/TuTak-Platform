@@ -632,7 +632,7 @@ function StationCard({
   startingConnectorId: string | null;
   disabled: boolean;
 }) {
-  const { color, space, text, radius, glass, premium } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
   const { t } = useTranslation();
 
   const free = station.connectors.filter((c) => c.status === 'AVAILABLE').length;
@@ -712,8 +712,7 @@ function StationCard({
                 style={({ pressed }) => [
                   styles.connector,
                   {
-                    borderColor: startable ? glass.border : color.border,
-                    backgroundColor: startable && pressed ? glass.light : 'transparent',
+                    backgroundColor: startable && pressed ? color.surfaceSunken : color.backgroundSubtle,
                     opacity: startable || starting ? 1 : 0.55,
                     borderRadius: radius.md,
                     paddingHorizontal: space[3],
@@ -826,6 +825,6 @@ const styles = StyleSheet.create({
   cardIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   trailing: { alignItems: 'flex-end' },
   connectors: { flexDirection: 'row', flexWrap: 'wrap' },
-  connector: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth },
+  connector: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
 });

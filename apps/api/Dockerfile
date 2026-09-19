@@ -31,6 +31,11 @@ COPY --from=build /repo/apps/api/dist ./apps/api/dist
 COPY --from=build /repo/apps/api/prisma ./apps/api/prisma
 COPY --from=build /repo/apps/api/public ./apps/api/public
 COPY --from=build /repo/apps/api/package.json ./apps/api/package.json
+# The Prisma CLI config (seed command, migrations path). `migrate deploy`
+# at start-up runs without it too, but then it runs on defaults rather
+# than on what the repository says — and the whole point of the file is
+# that there is one place that says it.
+COPY --from=build /repo/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY apps/api/docker-entrypoint.sh ./apps/api/docker-entrypoint.sh
 RUN chmod +x ./apps/api/docker-entrypoint.sh
 

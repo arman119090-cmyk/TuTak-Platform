@@ -1,7 +1,7 @@
 # TUTAK — ДОВЕСТИ ДО READY FOR LIMITED PRODUCTION PILOT: итоговый отчёт
 
 Дата: 19.09.2026. Ветка `claude/railway-connector-check-wy0ffq` (PR #58),
-база работы — `main` `369eda1`; последний коммит ветки `0dacd9f`.
+база работы — `main` `369eda1`; последний коммит ветки `9b6634f`.
 
 ## Задание (пересказ)
 
@@ -112,7 +112,7 @@ unit-теста зелёные на ветке, нагрузка первого 
 | DEMO_MODE | переменная есть, **эффективно false** (нет баннера) |
 | Наблюдаемость | `ALERT_WEBHOOK_URL`, `SENTRY_DSN`, `METRICS_TOKEN` — отсутствуют |
 | Railway source | `checkSuites: false` |
-| CI | `071c4e8` 10/10 зелёных; `0dacd9f` — запущен (run 801/802), результат см. UNVERIFIED |
+| CI | `071c4e8` 10/10 зелёных; `9b6634f` (head PR #58, включает весь код): pull_request-run 35432450617 — **5/5 success** (08:44 UTC); push-run 35432448690 — 4/5 success, шард Integration 3/3 ещё выполнялся на 08:49 (те же тесты, в PR-run прошли) |
 | Открытые PR | #58 (эта ветка), #52 (биометрия), #29 (draft, мёртвая база) |
 
 ## F. MANUAL ACTIONS (только то, что нельзя сделать без Армана)
@@ -189,12 +189,12 @@ Sentry release health, метрики в Grafana Cloud, ротация `JWT_REFR
 | `scripts/pilot-verify.sql`, SQL DR-runbook | `psql -v ON_ERROR_STOP=1` на `tutak_test` (71 миграция): 0 ошибок, applied=71/failed=0 |
 | `uptime.yml` | YAML валиден; actionlint недоступен в sandbox |
 | CI на `071c4e8` | 10/10 success |
-| CI на `0dacd9f` | запущен 08:32 UTC, run 801 (push) и 802 (PR) |
+| CI на `9b6634f` (head PR #58) | PR-run **5/5 success**: Lint/test/build, Build the container images (e2e + backup/restore rehearsal), Integration 1/3, 2/3, 3/3; push-run 4/5 + один шард ещё шёл |
 | Railway | `describe-service` Postgres, `list-deployments` api, `get-logs` `f94d56eb` (фильтры DEMO, SMS transport) |
 
 ## UNVERIFIED
 
-- CI на `0dacd9f` (в момент написания — in_progress).
+- Последний шард push-run на `9b6634f` (Integration 3/3) — на момент записи ещё шёл; PR-run на том же SHA полностью зелёный.
 - Первый реальный прогон `uptime.yml` и приём webhook.
 - RPO ≈ 60 с и время restore 5 GB на Railway — из документации, не измерены.
 - Поведение restore тома Railway (заменяет ли текущий том).

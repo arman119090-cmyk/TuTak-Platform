@@ -59,8 +59,8 @@ Sentry: только `SENTRY_DSN` (api) и `NEXT_PUBLIC_SENTRY_DSN` (admin/partn
 
 - HEAD: `3b0c42d` (9 коммитов после `main` `369eda1`).
 - Diff vs main: 20 файлов на `7670201` + этот коммит; посторонних изменений нет; секретов нет (grep по diff); денежные флаги не включаются; destructive-действий нет (только чтение production через MCP).
-- CI: `7670201` — PR-run 5/5 success (push-run 4/5 + один медленный шард). `3b0c42d` — см. UNVERIFIED (запущен при записи).
-- Mergeability: `clean` на `7670201`; на `3b0c42d` — после CI.
+- CI: `c535c39` (head с кодом `3b0c42d` + отчёт) — push-run 35434292814 **5/5 success** (Lint/test/build с новым probe self-test, Integration 1/3–3/3, Build the container images с e2e и backup/restore rehearsal); PR-run 35434294580 — 4/5 success, последний job (container images) ещё шёл в 09:26 UTC. `7670201` — PR-run 5/5 success.
+- Mergeability: `clean` (без конфликтов с `main` `369eda1`).
 - **Merge-ready: YES по коду, NO по процессу** — не мержу, пока `checkSuites=false`: merge — доказательство Wait for CI (протокол в `docs/WAIT_FOR_CI_EXPERIMENT_RU.md`).
 
 ## 5. PRODUCTION SAFETY
@@ -138,8 +138,8 @@ Sentry: только `SENTRY_DSN` (api) и `NEXT_PUBLIC_SENTRY_DSN` (admin/partn
 | `pilot-verify.sql` | 12/12 PASS на реальной покупке; READ ONLY подтверждён |
 | typecheck / lint API | exit 0 |
 | CI на `7670201` | PR-run 5/5 success |
-| CI на `3b0c42d` | UNVERIFIED (запущен) |
+| CI на `c535c39` | push-run **5/5 success**; PR-run 4/5 + последний job в процессе |
 
 ## UNVERIFIED
 
-CI `36b2543` (head после отчёта); `backup.yml` end-to-end; панельный Sentry release на Railway; Wait for CI; всё, что BLOCKED BY ARMAN.
+последний job PR-run на `c535c39` (container images; тот же job в push-run — success); `backup.yml` end-to-end; панельный Sentry release на Railway; Wait for CI; всё, что BLOCKED BY ARMAN.

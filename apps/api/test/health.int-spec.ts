@@ -60,13 +60,19 @@ describe('HealthController (integration)', () => {
  * that runs after this one in the same Jest worker.
  */
 describe('HealthController readiness under a failing dependency', () => {
-  it('reports 503 when a dependency check rejects', async () => {
+  it('reports 503 when a dependency check rejects, and tells a person', async () => {
+    const fired: { key: string; severity: string }[] = [];
     const failingController = new HealthController(
       { $queryRaw: () => Promise.reject(new Error('connection refused')) } as never,
       { ping: () => Promise.resolve('PONG') } as never,
       { driverName: 'memory', get: () => Promise.resolve(null) } as never,
       { get: () => false } as never,
-      { fire: () => Promise.resolve(true) } as never,
+      {
+        fire: (alert: { key: string; severity: string }) => {
+          fired.push(alert);
+          return Promise.resolve({ suppressed: false, delivered: true, channel: 't', detail: '' });
+        },
+      } as never,
     );
 
     await expect(failingController.ready()).rejects.toThrow(HttpException);
@@ -81,5 +87,31 @@ describe('HealthController readiness under a failing dependency', () => {
         checks: { database: 'error', redis: 'ok', storage: 'ok', storageDriver: 'memory' },
       });
     }
+    // The blind spot this closes: a dead database took the instance out of
+    // rotation and nobody was told, because every other alert path needs
+    // the sweeps, and the sweeps need Redis and Postgres to run.
+    expect(fired.map((a) => a.key)).toEqual([
+      'readiness.database.unreachable',
+      'readiness.database.unreachable',
+    ]);
+    expect(fired[0]?.severity).toBe('critical');
+  });
+
+  it('pages for Redis too, even though the suppression store is the thing that is down', async () => {
+    const fired: string[] = [];
+    const controller = new HealthController(
+      { $queryRaw: () => Promise.resolve([{ '?column?': 1 }]) } as never,
+      { ping: () => Promise.reject(new Error('ECONNREFUSED')) } as never,
+      { driverName: 'memory', get: () => Promise.resolve(null) } as never,
+      { get: () => false } as never,
+      {
+        fire: (alert: { key: string }) => {
+          fired.push(alert.key);
+          return Promise.resolve({ suppressed: false, delivered: true, channel: 't', detail: '' });
+        },
+      } as never,
+    );
+    await expect(controller.ready()).rejects.toThrow(HttpException);
+    expect(fired).toEqual(['readiness.redis.unreachable']);
   });
 });

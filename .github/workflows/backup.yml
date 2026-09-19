@@ -1,0 +1,110 @@
+# Daily volume backup of the production Postgres, and proof that it exists.
+#
+# Railway's dashboard can schedule volume backups, but nothing outside the
+# dashboard can see whether that schedule is on or whether last night's backup
+# happened. This workflow makes the backup itself through Railway's public
+# GraphQL API (the documented `volumeInstanceBackupCreate`), then lists the
+# backups and fails — and pages — if the newest one is older than 26 hours.
+# It is a second line next to PITR, not a replacement: PITR restores to a
+# moment into a new service; a volume backup restores a whole volume.
+#
+# Secrets:
+#   RAILWAY_API_TOKEN   an account or project token with access to the
+#                       TuTak project (Railway → Account → Tokens). Needed for
+#                       anything here to run; without it the job stops with a
+#                       clear message and no backup is claimed.
+#   ALERT_WEBHOOK_URL   optional; same channel as the API's alerts.
+# Variables:
+#   RAILWAY_VOLUME_ID            defaults to the production postgres-volume
+#   RAILWAY_ENVIRONMENT_ID       defaults to production
+#
+# `workflow_dispatch` runs the same steps by hand — that is the first proof.
+name: Backup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'   # 02:17 UTC daily (06:17 Yerevan)
+  workflow_dispatch:
+    inputs:
+      create:
+        description: 'Create a new backup (false = only verify the newest one)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      VOLUME_ID: ${{ vars.RAILWAY_VOLUME_ID || '75413fb2-7af3-40f5-a534-0d1f48b5217e' }}
+      ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID || 'aebe04da-ba8f-44b5-9a7f-3d4d43284966' }}
+      CREATE: ${{ github.event_name == 'schedule' && 'true' || inputs.create }}
+      API: https://backboard.railway.com/graphql/v2
+    steps:
+      - name: Refuse without a token
+        run: |
+          if [ -z "$RAILWAY_API_TOKEN" ]; then
+            echo "::error::RAILWAY_API_TOKEN secret is not set — no backup was made. Railway → Account → Tokens → add as a repository secret."
+            exit 1
+          fi
+
+      - name: Resolve the volume instance in this environment
+        id: vi
+        run: |
+          set -e
+          gql() { curl -sS --fail --max-time 30 -H "Authorization: Bearer $RAILWAY_API_TOKEN" -H 'Content-Type: application/json' -d "$1" "$API"; }
+          q=$(jq -cn --arg id "$VOLUME_ID" '{query: "query($id: String!) { volume(id: $id) { id name volumeInstances { edges { node { id environmentId currentSizeMB } } } } }", variables: {id: $id}}')
+          resp=$(gql "$q")
+          echo "$resp" | jq -c 'del(.data.volume.volumeInstances.edges[].node.currentSizeMB) // .' >/dev/null 2>&1 || true
+          if echo "$resp" | jq -e '.errors' >/dev/null; then echo "::error::Railway API: $(echo "$resp" | jq -c .errors)"; exit 1; fi
+          vi=$(echo "$resp" | jq -r --arg env "$ENVIRONMENT_ID" '.data.volume.volumeInstances.edges[].node | select(.environmentId==$env) | .id' | head -n1)
+          size=$(echo "$resp" | jq -r --arg env "$ENVIRONMENT_ID" '.data.volume.volumeInstances.edges[].node | select(.environmentId==$env) | .currentSizeMB')
+          [ -n "$vi" ] || { echo "::error::no volume instance for volume $VOLUME_ID in environment $ENVIRONMENT_ID"; exit 1; }
+          echo "volume instance $vi (${size:-?} MB used)"
+          echo "id=$vi" >> "$GITHUB_OUTPUT"
+
+      - name: Create a backup
+        if: env.CREATE == 'true'
+        run: |
+          set -e
+          gql() { curl -sS --fail --max-time 120 -H "Authorization: Bearer $RAILWAY_API_TOKEN" -H 'Content-Type: application/json' -d "$1" "$API"; }
+          q=$(jq -cn --arg id "${{ steps.vi.outputs.id }}" '{query: "mutation($id: String!) { volumeInstanceBackupCreate(volumeInstanceId: $id) }", variables: {id: $id}}')
+          resp=$(gql "$q")
+          if echo "$resp" | jq -e '.errors' >/dev/null; then echo "::error::backup create failed: $(echo "$resp" | jq -c .errors)"; exit 1; fi
+          echo "backup requested: $(echo "$resp" | jq -c .data)"
+          sleep 60
+
+      - name: Verify the newest backup is fresh
+        id: verify
+        run: |
+          set -e
+          gql() { curl -sS --fail --max-time 30 -H "Authorization: Bearer $RAILWAY_API_TOKEN" -H 'Content-Type: application/json' -d "$1" "$API"; }
+          q=$(jq -cn --arg id "${{ steps.vi.outputs.id }}" '{query: "query($id: String!) { volumeInstanceBackupList(volumeInstanceId: $id) { id name createdAt expiresAt usedMB referencedMB } }", variables: {id: $id}}')
+          resp=$(gql "$q")
+          if echo "$resp" | jq -e '.errors' >/dev/null; then echo "::error::backup list failed: $(echo "$resp" | jq -c .errors)"; exit 1; fi
+          echo "$resp" | jq -r '.data.volumeInstanceBackupList | sort_by(.createdAt) | reverse | .[:5][] | "\(.createdAt)  \(.name // "-")  used=\(.usedMB)MB referenced=\(.referencedMB)MB expires=\(.expiresAt // "-")"'
+          newest=$(echo "$resp" | jq -r '.data.volumeInstanceBackupList | map(.createdAt) | max // empty')
+          count=$(echo "$resp" | jq -r '.data.volumeInstanceBackupList | length')
+          echo "count=$count newest=${newest:-none}"
+          if [ -z "$newest" ]; then echo "problem=NO BACKUP EXISTS for the production Postgres volume" >> "$GITHUB_OUTPUT"; exit 0; fi
+          age=$(( $(date -u +%s) - $(date -u -d "$newest" +%s) ))
+          echo "newest backup age: $((age/3600))h $(((age%3600)/60))m"
+          if [ "$age" -gt $((26*3600)) ]; then echo "problem=newest Postgres backup is $((age/3600)) hours old (limit 26h)" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Page a human
+        if: always() && (failure() || steps.verify.outputs.problem != '')
+        env:
+          PROBLEM: ${{ steps.verify.outputs.problem || 'the backup job failed — see the run log' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "::error::$PROBLEM"
+          [ -n "$ALERT_WEBHOOK_URL" ] || { echo "::warning::ALERT_WEBHOOK_URL not set — visible only here"; exit 1; }
+          payload=$(jq -cn --arg b "$PROBLEM" --arg r "$RUN_URL" '{text: ("🔴 *TuTak production: backup problem* — production\n" + $b + "\n• run: " + $r), severity: "critical", title: "TuTak production: backup problem", body: $b, key: "backup.volume", environment: "production", context: {run: $r}, firedAt: (now|todate)}')
+          code=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "$payload" "$ALERT_WEBHOOK_URL")
+          echo "webhook answered $code"
+          exit 1

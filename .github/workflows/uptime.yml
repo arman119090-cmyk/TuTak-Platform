@@ -1,17 +1,19 @@
 # External uptime detection, with nothing but GitHub.
 #
-# The API's own alerts (dead letters, drift, a dependency that stopped
-# answering) are sent by the API process. When that process is not running —
-# a migration that failed on boot, a container that never became healthy, a
-# platform outage — there is nobody left to send anything. Railway restarts
-# the container (restart policy ALWAYS) but tells no human.
+# The API's own alerts are sent by the API process. When that process is not
+# running — a migration that failed on boot, a container that never became
+# healthy, a platform outage — there is nobody left to send anything. Railway
+# restarts the container (restart policy ALWAYS) but tells no human.
 #
-# This workflow is the outside observer: every ten minutes it asks
-# `/health/ready`, and when the answer is not a 200 with every check `ok` it
-# posts to the same webhook the API uses (`ALERT_WEBHOOK_URL`), in the same
-# JSON shape, so it lands in the same channel. Optionally, with
-# `METRICS_TOKEN`, it also reads `tutak_ledger_imbalance_amd` and pages when
-# the ledger does not sum to zero — the one number worth a page at 3am.
+# This workflow is the outside observer: every ten minutes it runs
+# scripts/uptime-probe.sh, which asks `/health/ready` and, with METRICS_TOKEN,
+# reads `tutak_ledger_imbalance_amd`, and pages the same webhook the API uses
+# (`ALERT_WEBHOOK_URL`) in the same JSON shape. The script's logic is proven
+# by scripts/uptime-probe.test.sh, which CI runs on every push.
+#
+# Paging is transition-based: a long outage pages once when it starts and
+# then once an hour, not every ten minutes. The previous run's conclusion
+# comes from the Actions API (hence `actions: read`).
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   ALERT_WEBHOOK_URL  required for a page; without it the run only fails
@@ -20,8 +22,12 @@
 # Variables:
 #   API_BASE_URL       optional; defaults to the production API below.
 #
-# Ten minutes is GitHub's practical floor for scheduled workflows; a check
-# that runs late by a few minutes is still a check.
+# GitHub only runs schedules from the default branch, so this is inert until
+# it is on `main`; `workflow_dispatch` is the manual proof run after that.
+# Ten minutes is GitHub's practical floor for schedules; a check that runs a
+# few minutes late is still a check. If GitHub Actions itself is down, so is
+# this observer — that is the residual gap, and the Actions status page is
+# where it shows.
 name: Uptime
 
 on:
@@ -31,6 +37,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: uptime
@@ -44,66 +51,29 @@ jobs:
       API_BASE_URL: ${{ vars.API_BASE_URL || 'https://tutak-api-production.up.railway.app' }}
       ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
       METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Readiness
-        id: ready
-        run: |
-          set +e
-          body=$(curl -sS --max-time 20 -w '\n%{http_code}' "$API_BASE_URL/health/ready" 2>&1)
-          rc=$?
-          code=$(printf '%s' "$body" | tail -n1)
-          json=$(printf '%s' "$body" | sed '$d')
-          echo "curl_rc=$rc http=$code"
-          echo "$json" | head -c 600; echo
-          if [ "$rc" != "0" ] || [ "$code" != "200" ]; then
-            echo "problem=API not ready (curl rc=$rc, HTTP ${code:-none}): $(printf '%s' "$json" | head -c 300)" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Every check must say ok; `storage` deliberately does not fail
-          # readiness (see HealthController), so it is checked here instead.
-          if printf '%s' "$json" | grep -Eq '"(database|redis|storage)":"error"'; then
-            echo "problem=A readiness check reports error: $(printf '%s' "$json" | head -c 300)" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
 
-      - name: Ledger imbalance (only with METRICS_TOKEN)
-        id: ledger
-        if: env.METRICS_TOKEN != ''
-        run: |
-          set +e
-          metrics=$(curl -sS --max-time 20 -H "Authorization: Bearer $METRICS_TOKEN" "$API_BASE_URL/metrics")
-          rc=$?
-          if [ "$rc" != "0" ]; then
-            echo "problem=/metrics unreachable (curl rc=$rc)" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          value=$(printf '%s' "$metrics" | awk '/^tutak_ledger_imbalance_amd[ {]/ {print $NF; exit}')
-          echo "tutak_ledger_imbalance_amd=${value:-<absent>}"
-          if [ -z "$value" ]; then
-            echo "problem=tutak_ledger_imbalance_amd is absent from /metrics (token rejected or endpoint disabled)" >> "$GITHUB_OUTPUT"
-          elif [ "$value" != "0" ] && [ "$value" != "0.0" ] && [ "$value" != "0.0000" ]; then
-            echo "problem=LEDGER IMBALANCE: tutak_ledger_imbalance_amd=$value — money was invented or lost; stop payouts and page the engineer" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Page a human
-        if: steps.ready.outputs.problem != '' || steps.ledger.outputs.problem != ''
+      - name: Previous run's conclusion (for transition paging)
+        id: prev
         env:
-          READY_PROBLEM: ${{ steps.ready.outputs.problem }}
-          LEDGER_PROBLEM: ${{ steps.ledger.outputs.problem }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          problem="${READY_PROBLEM:-$LEDGER_PROBLEM}"
-          [ -n "$READY_PROBLEM" ] && [ -n "$LEDGER_PROBLEM" ] && problem="$READY_PROBLEM; $LEDGER_PROBLEM"
-          severity=critical
-          title="TuTak production: external probe failed"
-          echo "::error::$problem"
-          if [ -z "$ALERT_WEBHOOK_URL" ]; then
-            echo "::warning::ALERT_WEBHOOK_URL secret is not set — this failure is visible only here."
-            exit 1
-          fi
-          payload=$(jq -cn --arg t "$title" --arg b "$problem" --arg s "$severity" --arg u "$API_BASE_URL" --arg r "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            '{text: ("🔴 *" + $t + "* — production\n" + $b + "\n• api: " + $u + "\n• run: " + $r),
-              severity: $s, title: $t, body: $b, key: "uptime.probe", environment: "production",
-              context: {api: $u, run: $r}, firedAt: (now | todate)}')
-          code=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "$payload" "$ALERT_WEBHOOK_URL")
-          echo "webhook answered $code"
-          case "$code" in 2*) ;; *) echo "::error::webhook did not accept the page (HTTP $code)";; esac
-          exit 1
+          prev=$(gh api "repos/${{ github.repository }}/actions/workflows/uptime.yml/runs?status=completed&per_page=1" \
+            --jq '.workflow_runs[0].conclusion' 2>/dev/null)
+          echo "conclusion=${prev:-unknown}" >> "$GITHUB_OUTPUT"
+          # A reminder slot: the first probe of every hour re-pages a still-open outage.
+          if [ "$(date -u +%M)" -lt 10 ]; then echo "reminder=1" >> "$GITHUB_OUTPUT"; else echo "reminder=0" >> "$GITHUB_OUTPUT"; fi
+          echo "previous=${prev:-unknown} reminder=$([ "$(date -u +%M)" -lt 10 ] && echo 1 || echo 0)"
+
+      - name: Probe
+        env:
+          PAGE_MODE: ${{ github.event_name == 'workflow_dispatch' && 'always' || 'transition' }}
+          PREVIOUS_CONCLUSION: ${{ steps.prev.outputs.conclusion }}
+          REMINDER: ${{ steps.prev.outputs.reminder }}
+        run: bash scripts/uptime-probe.sh

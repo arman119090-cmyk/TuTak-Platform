@@ -128,6 +128,9 @@ export interface AppConfig {
   alerts: {
     /** Where an operator gets told that money is at risk. Empty = the log only. */
     webhookUrl: string;
+    /** Telegram Bot API transport; both must be set for it to exist. Never logged. */
+    telegramBotToken: string;
+    telegramChatId: string;
   };
   payouts: {
     /** Whether confirming a payout requires someone other than its requester. */
@@ -143,6 +146,10 @@ export interface AppConfig {
      * being scrubbed. Access ends immediately either way.
      */
     graceDays: number;
+  };
+  legalPages: {
+    /** Serve /legal/privacy and /legal/account-deletion. Off until a lawyer signed the texts. */
+    enabled: boolean;
   };
   otpIpLimits: {
     /**
@@ -551,6 +558,9 @@ const buildConfig = (): AppConfig => ({
     // the data, not the account.
     graceDays: parseInt(process.env.ACCOUNT_DELETION_GRACE_DAYS ?? '30', 10),
   },
+  legalPages: {
+    enabled: process.env.LEGAL_PAGES_ENABLED === 'true',
+  },
   otpIpLimits: {
     // Defaults sit above what carrier-grade NAT puts behind one address in an
     // hour and far below what a credential attack needs (see the service).
@@ -560,8 +570,10 @@ const buildConfig = (): AppConfig => ({
     // a deploy; `positiveIntEnv` ignores anything that is not a whole number
     // above zero, so a typo restores the default rather than disabling the
     // ceiling.
-    issuancePerHour: positiveIntEnv(process.env.OTP_IP_ISSUANCE_PER_HOUR, 60),
-    verificationPerHour: positiveIntEnv(process.env.OTP_IP_VERIFICATION_PER_HOUR, 120),
+    // ...and never above ten times the default: an override is for a
+    // venue, not for switching the ceiling off. Anything larger is clamped.
+    issuancePerHour: Math.min(positiveIntEnv(process.env.OTP_IP_ISSUANCE_PER_HOUR, 60), 600),
+    verificationPerHour: Math.min(positiveIntEnv(process.env.OTP_IP_VERIFICATION_PER_HOUR, 120), 1200),
   },
   retention: {
     // Ninety days of read notifications is enough for a customer to scroll
@@ -682,6 +694,10 @@ const buildConfig = (): AppConfig => ({
     // JSON POST. Unset in development; production boots without it but warns
     // — see AlertsModule for why it does not refuse.
     webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+    // A Telegram group with a bot in it: ten minutes of setup on a phone,
+    // for an operator who has no Slack. Both halves or nothing.
+    telegramBotToken: (process.env.ALERT_TELEGRAM_BOT_TOKEN ?? '').trim(),
+    telegramChatId: (process.env.ALERT_TELEGRAM_CHAT_ID ?? '').trim(),
   },
   metrics: {
     // No default. An unset token disables the endpoint rather than opening

@@ -82,6 +82,13 @@ jobs:
       - name: Sentry sanitizer parity (apps/api vs @tutak/observability)
         run: pnpm test:sentry-parity
 
+      # The external uptime probe (.github/workflows/uptime.yml) is a shell
+      # script; this is its test: a fake API and a fake webhook, fifteen
+      # cases of healthy/unhealthy/paging/not-paging. It fails the build if
+      # the observer would page wrongly or stay silent.
+      - name: Uptime probe self-test
+        run: bash scripts/uptime-probe.test.sh
+
       # Reported, not enforced — and that is a decision rather than laziness.
       # Every advisory the last review turned up was either a build-time
       # dependency of the mobile app (`image-size`, `uuid`, reached only by

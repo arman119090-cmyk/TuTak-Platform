@@ -8,7 +8,8 @@ import { resolveApiBaseUrl } from './api-base-url.mjs';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
-const releaseSha = process.env.GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'unknown';
+const releaseSha =
+  process.env.GIT_COMMIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'unknown';
 
 // Which API this build may talk to, and therefore what `connect-src` names.
 //

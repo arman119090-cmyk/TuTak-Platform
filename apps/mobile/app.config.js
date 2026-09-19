@@ -453,6 +453,14 @@ module.exports = ({ config }) => ({
     map: mapExtra(),
     appEnv: process.env.APP_ENV ?? 'development',
     /**
+     * Where the public legal pages live — the API serves them at
+     * `/legal/privacy` and `/legal/account-deletion` once
+     * `LEGAL_PAGES_ENABLED=true` on the server. Empty (the default) hides
+     * the Settings row: a link to a 404 is worse than no link, and the
+     * pages stay unpublished until a lawyer has signed the texts.
+     */
+    legalBaseUrl: (process.env.LEGAL_BASE_URL ?? '').replace(/\/+$/, ''),
+    /**
      * The on-screen event log. Only the `diagnostic` EAS profile sets this,
      * and it refuses to combine with production below.
      *

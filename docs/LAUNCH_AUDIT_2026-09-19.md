@@ -35,7 +35,7 @@ production-данные.
 | INFRASTRUCTURE | **READY WITH CONDITIONS** | Все сервисы online, API 100 МБ из 8 ГБ, CPU ~0; миграции применяются на старте; healthcheck `/health/ready`. Условия: **Railway деплоит `main` не дожидаясь CI** (`checkSuites: false`) — плохой merge попадает в production раньше, чем CI его увидит; один реплик, без HA; restart policy была ON_FAILURE×3 — **исправлено на ALWAYS** этим аудитом. |
 | OBSERVABILITY | **NOT READY** | Цепочка в коде полная (dead-letter → alert, ageing, sweep.failed, drift, heartbeat; с #57 «delivered» = 2xx получателя), но в production **нет ни `ALERT_WEBHOOK_URL`, ни `SENTRY_DSN`, ни `METRICS_TOKEN`**: ERROR DETECTED — да; ALERT CREATED — да; ALERT DELIVERED — **нет** (console); HUMAN RECEIVED — **нет**. |
 | BACKUP / DR | **NOT READY** | Скрипты `backup.sh`/`restore.sh`/`pitr-basebackup.sh` есть и репетируются в CI, но **ни одного автоматического backup production нет**: нет cron-сервиса, нет scheduled workflow, Railway-бэкапы тома не подтверждены. Postgres — один узел, том 5 ГБ. Если БД исчезнет сейчас — теряем всё, что не в git. |
-| LEGAL / BUSINESS | **NOT READY** | `public/privacy.html` и оферта содержат `[OPERATOR]`, `[ADDRESS]`, `[CONTACT EMAIL]` (в privacy.html — 15 плейсхолдеров), помечены «не проверено юристом»; приложение ссылается на `https://tutak.am/privacy` — работает ли домен, отсюда не проверить; iOS никогда не собирался; процессов для спорных покупок/возвратов/зависших PSP нет ни runbook, ни назначенных людей. |
+| LEGAL / BUSINESS | **NOT READY** | `apps/api/public/legal/privacy.html` и оферта содержат `[OPERATOR]`, `[ADDRESS]`, `[CONTACT EMAIL]` (в privacy.html — 15 плейсхолдеров), помечены «не проверено юристом»; приложение ссылается на `https://tutak.am/privacy` — работает ли домен, отсюда не проверить; iOS никогда не собирался; процессов для спорных покупок/возвратов/зависших PSP нет ни runbook, ни назначенных людей. |
 
 ---
 
@@ -92,7 +92,7 @@ production-данные.
 | D-5 | P1 | Repo | PR #55 устарел и вводил в заблуждение (та же правка уже в main) | целевая ветка влита в #54 | CI #757/#758 красный на устаревшей базе | **Да** — закрыт с комментарием | — |
 | D-6 | P1 | Repo / mobile | PR #52 (биометрия) конфликтует с main; мобильные изменения живут только в ветке | ветка от `d9d3f02`, 48 коммитов позади | `git merge-tree`: конфликты в 4 файлах i18n/demo | **Нет** — решение владельца (нужна ли биометрия в первом релизе) | — |
 | D-7 | P2 | Refunds | Скомпрометированный/ошибающийся админ с `PAYMENT_REFUND` делает возврат один; refund-request path требует второго человека (`requestedByUserId === approverUserId` → отказ), а прямой admin-refund — нет | дизайн: два пути возврата с разной строгостью | `refunds.controller.ts` (только permission + throttle 20/мин); `purchase-intent-refund-request.service.ts:517` | **Нет** — предложение: лимит суммы для одиночного admin-refund или обязательный второй человек | — |
-| D-8 | P2 | Legal | Плейсхолдеры в опубликованной политике | не заполнены реквизиты | `public/privacy.html`: `[CONTACT EMAIL]`×11, `[OPERATOR]`×2, `[ADDRESS]`×2 | **Нет** — данные компании и юрист | — |
+| D-8 | P2 | Legal | Плейсхолдеры в опубликованной политике | не заполнены реквизиты | `apps/api/public/legal/privacy.html`: `[CONTACT EMAIL]`×11, `[OPERATOR]`×2, `[ADDRESS]`×2 | **Нет** — данные компании и юрист | — |
 | D-9 | P2 | Perf | Нет воспроизводимого нагрузочного теста DIRECT-контура на пуле 5 (k6 в среде нет; `load-test.ts` — для legacy card engine) | — | добавлен `launch-load.int-spec.ts` | **Да** | сам тест: 60 покупок/20 партнёров/10 рефералов, 50 OTP |
 
 Что искали и **не нашли** (adversarial pass, §19): двойное начисление
@@ -218,7 +218,7 @@ APK → установить на Samsung и Xiaomi → регистрация �
 
 **A-8. Юрист (P0 для публичного запуска).** Передать
 `docs/PRIVACY_POLICY_RU.md`, `docs/PUBLIC_OFFER_RU.md`,
-`docs/PARTNER_TERMS.md`, `public/privacy.html` армянскому юристу с
+`docs/PARTNER_TERMS.md`, `apps/api/public/legal/privacy.html` армянскому юристу с
 вопросами из §17 → получить правки и реквизиты → заменить `[OPERATOR]`,
 `[ADDRESS]`, `[CONTACT EMAIL]` → прислать финальные тексты; я вставлю их
 и опубликую.

@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { positiveIntEnv } from '../../config/configuration';
+import configuration, { positiveIntEnv } from '../../config/configuration';
 import {
   MAX_OTP_ISSUANCE_PER_IP_PER_HOUR,
   MAX_OTP_VERIFICATION_PER_IP_PER_HOUR,
@@ -67,5 +67,18 @@ describe('OtpIpRateLimitService limits', () => {
     expect(positiveIntEnv('12.5', 60)).toBe(60);
     expect(positiveIntEnv('lots', 60)).toBe(60);
     expect(positiveIntEnv('300', 60)).toBe(300);
+  });
+
+  it('clamps an override to ten times the default — a venue setting, never an off switch', () => {
+    const previous = { ...process.env };
+    process.env.OTP_IP_ISSUANCE_PER_HOUR = '999999';
+    process.env.OTP_IP_VERIFICATION_PER_HOUR = '0';
+    try {
+      const limits = configuration().otpIpLimits;
+      expect(limits.issuancePerHour).toBe(600);
+      expect(limits.verificationPerHour).toBe(120);
+    } finally {
+      process.env = previous;
+    }
   });
 });

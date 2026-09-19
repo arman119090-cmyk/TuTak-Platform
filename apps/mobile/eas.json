@@ -72,9 +72,32 @@
       "env": {
         "APP_ENV": "production"
       }
+    },
+    "preview-ios": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "APP_ENV": "preview",
+        "API_BASE_URL": "https://tutak-api-production.up.railway.app/v1"
+      }
+    },
+    "production-ios": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": {
+        "APP_ENV": "production",
+        "API_BASE_URL": "https://tutak-api-production.up.railway.app/v1"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "production-ios": {
+      "ios": {
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID"
+      }
+    }
   }
 }

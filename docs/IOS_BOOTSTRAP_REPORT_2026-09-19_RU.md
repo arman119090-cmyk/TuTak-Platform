@@ -120,7 +120,7 @@ gesture-handler, screens, safe-area) компилируются под iOS, Andr
 | `expo config --type introspect`, `development` | ATS как было (localhost) |
 | YAML обоих workflow | валиден |
 | demo parity | регенерирован, закоммичен |
-| CI на `597f402` | run 35447285321 (см. конец отчёта) |
+| CI на `27f2a55` | success (run 35448232648) |
 
 ## UNVERIFIED
 
@@ -139,6 +139,33 @@ gesture-handler, screens, safe-area) компилируются под iOS, Andr
 
 ---
 
-## Результат второй демо-сборки и CI
+## Результат второй демо-сборки
 
-_Заполняется ниже по факту._
+**Демо-приложение тоже собрано для iOS Simulator** — run
+https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35447871871
+(commit `7915d7c`, EAS build `79af95d0-be0b-4cc7-b11d-eb418328f5ee`,
+status `FINISHED`, сборка 7 мин).
+
+| Поле | Значение |
+|---|---|
+| Файл | `tutak-demo-ios-simulator.tar.gz`, 31 451 422 байт, внутри `TuTakDemo.app/` |
+| SHA-256 | `53df451c2ef7ec663a7520218d25ee1e94619cb48ff7eee9bc05e3565e6dd1cb` (посчитан на runner'е) |
+| Артефакт GitHub (30 дней) | https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35447871871/artifacts/10585871355 |
+| Установка на Mac | `tar -xzf tutak-demo-ios-simulator.tar.gz && xcrun simctl boot 'iPhone 15'; xcrun simctl install booted TuTakDemo.app && xcrun simctl launch booted am.tutak.demo` |
+
+Замечание из лога: «Failed to set the project icon … not authorized» —
+EAS не смог поставить иконку проекта на expo.dev от имени робота-токена;
+на сборку не влияет.
+
+## CI
+
+CI на `27f2a55` (вся ветка, включая tab bar, конфиг и workflow) —
+**success**: https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35448232648
+(lint/test/build, интеграционные тесты 1–3/3, сборка контейнеров).
+
+## Итог
+
+iOS-сторона TuTak компилируется — и приложение, и демо, на EAS, без
+Apple-аккаунта. Следующий шаг только у владельца: Apple Developer Program и
+одноразовая настройка credentials; после этого тот же workflow «Build iOS»
+с профилем `preview-ios` даст сборку для iPhone.

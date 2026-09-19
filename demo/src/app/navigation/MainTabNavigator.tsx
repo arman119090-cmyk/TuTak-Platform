@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -40,7 +40,14 @@ export function MainTabNavigator() {
   const { t } = useTranslation();
   const { color, text, layout, glass } = useTheme();
   const insets = useSafeAreaInsets();
-  const androidBottomPadding = Math.max(20, insets.bottom);
+  // One rule for both platforms. The bar grows by the live bottom inset —
+  // a gesture pill, a Samsung navigation row, an iPhone home indicator —
+  // and pads by at least 20 pt so a device reporting no inset (an iPhone
+  // with a home button, an emulator) still keeps its labels off the edge.
+  // iOS used to hard-code 28 pt with no growth: on an iPhone with a 34 pt
+  // indicator the labels sat 6 pt inside it, and on an iPhone SE the 28 pt
+  // were wasted.
+  const bottomPadding = Math.max(20, insets.bottom);
 
   return (
     <Tab.Navigator
@@ -52,12 +59,9 @@ export function MainTabNavigator() {
           backgroundColor: color.backgroundSubtle,
           borderTopColor: glass.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height:
-            Platform.OS === 'android'
-              ? layout.tabBarHeight + insets.bottom
-              : layout.tabBarHeight,
+          height: layout.tabBarHeight + insets.bottom,
           paddingTop: 8,
-          paddingBottom: Platform.OS === 'ios' ? 28 : androidBottomPadding,
+          paddingBottom: bottomPadding,
         },
         tabBarLabelStyle: {
           fontSize: text.overline.fontSize,

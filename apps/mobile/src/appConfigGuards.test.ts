@@ -10,7 +10,27 @@ const guards = require('../app.config.js') as {
   assertTransportSecurity: (appEnv: string, url: string) => void;
   apiBaseUrl: () => string;
   refuseUnkeyedMapInInstallableBuild: (appEnv: string) => void;
+  iosTransportSecurity: (appEnv: string) => {
+    NSAllowsArbitraryLoads: boolean;
+    NSExceptionDomains?: Record<string, unknown>;
+  };
 };
+
+describe('iosTransportSecurity', () => {
+  it('leaves App Transport Security as Apple ships it in every installable build', () => {
+    for (const appEnv of ['preview', 'staging', 'production']) {
+      const ats = guards.iosTransportSecurity(appEnv);
+      expect(ats.NSAllowsArbitraryLoads).toBe(false);
+      expect(ats.NSExceptionDomains).toBeUndefined();
+    }
+  });
+
+  it('allows cleartext only for a development build, where Metro and a local API answer over http', () => {
+    const ats = guards.iosTransportSecurity('development');
+    expect(ats.NSAllowsArbitraryLoads).toBe(true);
+    expect(Object.keys(ats.NSExceptionDomains ?? {})).toEqual(['localhost']);
+  });
+});
 
 describe('assertTransportSecurity', () => {
   let warn: jest.SpyInstance;

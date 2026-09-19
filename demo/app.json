@@ -39,7 +39,16 @@
         "expo-camera",
         {
           "cameraPermission": "TuTak needs camera access to scan QR codes for payments.",
-          "recordAudioAndroid": false
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TuTak needs access to your photos to set a profile picture.",
+          "cameraPermission": "TuTak needs camera access to scan QR codes for payments.",
+          "microphonePermission": false
         }
       ]
     ],

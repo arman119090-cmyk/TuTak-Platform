@@ -77,7 +77,7 @@ export default function PartnerApplicationsPage() {
               <Tr>
                 <Th>Business</Th>
                 <Th>Category</Th>
-                <Th>ՀՎՀՀ</Th>
+                <Th>Tax ID</Th>
                 <Th align="right">Proposed cashback</Th>
                 <Th align="right">Decision</Th>
               </Tr>

@@ -111,10 +111,10 @@ export function LoginScreen({ navigation }: Props) {
             accessibilityIgnoresInvertColors
           />
 
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
+          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[7] }]}>
             {t('auth.welcomeBack')}
           </Text>
-          <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] }]}>
+          <Text style={[text.body, { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[6] : space[8] }]}>
             {t('auth.loginSubtitle')}
           </Text>
 
@@ -142,12 +142,12 @@ export function LoginScreen({ navigation }: Props) {
           <Pressable
             onPress={() => navigation.navigate('ForgotPassword')}
             hitSlop={8}
-            style={{ alignSelf: 'flex-end', marginTop: -space[2], marginBottom: space[2] }}
+            style={({ pressed }) => ({ alignSelf: 'flex-end', marginTop: -space[1], marginBottom: space[3], opacity: pressed ? 0.5 : 1 })}
           >
             <Text style={[text.label, { color: color.primary }]}>{t('auth.forgotPassword')}</Text>
           </Pressable>
 
-          <View style={{ marginTop: space[3] }}>
+          <View style={{ marginTop: space[4] }}>
             <Button
               label={t('auth.loginButton')}
               onPress={handleLogin}
@@ -209,5 +209,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { flexGrow: 1, paddingBottom: 40 },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  mark: { width: 52, height: 52 },
+  mark: { width: 56, height: 56 },
 });

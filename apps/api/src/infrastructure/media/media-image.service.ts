@@ -220,4 +220,13 @@ const SHAPES: Record<
     thumbnail: { width: 128, height: 72 },
     fit: 'cover',
   },
+  // 16:10 — the Home spotlight card's own shape. `cover`, like a partner
+  // cover: the card is a photograph with text set over it by the app, and a
+  // letterboxed photograph is the one thing that card must never be.
+  PROMO_ARTWORK: {
+    original: { width: 2048, height: 1280 },
+    display: { width: 1024, height: 640 },
+    thumbnail: { width: 128, height: 80 },
+    fit: 'cover',
+  },
 };

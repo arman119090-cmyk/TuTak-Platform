@@ -11,3 +11,4 @@ export * from './partner-integration';
 export * from './media';
 export * from './partner-branch';
 export * from './settlement';
+export * from './promo';

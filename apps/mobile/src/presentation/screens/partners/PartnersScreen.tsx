@@ -82,7 +82,7 @@ type MapItem =
  */
 export function PartnersScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, glass } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const tabBarSpace = useTabBarSpace();
   const route = useRoute<PartnersRoute>();
   const navigation = useNavigation<Nav>();
@@ -102,6 +102,13 @@ export function PartnersScreen() {
   // this fires each time the button is pressed, not just on first mount.
   React.useEffect(() => {
     if (route.params?.filter === 'stations') setFilter({ kind: 'stations' });
+    // A spotlight card's "go to this partner": the search box does the
+    // narrowing, on the same `q` the API takes, so the list and the map
+    // agree with what a person typing that name would see.
+    if (typeof route.params?.q === 'string') {
+      setSearch(route.params.q);
+      setFilter({ kind: 'all' });
+    }
   }, [route.params]);
 
   const centre = useApproximateLocation();
@@ -317,8 +324,8 @@ export function PartnersScreen() {
             styles.search,
             {
               marginTop: space[4],
-              backgroundColor: glass.background,
-              borderColor: glass.border,
+              backgroundColor: color.backgroundSubtle,
+              borderColor: 'transparent',
               borderRadius: radius.md,
               paddingHorizontal: space[4],
               gap: space[2],
@@ -625,7 +632,7 @@ function StationCard({
   startingConnectorId: string | null;
   disabled: boolean;
 }) {
-  const { color, space, text, radius, glass, premium } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
   const { t } = useTranslation();
 
   const free = station.connectors.filter((c) => c.status === 'AVAILABLE').length;
@@ -705,8 +712,7 @@ function StationCard({
                 style={({ pressed }) => [
                   styles.connector,
                   {
-                    borderColor: startable ? glass.border : color.border,
-                    backgroundColor: startable && pressed ? glass.light : 'transparent',
+                    backgroundColor: startable && pressed ? color.surfaceSunken : color.backgroundSubtle,
                     opacity: startable || starting ? 1 : 0.55,
                     borderRadius: radius.md,
                     paddingHorizontal: space[3],
@@ -758,7 +764,7 @@ function Chip({
   active: boolean;
   onPress: () => void;
 }) {
-  const { color, space, text, radius, premium, glass } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
 
   return (
     <Pressable
@@ -771,8 +777,8 @@ function Chip({
           borderRadius: radius.full,
           paddingHorizontal: space[4],
           gap: space[2],
-          backgroundColor: active ? premium.brand.primary : glass.background,
-          borderColor: active ? premium.brand.primary : glass.border,
+          backgroundColor: active ? premium.brand.primary : color.backgroundSubtle,
+          borderColor: 'transparent',
           opacity: pressed ? 0.7 : 1,
         },
       ]}
@@ -819,6 +825,6 @@ const styles = StyleSheet.create({
   cardIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   trailing: { alignItems: 'flex-end' },
   connectors: { flexDirection: 'row', flexWrap: 'wrap' },
-  connector: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth },
+  connector: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
 });

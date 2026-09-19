@@ -20,7 +20,9 @@
     "clear": "Clear",
     "offlineTitle": "No internet connection",
     "offlineBody": "Check your connection — data will refresh by itself.",
-    "optional": "optional"
+    "optional": "optional",
+    "today": "Today",
+    "yesterday": "Yesterday"
   },
   "auth": {
     "welcomeBack": "Welcome back",
@@ -222,13 +224,25 @@
   },
   "notifications": {
     "title": "Notifications",
-    "markAllRead": "Mark all as read",
+    "markAllRead": "Mark all read",
     "empty": "You're all caught up",
     "welcomeTitle": "Welcome to TuTak!",
     "welcomeBody": "Your account is ready. Start earning bonus points today.",
     "transactionCompletedTitle": "Payment completed",
     "transactionCompletedBody": "Your {{type}} transaction of {{amount}} was completed.",
-    "emptyMessage": "We will let you know when something happens in your wallet."
+    "emptyMessage": "We will let you know when something happens in your wallet.",
+    "bonusEarned": {
+      "title": "Bonus earned",
+      "body": "{{amount}} points were added to your balance."
+    },
+    "chargingStarted": {
+      "title": "Charging started",
+      "body": "{{station}} has started your session."
+    },
+    "bonusExpiring": {
+      "title": "Points expiring soon",
+      "body": "{{amount}} points expire in {{days}} days."
+    }
   },
   "settings": {
     "title": "Settings",
@@ -254,7 +268,8 @@
     "deleteAccountConfirmBody": "Your points will be forfeited and you will be signed out on every device. This cannot be undone from the app.",
     "deleteAccountDoneTitle": "Your account is deleted",
     "deleteAccountDoneBody": "You have been signed out. Your personal data will be erased on {{date}}.",
-    "deleteAccountFailed": "We could not delete your account. Please try again."
+    "deleteAccountFailed": "We could not delete your account. Please try again.",
+    "account": "Account"
   },
   "nav": {
     "home": "Home",
@@ -268,7 +283,9 @@
     "greetingNamed": "Hello, {{name}}",
     "recentActivity": "Recent activity",
     "noActivityTitle": "Nothing here yet",
-    "noActivityMessage": "Your payments and bonuses will appear here once you start using TuTak."
+    "noActivityMessage": "Your payments and bonuses will appear here once you start using TuTak.",
+    "partnerOffers": "From TuTak partners",
+    "promoMark": "Promo"
   },
   "transactionType": {
     "QR_PAYMENT": "QR payment",
@@ -346,7 +363,8 @@
     "about": "About",
     "offerings": "Products & services",
     "mapUnavailable": "The map is unavailable right now. Partners are listed below.",
-    "goodValue": "good value"
+    "goodValue": "good value",
+    "showOnMap": "Show on map"
   },
   "partnerCategory": {
     "grocery": "Groceries",
@@ -414,7 +432,7 @@
     "displayName": "Shop name",
     "displayNamePlaceholder": "Nairi",
     "displayNameHint": "What your customers call you — this is the name they will see in the app.",
-    "taxId": "ՀՎՀՀ",
+    "taxId": "Tax ID (ՀՎՀՀ)",
     "taxIdPlaceholder": "8 digits",
     "category": "Category",
     "rate": "Cashback for customers",
@@ -432,7 +450,7 @@
     "sentTitle": "Application under review",
     "sentBody": "We have received the application from \"{{name}}\". We will be in touch in the next few days to agree terms.",
     "taxIdMissing": "not given",
-    "taxIdLater": "You can add your ՀՎՀՀ later, from your partner panel.",
+    "taxIdLater": "You can add your tax ID later, from your partner panel.",
     "backHome": "Back to home"
   },
   "editProfile": {

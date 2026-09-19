@@ -39,6 +39,7 @@ import { CustomerBalanceModule } from './modules/customer-balance/customer-balan
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { PromosModule } from './modules/promos/promos.module';
 import { SecurityModule } from './modules/security/security.module';
 import { PartnerSettlementsModule } from './modules/partner-settlements/partner-settlements.module';
 import { PspModule } from './modules/psp/psp.module';
@@ -106,6 +107,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     AdminModule,
     NotificationsModule,
     AnalyticsModule,
+    PromosModule,
     SecurityModule,
     LedgerModule,
     ...(cardPaymentsEnabled ? [PaymentsModule] : []),

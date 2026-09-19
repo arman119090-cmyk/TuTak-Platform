@@ -48,8 +48,10 @@ export const lightPremiumBrand = {
 } as const;
 
 export const lightPremiumGradients = {
-  /** Primary actions, the balance card, avatars — two steps of the brand ramp. */
-  primary: [brand[400], brand[700]] as const,
+  /** The hero card's fallback fill only. Primary actions are solid
+   *  `brand[600]` — a gradient on every button read as decoration, and a
+   *  single quiet green reads as the brand. */
+  primary: [brand[500], brand[700]] as const,
   /** Reserved for warm, secondary emphasis — referral rewards, promotions.
    *  Unchanged from the dark scheme: a coral→amber pair reads the same way
    *  regardless of what surface it sits on. */
@@ -66,10 +68,14 @@ export const lightPremiumGradients = {
  * `dark` stays a near-opaque dark one.
  */
 export const lightPremiumGlass = {
-  background: 'rgba(16, 24, 40, 0.04)',
-  light: 'rgba(16, 24, 40, 0.06)',
+  // On a white ground a "glass" fill is nearly nothing: 3% ink. It exists so
+  // a secondary control has a resting tone at all, not to draw a panel.
+  background: 'rgba(16, 24, 40, 0.03)',
+  light: 'rgba(16, 24, 40, 0.05)',
   dark: 'rgba(255, 255, 255, 0.82)',
-  border: 'rgba(16, 24, 40, 0.08)',
+  // Only for the few places an edge is still the right tool (an input at
+  // rest, a chip). Cards no longer draw this — depth comes from `glow`.
+  border: 'rgba(16, 24, 40, 0.07)',
 } as const;
 
 export const lightPremiumCard = {
@@ -86,34 +92,38 @@ export const lightPremiumCard = {
  * than merely elevated.
  */
 export const lightPremiumGlow = {
+  // Neutral ink, not brand green. A green-tinted shadow under every card read
+  // as a colour cast on white and made the whole screen look printed on
+  // cheap paper. Depth here is three barely-visible steps: a card (sm), the
+  // hero (md), and a sheet or floating control (lg). Nothing else.
   sm: {
-    web: '0 2px 8px rgba(11, 93, 59, 0.10)',
+    web: '0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 12px rgba(16, 24, 40, 0.05)',
     native: {
-      shadowColor: lightPremiumBrand.primary,
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 2,
+      shadowColor: '#101828',
+      shadowOpacity: 0.06,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 3 },
+      elevation: 1,
     },
   },
   md: {
-    web: '0 6px 16px rgba(11, 93, 59, 0.14)',
+    web: '0 2px 4px rgba(16, 24, 40, 0.04), 0 12px 28px rgba(16, 24, 40, 0.08)',
     native: {
-      shadowColor: lightPremiumBrand.primary,
-      shadowOpacity: 0.14,
-      shadowRadius: 16,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 4,
+      shadowColor: '#101828',
+      shadowOpacity: 0.10,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 3,
     },
   },
   lg: {
-    web: '0 12px 28px rgba(11, 93, 59, 0.18)',
+    web: '0 4px 8px rgba(16, 24, 40, 0.04), 0 20px 40px rgba(16, 24, 40, 0.12)',
     native: {
-      shadowColor: lightPremiumBrand.primary,
-      shadowOpacity: 0.18,
+      shadowColor: '#101828',
+      shadowOpacity: 0.14,
       shadowRadius: 28,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 8,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: 6,
     },
   },
 } as const;

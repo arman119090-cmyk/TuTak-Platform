@@ -1,6 +1,5 @@
 import React from 'react';
 import { Image, Share, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -41,7 +40,7 @@ import { formatDate, formatPoints } from '../../utils/format';
  */
 export function ReferralScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, gradients, glow } = useTheme();
+  const { color, space, text, radius, glow, palette } = useTheme();
 
   const { data: code } = useQuery({ queryKey: ['referral-code'], queryFn: referralApi.getMyCode });
   const {
@@ -65,14 +64,11 @@ export function ReferralScreen() {
   return (
     <Screen title={t('referral.myNetwork')} subtitle={t('referral.subtitle')}>
       {/* 1. Invitation card — code, copy and native share. */}
-      <LinearGradient
-        colors={[...gradients.secondary]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+      <View
         style={[
           styles.codeCard,
-          glow.sm.native,
-          { borderRadius: radius['2xl'], padding: space[6] },
+          glow.md.native,
+          { borderRadius: radius.xl, padding: space[6], backgroundColor: color.primary },
         ]}
       >
         <View style={styles.watermark} pointerEvents="none">
@@ -85,13 +81,13 @@ export function ReferralScreen() {
           />
         </View>
 
-        <Text style={[text.caption, { color: 'rgba(255,255,255,0.72)' }]}>
+        <Text style={[text.caption, { color: 'rgba(255,255,255,0.78)' }]}>
           {t('referral.yourCode')}
         </Text>
         <Text
           style={[
             text.balanceSm,
-            { color: color.textInverse, marginTop: space[2], letterSpacing: 1 },
+            { color: color.textInverse, marginTop: space[2], letterSpacing: 1.5, fontVariant: ['tabular-nums'] },
           ]}
         >
           {code?.code ?? '—'}
@@ -105,7 +101,7 @@ export function ReferralScreen() {
             icon={<JakoWingMark size={16} color={color.textPrimary} />}
           />
         </View>
-      </LinearGradient>
+      </View>
 
       {/* 2. Three-level summary. */}
       <SectionHeader title={t('referral.myNetwork')} />
@@ -132,29 +128,41 @@ export function ReferralScreen() {
 
       {/* Rewarded-to-date figure — Level-1 only, from data this screen
           already holds; never a fabricated L2/L3 contribution. */}
-      <View style={[styles.stats, { marginTop: space[5], gap: space[3] }]}>
-        <Surface style={styles.flex}>
+      <View
+        style={[
+          styles.stats,
+          {
+            marginTop: space[5],
+            paddingVertical: space[4],
+            gap: space[4],
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderColor: palette.neutral[100],
+          },
+        ]}
+      >
+        <View style={styles.flex}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('referral.totalInvites')}
           </Text>
-          <Text style={[text.title, { color: color.textPrimary, marginTop: space[1] }]}>
+          <Text style={[text.title, styles.tabular, { color: color.textPrimary, marginTop: 2 }]}>
             {list.length}
           </Text>
-        </Surface>
-        <Surface style={styles.flex}>
+        </View>
+        <View style={styles.flex}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('referral.rewardEarned')}
           </Text>
-          <Text style={[text.title, { color: color.availableText, marginTop: space[1] }]}>
+          <Text style={[text.title, styles.tabular, { color: color.availableText, marginTop: 2 }]}>
             {formatPoints(totalEarned)}
           </Text>
-        </Surface>
+        </View>
       </View>
 
       {/* 3. Level-1 list — the only level with identities. */}
       <SectionHeader title={t('referral.level1Title')} />
-      <Surface padded={false}>
-        <View style={{ paddingHorizontal: space[5] }}>
+      <Surface tone="subtle" padded={false}>
+        <View style={{ paddingHorizontal: space[4] }}>
           {invitesError ? (
             // "You have not invited anyone yet" and "we could not ask the
             // server" are opposite facts, and this list reached the same
@@ -241,7 +249,7 @@ function LevelCard({
   const { color, space, text, radius } = useTheme();
 
   return (
-    <Surface>
+    <Surface tone="subtle">
       <View style={styles.levelRow}>
         <View style={styles.flex}>
           <Text style={[text.headline, { color: color.textPrimary }]}>{title}</Text>
@@ -261,12 +269,7 @@ function LevelCard({
 
       <View style={{ marginTop: space[3] }}>
         {count === null ? (
-          <View
-            style={[
-              styles.unavailable,
-              { backgroundColor: color.surfaceSunken, borderRadius: radius.md, padding: space[3], gap: space[1] },
-            ]}
-          >
+          <View style={[styles.unavailable, { gap: space[1] }]}>
             <Text style={[text.label, { color: color.textSecondary }]}>
               {t('referral.levelUnavailableTitle')}
             </Text>
@@ -290,8 +293,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   codeCard: { overflow: 'hidden', position: 'relative' },
   watermark: { position: 'absolute', right: -50, top: -40 },
-  watermarkImage: { width: 200, height: 200, opacity: 0.07 },
+  watermarkImage: { width: 200, height: 200, opacity: 0.08 },
   stats: { flexDirection: 'row' },
+  tabular: { fontVariant: ['tabular-nums'] },
   levelRow: { flexDirection: 'row', alignItems: 'flex-start' },
   ratePill: { paddingVertical: 4, alignSelf: 'flex-start' },
   unavailable: {},

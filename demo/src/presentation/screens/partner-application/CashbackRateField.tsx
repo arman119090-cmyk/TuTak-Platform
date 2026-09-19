@@ -99,12 +99,10 @@ export function CashbackRateField({
   return (
     <View
       style={{
-        borderWidth: 1,
-        borderColor: color.border,
         borderRadius: radius.lg,
         padding: space[4],
         marginBottom: space[6],
-        backgroundColor: color.surface,
+        backgroundColor: color.backgroundSubtle,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
@@ -232,8 +230,7 @@ function StepButton({
         width: 44,
         height: 44,
         borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: color.border,
+        backgroundColor: color.surface,
         alignItems: 'center',
         justifyContent: 'center',
         opacity: disabled ? 0.4 : 1,

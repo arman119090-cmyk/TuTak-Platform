@@ -14,7 +14,7 @@
  * a field the server stopped sending.
  */
 
-export type MediaAssetKindDto = 'USER_AVATAR' | 'PARTNER_LOGO' | 'PARTNER_COVER';
+export type MediaAssetKindDto = 'USER_AVATAR' | 'PARTNER_LOGO' | 'PARTNER_COVER' | 'PROMO_ARTWORK';
 
 export type MediaAssetStatusDto = 'PENDING_REVIEW' | 'ACTIVE' | 'REPLACED' | 'REVOKED';
 

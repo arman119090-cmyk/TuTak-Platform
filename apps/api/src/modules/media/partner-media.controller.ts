@@ -223,7 +223,7 @@ export class PartnerMediaController {
  * decision is made by inspecting the bytes in `MediaImageService`, and that is
  * the one that is allowed to be load-bearing.
  */
-function uploadPipe() {
+export function uploadPipe() {
   return new ParseFilePipeBuilder()
     .addMaxSizeValidator({ maxSize: MAX_UPLOAD_BYTES, message: 'The image must be 5 MB or smaller' })
     .build({ fileIsRequired: true });

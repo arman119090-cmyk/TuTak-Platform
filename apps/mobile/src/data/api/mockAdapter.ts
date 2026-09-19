@@ -9,7 +9,7 @@ import {
   QrCodeType,
 } from '@tutak/shared-types';
 import { isSupportedLocale } from '@tutak/i18n';
-import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
+import { MOCK_PROMO_COPY, MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
 /**
  * Serves the app from memory instead of from a server.
@@ -503,11 +503,35 @@ function handle(
       return envelope(intent);
     }
 
+    // ── Home "Partner Spotlight" ────────────────────────────────────────
+    case 'GET /promos/featured': {
+      // The same fallback the API applies: requested → ru → first filled.
+      const requested = String((config.params as { locale?: string } | undefined)?.locale ?? '');
+      return envelope(
+        state.promos.map((promo) => {
+          const copy = MOCK_PROMO_COPY[promo.id] ?? {};
+          const order = [requested, 'ru', 'hy', 'en'] as const;
+          for (const locale of order) {
+            const c = copy[locale as 'hy' | 'ru' | 'en'];
+            if (c) return { ...promo, locale: locale as 'hy' | 'ru' | 'en', ...c };
+          }
+          return promo;
+        }),
+      );
+    }
+
     default:
       break;
   }
 
   // Routes with an id in them.
+  // An impression or an open on a spotlight card. Counted on the server;
+  // here there is nothing to count into, and 204 is what the API answers.
+  const promoEvent = /^\/promos\/([^/]+)\/events$/.exec(path);
+  if (method === 'POST' && promoEvent) {
+    return { body: undefined, status: 204 };
+  }
+
   const readNotification = /^\/notifications\/([^/]+)\/read$/.exec(path);
   if (method === 'POST' && readNotification) {
     const id = readNotification[1];

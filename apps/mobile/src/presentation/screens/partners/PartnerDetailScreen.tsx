@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import type { NearbyPartnerDto, PartnerOfferingDto } from '@tutak/shared-types';
+import type { PartnerOfferingDto } from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
@@ -60,89 +60,143 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  */
 export function PartnerDetailScreen() {
   const { t } = useTranslation();
-  const { color, space, text } = useTheme();
+  const { color, space, text, palette } = useTheme();
   const { params } = useRoute<Route>();
   const navigation = useNavigation<Nav>();
-  const { partner } = params;
+  /*
+   * Two ways in. A map pin brings the whole nearby record — a branch with
+   * coordinates, a distance, an address — and the screen renders it at once.
+   * A Home "Partner Spotlight" card brings only a partner id: the business,
+   * not a branch. Then the identity comes from `GET /partners/:id` and the
+   * branch-only parts (distance, mini-map, address, "pay here") are simply
+   * not drawn; the map is offered instead, so a chain's nearest shop is the
+   * customer's pick, not this screen's guess.
+   */
+  const nearby = 'partner' in params ? params.partner : null;
+  const partnerId = nearby ? nearby.partnerId : (params as { partnerId: string }).partnerId;
 
-  const { data: detail } = useQuery({
-    queryKey: ['partner', partner.partnerId],
-    queryFn: () => partnersApi.get(partner.partnerId),
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ['partner', partnerId],
+    queryFn: () => partnersApi.get(partnerId),
   });
 
+  const name = nearby?.name ?? detail?.displayName ?? '';
+  const category = nearby?.category ?? detail?.category;
+  const logoUrl = nearby?.logo?.url ?? detail?.logo?.url;
+  const cover = nearby?.cover ?? detail?.cover ?? null;
+  const cashbackPercent = nearby?.cashbackPercent ?? (detail ? detail.bonusAccrualRateBps / 100 : null);
+
+  if (!nearby && detailLoading) {
+    return (
+      <Screen title={t('partners.title')}>
+        <View style={{ paddingTop: space[6], alignItems: 'center' }}>
+          <ActivityIndicator color={color.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
   return (
-    <Screen title={partner.name} subtitle={partner.branchName}>
-      {partner.cover ? (
+    <Screen title={name} subtitle={nearby?.branchName}>
+      {cover ? (
         <Surface padded={false}>
-          <CoverImage url={partner.cover.url} name={partner.name}>
-            <LogoBlock partner={partner} size={64} paddingVertical={space[5]} />
+          <CoverImage url={cover.url} name={name}>
+            <LogoBlock name={name} logoUrl={logoUrl} category={category} size={64} paddingVertical={space[5]} />
           </CoverImage>
         </Surface>
       ) : (
-        // Centred on an inner view rather than by `alignItems` on the
-        // Surface: `Surface` nests its children under a full-width fill, so
-        // alignment set on the outer element centres that fill and leaves the
-        // content flush left. Invisible while the mark was a placeholder;
-        // obvious the moment a real logo landed in it.
-        <Surface style={{ paddingVertical: space[6] }}>
-          <LogoBlock partner={partner} size={72} />
-        </Surface>
+        <View style={{ paddingVertical: space[4] }}>
+          <LogoBlock name={name} logoUrl={logoUrl} category={category} size={72} />
+        </View>
       )}
 
-      <View style={[styles.statsRow, { marginTop: space[3], gap: space[3] }]}>
-        <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
+      {/* The two numbers a customer came for, as a line under a rule —
+          the same statement shape as the wallet totals, not two tiles. */}
+      <View
+        style={[
+          styles.statsRow,
+          {
+            marginTop: space[4],
+            paddingVertical: space[4],
+            gap: space[4],
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderColor: palette.neutral[100],
+          },
+        ]}
+      >
+        <View style={{ flex: 1 }}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('partners.cashback')}
           </Text>
-          <Text style={[text.titleLg, { color: color.availableText, marginTop: space[1] }]}>
-            {partner.cashbackPercent}%
+          <Text style={[text.title, { color: color.availableText, marginTop: 2 }]}>
+            {cashbackPercent === null ? '—' : `${cashbackPercent}%`}
           </Text>
-        </Surface>
-        <Surface style={{ flex: 1, alignItems: 'center', paddingVertical: space[4] }}>
-          <Text style={[text.caption, { color: color.textSecondary }]}>
-            {t('partners.distance')}
-          </Text>
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[1] }]}>
-            {formatDistance(partner.distanceKm)}
-          </Text>
-        </Surface>
+        </View>
+        {nearby ? (
+          <View style={{ flex: 1 }}>
+            <Text style={[text.caption, { color: color.textSecondary }]}>
+              {t('partners.distance')}
+            </Text>
+            <Text style={[text.title, { color: color.textPrimary, marginTop: 2 }]}>
+              {formatDistance(nearby.distanceKm)}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
-      <View style={{ marginTop: space[3] }}>
-        <TileMap
-          markers={[
-            {
-              id: partner.id,
-              position: { lat: partner.latitude, lng: partner.longitude },
-              render: () => (
-                <PartnerPin
-                  name={partner.name}
-                  category={partner.category}
-                  cashbackPercent={partner.cashbackPercent}
-                  logoUrl={partner.logo?.url}
-                  selected
-                />
-              ),
-            },
-          ]}
-          initialCentre={{ lat: partner.latitude, lng: partner.longitude }}
-          initialZoom={16}
-          height={180}
-          unavailableLabel={t('partners.mapUnavailable')}
-        />
-      </View>
+      {nearby ? (
+        <>
+          <View style={{ marginTop: space[4] }}>
+            <TileMap
+              markers={[
+                {
+                  id: nearby.id,
+                  position: { lat: nearby.latitude, lng: nearby.longitude },
+                  render: () => (
+                    <PartnerPin
+                      name={nearby.name}
+                      category={nearby.category}
+                      cashbackPercent={nearby.cashbackPercent}
+                      logoUrl={nearby.logo?.url}
+                      selected
+                    />
+                  ),
+                },
+              ]}
+              initialCentre={{ lat: nearby.latitude, lng: nearby.longitude }}
+              initialZoom={16}
+              height={180}
+              unavailableLabel={t('partners.mapUnavailable')}
+            />
+          </View>
 
-      <Surface style={{ marginTop: space[3] }}>
-        <ListRow
-          title={t('partners.address')}
-          subtitle={`${partner.address}, ${partner.city}`}
-          leading={<InfoIcon name="location-outline" />}
-          last
-        />
-      </Surface>
+          <View style={{ marginTop: space[3] }}>
+            <ListRow
+              title={t('partners.address')}
+              subtitle={`${nearby.address}, ${nearby.city}`}
+              leading={<InfoIcon name="location-outline" />}
+              last
+            />
+          </View>
+        </>
+      ) : (
+        // No branch chosen yet: the map, narrowed to this partner, is where
+        // the customer picks one. Secondary, because the page is the offer.
+        <View style={{ marginTop: space[4] }}>
+          <Button
+            label={t('partners.showOnMap')}
+            variant="secondary"
+            onPress={() =>
+              navigation.navigate('Main', { screen: 'Partners', params: { q: name } } as never)
+            }
+            icon={<Ionicons name="map-outline" size={18} color={color.textPrimary} />}
+          />
+        </View>
+      )}
 
       {detail?.about ? (
-        <Surface style={{ marginTop: space[3] }}>
+        <View style={{ marginTop: space[5] }}>
           <Text style={[text.headline, { color: color.textPrimary }]}>
             {t('partners.about')}
           </Text>
@@ -152,12 +206,12 @@ export function PartnerDetailScreen() {
           <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2] }]}>
             {detail.about}
           </Text>
-        </Surface>
+        </View>
       ) : null}
 
       {detail?.offerings && detail.offerings.length > 0 ? (
-        <Surface style={{ marginTop: space[3] }} padded={false}>
-          <View style={{ paddingHorizontal: space[4], paddingTop: space[4] }}>
+        <View style={{ marginTop: space[5] }}>
+          <View style={{ paddingBottom: space[2] }}>
             <Text style={[text.headline, { color: color.textPrimary }]}>
               {t('partners.offerings')}
             </Text>
@@ -169,7 +223,7 @@ export function PartnerDetailScreen() {
               last={index === detail.offerings.length - 1}
             />
           ))}
-        </Surface>
+        </View>
       ) : null}
 
       <Text
@@ -178,7 +232,7 @@ export function PartnerDetailScreen() {
           { color: color.textSecondary, textAlign: 'center', marginTop: space[4] },
         ]}
       >
-        {t('partners.howToEarn', { percent: partner.cashbackPercent })}
+        {t('partners.howToEarn', { percent: cashbackPercent ?? 0 })}
       </Text>
 
       {/*
@@ -215,28 +269,28 @@ export function PartnerDetailScreen() {
         never be the reason a customer cannot pay.
       */}
       {detail && (detail.isActive === false || (detail.status && detail.status !== 'ACTIVE')) ? (
-        <Surface style={{ marginTop: space[4] }}>
+        <View style={{ marginTop: space[4], paddingVertical: space[4] }}>
           <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
             {detail.status === 'PENDING_APPROVAL'
               ? t('partners.notTradingYet')
               : t('partners.notTrading')}
           </Text>
-        </Surface>
-      ) : (
+        </View>
+      ) : nearby ? (
         <View style={{ marginTop: space[4] }}>
           <Button
             label={t('purchaseIntent.payHere')}
             onPress={() =>
               navigation.navigate('CreatePurchaseIntent', {
-                partnerId: partner.partnerId,
-                partnerBranchId: partner.id,
-                partnerName: partner.name,
+                partnerId: nearby.partnerId,
+                partnerBranchId: nearby.id,
+                partnerName: nearby.name,
               })
             }
             icon={<JakoWingMark size={16} color={color.textInverse} />}
           />
         </View>
-      )}
+      ) : null}
     </Screen>
   );
 }
@@ -287,9 +341,8 @@ function CoverImage({
  * explicit "полноценный маркетплейс сейчас НЕ строим".
  */
 function OfferingRow({ offering, last }: { offering: PartnerOfferingDto; last: boolean }) {
-  const { space } = useTheme();
   return (
-    <View style={{ paddingHorizontal: space[4] }}>
+    <View>
       <ListRow
         title={offering.name}
         subtitle={offering.description ?? undefined}
@@ -305,27 +358,34 @@ function OfferingRow({ offering, last }: { offering: PartnerOfferingDto; last: b
  * a different size and with the cover's own padding standing in for the
  * card's. */
 function LogoBlock({
-  partner,
+  name,
+  logoUrl,
+  category,
   size,
   paddingVertical,
 }: {
-  partner: NearbyPartnerDto;
+  name: string;
+  logoUrl?: string;
+  category?: string;
   size: number;
   /** Omitted when the enclosing `Surface` already supplies its own padding. */
   paddingVertical?: number;
 }) {
   const { color, space, text } = useTheme();
   const { t } = useTranslation();
+  const icon = category ? CATEGORY_ICONS[category as keyof typeof CATEGORY_ICONS] : undefined;
 
   return (
     <View style={[styles.logoBlock, paddingVertical !== undefined ? { paddingVertical } : null]}>
-      <PartnerMark name={partner.name} logoUrl={partner.logo?.url} size={size} />
-      <View style={[styles.categoryRow, { marginTop: space[3] }]}>
-        <Ionicons name={CATEGORY_ICONS[partner.category]} size={14} color={color.textSecondary} />
-        <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>
-          {t(`partnerCategory.${partner.category}`)}
-        </Text>
-      </View>
+      <PartnerMark name={name} logoUrl={logoUrl} size={size} />
+      {category ? (
+        <View style={[styles.categoryRow, { marginTop: space[3] }]}>
+          {icon ? <Ionicons name={icon} size={14} color={color.textSecondary} /> : null}
+          <Text style={[text.caption, { color: color.textSecondary, marginLeft: space[1] }]}>
+            {t(`partnerCategory.${category}`)}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -20,7 +20,9 @@
     "clear": "Մաքրել",
     "offlineTitle": "Ինտերնետ կապ չկա",
     "offlineBody": "Ստուգեք կապը — տվյալները կթարմացվեն ինքնաշխատ։",
-    "optional": "ըստ ցանկության"
+    "optional": "ըստ ցանկության",
+    "today": "Այսօր",
+    "yesterday": "Երեկ"
   },
   "auth": {
     "welcomeBack": "Բարի վերադարձ",
@@ -222,13 +224,25 @@
   },
   "notifications": {
     "title": "Ծանուցումներ",
-    "markAllRead": "Նշել բոլորը որպես կարդացված",
+    "markAllRead": "Կարդացված",
     "empty": "Նոր ծանուցումներ չկան",
     "welcomeTitle": "Բարի գալուստ TuTak!",
     "welcomeBody": "Ձեր հաշիվը պատրաստ է։ Սկսեք վաստակել բոնուս միավորներ արդեն այսօր։",
     "transactionCompletedTitle": "Վճարումն ավարտված է",
     "transactionCompletedBody": "{{type}} գործարքը {{amount}} գումարով ավարտվեց։",
-    "emptyMessage": "Մենք կտեղեկացնենք, երբ ձեր դրամապանակում ինչ-որ բան տեղի ունենա։"
+    "emptyMessage": "Մենք կտեղեկացնենք, երբ ձեր դրամապանակում ինչ-որ բան տեղի ունենա։",
+    "bonusEarned": {
+      "title": "Բոնուս է հաշվեգրվել",
+      "body": "Ձեր հաշվին ավելացվել է {{amount}} միավոր։"
+    },
+    "chargingStarted": {
+      "title": "Լիցքավորումը սկսվեց",
+      "body": "{{station}} կայանը սկսել է ձեր սեսիան։"
+    },
+    "bonusExpiring": {
+      "title": "Բոնուսները շուտով կայրվեն",
+      "body": "{{amount}} միավոր կսպառվի {{days}} օրից։"
+    }
   },
   "settings": {
     "title": "Կարգավորումներ",
@@ -254,7 +268,8 @@
     "deleteAccountConfirmBody": "Միավորները կչեղարկվեն, և դուք դուրս կգաք բոլոր սարքերից։ Հավելվածից սա հետարկել հնարավոր չի լինի։",
     "deleteAccountDoneTitle": "Հաշիվը ջնջված է",
     "deleteAccountDoneBody": "Դուք դուրս եք եկել։ Անձնական տվյալները կջնջվեն {{date}}-ին։",
-    "deleteAccountFailed": "Չհաջողվեց ջնջել հաշիվը։ Խնդրում ենք կրկին փորձել։"
+    "deleteAccountFailed": "Չհաջողվեց ջնջել հաշիվը։ Խնդրում ենք կրկին փորձել։",
+    "account": "Հաշիվ"
   },
   "nav": {
     "home": "Գլխավոր",
@@ -268,7 +283,9 @@
     "greetingNamed": "Բարև, {{name}}",
     "recentActivity": "Վերջին գործարքները",
     "noActivityTitle": "Դեռ դատարկ է",
-    "noActivityMessage": "Ձեր վճարումներն ու բոնուսները կհայտնվեն այստեղ, երբ սկսեք օգտվել TuTak-ից։"
+    "noActivityMessage": "Ձեր վճարումներն ու բոնուսները կհայտնվեն այստեղ, երբ սկսեք օգտվել TuTak-ից։",
+    "partnerOffers": "TuTak-ի գործընկերներից",
+    "promoMark": "Պրոմո"
   },
   "transactionType": {
     "QR_PAYMENT": "QR վճարում",
@@ -346,7 +363,8 @@
     "about": "Գործընկերոջ մասին",
     "offerings": "Ապրանքներ և ծառայություններ",
     "mapUnavailable": "Քարտեզը հիմա հասանելի չէ։ Գործընկերները ցուցակով՝ ներքևում։",
-    "goodValue": "ձեռնտու"
+    "goodValue": "ձեռնտու",
+    "showOnMap": "Ցույց տալ քարտեզի վրա"
   },
   "partnerCategory": {
     "grocery": "Մթերք",

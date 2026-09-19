@@ -40,7 +40,7 @@ Manrope; (12) motion; (13) haptics; (14–15) Wallet/Settings native review;
 | PR #59 (эта ветка) | open, 6 коммитов, 0 позади `main`, `git merge-tree` с `main` — без конфликтов |
 | Rebase | не нужен: `main` не двигался |
 | Миграции | 74 в `prisma/migrations`, `migrate deploy` на чистую БД — 0 ошибок; `prisma migrate diff --from-url <мигрированная БД> --to-schema-datamodel` — «No difference detected» |
-| CI на `8d07936` | запущен (push + pull_request); результат — раздел L |
+| CI на `4d18c3f` | зелёный: 10/10 check runs в двух прогонах (раздел L) |
 
 Риск: PR #58 и PR #59 оба трогают `SettingsScreen.tsx` (строка «Политика
 конфиденциальности» в #58). Кто смержится вторым — тому нужен rebase; по
@@ -278,8 +278,11 @@ Spotlight — `useQuery` с `staleTime` 5 мин, `retry: 1`, параллель
 | demo parity (`scripts/build-demo-app.sh`, закоммичен) | регенерирован, diff в коммите |
 | Playwright web: 390, 360, sweep 15, secondary 12, HY 4, font 4 | page errors 0 |
 
-CI GitHub на `8d07936` — запущено два прогона (push и pull_request), в
-момент записи in progress; итог — в конце отчёта.
+CI GitHub на `4d18c3f` (= `8d07936` + этот отчёт), оба прогона — push
+и pull_request — **зелёные целиком**: Lint, test and build; Integration
+tests 1/3, 2/3, 3/3; Build the container images — 10 из 10 check runs
+`success`. Прогоны: https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35445064703
+и https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35445061754.
 
 ## M. REMAINING MANUAL DEVICE CHECK
 

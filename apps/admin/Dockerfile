@@ -52,11 +52,16 @@ ARG NEXT_PUBLIC_SENTRY_DSN=""
 # argument — on Railway, a service variable of this name reaches the ARG.
 ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=unknown
 ARG GIT_COMMIT_SHA=""
+# Railway passes its own commit variable as a build argument only when the
+# Dockerfile declares it; without this line every Railway build of this
+# dashboard reported release `unknown` to Sentry (found 19.09.2026: the
+# service has no GIT_COMMIT_SHA variable, and Railway never sets one).
+ARG RAILWAY_GIT_COMMIT_SHA=""
 
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_PUBLIC_SENTRY_ENVIRONMENT=$NEXT_PUBLIC_SENTRY_ENVIRONMENT
-ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA:-$RAILWAY_GIT_COMMIT_SHA}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Source-map generation/upload is deliberately disabled in next.config.ts for

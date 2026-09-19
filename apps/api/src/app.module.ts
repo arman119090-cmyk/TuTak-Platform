@@ -50,6 +50,7 @@ import { SettlementModule } from './modules/settlement/settlement.module';
 import { PayoutsModule } from './modules/payouts/payouts.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { HealthModule } from './modules/health/health.module';
+import { LegalModule } from './modules/legal/legal.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { SweepsModule } from './modules/sweeps/sweeps.module';
 
@@ -120,6 +121,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     // queue by accident.
     SweepsModule,
     HealthModule,
+    LegalModule,
     MetricsModule,
   ],
   providers: [

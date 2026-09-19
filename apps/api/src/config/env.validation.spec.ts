@@ -315,6 +315,7 @@ describe('assertProviderPaymentsConfigured', () => {
     IDRAM_MERCHANT_ID: '110000110',
     IDRAM_SECRET_KEY: 'a-real-secret',
     IDRAM_FORM_ACTION: 'https://sandbox.idram.example/pay',
+    ALERT_WEBHOOK_URL: 'https://hooks.example/tutak-alerts',
     ...overrides,
   });
 
@@ -339,6 +340,26 @@ describe('assertProviderPaymentsConfigured', () => {
    * No silent production default any more, and no plain-HTTP action either:
    * the form carries the amount and the bill the customer is about to pay.
    */
+  /**
+   * The provider route may not start blind. `AlertsModule` deliberately only
+   * warns when the webhook is missing, so the till keeps working while
+   * somebody fixes it; the route where a customer's money can sit
+   * unaccounted for is the one that has to refuse instead.
+   */
+  it('refuses the route on without an alert webhook, and with a plain-http one', () => {
+    expect(() => assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: undefined }))).toThrow(
+      /ALERT_WEBHOOK_URL/,
+    );
+    expect(() => assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: '  ' }))).toThrow(
+      /ALERT_WEBHOOK_URL/,
+    );
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: 'http://hooks.example/x' })),
+    ).toThrow(/https/);
+    // And the route off never asks for one.
+    expect(() => assertProviderPaymentsConfigured({ ALERT_WEBHOOK_URL: undefined })).not.toThrow();
+  });
+
   it('refuses a form action that is not https', () => {
     expect(() =>
       assertProviderPaymentsConfigured(on({ IDRAM_FORM_ACTION: 'http://banking.idram.am/x' })),

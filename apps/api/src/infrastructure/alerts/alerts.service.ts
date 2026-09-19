@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
-import { Alert, ALERT_CHANNEL, AlertChannel } from './alert-channel.interface';
+import { Alert, ALERT_CHANNEL, AlertChannel, AlertDelivery } from './alert-channel.interface';
 import { REDIS_CLIENT } from '../redis/redis-client.token';
 
 /**
@@ -44,7 +44,7 @@ export class AlertsService {
    * "the code called alert()" and "an alert went out" are different claims,
    * and only the second one wakes anybody.
    */
-  async fire(alert: Alert): Promise<boolean> {
+  async fire(alert: Alert): Promise<AlertOutcome> {
     try {
       // SET NX EX is the whole suppression mechanism: the first caller to
       // claim the key within the window wins, everyone else is told the key
@@ -60,11 +60,15 @@ export class AlertsService {
 
       if (claimed !== 'OK') {
         this.logger.debug(`Alert '${alert.key}' suppressed — already sent within the window`);
-        return false;
+        return {
+          suppressed: true,
+          delivered: false,
+          channel: this.channel.name,
+          detail: 'suppressed: the same key fired within the window',
+        };
       }
 
-      await this.channel.send(alert);
-      return true;
+      return this.outcome(await this.channel.send(alert));
     } catch (err) {
       // Redis being down must not take the alert with it: send anyway and
       // accept the possibility of repeats. An operator complaining about
@@ -75,8 +79,24 @@ export class AlertsService {
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      await this.channel.send(alert).catch(() => undefined);
-      return true;
+      const delivery = await this.channel.send(alert).catch((sendErr: unknown) => ({
+        delivered: false,
+        detail: `channel threw: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`,
+      }));
+      return this.outcome(delivery);
     }
   }
+
+  private outcome(delivery: AlertDelivery): AlertOutcome {
+    return { suppressed: false, channel: this.channel.name, ...delivery };
+  }
+}
+
+/**
+ * What `fire` did with an alert. `delivered` is the channel's word for "a
+ * receiver accepted it", never "we tried" — see `AlertDelivery`.
+ */
+export interface AlertOutcome extends AlertDelivery {
+  suppressed: boolean;
+  channel: string;
 }

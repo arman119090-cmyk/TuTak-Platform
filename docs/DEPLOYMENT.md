@@ -444,9 +444,21 @@ it warns at startup instead. Refusing to serve payments because a
 notification endpoint is unset would take the platform down at the exact
 moment someone was fixing the webhook.
 
-Test it before you rely on it — post to the URL by hand and confirm the
-message arrives where a human will see it at 3am, not in a channel nobody
-opens.
+Test it before you rely on it: `pnpm --filter @tutak/api alert:verify` sends
+one clearly-labelled test alert through the real channel and exits non-zero
+unless the receiver **accepted** it. Since 19.09.2026 "accepted" is the
+receiver's word — a 2xx — not the platform's: a webhook that answers 500 or
+never answers is reported as *not delivered*, where the first version of the
+script called it sent. Then confirm the message arrived where a human will
+see it at 3am, not in a channel nobody opens.
+
+**The provider route will not start without it.** With `TUTAK_PSP_ENABLED=true`
+the boot validation requires `ALERT_WEBHOOK_URL` (https), alongside the
+Idram credentials. The ordinary till route keeps the warn-and-continue
+behaviour above; the route where a customer's money can be taken and sit
+unaccounted for is the one that must not start blind — a dead-lettered
+payment callback with no webhook is a customer who paid for nothing, and
+nobody told.
 
 ## 5b. Metrics
 

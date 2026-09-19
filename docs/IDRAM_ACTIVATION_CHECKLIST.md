@@ -48,8 +48,13 @@ releases a payment.
 ## 3. Endpoints and credentials
 
 - [ ] `IDRAM_FORM_ACTION` points at the **sandbox** for testing and is
-      changed deliberately for production. It defaults to the documented
-      live URL, so this is an explicit step, not an omission to notice later.
+      changed deliberately for production. Since 19.09.2026 it has **no
+      default**: with `TUTAK_PSP_ENABLED=true` the boot validation requires
+      an explicit `https://` value, alongside `ALERT_WEBHOOK_URL`.
+- [ ] The point-by-point provider confirmation — checksum, `EDP_TRANS_ID`,
+      pre-check, callback retries, status query, refunds, expirations — is
+      in `docs/IDRAM_PROVIDER_CONFIRMATION.md`, with the letter to send and
+      the sandbox activation plan.
 - [ ] `IDRAM_MERCHANT_ID` / `IDRAM_SECRET_KEY` set from the real merchant
       account. The secret is never logged and never written to a durable row —
       `EDP_CHECKSUM` is a digest, and the inbox keeps the digest, not the key.

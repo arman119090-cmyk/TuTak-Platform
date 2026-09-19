@@ -62,4 +62,10 @@ export type RootStackParamList = {
       `EvSession` receives its session — it re-polls for the authoritative
       status either way. */
   PurchaseIntentStatus: { intent: PurchaseIntentDto };
+  /**
+   * Paying through the provider. Takes only the purchase id: everything the
+   * screen may believe about the payment comes from the server, never from
+   * params a previous screen captured before the payment existed.
+   */
+  ProviderPayment: { purchaseIntentId: string };
 };

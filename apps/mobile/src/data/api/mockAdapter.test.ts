@@ -165,7 +165,17 @@ describe('mockAdapter', () => {
      * *no handler at all*, so for these the bar is "not a 404" — and the
      * upload path's own success case is covered directly, below.
      */
-    const REJECTS_A_SYNTHETIC_BODY = new Set(['put /users/me/avatar']);
+    const REJECTS_A_SYNTHETIC_BODY = new Set([
+      'put /users/me/avatar',
+      /*
+       * `POST /psp/purchases/:id/begin` answers 409 on purpose, and that is
+       * the handler working rather than missing. The demo has no payment
+       * provider: returning a bill would be demonstrating money moving when
+       * none did, in the one part of the app whose whole purpose is to refuse
+       * that claim. The bar here, as for the avatar upload, is "not a 404".
+       */
+      'post /psp/purchases/sample-id/begin',
+    ]);
 
     const unmocked: string[] = [];
     for (const entry of calls) {

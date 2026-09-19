@@ -1,4 +1,10 @@
-import { PurchaseIntentStatus } from '../enums/purchase-intent';
+import {
+  ContributionRuleKind,
+  CustomerPaymentState,
+  PaymentRoute,
+  PurchaseIntentStatus,
+  UnitOfMeasure,
+} from '../enums/purchase-intent';
 import type { PartnerBrandDto } from './media';
 
 export interface CreatePurchaseIntentRequestDto {
@@ -8,6 +14,30 @@ export interface CreatePurchaseIntentRequestDto {
   grossAmount: string;
   /** 0 up to the partner's max_bonus_payment_percent of grossAmount. */
   bonusAmountRequested?: string;
+  /** Omit for the partner-direct route, which is the default. */
+  paymentRoute?: PaymentRoute;
+  /** All three together or none: a quantity with no unit price is a receipt
+   *  nobody can re-derive. Required for a per-unit partner. */
+  quantity?: string;
+  quantityUnit?: UnitOfMeasure;
+  unitPrice?: string;
+}
+
+/**
+ * What a member of staff reads back to say they have seen what is being sold.
+ *
+ * Empty for a percentage partner — there is no line item to check, and
+ * demanding one would train staff to type numbers they never looked at. For
+ * `FIXED_PER_UNIT` and `HYBRID` all three are required and are compared
+ * against the stored snapshot, which is what stops a customer who typed 500
+ * litres getting past somebody who saw 50.
+ */
+export interface ApprovePurchaseIntentRequestDto {
+  quantity?: string;
+  quantityUnit?: UnitOfMeasure;
+  unitPrice?: string;
+  grossAmount?: string;
+  note?: string;
 }
 
 export interface RejectPurchaseIntentRequestDto {
@@ -32,6 +62,28 @@ export interface PurchaseIntentDto {
   grossAmount: string;
   bonusAmountRequested: string;
   ordinaryPaymentRemainder: string;
+  /** How the real-money remainder is collected. Fixed at creation. */
+  paymentRoute: PaymentRoute;
+  /** The line item, when the partner is paid per unit. Null otherwise. */
+  quantity: string | null;
+  quantityUnit: UnitOfMeasure | null;
+  unitPrice: string | null;
+  /**
+   * The terms this purchase was priced under. Null for a partner who has no
+   * rule row — those are still priced from `negotiatedRateBps`.
+   */
+  contributionRuleKind: ContributionRuleKind | null;
+  contributionRuleVersion: number | null;
+  /**
+   * When somebody at the business agreed to the economics.
+   *
+   * On a `DIRECT_PARTNER` purchase the cashier's confirmation is this act.
+   * On `TUTAK_PSP` it is a separate, earlier step: it authorises the bill and
+   * nothing else, and the purchase is completed by the provider's verified
+   * callback. Once set, the economics are frozen at the database level.
+   */
+  merchantApprovedAt: string | null;
+  merchantApprovedByUserId: string | null;
   /**
    * How much of this purchase's merchandise value has already been returned.
    * `0` for a sale nobody has refunded. Exposed so a dashboard can show what
@@ -58,6 +110,29 @@ export interface PurchaseIntentDto {
   confirmedAt: string | null;
   rejectedAt: string | null;
   cancelledAt: string | null;
+}
+
+/** What the customer's app may believe about their provider payment. */
+export interface CustomerPaymentStatusDto {
+  state: CustomerPaymentState;
+  attemptId?: string;
+}
+
+/** What the client must do to let the customer pay at the provider. */
+export type ProviderHandoffDto =
+  | { type: 'REDIRECT'; url: string }
+  | {
+      type: 'FORM_POST';
+      method: 'POST';
+      action: string;
+      /** Posted verbatim, in this order. Never re-derived by the client. */
+      fields: Record<string, string>;
+    };
+
+export interface BeginPspPaymentResponseDto {
+  attemptId: string;
+  billId: string;
+  handoff: ProviderHandoffDto;
 }
 
 /**

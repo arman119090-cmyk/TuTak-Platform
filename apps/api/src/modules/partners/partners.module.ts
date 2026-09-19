@@ -6,10 +6,21 @@ import { PartnerIntegrationsController } from './partner-integrations.controller
 import { PartnerIntegrationsService } from './partner-integrations.service';
 import { PartnersController } from './partners.controller';
 import { PartnersService } from './partners.service';
-import { PartnerBranchStaffController, PartnerStaffController } from './partner-branch-staff.controller';
+import {
+  PartnerBranchStaffController,
+  PartnerStaffController,
+} from './partner-branch-staff.controller';
 import { PartnerBranchStaffService } from './partner-branch-staff.service';
-import { PartnerBranchQrController, PartnerBranchQrResolveController } from './partner-branch-qr.controller';
+import {
+  PartnerBranchQrController,
+  PartnerBranchQrResolveController,
+} from './partner-branch-qr.controller';
 import { PartnerBranchQrService } from './partner-branch-qr.service';
+import {
+  PartnerContributionRuleController,
+  PartnerOwnContributionRuleController,
+} from './contribution/partner-contribution-rule.controller';
+import { PartnerContributionRuleService } from './contribution/partner-contribution-rule.service';
 
 @Module({
   imports: [AuditModule, MediaModule, TransactionsModule],
@@ -20,8 +31,16 @@ import { PartnerBranchQrService } from './partner-branch-qr.service';
     PartnerStaffController,
     PartnerBranchQrController,
     PartnerBranchQrResolveController,
+    PartnerContributionRuleController,
+    PartnerOwnContributionRuleController,
   ],
-  providers: [PartnersService, PartnerIntegrationsService, PartnerBranchStaffService, PartnerBranchQrService],
-  exports: [PartnersService],
+  providers: [
+    PartnersService,
+    PartnerIntegrationsService,
+    PartnerBranchStaffService,
+    PartnerBranchQrService,
+    PartnerContributionRuleService,
+  ],
+  exports: [PartnersService, PartnerContributionRuleService],
 })
 export class PartnersModule {}

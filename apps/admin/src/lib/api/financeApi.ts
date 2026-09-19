@@ -1,3 +1,9 @@
+import {
+  ReconciliationOutcome,
+  type PartnerSettlementDto,
+  type PartnerStatementDto,
+  type UnsettledPositionDto,
+} from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
 
 export interface AcquirerSettlement {
@@ -250,5 +256,222 @@ export const financeApi = {
   }) {
     const { data } = await httpClient.post('/payouts/acquirer/settlements', input);
     return data.data;
+  },
+};
+
+// ── Provider payments nobody can account for ────────────────────────────
+
+export interface UnresolvedPspAttempt {
+  id: string;
+  provider: string;
+  status: string;
+  amount: string;
+  currency: string;
+  providerBillId: string | null;
+  providerTransactionId: string | null;
+  createdAt: string;
+  escalationCount: number;
+  /** Set once somebody has read the provider's record and said what it shows. */
+  reconciledByUserId: string | null;
+  reconciliationEvidence: string | null;
+  reconciliationProposedAt: string | null;
+  purchaseIntent: {
+    id: string;
+    partnerId: string;
+    customerId: string;
+    grossAmount: string;
+    status: string;
+  };
+}
+
+export interface DeadLetteredCallback {
+  id: string;
+  provider: string;
+  billId: string | null;
+  providerTransactionId: string | null;
+  receivedAt: string;
+  attempts: number;
+  lastError: string | null;
+}
+
+export interface LiquidityPosition {
+  currency: string;
+  platformBank: string;
+  pspReceivable: string;
+  unsettledAcquirerAmount: string;
+  partnerPayable: string;
+  partnerReceivable: string;
+  pendingPspExposure: string;
+  pendingRefunds: string;
+  safeToPay: string;
+  paymentsWithUnknownFee: number;
+}
+
+export const pspApi = {
+  async unresolved() {
+    const { data } = await httpClient.get<{ data: UnresolvedPspAttempt[] }>(
+      '/admin/psp/attempts/unresolved',
+    );
+    return data.data;
+  },
+
+  async deadLettered() {
+    const { data } = await httpClient.get<{ data: DeadLetteredCallback[] }>(
+      '/admin/psp/callbacks/dead-lettered',
+    );
+    return data.data;
+  },
+
+  /**
+   * "I have read the provider's record and it shows no payment."
+   *
+   * Moves nothing. The actor is whoever is signed in — there is no field for
+   * it, deliberately, because one caller naming the second person is not two
+   * people.
+   */
+  async proposeReconciliation(attemptId: string, evidence: string) {
+    const { data } = await httpClient.post<{ data: UnresolvedPspAttempt }>(
+      `/admin/psp/attempts/${attemptId}/reconciliation/propose`,
+      { evidence },
+    );
+    return data.data;
+  },
+
+  /** A second person agrees, and the payment is released. */
+  async confirmReconciliation(attemptId: string) {
+    const { data } = await httpClient.post<{ data: UnresolvedPspAttempt }>(
+      `/admin/psp/attempts/${attemptId}/reconciliation/confirm`,
+    );
+    return data.data;
+  },
+};
+
+export const treasuryApi = {
+  async position() {
+    const { data } = await httpClient.get<{ data: LiquidityPosition }>('/admin/treasury/position');
+    return data.data;
+  },
+};
+
+/**
+ * Partner settlements from the TuTak side: drafting one, and the two-person
+ * path that gets it paid.
+ *
+ * Every write here is `SETTLEMENT_MANAGE`. The maker/checker split is not a
+ * permission split — both halves need the same permission — it is an
+ * *identity* split enforced by the service: whoever created a settlement
+ * cannot approve it. The screen mirrors that so an admin is told before the
+ * request rather than by a 409.
+ */
+export const settlementAdminApi = {
+  async list(partnerId?: string): Promise<PartnerSettlementDto[]> {
+    const { data } = await httpClient.get('/admin/partner-settlements', {
+      params: partnerId ? { partnerId } : undefined,
+    });
+    return data.data;
+  },
+
+  async detail(id: string): Promise<PartnerStatementDto> {
+    const { data } = await httpClient.get(`/admin/partner-settlements/${id}`);
+    return data.data;
+  },
+
+  async unsettled(partnerId: string): Promise<UnsettledPositionDto> {
+    const { data } = await httpClient.get(`/admin/partner-settlements/unsettled/${partnerId}`);
+    return data.data;
+  },
+
+  async draft(partnerId: string, periodStart: string, periodEnd: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/drafts/${partnerId}`, {
+      periodStart,
+      periodEnd,
+    });
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markReady(id: string, documentNumber?: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/ready`, {
+      ...(documentNumber ? { documentNumber } : {}),
+    });
+    return data.data as PartnerSettlementDto;
+  },
+
+  /** The checker half. Refused by the server if you are the maker. */
+  async approve(id: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/approve`);
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markPaymentPending(id: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/payment-pending`);
+    return data.data as PartnerSettlementDto;
+  },
+
+  /** The only call that posts to the ledger. Needs the bank's own reference. */
+  async markPaid(id: string, bankTransferReference: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/paid`, {
+      bankTransferReference,
+    });
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markFailed(id: string, reason: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/failed`, { reason });
+    return data.data as PartnerSettlementDto;
+  },
+
+  async markAmbiguous(id: string, reason: string) {
+    const { data } = await httpClient.post(
+      `/admin/partner-settlements/${id}/requires-reconciliation`,
+      { reason },
+    );
+    return data.data as PartnerSettlementDto;
+  },
+
+  async proposeReconciliation(id: string, outcome: ReconciliationOutcome, evidence: string) {
+    const { data } = await httpClient.post(
+      `/admin/partner-settlements/${id}/reconciliation/propose`,
+      { outcome, evidence },
+    );
+    return data.data as PartnerSettlementDto;
+  },
+
+  async confirmReconciliation(id: string) {
+    const { data } = await httpClient.post(
+      `/admin/partner-settlements/${id}/reconciliation/confirm`,
+    );
+    return data.data as PartnerSettlementDto;
+  },
+
+  async cancel(id: string, reason: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/cancel`, { reason });
+    return data.data as PartnerSettlementDto;
+  },
+};
+
+/**
+ * Bookkeeping exports.
+ *
+ * Fetched through the authenticated client and handed to the browser as a
+ * blob, rather than pointed at with a plain `<a href>`: the endpoint needs a
+ * bearer token, and a link cannot carry one. Putting the token in a query
+ * string to make a link work would write it into server logs, browser
+ * history and any referrer — for a file that is the whole ledger.
+ */
+export const accountingApi = {
+  async ledgerCsv(from: string, until: string): Promise<Blob> {
+    const { data } = await httpClient.get('/admin/accounting/ledger.csv', {
+      params: { from, until },
+      responseType: 'blob',
+    });
+    return data as Blob;
+  },
+
+  async settlementsCsv(from: string, until: string): Promise<Blob> {
+    const { data } = await httpClient.get('/admin/accounting/settlements.csv', {
+      params: { from, until },
+      responseType: 'blob',
+    });
+    return data as Blob;
   },
 };

@@ -7,6 +7,8 @@ import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
+import type { PspAttemptAgeingService } from '../psp/psp-attempt-ageing.service';
+import type { PspCallbackWorkerService } from '../psp/psp-callback-worker.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
@@ -52,6 +54,8 @@ export interface SweepDependencies {
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
   partnerSettlement: PartnerSettlementCheckService;
+  pspAgeing: PspAttemptAgeingService;
+  pspCallbacks: PspCallbackWorkerService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -184,7 +188,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'account.anonymize-deleted',
-    why: "Scrubs the personal data of customers who deleted their account once the grace window has passed. Without it the platform keeps every phone number and name it promised to erase, and the deletion the app store required is a promise the backend never keeps.",
+    why: 'Scrubs the personal data of customers who deleted their account once the grace window has passed. Without it the platform keeps every phone number and name it promised to erase, and the deletion the app store required is a promise the backend never keeps.',
     // Hourly. The window is measured in days, so the schedule only has to be
     // fine enough that "we delete after thirty days" is true to the hour.
     repeat: { every: 60 * 60_000 },
@@ -252,6 +256,32 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 26 * 60 * 60_000,
     lockTtlMs: 10 * 60_000,
     run: ({ partnerSettlement }) => partnerSettlement.checkOverdueSettlements(),
+  },
+  {
+    name: 'psp.process-callbacks',
+    why: "A provider callback is written down at the HTTP boundary and settled here. Without this sweep a customer's payment is recorded and never applied — they have paid and their purchase never completes. Split from the HTTP request deliberately: settling inline meant one heavy transaction per callback, and a burst of retries exhausted the connection pool and failed every one of them.",
+    // Every five seconds. This is a customer standing at a pump watching a
+    // spinner, not a nightly reconciliation — the gap between their money
+    // leaving and their purchase completing should be a moment.
+    repeat: { every: 5_000 },
+    maxSilenceMs: 5 * 60_000,
+    // No lock: the inbox claims with FOR UPDATE SKIP LOCKED under a lease,
+    // and per-bill serialisation is a separate, narrower lock inside the
+    // worker. A sweep-wide lock would cap callback settlement at one worker
+    // platform-wide, which is the same mistake as the old outbox lock.
+    lockTtlMs: null,
+    run: ({ pspCallbacks }) => pspCallbacks.processPending(),
+  },
+  {
+    name: 'psp.escalate-stale-attempts',
+    why: "A payment attempt the provider never answered leaves a customer possibly charged for a purchase nobody can complete, and it will not resolve itself. This sweep makes it louder — and deliberately never makes it *go away*: Arman's decision of 15.09.2026 is that time creates alerts and escalation, never a resolution. The one status change it makes (live → EXPIRED) keeps the attempt in the unsafe set, so the purchase stays blocked; releasing it takes the provider's own answer or two people reconciling it by hand.",
+    // Every ten minutes. The customer whose money is somewhere unaccounted
+    // for is the one waiting, so the escalation clock should be theirs rather
+    // than an operator's convenience.
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ pspAgeing }) => pspAgeing.escalateStaleAttempts(),
   },
   {
     name: 'reconciliation.nightly',

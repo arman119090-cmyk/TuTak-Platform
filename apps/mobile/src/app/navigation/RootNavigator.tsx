@@ -16,6 +16,7 @@ import { PartnerApplicationSentScreen } from '../../presentation/screens/partner
 import { DeleteAccountScreen } from '../../presentation/screens/settings/DeleteAccountScreen';
 import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
 import { CreatePurchaseIntentScreen } from '../../presentation/screens/purchase-intent/CreatePurchaseIntentScreen';
+import { ProviderPaymentScreen } from '../../presentation/screens/purchase-intent/ProviderPaymentScreen';
 import { PurchaseIntentStatusScreen } from '../../presentation/screens/purchase-intent/PurchaseIntentStatusScreen';
 import { PartnerDetailScreen } from '../../presentation/screens/partners/PartnerDetailScreen';
 import type { RootStackParamList } from './types';
@@ -120,6 +121,11 @@ export function RootNavigator() {
         name="PurchaseIntentStatus"
         component={PurchaseIntentStatusScreen}
         options={{ title: t('purchaseIntent.statusTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="ProviderPayment"
+        component={ProviderPaymentScreen}
+        options={{ title: t('psp.title', 'Payment'), headerShown: false }}
       />
       <Stack.Screen
         name="PartnerDetail"

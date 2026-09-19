@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { PurchaseIntentStatus, type PurchaseIntentDto } from '@tutak/shared-types';
+import { PaymentRoute, PurchaseIntentStatus, type PurchaseIntentDto } from '@tutak/shared-types';
 import { PurchaseIntentStatusScreen } from './PurchaseIntentStatusScreen';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 
@@ -55,6 +55,19 @@ const intentFixture = (overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
   confirmedByUserId: null,
   rejectedByUserId: null,
   rejectionReason: null,
+  // The hybrid money flow (15.09.2026). This screen is the customer's view
+  // of a purchase waiting at a till, so the partner-direct route is what it
+  // actually shows; the in-TuTak provider route has its own screens and its
+  // own tests, and pretending this one covered them would be the fixture
+  // lying about which flow is under test.
+  paymentRoute: PaymentRoute.DIRECT_PARTNER,
+  quantity: null,
+  quantityUnit: null,
+  unitPrice: null,
+  contributionRuleKind: null,
+  contributionRuleVersion: null,
+  merchantApprovedAt: null,
+  merchantApprovedByUserId: null,
   createdAt: new Date().toISOString(),
   expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
   confirmedAt: null,

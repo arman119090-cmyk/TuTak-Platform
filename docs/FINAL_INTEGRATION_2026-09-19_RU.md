@@ -165,8 +165,21 @@ support (их сторона `217.76.0.20`). Тестовую OTP не отпр�
 | Размер | 31 488 628 байт |
 | SHA-256 | `b637df0872a1cb509232852db973ca0a946e6352dda6a434c0cd8dee86c04f82` |
 
-Приложение (`preview-ios-simulator`, production API, Premium + Spotlight
-client): run 35450065455 — **см. дополнение в конце отчёта**.
+Приложение (`preview-ios-simulator`, `APP_ENV=preview`, production API,
+Premium PASS 3 + Spotlight client + promo DTO/API client, safe-area, ATS,
+все нативные модули):
+
+| Поле | Значение |
+|---|---|
+| Commit | `cf87f72` |
+| Workflow | Build iOS #2, run 35450065455, EAS build `ae3dae80-9347-4edd-9423-b6d82b155258`, FINISHED (14 мин) |
+| Артефакт GitHub | https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35450065455/artifacts/10587130416 (`tutak-ios-preview-ios-simulator.tar.gz` + `.sha256`, 30 дней) |
+| Содержимое | `TuTakpreview.app/` (имя «TuTak (preview)») |
+| Размер | 31 512 405 байт |
+| SHA-256 | `2ed5796c4cba7af3754608005824b70771fca26a4f419421bff21ffbb3dbd03c` |
+
+Это первый integrated iOS RC для Simulator. Карта в нём — MapTiler по
+секрету репозитория (`MAP_TILE_API_KEY`), шаблон и атрибуция по умолчанию.
 
 ## H. CI
 
@@ -184,7 +197,7 @@ client): run 35450065455 — **см. дополнение в конце отчё
 | Secret scan / `.env` в git | 0 / 0 |
 | Sentry sanitizer parity | OK |
 | `expo config --type introspect` (preview) | ATS `NSAllowsArbitraryLoads:false`, `ITSAppUsesNonExemptEncryption:false`, микрофона нет, camera/photos/location purpose-строки, Light; Android без `RECORD_AUDIO` (только CAMERA, LOCATION×2, STORAGE×2 от image-picker, INTERNET); development — localhost-исключение |
-| Android demo APK / iOS demo simulator / iOS app simulator | FINISHED / FINISHED / см. дополнение |
+| Android demo APK / iOS demo simulator / iOS app simulator | FINISHED / FINISHED / FINISHED |
 
 ## I. PRODUCTION MANUAL GATES (владелец, до мержа PR)
 
@@ -269,6 +282,10 @@ gates I.1–I.7. Не PUBLIC LAUNCH READY; Idram/EV/PSP выключены.
 
 ---
 
-## Дополнение: результат сборки приложения для iOS Simulator
+## Дополнение: CI на итоговом SHA
 
-_Заполняется по завершении run 35450065455._
+Интеграционная ветка после отчёта: `073a043` (js-yaml overrides) и
+`c4fa144`/далее (только документы). CI на `cf87f72` — success (run
+35450056493); CI на `c4fa144` — runs 35450843887 (push) и 35450882037
+(pull_request #60), результат указан в PR #60. PR:
+https://github.com/arman119090-cmyk/TuTak-Platform/pull/60.

@@ -38,6 +38,21 @@ export interface AppConfig {
   sweeps: { enabled: boolean };
   jwt: {
     accessSecret: string;
+    /**
+     * The secret being retired, accepted for verification but never used to
+     * sign.
+     *
+     * Rotation without this is not rotation: changing `JWT_ACCESS_SECRET`
+     * invalidates every access token in flight at once, so every signed-in
+     * customer is thrown out mid-action — which is why a leaked secret
+     * tends not to get rotated promptly, which is the actual danger. With an
+     * overlap window the new secret signs immediately, tokens minted under
+     * the old one keep working until they expire (fifteen minutes by
+     * default), and the variable is then removed.
+     *
+     * Empty when no rotation is in progress, which is the normal state.
+     */
+    previousAccessSecret: string;
     accessExpiresIn: string;
     refreshSecret: string;
     refreshExpiresIn: string;
@@ -488,6 +503,7 @@ const buildConfig = (): AppConfig => ({
   },
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',
+    previousAccessSecret: process.env.JWT_ACCESS_SECRET_PREVIOUS ?? '',
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',

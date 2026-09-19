@@ -9,3 +9,4 @@ export type { ThemeName } from './theme-script';
 export { createHttpClient, restoreSession, SessionChangedError } from './httpClient';
 export type { ApiEnvelope, HttpAuthStore } from './httpClient';
 export { registerSessionCacheReset, resetSessionCaches } from './sessionCache';
+export { StorageNotice } from './components/StorageNotice';

@@ -354,9 +354,49 @@ RETENTION_OUTBOX_DAYS=90
 
 Generate the JWT secrets once, per environment, and store them wherever the
 platform keeps secrets — not in the repository, not in a compose file.
-Rotating `JWT_REFRESH_SECRET` signs every open session out; rotating
-`JWT_ACCESS_SECRET` alone is nearly invisible to users, since access tokens
-are short-lived and clients refresh automatically.
+
+**Correction (19.09.2026).** This section used to say that rotating
+`JWT_REFRESH_SECRET` signs every open session out. It does not, and it never
+did: refresh tokens are opaque random strings stored as SHA-256 hashes in
+`refresh_tokens` (`AuthService.issueTokenPair`), not JWTs. `jwt.refreshSecret`
+is read into configuration and **used by nothing** — verified by searching the
+whole API for it. The variable is still required at boot, so it must be set,
+but changing it has no effect whatsoever. Anyone who rotated it believing
+sessions were cut was mistaken about what they had done, which is worse than
+not rotating. Revoking sessions is `refresh_tokens`, not a secret.
+
+### Rotating `JWT_ACCESS_SECRET`
+
+Rotating it alone is *not* invisible, which is what this section used to
+claim. Access tokens live fifteen minutes by default, so replacing the secret
+outright rejects every token minted in the last fifteen minutes — every
+signed-in customer gets a 401 in the middle of whatever they were doing, and
+whether that is invisible depends entirely on whether their client refreshes
+silently at that moment. That cost is the reason leaked secrets go unrotated,
+and an unrotated leaked secret is the actual danger.
+
+`JWT_ACCESS_SECRET_PREVIOUS` exists so the rotation costs nothing:
+
+1. Set `JWT_ACCESS_SECRET_PREVIOUS` to the **current** value and
+   `JWT_ACCESS_SECRET` to the new one, in the same deploy.
+2. From that moment the new secret signs every token; tokens already in
+   flight keep verifying under the old one until they expire.
+3. Wait longer than `JWT_ACCESS_EXPIRES_IN` (fifteen minutes by default).
+   Waiting an hour costs nothing and removes any doubt.
+4. Remove `JWT_ACCESS_SECRET_PREVIOUS` and deploy again.
+
+While unset — the normal state — the retiring key path is not used at all:
+`JwtStrategy` hands back the live secret without trying anything else. The
+retiring key **never signs**; it only verifies, and only tokens the live
+secret has already rejected. Proven end-to-end in
+`apps/api/test/jwt-secret-rotation.int-spec.ts`, including that a stranger's
+key is still refused and that an expired token stays expired — a rotation
+window that extended sessions would be a worse bug than the one it fixes.
+
+If the secret leaked, do steps 1-2 immediately and do not wait for a
+convenient moment: the old secret keeps working for fifteen minutes either
+way, so the window is the same whether you rotate now or later, and rotating
+now starts the clock.
 
 ---
 

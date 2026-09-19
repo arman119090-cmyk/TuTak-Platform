@@ -1,3 +1,5 @@
+import { Reflector } from '@nestjs/core';
+import { JwtAuthGuard } from '../../src/common/guards/jwt-auth.guard';
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitter2, EventEmitterModule } from '@nestjs/event-emitter';
@@ -33,6 +35,7 @@ import { LedgerModule } from '../../src/modules/ledger/ledger.module';
 import { PaymentsModule } from '../../src/modules/payments/payments.module';
 import { PartnerSettlementsModule } from '../../src/modules/partner-settlements/partner-settlements.module';
 import { PspModule } from '../../src/modules/psp/psp.module';
+import { AccountingModule } from '../../src/modules/accounting/accounting.module';
 import { TreasuryModule } from '../../src/modules/treasury/treasury.module';
 import { SettlementModule } from '../../src/modules/settlement/settlement.module';
 import { PayoutsModule } from '../../src/modules/payouts/payouts.module';
@@ -202,6 +205,7 @@ function domainTestingModuleBuilder(
         PartnerSettlementsModule,
         PspModule,
       TreasuryModule,
+      AccountingModule,
         SettlementModule,
         PayoutsModule,
         ReconciliationModule,
@@ -335,7 +339,19 @@ export interface HttpTestHarness {
  * real running server, in docs/ID_VALIDATION_2026-08-23.md, is the evidence
  * that authenticated routes behave the same way end-to-end, guards included.
  */
-export async function createHttpTestHarness(): Promise<HttpTestHarness> {
+/**
+ * `authGuards` attaches `AppModule`'s `JwtAuthGuard` to this instance.
+ *
+ * Off by default, because `id-validation.int-spec.ts` — the reason this
+ * harness exists — is specifically about a pipe rejecting a malformed id
+ * *before* the handler runs, and it reaches controllers unauthenticated on
+ * purpose. Anything testing what a token is worth needs the guard, and
+ * without this option there was no way to get one: the global guards live on
+ * `AppModule`, which neither harness imports.
+ */
+export async function createHttpTestHarness(
+  options: { authGuards?: boolean } = {},
+): Promise<HttpTestHarness> {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
   const alerts = new RecordingAlertChannel();
   const emitter = new SettleableEventEmitter();
@@ -365,6 +381,12 @@ export async function createHttpTestHarness(): Promise<HttpTestHarness> {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+  if (options.authGuards) {
+    // Only `JwtAuthGuard`. The role and permission guards read metadata this
+    // harness's callers set per-test, and attaching them globally here would
+    // change what every existing caller sees.
+    app.useGlobalGuards(new JwtAuthGuard(moduleRef.get(Reflector)));
+  }
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });

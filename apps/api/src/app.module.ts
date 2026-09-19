@@ -42,6 +42,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SecurityModule } from './modules/security/security.module';
 import { PartnerSettlementsModule } from './modules/partner-settlements/partner-settlements.module';
 import { PspModule } from './modules/psp/psp.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { TreasuryModule } from './modules/treasury/treasury.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -110,6 +111,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     PartnerSettlementsModule,
     PspModule,
     TreasuryModule,
+    AccountingModule,
     SettlementModule,
     PayoutsModule,
     ReconciliationModule,

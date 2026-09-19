@@ -43,16 +43,13 @@ jobs:
         with:
           node-version: 22
 
-      # `demo/` is a self-contained npm project on purpose (see
-      # scripts/build-demo-app.sh): no workspace, no pnpm, nothing the EAS
-      # builder has to understand about the monorepo.
-      - name: Install the demo app
-        working-directory: demo
-        run: npm install --no-audit --no-fund
-
       - name: The demo app matches the app it was generated from
         # A stale demo/ would put a build of yesterday's app under today's
-        # commit. Same check ci.yml runs.
+        # commit. Same check ci.yml runs — and it runs BEFORE npm install,
+        # because `npm install` rewrites demo/package-lock.json (peer
+        # resolution differs between npm versions) and a check placed after
+        # it fails on that rewrite rather than on the generated sources. The
+        # first run of this workflow failed exactly that way.
         run: |
           scripts/build-demo-app.sh
           if ! git diff --quiet -- demo; then
@@ -60,6 +57,14 @@ jobs:
             git diff --stat -- demo
             exit 1
           fi
+
+      # `demo/` is a self-contained npm project on purpose (see
+      # scripts/build-demo-app.sh): no workspace, no pnpm, nothing the EAS
+      # builder has to understand about the monorepo. Same install as
+      # demo-apk.yml.
+      - name: Install the demo app
+        working-directory: demo
+        run: npm install --no-audit --no-fund
 
       - name: Link the EAS project
         working-directory: demo

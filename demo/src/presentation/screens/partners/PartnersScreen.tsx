@@ -82,7 +82,7 @@ type MapItem =
  */
 export function PartnersScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, glass } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const tabBarSpace = useTabBarSpace();
   const route = useRoute<PartnersRoute>();
   const navigation = useNavigation<Nav>();
@@ -317,8 +317,8 @@ export function PartnersScreen() {
             styles.search,
             {
               marginTop: space[4],
-              backgroundColor: glass.background,
-              borderColor: glass.border,
+              backgroundColor: color.backgroundSubtle,
+              borderColor: 'transparent',
               borderRadius: radius.md,
               paddingHorizontal: space[4],
               gap: space[2],
@@ -758,7 +758,7 @@ function Chip({
   active: boolean;
   onPress: () => void;
 }) {
-  const { color, space, text, radius, premium, glass } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
 
   return (
     <Pressable
@@ -771,8 +771,8 @@ function Chip({
           borderRadius: radius.full,
           paddingHorizontal: space[4],
           gap: space[2],
-          backgroundColor: active ? premium.brand.primary : glass.background,
-          borderColor: active ? premium.brand.primary : glass.border,
+          backgroundColor: active ? premium.brand.primary : color.backgroundSubtle,
+          borderColor: 'transparent',
           opacity: pressed ? 0.7 : 1,
         },
       ]}

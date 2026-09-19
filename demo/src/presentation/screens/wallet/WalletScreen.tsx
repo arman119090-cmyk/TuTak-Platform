@@ -47,7 +47,7 @@ export function WalletScreen() {
 
   return (
     <Screen title={t('wallet.title')}>
-      <Surface>
+      <Surface elevated>
         {isLoading ? (
           <View style={{ gap: space[4] }}>
             <Skeleton width="45%" height={36} />
@@ -96,8 +96,8 @@ export function WalletScreen() {
       </Surface>
 
       {/* Lifetime totals — secondary, so they sit in plain grey text. */}
-      <View style={[styles.totals, { marginTop: space[5], gap: space[3] }]}>
-        <Surface style={styles.flex}>
+      <View style={[styles.totals, { marginTop: space[4], gap: space[3] }]}>
+        <Surface tone="subtle" style={styles.flex}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('wallet.lifetimeEarned')}
           </Text>
@@ -105,7 +105,7 @@ export function WalletScreen() {
             {formatPoints(wallet?.lifetimeEarned ?? 0)}
           </Text>
         </Surface>
-        <Surface style={styles.flex}>
+        <Surface tone="subtle" style={styles.flex}>
           <Text style={[text.caption, { color: color.textSecondary }]}>
             {t('wallet.lifetimeSpent')}
           </Text>
@@ -127,7 +127,7 @@ export function WalletScreen() {
                     <View
                       style={[
                         styles.lotIcon,
-                        { backgroundColor: color.pendingSurface, borderRadius: radius.md },
+                        { backgroundColor: color.surface, borderRadius: radius.md },
                       ]}
                     >
                       <Ionicons name="time-outline" size={18} color={color.pendingText} />
@@ -145,8 +145,8 @@ export function WalletScreen() {
       ) : null}
 
       <SectionHeader title={t('wallet.history')} />
-      <Surface padded={false}>
-        <View style={{ paddingHorizontal: space[5] }}>
+      <Surface tone="subtle" padded={false}>
+        <View style={{ paddingHorizontal: space[4] }}>
           {!ledger ? (
             <View style={{ paddingVertical: space[5], gap: space[4] }}>
               {[0, 1, 2].map((i) => (

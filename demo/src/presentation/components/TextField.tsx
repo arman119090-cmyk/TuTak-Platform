@@ -59,14 +59,14 @@ interface Props extends TextInputProps {
 }
 
 /**
- * Focus is signalled by the brand blue arriving on the border and a soft
- * glow behind it, rather than by a colour flood — the field stays quiet
- * until the user is actually in it.
+ * Visual layer: a quiet grey well at rest (`backgroundSubtle`, a light
+ * neutral edge), turning white with a brand-green edge when focused. Focus
+ * is announced by the edge and the fill, not by a glow — the ring shadow
+ * below is kept at a whisper because its *presence* is part of the proven
+ * Android focus fix (see the `ring` note), not because it is decoration.
  *
- * The resting fill is a 5%-white wash rather than a solid panel. On a dark
- * UI a field filled with a lighter grey reads as *disabled*, because that is
- * what a greyed control looks like everywhere else; a barely-lit well reads
- * as empty and waiting, which is what it is.
+ * Nothing about focus handling, refs, logging or `collapsable` is visual and
+ * none of it is touched here.
  */
 export function TextField({
   label,
@@ -85,7 +85,7 @@ export function TextField({
   onPressIn,
   ...rest
 }: Props) {
-  const { color, space, radius, text, glass, premium } = useTheme();
+  const { color, space, radius, text, palette, premium } = useTheme();
   const [focused, setFocused] = useState(false);
   /*
    * Whether focus changes re-render this field at all — the second
@@ -183,7 +183,7 @@ export function TextField({
   // screen that does not scroll.
   const ensureVisible = useEnsureVisibleOnFocus();
 
-  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : glass.border;
+  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : palette.neutral[200];
 
   return (
     <View
@@ -216,7 +216,7 @@ export function TextField({
       }
       style={{ marginBottom: space[4] }}
     >
-      <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2] }]}>
+      <Text style={[text.caption, styles.labelText, { color: color.textSecondary, marginBottom: space[2] }]}>
         {label}
       </Text>
 
@@ -255,11 +255,11 @@ export function TextField({
         style={[
           styles.field,
           {
-            backgroundColor: focused ? glass.light : glass.background,
+            backgroundColor: focused ? color.surface : color.backgroundSubtle,
             borderColor,
             borderRadius: radius.md,
             paddingHorizontal: space[4],
-            gap: space[1],
+            gap: space[2],
           },
           focused && !error
             ? { shadowColor: premium.brand.primary, ...styles.ring }
@@ -310,7 +310,7 @@ export function TextField({
           placeholderTextColor={color.textTertiary}
           // Without this the OS paints a black caret on a black field, and
           // the user cannot see where they are typing.
-          selectionColor={premium.brand.light}
+          selectionColor={premium.brand.primary}
           ref={input}
           keyboardType={keyboardType}
           /*
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   // the system font scale turned up — the control kept its size and the
   // characters lost theirs. The field grows instead; nothing else about it
   // changes at the default scale.
-  field: { flexDirection: 'row', alignItems: 'center', minHeight: 54, borderWidth: 1 },
+  field: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderWidth: 1 },
   input: { flex: 1, paddingVertical: 14 },
   /*
    * The focus glow.
@@ -444,9 +444,12 @@ const styles = StyleSheet.create({
    * to spend a build discovering it again.
    */
   ring: {
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
+    // Same keys, quieter values: the object's presence is what matters for
+    // the focus fix; a 25%-opacity 12pt glow was the neon part.
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
+    elevation: 2,
   },
+  labelText: { fontWeight: '500' },
 });

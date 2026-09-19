@@ -60,7 +60,7 @@ export function NotificationsScreen() {
       ) : (
         items.map((n) => (
           <Pressable key={n.id} onPress={() => (n.isRead ? undefined : markRead(n.id))}>
-            <Surface style={{ marginBottom: space[3] }}>
+            <Surface tone="subtle" style={{ marginBottom: space[3] }}>
               <View style={styles.row}>
                 {/* Unread is signalled by a brand dot, not a tinted card —
                     the list stays calm and the dot does the work. */}

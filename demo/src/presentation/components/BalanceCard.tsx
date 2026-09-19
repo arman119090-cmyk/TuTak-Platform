@@ -44,7 +44,7 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
         colors={[...gradients.primary]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.card, glow.md.native, { borderRadius: radius['2xl'], padding: space[6] }]}
+        style={[styles.card, glow.md.native, { borderRadius: radius.xl, padding: space[6] }]}
       >
         <View style={styles.watermark} pointerEvents="none">
           <Image
@@ -70,17 +70,21 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
       source={heroImage}
       resizeMode="cover"
       onError={() => setHeroFailed(true)}
-      style={[styles.card, glow.md.native, { borderRadius: radius['2xl'] }]}
-      imageStyle={{ borderRadius: radius['2xl'] }}
+      style={[styles.card, glow.md.native, { borderRadius: radius.xl }]}
+      imageStyle={{ borderRadius: radius.xl }}
     >
       {/* Accessibility-safe gradient scrim over the photo, left-weighted —
           the same "gradient overlay only when text is shown on it" rule the
           master spec gives partner cards, applied to TuTak's own hero. */}
       <LinearGradient
-        colors={['rgba(11,93,59,0.82)', 'rgba(11,93,59,0.38)', 'rgba(11,93,59,0.05)']}
+        // Deeper on the left, where the numbers sit, and it clears to the
+        // photo only in the last third: the artwork is a backdrop for the
+        // balance, not a poster the balance is printed on.
+        colors={['rgba(7,60,38,0.92)', 'rgba(9,77,49,0.72)', 'rgba(11,93,59,0.22)', 'rgba(11,93,59,0.02)']}
+        locations={[0, 0.42, 0.78, 1]}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
-        style={[StyleSheet.absoluteFill, { borderRadius: radius['2xl'] }]}
+        style={[StyleSheet.absoluteFill, { borderRadius: radius.xl }]}
       />
       <View style={{ padding: space[6] }}>
         <BalanceCardBody
@@ -100,7 +104,7 @@ function BalanceCardBody({ available, pending, reserved, loading }: Props) {
 
   return (
     <>
-      <Text style={[text.caption, { color: 'rgba(255,255,255,0.72)' }]}>
+      <Text style={[text.caption, { color: 'rgba(255,255,255,0.78)' }]}>
         {t('wallet.available')}
       </Text>
 
@@ -110,10 +114,10 @@ function BalanceCardBody({ available, pending, reserved, loading }: Props) {
         </View>
       ) : (
         <View style={[styles.amountRow, { marginTop: space[1], gap: space[2] }]}>
-          <Text style={[text.balance, { color: color.textInverse }]}>
+          <Text style={[text.balance, styles.amount, { color: color.textInverse }]}>
             {formatPoints(available ?? 0)}
           </Text>
-          <Text style={[text.body, { color: 'rgba(255,255,255,0.72)', marginBottom: space[2] }]}>
+          <Text style={[text.bodySm, { color: 'rgba(255,255,255,0.78)', marginBottom: space[2] + 2 }]}>
             {t('common.points')}
           </Text>
         </View>
@@ -136,4 +140,7 @@ const styles = StyleSheet.create({
   watermark: { position: 'absolute', right: -70, top: -50 },
   watermarkImage: { width: 260, height: 260, opacity: 0.1 },
   amountRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  // 44/50 rather than 56/62: the hero number should dominate the card, not
+  // the screen, and 56 wrapped six-digit balances on a compact phone.
+  amount: { fontSize: 44, lineHeight: 50, fontVariant: ['tabular-nums'] },
 });

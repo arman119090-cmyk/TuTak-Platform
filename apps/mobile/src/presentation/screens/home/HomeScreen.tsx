@@ -67,7 +67,7 @@ export function HomeScreen({ navigation }: Props) {
           style={{
             paddingHorizontal: layout.screenPaddingX,
             paddingTop: space[3],
-            paddingBottom: space[5],
+            paddingBottom: space[4],
           }}
         >
           <HomeHeader
@@ -149,7 +149,7 @@ export function HomeScreen({ navigation }: Props) {
             signature is permitted on this button: a safe, positive,
             full-width primary CTA is exactly the icon-boundary table's
             allowed case. */}
-        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[6] }}>
+        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[5] }}>
           <Button
             label={t('qr.scanQr')}
             onPress={() => navigation.navigate('ScanQr')}
@@ -160,7 +160,7 @@ export function HomeScreen({ navigation }: Props) {
         <View
           style={[
             styles.actions,
-            { paddingHorizontal: layout.screenPaddingX, marginTop: space[3], gap: space[3] },
+            { paddingHorizontal: layout.screenPaddingX, marginTop: space[4], gap: space[3] },
           ]}
         >
           <QuickAction
@@ -179,7 +179,7 @@ export function HomeScreen({ navigation }: Props) {
         {/* Referral entry — master spec §1: "sits immediately after the
             quick actions — before long transaction history — because it is
             a primary acquisition loop." */}
-        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[5] }}>
+        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[6] }}>
           <ReferralEntryCard onPress={() => navigation.navigate('Referral')} />
         </View>
 
@@ -259,8 +259,11 @@ export function HomeScreen({ navigation }: Props) {
 function TransactionIcon({ type }: { type: string }) {
   const { color, radius, bonusState } = useTheme();
   const tone = transactionTone(type);
-  const surface = tone === 'positive' ? bonusState.available.surface : color.surfaceSunken;
-  const fg = tone === 'positive' ? bonusState.available.text : color.textSecondary;
+  // One neutral tile for every non-partner row; the sign and colour of the
+  // amount already say which way the money went.
+  void bonusState;
+  const surface = color.backgroundSubtle;
+  const fg = tone === 'positive' ? color.availableText : color.textSecondary;
 
   return (
     <View

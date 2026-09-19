@@ -215,11 +215,16 @@ export const premiumBonusStateColors = {
  */
 export const premiumRadius = {
   none: 0,
-  sm: 8,
+  /** Chips, small icon tiles, tags. */
+  sm: 10,
+  /** Controls: buttons, inputs, search. */
   md: 14,
+  /** Compact cards and grouped lists. */
   lg: 20,
+  /** Main cards and the hero. */
   xl: 24,
-  '2xl': 32,
+  /** Reserved for a full-bleed sheet or a single hero; never a control. */
+  '2xl': 28,
   full: 9999,
 } as const;
 
@@ -233,11 +238,16 @@ export const premiumRadius = {
  * since that is what keeps long text readable.
  */
 export const premiumTextWeights = {
-  balance: { fontWeight: '700' as const, letterSpacing: -1 },
-  balanceSm: { fontWeight: '700' as const, letterSpacing: -0.6 },
-  titleLg: { fontWeight: '700' as const, letterSpacing: -0.5 },
-  title: { fontWeight: '700' as const, letterSpacing: -0.4 },
-  headline: { fontWeight: '600' as const, letterSpacing: -0.2 },
+  // Semibold, not bold, on the light ground: 700 was chosen for white-on-
+  // black, where light text optically thins. On white the same weight
+  // reads heavy and the tracking that came with it (-1 / -0.5) crushes
+  // Armenian, whose glyphs sit wider than Latin. Tracking is kept gentle
+  // enough to read as set type in all three languages.
+  balance: { fontWeight: '600' as const, letterSpacing: -0.8 },
+  balanceSm: { fontWeight: '600' as const, letterSpacing: -0.4 },
+  titleLg: { fontWeight: '600' as const, letterSpacing: -0.3 },
+  title: { fontWeight: '600' as const, letterSpacing: -0.2 },
+  headline: { fontWeight: '600' as const, letterSpacing: -0.1 },
 } as const;
 
 /**

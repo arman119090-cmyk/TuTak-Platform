@@ -1,7 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeProvider';
@@ -38,7 +37,7 @@ const ICONS: Record<keyof MainTabParamList, V2NavIconName> = {
 
 export function MainTabNavigator() {
   const { t } = useTranslation();
-  const { color, text, layout, glass } = useTheme();
+  const { color, text, layout, palette } = useTheme();
   const insets = useSafeAreaInsets();
   const androidBottomPadding = Math.max(20, insets.bottom);
 
@@ -47,32 +46,44 @@ export function MainTabNavigator() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: color.primary,
-        tabBarInactiveTintColor: color.textTertiary,
+        tabBarInactiveTintColor: palette.neutral[400],
+        // White, edgeless. The hairline that used to run across the top of
+        // the bar was one more line under a screen already full of them;
+        // the bar is separated from content by tone alone (content scrolls
+        // under white) plus a whisper of shadow upward.
         tabBarStyle: {
-          backgroundColor: color.backgroundSubtle,
-          borderTopColor: glass.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
+          backgroundColor: color.surface,
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowColor: '#101828',
+          shadowOpacity: 0.06,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: -2 },
           height:
             Platform.OS === 'android'
               ? layout.tabBarHeight + insets.bottom
               : layout.tabBarHeight,
-          paddingTop: 8,
+          paddingTop: 10,
           paddingBottom: Platform.OS === 'ios' ? 28 : androidBottomPadding,
         },
+        tabBarItemStyle: { gap: 2 },
         tabBarLabelStyle: {
-          fontSize: text.overline.fontSize,
+          fontSize: 11,
           fontWeight: text.label.fontWeight,
           letterSpacing: 0,
         },
-        tabBarIcon: ({ color: c, size, focused }) => {
+        tabBarIcon: ({ color: c, size }) => {
           const name = ICONS[route.name as keyof MainTabParamList];
           if (name === 'qr') return null;
           return (
             <V2NavIcon
               name={name}
-              size={size - 2}
+              size={size}
               color={c}
-              strokeWidth={focused ? 3 : 2.4}
+              // One stroke for the family, focused or not: colour carries the
+              // state. A stroke that thickens on focus made the active icon
+              // look like a different, heavier icon.
+              strokeWidth={2.6}
             />
           );
         },
@@ -101,34 +112,26 @@ export function MainTabNavigator() {
   );
 }
 
+/**
+ * The central action. A solid brand disc, always — it is the customer's
+ * primary purchase action and should look like the one button that is
+ * always ready, not a chip that lights up when the tab happens to be the
+ * current one. Focus deepens the green by one step; nothing glows.
+ */
 function PayTabIcon({ focused }: { focused: boolean }) {
-  const { color, radius, gradients, glow } = useTheme();
-
-  if (focused) {
-    return (
-      <LinearGradient
-        colors={[...gradients.primary]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.payChip, glow.sm.native, { borderRadius: radius.full }]}
-      >
-        <V2NavIcon name="qr" size={22} color={color.textInverse} strokeWidth={3} />
-      </LinearGradient>
-    );
-  }
-
+  const { color, radius } = useTheme();
   return (
     <View
       style={[
-        styles.payChip,
-        { backgroundColor: color.primarySurface, borderRadius: radius.full },
+        styles.payDisc,
+        { backgroundColor: focused ? color.primaryPressed : color.primary, borderRadius: radius.full },
       ]}
     >
-      <V2NavIcon name="qr" size={22} color={color.primary} strokeWidth={2.7} />
+      <V2NavIcon name="qr" size={24} color={color.textInverse} strokeWidth={2.8} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  payChip: { width: 48, height: 40, alignItems: 'center', justifyContent: 'center' },
+  payDisc: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', marginTop: -6 },
 });

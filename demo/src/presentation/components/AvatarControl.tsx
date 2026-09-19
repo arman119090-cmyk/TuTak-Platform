@@ -42,7 +42,7 @@ import { Surface } from './Surface';
  */
 export function AvatarControl() {
   const { t } = useTranslation();
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text, radius, palette } = useTheme();
   const user = useAuthStore((s) => s.user);
   const patchUser = useAuthStore((s) => s.patchUser);
   const queryClient = useQueryClient();
@@ -217,8 +217,8 @@ export function AvatarControl() {
           value={user?.showAvatarInReferralList ?? false}
           onValueChange={(next) => consent.mutate(next)}
           disabled={consent.isPending}
-          trackColor={{ true: color.availableSurface, false: color.surfaceSunken }}
-          thumbColor={user?.showAvatarInReferralList ? color.availableText : color.textTertiary}
+          trackColor={{ true: color.primary, false: palette.neutral[300] }}
+          thumbColor="#FFFFFF"
         />
       </View>
 

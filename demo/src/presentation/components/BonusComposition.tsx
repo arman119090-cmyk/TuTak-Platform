@@ -98,29 +98,38 @@ export function BonusComposition({
         )}
       </View>
 
-      {compact ? null : (
-        <View style={[styles.legend, { marginTop: space[4], gap: onBrand ? undefined : space[5] }]}>
+      {compact ? null : onBrand ? (
+        // On the hero: one inline item per state, wrapping onto a second
+        // line when the language needs it ("Зарезервировано", Armenian).
+        // Nothing shrinks and nothing is cut short: `adjustsFontSizeToFit`
+        // is not honoured on every platform and an ellipsis in a balance
+        // legend is a defect, not a compromise.
+        <View style={[styles.legend, { marginTop: space[4], columnGap: space[4], rowGap: space[2] }]}>
           {segments.map((s) => (
-            <View key={s.key} style={styles.legendItem}>
-              <View
-                style={[styles.legendHeader, { gap: onBrand ? space[2] - 2 : space[2] }]}
-              >
-                <View
-                  style={[
-                    onBrand ? styles.dotOnBrand : styles.dot,
-                    { backgroundColor: s.fill },
-                  ]}
-                />
-                <Text style={[text.caption, { color: labelColor }]}>{s.label}</Text>
-              </View>
-              <Text
-                style={[
-                  onBrand ? text.label : text.headline,
-                  { color: valueColor, marginTop: space[1] },
-                ]}
-              >
+            <View key={s.key} style={[styles.legendInline, { gap: space[2] - 2 }]}>
+              <View style={[styles.dotOnBrand, { backgroundColor: s.fill }]} />
+              <Text style={[text.caption, { color: labelColor }]}>{s.label}</Text>
+              <Text style={[text.label, styles.tabular, { color: valueColor }]}>
                 {formatPoints(s.value)}
               </Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        // Everywhere else: one row per state, value right-aligned. Reads as
+        // a small statement rather than three cramped columns, and no label
+        // ever has to wrap.
+        <View style={{ marginTop: space[4] }}>
+          {segments.map((s, i) => (
+            <View
+              key={s.key}
+              style={[styles.legendRow, { paddingVertical: space[2], marginTop: i === 0 ? 0 : 2 }]}
+            >
+              <View style={[styles.dot, { backgroundColor: s.fill }]} />
+              <Text style={[text.bodySm, styles.flex, { color: labelColor, marginLeft: space[2] }]} numberOfLines={1}>
+                {s.label}
+              </Text>
+              <Text style={[text.headline, styles.tabular, { color: valueColor }]}>{formatPoints(s.value)}</Text>
             </View>
           ))}
         </View>
@@ -144,9 +153,11 @@ const styles = StyleSheet.create({
   track: { height: 10, overflow: 'hidden', width: '100%' },
   trackOnBrand: { height: 8, overflow: 'hidden', width: '100%' },
   trackInner: { flexDirection: 'row', height: '100%', width: '100%' },
-  legend: { flexDirection: 'row' },
-  legendItem: { flex: 1 },
-  legendHeader: { flexDirection: 'row', alignItems: 'center' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
+  legendInline: { flexDirection: 'row', alignItems: 'center' },
+  legendRow: { flexDirection: 'row', alignItems: 'center' },
+  flex: { flex: 1 },
+  tabular: { fontVariant: ['tabular-nums'] },
   dot: { width: 8, height: 8, borderRadius: 4 },
   dotOnBrand: { width: 6, height: 6, borderRadius: 3 },
 });

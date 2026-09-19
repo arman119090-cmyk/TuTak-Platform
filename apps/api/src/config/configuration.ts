@@ -703,7 +703,13 @@ const buildConfig = (): AppConfig => ({
     defaultStaleAfterMs: positiveIntFromEnv('PSP_STALE_AFTER_MS', 30 * 60_000),
     defaultEscalateEveryMs: positiveIntFromEnv('PSP_ESCALATE_EVERY_MS', 60 * 60_000),
     perProvider: pspPerProviderPolicy(),
-    idramFormAction: process.env.IDRAM_FORM_ACTION ?? 'https://banking.idram.am/Payment/GetPayment',
+    // No default, and the absence of one is the safety property. The previous
+    // default was the production URL, so a deployment that forgot the variable
+    // would have sent real customers to real Idram without anybody choosing
+    // to. Sandbox and production are both explicit now; with the route
+    // enabled and this unset, the adapter refuses to open a bill and boot
+    // validation refuses to start at all.
+    idramFormAction: process.env.IDRAM_FORM_ACTION ?? '',
     idramLanguage: process.env.IDRAM_LANGUAGE ?? 'AM',
   },
   media: {

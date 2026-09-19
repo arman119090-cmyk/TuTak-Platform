@@ -469,13 +469,19 @@ export class PartnerSettlementService {
         );
       }
 
-      const [payableAccount, bankAccount] = await Promise.all([
-        this.ledger.accountFor({
-          type: LedgerAccountType.PARTNER_PAYABLE,
-          partnerId: settlement.partnerId,
-        }),
-        this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_BANK }),
-      ]);
+      // Both on `tx`. A tx-less lookup here borrows a second pool connection
+      // while this transaction holds one — the pattern that starved the pool
+      // under concurrent provider callbacks (CI #735), now guarded against
+      // statically by `transaction-discipline.spec.ts`. Sequential rather
+      // than `Promise.all`: an interactive transaction is one connection.
+      const payableAccount = await this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: settlement.partnerId },
+        tx,
+      );
+      const bankAccount = await this.ledger.accountFor(
+        { type: LedgerAccountType.PLATFORM_BANK },
+        tx,
+      );
 
       const posted = await this.ledger.post(
         {

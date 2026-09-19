@@ -85,13 +85,14 @@ describe('PSP callback burst, measured (integration)', () => {
     return createHash('md5')
       .update(
         [
+          // Documented order: the secret sits third. See idram.contract.spec.ts.
           fields.EDP_REC_ACCOUNT,
           fields.EDP_AMOUNT,
+          SECRET,
           fields.EDP_BILL_NO,
           fields.EDP_PAYER_ACCOUNT,
           fields.EDP_TRANS_ID,
           fields.EDP_TRANS_DATE,
-          SECRET,
         ].join(':'),
       )
       .digest('hex')

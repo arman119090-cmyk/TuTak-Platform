@@ -92,6 +92,15 @@ export interface CreateBillResult {
 export interface PrecheckRequest {
   billId: string | null;
   merchantAccount: string | null;
+  /**
+   * Whether `merchantAccount` is *this* merchant.
+   *
+   * Decided by the adapter, which is the only thing that knows its own
+   * account, so the domain never has to reach into provider configuration to
+   * ask. A pre-check for somebody else's merchant account gets "no" whatever
+   * the bill says — see `PspPaymentService.answerPrecheck`.
+   */
+  merchantMatches: boolean;
   amount: Decimal | null;
   raw: unknown;
 }
@@ -149,7 +158,26 @@ export interface PspAdapter {
   readonly name: string;
   readonly capabilities: PspCapabilities;
 
-  /** Opens a bill the customer can pay. */
+  /**
+   * Throws if this adapter is not configured well enough to open a bill.
+   *
+   * Called *before* an attempt row is written, so a missing merchant id or
+   * form action fails closed with nothing left behind — rather than after,
+   * where the first version left an `INITIATED` attempt that blocked the
+   * customer from paying again until a human resolved it.
+   */
+  assertReady(): void;
+
+  /**
+   * Opens a bill the customer can pay.
+   *
+   * For the documented Idram flow this is *local*: it builds the form the
+   * customer's browser will post and makes no call to the provider. That is
+   * why `beginAttempt` may call it before writing the attempt row. A future
+   * provider whose bill creation is a remote call must not be wired into
+   * that order without revisiting it — a remote bill with no local row is a
+   * different failure than the one the order was chosen to avoid.
+   */
   createBill(params: CreateBillParams): Promise<CreateBillResult>;
 
   /**

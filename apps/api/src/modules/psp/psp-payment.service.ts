@@ -254,7 +254,32 @@ export class PspPaymentService {
       );
     }
 
+    /*
+     * Configuration first, then the bill, then the row — in that order.
+     *
+     * The first version wrote the `INITIATED` attempt and *then* asked the
+     * adapter for the bill. When the adapter threw on a missing merchant id,
+     * the attempt stayed behind: an unsafe, unresolved row that blocked the
+     * customer from paying again until a human reconciled a payment that had
+     * never been offered. A local misconfiguration became a stranded
+     * customer.
+     *
+     * `assertReady` fails closed with nothing written. `createBill` is local
+     * for the documented Idram flow (it builds a form; see the interface),
+     * so calling it before the insert leaves nothing behind if it throws for
+     * any other reason either. The insert is the only side effect, and it is
+     * last.
+     */
+    this.adapter.assertReady();
+
     const billId = randomUUID();
+    const bill = await this.adapter.createBill({
+      billId,
+      amount: intent.ordinaryPaymentRemainder,
+      currency: 'AMD',
+      description: `TuTak purchase ${intent.id}`,
+    });
+
     let attempt;
     try {
       attempt = await this.prisma.pspPaymentAttempt.create({
@@ -263,7 +288,7 @@ export class PspPaymentService {
           provider: this.adapter.name,
           status: PspAttemptStatus.INITIATED,
           amount: intent.ordinaryPaymentRemainder,
-          providerBillId: billId,
+          providerBillId: bill.providerBillId || billId,
           liveKey: LIVE,
         },
       });
@@ -276,20 +301,6 @@ export class PspPaymentService {
         );
       }
       throw err;
-    }
-
-    const bill = await this.adapter.createBill({
-      billId,
-      amount: intent.ordinaryPaymentRemainder,
-      currency: 'AMD',
-      description: `TuTak purchase ${intent.id}`,
-    });
-
-    if (bill.providerBillId) {
-      await this.prisma.pspPaymentAttempt.update({
-        where: { id: attempt.id },
-        data: { providerBillId: bill.providerBillId },
-      });
     }
 
     // The handoff is passed outwards, which it previously was not: the form
@@ -325,6 +336,11 @@ export class PspPaymentService {
     const request = this.adapter.readPrecheck(body);
 
     if (!request.billId) return { ok: false, reason: 'no bill' };
+    // Whose bill this is. A pre-check quoting a different merchant account
+    // is either misrouted or probing, and "yes" would tell the provider to
+    // take money for a bill we did not open. Nothing financial happens on
+    // this path either way — the only effect of a pre-check is the answer.
+    if (!request.merchantMatches) return { ok: false, reason: 'merchant mismatch' };
 
     const attempt = await this.prisma.pspPaymentAttempt.findFirst({
       where: { provider: this.adapter.name, providerBillId: request.billId },

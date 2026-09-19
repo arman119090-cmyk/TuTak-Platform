@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
-import { Decimal } from '@prisma/client/runtime/library';
+import { wireField as field, wireMoney as money } from './psp-wire';
 import { AppConfig } from '../../config/configuration';
 import {
   ConfirmationResult,
@@ -79,12 +79,7 @@ export class IdramAdapter implements PspAdapter {
    */
   // eslint-disable-next-line @typescript-eslint/require-await
   async createBill(params: CreateBillParams): Promise<CreateBillResult> {
-    if (!this.merchantId || !this.secret) {
-      throw new Error(
-        'IDRAM_MERCHANT_ID and IDRAM_SECRET_KEY are not set. Refusing to open a bill ' +
-          'this platform could not later verify a callback for.',
-      );
-    }
+    this.assertReady();
     // Idram's flow is a form post the customer's browser makes; there is no
     // server-to-server bill creation in the documentation supplied. The
     // caller redirects with these fields.
@@ -112,6 +107,29 @@ export class IdramAdapter implements PspAdapter {
   }
 
   /**
+   * Fails closed on configuration, before any row exists.
+   *
+   * The form action is deliberately checked here and not defaulted in
+   * configuration: the previous default was the production URL, which meant
+   * a deployment that forgot the variable would silently send real customers
+   * to real Idram. Sandbox and production are both explicit choices now, and
+   * a deployment with the route enabled and no action set does not open
+   * bills at all.
+   */
+  assertReady(): void {
+    const missing: string[] = [];
+    if (!this.merchantId) missing.push('IDRAM_MERCHANT_ID');
+    if (!this.secret) missing.push('IDRAM_SECRET_KEY');
+    if (!this.formAction) missing.push('IDRAM_FORM_ACTION');
+    if (missing.length > 0) {
+      throw new Error(
+        `Idram is not configured: ${missing.join(', ')} not set. Refusing to open a bill ` +
+          'the platform could not hand off or later verify a callback for.',
+      );
+    }
+  }
+
+  /**
    * Idram announces a pre-check with `EDP_PRECHECK=YES`.
    *
    * Read from the body rather than from a header or a separate URL because
@@ -119,18 +137,16 @@ export class IdramAdapter implements PspAdapter {
    * distinct endpoint, this is the one place that changes.
    */
   isPrecheck(body: unknown): boolean {
-    const payload = (body ?? {}) as Record<string, string>;
-    return payload.EDP_PRECHECK === 'YES';
+    return field(body, 'EDP_PRECHECK') === 'YES';
   }
 
   readPrecheck(body: unknown): PrecheckRequest {
-    const payload = (body ?? {}) as Record<string, string>;
-    const rawAmount = payload.EDP_AMOUNT;
-    const amount = rawAmount === undefined ? null : new Decimal(rawAmount);
+    const merchantAccount = field(body, 'EDP_REC_ACCOUNT') || null;
     return {
-      billId: payload.EDP_BILL_NO ?? null,
-      merchantAccount: payload.EDP_REC_ACCOUNT ?? null,
-      amount: amount !== null && amount.isFinite() ? amount : null,
+      billId: field(body, 'EDP_BILL_NO') || null,
+      merchantAccount,
+      merchantMatches: merchantAccount !== null && merchantAccount === this.merchantId,
+      amount: money(field(body, 'EDP_AMOUNT')),
       raw: body,
     };
   }
@@ -158,33 +174,69 @@ export class IdramAdapter implements PspAdapter {
     _headers: Record<string, string>,
     body: unknown,
   ): Promise<ConfirmationResult> {
-    const payload = (body ?? {}) as Record<string, string>;
+    // Every field read through `field()`: a public endpoint receives whatever
+    // is sent, and an array where a string was expected, or no body at all,
+    // must be a rejected callback rather than a 500 — see the note on
+    // `field` below.
+    const payload = {
+      EDP_REC_ACCOUNT: field(body, 'EDP_REC_ACCOUNT'),
+      EDP_AMOUNT: field(body, 'EDP_AMOUNT'),
+      EDP_BILL_NO: field(body, 'EDP_BILL_NO'),
+      EDP_PAYER_ACCOUNT: field(body, 'EDP_PAYER_ACCOUNT'),
+      EDP_TRANS_ID: field(body, 'EDP_TRANS_ID'),
+      EDP_TRANS_DATE: field(body, 'EDP_TRANS_DATE'),
+      EDP_CHECKSUM: field(body, 'EDP_CHECKSUM'),
+    };
 
     if (!this.secret) {
       return { verified: false, reason: 'IDRAM_SECRET_KEY is not configured', raw: body };
     }
 
     // The pre-check ping asks "does this bill exist?" and is not a payment.
-    if (payload.EDP_PRECHECK === 'YES') {
+    if (this.isPrecheck(body)) {
       return { verified: false, reason: 'precheck', raw: body };
     }
 
+    // Idram's documented fields are all required on a final callback. An
+    // empty bill number or transaction id cannot be settled against anything,
+    // and a digest computed over blanks is still a digest — so the presence
+    // check comes before the checksum, not after.
+    for (const [name, value] of Object.entries(payload)) {
+      if (name !== 'EDP_PAYER_ACCOUNT' && value === '') {
+        return { verified: false, reason: `${name} missing`, raw: body };
+      }
+    }
+
+    /*
+     * The documented composition, and the order matters:
+     *
+     *   EDP_REC_ACCOUNT : EDP_AMOUNT : SECRET_KEY : EDP_BILL_NO
+     *     : EDP_PAYER_ACCOUNT : EDP_TRANS_ID : EDP_TRANS_DATE
+     *
+     * The secret goes *third*, not last. The first version of this put it
+     * last, and every locally-minted test callback agreed — because the
+     * tests were minted by this same function. The suite was green while
+     * every genuine Idram callback would have been thrown away as a forgery,
+     * which is the failure mode that looks like "the provider never calls
+     * back" from the outside. `idram.contract.spec.ts` pins the order with a
+     * digest computed outside this codebase.
+     */
     const expected = createHash('md5')
       .update(
         [
           payload.EDP_REC_ACCOUNT ?? '',
           payload.EDP_AMOUNT ?? '',
+          this.secret,
           payload.EDP_BILL_NO ?? '',
           payload.EDP_PAYER_ACCOUNT ?? '',
           payload.EDP_TRANS_ID ?? '',
           payload.EDP_TRANS_DATE ?? '',
-          this.secret,
         ].join(':'),
       )
       .digest('hex')
       .toUpperCase();
 
-    const given = (payload.EDP_CHECKSUM ?? '').toUpperCase();
+    const given = payload.EDP_CHECKSUM.toUpperCase();
     if (!given || given !== expected) {
       // Deliberately does not say which part failed.
       this.logger.warn(
@@ -197,15 +249,15 @@ export class IdramAdapter implements PspAdapter {
       return { verified: false, reason: 'merchant mismatch', raw: body };
     }
 
-    const amount = new Decimal(payload.EDP_AMOUNT ?? '0');
-    if (!amount.isFinite() || amount.lessThanOrEqualTo(0)) {
+    const amount = money(payload.EDP_AMOUNT);
+    if (amount === null || amount.lessThanOrEqualTo(0)) {
       return { verified: false, reason: 'amount not usable', raw: body };
     }
 
     return {
       verified: true,
-      billId: payload.EDP_BILL_NO ?? '',
-      providerTransactionId: payload.EDP_TRANS_ID ?? '',
+      billId: payload.EDP_BILL_NO,
+      providerTransactionId: payload.EDP_TRANS_ID,
       amount,
       currency: 'AMD',
       // Idram is not documented as reporting its fee. Deliberately absent
@@ -215,3 +267,4 @@ export class IdramAdapter implements PspAdapter {
     };
   }
 }
+

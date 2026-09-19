@@ -32,3 +32,13 @@ process.env.BONUS_RESERVATION_HOLD_SECONDS ??= '300';
 // exercise it deliberately: leaving it off would make them pass by never
 // reaching the code they exist to test.
 process.env.TUTAK_PSP_ENABLED ??= 'true';
+// A route that is switched on must be a route that can actually be used —
+// boot validation (`assertProviderPaymentsConfigured`) refuses an
+// environment that enables the provider route without a merchant, a secret
+// and an https form action, exactly as it would refuse such a deployment.
+// The test environment therefore carries a coherent, obviously-fake
+// provider. Suites that care about the exact values set their own in
+// `beforeAll`; `??=` leaves those alone.
+process.env.IDRAM_MERCHANT_ID ??= '110000110';
+process.env.IDRAM_SECRET_KEY ??= 'integration-test-idram-secret-not-real';
+process.env.IDRAM_FORM_ACTION ??= 'https://sandbox.idram.example/Payment/GetPayment';

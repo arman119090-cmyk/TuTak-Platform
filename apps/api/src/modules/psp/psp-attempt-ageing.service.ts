@@ -55,10 +55,14 @@ export class PspAttemptAgeingService {
     };
   }
 
+  /**
+   * Runs regardless of `TUTAK_PSP_ENABLED`, for the same reason the callback
+   * worker does: this sweep does not start payments, it raises the alarm on
+   * ones that started and went quiet. An attempt left unresolved by an
+   * emergency switch-off is precisely the attempt a human most needs to be
+   * told about, and a gate here would have silenced exactly that.
+   */
   async escalateStaleAttempts(): Promise<{ expired: number; escalated: number }> {
-    if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
-      return { expired: 0, escalated: 0 };
-    }
 
     const now = Date.now();
     // The adapter's own name is the key, so a second provider is a second

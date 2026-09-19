@@ -7,6 +7,7 @@ import { PspCallbackInboxService } from './psp-callback-inbox.service';
 import { PspPaymentService } from './psp-payment.service';
 import { Inject } from '@nestjs/common';
 import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
+import { wireField, wireMoney } from './psp-wire';
 
 /**
  * Where the payment provider talks to us.
@@ -103,15 +104,18 @@ export class PspCallbackController {
   }
 }
 
-/** Best-effort read of the bill from an unverified body, for the record. */
+/**
+ * Best-effort reads from an unverified body, for the record only.
+ *
+ * Through the shared wire helpers: the first version parsed `EDP_AMOUNT`
+ * with `new Decimal` directly, which throws on `abc` — so a callback the
+ * adapter had already refused cleanly still produced a 500 one line later,
+ * on the way to being written down as refused.
+ */
 function readBillId(body: unknown): string | null {
-  const payload = (body ?? {}) as Record<string, string>;
-  return payload.EDP_BILL_NO ?? null;
+  return wireField(body, 'EDP_BILL_NO') || null;
 }
 
 function readAmount(body: unknown): Decimal | null {
-  const payload = (body ?? {}) as Record<string, string>;
-  if (payload.EDP_AMOUNT === undefined) return null;
-  const amount = new Decimal(payload.EDP_AMOUNT);
-  return amount.isFinite() ? amount : null;
+  return wireMoney(wireField(body, 'EDP_AMOUNT'));
 }

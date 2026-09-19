@@ -6,7 +6,7 @@
 // already imported this polyfill does not help this one.
 import 'reflect-metadata';
 import { randomBytes } from 'node:crypto';
-import { assertProductionJwtSecretsAreStrong, validate } from './env.validation';
+import { assertProviderPaymentsConfigured, assertProductionJwtSecretsAreStrong, validate } from './env.validation';
 
 /**
  * Security hardening (2026-08-23): regression suite for the boot-time
@@ -301,5 +301,47 @@ describe('validate() — production boot integration', () => {
         JWT_REFRESH_SECRET: 'change-me-refresh-secret-min-32-chars-long',
       }),
     ).not.toThrow();
+  });
+});
+
+/**
+ * Turning the provider route on without the provider configured must refuse
+ * to boot. The first version let it boot and fail at the first customer —
+ * leaving an `INITIATED` attempt behind, which is worse than not starting.
+ */
+describe('assertProviderPaymentsConfigured', () => {
+  const on = (overrides: Record<string, unknown> = {}) => ({
+    TUTAK_PSP_ENABLED: 'true',
+    IDRAM_MERCHANT_ID: '110000110',
+    IDRAM_SECRET_KEY: 'a-real-secret',
+    IDRAM_FORM_ACTION: 'https://sandbox.idram.example/pay',
+    ...overrides,
+  });
+
+  it('lets a deployment with the route off boot with nothing set', () => {
+    expect(() => assertProviderPaymentsConfigured({})).not.toThrow();
+    expect(() => assertProviderPaymentsConfigured({ TUTAK_PSP_ENABLED: 'false' })).not.toThrow();
+  });
+
+  it('accepts the route on with everything set', () => {
+    expect(() => assertProviderPaymentsConfigured(on())).not.toThrow();
+  });
+
+  it.each(['IDRAM_MERCHANT_ID', 'IDRAM_SECRET_KEY', 'IDRAM_FORM_ACTION'])(
+    'refuses to boot with the route on and %s missing',
+    (name) => {
+      expect(() => assertProviderPaymentsConfigured(on({ [name]: undefined }))).toThrow(name);
+      expect(() => assertProviderPaymentsConfigured(on({ [name]: '   ' }))).toThrow(name);
+    },
+  );
+
+  /**
+   * No silent production default any more, and no plain-HTTP action either:
+   * the form carries the amount and the bill the customer is about to pay.
+   */
+  it('refuses a form action that is not https', () => {
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ IDRAM_FORM_ACTION: 'http://banking.idram.am/x' })),
+    ).toThrow(/https/);
   });
 });

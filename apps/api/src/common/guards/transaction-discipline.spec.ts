@@ -45,6 +45,33 @@ function typescriptFilesUnder(dir: string): string[] {
   });
 }
 
+/**
+ * Methods that accept an optional transaction and silently use the global
+ * client without one. Kept as a list rather than discovered, so adding a
+ * wrapper is a deliberate act that names the risk.
+ */
+const WRAPPER_CALL =
+  /this\.(?:ledger\.(?:accountFor|post|reverse)|bonusEngine\.(?:accrue|settleReservation|releaseReservation|reverseSettlement|reverseAccrualLot)|transactionsService\.(?:create|markCompleted|markFailed|markFlagged)|audit\.record|referralService\.resolveReferralChain|purchases\.settleFromProviderConfirmation|findByIdOrThrow|contributionFor|hasUnsafeAttempt|hasUnsafePspAttempt|assertDirectCollectionAllowed)\(/;
+
+/** The text of one call, from its opening parenthesis to the matching close. */
+function balancedCallText(lines: string[], startLine: number, startCol: number): string {
+  let depth = 0;
+  let text = '';
+  for (let i = startLine; i < lines.length && i < startLine + 40; i += 1) {
+    const line = i === startLine ? lines[i]!.slice(startCol) : lines[i]!;
+    for (const ch of line) {
+      text += ch;
+      if (ch === '(') depth += 1;
+      if (ch === ')') {
+        depth -= 1;
+        if (depth === 0) return text;
+      }
+    }
+    text += '\n';
+  }
+  return text;
+}
+
 interface Violation {
   file: string;
   line: number;
@@ -97,6 +124,29 @@ function findViolations(): Violation[] {
           text: code.trim().slice(0, 90),
           why: 'reads through the global client while a transaction is open — takes a second pool connection',
         });
+      }
+
+      /*
+       * The indirect form of the same bug: a service method that takes an
+       * optional `tx` and falls back to the global client when it is not
+       * given one. `this.ledger.accountFor({...})` inside a transaction is
+       * exactly `this.prisma.ledgerAccount.findFirst` one call deeper, and
+       * it borrowed the second connection just the same. The call text is
+       * gathered until its parentheses balance, so a multi-line call or one
+       * inside `Promise.all([...])` is read whole before asking whether `tx`
+       * is among its arguments.
+       */
+      const wrapper = WRAPPER_CALL.exec(code);
+      if (wrapper) {
+        const callText = balancedCallText(lines, i, code.indexOf(wrapper[0]));
+        if (!/\btx\b/.test(callText) && !/\bclient\b/.test(callText)) {
+          found.push({
+            file: file.slice(SRC.length + 1),
+            line: i + 1,
+            text: code.trim().slice(0, 90),
+            why: `calls ${wrapper[0].replace(/\($/, '')} without passing the transaction — it falls back to the global client`,
+          });
+        }
       }
       if (/\$transaction\(/.test(code)) {
         found.push({
@@ -157,6 +207,25 @@ describe('transaction discipline', () => {
     }
 
     expect(caught).toEqual([3]);
+  });
+
+  /**
+   * The indirect form must be caught too — this is the shape that survived
+   * the first guard, because nothing in it says `this.prisma`.
+   */
+  it('catches a wrapper called without the transaction, across lines', () => {
+    const lines = [
+      '    const [a, b] = await Promise.all([',
+      '      this.ledger.accountFor({',
+      '        type: LedgerAccountType.PARTNER_PAYABLE,',
+      '      }),',
+      '      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_BANK }, tx),',
+      '    ]);',
+    ];
+    const first = balancedCallText(lines, 1, lines[1]!.indexOf('this.ledger'));
+    const second = balancedCallText(lines, 4, lines[4]!.indexOf('this.ledger'));
+    expect(/\btx\b/.test(first)).toBe(false);
+    expect(/\btx\b/.test(second)).toBe(true);
   });
 
   /** And must not flag the array form, which is correct as written. */

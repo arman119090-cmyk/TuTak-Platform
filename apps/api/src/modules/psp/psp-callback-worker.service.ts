@@ -47,10 +47,29 @@ export class PspCallbackWorkerService {
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
+  /**
+   * Drains the inbox — regardless of `TUTAK_PSP_ENABLED`.
+   *
+   * ## Why the flag is deliberately not checked here
+   *
+   * It was, and that was the wrong half of the flag's meaning. The flag
+   * says whether *new* payments may be started: `beginAttempt` and the
+   * pre-check refuse when it is off. It does not, and must not, say whether
+   * money that has *already been taken* may be accounted for.
+   *
+   * Consider the emergency: the flag is switched off while a customer is at
+   * the provider's page. Their pre-check already passed; they pay; the
+   * verified callback arrives and is written to the inbox. A worker that
+   * refused to drain would leave real money on the merchant account with no
+   * purchase confirmed, no ledger entry, and the customer's own record
+   * saying nothing happened. Switching the route off must never *create*
+   * an unaccounted payment, and that is exactly what gating this method did.
+   *
+   * Every callback the worker settles verified against an attempt this
+   * platform opened while the route was on. Nothing here can start a
+   * payment; it can only finish accounting for one.
+   */
   async processPending(): Promise<{ processed: number; failed: number }> {
-    if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
-      return { processed: 0, failed: 0 };
-    }
     return this.inbox.drain((row) => this.settle(row));
   }
 

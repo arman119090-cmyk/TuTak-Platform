@@ -215,5 +215,38 @@ export function validate(config: Record<string, unknown>) {
     );
   }
   assertProductionJwtSecretsAreStrong(validatedConfig);
+  assertProviderPaymentsConfigured(config);
   return validatedConfig;
+}
+
+/**
+ * Turning the in-TuTak payment route on is a promise that bills can be
+ * opened and callbacks verified. A deployment that makes the promise
+ * without the credentials or the form action behind it must not boot —
+ * fail closed at start, not at the first customer.
+ *
+ * Read from the raw config rather than the validated class so the three
+ * variables stay optional for every deployment that has the route off,
+ * which is all of them until activation.
+ */
+export function assertProviderPaymentsConfigured(config: Record<string, unknown>): void {
+  if (config.TUTAK_PSP_ENABLED !== 'true') return;
+
+  const missing = ['IDRAM_MERCHANT_ID', 'IDRAM_SECRET_KEY', 'IDRAM_FORM_ACTION'].filter(
+    (name) => typeof config[name] !== 'string' || (config[name] as string).trim() === '',
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `TUTAK_PSP_ENABLED=true but ${missing.join(', ')} not set. The provider route cannot ` +
+        'open a bill it could not hand off or verify. Set them, or turn the route off.',
+    );
+  }
+
+  const action = String(config.IDRAM_FORM_ACTION);
+  if (!/^https:\/\//.test(action)) {
+    throw new Error(
+      `IDRAM_FORM_ACTION must be an https URL (got "${action}"). A customer's payment form ` +
+        'must not be posted over plain HTTP.',
+    );
+  }
 }

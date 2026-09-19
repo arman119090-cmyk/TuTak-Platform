@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { themeInitScript, Providers } from '@tutak/design/web';
+import { themeInitScript, Providers, StorageNotice } from '@tutak/design/web';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -24,7 +24,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `window.__TUTAK_RUNTIME_CONFIG__=${runtimeConfig};` }} />
       </head>
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          {/*
+            Configured, not hard-coded: the policy exists in `public/
+            privacy.html` but is not yet served at a permanent address, and a
+            link to a page that 404s is worse than no link. When it is
+            published, set NEXT_PUBLIC_PRIVACY_URL and the link appears.
+          */}
+          <StorageNotice privacyUrl={process.env.NEXT_PUBLIC_PRIVACY_URL} />
+        </Providers>
       </body>
     </html>
   );

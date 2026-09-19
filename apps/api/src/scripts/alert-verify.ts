@@ -121,9 +121,9 @@ export async function runAlertVerify(
   channel: AlertChannel,
   now = new Date(),
 ): Promise<AlertVerifyResult> {
-  const sent = await alerts.fire(buildVerificationAlert(now));
+  const outcome = await alerts.fire(buildVerificationAlert(now));
 
-  if (!sent) {
+  if (outcome.suppressed) {
     // `fire` swallows transport errors by design — see the interface — so a
     // false here means the suppression window claimed it, which with a
     // timestamped key means Redis returned something unexpected rather than
@@ -147,7 +147,24 @@ export async function runAlertVerify(
     };
   }
 
-  return { sent: true, channel: channel.name, reason: `sent at ${now.toISOString()}` };
+  // "Sent" is the receiver's word, not ours. A webhook that answered 500,
+  // timed out or refused the connection told nobody anything, and the first
+  // version of this script called that success.
+  if (!outcome.delivered) {
+    return {
+      sent: false,
+      channel: channel.name,
+      reason:
+        `ALERT_WEBHOOK_URL is set but the receiver did not accept the alert (${outcome.detail}). ` +
+        'Nothing reached a human. Check the URL and what is on the other end of it.',
+    };
+  }
+
+  return {
+    sent: true,
+    channel: channel.name,
+    reason: `accepted at ${now.toISOString()}: ${outcome.detail}`,
+  };
 }
 
 async function main() {
@@ -192,10 +209,7 @@ async function main() {
      * itself was already awaited and delivered before this point), and the
      * explicit exit is what a one-shot CLI owes its caller.
      */
-    await Promise.race([
-      app.close(),
-      new Promise((resolve) => setTimeout(resolve, 2_000).unref()),
-    ]);
+    await Promise.race([app.close(), new Promise((resolve) => setTimeout(resolve, 2_000).unref())]);
     process.exit(process.exitCode ?? 0);
   }
 }

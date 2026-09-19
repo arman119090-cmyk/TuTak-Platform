@@ -280,3 +280,55 @@ describe('the map keeps the place the person put it', () => {
     expect(firstTilePosition()).not.toEqual(afterDrag);
   });
 });
+
+describe('the map controls', () => {
+  it('offers a way back only after the person has moved the map', () => {
+    renderMap();
+    expect(screen.queryByLabelText('Show my location')).toBeNull();
+
+    drag([{ dx: -50, dy: -30 }, { dx: -110, dy: -70 }]);
+
+    expect(screen.getByLabelText('Show my location')).toBeTruthy();
+  });
+
+  it('goes back to where the person is when asked', () => {
+    renderMap();
+    const home = firstTilePosition();
+    drag([{ dx: -50, dy: -30 }, { dx: -110, dy: -70 }]);
+    expect(firstTilePosition()).not.toEqual(home);
+
+    act(() => {
+      fireEvent.press(screen.getByLabelText('Show my location'));
+    });
+
+    expect(firstTilePosition()).toEqual(home);
+    // And the control retires itself, because there is nothing to go back to.
+    expect(screen.queryByLabelText('Show my location')).toBeNull();
+  });
+
+  it('says what each control does rather than what it looks like', () => {
+    // Regression: the label used to be inferred from the glyph — anything
+    // that was not "+" announced itself as "Zoom out". The recentre button
+    // therefore promised a screen-reader user it would zoom out and then
+    // moved the map instead.
+    renderMap();
+    drag([{ dx: -50, dy: -30 }, { dx: -110, dy: -70 }]);
+
+    expect(screen.getByLabelText('Zoom in')).toBeTruthy();
+    expect(screen.getByLabelText('Zoom out')).toBeTruthy();
+    expect(screen.getByLabelText('Show my location')).toBeTruthy();
+  });
+
+  it('still lets a tap reach a pin underneath', () => {
+    // Why the responder claims on move and not on touch. If this breaks,
+    // the map is draggable and every pin is dead.
+    const onSelect = jest.fn();
+    renderMap({
+      markers: [{ id: 'a', position: { lat: 40.1772, lng: 44.5035 }, render: () => <View /> }],
+      onSelect,
+    });
+
+    const frame = mapFrame().props;
+    expect(frame.onStartShouldSetResponder?.({ nativeEvent: {} })).toBeFalsy();
+  });
+});

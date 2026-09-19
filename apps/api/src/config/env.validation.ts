@@ -37,9 +37,38 @@ class EnvironmentVariables {
   @MinLength(32, { message: 'JWT_ACCESS_SECRET must be at least 32 characters' })
   JWT_ACCESS_SECRET: string;
 
+  /**
+   * The secret being retired during a rotation.
+   *
+   * Optional, because outside a rotation window it must not be set at all —
+   * a second accepted key that nobody is retiring is simply a second live
+   * key. Held to the same length as the live one when it is present: a
+   * rotation is not an excuse to accept a weaker key for fifteen minutes,
+   * and this check was missing when the feature was first added.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(32, { message: 'JWT_ACCESS_SECRET_PREVIOUS must be at least 32 characters' })
+  JWT_ACCESS_SECRET_PREVIOUS?: string;
+
+  /**
+   * **Deprecated, and it never did anything.**
+   *
+   * Refresh tokens are opaque random strings stored as SHA-256 hashes in
+   * `refresh_tokens`; they are not JWTs, and nothing in the API reads this
+   * value — verified by searching for it. It was required at boot, which is
+   * worse than harmless: a deployment that rotated it believing sessions
+   * were being cut was mistaken about what it had done.
+   *
+   * Now optional, so a deployment need not carry a secret that does nothing,
+   * but still quality-checked when present — a value that exists should not
+   * be a weak one, and the checks below also stop it being set equal to the
+   * access secret.
+   */
+  @IsOptional()
   @IsString()
   @MinLength(32, { message: 'JWT_REFRESH_SECRET must be at least 32 characters' })
-  JWT_REFRESH_SECRET: string;
+  JWT_REFRESH_SECRET?: string;
 }
 
 /**
@@ -117,7 +146,7 @@ export function assertProductionJwtSecretsAreStrong(env: EnvironmentVariables): 
         'change-me/example/test pattern). Generate a real one: openssl rand -hex 32',
     );
   }
-  if (looksLikePlaceholderSecret(env.JWT_REFRESH_SECRET)) {
+  if (env.JWT_REFRESH_SECRET && looksLikePlaceholderSecret(env.JWT_REFRESH_SECRET)) {
     problems.push(
       'JWT_REFRESH_SECRET looks like a placeholder/example value (matches a known ' +
         'change-me/example/test pattern). Generate a real one: openssl rand -hex 32',
@@ -129,13 +158,37 @@ export function assertProductionJwtSecretsAreStrong(env: EnvironmentVariables): 
         'characters for its length). Generate a real one: openssl rand -hex 32',
     );
   }
-  if (hasLowEntropy(env.JWT_REFRESH_SECRET)) {
+  if (env.JWT_REFRESH_SECRET && hasLowEntropy(env.JWT_REFRESH_SECRET)) {
     problems.push(
       'JWT_REFRESH_SECRET does not look cryptographically random (too few distinct ' +
         'characters for its length). Generate a real one: openssl rand -hex 32',
     );
   }
-  if (env.JWT_ACCESS_SECRET && env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+  if (env.JWT_ACCESS_SECRET_PREVIOUS) {
+    if (looksLikePlaceholderSecret(env.JWT_ACCESS_SECRET_PREVIOUS)) {
+      problems.push(
+        'JWT_ACCESS_SECRET_PREVIOUS looks like a placeholder/example value. A retiring ' +
+          'key still signs nothing but still verifies — it must be a real one.',
+      );
+    }
+    if (hasLowEntropy(env.JWT_ACCESS_SECRET_PREVIOUS)) {
+      problems.push(
+        'JWT_ACCESS_SECRET_PREVIOUS does not look cryptographically random (too few ' +
+          'distinct characters).',
+      );
+    }
+    if (env.JWT_ACCESS_SECRET === env.JWT_ACCESS_SECRET_PREVIOUS) {
+      problems.push(
+        'JWT_ACCESS_SECRET_PREVIOUS is the same value as JWT_ACCESS_SECRET, so nothing ' +
+          'is being rotated. Set it to the key you are retiring, or unset it.',
+      );
+    }
+  }
+  if (
+    env.JWT_ACCESS_SECRET &&
+    env.JWT_REFRESH_SECRET &&
+    env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET
+  ) {
     problems.push(
       'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must not be the same value — a leaked ' +
         'or forged token of one kind must not also be valid as the other.',
@@ -162,5 +215,60 @@ export function validate(config: Record<string, unknown>) {
     );
   }
   assertProductionJwtSecretsAreStrong(validatedConfig);
+  assertProviderPaymentsConfigured(config);
   return validatedConfig;
+}
+
+/**
+ * Turning the in-TuTak payment route on is a promise that bills can be
+ * opened and callbacks verified. A deployment that makes the promise
+ * without the credentials or the form action behind it must not boot —
+ * fail closed at start, not at the first customer.
+ *
+ * Read from the raw config rather than the validated class so the three
+ * variables stay optional for every deployment that has the route off,
+ * which is all of them until activation.
+ */
+export function assertProviderPaymentsConfigured(config: Record<string, unknown>): void {
+  if (config.TUTAK_PSP_ENABLED !== 'true') return;
+
+  const missing = ['IDRAM_MERCHANT_ID', 'IDRAM_SECRET_KEY', 'IDRAM_FORM_ACTION'].filter(
+    (name) => typeof config[name] !== 'string' || (config[name] as string).trim() === '',
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `TUTAK_PSP_ENABLED=true but ${missing.join(', ')} not set. The provider route cannot ` +
+        'open a bill it could not hand off or verify. Set them, or turn the route off.',
+    );
+  }
+
+  const action = String(config.IDRAM_FORM_ACTION);
+  if (!/^https:\/\//.test(action)) {
+    throw new Error(
+      `IDRAM_FORM_ACTION must be an https URL (got "${action}"). A customer's payment form ` +
+        'must not be posted over plain HTTP.',
+    );
+  }
+
+  // Real money needs a human on the other end of the alert channel. Without
+  // a webhook, a callback the worker gave up on — a customer who paid for a
+  // purchase that never completed — goes to a console line in a container
+  // nobody is attached to. `AlertsModule` only *warns* about a missing
+  // webhook, because the ordinary till route must not go down over a
+  // notification endpoint; the provider route is the one where money can be
+  // taken and stay unaccounted for, so it is the one that must not start blind.
+  const webhook =
+    typeof config.ALERT_WEBHOOK_URL === 'string' ? config.ALERT_WEBHOOK_URL.trim() : '';
+  if (webhook === '') {
+    throw new Error(
+      'TUTAK_PSP_ENABLED=true but ALERT_WEBHOOK_URL not set. A dead-lettered payment callback ' +
+        'would be logged and nobody told. Set the webhook and prove it with `pnpm alert:verify`, ' +
+        'or turn the route off.',
+    );
+  }
+  if (!/^https:\/\//.test(webhook)) {
+    throw new Error(
+      `ALERT_WEBHOOK_URL must be an https URL when TUTAK_PSP_ENABLED=true (got "${webhook}").`,
+    );
+  }
 }

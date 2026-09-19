@@ -16,11 +16,23 @@ describe('alert:verify', () => {
   const webhook = { name: 'webhook', send: jest.fn() } as unknown as AlertChannel;
   const console_ = { name: 'console', send: jest.fn() } as unknown as AlertChannel;
 
-  const alertsThatReport = (sent: boolean) =>
-    ({ fire: jest.fn().mockResolvedValue(sent) }) as unknown as AlertsService;
+  const alertsThatReport = (outcome: {
+    suppressed?: boolean;
+    delivered?: boolean;
+    detail?: string;
+  }) =>
+    ({
+      fire: jest.fn().mockResolvedValue({
+        suppressed: outcome.suppressed ?? false,
+        delivered: outcome.delivered ?? false,
+        channel: 'irrelevant',
+        detail: outcome.detail ?? '',
+      }),
+    }) as unknown as AlertsService;
+  const accepted = { delivered: true, detail: 'webhook answered 200' };
 
   it('reports success only when a real channel accepted it', async () => {
-    const result = await runAlertVerify(alertsThatReport(true), webhook);
+    const result = await runAlertVerify(alertsThatReport(accepted), webhook);
 
     expect(result).toMatchObject({ sent: true, channel: 'webhook' });
   });
@@ -30,7 +42,7 @@ describe('alert:verify', () => {
     // `ALERT_WEBHOOK_URL` is unset, and the fallback is deliberately quiet
     // enough to boot with. A verification tool that counted it as success
     // would certify precisely the state it exists to detect.
-    const result = await runAlertVerify(alertsThatReport(true), console_);
+    const result = await runAlertVerify(alertsThatReport(accepted), console_);
 
     expect(result.sent).toBe(false);
     expect(result.reason).toMatch(/ALERT_WEBHOOK_URL is not set/);
@@ -40,10 +52,33 @@ describe('alert:verify', () => {
     // The key is timestamped, so suppression cannot legitimately claim it.
     // If it did, the suppression store — not the webhook — is what is broken,
     // and that is a different thing to go and fix.
-    const result = await runAlertVerify(alertsThatReport(false), webhook);
+    const result = await runAlertVerify(alertsThatReport({ suppressed: true }), webhook);
 
     expect(result.sent).toBe(false);
     expect(result.reason).toMatch(/REDIS_URL/);
+  });
+
+  /**
+   * The case the first version got wrong. The channel POSTed, the receiver
+   * said 500 (or nothing at all), the channel logged it and returned — and
+   * this script printed "Sent through the webhook channel". An operator who
+   * trusts that line has certified a dead alert channel.
+   */
+  it('refuses to call a rejected or unreachable webhook a delivered alert', async () => {
+    const rejected = await runAlertVerify(
+      alertsThatReport({ delivered: false, detail: 'webhook answered 500 Internal Server Error' }),
+      webhook,
+    );
+    expect(rejected.sent).toBe(false);
+    expect(rejected.reason).toMatch(/did not accept/);
+    expect(rejected.reason).toMatch(/500/);
+
+    const unreachable = await runAlertVerify(
+      alertsThatReport({ delivered: false, detail: 'webhook unreachable: fetch failed' }),
+      webhook,
+    );
+    expect(unreachable.sent).toBe(false);
+    expect(unreachable.reason).toMatch(/unreachable/);
   });
 
   it('gives every run its own key, so a second run is not swallowed', () => {

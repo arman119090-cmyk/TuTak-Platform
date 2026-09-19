@@ -89,7 +89,7 @@
   <body>
     <main>
       <h1>Privacy Policy</h1>
-      <p class="updated">TuTak · Last updated 9 August 2026</p>
+      <p class="updated">TuTak · Last updated 13 September 2026</p>
 
       <div class="card">
         <p>
@@ -105,10 +105,10 @@
       </div>
 
       <p>
-        TuTak is a loyalty and payments app: you pay at partner merchants,
-        earn points, and charge an electric vehicle. This page explains what
-        we hold about you, why we need it, how long we keep it, and how to
-        make us delete it.
+        TuTak is a loyalty app: you buy from partner merchants as you normally
+        would, earn points for it, spend those points at other partners, and
+        charge an electric vehicle. This page explains what we hold about you,
+        why we need it, how long we keep it, and how to make us delete it.
       </p>
 
       <h2>Who is responsible</h2>
@@ -139,8 +139,8 @@
               <td>Stored only as an Argon2 hash. Nobody at TuTak can read it, including us.</td>
             </tr>
             <tr>
-              <td><strong>Payments</strong> — amount, merchant, time, and a reference from the acquirer</td>
-              <td>To take the payment, to pay the merchant, to calculate your points, and to handle refunds and disputes. <strong>We never see or store your card number</strong> — the payment provider gives us a token instead.</td>
+              <td><strong>Purchases</strong> — amount, merchant, branch and time</td>
+              <td>To calculate your points, to settle with the merchant, and to handle refunds. <strong>No card details of any kind reach TuTak</strong> — see the note below this table.</td>
             </tr>
             <tr>
               <td><strong>Points ledger</strong></td>
@@ -168,6 +168,15 @@
 
       <div class="card">
         <p>
+          <strong>Card payments.</strong> TuTak does not currently process
+          card payments at all: there is no live card acquirer connected, and
+          no card number, expiry or token passes through or is stored by the
+          platform. You pay the merchant however you normally would, and TuTak
+          only records the purchase so it can award and spend points. If a card
+          acquirer is connected later, this page will be updated to say who it
+          is and what reaches them, before it is switched on.
+        </p>
+        <p>
           <strong>What we do not do.</strong> We do not sell your data. We do
           not share it with advertisers. We do not track you across other apps
           or websites. There are no third-party analytics or advertising SDKs
@@ -175,20 +184,69 @@
         </p>
       </div>
 
-      <h2>Camera and notifications</h2>
+      <h2>Camera, notifications and location</h2>
       <p>
         The app asks for your <strong>camera</strong> only to scan a payment QR
         code. Frames are read on your phone to find the code and are never
         uploaded or stored. It asks for <strong>notifications</strong> only
         after you have signed in, to tell you about your own payments, points
-        and charging sessions. Both are optional; the rest of the app works
-        without them.
+        and charging sessions. All three permissions on this page are optional;
+        the rest of the app works without them.
       </p>
+      <p>
+        It asks for your <strong>location</strong> for one thing: to sort the
+        list of nearby partners by how close they are to you.
+      </p>
+      <p>
+        To do that, the app <strong>does send your coordinates to our
+        server</strong> — they are the query. What happens to them afterwards
+        is the part that matters: <strong>they are not written to our
+        database.</strong> They are used to answer one question — which
+        partners are near this point — and the answer is all that is kept.
+        There is no table holding a customer's position, now or historically.
+      </p>
+      <p>
+        Refuse, and the map opens on the centre of Yerevan and says on screen
+        that it is showing the city centre rather than you.
+      </p>
+
+      <h2>The map</h2>
+      <p>
+        Map images come from <strong>MapTiler</strong>, an outside provider.
+        Your device fetches them directly, so MapTiler does not receive your
+        GPS reading from us — but it does receive
+        <strong>your IP address and the tiles you ask for</strong>, and which
+        tiles those are follows from the part of the map you are looking at.
+        In practice that tells them roughly where you are looking, which is
+        usually roughly where you are. Their own handling of that is governed
+        by their privacy policy, not ours.
+      </p>
+
+      <h2>Two things you switch on yourself</h2>
+      <p>
+        Both are <strong>off unless you turn them on</strong>, and turning
+        either off takes effect on your very next request.
+      </p>
+      <ul>
+        <li>
+          <strong>Personalised ordering.</strong> Sorts nearby partners using
+          the categories you actually spend in. Switching it on collects
+          nothing new — the calculation runs over the purchase history we
+          already hold, at the moment you ask, and is not saved.
+        </li>
+        <li>
+          <strong>Your photo in your inviter's list.</strong> Lets the person
+          who invited you see your profile picture in their own list of direct
+          invitees. It controls nothing else: no other screen, no merchant,
+          and no administrator response treats it as permission to show your
+          photo.
+        </li>
+      </ul>
 
       <h2>Who else sees it</h2>
       <ul>
         <li><strong>The merchant you paid</strong> sees that payment — amount, time, and enough to identify it — because they have to be able to refund it.</li>
-        <li><strong>Our payment provider</strong> processes the card. They hold the card details; we hold their token.</li>
+        <li><strong>MapTiler</strong>, our map provider, receives your IP address and the map tiles your device requests, which correspond to the area you are viewing.</li>
         <li><strong>Charging network operators</strong> receive the session details for stations they run, so the session can be authorised and billed.</li>
         <li><strong>Our SMS provider</strong> receives your phone number to deliver verification codes.</li>
         <li><strong>Authorities</strong>, where the law requires it and to the extent it requires it.</li>
@@ -222,10 +280,18 @@
         page</a>.
       </p>
       <p>
-        You get a <strong>30-day grace period</strong>: the account is
-        deactivated immediately and you can sign in during those 30 days to
-        cancel. After that, your personal details are anonymised
-        irreversibly — name, phone, email and device identifiers are removed.
+        Deletion happens in two stages. <strong>Immediately</strong>, your
+        access ends: every session is revoked, every device is unlinked, and
+        you cannot sign in again. <strong>Thirty days later</strong>, your
+        personal details are anonymised irreversibly — name, phone, email and
+        device identifiers are removed.
+      </p>
+      <p>
+        During those thirty days a deletion can still be undone, but not by
+        signing in — you no longer can. Write to
+        <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a> from the phone
+        number on the account and we will restore it. After thirty days the
+        phone number is gone and there is nothing left to restore you from.
       </p>
       <p>
         <strong>Your financial records are not deleted, and cannot be.</strong>
@@ -250,10 +316,11 @@
       <p>
         Traffic is encrypted in transit. Passwords are Argon2 hashes. On your
         phone, your session lives in the iOS Keychain or the Android Keystore,
-        which the operating system encrypts. Backups of our database are
-        encrypted before they leave the machine that made them. Access to
-        production data is restricted and every administrator action is
-        recorded.
+        which the operating system encrypts. Access to production data is
+        restricted and every administrator action is recorded. Database
+        backups are taken regularly; our backup tooling supports encrypting
+        each dump at rest, and we will state here that it is switched on once
+        that is confirmed for the production deployment rather than before.
       </p>
       <p>
         No system is perfectly secure. If a breach affects you, we will tell

@@ -1,4 +1,8 @@
-import { Alert, AlertChannel } from '../../src/infrastructure/alerts/alert-channel.interface';
+import {
+  Alert,
+  AlertChannel,
+  AlertDelivery,
+} from '../../src/infrastructure/alerts/alert-channel.interface';
 
 /**
  * Captures alerts instead of delivering them.
@@ -11,9 +15,9 @@ export class RecordingAlertChannel implements AlertChannel {
   readonly name = 'recording';
   readonly sent: Alert[] = [];
 
-  send(alert: Alert): Promise<void> {
+  send(alert: Alert): Promise<AlertDelivery> {
     this.sent.push(alert);
-    return Promise.resolve();
+    return Promise.resolve({ delivered: true, detail: 'recorded by the test channel' });
   }
 
   clear(): void {

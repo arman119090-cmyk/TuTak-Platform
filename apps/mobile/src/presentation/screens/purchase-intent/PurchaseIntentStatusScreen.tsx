@@ -6,7 +6,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { PurchaseIntentStatus as Status, type PurchaseIntentDto } from '@tutak/shared-types';
+import {
+  PaymentRoute,
+  PurchaseIntentStatus as Status,
+  type PurchaseIntentDto,
+} from '@tutak/shared-types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
@@ -299,13 +303,25 @@ export function PurchaseIntentStatusScreen() {
   }
 
   // AWAITING_CONFIRMATION
+  //
+  // A provider-routed purchase waits for two different things in turn, and
+  // conflating them would mislead: first the business agrees the amount, then
+  // the customer pays. Until `merchantApprovedAt` exists there is nothing to
+  // pay — the server refuses a bill — so the Pay control only appears once it
+  // does. The till code below stays either way: it is how the cashier finds
+  // the purchase to approve it in the first place.
+  const viaProvider = intent.paymentRoute === PaymentRoute.TUTAK_PSP;
+  const readyToPay = viaProvider && !!intent.merchantApprovedAt;
+
   return (
     <Screen title={t('purchaseIntent.statusTitle')}>
       <Surface style={{ paddingVertical: space[8] }}>
         <View style={{ alignItems: 'center' }}>
           <ActivityIndicator color={color.primary} />
           <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
-            {t('purchaseIntent.awaiting')}
+            {viaProvider && !readyToPay
+              ? t('purchaseIntent.awaitingApproval', 'Waiting for the business to agree the amount')
+              : t('purchaseIntent.awaiting')}
           </Text>
           <BrandLine brand={intent.partnerBrand} />
           <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
@@ -315,6 +331,16 @@ export function PurchaseIntentStatusScreen() {
             <Text style={[text.bodySm, { color: color.reservedText, marginTop: space[2] }]}>
               −{formatPoints(intent.bonusAmountRequested)} {t('qr.applyBonus').toLowerCase()}
             </Text>
+          ) : null}
+          {readyToPay ? (
+            <View style={{ marginTop: space[5], alignSelf: 'stretch' }}>
+              <Button
+                label={t('psp.pay', 'Pay')}
+                onPress={() =>
+                  navigation.navigate('ProviderPayment', { purchaseIntentId: intent.id })
+                }
+              />
+            </View>
           ) : null}
           {/*
             What the cashier actually needs: four digits the customer can

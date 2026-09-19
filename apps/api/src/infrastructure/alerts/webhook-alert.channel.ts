@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { Alert, AlertChannel } from './alert-channel.interface';
+import { Alert, AlertChannel, AlertDelivery } from './alert-channel.interface';
 
 const TIMEOUT_MS = 5_000;
 
@@ -25,7 +25,7 @@ export class WebhookAlertChannel implements AlertChannel {
     private readonly environment: string,
   ) {}
 
-  async send(alert: Alert): Promise<void> {
+  async send(alert: Alert): Promise<AlertDelivery> {
     const icon = alert.severity === 'critical' ? '🔴' : '🟡';
     const lines = [
       `${icon} *${alert.title}* — ${this.environment}`,
@@ -58,15 +58,16 @@ export class WebhookAlertChannel implements AlertChannel {
       });
 
       if (!response.ok) {
-        this.logger.error(
-          `Alert '${alert.key}' was not accepted by the webhook: ${response.status} ${response.statusText}`,
-        );
+        const detail = `webhook answered ${response.status} ${response.statusText}`.trim();
+        this.logger.error(`Alert '${alert.key}' was not accepted by the webhook: ${detail}`);
+        return { delivered: false, detail };
       }
+      return { delivered: true, detail: `webhook answered ${response.status}` };
     } catch (err) {
-      // Deliberately swallowed — see the note on AlertChannel.
-      this.logger.error(
-        `Alert '${alert.key}' could not be delivered: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // Deliberately swallowed — see the note on AlertChannel — but reported.
+      const detail = `webhook unreachable: ${err instanceof Error ? err.message : String(err)}`;
+      this.logger.error(`Alert '${alert.key}' could not be delivered: ${detail}`);
+      return { delivered: false, detail };
     }
   }
 }

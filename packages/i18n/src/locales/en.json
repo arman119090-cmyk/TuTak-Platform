@@ -468,5 +468,12 @@
     "unlock": "Unlock",
     "failed": "Could not unlock. Try again or sign in with SMS / password.",
     "otherLogin": "Sign out and use SMS / password"
+  },
+  "unitOfMeasure": {
+    "LITER": "L",
+    "KWH": "kWh",
+    "KILOGRAM": "kg",
+    "ITEM": "pcs",
+    "HOUR": "h"
   }
 }

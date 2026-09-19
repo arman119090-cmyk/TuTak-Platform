@@ -62,6 +62,29 @@ enum PermissionName {
   /// cashier) does this as their ordinary job, while only PARTNER_MANAGE
   /// reaches the negotiated rate and the bonus-payment cap.
   PURCHASE_INTENT_CONFIRM
+  /// Start and inspect provider payments, and read their state. Held by the
+  /// customer's own routes implicitly (ownership is checked in the service);
+  /// this one is for staff and admin surfaces.
+  PSP_READ
+  /// Resolve a payment nobody can account for: propose or confirm a manual
+  /// reconciliation. Finance only — the two halves are separate acts by
+  /// separate people, and this permission gates both.
+  PSP_RECONCILE
+  /// Draft, ready, approve and record transfers on a partner settlement.
+  SETTLEMENT_MANAGE
+  /// Read a settlement and its itemisation. A partner holds this for their
+  /// own settlements; finance holds it for everyone's.
+  SETTLEMENT_READ
+  /// Propose a change to a partner's commercial terms.
+  CONTRIBUTION_RULE_PROPOSE
+  /// Approve or reject somebody else's proposal. Deliberately a different
+  /// permission from proposing, so "two people" can be enforced by role and
+  /// not only by comparing user ids.
+  CONTRIBUTION_RULE_APPROVE
+  /// Record that the acquirer actually settled money into the bank.
+  ACQUIRER_SETTLEMENT_MANAGE
+  /// Read the liquidity position: cash, receivables, payables, exposure.
+  TREASURY_READ
 }
 
 model Role {
@@ -700,7 +723,7 @@ model PurchaseIntent {
   /// printed slip and in a spoken sentence, and an integer column cannot
   /// keep the leading zeros that half of all codes need.
   /// Null on every row created before this column existed.
-  confirmationCode String?              @db.Char(4)
+  confirmationCode String? @db.Char(4)
 
   grossAmount              Decimal @db.Decimal(18, 4)
   bonusAmountRequested     Decimal @default(0) @db.Decimal(18, 4)
@@ -714,6 +737,81 @@ model PurchaseIntent {
   /// `PurchaseIntentRefundService`.
   refundedAmount           Decimal @default(0) @db.Decimal(18, 4)
 
+  /// How the real-money remainder is settled. Fixed when the purchase is
+  /// created and never changed: see `PaymentRoute`'s own docblock for why
+  /// immutability here is what makes double payment structurally impossible
+  /// rather than merely unlikely.
+  ///
+  /// Defaults to DIRECT_PARTNER so every purchase that existed before this
+  /// column did is described correctly — they were all direct, because
+  /// nothing else existed.
+  paymentRoute PaymentRoute @default(DIRECT_PARTNER)
+
+  /// What the customer handed over on a DIRECT purchase, recorded by the
+  /// cashier at confirmation. Null until confirmed, and always null on a
+  /// TUTAK_PSP purchase.
+  directTender DirectTender?
+
+  /// Quantity sold, for partners who price per unit — 50 litres at 300 AMD.
+  /// All three are snapshots: a fuel price that changes tomorrow must not
+  /// change what yesterday's receipt says. Null together for a partner who
+  /// simply charges a total.
+  quantity     Decimal?       @db.Decimal(18, 4)
+  quantityUnit UnitOfMeasure?
+  unitPrice    Decimal?       @db.Decimal(18, 4)
+
+  /// ── Merchant authorisation ────────────────────────────────────────────
+  ///
+  /// A payment provider confirms that money moved. It cannot confirm that a
+  /// sale happened, what was sold, or for how much — and on this platform the
+  /// *customer* supplies all three when they open a purchase.
+  ///
+  /// Without this, a customer could type 500 litres, pay the resulting bill
+  /// through Idram, and have one verified callback credit the partner's
+  /// `PARTNER_PAYABLE`, mint their own cashback and pay their referrers on a
+  /// sale that never happened. The provider would have done nothing wrong:
+  /// the money genuinely moved. Arman's decision of 15.09.2026 is that
+  /// somebody at the business has to agree the economics first.
+  ///
+  /// So a non-integrated partner's staff approve the snapshot — gross, bonus,
+  /// quantity, unit, unit price, and the terms version — **before** a bill
+  /// may be opened, and from that moment those columns are immutable at the
+  /// database level. What approval *means* then differs by route:
+  ///
+  ///  - `DIRECT_PARTNER`: the cashier's confirmation is both the approval and
+  ///    the statement that the money is in the till. One act, as it always
+  ///    was — `confirm()` stamps these columns on the way past.
+  ///  - `TUTAK_PSP`: approval only authorises the bill. The purchase is
+  ///    completed by the provider's verified callback and by nothing else.
+  ///
+  /// For an integrated POS or pump this is where an authoritative integration
+  /// event will sit instead. `PartnerIntegration` exists as a registry with
+  /// no event path yet, so that is deliberately not built.
+  merchantApprovedByUserId String?
+  merchantApprovedAt       DateTime?
+  /// What the member of staff actually keyed in to confirm the line item,
+  /// kept as evidence that they saw it rather than clicked past it.
+  merchantApprovalNote     String?
+
+  /// The commercial terms this purchase was priced under, named exactly.
+  ///
+  /// Null on every purchase made before 15.09.2026 and on every partner who
+  /// has no rule row, which is why `negotiatedRateBps` below is still
+  /// written and still read: a percentage partner with no rule behaves
+  /// exactly as it did, and nothing about the old rows had to be migrated or
+  /// reinterpreted.
+  ///
+  /// `contributionRuleVersion` and `contributionRuleKind` are duplicated out
+  /// of the rule on purpose. The foreign key already reaches the row, but a
+  /// receipt should be readable without a join, and a rule that is one day
+  /// deleted in a database restore should not take the description of what
+  /// was charged with it.
+  contributionRuleId      String?
+  contributionRuleVersion Int?
+  contributionRuleKind    ContributionRuleKind?
+
+  /// The legacy single-number snapshot. Still the source of truth for a
+  /// purchase with no rule snapshot; ignored when there is one.
   negotiatedRateBps      Int
   maxBonusPaymentPercent Int
 
@@ -823,17 +921,28 @@ model PurchaseIntent {
 
   brandLogoAsset MediaAsset? @relation("PurchaseIntentBrandLogo", fields: [brandLogoAssetId], references: [id])
 
-  customer    User                   @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
-  partner     Partner                @relation(fields: [partnerId], references: [id])
-  branch      PartnerBranch?         @relation(fields: [partnerBranchId], references: [id])
-  confirmedBy User?                  @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
-  rejectedBy     User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
-  refunds        PurchaseIntentRefund[]
-  refundRequests PurchaseIntentRefundRequest[]
+  customer           User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
+  partner            Partner                       @relation(fields: [partnerId], references: [id])
+  contributionRule   PartnerContributionRule?      @relation(fields: [contributionRuleId], references: [id])
+  branch             PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
+  confirmedBy        User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  rejectedBy         User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
+  refunds            PurchaseIntentRefund[]
+  refundRequests     PurchaseIntentRefundRequest[]
+  pspPaymentAttempts PspPaymentAttempt[]
 
   @@index([partnerId, status])
   @@index([status, expiresAt])
   @@index([customerId, status])
+  /// At most one *unfinished* purchase per customer per business, whatever
+  /// route it collects on. A partial unique index created by migration — see
+  /// `20260915150000_one_live_purchase_per_customer_partner` for the race it
+  /// closes. Prisma cannot express a partial unique index, so it is declared
+  /// there and not here; this comment exists so the next reader of this model
+  /// knows the constraint is real.
+  //   CREATE UNIQUE INDEX purchase_intents_one_live_per_customer_partner
+  //     ON purchase_intents (customerId, partnerId)
+  //     WHERE status = 'AWAITING_CONFIRMATION';
   @@map("purchase_intents")
 }
 
@@ -860,7 +969,7 @@ enum RefundRequestStatus {
 /// nothing that has not been approved may ever appear in that table. The two
 /// are linked by `refundId` once, at approval.
 model PurchaseIntentRefundRequest {
-  id               String  @id @default(uuid())
+  id               String   @id @default(uuid())
   purchaseIntentId String
   /// Denormalized from the purchase so an approver's queue is one indexed
   /// read, and so branch isolation filters in SQL rather than by walking
@@ -877,7 +986,7 @@ model PurchaseIntentRefundRequest {
   status RefundRequestStatus @default(PENDING)
 
   requestedByUserId String
-  requestedAt       DateTime @default(now())
+  requestedAt       DateTime  @default(now())
   decidedByUserId   String?
   decidedAt         DateTime?
   decisionNote      String?
@@ -935,8 +1044,8 @@ model PurchaseIntentRefund {
   idempotencyKey      String?
   createdAt           DateTime @default(now())
 
-  purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
-  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  purchaseIntent    PurchaseIntent               @relation(fields: [purchaseIntentId], references: [id])
+  ledgerTransaction LedgerTransaction?           @relation(fields: [ledgerTransactionId], references: [id])
   request           PurchaseIntentRefundRequest?
 
   @@unique([actorId, idempotencyKey])
@@ -1089,22 +1198,33 @@ model Partner {
   evStations             EvStation[]
   userRoles              UserRole[]
   payments               Payment[]
-  settlements            Settlement[]
-  payouts                Payout[]
-  collections            PartnerCollection[]
-  purchaseIntents        PurchaseIntent[]
-  refundRequests         PurchaseIntentRefundRequest[]
-  offerings              PartnerOfferingItem[]
-  apiKeys                PartnerApiKey[]
-  roamingCustomerLinks   RoamingCustomerLink[]
+  /// How often this partner is settled. Per-partner, not one global period:
+  /// a weekly restaurant and a monthly fuel chain are both normal, and
+  /// hardcoding one cadence would force the other into it (Arman, 14.09.2026).
+  settlementPeriodicity  SettlementPeriodicity          @default(MONTHLY)
+  /// Day the period is anchored to. 1-7 (Mon-Sun) for WEEKLY/BIWEEKLY, 1-28
+  /// for MONTHLY — 28 so a monthly anchor exists in February too.
+  settlementAnchorDay    Int                            @default(1)
+
+  settlements          Settlement[]
+  payouts              Payout[]
+  collections          PartnerCollection[]
+  partnerSettlements   PartnerSettlement[]
+  bankAccounts         PartnerBankAccount[]
+  purchaseIntents      PurchaseIntent[]
+  refundRequests       PurchaseIntentRefundRequest[]
+  offerings            PartnerOfferingItem[]
+  apiKeys              PartnerApiKey[]
+  roamingCustomerLinks RoamingCustomerLink[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
-  referralCode           ReferralCode?
-  referralInvitesMade    ReferralInvite[]               @relation("PartnerReferrer")
+  referralCode         ReferralCode?
+  referralInvitesMade  ReferralInvite[]              @relation("PartnerReferrer")
 
-  logoAsset   MediaAsset?  @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
-  coverAsset  MediaAsset?  @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
-  mediaAssets MediaAsset[] @relation("MediaAssetSubjectPartner")
+  logoAsset                MediaAsset?               @relation("PartnerLogoAsset", fields: [logoAssetId], references: [id])
+  coverAsset               MediaAsset?               @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
+  mediaAssets              MediaAsset[]              @relation("MediaAssetSubjectPartner")
+  partnerContributionRules PartnerContributionRule[]
 
   @@map("partners")
 }
@@ -2273,6 +2393,8 @@ model LedgerTransaction {
   acquirerSettlement   AcquirerSettlement?
   partnerCollection    PartnerCollection?
   balanceTopUp         BalanceTopUp?
+  partnerSettlement    PartnerSettlement?
+  pspPaymentAttempt    PspPaymentAttempt?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -2289,8 +2411,11 @@ model LedgerPosting {
   currency      Currency         @default(AMD)
   createdAt     DateTime         @default(now())
 
-  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  account     LedgerAccount     @relation(fields: [accountId], references: [id])
+  transaction     LedgerTransaction       @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account         LedgerAccount           @relation(fields: [accountId], references: [id])
+  /// Set once this posting has been claimed by a partner settlement. Its
+  /// absence is what makes a posting "unsettled".
+  settlementEntry PartnerSettlementEntry?
 
   @@index([accountId, id])
   @@index([transactionId])
@@ -2764,6 +2889,744 @@ enum ReconciliationStatus {
 /// Drift is recorded and escalated, never auto-corrected: a reconciliation
 /// engine that silently adjusts balances hides exactly the bug it exists to
 /// find.
+/// How often a partner is settled. Per-partner — see `Partner.settlementPeriodicity`.
+enum SettlementPeriodicity {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+/// Where a partner's bank transfer goes.
+///
+/// Rows are never edited. Changing a partner's details deactivates the old
+/// row and inserts a new one, so "what were the details when we paid them in
+/// March" is answerable from the table itself rather than from an audit log
+/// that might have been pruned. A settlement additionally snapshots the
+/// details it was approved against (`PartnerSettlement.beneficiarySnapshot`),
+/// because the answer has to survive even this table being corrected later.
+model PartnerBankAccount {
+  id               String    @id @default(uuid())
+  partnerId        String
+  beneficiaryName  String
+  /// Free-form on purpose: IBAN in some banks, a domestic account number in
+  /// others. Validation belongs to whoever knows the banking rules, not here.
+  accountNumber    String
+  bankName         String
+  swiftBic         String?
+  isActive         Boolean   @default(true)
+  createdByUserId  String?
+  createdAt        DateTime  @default(now())
+  /// Set when a newer row replaced this one. Never deleted.
+  replacedAt       DateTime?
+  replacedByUserId String?
+
+  partner     Partner             @relation(fields: [partnerId], references: [id])
+  settlements PartnerSettlement[]
+
+  /// At most one live destination per partner. A partial index, so the
+  /// history rows (isActive = false) are unconstrained.
+  @@index([partnerId, isActive])
+  @@map("partner_bank_accounts")
+}
+
+/// Who raised the doubt about a bank transfer.
+///
+/// Arman's decision of 15.09.2026: a partner may *report* that a transfer did
+/// not arrive, and may not *confirm* whether money moved. The two are
+/// different acts and this column is what keeps them apart — a settlement
+/// flagged by a partner's report reads differently from one flagged by
+/// finance, and only finance can resolve either.
+enum ReconciliationSource {
+  /// Finance noticed it: a timeout, a reference the bank cannot find.
+  FINANCE
+  /// The partner said the money never arrived. A report, not a finding.
+  PARTNER_REPORT
+}
+
+/// What a human established the ambiguous transfer actually did.
+enum ReconciliationOutcome {
+  /// The statement shows the debit. The settlement closes as paid.
+  MONEY_MOVED
+  /// The statement shows no debit. The settlement becomes retryable.
+  MONEY_DID_NOT_MOVE
+}
+
+enum PartnerSettlementStatus {
+  /// Being assembled. Entries are already claimed (so nothing else can take
+  /// them) but no money is promised.
+  DRAFT
+  /// The figures are final and the document is attached. Awaiting approval.
+  READY
+  /// A second admin approved it — the "checker" half of maker/checker.
+  APPROVED
+  /// The bank transfer has been initiated by hand and we are waiting for it
+  /// to land. Nothing is posted yet.
+  PAYMENT_PENDING
+  /// The transfer landed. This is the only status that posts to the ledger,
+  /// and the row is immutable from here on.
+  PAID
+  /// A transfer attempt was rejected or returned. **Not terminal.** The
+  /// settlement keeps its entries and a new transfer may be attempted against
+  /// the same figure: the settlement is the statement of what is owed, and a
+  /// bank refusing one transfer does not change what is owed.
+  ///
+  /// Making this terminal was a real bug — it stranded the claimed postings
+  /// for ever, so a partner whose transfer bounced could never be paid for
+  /// those sales at all. Found by Arman's review.
+  FAILED
+  /// The bank's answer is ambiguous — a timeout, a reference that cannot be
+  /// found, a partial. Never retried automatically: a retry on an ambiguous
+  /// result is how a partner gets paid twice.
+  REQUIRES_RECONCILIATION
+  /// Abandoned before payment. Releases its entries back to unsettled.
+  CANCELLED
+}
+
+/// One period's worth of a partner's payable, frozen.
+///
+/// The unit of settlement is deliberately the existing `LedgerPosting` on the
+/// partner's `PARTNER_PAYABLE` account, not a second parallel partner ledger:
+/// this codebase already keeps immutable double-entry postings, and a rollup
+/// table maintained alongside them would be a second source of truth that can
+/// disagree with the first. `PartnerSettlementEntry` claims postings; a
+/// partner's *unsettled* payable is exactly the postings with no claim.
+///
+/// That one decision gives most of what the brief asks for:
+///
+/// - **A frozen amount.** Once entries are claimed the figure cannot drift,
+///   because a later purchase produces a *new* posting, which by definition
+///   is not in this settlement.
+/// - **No double payment.** Enforced by a unique index on
+///   `PartnerSettlementEntry.ledgerPostingId`, in the database, not in code.
+/// - **Refund after payout.** The reversing postings a refund writes are
+///   simply unclaimed postings, so the next settlement picks them up as
+///   negatives. The PAID settlement is never touched.
+/// - **Explainable debt.** Every claimed posting keeps its own `kind` and
+///   source, so a negative balance can always be itemised back to the
+///   purchases and refunds that produced it.
+model PartnerSettlement {
+  id          String                  @id @default(uuid())
+  partnerId   String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      PartnerSettlementStatus @default(DRAFT)
+  currency    Currency                @default(AMD)
+
+  /// Sum of the claimed CREDIT postings — what the platform owes for.
+  accruedAmount    Decimal @default(0) @db.Decimal(18, 4)
+  /// Sum of the claimed DEBIT postings — commission, refund reversals, and
+  /// the debt carried in from earlier periods.
+  deductionAmount  Decimal @default(0) @db.Decimal(18, 4)
+  /// accrued - deduction. Always > 0 for a settlement that can be paid; a
+  /// non-positive balance is not settled at all, it stays unclaimed and
+  /// carries forward.
+  netPayableAmount Decimal @default(0) @db.Decimal(18, 4)
+  entryCount       Int     @default(0)
+
+  /// The tax/accounting document this payment is made against. Deliberately
+  /// free-form: the Armenian form is a legal question that is not settled,
+  /// and inventing a shape here would be inventing a tax rule.
+  documentNumber    String?
+  documentDate      DateTime?
+  documentReference String?
+
+  /// The bank's own reference for the transfer. Unique per currency, so one
+  /// transfer cannot be used to close two settlements — the same guarantee
+  /// `PartnerCollection` already has for money coming the other way.
+  bankTransferReference String?
+
+  /// Where the money was sent, as it read at approval time. Kept even if the
+  /// partner's details change afterwards.
+  bankAccountId       String?
+  beneficiarySnapshot Json?
+
+  /// ── Reconciliation, when the bank's answer was ambiguous ──────────────
+  ///
+  /// Every column here exists because Arman's decision of 15.09.2026 requires
+  /// that resolving an ambiguous transfer carry evidence and two different
+  /// people. The proposal and the confirmation are separate acts by separate
+  /// actors, exactly as `approve` is separate from `markReady`: one person
+  /// deciding alone that money moved is one person deciding alone to pay a
+  /// partner twice.
+  reconciliationSource            ReconciliationSource?
+  /// Who said something was wrong. May be a partner — that is a report.
+  reconciliationReportedByUserId  String?
+  reconciliationReportedAt        DateTime?
+  /// The proposed answer, and what it rests on. `reconciliationEvidence` is
+  /// free-form on purpose: it is a bank statement line, a reference number, a
+  /// case id from the bank's own support. Requiring a shape would mean
+  /// guessing what the bank provides.
+  reconciliationOutcome           ReconciliationOutcome?
+  reconciliationEvidence          String?
+  reconciliationProposedByUserId  String?
+  reconciliationProposedAt        DateTime?
+  /// The second pair of eyes. Never the proposer, and never the partner.
+  reconciliationConfirmedByUserId String?
+  reconciliationConfirmedAt       DateTime?
+
+  createdByUserId   String?
+  createdAt         DateTime  @default(now())
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  paidByUserId      String?
+  paidAt            DateTime?
+  failedReason      String?
+  cancelledByUserId String?
+  cancelledAt       DateTime?
+  cancelledReason   String?
+
+  /// The payout posting, written only when the status becomes PAID.
+  ledgerTransactionId String? @unique
+
+  updatedAt DateTime @updatedAt
+
+  partner           Partner                            @relation(fields: [partnerId], references: [id])
+  bankAccount       PartnerBankAccount?                @relation(fields: [bankAccountId], references: [id])
+  ledgerTransaction LedgerTransaction?                 @relation(fields: [ledgerTransactionId], references: [id])
+  entries           PartnerSettlementEntry[]
+  transferAttempts  PartnerSettlementTransferAttempt[]
+
+  @@unique([currency, bankTransferReference])
+  @@index([partnerId, periodStart])
+  @@index([status])
+  @@map("partner_settlements")
+}
+
+/// A single ledger posting claimed by one settlement, for ever.
+///
+/// The unique index on `ledgerPostingId` is the hard invariant the whole
+/// design rests on: a posting the platform has already paid for cannot be
+/// paid for again, whatever a retried job or a second admin does.
+model PartnerSettlementEntry {
+  id              String           @id @default(uuid())
+  settlementId    String
+  ledgerPostingId String           @unique
+  partnerId       String
+  amount          Decimal          @db.Decimal(18, 4)
+  direction       PostingDirection
+  /// `LedgerTransaction.kind`, copied so a settlement can be itemised
+  /// without walking back through the ledger.
+  kind            String
+  sourceType      String
+  sourceId        String
+  occurredAt      DateTime
+
+  settlement PartnerSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  posting    LedgerPosting     @relation(fields: [ledgerPostingId], references: [id])
+
+  @@index([settlementId])
+  @@index([partnerId, occurredAt])
+  @@map("partner_settlement_entries")
+}
+
+/// How the real-money part of a purchase is settled.
+///
+/// Chosen when the purchase is created and never changed afterwards. That
+/// immutability is the whole defence against the double-payment hazard: a
+/// customer cannot start paying through the provider, have the callback
+/// arrive late, and meanwhile hand the cashier cash for the same purchase.
+/// Changing your mind means cancelling and starting again — and cancelling is
+/// refused while a provider attempt might still take the money.
+enum PaymentRoute {
+  /// The customer pays the partner directly, outside TuTak. The original
+  /// model, still fully supported.
+  DIRECT_PARTNER
+  /// The customer pays TuTak through a payment provider.
+  TUTAK_PSP
+}
+
+/// What the customer physically handed the partner on a DIRECT purchase.
+///
+/// Recorded because "who actually received the cash" has to be answerable
+/// from history, and because a partner's own card terminal and a banknote
+/// are different facts even though TuTak sees neither.
+enum DirectTender {
+  CASH
+  PARTNER_CARD
+  OTHER
+}
+
+/// Where a provider payment attempt has got to.
+///
+/// The ordering matters more than the names: everything from `INITIATED`
+/// onwards is a state in which the provider **may already have taken the
+/// customer's money**, and while a purchase sits in one of them no cash may
+/// be collected for it by any other route.
+/// Why a provider attempt was resolved the way it was.
+///
+/// Arman's decision of 15.09.2026: **time never resolves an attempt.** A
+/// timeout is the absence of an answer, not the answer "no", and letting the
+/// clock write `FAILED` is how a purchase the provider already charged for is
+/// declared safe to collect again. So an attempt may only leave the unsafe
+/// set on one of the bases below — and `TIMEOUT` is deliberately not one of
+/// them, because there is nothing to put in this column for "we waited".
+///
+/// Ageing still does something: it raises alerts and escalates, so a human
+/// looks. It just never decides.
+enum PspResolutionBasis {
+  /// The provider's own signed callback said so.
+  PROVIDER_CALLBACK
+  /// The provider's status API was asked and answered. Requires the adapter
+  /// to declare `statusQuery`, which Idram's does not today.
+  PROVIDER_STATUS_QUERY
+  /// Two people read the provider's statement and agreed what it shows. The
+  /// manual counterpart of a settlement's maker/checker reconciliation, and
+  /// subject to the same rule: never one person alone.
+  MANUAL_RECONCILIATION
+}
+
+enum PspAttemptStatus {
+  /// A bill exists at the provider. The customer may be paying right now.
+  INITIATED
+  /// The customer came back, or a pre-check arrived, but the authoritative
+  /// server confirmation has not. Deliberately not "paid": a customer
+  /// returning to a success URL proves nothing.
+  PENDING_CONFIRMATION
+  /// A verified server-side confirmation arrived. Only here does money move
+  /// in the ledger.
+  SUCCEEDED
+  /// The provider said, authoritatively, that no payment happened. The only
+  /// state from which another route may be attempted.
+  FAILED
+  /// Nothing conclusive arrived in time. **Not** a synonym for failed:
+  /// until the provider confirms otherwise the money may have moved, so this
+  /// is as unsafe as INITIATED.
+  EXPIRED
+  /// The provider and this platform disagree, or a confirmation arrived that
+  /// cannot be matched. A human has to look; nothing is settled meanwhile.
+  REQUIRES_RECONCILIATION
+}
+
+/// One attempt to collect the real-money remainder through a provider.
+///
+/// Separate from `PurchaseIntent` because a purchase has one economic
+/// identity but may legitimately be attempted more than once — a declined
+/// card, an abandoned redirect. The purchase's snapshot never changes; each
+/// attempt is its own row with its own provider references.
+///
+/// ## Why the unique indexes are the real design
+///
+/// `@@unique([purchaseIntentId, liveKey])` with `liveKey` set only while an
+/// attempt is unresolved allows **at most one live attempt per purchase**.
+/// Two taps on "pay" cannot open two bills at the provider, and that is
+/// enforced by the database rather than by a disabled button.
+///
+/// `@@unique([provider, providerTransactionId])` makes a replayed callback a
+/// no-op: the second one cannot create a second payment record.
+/// What a provider callback was asking for.
+enum PspCallbackKind {
+  /// "Does this bill exist and may it be paid?" Answered synchronously and
+  /// never touches the ledger.
+  PRECHECK
+  /// "This bill was paid." The only kind that can move money.
+  FINAL
+}
+
+/// Where an inbound callback is in its durable processing.
+enum PspInboxStatus {
+  /// Written down, provider acknowledged, not yet acted on.
+  RECEIVED
+  /// A worker holds a lease on it.
+  PROCESSING
+  /// Its financial effect has happened, or was found to have happened
+  /// already. Terminal and successful.
+  PROCESSED
+  /// A duplicate of a callback already recorded. Terminal, and not a
+  /// failure: the provider retrying is normal.
+  DUPLICATE
+  /// Verification failed — bad checksum, wrong merchant, unknown bill. Kept
+  /// rather than discarded, because a forged callback is evidence.
+  REJECTED
+  /// Retried to exhaustion. Alerted on, never retried again silently.
+  DEAD
+}
+
+/// Every callback a payment provider has sent us, written down before
+/// anything is done about it.
+///
+/// ## Why this exists
+///
+/// A verified callback used to be processed inside the HTTP request that
+/// delivered it. That meant one settlement transaction per callback, held for
+/// the whole of a heavy write, and a burst of twenty duplicate retries took
+/// twenty connections from a pool of five. Measured, not theorised: ten
+/// concurrent callbacks for one bill all failed with "Unable to start a
+/// transaction in the given time", and the provider — seeing errors — would
+/// have retried harder. Nothing was double-counted, because nothing happened
+/// at all, which is its own kind of wrong: the customer had paid.
+///
+/// Raising the pool would have moved the cliff, not removed it. So the HTTP
+/// boundary now does the one thing it must do synchronously — prove the
+/// callback genuine and write it down — and answers. The money moves later,
+/// once, in a worker.
+///
+/// ## What makes it safe
+///
+/// `dedupeKey` is the provider's own identity for the event, so a retry
+/// collides with the row it is a retry of and is recorded as DUPLICATE
+/// instead of becoming a second unit of work. Processing is claimed with a
+/// lease, so a worker that dies mid-flight releases its claim rather than
+/// stranding the row; and because the financial step is itself idempotent, a
+/// crash between committing the ledger and marking the row processed costs a
+/// repeat that finds the work already done.
+model PspCallbackInbox {
+  id       String          @id @default(uuid())
+  provider String
+  kind     PspCallbackKind
+  status   PspInboxStatus  @default(RECEIVED)
+
+  /// The provider's identity for this event: provider, bill, and its own
+  /// transaction id. Unique, and that uniqueness is the whole duplicate
+  /// defence — a retry cannot become a second unit of work.
+  dedupeKey String @unique
+
+  billId                String?
+  providerTransactionId String?
+  /// What the provider said the amount was. Never trusted on its own; the
+  /// attempt's own amount is what settlement checks against.
+  reportedAmount        Decimal? @db.Decimal(18, 4)
+
+  /// Whether the signature/checksum proved genuine. A false here is why the
+  /// row is REJECTED, and the row is kept: a forged callback is evidence.
+  verified       Boolean @default(false)
+  rejectedReason String?
+
+  /// Everything the provider sent, verbatim, for disputes.
+  ///
+  /// Kept whole rather than filtered: a dispute is argued on what arrived,
+  /// and a redacted copy proves nothing. It contains no secret — Idram's
+  /// `EDP_CHECKSUM` is a digest, and the key that produced it lives only in
+  /// the environment and is never written here or logged.
+  rawPayload Json
+
+  /// Set while unprocessed and nulled once terminal, so "one live inbox row
+  /// per dedupe key" needs no coordination. Same trick as
+  /// `PspPaymentAttempt.liveKey`.
+  pendingKey String?
+
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  leaseUntil    DateTime?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  /// The attempt this callback settled, once it has.
+  pspPaymentAttemptId String?
+
+  @@index([status, nextAttemptAt])
+  @@index([billId])
+  @@index([receivedAt])
+  @@map("psp_callback_inbox")
+}
+
+model PspPaymentAttempt {
+  id               String           @id @default(uuid())
+  purchaseIntentId String
+  provider         String
+  status           PspAttemptStatus @default(INITIATED)
+  amount           Decimal          @db.Decimal(18, 4)
+  currency         Currency         @default(AMD)
+
+  /// The bill/order identifier this platform gave the provider.
+  providerBillId        String?
+  /// The provider's own transaction identifier, known once it confirms.
+  providerTransactionId String?
+  /// Provider fee for this attempt, when the provider tells us. Null means
+  /// "not known yet", never "zero".
+  providerFeeAmount     Decimal? @db.Decimal(18, 4)
+  /// Which fee rule was in force, so the figure can be re-derived.
+  feeRuleId             String?
+
+  /// Set to a constant while the attempt is unresolved and nulled once it
+  /// reaches a terminal state — the trick that makes "one live attempt per
+  /// purchase" expressible as a unique index. See the docblock above.
+  liveKey String?
+
+  /// The ledger transaction written when this attempt succeeded.
+  ledgerTransactionId String? @unique
+
+  failureReason   String?
+  /// Everything the provider sent, kept verbatim for disputes.
+  providerPayload Json?
+
+  /// ── How this attempt stopped being unsafe ─────────────────────────────
+  ///
+  /// Null while unresolved, and null for ever on an attempt that timed out
+  /// and was never answered — `EXPIRED` is a state of not knowing, not a
+  /// resolution. A database trigger refuses `FAILED` without one of these,
+  /// which is what makes "time never releases a purchase" a property of the
+  /// table rather than a habit of the code.
+  resolutionBasis               PspResolutionBasis?
+  /// MANUAL_RECONCILIATION only: two different people, and what they read.
+  ///
+  /// Filled in two separate authenticated calls, never one. A single caller
+  /// passing both user ids is one person asserting who the second person
+  /// was, which is not dual control — it is dual control's paperwork.
+  reconciledByUserId            String?
+  reconciliationCheckedByUserId String?
+  reconciliationEvidence        String?
+  /// Set when the first person proposes, cleared when the second confirms or
+  /// the proposal is withdrawn. While it is set the attempt is unchanged:
+  /// a proposal moves no money and resolves nothing.
+  reconciliationProposedAt      DateTime?
+
+  /// Ageing. Raised by the sweep so an unresolved attempt gets louder rather
+  /// than being quietly decided; neither column ever changes `status`.
+  escalatedAt     DateTime?
+  escalationCount Int       @default(0)
+
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime?
+  resolvedAt  DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  feeRule           PspFeeRule?        @relation(fields: [feeRuleId], references: [id])
+
+  @@unique([purchaseIntentId, liveKey])
+  @@unique([provider, providerTransactionId])
+  @@index([status])
+  @@index([purchaseIntentId])
+  @@index([purchaseIntentId, status])
+  @@map("psp_payment_attempts")
+}
+
+/// Who bears a provider's fee. Contractual, so configurable rather than
+/// assumed — the brief is explicit that nobody may decide this in code.
+enum FeePayer {
+  PLATFORM
+  PARTNER
+  SPLIT
+}
+
+/// A provider's fee, as it stood over a period of time.
+///
+/// Versioned rather than edited: a purchase made in March must still be
+/// explainable by March's rate after the contract changes in June. Rules are
+/// never updated in place — a change closes the old row and opens a new one.
+/// How a partner's contribution to TuTak is priced.
+///
+/// The platform started with one answer — a percentage of the sale, in basis
+/// points on a 50-point grid — and Arman's decision of 15.09.2026 is that
+/// this stays for the partners it fits and stops being the only answer.
+///
+/// The forcing case is fuel. HAZE's terms are 10 AMD of every 300 AMD litre,
+/// which is one thirtieth: 333.33 basis points. Not an integer, and not on
+/// the grid. Rounding it to 3 % or 3.5 % changes real money on every tank —
+/// 50 AMD either way on a 15,000 AMD fill — and loosening the grid for
+/// everyone to accommodate one pricing shape would be fixing the wrong thing.
+/// A per-litre margin is not a percentage that happens to be awkward; it is a
+/// different kind of number.
+/// The units a per-unit commercial term may be priced in.
+///
+/// Closed on purpose, and Arman's decision of 15.09.2026 says why: `unit` was
+/// a free string, and a free string in a financial identifier means "L", "l",
+/// "л", "litre" and "liter" are five different units as far as the equality
+/// check is concerned. That check decides whether 10 AMD per litre may be
+/// multiplied by a quantity, so a partner whose till sends "л" while their
+/// contract says "L" is a partner whose purchases are silently refused — or,
+/// worse, a mismatch that some later "helpful" normalisation resolves the
+/// wrong way.
+///
+/// Two values are required by the decision (LITER, KWH); the rest are here
+/// because refusing to record a purchase measured in kilograms would push
+/// somebody towards abusing LITER. Adding a value is a migration, which is
+/// the point: a new unit is a commercial decision, not a typo.
+///
+/// Display names are **not** here. "литр" is a label, and a label belongs in
+/// the client's own translations, not in the identifier the arithmetic
+/// compares.
+enum UnitOfMeasure {
+  LITER
+  KWH
+  KILOGRAM
+  ITEM
+  HOUR
+}
+
+/// Where a version of a partner's commercial terms is in its approval.
+///
+/// Arman's decision of 15.09.2026: production changes to commercial terms go
+/// through maker/checker. Before this, `open()` wrote a live rule in one call
+/// and retried on conflict — so two administrators editing at once produced
+/// two versions applied one after the other, each looking deliberate, with
+/// nobody having agreed to the combination.
+enum ContributionRuleStatus {
+  /// Written down, agreed by nobody. Prices nothing.
+  PROPOSED
+  /// In force. At most one per partner, held by a partial unique index.
+  ACTIVE
+  /// Was in force, replaced by a later version. Still prices the purchases
+  /// that named it.
+  SUPERSEDED
+  /// Turned down before it ever priced anything. Kept, because "who proposed
+  /// what and who said no" is exactly what an audit wants.
+  REJECTED
+}
+
+enum ContributionRuleKind {
+  /// A share of the sale, in basis points. What every partner used before
+  /// 15.09.2026 and what most will keep using.
+  PERCENT_BPS
+  /// A fixed amount per unit sold — 10 AMD per litre. Requires the purchase
+  /// to carry `quantity`/`quantityUnit`, because there is nothing to multiply
+  /// otherwise.
+  FIXED_PER_UNIT
+  /// Both, added. Exists because a supplier contract that has a per-unit
+  /// margin *and* a percentage on top is an ordinary thing to sign, and
+  /// modelling it as two rules would mean two snapshots on one purchase.
+  HYBRID
+}
+
+/// A partner's commercial terms, versioned and immutable.
+///
+/// ## Why a row and not a column
+///
+/// `Partner.bonusAccrualRateBps` is a single mutable number, which makes two
+/// true statements impossible to hold at once: "this is what we charge" and
+/// "this is what we charged for that sale in March". Changing the rate
+/// silently rewrites the second. A purchase snapshots
+/// `negotiatedRateBps`, which fixed the percentage case, but a snapshot of a
+/// number cannot record *which kind* of term it was, nor let anyone answer
+/// "what were HAZE's terms in March" without reading a purchase from March.
+///
+/// So terms become rows: one per version, never edited, only closed. A
+/// contract change opens the next version and closes the previous one, and
+/// every purchase names the exact version it was priced under.
+///
+/// ## What is deliberately not here
+///
+/// No approval workflow, and no per-branch terms. Both are real questions and
+/// neither has been decided; inventing either now would be guessing about the
+/// commercial process rather than recording it.
+model PartnerContributionRule {
+  id        String                 @id @default(uuid())
+  partnerId String
+  status    ContributionRuleStatus @default(PROPOSED)
+
+  /// 1, 2, 3 — per partner, and the number a purchase's snapshot names.
+  ///
+  /// **Allocated at approval, not at proposal.** That is the fix for the
+  /// concurrency complaint: while the number was handed out when a rule was
+  /// written, two administrators racing produced versions 4 and 5, and the
+  /// loser's retry quietly became a second real change rather than a
+  /// conflict somebody had to look at. A proposal nobody approved has no
+  /// number because it is not a version of anything.
+  version Int?
+  kind    ContributionRuleKind
+
+  /// PERCENT_BPS and HYBRID: the share of the sale. Unlike
+  /// `Partner.bonusAccrualRateBps` this is **not** on the 50-point grid:
+  /// the grid exists to keep a human-negotiated headline rate tidy, and a
+  /// rule row is the negotiated contract itself.
+  percentBps   Int?
+  /// FIXED_PER_UNIT and HYBRID: the amount per unit. 10.0000 for HAZE.
+  fixedPerUnit Decimal?       @db.Decimal(18, 4)
+  /// The unit that amount is per. Must match the purchase's own
+  /// `quantityUnit`, or the multiplication is meaningless: 10 AMD per litre
+  /// against a quantity measured in kilograms is not a rounding problem, it
+  /// is a wrong invoice. Typed rather than free text since 15.09.2026 — see
+  /// `UnitOfMeasure`.
+  unit         UnitOfMeasure?
+
+  currency Currency @default(AMD)
+
+  effectiveFrom  DateTime  @default(now())
+  /// Null means live. Closing the window is the only edit the database
+  /// permits on this row.
+  effectiveUntil DateTime?
+
+  /// Set to a constant while the rule is live and nulled when it is closed,
+  /// so "one live rule per partner" is a partial unique index rather than a
+  /// convention. Same trick as `PspPaymentAttempt.liveKey`.
+  liveKey String?
+
+  /// Maker and checker. `approvedByUserId` is never the proposer — the
+  /// database refuses that, not just this codebase.
+  proposedByUserId String?
+  approvedByUserId String?
+  approvedAt       DateTime?
+  rejectedByUserId String?
+  rejectedAt       DateTime?
+  decisionNote     String?
+
+  /// Kept for the rows written before approval existed. New rows set
+  /// `proposedByUserId`; this stays so nothing had to be back-filled.
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  note            String?
+
+  partner   Partner          @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  purchases PurchaseIntent[]
+
+  @@unique([partnerId, version])
+  @@unique([partnerId, liveKey])
+  @@index([partnerId, effectiveFrom])
+  @@index([partnerId, status])
+  @@map("partner_contribution_rules")
+}
+
+model PspFeeRule {
+  id              String    @id @default(uuid())
+  provider        String
+  /// Null matches any method; a more specific row wins.
+  paymentMethod   String?
+  percentBps      Int       @default(0)
+  fixedAmount     Decimal   @default(0) @db.Decimal(18, 4)
+  currency        Currency  @default(AMD)
+  payer           FeePayer  @default(PLATFORM)
+  effectiveFrom   DateTime
+  effectiveUntil  DateTime?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  note            String?
+
+  attempts PspPaymentAttempt[]
+
+  @@index([provider, effectiveFrom])
+  @@map("psp_fee_rules")
+}
+
+/// One attempt to move a settlement's money to the partner's bank.
+///
+/// Separate from the settlement because they are different facts. The
+/// settlement says what is owed and is frozen once approved; a transfer is a
+/// thing somebody does in a banking app, which can fail and be repeated. One
+/// settlement therefore has many attempts and at most one that succeeded.
+///
+/// The partial unique index is what makes "at most one succeeded" true in the
+/// database rather than in a service: a second successful attempt on the same
+/// settlement cannot be inserted.
+model PartnerSettlementTransferAttempt {
+  id           String   @id @default(uuid())
+  settlementId String
+  amount       Decimal  @db.Decimal(18, 4)
+  currency     Currency @default(AMD)
+
+  /// The bank's reference for this attempt. Unique per currency across all
+  /// attempts, so one real transfer cannot be recorded twice.
+  bankTransferReference String?
+  succeeded             Boolean @default(false)
+  failureReason         String?
+  /// Set only on the attempt that worked, so the partial unique index below
+  /// can hold "one success per settlement".
+  successKey            String?
+
+  attemptedByUserId String?
+  attemptedAt       DateTime  @default(now())
+  resolvedAt        DateTime?
+
+  settlement PartnerSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@unique([settlementId, successKey])
+  @@unique([currency, bankTransferReference])
+  @@index([settlementId, attemptedAt])
+  @@map("partner_settlement_transfer_attempts")
+}
+
 model ReconciliationRun {
   id          String               @id @default(uuid())
   /// UTC midnight of the day reconciled.

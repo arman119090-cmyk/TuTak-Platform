@@ -77,6 +77,18 @@ fi
 # ── 3. Decide ─────────────────────────────────────────────────────────────
 if [ "${#problems[@]}" -eq 0 ]; then
   echo "OK"
+  # Recovery: the previous run had paged (or failed) and this one is healthy —
+  # say so once, so the person who was paged knows it is over without
+  # opening GitHub. Only in transition mode, only with a webhook.
+  if [ "$PAGE_MODE" = "transition" ] && [ "$PREVIOUS_CONCLUSION" = "failure" ] && [ -n "$ALERT_WEBHOOK_URL" ]; then
+    title="TuTak production: external probe recovered"
+    payload=$(jq -cn --arg t "$title" --arg u "$API_BASE_URL" --arg r "$RUN_URL" \
+      '{text: ("🟢 *" + $t + "* — production\n/health/ready answers 200 with every check ok again.\n• api: " + $u + (if $r != "" then "\n• run: " + $r else "" end)),
+        severity: "warning", title: $t, body: "/health/ready answers 200 with every check ok again", key: "uptime.probe.recovered", environment: "production",
+        context: {api: $u, run: $r}, firedAt: (now | todate)}')
+    rcode=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "$payload" "$ALERT_WEBHOOK_URL")
+    echo "recovery notice: webhook answered ${rcode:-none}"
+  fi
   exit 0
 fi
 

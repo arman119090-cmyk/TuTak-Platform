@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { CompositeAlertChannel } from './composite-alert.channel';
 import { TelegramAlertChannel } from './telegram-alert.channel';
 
@@ -64,6 +65,100 @@ describe('TelegramAlertChannel', () => {
     expect(delivery.delivered).toBe(false);
     expect(delivery.detail).not.toContain(token);
     expect(delivery.detail).toContain('***');
+  });
+});
+
+describe('TelegramAlertChannel — adversarial', () => {
+  const token = '777:ZZZ-secret';
+  const alert = { severity: 'critical' as const, title: 'T', body: 'B', key: 'k' };
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+  const respond = (status: number, body: unknown, jsonThrows = false) => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: () => (jsonThrows ? Promise.reject(new Error('Unexpected token < in JSON')) : Promise.resolve(body)),
+    }) as unknown as typeof fetch;
+  };
+
+  it.each([
+    [400, { ok: false, description: 'Bad Request: message text is empty' }],
+    [401, { ok: false, description: 'Unauthorized' }],
+    [403, { ok: false, description: 'Forbidden: bot was blocked by the user' }],
+    [429, { ok: false, description: 'Too Many Requests: retry after 35', parameters: { retry_after: 35 } }],
+  ])('HTTP %s is not delivered and the detail carries the status, never the token', async (status, body) => {
+    respond(status, body);
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
+    expect(delivery.delivered).toBe(false);
+    expect(delivery.detail).toContain(String(status));
+    expect(delivery.detail).not.toContain(token);
+  });
+
+  it('a 2xx whose body is not JSON is not delivered', async () => {
+    respond(200, null, true);
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
+    expect(delivery).toEqual({ delivered: false, detail: 'telegram answered 200' });
+  });
+
+  it('a 2xx with ok:true but a wrong shape is still delivered only on ok:true', async () => {
+    respond(200, { ok: 'yes' });
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
+    expect(delivery.delivered).toBe(false);
+  });
+
+  it('a timeout (AbortError) is not delivered and does not throw', async () => {
+    global.fetch = jest.fn().mockRejectedValue(Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' })) as unknown as typeof fetch;
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
+    expect(delivery.delivered).toBe(false);
+    expect(delivery.detail).toContain('telegram unreachable');
+  });
+
+  it('a DNS failure whose message quotes the request URL is scrubbed', async () => {
+    global.fetch = jest
+      .fn()
+      .mockRejectedValue(new Error(`getaddrinfo ENOTFOUND api.telegram.org (https://api.telegram.org/bot${token}/sendMessage)`)) as unknown as typeof fetch;
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
+    expect(delivery.detail).not.toContain(token);
+    expect(delivery.detail).toContain('***');
+  });
+
+  it('the description Telegram returns is scrubbed too, even if it echoes the token', async () => {
+    respond(200, { ok: false, description: `token ${token} is invalid` });
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
+    expect(delivery.detail).not.toContain(token);
+  });
+
+  it('truncates a huge alert to Telegram\'s 4096 limit and sends special characters as plain text', async () => {
+    let sent = '';
+    global.fetch = jest.fn().mockImplementation((_url: string, init: RequestInit) => {
+      sent = (JSON.parse(init.body as string) as { text: string; parse_mode?: string }).text;
+      expect((JSON.parse(init.body as string) as { parse_mode?: string }).parse_mode).toBeUndefined();
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    }) as unknown as typeof fetch;
+    const huge = { ...alert, body: '_*[]()~`>#+-=|{}.!<b>'.repeat(400) };
+    const delivery = await new TelegramAlertChannel(token, '1', 'production').send(huge);
+    expect(delivery.delivered).toBe(true);
+    expect(sent.length).toBeLessThanOrEqual(4000);
+    expect(sent).toContain('_*[]()~`>#+-=|{}.!<b>');
+  });
+
+  it('never logs the token through Nest Logger', async () => {
+    const logged: string[] = [];
+    const spy = jest.spyOn(Logger.prototype, 'error').mockImplementation((msg: unknown) => {
+      logged.push(String(msg));
+    });
+    try {
+      global.fetch = jest.fn().mockRejectedValue(new Error(`boom https://api.telegram.org/bot${token}/x`)) as unknown as typeof fetch;
+      await new TelegramAlertChannel(token, '1', 'production').send(alert);
+      respond(401, { ok: false, description: `bad bot${token}` });
+      await new TelegramAlertChannel(token, '1', 'production').send(alert);
+      expect(logged.length).toBe(2);
+      for (const line of logged) expect(line).not.toContain(token);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

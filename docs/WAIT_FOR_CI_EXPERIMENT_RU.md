@@ -41,6 +41,55 @@ Railway: workflow с `on: push: branches: [main]` — у `ci.yml` он есть.
    unit-тестом → merge в `main` → деплой должен остаться WAITING и стать
    SKIPPED/REMOVED после красного CI; production не меняется. Затем revert.
 
+## Что именно доказываем (causal ordering), и что НЕ считается провалом
+
+По документации Railway («Controlling GitHub Autodeploys», прочитано
+19.09.2026): при включённом Wait for CI «new deployments sit in a WAITING
+state until every GitHub Actions check suite on the commit has finished;
+Railway looks at the conclusion of each workflow run, not at individual
+jobs». То есть **объект deployment создаётся сразу** после push — это
+нормально. Провал — только если **build/deploy начался** (BUILDING /
+DEPLOYING) раньше `T_ci_green`.
+
+Фиксировать шесть отметок:
+
+| Отметка | Откуда |
+|---|---|
+| `T_merge` | GitHub PR `merged_at` |
+| `T_ci_start` | Actions → run на merge-коммите, `run_started_at` |
+| `T_ci_finish` | тот же run, `updated_at` при `conclusion=success` |
+| `T_deploy_created` | Railway `list-deployments` → `createdAt` (ожидается ≈ `T_merge`, статус WAITING) |
+| `T_build_start` | Railway → deployment → build logs, первая строка |
+| `T_success` | deployment `status=SUCCESS`, `updatedAt` |
+
+**PASS:** `T_build_start ≥ T_ci_finish` **и** статус до `T_ci_finish` был
+`WAITING` (ни BUILDING, ни DEPLOYING). `T_deploy_created < T_ci_finish` —
+**допустимо** и ожидаемо.
+
+## Fail-path (что будет при красном CI) — из документации, не проверено на нашем проекте
+
+- Workflow **failed** → deployment **skipped** сразу; production остаётся на
+  предыдущем SUCCESS-деплое; ручной cancel не нужен.
+- Workflow **cancelled** (например, наш `concurrency` отменил run из-за
+  следующего push) → блокирует только если ни один другой workflow на том
+  же коммите не прошёл; при одном workflow (`ci.yml`) — deployment будет
+  **skipped**, а следующий коммит получит свой run и свой deployment.
+- Не завершилось за **2 часа** → skipped.
+- **Skipped/neutral** workflow не блокирует.
+- Следующий зелёный коммит разблокируется сам: у него собственный
+  deployment со своим check suite.
+- Пока мы намеренно не ломали `main`, это — документация, а не наблюдение;
+  фиксируется как UNVERIFIED до первого реального красного CI на `main`.
+
+## Две разные защиты — не путать
+
+| | Branch protection (GitHub) | Wait for CI (Railway) |
+|---|---|---|
+| Что не даёт | непроверенному коммиту попасть в `main` (PR + required checks) | коммиту из `main` попасть в production до зелёного CI |
+| Где включается | GitHub → Settings → Branches → rule для `main` | Railway → сервис → Settings → Source → Wait for CI (×3 сервиса) |
+| Required checks — **фактические имена job из `ci.yml`** | `Lint, test and build`, `Integration tests (1/3)`, `Integration tests (2/3)`, `Integration tests (3/3)`, `Build the container images` | не настраивается: смотрит на conclusion всего workflow run |
+| Для limited pilot | желательно | обязательно (это gate) |
+
 ## Таблица результата (заполняется в момент эксперимента)
 
 | Шаг | Время UTC | Значение | Вердикт |

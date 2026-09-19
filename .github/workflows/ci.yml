@@ -89,6 +89,13 @@ jobs:
       - name: Uptime probe self-test
         run: bash scripts/uptime-probe.test.sh
 
+      # The Railway backup workflow is a shell script talking GraphQL; this is
+      # its contract test against a mock that speaks the published schema and
+      # misbehaves on demand (GraphQL errors on 200, null workflowId, a backup
+      # that never appears, stale backups, wrong token scope).
+      - name: Railway backup script contract test
+        run: bash scripts/railway-backup.test.sh
+
       # Reported, not enforced — and that is a decision rather than laziness.
       # Every advisory the last review turned up was either a build-time
       # dependency of the mobile app (`image-size`, `uuid`, reached only by

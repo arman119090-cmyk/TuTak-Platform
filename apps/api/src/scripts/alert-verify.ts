@@ -142,8 +142,9 @@ export async function runAlertVerify(
       sent: false,
       channel: channel.name,
       reason:
-        'ALERT_WEBHOOK_URL is not set, so the alert went to the console and no human was ' +
-        'told. Set it on this service and run this again.',
+        'No alert channel is set (ALERT_WEBHOOK_URL, or ALERT_TELEGRAM_BOT_TOKEN + ' +
+        'ALERT_TELEGRAM_CHAT_ID), so the alert went to the console and no human was told. ' +
+        'Set one on this service and run this again.',
     };
   }
 
@@ -155,8 +156,8 @@ export async function runAlertVerify(
       sent: false,
       channel: channel.name,
       reason:
-        `ALERT_WEBHOOK_URL is set but the receiver did not accept the alert (${outcome.detail}). ` +
-        'Nothing reached a human. Check the URL and what is on the other end of it.',
+        `A channel is set (${channel.name}) but no receiver accepted the alert (${outcome.detail}). ` +
+        'Nothing reached a human. Check the URL / bot token and chat id, and what is on the other end.',
     };
   }
 
@@ -189,9 +190,9 @@ async function main() {
 
     console.log(`Sent through the ${result.channel} channel (${result.reason}).`);
     console.log(`Environment reported in the message: ${appEnv}.`);
-    console.log('Look for "TuTak alert channel test" wherever ALERT_WEBHOOK_URL points.');
-    console.log('If it did not arrive, the URL is wrong or the receiver rejected it —');
-    console.log('the channel logs the status code it got back.');
+    console.log('Look for "TuTak alert channel test" in the webhook channel and/or the Telegram chat.');
+    console.log('If it did not arrive although this says accepted, the receiver accepted and then dropped it —');
+    console.log('check the channel/chat the URL or chat id actually points to.');
   } catch (err) {
     new Logger('alert-verify').error(err);
     process.exitCode = 1;

@@ -83,5 +83,15 @@ env API_BASE_URL="http://127.0.0.1:$PORT" CURL_MAX_TIME=5 $W bash "$PROBE" >/dev
 n=$((n+1))
 if jq -e '.severity=="critical" and .key=="uptime.probe" and (.text|startswith("🔴")) and .environment=="production" and .title and .body' "$TMP/pages.log" >/dev/null; then echo "ok   payload shape"; else echo "FAIL payload shape"; cat "$TMP/pages.log"; fails=$((fails+1)); fi
 
+echo ok > "$TMP/ready"; echo 0 > "$TMP/imbalance"; echo 200 > "$TMP/webhook"
+check "healthy after failure, transition -> recovery notice" 0 1 $W PAGE_MODE=transition PREVIOUS_CONCLUSION=failure
+grep -q '"key":"uptime.probe.recovered"' "$TMP/pages.log" && echo "ok   recovery payload key" || { echo "FAIL recovery payload"; fails=$((fails+1)); }; n=$((n+1))
+check "healthy after success, transition -> silent" 0 0 $W PAGE_MODE=transition PREVIOUS_CONCLUSION=success
+check "healthy, always mode, prev failure -> silent (dispatch runs never notify recovery)" 0 0 $W PAGE_MODE=always PREVIOUS_CONCLUSION=failure
+check "healthy after failure, no webhook -> silent exit 0" 0 0 PAGE_MODE=transition PREVIOUS_CONCLUSION=failure
+# secrets never printed
+echo 503 > "$TMP/ready"; : > "$TMP/pages.log"
+env API_BASE_URL="http://127.0.0.1:$PORT" CURL_MAX_TIME=5 $W METRICS_TOKEN=good bash "$PROBE" > "$TMP/out.log" 2>&1
+n=$((n+1)); if grep -q "good\|/hook" "$TMP/out.log"; then echo "FAIL secret or webhook URL printed"; fails=$((fails+1)); else echo "ok   no secret in output"; fi
 echo "$((n-fails))/$n passed"
 [ "$fails" -eq 0 ]

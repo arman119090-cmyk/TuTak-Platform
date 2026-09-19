@@ -20,6 +20,27 @@
 резервной копии.** Потеря тома или неверная миграция = потеря всех
 пользователей, партнёров, покупок и ledger. Это P0 пилота.
 
+## 0a. Три разные защиты — не одно слово «backup»
+
+| | **PITR** (pgBackRest → Railway bucket) | **Снимок тома** (volume backup) | **Внешняя копия** (`infra/offsite-backup`) |
+|---|---|---|---|
+| Механизм | непрерывный архив WAL + full раз в неделю + diff ежедневно | copy-on-write снимок всего тома по расписанию или вручную (в т.ч. через API `volumeInstanceBackupCreate`) | `pg_dump` внутри приватной сети → `age` → S3 вне Railway |
+| RPO | ≈ 1 мин (`archive_timeout=60`) | до 24 ч (daily) / момент ручного снимка | до 24 ч (cron) |
+| Retention | ~4 недели (последние 4 full) | daily 6 дн., weekly 27 дн., monthly 89 дн. | сколько задано lifecycle bucket (рекомендация 35 дн.) |
+| Куда восстанавливает | **в новый сервис** `<source>-restored-…`, исходный не трогается | **в тот же сервис**: монтируется новый том со снимка, старый остаётся в проекте размонтированным | куда угодно (любой Postgres 18) |
+| Зависит от исходного тома | нет (данные в bucket) | да — «wiping a volume deletes all backups» | нет |
+| Restore только в тот же project+environment | да (bucket проекта) | **да** (документация Railway) | нет |
+| Потеря проекта/аккаунта Railway | **копия потеряна** | **копия потеряна** | копия живёт |
+| Защищает от | плохой миграции/ошибочного UPDATE/удаления строк (restore на минуту «до») | повреждения тома, ошибки с точностью «сутки» | provider-level failure, account loss, ransomware на стороне платформы |
+| Не защищает от | потери проекта/аккаунта; ошибки, замеченной > 4 недель спустя | потери проекта; всего, что случилось после снимка | ничего из «последних минут» (RPO сутки) |
+
+**Сейчас (19.09.2026): ни одной из трёх нет.** Внешней копии у TuTak не
+существует; при полной недоступности проекта/аккаунта Railway база
+невосстановима. Для limited pilot принимается остаточный риск
+«provider-level failure / account loss» при условии, что включены PITR и
+снимки; внешняя копия подготовлена (`infra/offsite-backup/README.md`), но не
+включена — нужен bucket у стороннего провайдера и ключ `age`.
+
 ## 1. Что включить (делает Арман, 10 минут, UI Railway)
 
 Railway MCP/API из этой сессии **не может** включить ни PITR, ни расписание
@@ -32,7 +53,13 @@ Railway MCP/API из этой сессии **не может** включить 
    даунтайм API ≈ 30–60 с; делать не в час пик). После — прислать
    скриншот вкладки Backups с «PITR enabled».
 3. Там же включить **scheduled volume backups**: `daily` (минимум) —
-   снимок тома целиком, независимый от PITR. Это вторая, независимая линия.
+   снимок тома целиком, независимый от PITR. Это вторая линия.
+   *Без UI:* создать **project token** (Railway → проект → Settings →
+   Tokens, environment production) → GitHub → Settings → Secrets →
+   `RAILWAY_PROJECT_TOKEN`, и переменную `BACKUP_ENSURE_SCHEDULE=DAILY,WEEKLY`
+   → Actions → Backup → Run: workflow сам поставит расписание (только если
+   его ещё нет), сделает снимок, дождётся завершения и проверит, что он в
+   списке (`scripts/railway-backup.sh`, контракт-тест 27 кейсов).
 4. Через сутки: убедиться, что во вкладке Backups есть первый **full
    backup** и растущий список WAL; в Postgres-логах нет строк
    `archive_command failed`.
@@ -98,6 +125,22 @@ Restore невозможен, пока Railway недоступен. Copy off-pl
 единственная защита от этого сценария; сегодня её нет.
 
 ## 4. Проверка восстановленной базы (обязательна до переключения)
+
+Одной командой (с ноутбука через `railway connect`/tunnel к **восстановленному**
+сервису, или из `railway ssh` в контейнер API, где есть `psql`? — нет, в образе
+API нет psql; с ноутбука):
+
+```bash
+scripts/verify-restored-db.sh "$RESTORED_URL" --expect-migrations 71 --compare "$SOURCE_URL"
+```
+
+Скрипт открывает **read-only сессию** (`default_transaction_read_only=on`,
+проверяется попыткой записи), отказывается от URL production-endpoint
+`postgres.railway.internal`, от одинаковых URL, от пустой/чужой базы; считает
+миграции (applied / failed / duplicates), 11 таблиц, imbalance, счета =
+проводки, транзакции = 0, кошельки ≥ 0, лоты, refund ≤ gross, «restored не
+больше source». Self-test: `scripts/verify-restored-db.test.sh` — 19 кейсов.
+Ниже — те же запросы для ручного выполнения в Railway → Data.
 
 Выполняется в Railway → сервис `Postgres-restored-…` → Data/Query (или
 `railway connect` с ноутбука). Все запросы — только чтение.

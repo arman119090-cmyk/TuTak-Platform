@@ -207,6 +207,20 @@ ledger разойдётся.
 - **Эскалировать:** дольше 10 минут или после rollback не поднялся —
   инженер.
 
+## 11a. Красный CI на `main` (после включения Wait for CI)
+
+- **Симптом:** merge в `main`, деплой в Railway висит WAITING, затем
+  SKIPPED; production на старом коммите.
+- **Что это значит:** так и должно быть — плохой коммит не доехал.
+  Production остаётся на последнем SUCCESS. Ручной cancel не нужен.
+- **Действие:** починить в новом PR → merge → у нового коммита свой run и
+  свой deployment. Не нажимать «Deploy latest commit» вручную для красного
+  коммита — это обходит защиту.
+- **Если CI «cancelled»** (следующий push отменил предыдущий run): деплой
+  отменённого коммита пропускается; ждать деплой следующего коммита.
+- **Если WAITING дольше 2 часов:** Railway пропустит деплой; проверить, не
+  завис ли workflow (Actions), перезапустить его — или merge fix.
+
 ## 12. Недоступен Postgres
 
 - **Симптом:** `/health/ready` → `database: error`; алерт
@@ -250,6 +264,21 @@ ledger разойдётся.
 | Оператор «выкинул» чужой телефон | да | Admin → Users → Deactivate, затем Reactivate после сброса пароля клиентом |
 
 ---
+
+## Проверка канала алертов на production (без копирования секретов)
+
+```bash
+railway login                                  # один раз, на ноутбуке
+railway ssh -p 901cf202-7c6a-4403-8853-56c36d684a53 -s tutak-api -e production -- node dist/scripts/alert-verify.js
+```
+
+Команда выполняется **внутри** production-контейнера API с его переменными
+(`ALERT_WEBHOOK_URL` / `ALERT_TELEGRAM_*`, `REDIS_URL`): ничего не копируется
+на ноутбук. Ожидание: `Sent through the webhook|telegram|webhook+telegram
+channel (accepted at …)` и сообщение «TuTak alert channel test» в канале.
+`exit 1` с текстом «no receiver accepted» — канал настроен, но приёмник
+отказал (проверить URL / бот в группе / chat id). Скриншот сообщения —
+в `docs/PILOT_GATES_2026-09-19.md`.
 
 ## Кто дежурит
 

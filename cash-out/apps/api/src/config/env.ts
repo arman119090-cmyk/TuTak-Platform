@@ -11,9 +11,7 @@ import { z } from 'zod';
  */
 
 const hexKey = (bytes: number) =>
-  z
-    .string()
-    .regex(new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`), `must be ${bytes} bytes of hex`);
+  z.string().regex(new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`), `must be ${bytes} bytes of hex`);
 
 export const envSchema = z
   .object({
@@ -134,7 +132,11 @@ export const envSchema = z
       }
     }
     if (env.PROVIDER_MODE === 'live') {
-      for (const key of ['PROVIDER_BASE_URL', 'PROVIDER_API_KEY', 'PROVIDER_WEBHOOK_SECRET'] as const) {
+      for (const key of [
+        'PROVIDER_BASE_URL',
+        'PROVIDER_API_KEY',
+        'PROVIDER_WEBHOOK_SECRET',
+      ] as const) {
         if (!env[key]) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,

@@ -121,10 +121,7 @@ export class CryptoService {
   }
 
   verifyQuote(canonical: string, signature: string): boolean {
-    return constantTimeEquals(
-      Buffer.from(this.signQuote(canonical)),
-      Buffer.from(signature ?? ''),
-    );
+    return constantTimeEquals(Buffer.from(this.signQuote(canonical)), Buffer.from(signature ?? ''));
   }
 
   verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {

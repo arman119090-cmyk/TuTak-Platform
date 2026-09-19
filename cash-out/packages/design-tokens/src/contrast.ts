@@ -39,9 +39,7 @@ function channelLuminance(value: number): number {
 
 export function relativeLuminance(color: string | Rgb): number {
   const { r, g, b } = typeof color === 'string' ? parseHexColor(color) : color;
-  return (
-    0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b)
-  );
+  return 0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b);
 }
 
 /** Returns the WCAG 2.1 contrast ratio, between 1 and 21. */

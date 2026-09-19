@@ -72,9 +72,16 @@ export class ReconciliationService {
       scanned += 1;
       if (row.difference !== 0n) {
         mismatches += 1;
-        await this.recordMismatch(run.id, null, 'trial_balance_not_zero', '0', String(row.difference), {
-          currency: row.currency,
-        });
+        await this.recordMismatch(
+          run.id,
+          null,
+          'trial_balance_not_zero',
+          '0',
+          String(row.difference),
+          {
+            currency: row.currency,
+          },
+        );
       }
     }
 
@@ -92,10 +99,17 @@ export class ReconciliationService {
     for (const row of negativePayables) {
       scanned += 1;
       mismatches += 1;
-      await this.recordMismatch(run.id, null, 'driver_payable_negative', '>=0', String(row.balance), {
-        driverId: row.key,
-        currency: row.currency,
-      });
+      await this.recordMismatch(
+        run.id,
+        null,
+        'driver_payable_negative',
+        '>=0',
+        String(row.balance),
+        {
+          driverId: row.key,
+          currency: row.currency,
+        },
+      );
     }
 
     // A completed withdrawal must have all three of its entries; a reversed one
@@ -222,7 +236,8 @@ export class ReconciliationService {
     for (const withdrawal of candidates) {
       scanned += 1;
       const outcome = await this.provider.probe(withdrawal.providerIdempotencyKey);
-      const expectedSettled = withdrawal.state === 'COMPLETED' || withdrawal.state === 'PAYOUT_CONFIRMED';
+      const expectedSettled =
+        withdrawal.state === 'COMPLETED' || withdrawal.state === 'PAYOUT_CONFIRMED';
 
       if (expectedSettled && outcome.status !== 'CONFIRMED') {
         mismatches += 1;
@@ -262,7 +277,10 @@ export class ReconciliationService {
   async stuck(olderThanSeconds = 900) {
     const cutoff = new Date(this.clock.nowMs() - olderThanSeconds * 1000);
     const rows = await this.prisma.withdrawal.findMany({
-      where: { updatedAt: { lt: cutoff }, state: { notIn: ['COMPLETED', 'REVERSED', 'FAILED', 'REJECTED'] } },
+      where: {
+        updatedAt: { lt: cutoff },
+        state: { notIn: ['COMPLETED', 'REVERSED', 'FAILED', 'REJECTED'] },
+      },
       orderBy: { updatedAt: 'asc' },
       take: 100,
     });

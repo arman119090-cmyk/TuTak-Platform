@@ -30,9 +30,7 @@ export class AmountTooSmallError extends Error {
     readonly gross: Money,
     readonly totalFee: Money,
   ) {
-    super(
-      `Requested amount ${gross.toString()} does not cover fees of ${totalFee.toString()}`,
-    );
+    super(`Requested amount ${gross.toString()} does not cover fees of ${totalFee.toString()}`);
     this.name = 'AmountTooSmallError';
   }
 }

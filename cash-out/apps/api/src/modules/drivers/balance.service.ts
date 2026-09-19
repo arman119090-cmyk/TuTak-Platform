@@ -62,7 +62,11 @@ export class BalanceService {
     }
 
     try {
-      const fresh = await this.fetchAndStore(driverId, driver.parkId!, driver.yandexContractorProfileId!);
+      const fresh = await this.fetchAndStore(
+        driverId,
+        driver.parkId!,
+        driver.yandexContractorProfileId!,
+      );
       return this.withReserved(driverId, fresh.amount, fresh.fetchedAt, true);
     } catch (error) {
       this.logger.fail('Falling back to cached balance', error, { driverId });

@@ -20,10 +20,18 @@ export default function LegalScreen() {
   const { t } = useI18n();
 
   const title =
-    doc === 'privacy' ? t('profile.privacy') : doc === 'faq' ? t('support.faq') : t('profile.terms');
+    doc === 'privacy'
+      ? t('profile.privacy')
+      : doc === 'faq'
+        ? t('support.faq')
+        : t('profile.terms');
 
   return (
-    <Screen footer={<Button label={t('common.close')} variant="secondary" onPress={() => router.back()} />}>
+    <Screen
+      footer={
+        <Button label={t('common.close')} variant="secondary" onPress={() => router.back()} />
+      }
+    >
       <View style={{ paddingTop: theme.spacing.xl }}>
         <Text variant="titleLarge">{title}</Text>
       </View>

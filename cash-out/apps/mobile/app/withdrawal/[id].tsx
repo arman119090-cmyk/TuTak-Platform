@@ -39,7 +39,11 @@ export default function WithdrawalDetailScreen() {
     }).format(new Date(iso));
 
   return (
-    <Screen footer={<Button label={t('common.close')} variant="secondary" onPress={() => router.back()} />}>
+    <Screen
+      footer={
+        <Button label={t('common.close')} variant="secondary" onPress={() => router.back()} />
+      }
+    >
       <View style={{ paddingTop: theme.spacing.xl }}>
         <Text variant="titleLarge">{t('history.detailsTitle')}</Text>
       </View>
@@ -63,8 +67,16 @@ export default function WithdrawalDetailScreen() {
 
           <Card style={{ marginTop: theme.spacing.base }}>
             <AmountRow label={t('withdraw.rowAmount')} amount={withdrawal.gross} />
-            <AmountRow label={t('withdraw.rowPlatformFee')} amount={withdrawal.platformFee} negative />
-            <AmountRow label={t('withdraw.rowProviderFee')} amount={withdrawal.providerFee} negative />
+            <AmountRow
+              label={t('withdraw.rowPlatformFee')}
+              amount={withdrawal.platformFee}
+              negative
+            />
+            <AmountRow
+              label={t('withdraw.rowProviderFee')}
+              amount={withdrawal.providerFee}
+              negative
+            />
             <View
               style={{
                 height: 1,
@@ -77,7 +89,10 @@ export default function WithdrawalDetailScreen() {
 
           <Card style={{ marginTop: theme.spacing.base }}>
             <Row label={t('history.reference')} value={withdrawal.reference} />
-            <Row label={t('withdraw.methodTitle')} value={withdrawal.payoutMethod.maskedIdentifier} />
+            <Row
+              label={t('withdraw.methodTitle')}
+              value={withdrawal.payoutMethod.maskedIdentifier}
+            />
             <Row label={t('history.requestedAt')} value={format(withdrawal.createdAt)} />
             {withdrawal.completedAt ? (
               <Row label={t('history.completedAt')} value={format(withdrawal.completedAt)} />

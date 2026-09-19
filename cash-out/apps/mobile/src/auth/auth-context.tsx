@@ -23,10 +23,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [deviceId, setDeviceId] = useState('');
 
   const api = useMemo(
-    () => new ApiClient(tokenStore, () => {
-      setStatus('signedOut');
-      setProfile(null);
-    }),
+    () =>
+      new ApiClient(tokenStore, () => {
+        setStatus('signedOut');
+        setProfile(null);
+      }),
     [],
   );
 

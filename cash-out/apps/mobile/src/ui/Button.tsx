@@ -62,8 +62,7 @@ export function Button({
     return pressed ? theme.colors.border : theme.colors.surfaceMuted;
   };
 
-  const labelTone =
-    variant === 'primary' ? 'inverse' : variant === 'danger' ? 'danger' : 'primary';
+  const labelTone = variant === 'primary' ? 'inverse' : variant === 'danger' ? 'danger' : 'primary';
 
   return (
     <Pressable
@@ -98,7 +97,11 @@ export function Button({
           />
         ) : (
           <>
-            <Text variant={size === 'large' ? 'bodyLarge' : 'label'} tone={labelTone} align="center">
+            <Text
+              variant={size === 'large' ? 'bodyLarge' : 'label'}
+              tone={labelTone}
+              align="center"
+            >
               {label}
             </Text>
             {caption ? (

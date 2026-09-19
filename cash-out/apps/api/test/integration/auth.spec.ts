@@ -29,7 +29,11 @@ describe('driver authentication', () => {
       locale: 'hy',
     });
     const code = harness.sms.lastCodes.get(withPhone)!;
-    return harness.auth.verifyOtp({ challengeId: challenge.challengeId, code, deviceId: withDevice });
+    return harness.auth.verifyOtp({
+      challengeId: challenge.challengeId,
+      code,
+      deviceId: withDevice,
+    });
   }
 
   describe('one-time codes', () => {

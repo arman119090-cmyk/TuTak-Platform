@@ -152,7 +152,12 @@ export class YandexHttpAdapter extends YandexFleetPort {
       };
     } catch (error) {
       if (error instanceof YandexHttpError) {
-        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+        if (
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 408 &&
+          error.status !== 429
+        ) {
           return { status: 'REJECTED', code: error.code, message: error.message };
         }
         return { status: 'UNKNOWN', reason: `http_${error.status}` };
@@ -280,7 +285,8 @@ export class YandexHttpAdapter extends YandexFleetPort {
 
   private toProfile(parkId: string, raw: DriverProfileItem): YandexContractorProfile {
     const profile = raw.driver_profile ?? {};
-    const account = (raw.accounts ?? []).find((item) => item.type === 'current') ?? raw.accounts?.[0];
+    const account =
+      (raw.accounts ?? []).find((item) => item.type === 'current') ?? raw.accounts?.[0];
     const currency = account?.currency ?? 'AMD';
     const balanceAmount = parseAmount(account?.balance, currency);
 

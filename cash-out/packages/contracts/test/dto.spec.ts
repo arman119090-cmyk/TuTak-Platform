@@ -27,9 +27,7 @@ describe('wire contracts', () => {
 
   it('refuses a quote request that is both an amount and "everything"', () => {
     const method = '11111111-1111-4111-8111-111111111111';
-    expect(
-      createQuoteSchema.safeParse({ payoutMethodId: method, all: true }).success,
-    ).toBe(true);
+    expect(createQuoteSchema.safeParse({ payoutMethodId: method, all: true }).success).toBe(true);
     expect(
       createQuoteSchema.safeParse({
         payoutMethodId: method,

@@ -92,12 +92,19 @@ export interface YandexTransaction {
 }
 
 export type YandexTransactionOutcome =
-  | { readonly status: 'APPLIED'; readonly transaction: YandexTransaction; readonly balanceAfter: Money | null }
+  | {
+      readonly status: 'APPLIED';
+      readonly transaction: YandexTransaction;
+      readonly balanceAfter: Money | null;
+    }
   | { readonly status: 'REJECTED'; readonly code: string; readonly message: string }
   | { readonly status: 'UNKNOWN'; readonly reason: string };
 
 export class YandexUnavailableError extends Error {
-  constructor(message: string, override readonly cause?: unknown) {
+  constructor(
+    message: string,
+    override readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'YandexUnavailableError';
   }

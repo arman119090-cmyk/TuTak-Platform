@@ -38,7 +38,13 @@ describe('divideRounded', () => {
   });
 
   it('is sign-symmetric for the magnitude-based modes', () => {
-    for (const mode of ['TRUNCATE', 'AWAY_FROM_ZERO', 'HALF_UP', 'HALF_DOWN', 'HALF_EVEN'] as const) {
+    for (const mode of [
+      'TRUNCATE',
+      'AWAY_FROM_ZERO',
+      'HALF_UP',
+      'HALF_DOWN',
+      'HALF_EVEN',
+    ] as const) {
       for (let n = -50n; n <= 50n; n += 1n) {
         expect(divideRounded(-n, 7n, mode)).toBe(-divideRounded(n, 7n, mode));
       }

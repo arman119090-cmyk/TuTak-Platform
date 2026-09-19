@@ -220,7 +220,10 @@ export class WithdrawalsService {
     });
   }
 
-  private async assertSameRequest(existing: Withdrawal, requestHash: string): Promise<WithdrawalDto> {
+  private async assertSameRequest(
+    existing: Withdrawal,
+    requestHash: string,
+  ): Promise<WithdrawalDto> {
     if (existing.requestHash !== requestHash) {
       throw new AppError(
         'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
@@ -313,9 +316,7 @@ export class WithdrawalsService {
  * something to paper over by returning an unrelated withdrawal.
  */
 function hashRequest(dto: ConfirmWithdrawalDto): string {
-  return createHash('sha256')
-    .update(`${dto.quoteId}|${dto.signature}`)
-    .digest('base64url');
+  return createHash('sha256').update(`${dto.quoteId}|${dto.signature}`).digest('base64url');
 }
 
 export type { Prisma };

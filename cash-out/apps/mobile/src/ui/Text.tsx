@@ -3,7 +3,8 @@ import { Text as RNText, type TextProps as RNTextProps, type TextStyle } from 'r
 import { useTheme } from '../theme/theme';
 
 type Variant = keyof ReturnType<typeof useTheme>['typography'];
-type Tone = 'primary' | 'secondary' | 'tertiary' | 'inverse' | 'brand' | 'danger' | 'success' | 'warning';
+type Tone =
+  'primary' | 'secondary' | 'tertiary' | 'inverse' | 'brand' | 'danger' | 'success' | 'warning';
 
 export interface TextProps extends RNTextProps {
   variant?: Variant;

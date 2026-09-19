@@ -7,7 +7,16 @@ import { useAuth } from '../../src/auth/auth-context';
 import { useErrorMessage } from '../../src/hooks/useErrorMessage';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
-import { Button, Card, EmptyState, ErrorState, Screen, Skeleton, Text, WithdrawalRow } from '../../src/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Screen,
+  Skeleton,
+  Text,
+  WithdrawalRow,
+} from '../../src/ui';
 
 export default function HistoryScreen() {
   const theme = useTheme();

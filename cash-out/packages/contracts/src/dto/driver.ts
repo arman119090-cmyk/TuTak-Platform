@@ -49,6 +49,9 @@ export const linkDriverSchema = z.object({
    * Last four digits of the driver licence, used as a second factor when
    * matching a phone number to a Yandex contractor profile.
    */
-  licenceLast4: z.string().regex(/^\d{4}$/).optional(),
+  licenceLast4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
 });
 export type LinkDriverDto = z.infer<typeof linkDriverSchema>;

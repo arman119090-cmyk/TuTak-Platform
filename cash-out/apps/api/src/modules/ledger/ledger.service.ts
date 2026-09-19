@@ -134,12 +134,10 @@ export class LedgerService {
    * reports debits minus credits, a credit-normal account the reverse, so that
    * every balance reads as a positive number when things are healthy.
    */
-  async balanceOf(
-    type: LedgerAccountType,
-    key: string,
-    currency: string,
-  ): Promise<Money> {
-    const rows = await this.prisma.$queryRaw<Array<{ debits: bigint | null; credits: bigint | null }>>`
+  async balanceOf(type: LedgerAccountType, key: string, currency: string): Promise<Money> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ debits: bigint | null; credits: bigint | null }>
+    >`
       -- The ::bigint casts matter: Postgres sums bigints into numeric, which the
       -- driver hands back as a string, and a string subtraction would silently
       -- route a monetary value through an IEEE double.

@@ -29,7 +29,10 @@ export abstract class PaymentProviderPort {
   abstract registerInstrument(input: RegisterInstrumentInput): Promise<RegisteredInstrument>;
 
   /** Verifies a webhook's signature and timestamp, and parses it. */
-  abstract parseWebhook(raw: string, headers: Record<string, string | undefined>): WebhookParseResult;
+  abstract parseWebhook(
+    raw: string,
+    headers: Record<string, string | undefined>,
+  ): WebhookParseResult;
 
   abstract ping(): Promise<boolean>;
 }
@@ -109,7 +112,10 @@ export interface ProviderWebhookEvent {
 }
 
 export class PaymentProviderUnavailableError extends Error {
-  constructor(message: string, override readonly cause?: unknown) {
+  constructor(
+    message: string,
+    override readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'PaymentProviderUnavailableError';
   }

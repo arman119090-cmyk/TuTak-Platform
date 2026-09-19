@@ -161,8 +161,8 @@ describe('assertQuoteConsistent', () => {
         net: amd(98_401n),
       }),
     ).toThrow(/negative component/);
-    expect(() =>
-      assertQuoteConsistent({ ...quote, unusedRemainder: amd(-1n) }),
-    ).toThrow(/unusedRemainder/);
+    expect(() => assertQuoteConsistent({ ...quote, unusedRemainder: amd(-1n) })).toThrow(
+      /unusedRemainder/,
+    );
   });
 });

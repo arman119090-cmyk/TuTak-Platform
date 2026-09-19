@@ -34,7 +34,12 @@ export function EmptyState({
         {title}
       </Text>
       {body ? (
-        <Text variant="body" tone="secondary" align="center" style={{ marginTop: theme.spacing.sm }}>
+        <Text
+          variant="body"
+          tone="secondary"
+          align="center"
+          style={{ marginTop: theme.spacing.sm }}
+        >
           {body}
         </Text>
       ) : null}
@@ -79,7 +84,12 @@ export function ErrorState({
         {title}
       </Text>
       {body ? (
-        <Text variant="body" tone="secondary" align="center" style={{ marginTop: theme.spacing.sm }}>
+        <Text
+          variant="body"
+          tone="secondary"
+          align="center"
+          style={{ marginTop: theme.spacing.sm }}
+        >
           {body}
         </Text>
       ) : null}

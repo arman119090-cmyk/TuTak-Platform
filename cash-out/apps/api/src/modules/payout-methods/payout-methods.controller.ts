@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
 import { addPayoutMethodSchema, type AddPayoutMethodDto } from '@cashout/contracts';
 import { zodBody } from '../../common/zod.pipe';
 import { CurrentDriverId } from '../auth/auth.decorators';
@@ -23,10 +32,7 @@ export class PayoutMethodsController {
 
   @Post(':id/default')
   @HttpCode(204)
-  async makeDefault(
-    @CurrentDriverId() driverId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  async makeDefault(@CurrentDriverId() driverId: string, @Param('id', ParseUUIDPipe) id: string) {
     await this.methods.makeDefault(driverId, id);
   }
 

@@ -25,7 +25,9 @@ export default function OnboardingScreen() {
 
   return (
     <Screen
-      footer={<Button label={t('onboarding.start')} onPress={() => router.push('/sign-in/phone')} />}
+      footer={
+        <Button label={t('onboarding.start')} onPress={() => router.push('/sign-in/phone')} />
+      }
     >
       <View style={{ flex: 1, justifyContent: 'center', paddingVertical: theme.spacing.xxxl }}>
         <Text variant="amountLarge" tone="brand">

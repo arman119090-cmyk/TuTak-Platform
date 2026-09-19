@@ -49,7 +49,9 @@ export class WithdrawalWorker {
     const now = this.clock.now();
     const due = await this.prisma.withdrawal.findMany({
       where: {
-        state: { notIn: ['COMPLETED', 'REVERSED', 'FAILED', 'REJECTED', 'MANUAL_REVIEW', 'RISK_REVIEW'] },
+        state: {
+          notIn: ['COMPLETED', 'REVERSED', 'FAILED', 'REJECTED', 'MANUAL_REVIEW', 'RISK_REVIEW'],
+        },
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
         AND: [{ OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] }],
       },

@@ -57,7 +57,8 @@ export class OtpService {
       const waitSeconds = Math.max(
         1,
         Math.ceil(
-          (recent.createdAt.getTime() + this.env.OTP_RESEND_COOLDOWN_SECONDS * 1000 -
+          (recent.createdAt.getTime() +
+            this.env.OTP_RESEND_COOLDOWN_SECONDS * 1000 -
             this.clock.nowMs()) /
             1000,
         ),

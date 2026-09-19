@@ -102,11 +102,7 @@ export const withdrawalJournal = {
   },
 
   /** What the provider actually charged us, once it tells us. */
-  providerCost(
-    withdrawalId: string,
-    providerAccountKey: string,
-    cost: Money,
-  ): PostEntryInput {
+  providerCost(withdrawalId: string, providerAccountKey: string, cost: Money): PostEntryInput {
     return {
       type: 'PROVIDER_COST',
       idempotencyKey: `${withdrawalId}:PROVIDER_COST`,

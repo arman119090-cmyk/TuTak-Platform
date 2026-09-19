@@ -35,10 +35,7 @@ export default function SplashScreen() {
       <Text variant="amountLarge" tone="inverse">
         Cash Out
       </Text>
-      <ActivityIndicator
-        color={theme.colors.onPrimary}
-        style={{ marginTop: theme.spacing.xl }}
-      />
+      <ActivityIndicator color={theme.colors.onPrimary} style={{ marginTop: theme.spacing.xl }} />
     </View>
   );
 }

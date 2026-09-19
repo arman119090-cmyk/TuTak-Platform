@@ -32,7 +32,10 @@ import { IntegrationHealthService } from './integration-health.service';
 const signInSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(200),
-  totpCode: z.string().regex(/^\d{6}$/).optional(),
+  totpCode: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
 });
 
 const driverQuerySchema = paginationSchema.extend({ search: z.string().max(120).optional() });
@@ -107,7 +110,9 @@ export class AdminController {
   @RequirePermission('dashboard:read')
   async dashboard(
     @Query(new ZodValidationPipe(z.object({ window: z.enum(['24h', '7d', '30d']).default('24h') })))
-    query: { window: '24h' | '7d' | '30d' },
+    query: {
+      window: '24h' | '7d' | '30d';
+    },
   ) {
     return this.admin.dashboard(query.window);
   }
@@ -145,9 +150,19 @@ export class AdminController {
   @RequirePermission('drivers:read')
   async drivers(
     @Query(new ZodValidationPipe(driverQuerySchema))
-    query: { limit: number; cursor?: string; search?: string },
+    query: {
+      limit: number;
+      cursor?: string;
+      search?: string;
+    },
   ) {
     return this.admin.listDrivers(query);
+  }
+
+  @Get('drivers/:id')
+  @RequirePermission('drivers:read')
+  async driver(@Param('id', ParseUUIDPipe) id: string) {
+    return this.admin.driverDetail(id);
   }
 
   @Post('drivers/:id/block')
@@ -237,7 +252,8 @@ export class AdminController {
   @RequirePermission('fees:write')
   async createFee(
     @CurrentAdmin() admin: AdminRequest['admin'],
-    @Body(zodBody(PricingService.feeScheduleSchema)) dto: z.infer<typeof PricingService.feeScheduleSchema>,
+    @Body(zodBody(PricingService.feeScheduleSchema))
+    dto: z.infer<typeof PricingService.feeScheduleSchema>,
   ) {
     return this.pricing.replaceFeeSchedule(dto, admin!.id);
   }
@@ -252,7 +268,8 @@ export class AdminController {
   @RequirePermission('limits:write')
   async createLimit(
     @CurrentAdmin() admin: AdminRequest['admin'],
-    @Body(zodBody(PricingService.limitPolicySchema)) dto: z.infer<typeof PricingService.limitPolicySchema>,
+    @Body(zodBody(PricingService.limitPolicySchema))
+    dto: z.infer<typeof PricingService.limitPolicySchema>,
   ) {
     return this.pricing.replaceLimitPolicy(dto, admin!.id);
   }
@@ -271,7 +288,11 @@ export class AdminController {
   @RequirePermission('audit:read')
   async audit(
     @Query(new ZodValidationPipe(auditQuerySchema))
-    query: { limit: number; cursor?: string; subjectId?: string },
+    query: {
+      limit: number;
+      cursor?: string;
+      subjectId?: string;
+    },
   ) {
     return this.admin.auditLog(query);
   }

@@ -15,7 +15,12 @@ export interface LimitCheckInput {
 export type LimitDecision =
   | { readonly outcome: 'ALLOW' }
   | { readonly outcome: 'MANUAL_REVIEW'; readonly reason: string }
-  | { readonly outcome: 'DENY'; readonly code: ErrorCode; readonly message: string; readonly details?: Record<string, unknown> };
+  | {
+      readonly outcome: 'DENY';
+      readonly code: ErrorCode;
+      readonly message: string;
+      readonly details?: Record<string, unknown>;
+    };
 
 export interface ResolvedLimits {
   readonly id: string;
@@ -116,9 +121,24 @@ export class LimitsService {
       code: ErrorCode;
       label: string;
     }> = [
-      { since: startOfDay(now), cap: limits.dailyAmount, code: 'DAILY_LIMIT_EXCEEDED', label: 'daily' },
-      { since: minusDays(now, 7), cap: limits.weeklyAmount, code: 'WEEKLY_LIMIT_EXCEEDED', label: 'weekly' },
-      { since: minusDays(now, 30), cap: limits.monthlyAmount, code: 'MONTHLY_LIMIT_EXCEEDED', label: 'monthly' },
+      {
+        since: startOfDay(now),
+        cap: limits.dailyAmount,
+        code: 'DAILY_LIMIT_EXCEEDED',
+        label: 'daily',
+      },
+      {
+        since: minusDays(now, 7),
+        cap: limits.weeklyAmount,
+        code: 'WEEKLY_LIMIT_EXCEEDED',
+        label: 'weekly',
+      },
+      {
+        since: minusDays(now, 30),
+        cap: limits.monthlyAmount,
+        code: 'MONTHLY_LIMIT_EXCEEDED',
+        label: 'monthly',
+      },
     ];
 
     for (const window of windows) {

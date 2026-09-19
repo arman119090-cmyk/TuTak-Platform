@@ -65,8 +65,7 @@ export const endpoints = {
   confirm: (api: ApiClient, body: ConfirmWithdrawalDto) =>
     api.request<WithdrawalDto>('/v1/withdrawals', { method: 'POST', body }),
 
-  withdrawal: (api: ApiClient, id: string) =>
-    api.request<WithdrawalDto>(`/v1/withdrawals/${id}`),
+  withdrawal: (api: ApiClient, id: string) => api.request<WithdrawalDto>(`/v1/withdrawals/${id}`),
 
   withdrawals: (api: ApiClient, cursor?: string) =>
     api.request<WithdrawalListDto>(

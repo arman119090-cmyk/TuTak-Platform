@@ -20,13 +20,7 @@ import { PricingService } from './pricing.service';
     YandexModule,
   ],
   controllers: [AdminAuthController, AdminController],
-  providers: [
-    AdminService,
-    AdminAuthService,
-    AdminGuard,
-    PricingService,
-    IntegrationHealthService,
-  ],
+  providers: [AdminService, AdminAuthService, AdminGuard, PricingService, IntegrationHealthService],
   exports: [AdminAuthService, AdminService, IntegrationHealthService],
 })
 export class AdminModule {}

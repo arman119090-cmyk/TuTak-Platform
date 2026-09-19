@@ -58,12 +58,7 @@ export default function PhoneScreen() {
     <Screen
       footer={
         <View style={{ gap: theme.spacing.sm }}>
-          <Button
-            label={t('common.continue')}
-            onPress={submit}
-            loading={busy}
-            disabled={!valid}
-          />
+          <Button label={t('common.continue')} onPress={submit} loading={busy} disabled={!valid} />
           <Text variant="caption" tone="tertiary" align="center">
             {t('auth.legalNote')}
           </Text>

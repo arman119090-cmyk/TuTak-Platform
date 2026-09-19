@@ -71,11 +71,7 @@ export function Screen({
     </ScrollView>
   ) : (
     <View
-      style={[
-        styles.content,
-        { flex: 1, paddingHorizontal: theme.spacing.base },
-        contentStyle,
-      ]}
+      style={[styles.content, { flex: 1, paddingHorizontal: theme.spacing.base }, contentStyle]}
     >
       {children}
     </View>
@@ -84,11 +80,7 @@ export function Screen({
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[
-        styles.root,
-        { backgroundColor: background, paddingTop: insets.top },
-        style,
-      ]}
+      style={[styles.root, { backgroundColor: background, paddingTop: insets.top }, style]}
     >
       {body}
       {footer ? (

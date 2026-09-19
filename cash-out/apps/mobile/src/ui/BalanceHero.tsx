@@ -46,7 +46,11 @@ export function BalanceHero({
         <Skeleton width={220} height={54} style={{ marginTop: theme.spacing.sm }} />
       ) : (
         <View style={[styles.amountRow, { marginTop: theme.spacing.xs }]}>
-          <Text variant="amountHero" tabular accessibilityLabel={balance ? money(balance) : undefined}>
+          <Text
+            variant="amountHero"
+            tabular
+            accessibilityLabel={balance ? money(balance) : undefined}
+          >
             {balance ? amount(balance) : '—'}
           </Text>
           <Text variant="titleLarge" tone="secondary" style={{ marginLeft: theme.spacing.sm }}>
@@ -68,9 +72,12 @@ export function BalanceHero({
       ) : updatedAt ? (
         <Text variant="caption" tone="tertiary" style={{ marginTop: theme.spacing.xs }}>
           {t('home.updatedAt', {
-            time: new Intl.DateTimeFormat(locale === 'hy' ? 'hy-AM' : locale === 'ru' ? 'ru-RU' : 'en-US', {
-              timeStyle: 'short',
-            }).format(new Date(updatedAt)),
+            time: new Intl.DateTimeFormat(
+              locale === 'hy' ? 'hy-AM' : locale === 'ru' ? 'ru-RU' : 'en-US',
+              {
+                timeStyle: 'short',
+              },
+            ).format(new Date(updatedAt)),
           })}
         </Text>
       ) : null}

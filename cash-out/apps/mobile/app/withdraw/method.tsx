@@ -45,9 +45,7 @@ export default function PayoutMethodScreen() {
   );
 
   return (
-    <Screen
-      footer={<Button label={t('payoutMethod.addCard')} onPress={() => setAddOpen(true)} />}
-    >
+    <Screen footer={<Button label={t('payoutMethod.addCard')} onPress={() => setAddOpen(true)} />}>
       <View style={{ paddingTop: theme.spacing.xl, paddingBottom: theme.spacing.base }}>
         <Text variant="titleLarge">{t('withdraw.methodTitle')}</Text>
       </View>
@@ -88,9 +86,9 @@ export default function PayoutMethodScreen() {
           {t('withdraw.noMethods')}
         </Text>
         <Text variant="caption" tone="tertiary" style={{ marginTop: theme.spacing.sm }}>
-          Card details are collected by the payment provider’s own secure sheet. Cash Out never
-          sees or stores a card number. This step is wired to the provider’s SDK; until a provider
-          is contracted, there is nothing here to enter.
+          Card details are collected by the payment provider’s own secure sheet. Cash Out never sees
+          or stores a card number. This step is wired to the provider’s SDK; until a provider is
+          contracted, there is nothing here to enter.
         </Text>
         <Button
           label={t('common.close')}

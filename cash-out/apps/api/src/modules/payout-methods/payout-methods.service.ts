@@ -58,11 +58,14 @@ export class PayoutMethodsService {
     });
     if (existing) {
       if (dto.setAsDefault) await this.makeDefault(driverId, existing.id);
-      return toDto(await this.prisma.payoutMethod.findUniqueOrThrow({ where: { id: existing.id } }));
+      return toDto(
+        await this.prisma.payoutMethod.findUniqueOrThrow({ where: { id: existing.id } }),
+      );
     }
 
     const created = await this.prisma.$transaction(async (tx) => {
-      const isFirst = (await tx.payoutMethod.count({ where: { driverId, disabledAt: null } })) === 0;
+      const isFirst =
+        (await tx.payoutMethod.count({ where: { driverId, disabledAt: null } })) === 0;
       const shouldDefault = dto.setAsDefault || isFirst;
 
       if (shouldDefault) {

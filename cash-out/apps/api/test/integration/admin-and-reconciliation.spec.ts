@@ -57,9 +57,9 @@ describe('the admin surface and reconciliation', () => {
   describe('admin sign-in', () => {
     it('requires the second factor for any role that can act', async () => {
       const admin = await createAdmin('OPERATOR');
-      await expect(
-        harness.adminAuth.signIn(admin.email, admin.password),
-      ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+      await expect(harness.adminAuth.signIn(admin.email, admin.password)).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+      });
 
       const session = await harness.adminAuth.signIn(
         admin.email,
@@ -79,14 +79,19 @@ describe('the admin surface and reconciliation', () => {
 
     it('gives the same answer for a wrong password and an unknown account', async () => {
       const admin = await createAdmin('ADMIN');
-      const wrongPassword = harness.adminAuth
-        .signIn(admin.email, 'nope', totpCode(admin.secret, harness.clock.nowMs()))
-        .catch((error: { code: string; message: string }) => error);
-      const unknownAccount = harness.adminAuth
-        .signIn('nobody@cashout.test', 'nope', '000000')
-        .catch((error: { code: string; message: string }) => error);
+      const failure = async (email: string, password: string, code: string) => {
+        try {
+          await harness.adminAuth.signIn(email, password, code);
+          throw new Error('expected the sign-in to fail');
+        } catch (error) {
+          return error as { code: string; message: string };
+        }
+      };
 
-      const [a, b] = await Promise.all([wrongPassword, unknownAccount]);
+      const [a, b] = await Promise.all([
+        failure(admin.email, 'nope', totpCode(admin.secret, harness.clock.nowMs())),
+        failure('nobody@cashout.test', 'nope', '000000'),
+      ]);
       expect(a.message).toBe(b.message);
       expect(a.code).toBe(b.code);
     });
@@ -292,7 +297,10 @@ describe('the admin surface and reconciliation', () => {
       await harness.reconciliation.runYandex();
 
       const [mismatch] = await harness.reconciliation.openMismatches();
-      await harness.reconciliation.resolveMismatch(mismatch!.id, 'Yandex support confirmed by ticket 1234');
+      await harness.reconciliation.resolveMismatch(
+        mismatch!.id,
+        'Yandex support confirmed by ticket 1234',
+      );
 
       expect(await harness.reconciliation.openMismatches()).toHaveLength(0);
     });
@@ -313,7 +321,8 @@ describe('the admin surface and reconciliation', () => {
         data: {
           type: 'ADJUSTMENT',
           idempotencyKey: 'delete-me-if-you-can',
-          description: 'a deliberately empty entry, so the failure is the trigger and not a foreign key',
+          description:
+            'a deliberately empty entry, so the failure is the trigger and not a foreign key',
         },
       });
 

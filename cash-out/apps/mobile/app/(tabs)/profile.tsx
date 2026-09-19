@@ -84,7 +84,13 @@ export default function ProfileScreen() {
       </Card>
 
       <Card padded={false}>
-        <ListRow label={t('profile.signOut')} danger onPress={() => setSignOutOpen(true)} first last />
+        <ListRow
+          label={t('profile.signOut')}
+          danger
+          onPress={() => setSignOutOpen(true)}
+          first
+          last
+        />
       </Card>
 
       <Sheet

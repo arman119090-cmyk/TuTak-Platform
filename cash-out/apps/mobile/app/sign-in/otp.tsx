@@ -115,7 +115,12 @@ export default function OtpScreen() {
         </View>
 
         {busy ? (
-          <Text variant="caption" tone="tertiary" align="center" style={{ marginTop: theme.spacing.base }}>
+          <Text
+            variant="caption"
+            tone="tertiary"
+            align="center"
+            style={{ marginTop: theme.spacing.base }}
+          >
             {t('common.loading')}
           </Text>
         ) : null}

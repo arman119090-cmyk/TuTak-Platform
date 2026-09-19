@@ -6,7 +6,10 @@ import { AppError } from '../../common/app-error';
 import { AppLogger } from '../../common/logging/logger.service';
 import { PrismaService, isUniqueViolation } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { PaymentProviderPort, ProviderWebhookEvent } from '../payment-provider/payment-provider.port';
+import {
+  PaymentProviderPort,
+  ProviderWebhookEvent,
+} from '../payment-provider/payment-provider.port';
 import { WithdrawalStateService } from './withdrawal-state.service';
 import { WithdrawalOrchestrator } from './withdrawal.orchestrator';
 

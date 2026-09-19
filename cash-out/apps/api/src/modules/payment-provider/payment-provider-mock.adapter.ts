@@ -226,9 +226,7 @@ export class PaymentProviderMockAdapter extends PaymentProviderPort {
           type,
           reference,
           providerTransactionId,
-          occurredAt: parsed.occurred_at
-            ? new Date(String(parsed.occurred_at))
-            : this.clock.now(),
+          occurredAt: parsed.occurred_at ? new Date(String(parsed.occurred_at)) : this.clock.now(),
           failureCode: parsed.failure_code ? String(parsed.failure_code) : undefined,
           failureMessage: parsed.failure_message ? String(parsed.failure_message) : undefined,
           providerCost:

@@ -77,9 +77,9 @@ describe('assertEntryBalances', () => {
   });
 
   it('rejects a single-leg entry', () => {
-    expect(() =>
-      assertEntryBalances(entry([posting('PARK_RECEIVABLE', 'DEBIT', '100')])),
-    ).toThrow(UnbalancedJournalEntryError);
+    expect(() => assertEntryBalances(entry([posting('PARK_RECEIVABLE', 'DEBIT', '100')]))).toThrow(
+      UnbalancedJournalEntryError,
+    );
   });
 
   it('rejects a negative posting instead of letting sign encode direction twice', () => {

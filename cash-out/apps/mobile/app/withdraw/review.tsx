@@ -88,9 +88,7 @@ export default function ReviewScreen() {
           ) : null}
           <Button
             label={
-              expired
-                ? t('common.retry')
-                : t('withdraw.confirmCta', { amount: money(quote.net) })
+              expired ? t('common.retry') : t('withdraw.confirmCta', { amount: money(quote.net) })
             }
             caption={expired ? t('withdraw.quoteExpired') : undefined}
             onPress={() => (expired ? router.back() : setConfirming(true))}
@@ -122,9 +120,7 @@ export default function ReviewScreen() {
           align="center"
           style={{ marginTop: theme.spacing.base }}
         >
-          {expired
-            ? t('withdraw.quoteExpired')
-            : `${secondsLeft}s`}
+          {expired ? t('withdraw.quoteExpired') : `${secondsLeft}s`}
         </Text>
       </View>
 
@@ -135,11 +131,7 @@ export default function ReviewScreen() {
         title={t('withdraw.reviewTitle')}
         footer={
           <View style={{ gap: theme.spacing.sm }}>
-            <Button
-              label={t('common.confirm')}
-              onPress={() => void confirm()}
-              loading={busy}
-            />
+            <Button label={t('common.confirm')} onPress={() => void confirm()} loading={busy} />
             <Button
               label={t('common.cancel')}
               variant="ghost"
@@ -152,7 +144,12 @@ export default function ReviewScreen() {
         <Text variant="amountMedium" align="center" tabular>
           {money(quote.net)}
         </Text>
-        <Text variant="body" tone="secondary" align="center" style={{ marginTop: theme.spacing.xs }}>
+        <Text
+          variant="body"
+          tone="secondary"
+          align="center"
+          style={{ marginTop: theme.spacing.xs }}
+        >
           {t('withdraw.rowNet')}
         </Text>
       </Sheet>

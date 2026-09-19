@@ -21,7 +21,9 @@ export default function SuccessScreen() {
           <Button
             label={t('history.detailsTitle')}
             variant="ghost"
-            onPress={() => router.replace({ pathname: '/withdrawal/[id]', params: { id: id ?? '' } })}
+            onPress={() =>
+              router.replace({ pathname: '/withdrawal/[id]', params: { id: id ?? '' } })
+            }
           />
         </View>
       }

@@ -33,25 +33,41 @@ export class AdminService {
     const hours = window === '24h' ? 24 : window === '7d' ? 168 : 720;
     const since = new Date(this.clock.nowMs() - hours * 3_600_000);
 
-    const [total, volume, revenue, succeeded, inFlight, manualReview, suspense] = await Promise.all([
-      this.prisma.withdrawal.count({ where: { createdAt: { gte: since }, currency } }),
-      this.prisma.withdrawal.aggregate({
-        where: { createdAt: { gte: since }, currency, state: { in: ['COMPLETED', 'PAYOUT_CONFIRMED'] } },
-        _sum: { grossMinor: true },
-      }),
-      this.prisma.withdrawal.aggregate({
-        where: { createdAt: { gte: since }, currency, state: { in: ['COMPLETED', 'PAYOUT_CONFIRMED'] } },
-        _sum: { platformFeeMinor: true },
-      }),
-      this.prisma.withdrawal.count({
-        where: { createdAt: { gte: since }, currency, state: { in: ['COMPLETED', 'PAYOUT_CONFIRMED'] } },
-      }),
-      this.prisma.withdrawal.count({
-        where: { state: { notIn: ['COMPLETED', 'REVERSED', 'FAILED', 'REJECTED'] } },
-      }),
-      this.prisma.withdrawal.count({ where: { state: { in: ['MANUAL_REVIEW', 'RISK_REVIEW'] } } }),
-      this.ledger.balanceOf('SUSPENSE', 'GLOBAL', currency),
-    ]);
+    const [total, volume, revenue, succeeded, inFlight, manualReview, suspense] = await Promise.all(
+      [
+        this.prisma.withdrawal.count({ where: { createdAt: { gte: since }, currency } }),
+        this.prisma.withdrawal.aggregate({
+          where: {
+            createdAt: { gte: since },
+            currency,
+            state: { in: ['COMPLETED', 'PAYOUT_CONFIRMED'] },
+          },
+          _sum: { grossMinor: true },
+        }),
+        this.prisma.withdrawal.aggregate({
+          where: {
+            createdAt: { gte: since },
+            currency,
+            state: { in: ['COMPLETED', 'PAYOUT_CONFIRMED'] },
+          },
+          _sum: { platformFeeMinor: true },
+        }),
+        this.prisma.withdrawal.count({
+          where: {
+            createdAt: { gte: since },
+            currency,
+            state: { in: ['COMPLETED', 'PAYOUT_CONFIRMED'] },
+          },
+        }),
+        this.prisma.withdrawal.count({
+          where: { state: { notIn: ['COMPLETED', 'REVERSED', 'FAILED', 'REJECTED'] } },
+        }),
+        this.prisma.withdrawal.count({
+          where: { state: { in: ['MANUAL_REVIEW', 'RISK_REVIEW'] } },
+        }),
+        this.ledger.balanceOf('SUSPENSE', 'GLOBAL', currency),
+      ],
+    );
 
     const stuck = await this.stuckCount();
     const money = (minor: bigint) => Money.fromMinor(minor, currency as CurrencyCode).toJSON();
@@ -242,7 +258,10 @@ export class AdminService {
     const withdrawal = await this.prisma.withdrawal.findUnique({ where: { id: withdrawalId } });
     if (!withdrawal) throw AppError.notFound('Withdrawal');
     if (withdrawal.state !== 'MANUAL_REVIEW' && withdrawal.state !== 'RISK_REVIEW') {
-      throw new AppError('VALIDATION_FAILED', `This withdrawal is ${withdrawal.state}, not under review`);
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `This withdrawal is ${withdrawal.state}, not under review`,
+      );
     }
 
     if (dto.resolution === 'MARK_COMPLETED' && !dto.evidenceReference) {
@@ -261,7 +280,9 @@ export class AdminService {
             note: dto.reason,
             actorType: 'ADMIN',
             actorId: adminId,
-            data: { providerTransactionId: dto.evidenceReference ?? withdrawal.providerTransactionId },
+            data: {
+              providerTransactionId: dto.evidenceReference ?? withdrawal.providerTransactionId,
+            },
           });
         });
         break;
@@ -355,6 +376,59 @@ export class AdminService {
     };
   }
 
+  async driverDetail(driverId: string) {
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+      include: {
+        user: true,
+        payoutMethods: { orderBy: { createdAt: 'desc' } },
+        withdrawals: { orderBy: { createdAt: 'desc' }, take: 50 },
+      },
+    });
+    if (!driver) throw AppError.notFound('Driver');
+
+    const currency = driver.currency ?? 'AMD';
+    const payable = await this.ledger.balanceOf('DRIVER_PAYABLE', driver.id, currency);
+
+    return {
+      driver: {
+        id: driver.id,
+        phone: driver.user.phone,
+        name: [driver.firstName, driver.lastName].filter(Boolean).join(' ') || null,
+        locale: driver.user.locale,
+        verificationStatus: driver.verificationStatus,
+        parkId: driver.parkId,
+        yandexContractorProfileId: driver.yandexContractorProfileId,
+        currency,
+        riskTier: driver.riskTier,
+        blockReason: driver.blockReason,
+        verifiedAt: driver.verifiedAt?.toISOString() ?? null,
+        createdAt: driver.createdAt.toISOString(),
+      },
+      /** What Cash Out still owes this driver, straight from the ledger. */
+      outstandingPayable: payable.toJSON(),
+      payoutMethods: driver.payoutMethods.map((method) => ({
+        id: method.id,
+        kind: method.kind,
+        status: method.status,
+        masked: method.maskedIdentifier,
+        displayName: method.displayName,
+        isDefault: method.isDefault,
+        createdAt: method.createdAt.toISOString(),
+        disabledAt: method.disabledAt?.toISOString() ?? null,
+      })),
+      withdrawals: driver.withdrawals.map((row) => ({
+        id: row.id,
+        reference: row.reference,
+        state: row.state,
+        currency: row.currency,
+        gross: row.grossMinor.toString(),
+        net: row.netMinor.toString(),
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
   async setDriverBlocked(driverId: string, blocked: boolean, adminId: string, reason: string) {
     const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
     if (!driver) throw AppError.notFound('Driver');
@@ -362,7 +436,11 @@ export class AdminService {
     await this.prisma.driver.update({
       where: { id: driverId },
       data: {
-        verificationStatus: blocked ? 'BLOCKED' : driver.yandexContractorProfileId ? 'VERIFIED' : 'UNLINKED',
+        verificationStatus: blocked
+          ? 'BLOCKED'
+          : driver.yandexContractorProfileId
+            ? 'VERIFIED'
+            : 'UNLINKED',
         blockedAt: blocked ? this.clock.now() : null,
         blockReason: blocked ? reason : null,
       },

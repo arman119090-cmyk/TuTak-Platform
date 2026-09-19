@@ -85,7 +85,9 @@ export default function HomeScreen() {
       footer={
         <Button
           label={t('home.withdrawCta')}
-          onPress={() => router.push(methods.length === 0 ? '/withdraw/method' : '/withdraw/amount')}
+          onPress={() =>
+            router.push(methods.length === 0 ? '/withdraw/method' : '/withdraw/amount')
+          }
           disabled={!canWithdraw && methods.length > 0}
           caption={
             live
@@ -108,10 +110,7 @@ export default function HomeScreen() {
       </View>
 
       {live ? (
-        <Card
-          tone="brand"
-          style={{ marginBottom: theme.spacing.base }}
-        >
+        <Card tone="brand" style={{ marginBottom: theme.spacing.base }}>
           <Text variant="label" tone="brand">
             {t('withdraw.processingTitle')}
           </Text>

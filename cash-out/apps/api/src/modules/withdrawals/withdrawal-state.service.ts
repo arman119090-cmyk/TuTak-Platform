@@ -10,9 +10,7 @@ export class WithdrawalConflictError extends Error {
     readonly withdrawalId: string,
     readonly expectedVersion: number,
   ) {
-    super(
-      `Withdrawal ${withdrawalId} changed underneath us (expected version ${expectedVersion})`,
-    );
+    super(`Withdrawal ${withdrawalId} changed underneath us (expected version ${expectedVersion})`);
     this.name = 'WithdrawalConflictError';
   }
 }

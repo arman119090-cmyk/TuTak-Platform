@@ -24,7 +24,11 @@ export default function SupportScreen() {
   )}`;
 
   return (
-    <Screen footer={<Button label={t('common.close')} variant="secondary" onPress={() => router.back()} />}>
+    <Screen
+      footer={
+        <Button label={t('common.close')} variant="secondary" onPress={() => router.back()} />
+      }
+    >
       <View style={{ paddingTop: theme.spacing.xl }}>
         <Text variant="titleLarge">{t('support.title')}</Text>
         <Text variant="body" tone="secondary" style={{ marginTop: theme.spacing.xs }}>

@@ -35,7 +35,10 @@ export class PricingService {
     providerMinMinor: minorString.nullable().default(null),
     providerMaxMinor: minorString.nullable().default(null),
     providerRounding: z.enum(ROUNDING_MODES).default('HALF_UP'),
-    payoutIncrementMinor: z.string().regex(/^[1-9]\d*$/).default('1'),
+    payoutIncrementMinor: z
+      .string()
+      .regex(/^[1-9]\d*$/)
+      .default('1'),
     reason: z.string().min(5).max(500),
   });
 
@@ -80,10 +83,7 @@ export class PricingService {
     }));
   }
 
-  async replaceFeeSchedule(
-    dto: z.infer<typeof PricingService.feeScheduleSchema>,
-    adminId: string,
-  ) {
+  async replaceFeeSchedule(dto: z.infer<typeof PricingService.feeScheduleSchema>, adminId: string) {
     const draft = {
       platformRateNumerator: BigInt(dto.platformRateNumerator),
       platformRateDenominator: BigInt(dto.platformRateDenominator),
@@ -165,10 +165,7 @@ export class PricingService {
     }));
   }
 
-  async replaceLimitPolicy(
-    dto: z.infer<typeof PricingService.limitPolicySchema>,
-    adminId: string,
-  ) {
+  async replaceLimitPolicy(dto: z.infer<typeof PricingService.limitPolicySchema>, adminId: string) {
     if (BigInt(dto.minWithdrawalMinor) > BigInt(dto.maxWithdrawalMinor)) {
       throw new AppError('VALIDATION_FAILED', 'The minimum cannot exceed the maximum');
     }

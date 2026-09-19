@@ -224,7 +224,12 @@ describe('quoting and limits', () => {
     it('enforces the per-day count', async () => {
       await setup({ dailyCountMax: 2, velocityMaxCount: 10 });
       for (let i = 0; i < 2; i += 1) {
-        const created = await requestWithdrawal(harness, driver, 200_000n, `daily-key-${i}-0000000`);
+        const created = await requestWithdrawal(
+          harness,
+          driver,
+          200_000n,
+          `daily-key-${i}-0000000`,
+        );
         await harness.orchestrator.advance(created.id, 8);
       }
       await expect(quote(200_000n)).rejects.toMatchObject({ code: 'DAILY_LIMIT_EXCEEDED' });

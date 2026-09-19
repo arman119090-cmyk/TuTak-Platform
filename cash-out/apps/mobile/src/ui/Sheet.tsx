@@ -48,7 +48,9 @@ export function Sheet({
       onRequestClose={dismissable ? onClose : undefined}
       statusBarTranslucent
     >
-      <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay, opacity: slide }]}>
+      <Animated.View
+        style={[styles.backdrop, { backgroundColor: theme.colors.overlay, opacity: slide }]}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={dismissable ? onClose : undefined}

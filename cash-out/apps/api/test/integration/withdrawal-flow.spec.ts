@@ -65,9 +65,21 @@ describe('the withdrawal flow', () => {
       // The bank was instructed for the net, once.
       expect(harness.provider.payoutCount()).toBe(1);
 
-      const parkReceivable = await harness.ledger.balanceOf('PARK_RECEIVABLE', driver.parkId, 'AMD');
-      const driverPayable = await harness.ledger.balanceOf('DRIVER_PAYABLE', driver.driverId, 'AMD');
-      const platformRevenue = await harness.ledger.balanceOf('PLATFORM_FEE_REVENUE', 'GLOBAL', 'AMD');
+      const parkReceivable = await harness.ledger.balanceOf(
+        'PARK_RECEIVABLE',
+        driver.parkId,
+        'AMD',
+      );
+      const driverPayable = await harness.ledger.balanceOf(
+        'DRIVER_PAYABLE',
+        driver.driverId,
+        'AMD',
+      );
+      const platformRevenue = await harness.ledger.balanceOf(
+        'PLATFORM_FEE_REVENUE',
+        'GLOBAL',
+        'AMD',
+      );
       const pspSettlement = await harness.ledger.balanceOf('PSP_SETTLEMENT', 'mock-psp', 'AMD');
 
       expect(parkReceivable.minor).toBe(1_000_000n);
@@ -130,7 +142,7 @@ describe('the withdrawal flow', () => {
       // The second call cannot reuse the quote (it is spent), so it must be
       // answered from the idempotency key alone.
       const second = await harness.withdrawals.confirm(driver.driverId, {
-        quoteId: first.id === '' ? '' : (await quoteIdOf(harness, first.id)),
+        quoteId: first.id === '' ? '' : await quoteIdOf(harness, first.id),
         signature: await signatureOf(harness, first.id),
         idempotencyKey: key,
       });
@@ -214,8 +226,7 @@ describe('the withdrawal flow', () => {
       expect(await harness.prisma.withdrawal.count()).toBe(1);
 
       const rejected = results.find((result) => result.status === 'rejected') as
-        | PromiseRejectedResult
-        | undefined;
+        PromiseRejectedResult | undefined;
       expect(['WITHDRAWAL_ALREADY_IN_PROGRESS', 'QUOTE_MISMATCH']).toContain(
         (rejected?.reason as { code?: string })?.code,
       );
@@ -361,7 +372,7 @@ async function quoteIdOf(harness: Harness, withdrawalId: string): Promise<string
 async function signatureOf(harness: Harness, withdrawalId: string): Promise<string> {
   const row = await harness.prisma.withdrawal.findUniqueOrThrow({
     where: { id: withdrawalId },
-    include: { },
+    include: {},
   });
   const quote = await harness.prisma.quote.findUniqueOrThrow({ where: { id: row.quoteId! } });
   return quote.signature;

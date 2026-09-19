@@ -64,7 +64,10 @@ export class AdminAuthService {
       if (!admin.mfaSecretEnc) {
         throw new AppError('FORBIDDEN', 'Two-factor authentication must be set up for this role');
       }
-      if (!totpCode || !verifyTotp(this.crypto.decrypt(admin.mfaSecretEnc), totpCode, this.clock.nowMs())) {
+      if (
+        !totpCode ||
+        !verifyTotp(this.crypto.decrypt(admin.mfaSecretEnc), totpCode, this.clock.nowMs())
+      ) {
         await this.registerFailure(admin.id, admin.failedLogins);
         throw invalid();
       }
@@ -162,8 +165,7 @@ export class AdminAuthService {
       where: { id: adminUserId },
       data: {
         failedLogins: failed,
-        lockedUntil:
-          failed >= MAX_FAILED_LOGINS ? this.clock.plusSeconds(LOCKOUT_SECONDS) : null,
+        lockedUntil: failed >= MAX_FAILED_LOGINS ? this.clock.plusSeconds(LOCKOUT_SECONDS) : null,
       },
     });
     if (failed >= MAX_FAILED_LOGINS) {

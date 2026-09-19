@@ -102,7 +102,13 @@ describe('Money.allocate', () => {
 
   it('never loses or invents a minor unit', () => {
     for (const total of [1n, 2n, 7n, 100n, 101n, 999_999n]) {
-      for (const weights of [[1n, 1n], [1n, 2n], [1n, 1n, 1n], [70n, 20n, 10n], [1n, 0n]]) {
+      for (const weights of [
+        [1n, 1n],
+        [1n, 2n],
+        [1n, 1n, 1n],
+        [70n, 20n, 10n],
+        [1n, 0n],
+      ]) {
         const parts = amd(total).allocate(weights);
         expect(parts).toHaveLength(weights.length);
         const sum = parts.reduce((acc, part) => acc + part.minor, 0n);

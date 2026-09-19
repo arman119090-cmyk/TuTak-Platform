@@ -253,7 +253,8 @@
     "deleteAccountConfirmBody": "Your points will be forfeited and you will be signed out on every device. This cannot be undone from the app.",
     "deleteAccountDoneTitle": "Your account is deleted",
     "deleteAccountDoneBody": "You have been signed out. Your personal data will be erased on {{date}}.",
-    "deleteAccountFailed": "We could not delete your account. Please try again."
+    "deleteAccountFailed": "We could not delete your account. Please try again.",
+    "account": "Account"
   },
   "nav": {
     "home": "Home",
@@ -267,7 +268,9 @@
     "greetingNamed": "Hello, {{name}}",
     "recentActivity": "Recent activity",
     "noActivityTitle": "Nothing here yet",
-    "noActivityMessage": "Your payments and bonuses will appear here once you start using TuTak."
+    "noActivityMessage": "Your payments and bonuses will appear here once you start using TuTak.",
+    "partnerOffers": "From TuTak partners",
+    "promoMark": "Promo"
   },
   "transactionType": {
     "QR_PAYMENT": "QR payment",

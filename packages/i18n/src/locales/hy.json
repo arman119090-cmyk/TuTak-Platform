@@ -253,7 +253,8 @@
     "deleteAccountConfirmBody": "Միավորները կչեղարկվեն, և դուք դուրս կգաք բոլոր սարքերից։ Հավելվածից սա հետարկել հնարավոր չի լինի։",
     "deleteAccountDoneTitle": "Հաշիվը ջնջված է",
     "deleteAccountDoneBody": "Դուք դուրս եք եկել։ Անձնական տվյալները կջնջվեն {{date}}-ին։",
-    "deleteAccountFailed": "Չհաջողվեց ջնջել հաշիվը։ Խնդրում ենք կրկին փորձել։"
+    "deleteAccountFailed": "Չհաջողվեց ջնջել հաշիվը։ Խնդրում ենք կրկին փորձել։",
+    "account": "Հաշիվ"
   },
   "nav": {
     "home": "Գլխավոր",
@@ -267,7 +268,9 @@
     "greetingNamed": "Բարև, {{name}}",
     "recentActivity": "Վերջին գործարքները",
     "noActivityTitle": "Դեռ դատարկ է",
-    "noActivityMessage": "Ձեր վճարումներն ու բոնուսները կհայտնվեն այստեղ, երբ սկսեք օգտվել TuTak-ից։"
+    "noActivityMessage": "Ձեր վճարումներն ու բոնուսները կհայտնվեն այստեղ, երբ սկսեք օգտվել TuTak-ից։",
+    "partnerOffers": "TuTak-ի գործընկերներից",
+    "promoMark": "Պրոմո"
   },
   "transactionType": {
     "QR_PAYMENT": "QR վճարում",

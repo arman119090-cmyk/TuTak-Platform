@@ -503,11 +503,22 @@ function handle(
       return envelope(intent);
     }
 
+    // ── Home "Partner Spotlight" ────────────────────────────────────────
+    case 'GET /promos/featured':
+      return envelope(state.promos);
+
     default:
       break;
   }
 
   // Routes with an id in them.
+  // An impression or an open on a spotlight card. Counted on the server;
+  // here there is nothing to count into, and 204 is what the API answers.
+  const promoEvent = /^\/promos\/([^/]+)\/events$/.exec(path);
+  if (method === 'POST' && promoEvent) {
+    return { body: undefined, status: 204 };
+  }
+
   const readNotification = /^\/notifications\/([^/]+)\/read$/.exec(path);
   if (method === 'POST' && readNotification) {
     const id = readNotification[1];

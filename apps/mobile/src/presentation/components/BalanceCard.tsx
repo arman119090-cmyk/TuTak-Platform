@@ -44,7 +44,7 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
         colors={[...gradients.primary]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.card, glow.md.native, { borderRadius: radius.xl, padding: space[6] }]}
+        style={[styles.card, glow.md.native, { borderRadius: radius.xl, padding: space[5] }]}
       >
         <View style={styles.watermark} pointerEvents="none">
           <Image
@@ -86,7 +86,7 @@ export function BalanceCard({ available, pending, reserved, loading }: Props) {
         end={{ x: 1, y: 0.5 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius.xl }]}
       />
-      <View style={{ padding: space[6] }}>
+      <View style={{ padding: space[5] }}>
         <BalanceCardBody
           available={available}
           pending={pending}
@@ -123,7 +123,7 @@ function BalanceCardBody({ available, pending, reserved, loading }: Props) {
         </View>
       )}
 
-      <View style={{ marginTop: space[5] }}>
+      <View style={{ marginTop: space[4] }}>
         <BonusComposition
           available={available ?? 0}
           pending={pending ?? 0}
@@ -140,7 +140,5 @@ const styles = StyleSheet.create({
   watermark: { position: 'absolute', right: -70, top: -50 },
   watermarkImage: { width: 260, height: 260, opacity: 0.1 },
   amountRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  // 44/50 rather than 56/62: the hero number should dominate the card, not
-  // the screen, and 56 wrapped six-digit balances on a compact phone.
-  amount: { fontSize: 44, lineHeight: 50, fontVariant: ['tabular-nums'] },
+  amount: { fontVariant: ['tabular-nums'] },
 });

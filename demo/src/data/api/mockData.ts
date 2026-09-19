@@ -7,11 +7,13 @@ import type {
   NearbyPartnerDto,
   NotificationDto,
   PartnerBrandDto,
+  PartnerPromoPublicDto,
   PurchaseIntentDto,
   ReferralCodeDto,
   ReferralInviteDto,
   TransactionDto,
 } from '@tutak/shared-types';
+import { MOCK_PROMO_ARTWORK } from './mockPromoArtwork';
 import {
   BonusEntryStatus,
   BonusEntryType,
@@ -115,6 +117,8 @@ export interface MockState {
   referralCode: ReferralCodeDto;
   invites: ReferralInviteDto[];
   purchaseIntents: PurchaseIntentDto[];
+  /** The Home "Partner Spotlight" strip, as `GET /promos/featured` returns it. */
+  promos: PartnerPromoPublicDto[];
 }
 
 const WALLET_ID = 'mock-wallet-1';
@@ -804,5 +808,52 @@ export function freshMockState(): MockState {
     ],
 
     purchaseIntents: [],
+
+    /*
+     * Three featured placements, already filtered and ordered the way the
+     * server returns them — the app never decides what is live, it only
+     * draws what it is given. Partners are three of the twelve on the map,
+     * so a tap lands on real branches; `partnerLogo` is null throughout for
+     * the reason `MOCK_BRANDS` gives. One is marked sponsored so the small
+     * "Promo" mark can be seen in the preview.
+     */
+    promos: [
+      {
+        id: 'promo-1',
+        partnerId: 'partner-coffeeshop',
+        partnerName: 'Coffeeshop Company',
+        partnerLogo: null,
+        title: 'Кофе с собой — 10% обратно',
+        subtitle: 'Каждый день до 12:00',
+        benefitLabel: '10% кешбэк',
+        artwork: { assetId: 'promo-art-1', url: MOCK_PROMO_ARTWORK.cafe, thumbnailUrl: MOCK_PROMO_ARTWORK.cafe, width: 720, height: 450 },
+        destination: 'PARTNER',
+        sponsored: true,
+      },
+      {
+        id: 'promo-2',
+        partnerId: 'partner-sas',
+        partnerName: 'SAS Supermarket',
+        partnerLogo: null,
+        title: 'Продукты на неделю — с бонусами',
+        subtitle: 'Во всех магазинах сети',
+        benefitLabel: '5% кешбэк',
+        artwork: { assetId: 'promo-art-2', url: MOCK_PROMO_ARTWORK.market, thumbnailUrl: MOCK_PROMO_ARTWORK.market, width: 720, height: 450 },
+        destination: 'PARTNER',
+        sponsored: false,
+      },
+      {
+        id: 'promo-3',
+        partnerId: 'partner-3',
+        partnerName: 'TuTak Charge',
+        partnerLogo: null,
+        title: 'Ночная зарядка дешевле',
+        subtitle: 'С 23:00 до 07:00 на всех станциях',
+        benefitLabel: '−15%',
+        artwork: { assetId: 'promo-art-3', url: MOCK_PROMO_ARTWORK.charge, thumbnailUrl: MOCK_PROMO_ARTWORK.charge, width: 720, height: 450 },
+        destination: 'PARTNERS_MAP',
+        sponsored: false,
+      },
+    ],
   };
 }

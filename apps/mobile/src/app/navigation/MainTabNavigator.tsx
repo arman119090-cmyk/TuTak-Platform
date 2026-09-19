@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTranslation } from 'react-i18next';
@@ -46,7 +46,9 @@ export function MainTabNavigator() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: color.primary,
-        tabBarInactiveTintColor: palette.neutral[400],
+        // 500, not 400: an inactive tab is a place the customer can go, not
+        // a disabled one, and 400 on white read as the latter.
+        tabBarInactiveTintColor: palette.neutral[500],
         // White, edgeless. The hairline that used to run across the top of
         // the bar was one more line under a screen already full of them;
         // the bar is separated from content by tone alone (content scrolls
@@ -63,27 +65,42 @@ export function MainTabNavigator() {
             Platform.OS === 'android'
               ? layout.tabBarHeight + insets.bottom
               : layout.tabBarHeight,
-          paddingTop: 10,
+          paddingTop: 6,
           paddingBottom: Platform.OS === 'ios' ? 28 : androidBottomPadding,
         },
-        tabBarItemStyle: { gap: 2 },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: text.label.fontWeight,
-          letterSpacing: 0,
-        },
-        tabBarIcon: ({ color: c, size }) => {
+        // Every tab's icon sits in the same 36 pt box — the Pay disc fills
+        // it, the outline icons centre in it — so all five labels share one
+        // baseline. No horizontal padding on the item: the Armenian labels
+        // need every point of the 72–78 pt a fifth of a phone gives them.
+        tabBarItemStyle: { gap: 2, paddingHorizontal: 0 },
+        tabBarIconStyle: { width: 36, height: 36 },
+        tabBarLabel: ({ color: c, children }) => (
+          <Text
+            style={[styles.label, { color: c, fontWeight: text.label.fontWeight }]}
+            numberOfLines={1}
+            // Shrinks a long label (Armenian "Դրամապանակ") to fit rather than
+            // cutting it with an ellipsis or abbreviating the language. On
+            // native this is honoured; on the web export it is a no-op.
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+            maxFontSizeMultiplier={1.2}
+          >
+            {children}
+          </Text>
+        ),
+        tabBarIcon: ({ color: c }) => {
           const name = ICONS[route.name as keyof MainTabParamList];
           if (name === 'qr') return null;
           return (
             <V2NavIcon
               name={name}
-              size={size}
+              size={24}
               color={c}
               // One stroke for the family, focused or not: colour carries the
-              // state. A stroke that thickens on focus made the active icon
-              // look like a different, heavier icon.
-              strokeWidth={2.6}
+              // state. 2.2 on the 48 pt source canvas lands at the same
+              // apparent weight as the 22 pt Ionicons outlines used on every
+              // other screen, so the bar and the screens read as one set.
+              strokeWidth={2.2}
             />
           );
         },
@@ -117,6 +134,10 @@ export function MainTabNavigator() {
  * primary purchase action and should look like the one button that is
  * always ready, not a chip that lights up when the tab happens to be the
  * current one. Focus deepens the green by one step; nothing glows.
+ *
+ * The disc is the same 36 pt box every other icon sits in, not a larger one
+ * hoisted above the bar: raised, it read as a floating button somebody had
+ * placed on top of the navigation rather than the fifth item of it.
  */
 function PayTabIcon({ focused }: { focused: boolean }) {
   const { color, radius } = useTheme();
@@ -127,11 +148,12 @@ function PayTabIcon({ focused }: { focused: boolean }) {
         { backgroundColor: focused ? color.primaryPressed : color.primary, borderRadius: radius.full },
       ]}
     >
-      <V2NavIcon name="qr" size={24} color={color.textInverse} strokeWidth={2.8} />
+      <V2NavIcon name="qr" size={22} color={color.textInverse} strokeWidth={2.4} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  payDisc: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', marginTop: -6 },
+  payDisc: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 11, lineHeight: 14, letterSpacing: 0, textAlign: 'center' },
 });

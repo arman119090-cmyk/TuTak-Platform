@@ -175,6 +175,11 @@ describe('mockAdapter', () => {
        * that claim. The bar here, as for the avatar upload, is "not a 404".
        */
       'post /psp/purchases/sample-id/begin',
+      /*
+       * `POST /promos/:id/events` answers 204, exactly as the API does — an
+       * impression counter has nothing to say back — and 204 is not 200.
+       */
+      'post /promos/sample-id/events',
     ]);
 
     const unmocked: string[] = [];

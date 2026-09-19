@@ -121,6 +121,59 @@ export class MediaService {
   }
 
   /**
+   * Artwork for one Home "Partner Spotlight" card.
+   *
+   * Administrator-only by construction — `AdminPromosController` is the sole
+   * caller and asserts the platform-admin role before reaching here — so the
+   * asset is published on arrival: there is no second party to wait for
+   * because the only party is the one who would do the approving. Scoped to
+   * the partner the card belongs to, and *not* pointed at by the partner row
+   * (a promo owns its artwork; the partner's own cover is untouched), which is
+   * why `publish` is false and several of these may be ACTIVE at once.
+   */
+  async storePromoArtwork(params: {
+    partnerId: string;
+    file: Buffer;
+    actor: ActorContext;
+  }): Promise<MediaAsset> {
+    const partner = await this.prisma.partner.findUnique({
+      where: { id: params.partnerId },
+      select: { id: true },
+    });
+    if (!partner) throw new NotFoundException('Partner not found');
+
+    const asset = await this.storeAsset({
+      kind: MediaAssetKind.PROMO_ARTWORK,
+      file: params.file,
+      partnerId: params.partnerId,
+      userId: null,
+      uploadedByUserId: params.actor.userId,
+      status: MediaAssetStatus.ACTIVE,
+      approvedByUserId: params.actor.userId,
+      supersedePending: false,
+      publish: false,
+    });
+
+    await this.audit.record({
+      actorUserId: params.actor.userId,
+      action: AuditAction.MEDIA_ASSET_UPLOADED,
+      entityType: 'MediaAsset',
+      entityId: asset.id,
+      metadata: {
+        partnerId: params.partnerId,
+        kind: asset.kind,
+        status: asset.status,
+        sha256: asset.sha256,
+        byteSize: asset.byteSize,
+      },
+      ipAddress: params.actor.ipAddress,
+      userAgent: params.actor.userAgent,
+    });
+
+    return asset;
+  }
+
+  /**
    * A platform administrator confirms a submission, and it becomes the
    * partner's public identity.
    *

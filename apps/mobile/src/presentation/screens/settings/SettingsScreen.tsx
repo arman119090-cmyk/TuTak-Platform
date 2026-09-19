@@ -8,7 +8,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { SUPPORTED_LOCALES } from '@tutak/i18n';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Button } from '../../components/Button';
@@ -91,17 +90,18 @@ export function SettingsScreen() {
 
   return (
     <Screen title={t('settings.title')}>
-      {/* Identity card. The avatar is the customer's own uploaded photo when
-          they have one (`AuthenticatedUserDto.avatar`, signed to them and
-          nobody else) and `UserAvatar`'s neutral mark when they do not — spec
-          §1.2 keeps the fallback everywhere, because an avatar is optional
-          and always will be. */}
+      {/* The account header: the customer's own photo when they have one
+          (`AuthenticatedUserDto.avatar`, signed to them and nobody else),
+          `UserAvatar`'s neutral mark when they do not — spec §1.2 keeps the
+          fallback everywhere, because an avatar is optional and always will
+          be. Set as a header, not a form field: name, number, nothing
+          boxed. Editing lives one row down, under "Account". */}
       <View style={[styles.profile, { marginBottom: space[2] }]}>
         <UserAvatar
           firstName={user?.firstName}
           lastName={user?.lastName}
           avatarUrl={user?.avatar?.thumbnailUrl}
-          size={64}
+          size={56}
         />
         <View style={[styles.flex, { marginLeft: space[4] }]}>
           <Text style={[text.title, { color: color.textPrimary }]} numberOfLines={1}>
@@ -121,71 +121,55 @@ export function SettingsScreen() {
       <AvatarControl />
 
       {/*
-        Directly under the avatar, because it answers the same question the
-        avatar does — who is this account — and because until now there was
-        nowhere in the app to answer it in words. `PATCH /users/me` accepted a
-        name the whole time and nothing ever sent one, so an account
-        registered by SMS kept the placeholder the server writes: "Customer",
-        with the phone number in place of a surname.
+        Who this account is, in words — `PATCH /users/me` accepted a name the
+        whole time and nothing ever sent one, so an account registered by
+        SMS kept the placeholder the server writes. Beside it, the two ways
+        an account grows: a business joining, a friend invited. Grouped
+        under one heading and set as rows on the page, no card around them.
       */}
-      <View style={{ height: space[3] }} />
-      <Surface tone="subtle" padded={false}>
-        <View style={{ paddingHorizontal: space[4] }}>
-          <ListRow
-            title={t('editProfile.entry')}
-            subtitle={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
-            leading={<SettingIcon name="person-outline" />}
-            trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-            onPress={() => navigation.navigate('EditProfile')}
-            last
-          />
-        </View>
-      </Surface>
-
+      <SectionHeader title={t('settings.account')} />
+      <ListRow
+        title={t('editProfile.entry')}
+        leading={<SettingIcon name="person-outline" />}
+        trailing={<Chevron />}
+        onPress={() => navigation.navigate('EditProfile')}
+      />
+      <ListRow
+        title={t('becomePartner.entry')}
+        subtitle={t('becomePartner.intro')}
+        leading={<SettingIcon name="storefront-outline" />}
+        trailing={<Chevron />}
+        onPress={() => navigation.navigate('BecomePartner')}
+      />
       {/*
-        The only way into the application form. A business owner is a customer
-        with a shop, so they are already signed in here — and the endpoint
-        behind this has existed since the platform was written with no client
-        to call it.
-
-        No section header of its own: the row already carries the same title,
-        and a heading that repeats the one line beneath it is noise.
+        A second way in. Inviting people is how a loyalty programme grows,
+        and it was reachable from exactly one place: a tile on the home
+        screen. Somebody who did not happen to notice that tile concluded
+        the feature did not exist — which is what happened.
       */}
-      <View style={{ height: space[3] }} />
-      <Surface tone="subtle" padded={false}>
-        <View style={{ paddingHorizontal: space[4] }}>
-          <ListRow
-            title={t('becomePartner.entry')}
-            subtitle={t('becomePartner.intro')}
-            leading={<SettingIcon name="storefront-outline" />}
-            trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-            onPress={() => navigation.navigate('BecomePartner')}
-            last
-          />
-        </View>
-      </Surface>
+      <ListRow
+        title={t('referral.inviteFriends')}
+        leading={<SettingIcon name="gift-outline" />}
+        trailing={<Chevron />}
+        onPress={() => navigation.navigate('Referral')}
+        last
+      />
 
       <SectionHeader title={t('settings.language')} />
-      <Surface tone="subtle" padded={false}>
-        <View style={{ paddingHorizontal: space[4] }}>
-          {SUPPORTED_LOCALES.map((locale, i) => {
-            const active = i18n.language === locale;
-            return (
-              <ListRow
-                key={locale}
-                title={LOCALE_LABELS[locale] ?? locale}
-                onPress={() => selectLocale(locale)}
-                trailing={
-                  active ? (
-                    <Ionicons name="checkmark" size={20} color={color.primary} />
-                  ) : undefined
-                }
-                last={i === SUPPORTED_LOCALES.length - 1}
-              />
-            );
-          })}
-        </View>
-      </Surface>
+      {SUPPORTED_LOCALES.map((locale, i) => {
+        const active = i18n.language === locale;
+        return (
+          <ListRow
+            key={locale}
+            title={LOCALE_LABELS[locale] ?? locale}
+            onPress={() => selectLocale(locale)}
+            trailing={
+              active ? <Ionicons name="checkmark" size={20} color={color.primary} /> : undefined
+            }
+            last={i === SUPPORTED_LOCALES.length - 1}
+          />
+        );
+      })}
 
       {/*
         2026-08-26: off by default, its own explanation, its own switch — the
@@ -195,75 +179,55 @@ export function SettingsScreen() {
         collected beyond this one flag.
       */}
       <SectionHeader title={t('settings.privacy')} />
-      <Surface tone="subtle" padded={false}>
-        <View style={{ paddingHorizontal: space[4], paddingVertical: space[4] }}>
-          <View style={styles.consentRow}>
-            <View style={styles.flex}>
-              <Text style={[text.bodySm, { color: color.textPrimary }]}>
-                {t('settings.personalizationTitle')}
-              </Text>
-              <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>
-                {t('settings.personalizationExplain')}
-              </Text>
-            </View>
-            <Switch
-              value={user?.personalizedRecommendationsEnabled ?? false}
-              onValueChange={(next) => personalization.mutate(next)}
-              disabled={personalization.isPending}
-              trackColor={{ true: color.primary, false: palette.neutral[300] }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+      <View style={[styles.consentRow, { paddingVertical: space[2], gap: space[4] }]}>
+        <View style={styles.flex}>
+          <Text style={[text.body, { color: color.textPrimary }]}>
+            {t('settings.personalizationTitle')}
+          </Text>
+          <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>
+            {t('settings.personalizationExplain')}
+          </Text>
         </View>
-      </Surface>
+        <Switch
+          value={user?.personalizedRecommendationsEnabled ?? false}
+          onValueChange={(next) => personalization.mutate(next)}
+          disabled={personalization.isPending}
+          trackColor={{ true: color.primary, false: palette.neutral[300] }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
 
       <SectionHeader title={t('settings.security')} />
-      <Surface tone="subtle" padded={false}>
-        <View style={{ paddingHorizontal: space[4] }}>
-          {/*
-            A second way in. Inviting people is how a loyalty programme grows,
-            and it was reachable from exactly one place: a tile on the home
-            screen. Somebody who did not happen to notice that tile concluded
-            the feature did not exist — which is what happened.
-          */}
-          <ListRow
-            title={t('referral.inviteFriends')}
-            leading={<SettingIcon name="gift-outline" />}
-            trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-            onPress={() => navigation.navigate('Referral')}
-          />
-          <ListRow
-            title={t('settings.notifications')}
-            leading={<SettingIcon name="notifications-outline" />}
-            trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-          />
-          {!user?.isPhoneVerified ? (
-            <ListRow
-              title={t('settings.verifyPhone')}
-              leading={<SettingIcon name="shield-checkmark-outline" />}
-              trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-              onPress={() => navigation.navigate('VerifyPhone')}
-            />
-          ) : null}
-          <ListRow
-            title={t('settings.changePassword')}
-            leading={<SettingIcon name="lock-closed-outline" />}
-            trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-            onPress={() => navigation.navigate('ChangePassword')}
-          />
-          {/* Required by both app stores to be reachable from inside the app.
-              Styled as an ordinary row rather than hidden behind a warning:
-              hard to find is its own kind of dark pattern, and the screen it
-              opens does the explaining. */}
-          <ListRow
-            title={t('settings.deleteAccount')}
-            leading={<SettingIcon name="trash-outline" />}
-            trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
-            onPress={() => navigation.navigate('DeleteAccount')}
-            last
-          />
-        </View>
-      </Surface>
+      <ListRow
+        title={t('settings.notifications')}
+        leading={<SettingIcon name="notifications-outline" />}
+        trailing={<Chevron />}
+      />
+      {!user?.isPhoneVerified ? (
+        <ListRow
+          title={t('settings.verifyPhone')}
+          leading={<SettingIcon name="shield-checkmark-outline" />}
+          trailing={<Chevron />}
+          onPress={() => navigation.navigate('VerifyPhone')}
+        />
+      ) : null}
+      <ListRow
+        title={t('settings.changePassword')}
+        leading={<SettingIcon name="lock-closed-outline" />}
+        trailing={<Chevron />}
+        onPress={() => navigation.navigate('ChangePassword')}
+      />
+      {/* Required by both app stores to be reachable from inside the app.
+          Styled as an ordinary row rather than hidden behind a warning:
+          hard to find is its own kind of dark pattern, and the screen it
+          opens does the explaining. */}
+      <ListRow
+        title={t('settings.deleteAccount')}
+        leading={<SettingIcon name="trash-outline" />}
+        trailing={<Chevron />}
+        onPress={() => navigation.navigate('DeleteAccount')}
+        last
+      />
 
       <View style={{ marginTop: space[7] }}>
         <Button
@@ -277,6 +241,12 @@ export function SettingsScreen() {
       <BuildInfo />
     </Screen>
   );
+}
+
+/** The row's "this opens something" mark, in the lightest neutral. */
+function Chevron() {
+  const { palette } = useTheme();
+  return <Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />;
 }
 
 /**

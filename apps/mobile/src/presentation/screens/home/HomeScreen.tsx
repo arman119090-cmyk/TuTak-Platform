@@ -14,6 +14,7 @@ import { Button } from '../../components/Button';
 import { HomeHeader } from '../../components/HomeHeader';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { QuickAction } from '../../components/QuickAction';
+import { PartnerSpotlight } from '../../components/PartnerSpotlight';
 import { ReferralEntryCard } from '../../components/ReferralEntryCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import { ListRow } from '../../components/ListRow';
@@ -66,7 +67,7 @@ export function HomeScreen({ navigation }: Props) {
         <View
           style={{
             paddingHorizontal: layout.screenPaddingX,
-            paddingTop: space[3],
+            paddingTop: space[2],
             paddingBottom: space[4],
           }}
         >
@@ -149,7 +150,7 @@ export function HomeScreen({ navigation }: Props) {
             signature is permitted on this button: a safe, positive,
             full-width primary CTA is exactly the icon-boundary table's
             allowed case. */}
-        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[5] }}>
+        <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[4] }}>
           <Button
             label={t('qr.scanQr')}
             onPress={() => navigation.navigate('ScanQr')}
@@ -160,25 +161,43 @@ export function HomeScreen({ navigation }: Props) {
         <View
           style={[
             styles.actions,
-            { paddingHorizontal: layout.screenPaddingX, marginTop: space[4], gap: space[3] },
+            { paddingHorizontal: layout.screenPaddingX, marginTop: space[3], gap: space[3] },
           ]}
         >
           <QuickAction
-            icon="flash"
+            icon="flash-outline"
             label={t('ev.stations')}
             tone="reserved"
             onPress={() => navigation.navigate('Main', { screen: 'Partners', params: { filter: 'stations' } } as never)}
           />
           <QuickAction
-            icon="map"
+            icon="map-outline"
             label={t('partners.findPartner')}
             onPress={() => navigation.navigate('Main', { screen: 'Partners' } as never)}
           />
         </View>
 
+        {/* Partner Spotlight — after the customer's own actions, never above
+            the QR button. Absent entirely when there is nothing to show. A
+            card lands on the map narrowed to that partner (its branches,
+            nearest first) or on the whole map, per the placement's own
+            destination; never outside the app. */}
+        <PartnerSpotlight
+          onOpen={(promo) =>
+            navigation.navigate(
+              'Main',
+              {
+                screen: 'Partners',
+                params: promo.destination === 'PARTNER' ? { q: promo.partnerName } : undefined,
+              } as never,
+            )
+          }
+        />
+
         {/* Referral entry — master spec §1: "sits immediately after the
             quick actions — before long transaction history — because it is
-            a primary acquisition loop." */}
+            a primary acquisition loop." Now after the spotlight, which is
+            the one thing the owner asked to sit between the two. */}
         <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[6] }}>
           <ReferralEntryCard onPress={() => navigation.navigate('Referral')} />
         </View>

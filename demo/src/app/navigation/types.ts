@@ -19,8 +19,12 @@ export type MainTabParamList = {
    * lets a caller land directly on the stations view — the home screen's
    * "Начать зарядку" quick action passes `'stations'` rather than pushing a
    * separate route, since there no longer is one.
+   *
+   * `q` pre-fills the search box — a Home "Partner Spotlight" card lands on
+   * the map already narrowed to that partner's branches, nearest first,
+   * which is what "go to this partner" means for a chain with ten shops.
    */
-  Partners: { filter?: 'stations' } | undefined;
+  Partners: { filter?: 'stations'; q?: string } | undefined;
   Settings: undefined;
 };
 

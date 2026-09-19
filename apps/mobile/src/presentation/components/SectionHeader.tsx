@@ -20,7 +20,7 @@ export function SectionHeader({
   const { color, space, text } = useTheme();
 
   return (
-    <View style={[styles.row, { marginTop: space[7], marginBottom: space[3] }]}>
+    <View style={[styles.row, { marginTop: space[6], marginBottom: space[3] }]}>
       <Text style={[text.headline, { color: color.textPrimary }]}>{title}</Text>
       {actionLabel && onAction ? (
         <Pressable

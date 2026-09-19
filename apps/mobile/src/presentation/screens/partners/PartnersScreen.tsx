@@ -102,6 +102,13 @@ export function PartnersScreen() {
   // this fires each time the button is pressed, not just on first mount.
   React.useEffect(() => {
     if (route.params?.filter === 'stations') setFilter({ kind: 'stations' });
+    // A spotlight card's "go to this partner": the search box does the
+    // narrowing, on the same `q` the API takes, so the list and the map
+    // agree with what a person typing that name would see.
+    if (typeof route.params?.q === 'string') {
+      setSearch(route.params.q);
+      setFilter({ kind: 'all' });
+    }
   }, [route.params]);
 
   const centre = useApproximateLocation();

@@ -8,7 +8,6 @@ import { useTheme } from '../../app/theme/ThemeProvider';
 import { useAuthStore } from '../../data/stores/authStore';
 import { usersApi } from '../../data/api/usersApi';
 import { UserAvatar } from './UserAvatar';
-import { Surface } from './Surface';
 
 /**
  * The customer's avatar control — `TUTAK_V2_MEDIA_SYSTEM_SPEC.md` §4:
@@ -128,14 +127,17 @@ export function AvatarControl() {
   };
 
   return (
-    <Surface>
+    // Set directly on the page under its own heading, like every other
+    // group in Settings — the card it used to sit in was the heaviest thing
+    // on the screen, and the content is two rows and a note.
+    <View>
       <View style={styles.row}>
         <View>
           <UserAvatar
             firstName={user?.firstName}
             lastName={user?.lastName}
             avatarUrl={shown}
-            size={72}
+            size={56}
           />
           {busy ? (
             <View
@@ -204,9 +206,9 @@ export function AvatarControl() {
         <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[3] }]}>{error}</Text>
       ) : null}
 
-      <View style={[styles.consentRow, { marginTop: space[5] }]}>
+      <View style={[styles.consentRow, { marginTop: space[4], gap: space[4] }]}>
         <View style={styles.flex}>
-          <Text style={[text.bodySm, { color: color.textPrimary }]}>
+          <Text style={[text.body, { color: color.textPrimary }]}>
             {t('profile.avatarConsentTitle')}
           </Text>
           <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>
@@ -225,7 +227,7 @@ export function AvatarControl() {
       <Text style={[text.caption, { color: color.textTertiary, marginTop: space[3] }]}>
         {t('profile.avatarPrivacyNote')}
       </Text>
-    </Surface>
+    </View>
   );
 }
 

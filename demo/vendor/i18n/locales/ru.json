@@ -253,7 +253,8 @@
     "deleteAccountConfirmBody": "Баллы сгорят, и вы выйдете из аккаунта на всех устройствах. Отменить это из приложения будет нельзя.",
     "deleteAccountDoneTitle": "Аккаунт удалён",
     "deleteAccountDoneBody": "Вы вышли из аккаунта. Персональные данные будут стёрты {{date}}.",
-    "deleteAccountFailed": "Не удалось удалить аккаунт. Попробуйте ещё раз."
+    "deleteAccountFailed": "Не удалось удалить аккаунт. Попробуйте ещё раз.",
+    "account": "Аккаунт"
   },
   "nav": {
     "home": "Главная",
@@ -267,7 +268,9 @@
     "greetingNamed": "Привет, {{name}}",
     "recentActivity": "Последние операции",
     "noActivityTitle": "Пока пусто",
-    "noActivityMessage": "Ваши платежи и бонусы появятся здесь, как только вы начнёте пользоваться TuTak."
+    "noActivityMessage": "Ваши платежи и бонусы появятся здесь, как только вы начнёте пользоваться TuTak.",
+    "partnerOffers": "От партнёров TuTak",
+    "promoMark": "Промо"
   },
   "transactionType": {
     "QR_PAYMENT": "QR-платёж",

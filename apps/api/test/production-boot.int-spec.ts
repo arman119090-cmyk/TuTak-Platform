@@ -188,6 +188,10 @@ describe('production boot: legacy card-payment subsystem (CARD_PAYMENTS_ENABLED)
     process.env.MEDIA_STORAGE_S3_ACCESS_KEY_ID = 'AKIAEXAMPLE';
     process.env.MEDIA_STORAGE_S3_SECRET_ACCESS_KEY = 'secret';
     process.env.MEDIA_PUBLIC_BASE_URL = 'https://api.example.test';
+    // The provider route (on in the integration environment) refuses to boot
+    // without an alert webhook since 19.09.2026 — a guard of the same shape
+    // as the ones above, configured here for the same reason.
+    process.env.ALERT_WEBHOOK_URL = 'https://hooks.example.test/tutak-alerts';
   }
 
   /** Re-imports `AppModule` and `NestFactory` together, from one fresh module registry. */

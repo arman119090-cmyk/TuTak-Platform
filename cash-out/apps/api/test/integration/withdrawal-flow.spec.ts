@@ -38,8 +38,13 @@ describe('the withdrawal flow', () => {
     driver = await seedDriver(harness, { balance: 5_000_000n });
   });
 
+  /** Advances until the withdrawal stops moving, ignoring backoff timers. */
   async function drive(withdrawalId: string, rounds = 6): Promise<string> {
     for (let i = 0; i < rounds; i += 1) {
+      await harness.prisma.withdrawal.updateMany({
+        where: { id: withdrawalId },
+        data: { nextAttemptAt: null },
+      });
       await harness.orchestrator.advance(withdrawalId);
     }
     const row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: withdrawalId } });
@@ -182,7 +187,7 @@ describe('the withdrawal flow', () => {
         parkId: row.parkId,
         contractorProfileId: row.yandexContractorProfileId,
         amount: Money.fromMinor(row.grossMinor, 'AMD'),
-        categoryId: 'partner_service_manual',
+        kind: 'payout',
         description: `Cash Out ${row.reference}`,
         idempotencyToken: row.yandexIdempotencyToken,
       });

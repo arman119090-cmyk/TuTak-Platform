@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { Money } from '@cashout/money';
 import { AppModule } from '../src/app.module';
 import { Clock, FixedClock } from '../src/common/clock';
-import { ENV, Env, loadEnv } from '../src/config/env';
+import { Env, loadEnv } from '../src/config/env';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RateLimiter } from '../src/common/rate-limit.service';
 import { ConsoleSmsGateway } from '../src/modules/auth/sms-gateway.port';

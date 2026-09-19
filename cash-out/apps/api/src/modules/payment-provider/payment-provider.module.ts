@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ENV, Env } from '../../config/env';
-import { Clock } from '../../common/clock';
 import { PaymentProviderPort } from './payment-provider.port';
 import { PaymentProviderMockAdapter } from './payment-provider-mock.adapter';
 

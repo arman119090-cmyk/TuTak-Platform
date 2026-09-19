@@ -293,6 +293,7 @@ enum WithdrawalState {
   REJECTED
   RESERVING
   RESERVE_UNCERTAIN
+  RESERVE_PENDING
   RESERVED
   PAYOUT_SUBMITTING
   PAYOUT_UNCERTAIN
@@ -334,6 +335,8 @@ model Withdrawal {
   yandexBalanceBeforeMinor BigInt?
   yandexBalanceAfterMinor  BigInt?
   yandexTransactionId      String?
+  /// The id of the compensating credit, once Yandex has given us one.
+  yandexReversalTransactionId String?
   /// The token sent to Yandex. Stable across retries — that is the point.
   yandexIdempotencyToken   String  @unique
 

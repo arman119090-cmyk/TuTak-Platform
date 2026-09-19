@@ -20,7 +20,7 @@ describe('locale completeness', () => {
   it('leaves no empty or placeholder-only string', () => {
     for (const locale of LOCALES) {
       for (const section of sections) {
-        for (const [key, value] of Object.entries(translations[locale][section])) {
+        for (const value of Object.values(translations[locale][section])) {
           expect(typeof value).toBe('string');
           expect(value.trim().length).toBeGreaterThan(0);
           expect(value).not.toMatch(/^TODO/i);
@@ -121,7 +121,7 @@ describe('money formatting', () => {
   it('formats per locale', () => {
     for (const locale of LOCALES as readonly Locale[]) {
       const formatted = formatMoney({ minor: '123456', currency: 'AMD' }, locale);
-      expect(formatted).toMatch(/1[\s  ,]?234/);
+      expect(formatted).toMatch(/1[\s\u00A0\u202F,]?234/);
     }
   });
 

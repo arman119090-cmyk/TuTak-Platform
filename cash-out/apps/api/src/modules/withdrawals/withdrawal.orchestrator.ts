@@ -6,7 +6,7 @@ import type { CurrencyCode } from '@cashout/money';
 import { ENV, Env } from '../../config/env';
 import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
-import { PrismaService, TransactionClient } from '../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { withSerializationRetry } from '../../prisma/retry';
 import { LedgerService } from '../ledger/ledger.service';
 import { withdrawalJournal, WithdrawalJournalContext } from '../ledger/withdrawal-journal';
@@ -128,6 +128,8 @@ export class WithdrawalOrchestrator {
           return await this.reserve(withdrawal);
         case 'RESERVE_UNCERTAIN':
           return await this.resolveReserve(withdrawal);
+        case 'RESERVE_PENDING':
+          return await this.checkReservePending(withdrawal);
         case 'RESERVED':
           return await this.beginPayout(withdrawal);
         case 'PAYOUT_SUBMITTING':
@@ -205,12 +207,18 @@ export class WithdrawalOrchestrator {
   }
 
   /**
-   * The Yandex debit.
+   * The Yandex debit, through Fleet API v3.
    *
-   * Note what is *not* here: no balance re-read, no "is it still enough".
-   * Yandex itself rejects an overdraft, and its answer is the only one that
-   * matters at this point — a check of our own would just widen the window
-   * between deciding and acting.
+   * `condition.balance_min` is set to the gross amount, so Yandex itself
+   * refuses the debit atomically if the balance has fallen below what we are
+   * about to take — a driver who saw 100 000 and whose balance then dropped
+   * cannot be overdrawn by us, whatever happened between quote and debit. Our
+   * own fresh re-read of the balance at confirmation stays as the second line.
+   *
+   * A rejection is treated as "nothing moved" **only on the first attempt**.
+   * Once a previous attempt has ended `UNKNOWN`, a later rejection could be a
+   * replay that re-evaluated the condition against an already-debited balance;
+   * that is not proof of non-application, and it goes to a human.
    */
   private async reserve(withdrawal: Withdrawal): Promise<boolean> {
     const gross = moneyOf(withdrawal.grossMinor, withdrawal.currency);
@@ -218,9 +226,10 @@ export class WithdrawalOrchestrator {
       parkId: withdrawal.parkId,
       contractorProfileId: withdrawal.yandexContractorProfileId,
       amount: gross,
-      categoryId: this.env.YANDEX_PAYOUT_CATEGORY_ID ?? 'partner_service_manual',
+      kind: this.env.YANDEX_PAYOUT_KIND,
       description: `Cash Out ${withdrawal.reference}`,
       idempotencyToken: withdrawal.yandexIdempotencyToken,
+      balanceMin: gross,
     });
 
     switch (outcome.status) {
@@ -228,8 +237,29 @@ export class WithdrawalOrchestrator {
         await this.markReserved(withdrawal, outcome.transaction.id, outcome.balanceAfter);
         return true;
 
-      case 'REJECTED':
-        // Nothing moved, so this is a clean failure with nothing to compensate.
+      case 'PENDING':
+        await this.prisma.inTransaction((tx) =>
+          this.states.transition(tx, withdrawal, 'RESERVE_PENDING', {
+            note: `Yandex accepted transaction ${outcome.transactionId} (in_progress)`,
+            data: {
+              yandexTransactionId: outcome.transactionId,
+              attempts: 0,
+              nextAttemptAt: this.clock.plusSeconds(2),
+            },
+          }),
+        );
+        return true;
+
+      case 'REJECTED': {
+        if (withdrawal.attempts > 0) {
+          await this.escalate(
+            withdrawal,
+            `Yandex rejected the debit (${outcome.code}) after an earlier attempt ended without an answer; ` +
+              'a rejected replay does not prove the original was not applied',
+          );
+          return true;
+        }
+        // First attempt, definite refusal: nothing moved, nothing to compensate.
         await this.prisma.inTransaction((tx) =>
           this.states.transition(tx, withdrawal, 'FAILED', {
             note: `Yandex rejected the debit: ${outcome.code}`,
@@ -237,13 +267,17 @@ export class WithdrawalOrchestrator {
           }),
         );
         return true;
+      }
 
       case 'UNKNOWN':
       default:
         await this.prisma.inTransaction((tx) =>
           this.states.transition(tx, withdrawal, 'RESERVE_UNCERTAIN', {
             note: `Yandex outcome unknown: ${outcome.reason}`,
-            data: { attempts: { increment: 1 } },
+            data: {
+              attempts: { increment: 1 },
+              nextAttemptAt: this.backoffDeadline(withdrawal.attempts),
+            },
           }),
         );
         return true;
@@ -251,20 +285,40 @@ export class WithdrawalOrchestrator {
   }
 
   /**
-   * Resolves an unknown Yandex outcome by looking for the transaction we may
-   * have created. The reference is embedded in the description precisely so
-   * that this lookup is possible.
+   * Resolves a POST that ended without an answer and without a transaction id.
+   *
+   * Order of evidence:
+   *  1. The park's transaction list, searched for our reference. A hit means the
+   *     transaction exists; we take its id and let the status endpoint finish
+   *     the job. A miss proves nothing.
+   *  2. A replay of the POST with the **same** idempotency token. Under the v3
+   *     contract a used token returns the original transaction rather than
+   *     creating a second one, so this is safe, and it is the only way to
+   *     recover an id we never received.
+   *  3. After `MAX_STEP_ATTEMPTS`, a person.
    */
   private async resolveReserve(withdrawal: Withdrawal): Promise<boolean> {
-    const found = await this.yandex.findTransaction(
-      withdrawal.parkId,
-      withdrawal.yandexContractorProfileId,
-      withdrawal.reference,
-      new Date(withdrawal.createdAt.getTime() - 60_000),
-    );
+    let found: Awaited<ReturnType<YandexFleetPort['findTransaction']>> = null;
+    try {
+      found = await this.yandex.findTransaction(
+        withdrawal.parkId,
+        withdrawal.yandexContractorProfileId,
+        withdrawal.reference,
+        new Date(withdrawal.createdAt.getTime() - 60_000),
+      );
+    } catch (error) {
+      this.logger.fail('Transaction list probe failed; will fall back to a replay', error, {
+        withdrawalId: withdrawal.id,
+      });
+    }
 
     if (found) {
-      await this.markReserved(withdrawal, found.id, null);
+      await this.prisma.inTransaction((tx) =>
+        this.states.transition(tx, withdrawal, 'RESERVE_PENDING', {
+          note: `found transaction ${found!.id} by reference; confirming its status`,
+          data: { yandexTransactionId: found!.id, nextAttemptAt: null },
+        }),
+      );
       return true;
     }
 
@@ -276,16 +330,86 @@ export class WithdrawalOrchestrator {
       return true;
     }
 
-    // Not found and we still have attempts: retry the debit. Safe because the
-    // idempotency token is unchanged — if it did land, Yandex returns the same
-    // transaction rather than creating a second one.
     await this.prisma.inTransaction((tx) =>
       this.states.transition(tx, withdrawal, 'RESERVING', {
-        note: 'debit not found; retrying with the same idempotency token',
+        note: 'no evidence of the debit; replaying the POST with the same idempotency token',
         data: { nextAttemptAt: this.backoffDeadline(withdrawal.attempts) },
       }),
     );
     return true;
+  }
+
+  /**
+   * A debit Yandex holds as `in_progress`. Only the status endpoint moves it:
+   * `success` books the reservation, `fail` on a known id is proof nothing was
+   * applied, and anything else waits — or, past the SLA, asks a person.
+   */
+  private async checkReservePending(withdrawal: Withdrawal): Promise<boolean> {
+    if (!withdrawal.yandexTransactionId) {
+      await this.escalate(withdrawal, 'RESERVE_PENDING without a Yandex transaction id');
+      return true;
+    }
+
+    const status = await this.yandex.getTransactionStatus(
+      withdrawal.parkId,
+      withdrawal.yandexTransactionId,
+    );
+
+    switch (status.status) {
+      case 'SUCCESS':
+        await this.markReserved(withdrawal, withdrawal.yandexTransactionId, null);
+        return true;
+
+      case 'FAIL':
+        await this.prisma.inTransaction((tx) =>
+          this.states.transition(tx, withdrawal, 'FAILED', {
+            note: `Yandex reports transaction ${withdrawal.yandexTransactionId} as failed`,
+            data: {
+              failureCode: status.code ?? 'yandex_transaction_failed',
+              failureMessage: status.message ?? null,
+              nextAttemptAt: null,
+            },
+          }),
+        );
+        return true;
+
+      case 'NOT_FOUND':
+        // We hold an id Yandex does not recognise. That is not "not applied";
+        // it is a contradiction, and contradictions are for people.
+        await this.escalate(
+          withdrawal,
+          `Yandex does not recognise transaction ${withdrawal.yandexTransactionId} that it issued`,
+        );
+        return true;
+
+      case 'IN_PROGRESS':
+      case 'UNKNOWN':
+      default: {
+        // Measured against the SLA deadline stamped from the injected clock at
+        // creation — never against updatedAt, which the database stamps from
+        // its own clock. Two time sources here would make the SLA drift.
+        const pastSla =
+          withdrawal.slaDeadline !== null && this.clock.nowMs() > withdrawal.slaDeadline.getTime();
+        const stuckTooLong =
+          status.status === 'UNKNOWN' ? withdrawal.attempts + 1 >= MAX_STEP_ATTEMPTS : pastSla;
+        if (stuckTooLong) {
+          await this.escalate(
+            withdrawal,
+            status.status === 'UNKNOWN'
+              ? `The status endpoint gave no answer ${withdrawal.attempts + 1} times for ${withdrawal.yandexTransactionId}`
+              : `Transaction ${withdrawal.yandexTransactionId} still in_progress after the SLA`,
+          );
+          return true;
+        }
+        await this.prisma.inTransaction((tx) =>
+          this.states.patch(tx, withdrawal, {
+            attempts: { increment: 1 },
+            nextAttemptAt: this.backoffDeadline(withdrawal.attempts),
+          }),
+        );
+        return false;
+      }
+    }
   }
 
   private async markReserved(
@@ -502,51 +626,96 @@ export class WithdrawalOrchestrator {
    * The compensating credit gets its own idempotency token, derived from the
    * withdrawal's. Reusing the debit's token would be read by Yandex as a replay
    * of the debit and the credit would never be applied.
+   *
+   * A credit is never given up on: a rejection or a `fail` here leaves the
+   * driver out of pocket, so the only exits are REVERSED and a person.
    */
   private async compensate(withdrawal: Withdrawal): Promise<boolean> {
     const gross = moneyOf(withdrawal.grossMinor, withdrawal.currency);
+
+    // A credit we already hold an id for is followed up, not re-posted.
+    if (withdrawal.yandexReversalTransactionId) {
+      const status = await this.yandex.getTransactionStatus(
+        withdrawal.parkId,
+        withdrawal.yandexReversalTransactionId,
+      );
+      if (status.status === 'SUCCESS') {
+        await this.markReversed(withdrawal, withdrawal.yandexReversalTransactionId);
+        return true;
+      }
+      if (status.status === 'FAIL' || status.status === 'NOT_FOUND') {
+        await this.escalate(
+          withdrawal,
+          `Compensating credit ${withdrawal.yandexReversalTransactionId} reported ${status.status}; the driver is still out of pocket`,
+        );
+        return true;
+      }
+      return this.compensationRetryOrEscalate(withdrawal, `credit ${status.status.toLowerCase()}`);
+    }
+
     const outcome = await this.yandex.createCredit({
       parkId: withdrawal.parkId,
       contractorProfileId: withdrawal.yandexContractorProfileId,
       amount: gross,
-      categoryId: this.env.YANDEX_PAYOUT_CATEGORY_ID ?? 'partner_service_manual',
+      kind: this.env.YANDEX_REVERSAL_KIND,
       description: `Cash Out reversal ${withdrawal.reference}`,
       idempotencyToken: `${withdrawal.yandexIdempotencyToken}-rev`,
     });
 
-    if (outcome.status === 'APPLIED') {
-      await withSerializationRetry(() =>
-        this.prisma.inSerializableTransaction(async (tx) => {
-          await this.ledger.post(
-            tx,
-            withdrawalJournal.compensation(
-              this.journalContext(withdrawal),
-              withdrawal.failureCode ?? 'payout_failed',
-            ),
-          );
-          await this.states.transition(tx, withdrawal, 'REVERSED', {
-            note: `compensating Yandex transaction ${outcome.transaction.id}`,
-            data: { nextAttemptAt: null },
-          });
-        }),
-      );
-      return true;
+    switch (outcome.status) {
+      case 'APPLIED':
+        await this.markReversed(withdrawal, outcome.transaction.id);
+        return true;
+      case 'PENDING':
+        await this.prisma.inTransaction((tx) =>
+          this.states.patch(tx, withdrawal, {
+            yandexReversalTransactionId: outcome.transactionId,
+            nextAttemptAt: this.clock.plusSeconds(2),
+          }),
+        );
+        return false;
+      case 'REJECTED':
+        return this.compensationRetryOrEscalate(withdrawal, `credit rejected: ${outcome.code}`);
+      case 'UNKNOWN':
+      default:
+        return this.compensationRetryOrEscalate(withdrawal, `credit ${outcome.reason}`);
     }
+  }
 
-    if (withdrawal.attempts >= MAX_STEP_ATTEMPTS) {
+  private async markReversed(withdrawal: Withdrawal, creditId: string): Promise<void> {
+    await withSerializationRetry(() =>
+      this.prisma.inSerializableTransaction(async (tx) => {
+        await this.ledger.post(
+          tx,
+          withdrawalJournal.compensation(
+            this.journalContext(withdrawal),
+            withdrawal.failureCode ?? 'payout_failed',
+          ),
+        );
+        await this.states.transition(tx, withdrawal, 'REVERSED', {
+          note: `compensating Yandex transaction ${creditId}`,
+          data: { yandexReversalTransactionId: creditId, nextAttemptAt: null },
+        });
+      }),
+    );
+  }
+
+  private async compensationRetryOrEscalate(
+    withdrawal: Withdrawal,
+    message: string,
+  ): Promise<boolean> {
+    if (withdrawal.attempts + 1 >= MAX_STEP_ATTEMPTS) {
       await this.escalate(
         withdrawal,
-        `Could not return ${gross.toString()} to the driver's balance after ${withdrawal.attempts} attempts`,
+        `Could not return ${moneyOf(withdrawal.grossMinor, withdrawal.currency).toString()} to the driver's balance after ${withdrawal.attempts + 1} attempts (${message})`,
       );
       return true;
     }
-
     await this.prisma.inTransaction((tx) =>
       this.states.patch(tx, withdrawal, {
         attempts: { increment: 1 },
         nextAttemptAt: this.backoffDeadline(withdrawal.attempts),
-        failureMessage:
-          outcome.status === 'REJECTED' ? outcome.message : `compensation ${outcome.reason}`,
+        failureMessage: message.slice(0, 500),
       }),
     );
     return false;

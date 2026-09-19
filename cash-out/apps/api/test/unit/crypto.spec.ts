@@ -152,7 +152,12 @@ describe('CryptoService', () => {
   });
 });
 
+/**
+ * Flips the *first* character, not the last: base64url's final character can
+ * carry padding bits the decoder ignores, so flipping it does not always change
+ * the decoded bytes and the test would pass or fail on the luck of the IV.
+ */
 function flipLastChar(value: string): string {
-  const last = value.slice(-1);
-  return value.slice(0, -1) + (last === 'A' ? 'B' : 'A');
+  const first = value.slice(0, 1);
+  return (first === 'A' ? 'B' : 'A') + value.slice(1);
 }

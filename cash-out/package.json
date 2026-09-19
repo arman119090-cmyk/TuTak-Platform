@@ -9,7 +9,7 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
+    "lint": "eslint .",
     "test": "turbo run test",
     "test:money": "pnpm --filter @cashout/money test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml}\"",

@@ -136,6 +136,7 @@ export class BalanceService {
             'RISK_REVIEW',
             'RESERVING',
             'RESERVE_UNCERTAIN',
+            'RESERVE_PENDING',
             'MANUAL_REVIEW',
           ],
         },

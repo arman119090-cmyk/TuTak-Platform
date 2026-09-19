@@ -5,43 +5,40 @@ import { ENV, Env } from '../../config/env';
 import { AppLogger } from '../../common/logging/logger.service';
 import { Clock } from '../../common/clock';
 import {
+  assertIdempotencyToken,
   YandexBalance,
   YandexContractorProfile,
   YandexFleetPort,
   YandexTransaction,
   YandexTransactionInput,
   YandexTransactionOutcome,
+  YandexTransactionStatusOutcome,
   YandexUnavailableError,
 } from './yandex.port';
 
 /**
- * The live Fleet API adapter.
+ * The live Fleet API adapter, against API v3.
  *
- * ## Provenance of what is encoded here — read before trusting it
+ * ## Provenance — read before trusting it
  *
- * The official reference (`fleet.taxi.yandex.ru/docs/api/reference`,
- * `yandex.ru/dev/fleet-api`) is not reachable from the environment this was
- * written in: the egress policy blocks the `yandex.ru` domain. The base URL,
- * the header names and the endpoint paths below are corroborated across two
- * independent open-source clients and the public search index of the official
- * reference pages, and they agree with each other:
+ * The official reference could not be fetched from the environment this was
+ * written in (`yandex.ru`, `yandex.com` and `fleet.taxi.yandex.ru` are all
+ * blocked by its egress policy). The v3 contract encoded here — the two
+ * endpoint paths, the request fields `park_id`, `contractor_profile_id`,
+ * `amount`, `description`, `version`, `condition.balance_min`, `data.kind`,
+ * the status values `in_progress` / `success` / `fail`, and the 16–64
+ * printable-ASCII rule for `X-Idempotency-Token` — was relayed from the
+ * official documentation by the owner's independent reviewer. It was not read
+ * from the page by the author of this file.
  *
- *   * base URL `https://fleet-api.taxi.yandex.net`
- *   * `X-Client-ID`, `X-API-Key`, `X-Idempotency-Token`, `X-Park-ID`
- *   * `POST /v1/parks/driver-profiles/list`
- *   * `POST /v2/parks/driver-profiles/transactions`
- *   * `POST /v2/parks/driver-profiles/transactions/list`
+ * `docs/YANDEX_INTEGRATION.md` classifies every element as CONFIRMED,
+ * LIVE-UNVERIFIED or UNKNOWN. The response field names below are UNKNOWN, so
+ * every response is parsed defensively: a 2xx whose body does not carry a
+ * transaction id is reported as `UNKNOWN`, never as success and never as
+ * failure, and the orchestrator probes rather than guesses.
  *
- * The *request and response field names* below are the ones those clients use,
- * but they have not been verified against a live park, and error codes, paging
- * semantics, rate limits and the exact balance precision are not knowable from
- * a third-party client at all.
- *
- * Therefore: every response is parsed defensively and a shape we do not
- * recognise is reported as `UNKNOWN` rather than assumed to be a failure, and
- * this adapter must be replayed against a real sandbox park before it is
- * allowed to run with `YANDEX_MODE=live`. `docs/YANDEX_INTEGRATION.md` lists
- * exactly what has to be confirmed.
+ * This adapter must be replayed against a sandbox park before
+ * `YANDEX_MODE=live` is allowed anywhere.
  */
 @Injectable()
 export class YandexHttpAdapter extends YandexFleetPort {
@@ -55,45 +52,45 @@ export class YandexHttpAdapter extends YandexFleetPort {
     super();
   }
 
+  // ------------------------------------------------------------- profiles
+
   async findProfilesByPhone(parkId: string, phone: string): Promise<YandexContractorProfile[]> {
-    const body = {
-      limit: 50,
-      offset: 0,
-      query: { park: { id: parkId, driver_profile: { phone: [phone] } } },
-      fields: {
-        driver_profile: ['id', 'first_name', 'last_name', 'phones', 'license', 'work_rule_id'],
-        account: ['id', 'balance', 'currency', 'balance_limit'],
-      },
-    };
     const response = await this.call<DriverProfilesListResponse>(
       parkId,
       'POST',
       '/v1/parks/driver-profiles/list',
-      body,
+      {
+        limit: 50,
+        offset: 0,
+        query: { park: { id: parkId, driver_profile: { phone: [phone] } } },
+        fields: {
+          driver_profile: ['id', 'first_name', 'last_name', 'phones', 'license', 'work_rule_id'],
+          account: ['id', 'balance', 'currency', 'balance_limit'],
+        },
+      },
     );
-    return (response.driver_profiles ?? []).map((item) => this.toProfile(parkId, item));
+    return (response.body.driver_profiles ?? []).map((item) => this.toProfile(parkId, item));
   }
 
   async getProfile(
     parkId: string,
     contractorProfileId: string,
   ): Promise<YandexContractorProfile | null> {
-    const body = {
-      limit: 1,
-      offset: 0,
-      query: { park: { id: parkId, driver_profile: { id: [contractorProfileId] } } },
-      fields: {
-        driver_profile: ['id', 'first_name', 'last_name', 'phones', 'license', 'work_rule_id'],
-        account: ['id', 'balance', 'currency', 'balance_limit'],
-      },
-    };
     const response = await this.call<DriverProfilesListResponse>(
       parkId,
       'POST',
       '/v1/parks/driver-profiles/list',
-      body,
+      {
+        limit: 1,
+        offset: 0,
+        query: { park: { id: parkId, driver_profile: { id: [contractorProfileId] } } },
+        fields: {
+          driver_profile: ['id', 'first_name', 'last_name', 'phones', 'license', 'work_rule_id'],
+          account: ['id', 'balance', 'currency', 'balance_limit'],
+        },
+      },
     );
-    const first = response.driver_profiles?.[0];
+    const first = response.body.driver_profiles?.[0];
     return first ? this.toProfile(parkId, first) : null;
   }
 
@@ -107,65 +104,153 @@ export class YandexHttpAdapter extends YandexFleetPort {
     return profile.balance;
   }
 
+  // ---------------------------------------------------------- transactions
+
   async createDebit(input: YandexTransactionInput): Promise<YandexTransactionOutcome> {
-    return this.createTransaction(input, input.amount.negated());
+    return this.createTransaction(input, input.amount.abs().negated());
   }
 
   async createCredit(input: YandexTransactionInput): Promise<YandexTransactionOutcome> {
     return this.createTransaction(input, input.amount.abs());
   }
 
+  /**
+   * `POST /v3/parks/driver-profiles/transactions`.
+   *
+   * The amount is signed (negative for a debit). Whether v3 expects the sign
+   * on `amount` or derives direction from `data.kind` is one of the things the
+   * sandbox run must settle; it is listed as LIVE-UNVERIFIED.
+   */
   private async createTransaction(
     input: YandexTransactionInput,
-    signedAmount: ReturnType<Money['abs']>,
+    signedAmount: Money,
   ): Promise<YandexTransactionOutcome> {
-    const body = {
+    assertIdempotencyToken(input.idempotencyToken);
+
+    const body: Record<string, unknown> = {
       park_id: input.parkId,
-      driver_profile_id: input.contractorProfileId,
-      category_id: input.categoryId,
+      contractor_profile_id: input.contractorProfileId,
       amount: signedAmount.toDecimalString(),
       description: input.description,
+      version: this.env.YANDEX_TRANSACTION_VERSION,
+      data: { kind: input.kind },
     };
+    if (input.balanceMin) {
+      body.condition = { balance_min: input.balanceMin.toDecimalString() };
+    }
 
+    let response: CallResult<CreateTransactionResponse>;
     try {
-      const response = await this.call<CreateTransactionResponse>(
+      response = await this.call<CreateTransactionResponse>(
         input.parkId,
         'POST',
-        '/v2/parks/driver-profiles/transactions',
+        '/v3/parks/driver-profiles/transactions',
         body,
         input.idempotencyToken,
       );
-      const transaction = this.toTransaction(response, input.amount.currency);
-      if (!transaction) {
-        // A 2xx we cannot parse means the transaction may well exist. Treating
-        // this as a failure would risk paying the driver without a debit.
-        this.logger.warning('Yandex returned an unrecognised transaction payload', {
-          parkId: input.parkId,
-          idempotencyToken: input.idempotencyToken,
-        });
-        return { status: 'UNKNOWN', reason: 'unparseable_success_response' };
-      }
-      return {
-        status: 'APPLIED',
-        transaction,
-        balanceAfter: parseAmount(response.balance_after, input.amount.currency),
-      };
     } catch (error) {
-      if (error instanceof YandexHttpError) {
-        if (
-          error.status >= 400 &&
-          error.status < 500 &&
-          error.status !== 408 &&
-          error.status !== 429
-        ) {
-          return { status: 'REJECTED', code: error.code, message: error.message };
-        }
-        return { status: 'UNKNOWN', reason: `http_${error.status}` };
-      }
+      return this.transactionFailure(error, input);
+    }
+
+    const id = extractTransactionId(response.body);
+    if (!id) {
+      // A 2xx we cannot read may well have created the transaction. Saying
+      // "failed" here is how a driver gets debited twice.
+      this.logger.warning('Yandex v3 returned a 2xx without a recognisable transaction id', {
+        parkId: input.parkId,
+        idempotencyToken: input.idempotencyToken,
+        httpStatus: response.status,
+      });
       return {
         status: 'UNKNOWN',
-        reason: error instanceof Error ? error.name : 'transport_error',
+        reason: 'unparseable_success_response',
+        httpStatus: response.status,
       };
+    }
+
+    const status = normaliseStatus(response.body.status);
+    if (status === 'FAIL') {
+      return {
+        status: 'REJECTED',
+        code: response.body.error_code ?? response.body.code ?? 'fail',
+        message: response.body.message ?? 'Yandex reported the transaction as failed',
+      };
+    }
+    if (status === 'IN_PROGRESS' || status === null) {
+      // No final status in the response: let the status endpoint decide,
+      // rather than assuming a 2xx means applied.
+      return { status: 'PENDING', transactionId: id };
+    }
+
+    return {
+      status: 'APPLIED',
+      transaction: {
+        id,
+        amount: signedAmount,
+        description: input.description,
+        eventAt: parseDate(response.body.event_at ?? response.body.created_at) ?? this.clock.now(),
+      },
+      balanceAfter: parseAmount(response.body.balance_after, input.amount.currency),
+    };
+  }
+
+  private transactionFailure(
+    error: unknown,
+    input: YandexTransactionInput,
+  ): YandexTransactionOutcome {
+    if (error instanceof YandexHttpError) {
+      if (error.status === 429 || error.status === 408 || error.status >= 500) {
+        return { status: 'UNKNOWN', reason: `http_${error.status}`, httpStatus: error.status };
+      }
+      if (error.status >= 400 && error.status < 500) {
+        return {
+          status: 'REJECTED',
+          code: classifyRejection(error.code, error.message),
+          message: error.message,
+        };
+      }
+    }
+    this.logger.fail('Yandex v3 transaction transport failure', error, {
+      parkId: input.parkId,
+      idempotencyToken: input.idempotencyToken,
+    });
+    return { status: 'UNKNOWN', reason: error instanceof Error ? error.name : 'transport_error' };
+  }
+
+  /** `GET /v3/parks/driver-profiles/transactions/status`. */
+  async getTransactionStatus(
+    parkId: string,
+    transactionId: string,
+  ): Promise<YandexTransactionStatusOutcome> {
+    let response: CallResult<TransactionStatusResponse>;
+    try {
+      response = await this.call<TransactionStatusResponse>(
+        parkId,
+        'GET',
+        `/v3/parks/driver-profiles/transactions/status?id=${encodeURIComponent(transactionId)}`,
+      );
+    } catch (error) {
+      if (error instanceof YandexHttpError) {
+        if (error.status === 404) return { status: 'NOT_FOUND' };
+        return { status: 'UNKNOWN', reason: `http_${error.status}`, httpStatus: error.status };
+      }
+      return { status: 'UNKNOWN', reason: error instanceof Error ? error.name : 'transport_error' };
+    }
+
+    const status = normaliseStatus(response.body.status);
+    switch (status) {
+      case 'SUCCESS':
+        return { status: 'SUCCESS' };
+      case 'IN_PROGRESS':
+        return { status: 'IN_PROGRESS' };
+      case 'FAIL':
+        return {
+          status: 'FAIL',
+          code: response.body.error_code ?? response.body.code ?? null,
+          message: response.body.message ?? null,
+        };
+      default:
+        return { status: 'UNKNOWN', reason: 'unrecognised_status_value' };
     }
   }
 
@@ -175,35 +260,33 @@ export class YandexHttpAdapter extends YandexFleetPort {
     reference: string,
     since: Date,
   ): Promise<YandexTransaction | null> {
-    const body = {
-      limit: 200,
-      query: {
-        park: {
-          id: parkId,
-          driver_profile: { id: contractorProfileId },
-          transaction: {
-            event_at: { from: since.toISOString(), to: this.clock.now().toISOString() },
-          },
-        },
-      },
-    };
     const response = await this.call<TransactionsListResponse>(
       parkId,
       'POST',
       '/v2/parks/driver-profiles/transactions/list',
-      body,
+      {
+        limit: 200,
+        query: {
+          park: {
+            id: parkId,
+            driver_profile: { id: contractorProfileId },
+            transaction: {
+              event_at: { from: since.toISOString(), to: this.clock.now().toISOString() },
+            },
+          },
+        },
+      },
     );
-    const match = (response.transactions ?? []).find((item) =>
+    const match = (response.body.transactions ?? []).find((item) =>
       (item.description ?? '').includes(reference),
     );
     if (!match) return null;
-    const currency = match.currency_code ?? 'AMD';
+    const currency = (match.currency_code ?? 'AMD') as CurrencyCode;
     return {
       id: String(match.id),
-      amount: parseAmount(match.amount, currency) ?? Money.zero(currency as CurrencyCode),
+      amount: parseAmount(match.amount, currency) ?? Money.zero(currency),
       description: match.description ?? '',
-      eventAt: match.event_at ? new Date(match.event_at) : this.clock.now(),
-      categoryId: match.category_id ?? null,
+      eventAt: parseDate(match.event_at) ?? this.clock.now(),
     };
   }
 
@@ -228,23 +311,21 @@ export class YandexHttpAdapter extends YandexFleetPort {
     path: string,
     body?: unknown,
     idempotencyToken?: string,
-  ): Promise<T> {
+  ): Promise<CallResult<T>> {
     await this.throttle(parkId);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.env.YANDEX_TIMEOUT_MS);
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       Accept: 'application/json',
       'X-Client-ID': this.env.YANDEX_CLIENT_ID ?? '',
       'X-API-Key': this.env.YANDEX_API_KEY ?? '',
       'X-Park-ID': parkId,
       'Accept-Language': 'en',
     };
-    if (idempotencyToken) {
-      headers['X-Idempotency-Token'] = idempotencyToken;
-    }
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (idempotencyToken) headers['X-Idempotency-Token'] = idempotencyToken;
 
     try {
       const response = await fetch(`${this.env.YANDEX_BASE_URL}${path}`, {
@@ -253,12 +334,11 @@ export class YandexHttpAdapter extends YandexFleetPort {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal,
       });
-
       const text = await response.text();
       if (!response.ok) {
         throw new YandexHttpError(response.status, safeErrorCode(text), text.slice(0, 500));
       }
-      return (text ? JSON.parse(text) : {}) as T;
+      return { status: response.status, body: (text ? JSON.parse(text) : {}) as T };
     } catch (error) {
       if (error instanceof YandexHttpError) throw error;
       throw new YandexUnavailableError('Yandex Fleet API transport failure', error);
@@ -268,18 +348,16 @@ export class YandexHttpAdapter extends YandexFleetPort {
   }
 
   /**
-   * Yandex throttles per park. The exact budget is not documented publicly, so
-   * this enforces a conservative minimum gap between calls for one park rather
-   * than discovering the real limit by being rate-limited in production.
+   * Yandex throttles per park; the exact budget is not documented in what we
+   * have. A conservative minimum gap between calls for one park, rather than
+   * discovering the real limit by being rate-limited in production.
    */
   private async throttle(parkId: string): Promise<void> {
     const minInterval = this.env.YANDEX_MIN_INTERVAL_MS;
     if (minInterval <= 0) return;
     const last = this.lastCallAt.get(parkId) ?? 0;
     const wait = last + minInterval - Date.now();
-    if (wait > 0) {
-      await new Promise((resolve) => setTimeout(resolve, wait));
-    }
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     this.lastCallAt.set(parkId, Date.now());
   }
 
@@ -287,9 +365,8 @@ export class YandexHttpAdapter extends YandexFleetPort {
     const profile = raw.driver_profile ?? {};
     const account =
       (raw.accounts ?? []).find((item) => item.type === 'current') ?? raw.accounts?.[0];
-    const currency = account?.currency ?? 'AMD';
+    const currency = (account?.currency ?? 'AMD') as CurrencyCode;
     const balanceAmount = parseAmount(account?.balance, currency);
-
     return {
       id: String(profile.id ?? ''),
       parkId,
@@ -302,23 +379,6 @@ export class YandexHttpAdapter extends YandexFleetPort {
         ? { amount: balanceAmount, accountId: account?.id ?? null, fetchedAt: this.clock.now() }
         : null,
       blocked: profile.work_status === 'fired' || profile.work_status === 'not_working',
-    };
-  }
-
-  private toTransaction(
-    response: CreateTransactionResponse,
-    currency: string,
-  ): YandexTransaction | null {
-    const id = response.id ?? response.transaction?.id;
-    if (!id) return null;
-    const amount = parseAmount(response.amount ?? response.transaction?.amount, currency);
-    if (!amount) return null;
-    return {
-      id: String(id),
-      amount,
-      description: response.description ?? response.transaction?.description ?? '',
-      eventAt: response.event_at ? new Date(response.event_at) : this.clock.now(),
-      categoryId: response.category_id ?? null,
     };
   }
 }
@@ -334,6 +394,41 @@ export class YandexHttpError extends Error {
   }
 }
 
+interface CallResult<T> {
+  readonly status: number;
+  readonly body: T;
+}
+
+/**
+ * Maps a 4xx rejection onto the two codes the orchestrator cares about. The
+ * exact error codes v3 uses for a failed `condition` and for an insufficient
+ * balance are UNKNOWN; this matches on the words the codes are overwhelmingly
+ * likely to contain, and otherwise passes the API's code through.
+ */
+export function classifyRejection(code: string, message: string): string {
+  const haystack = `${code} ${message}`.toLowerCase();
+  if (/condition|balance_min|min_balance/.test(haystack)) return 'condition_failed';
+  if (/insufficient|not_enough|not enough|no_money/.test(haystack)) return 'insufficient_funds';
+  return code || 'rejected';
+}
+
+export function normaliseStatus(
+  raw: unknown,
+): 'IN_PROGRESS' | 'SUCCESS' | 'FAIL' | null | 'UNRECOGNISED' {
+  if (raw === undefined || raw === null) return null;
+  const value = String(raw).toLowerCase();
+  if (value === 'in_progress' || value === 'pending' || value === 'processing')
+    return 'IN_PROGRESS';
+  if (value === 'success' || value === 'succeeded' || value === 'ok') return 'SUCCESS';
+  if (value === 'fail' || value === 'failed' || value === 'error') return 'FAIL';
+  return 'UNRECOGNISED';
+}
+
+export function extractTransactionId(body: CreateTransactionResponse): string | null {
+  const id = body.id ?? body.transaction_id ?? body.transaction?.id;
+  return id === undefined || id === null || id === '' ? null : String(id);
+}
+
 /**
  * Yandex reports balances as decimal strings, sometimes with more precision
  * than the currency's minor unit. Truncating towards zero is the only safe
@@ -342,12 +437,17 @@ export class YandexHttpError extends Error {
  */
 function parseAmount(raw: unknown, currency: string): Money | null {
   if (raw === null || raw === undefined) return null;
-  const text = typeof raw === 'string' ? raw : String(raw);
   try {
-    return Money.fromDecimalString(text, currency as CurrencyCode, 'TRUNCATE');
+    return Money.fromDecimalString(String(raw), currency as CurrencyCode, 'TRUNCATE');
   } catch {
     return null;
   }
+}
+
+function parseDate(raw: unknown): Date | null {
+  if (typeof raw !== 'string') return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function safeErrorCode(body: string): string {
@@ -359,11 +459,10 @@ function safeErrorCode(body: string): string {
   }
 }
 
-// --- Response shapes, as used by the open-source clients this was built from ---
+// --- Response shapes. Field names are UNKNOWN until verified on a sandbox park. ---
 
 interface DriverProfilesListResponse {
   driver_profiles?: DriverProfileItem[];
-  total?: number;
 }
 
 interface DriverProfileItem {
@@ -376,32 +475,35 @@ interface DriverProfileItem {
     work_rule_id?: string;
     work_status?: string;
   };
-  accounts?: Array<{
-    id?: string;
-    type?: string;
-    balance?: string;
-    currency?: string;
-    balance_limit?: string;
-  }>;
+  accounts?: Array<{ id?: string; type?: string; balance?: string; currency?: string }>;
 }
 
-interface CreateTransactionResponse {
-  id?: string;
-  amount?: string;
-  description?: string;
+export interface CreateTransactionResponse {
+  id?: string | number;
+  transaction_id?: string | number;
+  transaction?: { id?: string | number };
+  status?: string;
+  code?: string;
+  error_code?: string;
+  message?: string;
   event_at?: string;
-  category_id?: string;
+  created_at?: string;
   balance_after?: string;
-  transaction?: { id?: string; amount?: string; description?: string };
+}
+
+interface TransactionStatusResponse {
+  status?: string;
+  code?: string;
+  error_code?: string;
+  message?: string;
 }
 
 interface TransactionsListResponse {
   transactions?: Array<{
-    id?: string;
+    id?: string | number;
     amount?: string;
     currency_code?: string;
     description?: string;
     event_at?: string;
-    category_id?: string;
   }>;
 }

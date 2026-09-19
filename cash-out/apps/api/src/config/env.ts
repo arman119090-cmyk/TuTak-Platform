@@ -60,10 +60,20 @@ export const envSchema = z
     YANDEX_API_KEY: z.string().optional(),
     YANDEX_PARK_ID: z.string().optional(),
     /**
-     * The park transaction category used for a Cash Out debit. Yandex requires
-     * an existing category id; there is no way to invent one at call time.
+     * Fleet API v3 request-schema `version` field. The value the current
+     * documentation prescribes must be confirmed against the reference before
+     * going live; see docs/YANDEX_INTEGRATION.md.
      */
-    YANDEX_PAYOUT_CATEGORY_ID: z.string().optional(),
+    YANDEX_TRANSACTION_VERSION: z.string().min(1).default('1'),
+    /** `data.kind` sent on the debit that funds a payout. */
+    YANDEX_PAYOUT_KIND: z.string().min(1).default('payout'),
+    /**
+     * `data.kind` sent on the compensating credit. Whether a reversal is a
+     * `payout` with the opposite sign or a different kind is not settled by the
+     * documentation we have; it is configuration so the answer does not need a
+     * deploy.
+     */
+    YANDEX_REVERSAL_KIND: z.string().min(1).default('payout'),
     YANDEX_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
     /** Minimum gap between calls for one park. Yandex throttles per park. */
     YANDEX_MIN_INTERVAL_MS: z.coerce.number().int().min(0).max(5000).default(500),
@@ -116,12 +126,7 @@ export const envSchema = z
       });
     }
     if (env.YANDEX_MODE === 'live') {
-      for (const key of [
-        'YANDEX_CLIENT_ID',
-        'YANDEX_API_KEY',
-        'YANDEX_PARK_ID',
-        'YANDEX_PAYOUT_CATEGORY_ID',
-      ] as const) {
+      for (const key of ['YANDEX_CLIENT_ID', 'YANDEX_API_KEY', 'YANDEX_PARK_ID'] as const) {
         if (!env[key]) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,

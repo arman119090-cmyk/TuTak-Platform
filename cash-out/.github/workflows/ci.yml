@@ -1,0 +1,88 @@
+# Cash Out CI. This is the workflow for the standalone repository; while the
+# code still lives inside TuTak-Platform, the copy at the parent root drives it.
+name: Cash Out CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: cash-out-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Install, migrate, typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cashout
+          POSTGRES_PASSWORD: cashout
+          POSTGRES_DB: cashout_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cashout"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Test-only values for the ephemeral service container. Nothing secret.
+      DATABASE_URL: postgresql://cashout:cashout@localhost:5432/cashout_test?schema=public
+      TEST_DATABASE_URL: postgresql://cashout:cashout@localhost:5432/cashout_test?schema=public
+      API_BASE_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm --filter @cashout/api exec prisma generate
+
+      # A clean database, every migration in order, including the one that
+      # installs the append-only triggers and the partial unique indexes the
+      # schema file cannot express.
+      - name: Migrations on a clean PostgreSQL
+        run: pnpm --filter @cashout/api exec prisma migrate deploy
+
+      - name: Build shared packages
+        run: pnpm -r --filter "./packages/*" build
+
+      - name: Typecheck (api, admin, mobile, packages)
+        run: pnpm -r typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Formatting
+        run: pnpm format:check
+
+      # Unit tests and integration tests against the real database above.
+      - name: Tests
+        run: pnpm -r test
+
+      - name: Admin build
+        run: pnpm --filter @cashout/admin build
+
+      # There is no simulator on a runner; what can be checked is that the
+      # app's TypeScript is sound and its Expo config resolves.
+      - name: Mobile checks
+        run: |
+          pnpm --filter @cashout/mobile typecheck
+          pnpm --filter @cashout/mobile exec expo config --type public > /dev/null

@@ -90,6 +90,7 @@ export class WithdrawalWorker {
             'PAYOUT_RETURNED',
             'COMPENSATING',
             'RESERVE_UNCERTAIN',
+            'RESERVE_PENDING',
           ],
         },
         slaDeadline: { lt: this.clock.now() },

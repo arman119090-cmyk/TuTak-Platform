@@ -8,7 +8,7 @@
     "start": "next start -p 3001",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"no unit tests in the admin app yet\" && exit 0",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@cashout/contracts": "workspace:*",

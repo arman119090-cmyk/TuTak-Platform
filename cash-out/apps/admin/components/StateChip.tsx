@@ -10,6 +10,7 @@ const TONE: Record<string, 'ok' | 'warn' | 'danger' | 'info' | 'neutral'> = {
   REJECTED: 'neutral',
   RESERVING: 'info',
   RESERVE_UNCERTAIN: 'danger',
+  RESERVE_PENDING: 'info',
   RESERVED: 'info',
   PAYOUT_SUBMITTING: 'info',
   PAYOUT_UNCERTAIN: 'danger',

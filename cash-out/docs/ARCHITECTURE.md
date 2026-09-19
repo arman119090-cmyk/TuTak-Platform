@@ -23,7 +23,8 @@ So the compensatable leg goes first:
 ```
       debit Yandex  ──▶  confirmed?  ──▶  instruct the bank  ──▶  settled?
             │                │                    │                  │
-            │                └── unknown ─▶ probe │                  │
+            │                ├── in_progress ─▶ poll status          │
+            │                └── unknown ─▶ replay/probe             │
             │                                     └── failed ─▶ compensate
             └── rejected ─▶ fail (nothing moved)                     │
                                                                      ▼
@@ -41,7 +42,10 @@ applied, and **unknown**. Collapsing "unknown" into "failed" is how a driver
 gets paid twice.
 
 Each external call therefore has an explicit `*_UNCERTAIN` state whose only exit
-is a probe of the remote system, keyed by our own idempotency key. The keys —
+is a probe of the remote system, keyed by our own idempotency key. Fleet API v3
+adds a fourth answer — `in_progress`, a transaction that exists with an id but
+no outcome yet — and that is its own state too, `RESERVE_PENDING`, driven only
+by the status endpoint. The keys —
 `yandexIdempotencyToken` and `providerIdempotencyKey` — are generated once when
 the withdrawal row is created and reused by every retry of every step.
 

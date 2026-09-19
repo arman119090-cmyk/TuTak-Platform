@@ -23,9 +23,10 @@ Written to be read before anyone demos this to anybody.
 | Mobile app               | All the screens in the brief, hy/ru/en, light theme, WCAG-AA contrast asserted in tests.                                                                       |
 | Admin panel              | Dashboard, withdrawals, attention queue, drivers, reconciliation, fees, limits, integrations, audit.                                                           |
 
-**246 tests pass**: 137 in the shared packages (money 59, contracts 46,
-design tokens 16, i18n 16) and 109 in the API, of which 80 are integration tests
-against a real PostgreSQL and 29 are unit tests of the cryptography and TOTP.
+**269 tests pass**: 138 in the shared packages (money 59, contracts 47,
+design tokens 16, i18n 16) and 131 in the API, of which 96 are integration tests
+against a real PostgreSQL (16 of them for the Fleet API v3 flow) and 35 are unit
+tests of the cryptography, TOTP and the v3 adapter's response interpretation.
 
 Three real bugs came out of writing those tests: ledger sums arrived from
 Postgres as strings and went through an IEEE double; the OTP cooldown compared
@@ -64,9 +65,9 @@ the admin panel read `MOCK`, not `OK`, and the API logs a warning at startup.
   re-encryption job, so rotating `ENCRYPTION_KEY` today would orphan existing
   provider tokens and TOTP secrets.
 - No push notifications, so the app polls a withdrawal until it settles.
-- The Yandex probe matches a reference string inside a transaction description.
-  It works, and it is fragile; a proper lookup by idempotency token would be
-  better if the API supports one.
+- When a POST dies before we receive a transaction id, recovery relies on the
+  v3 idempotent replay; the description search against the transaction list is
+  kept only as evidence, never as proof of absence.
 - No load testing. The design is straightforwardly horizontal apart from the
   rate limiter, but that is an argument, not a measurement.
 - The admin panel has no device binding for operators, unlike the driver app.

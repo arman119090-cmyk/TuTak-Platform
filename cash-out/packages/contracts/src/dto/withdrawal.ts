@@ -8,6 +8,7 @@ export const withdrawalStateSchema = z.enum([
   'REJECTED',
   'RESERVING',
   'RESERVE_UNCERTAIN',
+  'RESERVE_PENDING',
   'RESERVED',
   'PAYOUT_SUBMITTING',
   'PAYOUT_UNCERTAIN',

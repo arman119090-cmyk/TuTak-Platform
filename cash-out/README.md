@@ -88,6 +88,23 @@ paid twice lives in the database — serialisable isolation, partial unique
 indexes, deferred constraint triggers, advisory locks — and a fake would
 exercise none of it.
 
+## Moving to its own repository
+
+Cash Out does not belong inside TuTak-Platform and will not stay there. The
+move keeps every commit that touched `cash-out/`:
+
+```bash
+# 1. Create an EMPTY private repository named cash-out on github.com/new
+#    (no README, no licence, no initial commit).
+# 2. From the TuTak-Platform checkout:
+cash-out/scripts/split-to-own-repo.sh git@github.com:<owner>/cash-out.git
+```
+
+The script pushes the split history, clones it back, and refuses to report
+success unless the pushed tree is byte-for-byte the current `cash-out/`. It
+deletes nothing; removing the copy from TuTak-Platform is a separate step it
+prints instructions for.
+
 ## The one design decision to read
 
 Cash Out sits between two systems it does not control: the driver's balance

@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import type { PayoutMethodDto } from '@cashout/contracts';
 import { endpoints } from '../../src/api/endpoints';
 import { useAuth } from '../../src/auth/auth-context';
@@ -20,7 +20,6 @@ import { Button, Card, Dialog, EmptyState, ListRow, Screen, Sheet, Text } from '
  */
 export default function PayoutMethodScreen() {
   const theme = useTheme();
-  const router = useRouter();
   const { api } = useAuth();
   const { t } = useI18n();
   const describeError = useErrorMessage();

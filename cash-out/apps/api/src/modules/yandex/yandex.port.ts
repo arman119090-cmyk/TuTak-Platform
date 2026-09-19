@@ -5,11 +5,13 @@ import { Money } from '@cashout/money';
  *
  * Two things about this interface are load-bearing:
  *
- * 1. **Every mutating call returns a three-valued outcome.** `APPLIED`,
- *    `REJECTED` and `UNKNOWN`. A timeout is not a failure — the debit may well
- *    have landed — and any code that treats it as one will eventually debit a
- *    driver twice. `UNKNOWN` forces the caller into a state whose only exit is
- *    a probe.
+ * 1. **Every mutating call returns a many-valued outcome, never a boolean.**
+ *    `APPLIED`, `PENDING`, `REJECTED` and `UNKNOWN`. A timeout is not a
+ *    failure — the debit may well have landed — and any code that treats it as
+ *    one will eventually debit a driver twice. `UNKNOWN` forces the caller into
+ *    a state whose only exit is a probe. `PENDING` is the v3 API's own
+ *    `in_progress`: the transaction exists and has an id, but its outcome does
+ *    not yet.
  *
  * 2. **There is no "payout" method.** The Fleet API moves a number inside the
  *    park's own accounting; it does not send money to a driver's bank. That is
@@ -29,11 +31,14 @@ export abstract class YandexFleetPort {
   abstract getBalance(parkId: string, contractorProfileId: string): Promise<YandexBalance>;
 
   /**
-   * Posts a negative transaction against the driver's park account: the debit
-   * that funds a payout.
+   * Posts the debit that funds a payout (Fleet API v3
+   * `POST /v3/parks/driver-profiles/transactions`).
    *
-   * `idempotencyToken` is sent as `X-Idempotency-Token`. Calling twice with the
-   * same token must not produce two transactions.
+   * `idempotencyToken` is sent as `X-Idempotency-Token` (16–64 printable ASCII
+   * characters; see `assertIdempotencyToken`). `balanceMin`, when given, is
+   * sent as `condition.balance_min`, so that Yandex itself refuses the debit
+   * atomically when the balance is below it — our own re-read of the balance
+   * before confirming stays as the second line of defence, not the only one.
    */
   abstract createDebit(input: YandexTransactionInput): Promise<YandexTransactionOutcome>;
 
@@ -41,8 +46,19 @@ export abstract class YandexFleetPort {
   abstract createCredit(input: YandexTransactionInput): Promise<YandexTransactionOutcome>;
 
   /**
-   * Looks for a transaction we may or may not have created, so that an
-   * `UNKNOWN` outcome can be resolved without guessing.
+   * The final outcome of a transaction we hold an id for
+   * (`GET /v3/parks/driver-profiles/transactions/status`).
+   */
+  abstract getTransactionStatus(
+    parkId: string,
+    transactionId: string,
+  ): Promise<YandexTransactionStatusOutcome>;
+
+  /**
+   * Evidence-gathering only: looks for a transaction by the reference embedded
+   * in its description, for the case where a POST died before we received an
+   * id. A hit is proof that the debit exists; a miss is *not* proof that it
+   * does not, and no caller may treat it as one.
    */
   abstract findTransaction(
     parkId: string,
@@ -78,9 +94,17 @@ export interface YandexTransactionInput {
   readonly contractorProfileId: string;
   /** Always a magnitude; `createDebit` applies the sign. */
   readonly amount: Money;
-  readonly categoryId: string;
+  /** `data.kind` — "payout" for the debit that funds a payout. */
+  readonly kind: string;
   readonly description: string;
   readonly idempotencyToken: string;
+  /**
+   * `condition.balance_min`: Yandex applies the transaction only if the
+   * contractor's balance is at least this. For a debit of `amount` this is
+   * `amount` itself — the atomic guarantee that the balance never goes below
+   * zero because of us.
+   */
+  readonly balanceMin?: Money;
 }
 
 export interface YandexTransaction {
@@ -88,17 +112,32 @@ export interface YandexTransaction {
   readonly amount: Money;
   readonly description: string;
   readonly eventAt: Date;
-  readonly categoryId: string | null;
 }
 
 export type YandexTransactionOutcome =
+  /** Final and applied. */
   | {
       readonly status: 'APPLIED';
       readonly transaction: YandexTransaction;
       readonly balanceAfter: Money | null;
     }
+  /** Accepted with an id, outcome not final (`in_progress`). */
+  | { readonly status: 'PENDING'; readonly transactionId: string }
+  /**
+   * Definitively not applied. `code` is `condition_failed` when Yandex refused
+   * because of `condition.balance_min`, `insufficient_funds` when it refused
+   * because the balance is too low, otherwise the API's own code.
+   */
   | { readonly status: 'REJECTED'; readonly code: string; readonly message: string }
-  | { readonly status: 'UNKNOWN'; readonly reason: string };
+  /** No definite answer: timeout, 429, 5xx, transport failure, unparseable 2xx. */
+  | { readonly status: 'UNKNOWN'; readonly reason: string; readonly httpStatus?: number };
+
+export type YandexTransactionStatusOutcome =
+  | { readonly status: 'IN_PROGRESS' }
+  | { readonly status: 'SUCCESS' }
+  | { readonly status: 'FAIL'; readonly code: string | null; readonly message: string | null }
+  | { readonly status: 'NOT_FOUND' }
+  | { readonly status: 'UNKNOWN'; readonly reason: string; readonly httpStatus?: number };
 
 export class YandexUnavailableError extends Error {
   constructor(
@@ -107,5 +146,28 @@ export class YandexUnavailableError extends Error {
   ) {
     super(message);
     this.name = 'YandexUnavailableError';
+  }
+}
+
+/** The Fleet API's constraint on `X-Idempotency-Token`: 16–64 printable ASCII. */
+export const IDEMPOTENCY_TOKEN_PATTERN = /^[\x20-\x7E]{16,64}$/;
+
+export class InvalidIdempotencyTokenError extends Error {
+  constructor(token: string) {
+    super(
+      `Idempotency token must be 16–64 printable ASCII characters (got ${token.length} characters)`,
+    );
+    this.name = 'InvalidIdempotencyTokenError';
+  }
+}
+
+/**
+ * Refuses a token the API would refuse, *before* the request is made. A
+ * request rejected for a malformed token is a request whose token can never
+ * be replayed, which turns every later retry into a fresh transaction.
+ */
+export function assertIdempotencyToken(token: string): void {
+  if (!IDEMPOTENCY_TOKEN_PATTERN.test(token)) {
+    throw new InvalidIdempotencyTokenError(token);
   }
 }

@@ -77,6 +77,18 @@ describe('the withdrawal state machine', () => {
     it('never drops straight from an uncertain payout to a terminal success', () => {
       expect(canTransition('PAYOUT_UNCERTAIN', 'COMPLETED')).toBe(false);
       expect(canTransition('RESERVE_UNCERTAIN', 'COMPLETED')).toBe(false);
+      expect(canTransition('RESERVE_PENDING', 'COMPLETED')).toBe(false);
+    });
+
+    it('treats an accepted-but-unfinished Yandex debit as its own state', () => {
+      expect(canTransition('RESERVING', 'RESERVE_PENDING')).toBe(true);
+      expect(canTransition('RESERVE_UNCERTAIN', 'RESERVE_PENDING')).toBe(true);
+      expect(canTransition('RESERVE_PENDING', 'RESERVED')).toBe(true);
+      // A final `fail` on a known transaction id is proof nothing was applied.
+      expect(canTransition('RESERVE_PENDING', 'FAILED')).toBe(true);
+      // ...but it never pays out before the debit is final.
+      expect(canTransition('RESERVE_PENDING', 'PAYOUT_SUBMITTING')).toBe(false);
+      expect(isUncertain('RESERVE_PENDING')).toBe(true);
     });
 
     it('reaches REVERSED only through COMPENSATING', () => {

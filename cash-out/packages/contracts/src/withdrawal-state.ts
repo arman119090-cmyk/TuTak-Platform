@@ -52,6 +52,12 @@ export const WITHDRAWAL_STATES = [
   'RESERVING',
   /** The Yandex debit call did not return a definite answer; a probe must resolve it. */
   'RESERVE_UNCERTAIN',
+  /**
+   * Yandex accepted the debit and gave us a transaction id, but reports it as
+   * `in_progress`. It exists; its outcome does not yet. Only the status
+   * endpoint can move it on.
+   */
+  'RESERVE_PENDING',
   /** The Yandex debit is confirmed applied. The driver's park balance is already reduced. */
   'RESERVED',
   /** The payout instruction has been submitted to the PSP; awaiting its result. */
@@ -89,8 +95,9 @@ const TRANSITIONS: Readonly<Record<WithdrawalState, readonly WithdrawalState[]>>
   RISK_CHECK: ['RESERVING', 'RISK_REVIEW', 'REJECTED', 'FAILED'],
   RISK_REVIEW: ['RESERVING', 'REJECTED', 'MANUAL_REVIEW'],
   REJECTED: [],
-  RESERVING: ['RESERVED', 'RESERVE_UNCERTAIN', 'FAILED', 'MANUAL_REVIEW'],
-  RESERVE_UNCERTAIN: ['RESERVED', 'RESERVING', 'FAILED', 'MANUAL_REVIEW'],
+  RESERVING: ['RESERVED', 'RESERVE_PENDING', 'RESERVE_UNCERTAIN', 'FAILED', 'MANUAL_REVIEW'],
+  RESERVE_UNCERTAIN: ['RESERVED', 'RESERVE_PENDING', 'RESERVING', 'FAILED', 'MANUAL_REVIEW'],
+  RESERVE_PENDING: ['RESERVED', 'FAILED', 'MANUAL_REVIEW'],
   RESERVED: ['PAYOUT_SUBMITTING', 'COMPENSATING', 'MANUAL_REVIEW'],
   PAYOUT_SUBMITTING: [
     'PAYOUT_SUBMITTED',
@@ -153,6 +160,7 @@ export const DEBIT_OUTSTANDING_STATES: readonly WithdrawalState[] = [
 /** States whose only safe exit is probing an external system for the real outcome. */
 export const UNCERTAIN_STATES: readonly WithdrawalState[] = [
   'RESERVE_UNCERTAIN',
+  'RESERVE_PENDING',
   'PAYOUT_UNCERTAIN',
 ];
 
@@ -197,7 +205,7 @@ export function assertTransition(from: WithdrawalState, to: WithdrawalState): vo
 }
 
 /**
- * What the driver sees. The internal machine has eighteen states because
+ * What the driver sees. The internal machine has nineteen states because
  * correctness needs them; a driver on a phone needs five.
  */
 export const DRIVER_VISIBLE_STATUSES = [
@@ -220,6 +228,7 @@ export function toDriverStatus(state: WithdrawalState): DriverVisibleStatus {
       return 'UNDER_REVIEW';
     case 'RESERVING':
     case 'RESERVE_UNCERTAIN':
+    case 'RESERVE_PENDING':
     case 'RESERVED':
     case 'PAYOUT_SUBMITTING':
     case 'PAYOUT_UNCERTAIN':

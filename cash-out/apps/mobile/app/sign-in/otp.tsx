@@ -39,7 +39,8 @@ export default function OtpScreen() {
   // and the SMS autofill on both platforms fills the whole code at once.
   useEffect(() => {
     if (code.length === codeLength && !busy) void submit(code);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally keyed on the code alone: `submit` is recreated every render,
+    // and re-running this on each render would resubmit a code mid-flight.
   }, [code]);
 
   const submit = async (value: string) => {

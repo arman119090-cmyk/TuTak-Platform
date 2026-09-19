@@ -31,6 +31,7 @@ describe('the withdrawal flow', () => {
 
   beforeEach(async () => {
     await resetDatabase(harness.prisma);
+    await harness.rateLimiter.resetAll();
     harness.yandex.reset();
     harness.provider.reset();
     await seedPricing(harness.prisma);

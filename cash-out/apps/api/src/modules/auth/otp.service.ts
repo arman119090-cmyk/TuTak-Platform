@@ -76,6 +76,10 @@ export class OtpService {
         codeHash: this.crypto.hashSecret(code),
         deviceId,
         maxAttempts: this.env.OTP_MAX_ATTEMPTS,
+        // Stamped from the injected clock, not the database's now(): the
+        // cooldown below compares against this column, and two time sources
+        // that can drift apart would make the cooldown silently ineffective.
+        createdAt: this.clock.now(),
         expiresAt,
         ip: ip === 'unknown' ? null : ip,
       },

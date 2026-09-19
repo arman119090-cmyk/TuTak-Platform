@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { Clock, FixedClock } from '../src/common/clock';
 import { ENV, Env, loadEnv } from '../src/config/env';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { RateLimiter } from '../src/common/rate-limit.service';
 import { ConsoleSmsGateway } from '../src/modules/auth/sms-gateway.port';
 import { YandexMockAdapter } from '../src/modules/yandex/yandex-mock.adapter';
 import { PaymentProviderMockAdapter } from '../src/modules/payment-provider/payment-provider-mock.adapter';
@@ -65,6 +66,7 @@ export interface Harness {
   yandex: YandexMockAdapter;
   provider: PaymentProviderMockAdapter;
   sms: ConsoleSmsGateway;
+  rateLimiter: RateLimiter;
   orchestrator: WithdrawalOrchestrator;
   withdrawals: WithdrawalsService;
   worker: WithdrawalWorker;
@@ -108,6 +110,7 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     yandex: app.get(YandexMockAdapter),
     provider: app.get(PaymentProviderMockAdapter),
     sms: app.get(ConsoleSmsGateway),
+    rateLimiter: app.get(RateLimiter),
     orchestrator: app.get(WithdrawalOrchestrator),
     withdrawals: app.get(WithdrawalsService),
     worker: app.get(WithdrawalWorker),

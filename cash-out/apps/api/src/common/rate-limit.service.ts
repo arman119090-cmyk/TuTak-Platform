@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from './app-error';
+import { Clock } from './clock';
 
 interface Bucket {
   count: number;
@@ -22,6 +23,8 @@ interface Bucket {
 export abstract class RateLimiter {
   abstract consume(key: string, limit: number, windowSeconds: number): Promise<RateLimitResult>;
   abstract reset(key: string): Promise<void>;
+  /** Drops every bucket. Only tests and an operator-triggered flush use this. */
+  abstract resetAll(): Promise<void>;
 
   async enforce(key: string, limit: number, windowSeconds: number): Promise<void> {
     const result = await this.consume(key, limit, windowSeconds);
@@ -43,8 +46,12 @@ export interface RateLimitResult {
 export class InMemoryRateLimiter extends RateLimiter {
   private readonly buckets = new Map<string, Bucket>();
 
+  constructor(private readonly clock: Clock) {
+    super();
+  }
+
   async consume(key: string, limit: number, windowSeconds: number): Promise<RateLimitResult> {
-    const now = Date.now();
+    const now = this.clock.nowMs();
     this.sweep(now);
 
     const existing = this.buckets.get(key);
@@ -67,6 +74,10 @@ export class InMemoryRateLimiter extends RateLimiter {
 
   async reset(key: string): Promise<void> {
     this.buckets.delete(key);
+  }
+
+  async resetAll(): Promise<void> {
+    this.buckets.clear();
   }
 
   private sweep(now: number): void {

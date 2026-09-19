@@ -8,5 +8,5 @@
     // dist/main.js (and an empty Turborepo cache entry).
     "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
-  "exclude": ["node_modules", "test", "dist", "prisma", "**/*spec.ts"]
+  "exclude": ["node_modules", "test", "dist", "prisma", "prisma.config.ts", "**/*spec.ts"]
 }

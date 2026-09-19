@@ -31,6 +31,10 @@ import { REDIS_CLIENT } from '../../infrastructure/redis/redis-client.token';
  */
 export const MAX_OTP_ISSUANCE_PER_IP_PER_HOUR = 60;
 export const MAX_OTP_VERIFICATION_PER_IP_PER_HOUR = 120;
+// Those two are the defaults; `OTP_IP_ISSUANCE_PER_HOUR` and
+// `OTP_IP_VERIFICATION_PER_HOUR` override them (config `otpIpLimits`) so a
+// venue full of first-day sign-ups behind one address can be let in without
+// a deploy.
 const WINDOW_SECONDS = 3600;
 
 export type OtpIpAction = 'issue' | 'verify';
@@ -41,17 +45,22 @@ export class OtpIpRateLimitService {
 
   private readonly perCallerIp: boolean;
 
+  private readonly issuancePerHour: number;
+
+  private readonly verificationPerHour: number;
+
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     config: ConfigService<AppConfig, true>,
   ) {
     this.perCallerIp = clientIpIsPerCaller(config.get('clientIp', { infer: true }));
+    const limits = config.get('otpIpLimits', { infer: true });
+    this.issuancePerHour = limits?.issuancePerHour ?? MAX_OTP_ISSUANCE_PER_IP_PER_HOUR;
+    this.verificationPerHour = limits?.verificationPerHour ?? MAX_OTP_VERIFICATION_PER_IP_PER_HOUR;
   }
 
   private limitFor(action: OtpIpAction): number {
-    return action === 'issue'
-      ? MAX_OTP_ISSUANCE_PER_IP_PER_HOUR
-      : MAX_OTP_VERIFICATION_PER_IP_PER_HOUR;
+    return action === 'issue' ? this.issuancePerHour : this.verificationPerHour;
   }
 
   /**

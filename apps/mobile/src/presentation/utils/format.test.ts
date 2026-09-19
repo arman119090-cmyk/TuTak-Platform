@@ -7,6 +7,7 @@ import {
   formatPoints,
   formatSigned,
 } from './format';
+import i18n from '../../app/i18n/i18n';
 
 describe('formatPoints', () => {
   it('drops decimals for a whole number', () => {
@@ -73,6 +74,10 @@ describe('formatDate / formatDateTime', () => {
 });
 
 describe('formatDayGroup', () => {
+  beforeAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
   it('labels today as "Today"', () => {
     expect(formatDayGroup(new Date().toISOString())).toBe('Today');
   });
@@ -99,5 +104,73 @@ describe('formatEnergy', () => {
 
   it('falls back to "0 kWh" for a non-finite value', () => {
     expect(formatEnergy('n/a')).toBe('0 kWh');
+  });
+});
+
+describe('dates follow the interface language', () => {
+  const iso = '2026-09-19T11:52:00.000Z';
+  const expected = (locale: string, options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(locale, options).format(new Date(iso));
+
+  afterEach(async () => {
+    await i18n.changeLanguage('ru');
+  });
+
+  it.each(['ru', 'hy', 'en'])('formatDate renders %s month names, not the OS locale', async (locale) => {
+    await i18n.changeLanguage(locale);
+    const out = formatDate(iso);
+    expect(out).toBe(expected(locale, { day: 'numeric', month: 'short', year: 'numeric' }));
+    expect(out).toContain('2026');
+  });
+
+  it('uses three different month spellings for the three languages', async () => {
+    const seen = new Set<string>();
+    for (const locale of ['ru', 'hy', 'en']) {
+      await i18n.changeLanguage(locale);
+      seen.add(formatDate(iso));
+    }
+    expect(seen.size).toBe(3);
+  });
+
+  it.each(['ru', 'hy', 'en'])('formatDateTime keeps a 24-hour clock in %s', async (locale) => {
+    await i18n.changeLanguage(locale);
+    expect(formatDateTime(iso)).toBe(
+      expected(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }),
+    );
+    expect(formatDateTime(iso)).not.toMatch(/AM|PM/);
+  });
+
+  it.each([
+    ['ru', 'Сегодня', 'Вчера'],
+    ['hy', 'Այսօր', 'Երեկ'],
+    ['en', 'Today', 'Yesterday'],
+  ])('formatDayGroup says today/yesterday in %s', async (locale, today, yesterday) => {
+    await i18n.changeLanguage(locale);
+    const now = new Date();
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    expect(formatDayGroup(now.toISOString())).toBe(today);
+    expect(formatDayGroup(y.toISOString())).toBe(yesterday);
+  });
+
+  it('never throws on a bad date', () => {
+    expect(formatDate('not a date')).toBe('');
+  });
+
+  it('prints Armenian by hand, letter for letter as ICU would, on a runtime without Armenian data', async () => {
+    await i18n.changeLanguage('hy');
+    const icu = (options: Intl.DateTimeFormatOptions, date: Date) => new Intl.DateTimeFormat('hy', options).format(date);
+    const dates = Array.from({ length: 12 }, (_, month) => new Date(2026, month, 17, 12, 5));
+    const withIcu = dates.map((d) => [icu({ day: 'numeric', month: 'short', year: 'numeric' }, d), icu({ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }, d)]);
+
+    // The Playwright Chromium the web demo runs in: `supportedLocalesOf(['hy'])` is [] and
+    // `format` silently answers in English. Simulate exactly that.
+    const supported = jest.spyOn(Intl.DateTimeFormat, 'supportedLocalesOf').mockReturnValue([]);
+    try {
+      const byHand = dates.map((d) => [formatDate(d.toISOString()), formatDateTime(d.toISOString())]);
+      expect(byHand).toEqual(withIcu);
+    } finally {
+      supported.mockRestore();
+    }
   });
 });

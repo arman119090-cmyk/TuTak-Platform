@@ -128,9 +128,7 @@ export function BecomePartnerScreen({ navigation }: Props) {
                 justifyContent: 'center',
                 paddingHorizontal: space[4] - 2,
                 borderRadius: radius.md,
-                borderWidth: 1,
-                borderColor: selected ? color.primary : color.border,
-                backgroundColor: selected ? color.primary : color.surface,
+                backgroundColor: selected ? color.primary : color.backgroundSubtle,
               }}
             >
               <Text

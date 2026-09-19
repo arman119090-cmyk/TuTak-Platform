@@ -8,6 +8,7 @@ import {
   ReferralChallengeParticipantStatus,
   ReferrerType,
   RoleName,
+  Prisma,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
@@ -1080,6 +1081,91 @@ describe('PurchaseIntentRefundService (integration)', () => {
     const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
     expect(refreshed.refundedAmount.toFixed(4)).toBe('5000.0000'); // not 10000
     await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  it('two concurrent refunds with different keys never take more than the purchase (full + partial race)', async () => {
+    // Adversarial pilot case: the owner refunds everything from one screen
+    // while a manager refunds a part from another, different idempotency
+    // keys, same instant. Serializable isolation with retry decides who is
+    // second; whoever is second must see the first's `refundedAmount`.
+    const { wallet, staff, intent } = await confirmedPurchase();
+    const full = refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'full return',
+      actorId: staff.id,
+      idempotencyKey: 'race-full',
+    });
+    const partial = refunds.refund({
+      purchaseIntentId: intent.id,
+      amount: '4000',
+      reason: 'partial return',
+      actorId: staff.id,
+      idempotencyKey: 'race-partial',
+    });
+    const settled = await Promise.allSettled([full, partial]);
+    const fulfilled = settled.filter((r) => r.status === 'fulfilled').length;
+    expect(fulfilled).toBeGreaterThanOrEqual(1);
+
+    const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    const rows = await prisma.purchaseIntentRefund.findMany({ where: { purchaseIntentId: intent.id } });
+    const total = rows.reduce((sum, r) => sum.plus(r.amount), new Prisma.Decimal(0));
+    // Never more than the purchase, and the column agrees with the rows.
+    expect(total.lessThanOrEqualTo(intent.grossAmount)).toBe(true);
+    expect(refreshed.refundedAmount.toFixed(4)).toBe(total.toFixed(4));
+    // Either the full refund won (10000, one row) or the partial won first
+    // and the full one was refused/shrunk to what remained — but 14000 never.
+    expect(['10000.0000', '4000.0000']).toContain(refreshed.refundedAmount.toFixed(4));
+    await assertWalletIntegrity(prisma, wallet.id);
+    const imbalance = await prisma.ledgerAccount.aggregate({ _sum: { balance: true } });
+    expect((imbalance._sum.balance ?? new Prisma.Decimal(0)).toFixed(4)).toBe('0.0000');
+  });
+
+  it('a refund after the partner accrual was claimed by a settlement still leaves the ledger balanced and the purchase capped', async () => {
+    // "Refund after settlement" at the money level: the partner accrual is
+    // already claimed by a settlement row (a DRAFT claims exactly like a
+    // PAID one; the PAID → partner-in-debit path is refund-partner-debit
+    // .int-spec). The refund posts a reversal; the claimed row is history
+    // and stays untouched, so the deduction lands in the next period.
+    const { wallet, staff, intent, partner } = await confirmedPurchase();
+    const partnerPostings = await prisma.ledgerPosting.findMany({
+      where: { account: { partnerId: partner.id }, transaction: { sourceType: 'PurchaseIntent', sourceId: intent.id } },
+    });
+    expect(partnerPostings.length).toBeGreaterThan(0);
+    const settlement = await prisma.partnerSettlement.create({
+      data: {
+        partnerId: partner.id,
+        periodStart: new Date(Date.now() - 86_400_000),
+        periodEnd: new Date(),
+        status: 'DRAFT',
+        accruedAmount: '0',
+        deductionAmount: '0',
+        netPayableAmount: '0',
+        entryCount: partnerPostings.length,
+        entries: {
+          create: partnerPostings.map((p) => ({
+            ledgerPostingId: p.id,
+            partnerId: partner.id,
+            amount: p.amount,
+            direction: p.direction,
+            kind: 'ACCRUAL',
+            sourceType: 'PurchaseIntent',
+            sourceId: intent.id,
+            occurredAt: new Date(),
+          })),
+        },
+      },
+    });
+    await refunds.refund({ purchaseIntentId: intent.id, reason: 'after settlement', actorId: staff.id, idempotencyKey: 'after-settle-1' });
+    const refreshed = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+    expect(refreshed.refundedAmount.toFixed(4)).toBe('10000.0000');
+    await expect(
+      refunds.refund({ purchaseIntentId: intent.id, amount: '1', reason: 'again', actorId: staff.id, idempotencyKey: 'after-settle-2' }),
+    ).rejects.toThrow(/already been refunded in full/);
+    const entries = await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } });
+    expect(entries).toBe(partnerPostings.length); // the paid settlement is history, not rewritten
+    await assertWalletIntegrity(prisma, wallet.id);
+    const imbalance = await prisma.ledgerAccount.aggregate({ _sum: { balance: true } });
+    expect((imbalance._sum.balance ?? new Prisma.Decimal(0)).toFixed(4)).toBe('0.0000');
   });
 
   // ── Migration safety: pre-snapshot purchases fail closed ────────────────

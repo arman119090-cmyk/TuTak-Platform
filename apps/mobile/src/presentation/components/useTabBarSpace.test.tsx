@@ -60,10 +60,13 @@ describe('useTabBarSpace', () => {
     });
   });
 
-  it('ignores the inset on iOS, where the bar does not grow by it', () => {
+  it('reserves the bar plus the home indicator on iOS — the same rule, not a second one', () => {
+    // A Face ID iPhone reports 34. The bar grows by it now (it used to sit
+    // at a fixed height with hard-coded padding), so the screen reserves
+    // the same 34 more, exactly as it does for an Android navigation row.
     asPlatform('ios', () => {
       withInsets(34);
-      expect(screen.getByText(String(layout.tabBarHeight))).toBeTruthy();
+      expect(screen.getByText(String(layout.tabBarHeight + 34))).toBeTruthy();
     });
   });
 

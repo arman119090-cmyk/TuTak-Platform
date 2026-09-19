@@ -13,6 +13,7 @@ const KIND_PREFIX: Record<MediaAssetKind, string> = {
   USER_AVATAR: 'avatar',
   PARTNER_LOGO: 'partner-logo',
   PARTNER_COVER: 'partner-cover',
+  PROMO_ARTWORK: 'promo-artwork',
 };
 
 /**

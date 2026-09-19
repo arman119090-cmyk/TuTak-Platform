@@ -15,7 +15,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
@@ -139,7 +138,7 @@ export function PurchaseIntentStatusScreen() {
           </Text>
 
           {Number(intent.bonusAmountRequested) > 0 ? (
-            <Surface style={{ width: '100%', marginTop: space[8] }}>
+            <View style={{ width: '100%', marginTop: space[8] }}>
               <View style={styles.row}>
                 <Text style={[text.bodySm, { color: color.textSecondary }]}>
                   {t('qr.applyBonus')}
@@ -148,7 +147,7 @@ export function PurchaseIntentStatusScreen() {
                   −{formatPoints(intent.bonusAmountRequested)}
                 </Text>
               </View>
-            </Surface>
+            </View>
           ) : null}
 
           <View style={{ width: '100%', marginTop: space[8] }}>
@@ -182,7 +181,7 @@ export function PurchaseIntentStatusScreen() {
   if (status === Status.REJECTED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
-        <Surface style={{ paddingVertical: space[8] }}>
+        <View style={{ paddingVertical: space[8] }}>
           <View style={{ alignItems: 'center' }}>
             <View
               style={[
@@ -210,7 +209,7 @@ export function PurchaseIntentStatusScreen() {
               </Text>
             ) : null}
           </View>
-        </Surface>
+        </View>
         <View style={{ marginTop: space[6], gap: space[3] }}>
           <Button
             label={t('purchaseIntent.createNew')}
@@ -231,7 +230,7 @@ export function PurchaseIntentStatusScreen() {
   if (status === Status.CANCELLED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
-        <Surface style={{ paddingVertical: space[8] }}>
+        <View style={{ paddingVertical: space[8] }}>
           <View style={{ alignItems: 'center' }}>
             <Ionicons name="close-circle-outline" size={32} color={color.textSecondary} />
             <BrandLine brand={intent.partnerBrand} />
@@ -247,7 +246,7 @@ export function PurchaseIntentStatusScreen() {
               {t('purchaseIntent.cancelled')}
             </Text>
           </View>
-        </Surface>
+        </View>
         <View style={{ marginTop: space[6], gap: space[3] }}>
           <Button
             label={t('purchaseIntent.createNew')}
@@ -268,7 +267,7 @@ export function PurchaseIntentStatusScreen() {
   if (status === Status.EXPIRED) {
     return (
       <Screen title={t('purchaseIntent.statusTitle')}>
-        <Surface style={{ paddingVertical: space[8] }}>
+        <View style={{ paddingVertical: space[8] }}>
           <View style={{ alignItems: 'center' }}>
             <Ionicons name="time-outline" size={32} color={color.pendingText} />
             <BrandLine brand={intent.partnerBrand} />
@@ -284,7 +283,7 @@ export function PurchaseIntentStatusScreen() {
               {t('purchaseIntent.expired')}
             </Text>
           </View>
-        </Surface>
+        </View>
         <View style={{ marginTop: space[6], gap: space[3] }}>
           <Button
             label={t('purchaseIntent.createNew')}
@@ -315,7 +314,7 @@ export function PurchaseIntentStatusScreen() {
 
   return (
     <Screen title={t('purchaseIntent.statusTitle')}>
-      <Surface style={{ paddingVertical: space[8] }}>
+      <View style={{ paddingVertical: space[8] }}>
         <View style={{ alignItems: 'center' }}>
           <ActivityIndicator color={color.primary} />
           <Text style={[text.headline, { color: color.textPrimary, marginTop: space[4] }]}>
@@ -419,7 +418,7 @@ export function PurchaseIntentStatusScreen() {
             </Text>
           ) : null}
         </View>
-      </Surface>
+      </View>
       {/*
         The way out, for the customer who mistyped the amount or picked the
         wrong branch. Tertiary and below the card on purpose: waiting for the

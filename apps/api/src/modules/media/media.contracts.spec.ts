@@ -91,6 +91,7 @@ describe('media contracts stay in step with @tutak/shared-types', () => {
       USER_AVATAR: 'USER_AVATAR',
       PARTNER_LOGO: 'PARTNER_LOGO',
       PARTNER_COVER: 'PARTNER_COVER',
+      PROMO_ARTWORK: 'PROMO_ARTWORK',
     };
     const statuses: Record<MediaAssetStatus, MediaAssetStatusDto> = {
       PENDING_REVIEW: 'PENDING_REVIEW',

@@ -164,6 +164,34 @@ jobs:
             --wait \
             --json > build.json
 
+      - name: Fetch the artifact and record its checksum
+        # expo.dev links expire; the checksum in this log does not. For a
+        # simulator build the artifact is a tar.gz with the .app inside;
+        # for a phone build it is the .ipa. Either way the file is attached
+        # to this run for 30 days.
+        if: always()
+        working-directory: apps/mobile
+        run: |
+          [ -f build.json ] || exit 0
+          url=$(jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty' build.json)
+          [ -n "$url" ] || exit 0
+          name="tutak-ios-${{ inputs.profile }}"
+          case "$url" in *.ipa) name="$name.ipa" ;; *) name="$name.tar.gz" ;; esac
+          curl -fsSL "$url" -o "$name"
+          ls -la "$name"
+          sha256sum "$name" | tee "$name.sha256"
+          case "$name" in *.tar.gz) tar -tzf "$name" | head -3 ;; esac
+          echo "artifact_file=$name" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        if: env.artifact_file != ''
+        with:
+          name: tutak-ios-${{ inputs.profile }}
+          path: |
+            apps/mobile/${{ env.artifact_file }}
+            apps/mobile/${{ env.artifact_file }}.sha256
+          retention-days: 30
+
       - name: Where to get it
         if: always()
         working-directory: apps/mobile

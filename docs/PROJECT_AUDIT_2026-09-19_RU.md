@@ -8,7 +8,7 @@
 ## База
 
 - Ветка аудита: `claude/project-audit` от `main` `369eda1`.
-  Коммиты: `43266c5` (исправления), `8d19cd9` (tsconfig).
+  Коммиты: `43266c5` (исправления), `8d19cd9` (tsconfig), `9e13e30` (этот отчёт).
 - Production: Railway, проект TuTak, окружение `production`, регион `sfo`.
 - Параллельно открыты PR #58 (pilot readiness), PR #59 (premium visual),
   ветка `claude/ios-bootstrap` (iOS). Аудит смотрел на `main`; где дефект
@@ -159,7 +159,7 @@
 | demo parity | перегенерирован, закоммичен |
 | `pnpm audit --prod` | 4 high / 1 moderate (было 23 / 7) |
 | Deployed stack check (workflow run 35447934221) | 4 × HTTP 200 |
-| CI на ветке аудита | см. конец отчёта |
+| CI на ветке аудита (`9e13e30`) | **success** — run 35448234163: lint/test/build, интеграционные 1–3/3, контейнеры |
 
 ## Что осталось непроверенным (UNVERIFIED)
 

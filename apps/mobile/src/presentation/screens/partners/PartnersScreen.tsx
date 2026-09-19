@@ -442,7 +442,15 @@ export function PartnersScreen() {
           </Pressable>
         ) : null}
 
-        <SectionHeader title={t('partners.nearYou')} />
+        {/* The charging history had a screen and a route and no way in: it
+            was registered in RootNavigator and nothing navigated to it.
+            The stations view is where a driver looks for their charging,
+            so that is where the history is offered. */}
+        <SectionHeader
+          title={t('partners.nearYou')}
+          actionLabel={filter.kind === 'stations' ? t('ev.history') : undefined}
+          onAction={filter.kind === 'stations' ? () => navigation.navigate('EvHistory') : undefined}
+        />
 
         {isLoading ? (
           <>

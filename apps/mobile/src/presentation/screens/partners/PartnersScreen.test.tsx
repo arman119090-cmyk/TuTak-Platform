@@ -14,14 +14,17 @@ import { evApi } from '../../../data/api/evApi';
  * Yerevan-centre fallback.
  */
 
+const mockNavigate = jest.fn();
+let mockRouteParams: { filter?: 'stations' } | undefined;
+
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
-    navigate: jest.fn(),
+    navigate: mockNavigate,
     canGoBack: () => true,
     goBack: jest.fn(),
     getState: () => ({ type: 'tab' }),
   }),
-  useRoute: () => ({ params: undefined }),
+  useRoute: () => ({ params: mockRouteParams }),
 }));
 
 jest.mock('react-native-safe-area-context', () => {
@@ -155,5 +158,29 @@ describe('PartnersScreen — station Start behaviour', () => {
     fireEvent.press(startTarget);
 
     await waitFor(() => expect(evApi.startSession).toHaveBeenCalledWith({ connectorId: 'connector-internal' }));
+  });
+});
+
+describe('PartnersScreen — the way into the charging history', () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+    mockRouteParams = undefined;
+    (partnersApi.nearby as jest.Mock).mockResolvedValue([]);
+    (evApi.nearbyStations as jest.Mock).mockResolvedValue([]);
+    (evApi.activeSession as jest.Mock).mockResolvedValue(null);
+  });
+
+  it('offers the charging history from the stations view, and nowhere else', async () => {
+    mockRouteParams = { filter: 'stations' };
+    renderScreen();
+    const link = await screen.findByText('ev.history');
+    fireEvent.press(link);
+    expect(mockNavigate).toHaveBeenCalledWith('EvHistory');
+  });
+
+  it('does not put a charging link over the partner list', async () => {
+    renderScreen();
+    await screen.findByText('partners.nearYou');
+    expect(screen.queryByText('ev.history')).toBeNull();
   });
 });

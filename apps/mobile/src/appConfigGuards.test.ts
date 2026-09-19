@@ -124,46 +124,41 @@ describe('apiBaseUrl', () => {
 });
 
 /**
- * The guards above are exercised with values a test invents. This one uses the
- * value a build actually gets: `eas.json`'s own `staging` profile, which is
- * what the closed pilot installs from.
+ * `eas.json` is where the guards above meet the values a build actually
+ * gets, so its profiles are checked here rather than trusted.
  *
- * Everything above would still pass if somebody pointed that profile at
- * localhost, dropped its address, or moved it to plain http — the guards would
- * be correct and unreached, because nothing joins them to the file the builder
- * reads. A pilot APK that installs and reaches nothing is exactly the failure
- * `apiBaseUrl` exists to prevent, so the profile is checked here rather than
- * trusted.
+ * Two invariants. Every installable profile that names an API carries an
+ * https address that is not the phone itself — the thing `apiBaseUrl`
+ * exists to prevent. And no profile may call itself "staging" while
+ * pointing at the production API: the 2026-09-19 audit found exactly that
+ * profile, and a tester holding a "staging" build that quietly talks to
+ * production is worse than no staging at all. The only staging profile
+ * left is `staging-render`, which names Render's staging service.
  */
-describe('the staging build profile in eas.json', () => {
-  const env = process.env;
-  const profile = (require('../eas.json') as { build: Record<string, { env?: Record<string, string> }> })
-    .build.staging;
+describe('the build profiles in eas.json', () => {
+  const profiles = (require('../eas.json') as { build: Record<string, { env?: Record<string, string> }> })
+    .build;
 
-  beforeEach(() => {
-    process.env = { ...env };
-    delete process.env.API_BASE_URL;
-    delete process.env.ALLOW_INSECURE_API_BASE_URL;
-    for (const [key, value] of Object.entries(profile.env ?? {})) process.env[key] = value;
+  it('gives every installable profile that names an API an https address off the phone', () => {
+    for (const [name, profile] of Object.entries(profiles)) {
+      const url = profile.env?.API_BASE_URL;
+      const appEnv = profile.env?.APP_ENV ?? 'development';
+      if (!url || appEnv === 'development') continue;
+      expect({ name, url }).toEqual({ name, url: expect.stringMatching(/^https:\/\//) });
+      expect(url).not.toMatch(/localhost|127\.0\.0\.1/);
+      expect(() => guards.assertTransportSecurity(appEnv, url)).not.toThrow();
+    }
   });
 
-  afterAll(() => {
-    process.env = env;
-  });
-
-  /**
-   * Railway, not Render, since 2026-09-10. Render has no path to the carrier:
-   * it has no static outbound address, and the signed gateway that supplies
-   * one is wired to the Railway deployment alone. A pilot APK pointed at
-   * Render installs, opens, looks right and can never deliver a verification
-   * code — the same silent failure this block exists to catch.
-   */
-  it('carries an address, over https, that is not the phone itself', () => {
-    expect(guards.apiBaseUrl()).toBe('https://tutak-api-production.up.railway.app/v1');
-  });
-
-  it('names itself staging, so the app it builds cannot be mistaken for a real install', () => {
-    expect(profile.env?.APP_ENV).toBe('staging');
+  it('has no profile called staging that points at the production API', () => {
+    for (const [name, profile] of Object.entries(profiles)) {
+      const url = profile.env?.API_BASE_URL ?? '';
+      const claimsStaging = /staging/i.test(name) || profile.env?.APP_ENV === 'staging';
+      if (claimsStaging) {
+        expect({ name, url }).not.toEqual({ name, url: expect.stringContaining('tutak-api-production') });
+      }
+    }
+    expect(profiles.staging).toBeUndefined();
   });
 });
 

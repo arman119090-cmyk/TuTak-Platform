@@ -1,5 +1,15 @@
 # Проверка доставки СМС — 19.09.2026
 
+> **Обновление 14:43 UTC.** Шлюз Contabo опрошен с GitHub-runner'а
+> (workflow «Check the deployed stack», run 35449605699):
+> `https://217.76.49.94/health` → `{"status":"ok","tunnel":"down"}`.
+> Процесс шлюза жив, **IPsec-туннель до Viva лежит прямо сейчас**.
+> Статус: **VIVA SMS: BLOCKED** — ни одна СМС не уйдёт, пока туннель не
+> поднят на VPS (`docs/VIVA_TUNNEL_RUNBOOK_RU.md`: `sudo swanctl --initiate
+> --child viva && sudo swanctl --list-sas`, затем повторить опрос `/health`).
+> Это действие на сервере 217.76.49.94; из этой среды и из Railway оно
+> недоступно.
+
 ## Задание
 
 Вопрос владельца: «проверь, пожалуйста, приходят ли нормальные СМС или нет».

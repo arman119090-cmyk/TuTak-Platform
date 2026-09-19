@@ -156,12 +156,15 @@ fs.writeFileSync(
         version: '0.1.0',
         orientation: 'portrait',
         icon: './assets/icon.png',
-        userInterfaceStyle: 'dark',
+        // Light-only, like the product (apps/mobile/app.config.js): the demo
+        // exists to show TuTak, and a dark splash the real app never shows
+        // is the first thing a reviewer would see and ask about.
+        userInterfaceStyle: 'light',
         scheme: 'tutakdemo',
         splash: {
           image: './assets/splash-icon.png',
           resizeMode: 'contain',
-          backgroundColor: '#0A0A0F',
+          backgroundColor: '#F8F9FB',
         },
         assetBundlePatterns: ['**/*'],
         ios: { supportsTablet: false, bundleIdentifier: 'am.tutak.demo' },

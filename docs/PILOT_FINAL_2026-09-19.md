@@ -119,7 +119,6 @@ Sentry: только `SENTRY_DSN` (api) и `NEXT_PUBLIC_SENTRY_DSN` (admin/partn
 - Wait-for-CI эксперимент **не проведён** — нужен тумблер.
 - Branch protection **не включена** — у GitHub MCP нет endpoint; описано в п. 3.4.
 - Panels release fix (`RAILWAY_GIT_COMMIT_SHA` как build ARG) — по документации Railway; подтвердится первым деплоем панелей после merge (Sentry покажет release ≠ unknown) — до тех пор UNVERIFIED.
-- Полный локальный integration-прогон после последних правок шёл при записи (см. UNVERIFIED); целевые спеки (refund 48/48, legal, alerts, config, otp) зелёные, CI на `3b0c42d` — в процессе.
 - Ошибка: первая версия `pilot-verify.sql` использовала TEMP TABLE в READ ONLY-транзакции и сравнение text = uuid — обе упали на прогоне, исправлено до коммита; проверка 11 давала ложный FAIL из-за NULL от GROUP BY/HAVING — исправлено.
 - Ошибка: тест «refund после PAID-расчёта» упёрся в check-constraint `partner_settlements_approved_has_actor`; переписан на DRAFT-claim (PAID-случай уже покрыт `refund-partner-debit`).
 - sed по докам заменил `public/privacy.html` → новый путь и в исторических отчётах (LAUNCH_AUDIT, OTCHET_*): содержательно верно, но это правка старых документов.
@@ -131,7 +130,7 @@ Sentry: только `SENTRY_DSN` (api) и `NEXT_PUBLIC_SENTRY_DSN` (admin/partn
 |---|---|
 | API unit | 53 suites, **705/705** |
 | API integration (целевые): refund + dual-control | **48/48** |
-| API integration (полный набор) | см. UNVERIFIED |
+| API integration (полный набор, после `3b0c42d`) | 112 suites, **1476/1476**, exit 0 |
 | Admin / Partner | tsc 0; **105/105**, **92/92** (+4/4 node) |
 | Mobile | tsc 0, eslint 0; **530/530**; demo regen без расхождений |
 | `uptime-probe.test.sh` | **15/15** |
@@ -143,4 +142,4 @@ Sentry: только `SENTRY_DSN` (api) и `NEXT_PUBLIC_SENTRY_DSN` (admin/partn
 
 ## UNVERIFIED
 
-CI `3b0c42d`; полный локальный integration после `3b0c42d`; `backup.yml` end-to-end; панельный Sentry release на Railway; Wait for CI; всё, что BLOCKED BY ARMAN.
+CI `36b2543` (head после отчёта); `backup.yml` end-to-end; панельный Sentry release на Railway; Wait for CI; всё, что BLOCKED BY ARMAN.

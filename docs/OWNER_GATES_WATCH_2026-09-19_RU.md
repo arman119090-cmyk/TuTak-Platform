@@ -79,3 +79,34 @@ admin `8fea69ba`, partner `ab7fe4a4` — все с `main` `369eda1`. Денеж�
 
 **NOT READY — Wait for CI (×3 services), default branch/protection,
 backup + restore, human alerts, Viva tunnel (down), device review.**
+
+---
+
+# Проверка №2 — 16:46 UTC
+
+Плановая перепроверка по факту (не по отчёту). База: PR #60 HEAD `0385c10`,
+`main` `369eda1`, production без изменений.
+
+| # | Gate | Статус | Факт 16:46 UTC |
+|---|---|---|---|
+| 1 | Railway Wait for CI | **CLOSED** | `get-service-config`: `checkSuites:true` у tutak-api, tutak-admin, tutak-partner; `get-staged-changes` → `staged:null` (включено владельцем в UI; через API поле недоступно — см. `OWNER_GATES_SELF_CLOSE_2026-09-19_RU.md`) |
+| 2 | GitHub default branch / protection | **ЧАСТИЧНО** | default branch теперь **`main`** (`git remote show origin`). `list_branches`: `main.protected=false` — классической protection нет; наличие **ruleset** (PR required + required checks) connector не показывает → не доказано |
+| 3 | Backup + restore | OPEN | Postgres без изменений: переменных `WAL_ARCHIVE_*` нет (PITR не включён), бэкапов тома нет (план Hobby, лимит 0); restore не выполнялся |
+| 4 | Human alerts | OPEN | в переменных tutak-api по-прежнему нет `ALERT_WEBHOOK_URL` / `ALERT_TELEGRAM_*` |
+| 5 | Viva | OPEN / BLOCKED | run 35456018313 (16:46:30 UTC): `/health` → `{"status":"ok","tunnel":"down"}`; HTTP-логов API с 16:00 — ни одного запроса, OTP не запрашивался |
+| 6 | Device review | OPEN | результатов от владельца не поступало |
+
+PR #60: HEAD `0385c109ef8285e77bf36f2204e3f16f326ad2d1`, `mergeable_state:
+clean`, CI на этом HEAD 10/10 success (runs 35453892128, 35453890211,
+завершены 16:10–16:20 UTC). Merge **не выполнялся**.
+
+Что нужно, чтобы закрыть gate 2 до конца: GitHub → Settings → Rules →
+Rulesets → branch ruleset на `main` с «Require a pull request» и «Require
+status checks» (пять job'ов CI). Если ruleset уже создан — сообщите, я
+проверю по поведению PR (`mergeable_state` станет `blocked` без чеков) и
+зафиксирую как CLOSED.
+
+Следующая плановая перепроверка: через час.
+
+**NOT READY — ruleset на `main` (не доказан), backup + restore, alert
+secret, Viva tunnel (down), device review.**

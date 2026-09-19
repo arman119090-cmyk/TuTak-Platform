@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTranslation } from 'react-i18next';
@@ -39,7 +39,14 @@ export function MainTabNavigator() {
   const { t } = useTranslation();
   const { color, text, layout, palette } = useTheme();
   const insets = useSafeAreaInsets();
-  const androidBottomPadding = Math.max(20, insets.bottom);
+  // One rule for both platforms. The bar grows by the live bottom inset —
+  // a gesture pill, a Samsung navigation row, an iPhone home indicator —
+  // and pads by at least 20 pt so a device reporting no inset (an iPhone
+  // with a home button, an emulator) still keeps its labels off the edge.
+  // iOS used to hard-code 28 pt with no growth: on an iPhone with a 34 pt
+  // indicator the labels sat 6 pt inside it, and on an iPhone SE the 28 pt
+  // were wasted.
+  const bottomPadding = Math.max(20, insets.bottom);
 
   return (
     <Tab.Navigator
@@ -54,6 +61,7 @@ export function MainTabNavigator() {
         // the bar is separated from content by tone alone (content scrolls
         // under white) plus a whisper of shadow upward.
         tabBarStyle: {
+          // Premium pass 2: white, edgeless, a whisper of shadow upward.
           backgroundColor: color.surface,
           borderTopWidth: 0,
           elevation: 0,
@@ -61,12 +69,11 @@ export function MainTabNavigator() {
           shadowOpacity: 0.06,
           shadowRadius: 12,
           shadowOffset: { width: 0, height: -2 },
-          height:
-            Platform.OS === 'android'
-              ? layout.tabBarHeight + insets.bottom
-              : layout.tabBarHeight,
+          // iOS bootstrap: one geometry rule for both platforms — the bar
+          // grows by the live bottom inset and pads by at least 20 pt.
+          height: layout.tabBarHeight + insets.bottom,
           paddingTop: 6,
-          paddingBottom: Platform.OS === 'ios' ? 28 : androidBottomPadding,
+          paddingBottom: bottomPadding,
         },
         // Every tab's icon sits in the same 36 pt box — the Pay disc fills
         // it, the outline icons centre in it — so all five labels share one

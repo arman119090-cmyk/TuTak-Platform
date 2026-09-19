@@ -14,6 +14,12 @@
 #                         credentials error — that failure is the correct
 #                         signal, not something to work around.
 #
+# `preview-ios-simulator` needs none of the Apple credentials: EAS compiles
+# the native project on its Mac farm and returns a `.app` for the iOS
+# Simulator. It proves that the iOS side builds at all — CocoaPods, every
+# native module, the Info.plist — which is the one iOS fact this repository
+# can establish before the Apple account exists. It does not install on a
+# phone.
 # `preview-ios` (internal distribution) installs on iPhones whose UDIDs are
 # registered in the Apple account — the way to test before TestFlight.
 # `production-ios` (store distribution) produces the build for TestFlight and
@@ -29,11 +35,11 @@ on:
         type: string
         default: https://tutak-api-production.up.railway.app/v1
       profile:
-        description: 'preview-ios = ad-hoc build for registered iPhones. production-ios = App Store / TestFlight build.'
+        description: 'preview-ios-simulator = no Apple account needed, a .app for the iOS Simulator (proves the iOS build compiles). preview-ios = ad-hoc build for registered iPhones. production-ios = App Store / TestFlight build.'
         required: true
-        default: preview-ios
+        default: preview-ios-simulator
         type: choice
-        options: [preview-ios, production-ios]
+        options: [preview-ios-simulator, preview-ios, production-ios]
 
 concurrency:
   group: ios-build
@@ -95,17 +101,52 @@ jobs:
           [ -n "$ID" ] && echo "EAS_PROJECT_ID=$ID" >> "$GITHUB_ENV"
           exit 0
 
-      - name: Put the address where the build can see it
+      - name: Put the address and the map provider where the build can see them
+        # Same boundary, same handling as android-apk.yml: the profile's
+        # `env` block in eas.json is what reaches the EAS builder. The map
+        # provider matters here for the same reason it does there —
+        # app.config.js refuses an installable build with no provider, so a
+        # workflow that forgot the tile variables would fail at "Build on
+        # EAS" with a message about maps, twenty minutes after it started.
         working-directory: apps/mobile
         env:
           API_BASE_URL: ${{ inputs.api_base_url }}
           PROFILE: ${{ inputs.profile }}
+          MAP_TILE_URL_TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
+          MAP_TILE_API_KEY: ${{ secrets.MAP_TILE_API_KEY || vars.MAP_TILE_API_KEY }}
+          MAP_TILE_ATTRIBUTION: ${{ vars.MAP_TILE_ATTRIBUTION }}
         run: |
           set -e
           tmp=$(mktemp)
           jq --arg p "$PROFILE" --arg url "$API_BASE_URL" \
             '.build[$p].env.API_BASE_URL = $url' eas.json > "$tmp"
           mv "$tmp" eas.json
+          MAP_TILE_API_KEY="$(printf '%s' "$MAP_TILE_API_KEY" | tr -d '[:space:]')"
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_URL_TEMPLATE" ]; then
+            MAP_TILE_URL_TEMPLATE='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
+            echo "MAP_TILE_URL_TEMPLATE not set; defaulting to MapTiler's streets-v2 raster tiles."
+          fi
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_ATTRIBUTION" ]; then
+            MAP_TILE_ATTRIBUTION='© MapTiler © OpenStreetMap'
+            echo "MAP_TILE_ATTRIBUTION not set; defaulting to MapTiler's required credit line."
+          fi
+          for pair in "MAP_TILE_URL_TEMPLATE=$MAP_TILE_URL_TEMPLATE" "MAP_TILE_API_KEY=$MAP_TILE_API_KEY" "MAP_TILE_ATTRIBUTION=$MAP_TILE_ATTRIBUTION"; do
+            name="${pair%%=*}"; value="${pair#*=}"
+            if [ -n "$value" ]; then
+              tmp=$(mktemp)
+              jq --arg p "$PROFILE" --arg k "$name" --arg v "$value" \
+                '.build[$p].env[$k] = $v' eas.json > "$tmp"
+              mv "$tmp" eas.json
+            fi
+          done
+          # Evaluates app.config.js with the profile's env: every refusal in
+          # it (localhost, plain http, an unkeyed map) fires here, in
+          # seconds, rather than on the EAS builder.
+          APP_ENV=$(jq -r --arg p "$PROFILE" '.build[$p].env.APP_ENV' eas.json) \
+          API_BASE_URL="$API_BASE_URL" \
+          MAP_TILE_URL_TEMPLATE="$MAP_TILE_URL_TEMPLATE" \
+          MAP_TILE_API_KEY="$MAP_TILE_API_KEY" \
+          MAP_TILE_ATTRIBUTION="$MAP_TILE_ATTRIBUTION" \
           npx expo config --type public --json > /dev/null
 
       - name: Build on EAS
@@ -123,6 +164,34 @@ jobs:
             --wait \
             --json > build.json
 
+      - name: Fetch the artifact and record its checksum
+        # expo.dev links expire; the checksum in this log does not. For a
+        # simulator build the artifact is a tar.gz with the .app inside;
+        # for a phone build it is the .ipa. Either way the file is attached
+        # to this run for 30 days.
+        if: always()
+        working-directory: apps/mobile
+        run: |
+          [ -f build.json ] || exit 0
+          url=$(jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty' build.json)
+          [ -n "$url" ] || exit 0
+          name="tutak-ios-${{ inputs.profile }}"
+          case "$url" in *.ipa) name="$name.ipa" ;; *) name="$name.tar.gz" ;; esac
+          curl -fsSL "$url" -o "$name"
+          ls -la "$name"
+          sha256sum "$name" | tee "$name.sha256"
+          case "$name" in *.tar.gz) tar -tzf "$name" | head -3 ;; esac
+          echo "artifact_file=$name" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        if: env.artifact_file != ''
+        with:
+          name: tutak-ios-${{ inputs.profile }}
+          path: |
+            apps/mobile/${{ env.artifact_file }}
+            apps/mobile/${{ env.artifact_file }}.sha256
+          retention-days: 30
+
       - name: Where to get it
         if: always()
         working-directory: apps/mobile
@@ -132,6 +201,18 @@ jobs:
             status=$(jq -r '.[0].status // empty' build.json)
             echo "EAS build status: ${status:-unknown}"
             [ -n "$url" ] && echo "Artifact: $url"
+            {
+              echo "## iOS build (${{ inputs.profile }})"
+              echo ""
+              echo "**EAS status:** ${status:-unknown}"
+              [ -n "$url" ] && echo "" && echo "**Artifact:** $url"
+              echo ""
+              case "${{ inputs.profile }}" in
+                preview-ios-simulator) echo "A \`.app\` (tar.gz) for the iOS Simulator on a Mac: \`xcrun simctl install booted <app>\`. It does not install on an iPhone — that needs \`preview-ios\` and the Apple account." ;;
+                preview-ios) echo "Open the artifact link on the registered iPhone to install." ;;
+                production-ios) echo "TestFlight/App Store: \`eas submit --platform ios --profile production-ios\` once ascAppId is set in eas.json." ;;
+              esac
+            } >> "$GITHUB_STEP_SUMMARY"
             echo "TestFlight/App Store: expo.dev → project → Builds, then \`eas submit --platform ios --profile production-ios\` once ascAppId is set in eas.json."
           else
             echo "No build record. If the error above mentions credentials, run \`eas credentials --platform ios\` once from a laptop signed in to the Apple Developer account — see the header of this workflow."

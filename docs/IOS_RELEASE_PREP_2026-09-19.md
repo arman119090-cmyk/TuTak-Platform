@@ -27,6 +27,8 @@ iOS-сборки TuTak не существует ни одной, потому �
 | Секция `submit.production-ios` с плейсхолдером `ascAppId` | `apps/mobile/eas.json` | **добавлено**; заполнить после создания приложения в App Store Connect |
 | Workflow `Build iOS` (EAS cloud, `workflow_dispatch`, отказывается без `EXPO_TOKEN`, объясняет ошибку credentials) | `.github/workflows/ios-build.yml` | **добавлено** |
 | Тот же код приложения, что в Android APK из `main` | — | да; платформенных отличий в путях регистрации/покупки нет |
+| Профиль `preview-ios-simulator` (сборка для iOS Simulator **без Apple-аккаунта** — доказывает, что iOS компилируется) и такой же `ios-simulator` для демо + workflow «Build demo iOS (simulator)» | `apps/mobile/eas.json`, `demo/eas.json`, `.github/workflows/demo-ios.yml` | **добавлено** (ветка `claude/ios-bootstrap`) |
+| Info.plist: ATS без `NSAllowsArbitraryLoads` в installable-сборках, `usesNonExemptEncryption: false`, фото-строка с целью, микрофон убран (iOS и Android), workflow передаёт `MAP_TILE_*` | `app.config.js`, `ios-build.yml` | **добавлено**; разбор — `docs/IOS_RECON_2026-09-19_RU.md` |
 
 ## Что может сделать CI
 

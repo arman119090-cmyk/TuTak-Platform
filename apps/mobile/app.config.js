@@ -334,6 +334,41 @@ const APP_NAME = APP_NAME_ENV === 'production' ? 'TuTak' : `TuTak (${APP_NAME_EN
  */
 const SENTRY_BUILD_INTEGRATION = Boolean(process.env.SENTRY_AUTH_TOKEN);
 
+/**
+ * App Transport Security, decided the same way `assertTransportSecurity`
+ * decides the API address: by build profile, not by hope.
+ *
+ * Expo's template ships `NSAllowsArbitraryLoads: true`, which is right for a
+ * development build — Metro and a local API answer over plain HTTP on a LAN
+ * address that no exception list can name in advance — and wrong for
+ * anything a person installs: it switches iOS's own refusal of cleartext
+ * off for every request the app will ever make, and App Review asks for a
+ * justification of exactly that flag. The API is HTTPS, the map tiles are
+ * HTTPS (`refuseUnkeyedMapInInstallableBuild` refuses `http://`), so an
+ * installable build has nothing to except and keeps ATS as Apple ships it.
+ */
+function iosTransportSecurity(appEnv) {
+  if (appEnv === 'development') {
+    return {
+      NSAllowsArbitraryLoads: true,
+      NSExceptionDomains: { localhost: { NSExceptionAllowsInsecureHTTPLoads: true } },
+    };
+  }
+  return { NSAllowsArbitraryLoads: false };
+}
+
+/**
+ * The Info.plist keys this app sets itself. Everything a config plugin
+ * writes (camera, location, photo library strings) stays with its plugin
+ * below, so a permission string lives next to the module that triggers the
+ * prompt.
+ */
+function iosInfoPlist(appEnv) {
+  return {
+    NSAppTransportSecurity: iosTransportSecurity(appEnv),
+  };
+}
+
 module.exports = ({ config }) => ({
   ...config,
   name: APP_NAME,
@@ -360,6 +395,13 @@ module.exports = ({ config }) => ({
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'am.tutak.app',
+    // The app uses only the TLS the operating system provides, which Apple
+    // exempts from export-compliance paperwork. Stated here so every
+    // TestFlight upload does not stop at the "Does your app use encryption?"
+    // question — and so the answer is in the repository, not in somebody's
+    // memory of what they clicked last time.
+    config: { usesNonExemptEncryption: false },
+    infoPlist: iosInfoPlist(APP_NAME_ENV),
   },
   android: {
     adaptiveIcon: {
@@ -390,6 +432,27 @@ module.exports = ({ config }) => ({
         // the microphone is a reason to decline the install, and a question
         // at store review that has no good answer.
         recordAudioAndroid: false,
+        // And no microphone string on iOS for the same reason: the plugin
+        // writes one by default because the camera can record video.
+        microphonePermission: false,
+      },
+    ],
+    [
+      // Applied by Expo whether or not it is listed, so listing it is the
+      // only way to control what it writes. Left to its defaults it adds
+      // RECORD_AUDIO on Android and a microphone string on iOS — for a
+      // control that opens the photo library to pick an avatar and has never
+      // touched a microphone. Same reasoning as `recordAudioAndroid: false`
+      // above: a loyalty app asking for the microphone is a reason to decline
+      // the install, and a review question with no good answer.
+      'expo-image-picker',
+      {
+        photosPermission: 'TuTak needs access to your photos to set a profile picture.',
+        // The avatar control opens the library only (`launchImageLibraryAsync`);
+        // the camera string here matches expo-camera's so the two plugins
+        // cannot disagree about the one NSCameraUsageDescription.
+        cameraPermission: 'TuTak needs camera access to scan QR codes for payments.',
+        microphonePermission: false,
       },
     ],
     [
@@ -507,3 +570,4 @@ module.exports.assertTransportSecurity = assertTransportSecurity;
 module.exports.apiBaseUrl = apiBaseUrl;
 module.exports.refuseUnkeyedMapInInstallableBuild = refuseUnkeyedMapInInstallableBuild;
 module.exports.mapExtra = mapExtra;
+module.exports.iosTransportSecurity = iosTransportSecurity;

@@ -83,6 +83,16 @@
         "API_BASE_URL": "https://tutak-api-production.up.railway.app/v1"
       }
     },
+    "preview-ios-simulator": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "APP_ENV": "preview",
+        "API_BASE_URL": "https://tutak-api-production.up.railway.app/v1"
+      }
+    },
     "production-ios": {
       "distribution": "store",
       "autoIncrement": true,

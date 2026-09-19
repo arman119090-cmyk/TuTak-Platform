@@ -1,0 +1,69 @@
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+import { Env, loadEnv } from './config/env';
+import { AppExceptionFilter } from './common/error.filter';
+import { RequestContextMiddleware } from './common/request-context.middleware';
+import { CoreModule } from './core.module';
+import { CryptoModule } from './common/crypto/crypto.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { DriverAuthGuard } from './modules/auth/auth.guard';
+import { DriversModule } from './modules/drivers/drivers.module';
+import { FeesModule } from './modules/fees/fees.module';
+import { HealthModule } from './modules/health/health.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { LimitsModule } from './modules/limits/limits.module';
+import { PaymentProviderModule } from './modules/payment-provider/payment-provider.module';
+import { PayoutMethodsModule } from './modules/payout-methods/payout-methods.module';
+import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
+import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module';
+import { YandexModule } from './modules/yandex/yandex.module';
+
+export interface AppModuleOptions {
+  readonly env?: Env;
+  /** Tests disable the cron scheduler and drive the worker explicitly. */
+  readonly enableScheduler?: boolean;
+}
+
+@Module({})
+export class AppModule implements NestModule {
+  static register(options: AppModuleOptions = {}) {
+    const env = options.env ?? loadEnv();
+    const enableScheduler = options.enableScheduler ?? env.NODE_ENV !== 'test';
+
+    return {
+      module: AppModule,
+      imports: [
+        CoreModule.forRoot(env),
+        ...(enableScheduler ? [ScheduleModule.forRoot()] : []),
+        PrismaModule,
+        CryptoModule,
+        AuditModule,
+        AuthModule,
+        DriversModule,
+        PayoutMethodsModule,
+        WithdrawalsModule,
+        LedgerModule,
+        FeesModule,
+        LimitsModule,
+        YandexModule,
+        PaymentProviderModule,
+        ReconciliationModule,
+        AdminModule,
+        HealthModule,
+      ],
+      providers: [
+        // Authentication is on by default; `@Public()` is the exception.
+        { provide: APP_GUARD, useClass: DriverAuthGuard },
+        { provide: APP_FILTER, useClass: AppExceptionFilter },
+      ],
+    };
+  }
+
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

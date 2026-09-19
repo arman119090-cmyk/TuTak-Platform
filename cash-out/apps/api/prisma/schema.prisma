@@ -1,0 +1,661 @@
+// Cash Out — data model.
+//
+// Conventions that hold everywhere in this file:
+//
+//   * Money is stored as `BigInt` minor units plus an explicit currency column.
+//     Never Float, never Decimal-with-an-implicit-scale, never a bare number.
+//   * Anything that records a monetary fact is append-only. Corrections are new
+//     rows, not edits. The ledger tables additionally carry a database trigger
+//     that rejects UPDATE and DELETE outright (see the migration).
+//   * Every table that can be reached by a retried request carries the
+//     idempotency key that produced it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- identity
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model User {
+  id        String     @id @default(uuid()) @db.Uuid
+  phone     String     @unique
+  locale    String     @default("hy")
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  driver   Driver?
+  devices  Device[]
+  sessions Session[]
+
+  @@map("users")
+}
+
+model Device {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  deviceId   String
+  name       String?
+  platform   String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  blocked    Boolean  @default(false)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+  @@map("devices")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  deviceRowId      String    @db.Uuid
+  /// Only a hash of the refresh token is stored; the token itself is shown once.
+  refreshTokenHash String    @unique
+  /// Rotating refresh tokens: a reused old token revokes the whole family.
+  familyId         String    @db.Uuid
+  createdAt        DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    String?
+  ip               String?
+  userAgent        String?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceRowId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+model OtpChallenge {
+  id          String    @id @default(uuid()) @db.Uuid
+  phone       String
+  /// scrypt hash of the code. The plaintext code exists only in the SMS.
+  codeHash    String
+  deviceId    String
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  ip          String?
+  /// Set when the code was never actually sent (gateway down) so support can tell.
+  deliveryFailed Boolean @default(false)
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+  @@map("otp_challenges")
+}
+
+// ------------------------------------------------------------------ driver
+
+enum DriverVerificationStatus {
+  UNLINKED
+  PENDING
+  VERIFIED
+  BLOCKED
+}
+
+model Driver {
+  id                        String                   @id @default(uuid()) @db.Uuid
+  userId                    String                   @unique @db.Uuid
+  parkId                    String?
+  yandexContractorProfileId String?
+  verificationStatus        DriverVerificationStatus @default(UNLINKED)
+  firstName                 String?
+  lastName                  String?
+  currency                  String?
+  /// Hash, not the digits: enough to re-check a claim, useless if leaked.
+  licenceLast4Hash          String?
+  verifiedAt                DateTime?
+  blockedAt                 DateTime?
+  blockReason               String?
+  riskTier                  String                   @default("STANDARD")
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payoutMethods  PayoutMethod[]
+  withdrawals    Withdrawal[]
+  quotes         Quote[]
+  balanceSnapshots BalanceSnapshot[]
+
+  /// One Cash Out account per Yandex contractor profile: this is what stops two
+  /// phone numbers from draining the same driver's balance.
+  @@unique([parkId, yandexContractorProfileId])
+  @@index([verificationStatus])
+  @@map("drivers")
+}
+
+model BalanceSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  driverId    String   @db.Uuid
+  balanceMinor BigInt
+  currency    String
+  fetchedAt   DateTime @default(now())
+  /// Which Yandex account id the figure came from, for reconciliation.
+  yandexAccountId String?
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, fetchedAt])
+  @@map("balance_snapshots")
+}
+
+// ---------------------------------------------------------- payout methods
+
+enum PayoutMethodKind {
+  CARD
+  BANK_ACCOUNT
+}
+
+enum PayoutMethodStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  REJECTED
+  DISABLED
+}
+
+model PayoutMethod {
+  id               String             @id @default(uuid()) @db.Uuid
+  driverId         String             @db.Uuid
+  kind             PayoutMethodKind
+  status           PayoutMethodStatus @default(PENDING_VERIFICATION)
+  currency         String
+  /// Encrypted at rest with the application key; the plaintext is a provider
+  /// token, never a PAN or an IBAN.
+  providerTokenEnc String
+  /// Deterministic HMAC of the instrument, so the same card can be recognised
+  /// across drivers (fraud signal) without storing anything reversible.
+  fingerprint      String
+  maskedIdentifier String
+  displayName      String?
+  isDefault        Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  disabledAt       DateTime?
+  rejectedReason   String?
+
+  driver      Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  withdrawals Withdrawal[]
+  quotes      Quote[]
+
+  @@index([driverId, status])
+  @@index([fingerprint])
+  @@map("payout_methods")
+}
+
+// ----------------------------------------------------------- pricing/limits
+
+model FeeSchedule {
+  id                       String   @id @default(uuid()) @db.Uuid
+  /// null = the default schedule, applied to any park without its own.
+  parkId                   String?
+  currency                 String
+  platformRateNumerator    BigInt
+  platformRateDenominator  BigInt
+  platformFixedMinor       BigInt
+  platformMinMinor         BigInt?
+  platformMaxMinor         BigInt?
+  platformRounding         String   @default("HALF_UP")
+  providerRateNumerator    BigInt
+  providerRateDenominator  BigInt
+  providerFixedMinor       BigInt
+  providerMinMinor         BigInt?
+  providerMaxMinor         BigInt?
+  providerRounding         String   @default("HALF_UP")
+  payoutIncrementMinor     BigInt   @default(1)
+  effectiveFrom            DateTime @default(now())
+  effectiveTo              DateTime?
+  createdAt                DateTime @default(now())
+  createdByAdminId         String?  @db.Uuid
+
+  @@index([parkId, currency, effectiveFrom])
+  @@map("fee_schedules")
+}
+
+model LimitPolicy {
+  id                    String    @id @default(uuid()) @db.Uuid
+  parkId                String?
+  currency              String
+  minWithdrawalMinor    BigInt
+  maxWithdrawalMinor    BigInt
+  dailyAmountMinor      BigInt
+  dailyCountMax         Int
+  weeklyAmountMinor     BigInt
+  monthlyAmountMinor    BigInt
+  /// Velocity: at most `velocityMaxCount` withdrawals per rolling window.
+  velocityWindowSeconds Int       @default(3600)
+  velocityMaxCount      Int       @default(3)
+  /// Above this, a withdrawal goes to manual review instead of straight through.
+  manualReviewAboveMinor BigInt?
+  effectiveFrom         DateTime  @default(now())
+  effectiveTo           DateTime?
+  createdAt             DateTime  @default(now())
+  createdByAdminId      String?   @db.Uuid
+
+  @@index([parkId, currency, effectiveFrom])
+  @@map("limit_policies")
+}
+
+// --------------------------------------------------------------- quoting
+
+model Quote {
+  id                  String    @id @default(uuid()) @db.Uuid
+  driverId            String    @db.Uuid
+  payoutMethodId      String    @db.Uuid
+  currency            String
+  grossMinor          BigInt
+  platformFeeMinor    BigInt
+  providerFeeMinor    BigInt
+  netMinor            BigInt
+  balanceAtQuoteMinor BigInt
+  feeScheduleId       String    @db.Uuid
+  /// HMAC over the quote's fields. The confirm call must present it unchanged,
+  /// so a client cannot invent its own fee.
+  signature           String
+  createdAt           DateTime  @default(now())
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  consumedByWithdrawalId String? @db.Uuid
+
+  driver       Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  payoutMethod PayoutMethod @relation(fields: [payoutMethodId], references: [id])
+
+  @@index([driverId, createdAt])
+  @@index([expiresAt])
+  @@map("quotes")
+}
+
+// ------------------------------------------------------------ withdrawals
+
+enum WithdrawalState {
+  CREATED
+  RISK_CHECK
+  RISK_REVIEW
+  REJECTED
+  RESERVING
+  RESERVE_UNCERTAIN
+  RESERVED
+  PAYOUT_SUBMITTING
+  PAYOUT_UNCERTAIN
+  PAYOUT_SUBMITTED
+  PAYOUT_CONFIRMED
+  COMPLETED
+  PAYOUT_FAILED
+  PAYOUT_RETURNED
+  COMPENSATING
+  REVERSED
+  FAILED
+  MANUAL_REVIEW
+}
+
+model Withdrawal {
+  id        String          @id @default(uuid()) @db.Uuid
+  /// Short human reference shown to the driver and quoted to support.
+  reference String          @unique
+  driverId  String          @db.Uuid
+  payoutMethodId String     @db.Uuid
+  quoteId   String?         @db.Uuid
+  state     WithdrawalState @default(CREATED)
+  /// Optimistic-concurrency guard: every state change bumps it, and every state
+  /// change is conditional on the value it read.
+  version   Int             @default(0)
+
+  currency         String
+  grossMinor       BigInt
+  platformFeeMinor BigInt
+  providerFeeMinor BigInt
+  netMinor         BigInt
+
+  /// A copy of the identifiers as they were at request time. If a driver is
+  /// later moved to another park, this withdrawal still says where the money
+  /// actually came from.
+  parkId                    String
+  yandexContractorProfileId String
+
+  yandexBalanceBeforeMinor BigInt?
+  yandexBalanceAfterMinor  BigInt?
+  yandexTransactionId      String?
+  /// The token sent to Yandex. Stable across retries — that is the point.
+  yandexIdempotencyToken   String  @unique
+
+  providerTransactionId  String?
+  providerIdempotencyKey String  @unique
+  providerStatusRaw      String?
+
+  /// The client's key for the whole intent.
+  idempotencyKey String
+  requestHash    String
+
+  failureCode       String?
+  failureMessage    String?
+  manualReviewReason String?
+  riskScore         Int?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  reservedAt  DateTime?
+  submittedAt DateTime?
+  confirmedAt DateTime?
+  completedAt DateTime?
+  /// When automated handling should give up and escalate.
+  slaDeadline DateTime?
+  /// Set while a worker owns this withdrawal, to stop two workers driving it.
+  leaseUntil  DateTime?
+  leaseOwner  String?
+  attempts    Int       @default(0)
+  nextAttemptAt DateTime?
+
+  driver       Driver            @relation(fields: [driverId], references: [id])
+  payoutMethod PayoutMethod      @relation(fields: [payoutMethodId], references: [id])
+  events       WithdrawalEvent[]
+  journalEntries JournalEntry[]
+  providerEvents ProviderEvent[]
+
+  @@unique([driverId, idempotencyKey])
+  @@index([driverId, createdAt])
+  @@index([state, nextAttemptAt])
+  @@index([parkId, createdAt])
+  @@index([slaDeadline])
+  @@map("withdrawals")
+}
+
+/// Append-only timeline. Every state change writes exactly one row, and the
+/// rows are what the admin panel and any post-mortem read.
+model WithdrawalEvent {
+  id           String           @id @default(uuid()) @db.Uuid
+  withdrawalId String           @db.Uuid
+  fromState    WithdrawalState?
+  toState      WithdrawalState
+  at           DateTime         @default(now())
+  actorType    String           @default("SYSTEM")
+  actorId      String?
+  note         String?
+  metadata     Json?
+
+  withdrawal Withdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+
+  @@index([withdrawalId, at])
+  @@map("withdrawal_events")
+}
+
+// -------------------------------------------------------------- idempotency
+
+model IdempotencyRecord {
+  id           String    @id @default(uuid()) @db.Uuid
+  scope        String
+  key          String
+  /// Who the key belongs to: a key is never shared across drivers.
+  ownerId      String
+  requestHash  String
+  status       String    @default("IN_PROGRESS")
+  responseCode Int?
+  responseBody Json?
+  resultId     String?
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+  expiresAt    DateTime
+
+  @@unique([scope, ownerId, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+// ------------------------------------------------------------------ ledger
+
+enum LedgerAccountType {
+  PARK_RECEIVABLE
+  DRIVER_PAYABLE
+  PSP_SETTLEMENT
+  PLATFORM_FEE_REVENUE
+  PROVIDER_FEE_REVENUE
+  PROVIDER_FEE_EXPENSE
+  SUSPENSE
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid()) @db.Uuid
+  type      LedgerAccountType
+  /// The entity the account belongs to: a driver id, a park id, or GLOBAL.
+  key       String
+  currency  String
+  createdAt DateTime          @default(now())
+
+  postings LedgerPosting[]
+
+  @@unique([type, key, currency])
+  @@map("ledger_accounts")
+}
+
+enum JournalEntryType {
+  WITHDRAWAL_RESERVE
+  FEE_CAPTURE
+  PAYOUT_SETTLEMENT
+  PROVIDER_COST
+  COMPENSATION
+  ADJUSTMENT
+}
+
+model JournalEntry {
+  id             String           @id @default(uuid()) @db.Uuid
+  type           JournalEntryType
+  /// Posting the same business event twice is a no-op, not a double entry.
+  idempotencyKey String           @unique
+  withdrawalId   String?          @db.Uuid
+  description    String
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+  createdByAdminId String?        @db.Uuid
+
+  withdrawal Withdrawal?     @relation(fields: [withdrawalId], references: [id])
+  postings   LedgerPosting[]
+
+  @@index([withdrawalId])
+  @@index([createdAt])
+  @@map("journal_entries")
+}
+
+model LedgerPosting {
+  id             String   @id @default(uuid()) @db.Uuid
+  journalEntryId String   @db.Uuid
+  accountId      String   @db.Uuid
+  /// DEBIT or CREDIT. Amounts are always non-negative; direction carries sign.
+  direction      String
+  amountMinor    BigInt
+  currency       String
+  createdAt      DateTime @default(now())
+
+  journalEntry JournalEntry  @relation(fields: [journalEntryId], references: [id])
+  account      LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, createdAt])
+  @@index([journalEntryId])
+  @@map("ledger_postings")
+}
+
+// --------------------------------------------------------- provider events
+
+model ProviderEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  provider      String
+  /// The provider's own event id. Unique, so a webhook delivered twice is
+  /// stored once and processed once.
+  externalId    String
+  type          String
+  withdrawalId  String?   @db.Uuid
+  signatureOk   Boolean
+  payloadHash   String
+  payload       Json
+  receivedAt    DateTime  @default(now())
+  processedAt   DateTime?
+  processingError String?
+
+  withdrawal Withdrawal? @relation(fields: [withdrawalId], references: [id])
+
+  @@unique([provider, externalId])
+  @@index([processedAt])
+  @@map("provider_events")
+}
+
+// ------------------------------------------------------------------ outbox
+
+model OutboxMessage {
+  id          String    @id @default(uuid()) @db.Uuid
+  topic       String
+  payload     Json
+  createdAt   DateTime  @default(now())
+  availableAt DateTime  @default(now())
+  attempts    Int       @default(0)
+  processedAt DateTime?
+  lastError   String?
+
+  @@index([processedAt, availableAt])
+  @@map("outbox_messages")
+}
+
+// -------------------------------------------------------- reconciliation
+
+enum ReconciliationKind {
+  YANDEX
+  PROVIDER
+  LEDGER
+}
+
+model ReconciliationRun {
+  id            String             @id @default(uuid()) @db.Uuid
+  kind          ReconciliationKind
+  startedAt     DateTime           @default(now())
+  finishedAt    DateTime?
+  status        String             @default("RUNNING")
+  scannedCount  Int                @default(0)
+  mismatchCount Int                @default(0)
+  summary       Json?
+  triggeredBy   String             @default("SCHEDULE")
+
+  mismatches ReconciliationMismatch[]
+
+  @@index([kind, startedAt])
+  @@map("reconciliation_runs")
+}
+
+model ReconciliationMismatch {
+  id           String    @id @default(uuid()) @db.Uuid
+  runId        String    @db.Uuid
+  withdrawalId String?   @db.Uuid
+  kind         String
+  expected     String?
+  actual       String?
+  detail       Json?
+  resolvedAt   DateTime?
+  resolutionNote String?
+  createdAt    DateTime  @default(now())
+
+  run ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([resolvedAt])
+  @@map("reconciliation_mismatches")
+}
+
+// ------------------------------------------------------------------- admin
+
+enum AdminRole {
+  VIEWER
+  OPERATOR
+  FINANCE
+  ADMIN
+}
+
+model AdminUser {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(VIEWER)
+  status       String    @default("ACTIVE")
+  /// Encrypted TOTP secret. Mandatory for every role that can move money.
+  mfaSecretEnc String?
+  mfaEnabledAt DateTime?
+  failedLogins Int       @default(0)
+  lockedUntil  DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions AdminSession[]
+
+  @@map("admin_users")
+}
+
+model AdminSession {
+  id           String    @id @default(uuid()) @db.Uuid
+  adminUserId  String    @db.Uuid
+  tokenHash    String    @unique
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  ip           String?
+  userAgent    String?
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId, revokedAt])
+  @@map("admin_sessions")
+}
+
+/// Append-only. Who did what, to what, when, and why.
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorType   String
+  actorId     String?
+  action      String
+  subjectType String
+  subjectId   String?
+  at          DateTime @default(now())
+  ip          String?
+  userAgent   String?
+  reason      String?
+  before      Json?
+  after       Json?
+  requestId   String?
+
+  @@index([subjectType, subjectId, at])
+  @@index([actorId, at])
+  @@index([at])
+  @@map("audit_logs")
+}
+
+// ------------------------------------------------------- integration health
+
+model IntegrationHealth {
+  id          String   @id @default(uuid()) @db.Uuid
+  integration String   @unique
+  status      String   @default("UNKNOWN")
+  lastOkAt    DateTime?
+  lastErrorAt DateTime?
+  lastError   String?
+  /// Rolling counters the admin panel renders as a health tile.
+  windowStart DateTime @default(now())
+  okCount     Int      @default(0)
+  errorCount  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@map("integration_health")
+}

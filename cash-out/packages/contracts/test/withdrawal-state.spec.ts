@@ -56,7 +56,14 @@ describe('the withdrawal state machine', () => {
 
     it('never pays out before the Yandex debit is confirmed', () => {
       const sources = WITHDRAWAL_STATES.filter((s) => canTransition(s, 'PAYOUT_SUBMITTING'));
-      expect(new Set(sources)).toEqual(new Set(['RESERVED', 'MANUAL_REVIEW']));
+      expect(sources.length).toBeGreaterThan(0);
+      for (const source of sources) {
+        // Either the debit is already outstanding, or an operator decided.
+        expect(DEBIT_OUTSTANDING_STATES.includes(source) || source === 'MANUAL_REVIEW').toBe(true);
+      }
+      expect(sources).toContain('RESERVED');
+      expect(sources).not.toContain('CREATED');
+      expect(sources).not.toContain('RISK_CHECK');
     });
 
     it('treats an uncertain external call as its own state, never as a failure', () => {

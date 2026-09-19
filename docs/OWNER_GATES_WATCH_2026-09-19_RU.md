@@ -110,3 +110,24 @@ status checks» (пять job'ов CI). Если ruleset уже создан —
 
 **NOT READY — ruleset на `main` (не доказан), backup + restore, alert
 secret, Viva tunnel (down), device review.**
+
+---
+
+# Проверка №3 — 17:43–17:59 UTC (по факту, во время верификации restore)
+
+| # | Gate | Статус | Факт |
+|---|---|---|---|
+| 1 | Railway Wait for CI | CLOSED | `checkSuites:true` ×3, staged только удаление временного верификатора (см. ниже) |
+| 2 | GitHub default branch + ruleset | **CLOSED** | default `main`; ruleset 23702809: PR required (0 approvals), force-push и deletion заблокированы, 5 required checks от GitHub Actions (`integration_id 15368`). Доказано публичным REST `rules/branches/main` в 17:04 |
+| 3 | Backup + restore | **CLOSED** | PITR включён владельцем 17:32 (`WAL_ARCHIVE_*`, full backup 17:33:13, archived=12, failed=0); restore в новый сервис `Postgres-restored-20260919-1733`; проверка **RESTORE PASS** 17:43 — `docs/RESTORE_VERIFY_2026-09-19_RU.md` |
+| 4 | Human alerts | OPEN | у tutak-api нет `ALERT_*` (17:59) |
+| 5 | Viva | OPEN / BLOCKED | run 35459764461, 17:59:45: `tunnel: down` |
+| 6 | Device review | OPEN | сборки с `399e1d4` выданы (demo-latest, apk-preview-60); результатов нет |
+
+PR #60: HEAD `f4e046a` (docs), предыдущий `399e1d4` CI 10/10; `mergeable_state:
+clean`. Merge не выполнялся. В production застейджено одно изменение —
+удаление временного сервиса `verify-restore-20260919` (Railway требует 2FA
+в дашборде); других staged-изменений нет.
+
+**NOT READY — human alert secret + alert:verify, Viva tunnel (down) + OTP,
+device review.**

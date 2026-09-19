@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Switch, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -28,6 +29,9 @@ const LOCALE_LABELS: Record<string, string> = {
 
 export function SettingsScreen() {
   const { t, i18n } = useTranslation();
+  // Hidden until the server publishes the pages — see app.config.js.
+  const legalBaseUrl =
+    typeof Constants.expoConfig?.extra?.legalBaseUrl === 'string' ? Constants.expoConfig.extra.legalBaseUrl : '';
   const { color, space, text, palette } = useTheme();
   const { user, deviceId, clear, patchUser } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -196,6 +200,20 @@ export function SettingsScreen() {
           thumbColor="#FFFFFF"
         />
       </View>
+      {/* From the pilot-readiness branch: the privacy policy, as a plain row
+          in the premium group style. Hidden until the server publishes the
+          pages (LEGAL_BASE_URL at build time — see app.config.js). */}
+      {legalBaseUrl ? (
+        <ListRow
+          title={t('settings.privacyPolicy')}
+          leading={<SettingIcon name="document-text-outline" />}
+          trailing={<Ionicons name="open-outline" size={18} color={palette.neutral[300]} />}
+          onPress={() => {
+            void Linking.openURL(`${legalBaseUrl}/privacy`);
+          }}
+          last
+        />
+      ) : null}
 
       <SectionHeader title={t('settings.security')} />
       <ListRow

@@ -18,7 +18,9 @@ import {
   PspResolutionBasis,
   PurchaseIntentStatus,
 } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
+import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
@@ -108,8 +110,42 @@ export class PspPaymentService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly purchases: PurchaseIntentsService,
+    private readonly config: ConfigService<AppConfig, true>,
     @Inject(PSP_ADAPTER) private readonly adapter: PspAdapter,
   ) {}
+
+  /**
+   * Refuses anything that could put a customer in front of a real payment
+   * form while paying inside TuTak is switched off.
+   *
+   * ## Why this is not redundant with the check at purchase creation
+   *
+   * It was, until a purchase outlived the flag. `PurchaseIntentsService
+   * .create` refuses to *make* a provider-routed purchase when the flag is
+   * off — but rows created while it was on, restored from a backup, seeded,
+   * or written by a migration are still there, still `AWAITING_CONFIRMATION`,
+   * and `beginAttempt` was happy to open a real bill against one.
+   *
+   * What made that dangerous rather than merely untidy: the callback worker
+   * *does* check the flag. So the customer would have paid real money into
+   * the merchant account and the platform would have refused to settle it —
+   * charged, nothing delivered, and the row sitting in the inbox unprocessed.
+   * Of the ways this could go wrong, that is the worst one.
+   *
+   * ## Why the adapter's missing credentials were not the gate
+   *
+   * `IdramAdapter.createBill` throws without `IDRAM_MERCHANT_ID` and
+   * `IDRAM_SECRET_KEY`, which is why this never fired in practice. That is a
+   * configuration accident, not a control: it disappears the moment somebody
+   * stages credentials ahead of activation, which is exactly what a careful
+   * person does the day before turning the flag on. The regression test sets
+   * the credentials on purpose so the flag is the only thing standing there.
+   */
+  private assertProviderPaymentsEnabled(): void {
+    if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
+      throw new ConflictException('Paying inside TuTak is not available yet');
+    }
+  }
 
   /**
    * Refuses a cashier confirmation when a provider might already have taken
@@ -145,6 +181,8 @@ export class PspPaymentService {
    * customer can pay into a void.
    */
   async beginAttempt(params: { purchaseIntentId: string; customerId: string }) {
+    this.assertProviderPaymentsEnabled();
+
     const intent = await this.prisma.purchaseIntent.findUnique({
       where: { id: params.purchaseIntentId },
       select: {
@@ -278,6 +316,12 @@ export class PspPaymentService {
    * payment we then have to reverse.
    */
   async answerPrecheck(body: unknown): Promise<{ ok: boolean; reason?: string }> {
+    // A pre-check asks "may this bill be paid?". With the route switched off
+    // the answer is no, whatever the bill says — and answering `ok` would
+    // invite the provider to take the money next.
+    if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
+      return { ok: false, reason: 'provider payments are disabled' };
+    }
     const request = this.adapter.readPrecheck(body);
 
     if (!request.billId) return { ok: false, reason: 'no bill' };

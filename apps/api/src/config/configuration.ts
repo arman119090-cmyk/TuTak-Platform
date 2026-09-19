@@ -128,6 +128,9 @@ export interface AppConfig {
   alerts: {
     /** Where an operator gets told that money is at risk. Empty = the log only. */
     webhookUrl: string;
+    /** Telegram Bot API transport; both must be set for it to exist. Never logged. */
+    telegramBotToken: string;
+    telegramChatId: string;
   };
   payouts: {
     /** Whether confirming a payout requires someone other than its requester. */
@@ -143,6 +146,19 @@ export interface AppConfig {
      * being scrubbed. Access ends immediately either way.
      */
     graceDays: number;
+  };
+  legalPages: {
+    /** Serve /legal/privacy and /legal/account-deletion. Off until a lawyer signed the texts. */
+    enabled: boolean;
+  };
+  otpIpLimits: {
+    /**
+     * Ceilings per source address per hour on OTP issuance and verification
+     * (`OtpIpRateLimitService`). Raised, not lowered, for a launch event where
+     * a whole venue shares one address; never disabled.
+     */
+    issuancePerHour: number;
+    verificationPerHour: number;
   };
   /**
    * How long non-financial records are kept. Nothing financial appears here
@@ -470,6 +486,13 @@ function oneOf(
   return preferredValue ?? fallbackValue ?? defaultValue;
 }
 
+/** A whole number above zero from the environment, else `fallback`. */
+export function positiveIntEnv(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
@@ -534,6 +557,23 @@ const buildConfig = (): AppConfig => ({
     // Access ends the moment they press the button — this window is about
     // the data, not the account.
     graceDays: parseInt(process.env.ACCOUNT_DELETION_GRACE_DAYS ?? '30', 10),
+  },
+  legalPages: {
+    enabled: process.env.LEGAL_PAGES_ENABLED === 'true',
+  },
+  otpIpLimits: {
+    // Defaults sit above what carrier-grade NAT puts behind one address in an
+    // hour and far below what a credential attack needs (see the service).
+    // The first day of a pilot at one venue on one wifi is the case the
+    // defaults were not tuned for: a hundred sign-ups behind one address
+    // would spend the issuance budget in the first hour. Overridable without
+    // a deploy; `positiveIntEnv` ignores anything that is not a whole number
+    // above zero, so a typo restores the default rather than disabling the
+    // ceiling.
+    // ...and never above ten times the default: an override is for a
+    // venue, not for switching the ceiling off. Anything larger is clamped.
+    issuancePerHour: Math.min(positiveIntEnv(process.env.OTP_IP_ISSUANCE_PER_HOUR, 60), 600),
+    verificationPerHour: Math.min(positiveIntEnv(process.env.OTP_IP_VERIFICATION_PER_HOUR, 120), 1200),
   },
   retention: {
     // Ninety days of read notifications is enough for a customer to scroll
@@ -654,6 +694,10 @@ const buildConfig = (): AppConfig => ({
     // JSON POST. Unset in development; production boots without it but warns
     // — see AlertsModule for why it does not refuse.
     webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+    // A Telegram group with a bot in it: ten minutes of setup on a phone,
+    // for an operator who has no Slack. Both halves or nothing.
+    telegramBotToken: (process.env.ALERT_TELEGRAM_BOT_TOKEN ?? '').trim(),
+    telegramChatId: (process.env.ALERT_TELEGRAM_CHAT_ID ?? '').trim(),
   },
   metrics: {
     // No default. An unset token disables the endpoint rather than opening

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { PrismaClient, RefundRequestStatus, RoleName } from '@prisma/client';
+import { PermissionName, PrismaClient, RefundRequestStatus, RoleName } from '@prisma/client';
 import { AuditAction, PurchaseIntentStatus } from '@prisma/client';
 import { PurchaseIntentRefundRequestService } from '../src/modules/purchase-intents/purchase-intent-refund-request.service';
 import { PurchaseIntentRefundRequestsController } from '../src/modules/purchase-intents/purchase-intent-refund-requests.controller';
@@ -287,6 +287,69 @@ describe('Refund dual control (integration)', () => {
         await prisma.purchaseIntentRefundRequest.count({ where: { purchaseIntentId: intent.id } }),
       ).toBe(1);
     });
+  });
+
+  it("refuses another partner's owner and manager, on a request and on a direct refund", async () => {
+    const { partner, intent } = await confirmedPurchase();
+    const cashier = await userWithRole(partner.id, RoleName.PARTNER_STAFF);
+    const otherPartner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+    const foreignOwner = await userWithRole(otherPartner.id, RoleName.PARTNER_OWNER);
+    const foreignManager = await userWithRole(otherPartner.id, RoleName.PARTNER_MANAGER);
+
+    const request = await requests.request({
+      purchaseIntentId: intent.id,
+      amount: '1000',
+      reason: 'Damaged',
+      requestedByUserId: cashier.id,
+    });
+
+    // Owner of a *different* business: right role, wrong partner.
+    await expect(
+      requestsController.approve(asRequestUser(foreignOwner.id, RoleName.PARTNER_OWNER, otherPartner.id), request.id),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      requestsController.reject(
+        asRequestUser(foreignManager.id, RoleName.PARTNER_MANAGER, otherPartner.id),
+        request.id,
+        { note: 'not mine' },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      purchaseIntentsController.refund(
+        asRequestUser(foreignOwner.id, RoleName.PARTNER_OWNER, otherPartner.id),
+        intent.id,
+        { amount: '500', reason: 'not mine', idempotencyKey: 'foreign-direct-1' },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(await prisma.purchaseIntentRefund.count()).toBe(0);
+    const still = await prisma.purchaseIntentRefundRequest.findUniqueOrThrow({ where: { id: request.id } });
+    expect(still.status).toBe(RefundRequestStatus.PENDING);
+  });
+
+  it('a user holding only the permission, with no partner scope, cannot approve or refund', async () => {
+    // "Compromised admin permission": PURCHASE_INTENT_CONFIRM granted to an
+    // account that is neither a platform admin nor scoped to the partner.
+    const { partner, intent } = await confirmedPurchase();
+    const cashier = await userWithRole(partner.id, RoleName.PARTNER_STAFF);
+    const { user: stray } = await createCustomer(prisma);
+    const request = await requests.request({
+      purchaseIntentId: intent.id,
+      amount: '1000',
+      reason: 'Damaged',
+      requestedByUserId: cashier.id,
+    });
+    const strayUser = {
+      id: stray.id,
+      phone: '+37400000001',
+      roles: [RoleName.CUSTOMER],
+      permissions: [PermissionName.PURCHASE_INTENT_CONFIRM],
+      partnerScopes: {},
+    } as unknown as RequestUser;
+    await expect(requestsController.approve(strayUser, request.id)).rejects.toThrow(ForbiddenException);
+    await expect(
+      purchaseIntentsController.refund(strayUser, intent.id, { amount: '500', reason: 'x', idempotencyKey: 'stray-1' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(await prisma.purchaseIntentRefund.count()).toBe(0);
   });
 
   it('allows only one undecided request per purchase', async () => {

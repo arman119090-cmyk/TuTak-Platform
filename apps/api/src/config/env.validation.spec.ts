@@ -360,6 +360,17 @@ describe('assertProviderPaymentsConfigured', () => {
     expect(() => assertProviderPaymentsConfigured({ ALERT_WEBHOOK_URL: undefined })).not.toThrow();
   });
 
+  it('accepts a Telegram channel in place of the webhook, but not half of one', () => {
+    expect(() =>
+      assertProviderPaymentsConfigured(
+        on({ ALERT_WEBHOOK_URL: undefined, ALERT_TELEGRAM_BOT_TOKEN: '1:abc', ALERT_TELEGRAM_CHAT_ID: '-100' }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: undefined, ALERT_TELEGRAM_BOT_TOKEN: '1:abc' })),
+    ).toThrow(/no alert channel/);
+  });
+
   it('refuses a form action that is not https', () => {
     expect(() =>
       assertProviderPaymentsConfigured(on({ IDRAM_FORM_ACTION: 'http://banking.idram.am/x' })),

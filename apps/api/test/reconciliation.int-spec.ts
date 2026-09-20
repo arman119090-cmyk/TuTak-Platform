@@ -3,12 +3,18 @@ import {
   LedgerAccountType,
   PrismaClient,
   ReconciliationStatus,
+  RoleName,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
 import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
+import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
+import { PurchaseIntentRefundService } from '../src/modules/purchase-intents/purchase-intent-refund.service';
+import { LedgerService } from '../src/modules/ledger/ledger.service';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../src/infrastructure/redis/redis.module';
 import { ReconciliationService } from '../src/modules/reconciliation/reconciliation.service';
-import { createCustomer, createPartner } from './setup/fixtures';
+import { createCustomer, createPartner, createStaffUser, fundPrepaidBalance } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
@@ -338,5 +344,153 @@ describe('ReconciliationService (integration)', () => {
         idempotencyKey: 'payout-sticky-1',
       }),
     ).rejects.toThrow(/Payouts are blocked/);
+  });
+
+  /**
+   * The hybrid-funding invariants (brief §32 A–E, 20.09.2026). Each test
+   * breaks one record by hand — the way a bug would, never through the
+   * services — and expects the nightly run to name it rather than
+   * reconcile it away.
+   */
+  describe('hybrid funding invariants', () => {
+    const hybridPurchase = async (confirm = true) => {
+      const purchaseIntents = harness.app.get(PurchaseIntentsService);
+      const ledger = harness.app.get(LedgerService);
+      const { user } = await createCustomer(prisma);
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const role = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.PARTNER_OWNER } });
+      const staff = await createStaffUser(prisma);
+      await prisma.userRole.create({ data: { userId: staff.id, roleId: role.id, partnerId: partner.id } });
+      await fundPrepaidBalance(ledger, user.id, '50000');
+      const intent = await purchaseIntents.create(
+        { partnerId: partner.id, grossAmount: '50000', prepaidAmountApplied: '45000' },
+        user.id,
+      );
+      if (confirm) await purchaseIntents.confirm(intent.id, staff.id);
+      return { user, partner, intent, staff };
+    };
+
+    it('is clean after a prepaid-funded purchase, before and after confirmation', async () => {
+      await hybridPurchase(false);
+      expect((await reconciliation.reconcile({ periodStart: yesterday() })).status).toBe(ReconciliationStatus.CLEAN);
+      await hybridPurchase(true);
+      expect((await reconciliation.reconcile({ periodStart: yesterday() })).findings).toEqual([]);
+    });
+
+    it('C: names a hold the reserved account does not carry, and the customer it belongs to', async () => {
+      const { user, intent } = await hybridPurchase(false);
+      // The bug: the purchase still claims 45 000 held, but the reserved
+      // account was drained by something that bypassed the engine.
+      const reserved = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'CUSTOMER_PREPAID_RESERVED', userId: user.id },
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ledger_accounts" SET "balance" = 0 WHERE "id" = $1`,
+        reserved.id,
+      );
+      const result = await reconciliation.reconcile({ periodStart: yesterday() });
+      expect(result.status).toBe(ReconciliationStatus.DRIFT_DETECTED);
+      expect(result.findings.map((f) => f.account)).toEqual(
+        expect.arrayContaining([
+          'CUSTOMER_PREPAID_RESERVED:materialized-vs-postings',
+          `CUSTOMER_PREPAID_RESERVED:${user.id}:open-holds-vs-reserved`,
+        ]),
+      );
+      const c = result.findings.find((f) => f.account.endsWith('open-holds-vs-reserved'))!;
+      expect(c.expected).toBe('45000.0000');
+      expect(c.reported).toBe('0.0000');
+      expect(intent.prepaidAmountApplied.toFixed(4)).toBe('45000.0000');
+    });
+
+    it('D: names a partner credited twice for what its confirmed purchases say TuTak funded once', async () => {
+      const { partner, user, intent } = await hybridPurchase(true);
+      // The bug: a second funding posting for the same purchase — the
+      // double partner payable §31 forbids. Postings are append-only (the
+      // database refuses a delete), so the discrepancy is planted the only
+      // way it could really arise: one posting too many.
+      const ledger = harness.app.get(LedgerService);
+      await ledger.post({
+        kind: 'partner.prepaid_funding',
+        sourceType: 'PurchaseIntent',
+        sourceId: intent.id,
+        postings: [
+          {
+            accountId: (await ledger.accountFor({ type: 'CUSTOMER_PREPAID_RESERVED', userId: user.id })).id,
+            direction: 'DEBIT',
+            amount: new Decimal('45000'),
+          },
+          {
+            accountId: (await ledger.accountFor({ type: 'PARTNER_PAYABLE', partnerId: partner.id })).id,
+            direction: 'CREDIT',
+            amount: new Decimal('45000'),
+          },
+        ],
+      });
+
+      const result = await reconciliation.reconcile({ periodStart: yesterday() });
+      const d = result.findings.find((f) => f.account === 'PARTNER_PAYABLE:prepaid-funding-vs-purchases');
+      expect(d).toMatchObject({ partnerId: partner.id, expected: '45000.0000', reported: '90000.0000' });
+      expect(result.partnersBlocked).toContain(partner.id);
+    });
+
+    it('E: names a partner whose ledger balance the settlement view cannot account for', async () => {
+      const { partner } = await hybridPurchase(true);
+      const account = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ledger_accounts" SET "balance" = "balance" - 1000 WHERE "id" = $1`,
+        account.id,
+      );
+      const result = await reconciliation.reconcile({ periodStart: yesterday() });
+      expect(result.findings.map((f) => f.account)).toEqual(
+        expect.arrayContaining(['PARTNER_PAYABLE:ledger-vs-settlement-view']),
+      );
+      expect(result.partnersBlocked).toContain(partner.id);
+    });
+
+    it('A: names completed top-ups the balance credits do not add up to', async () => {
+      const { user } = await createCustomer(prisma);
+      // A COMPLETED row with no ledger transaction behind it — the state a
+      // crash between the claim and the posting would leave if the two were
+      // not one transaction.
+      await prisma.balanceTopUp.create({
+        data: { userId: user.id, amount: new Decimal('7000'), status: 'COMPLETED', providerReference: 'ghost-1' },
+      });
+      const result = await reconciliation.reconcile({ periodStart: yesterday() });
+      expect(result.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ account: 'TOPUPS:completed-vs-balance-credits', expected: '7000.0000', reported: '0.0000' }),
+        ]),
+      );
+    });
+
+    it('warns about refunds whose cash slice the business has not confirmed for a week', async () => {
+      const refunds = harness.app.get(PurchaseIntentRefundService);
+      const { intent, staff } = await hybridPurchase(true);
+      const refund = await refunds.refund({
+        purchaseIntentId: intent.id,
+        amount: '10000',
+        reason: 'returned',
+        actorId: staff.id,
+        idempotencyKey: 'stale-1',
+      });
+      expect(refund.externalRefundStatus).toBe('PENDING_PARTNER');
+      await prisma.purchaseIntentRefund.update({
+        where: { id: refund.refundId },
+        data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) },
+      });
+      harness.alerts.clear();
+      // The alert key is per day and suppressed in Redis for a while; a
+      // previous run in the same day must not swallow this one.
+      const redis = harness.app.get<Redis>(REDIS_CLIENT);
+      const keys = await redis.keys('alert:sent:refund.external-pending:*');
+      if (keys.length) await redis.del(...keys);
+      const result = await reconciliation.reconcile({ periodStart: yesterday() });
+      expect(result.status).toBe(ReconciliationStatus.CLEAN);
+      const warning = harness.alerts.sent.find((a) => a.key.startsWith('refund.external-pending:'));
+      expect(warning?.severity).toBe('warning');
+      expect(warning?.body).toContain('1000.0000');
+    });
   });
 });

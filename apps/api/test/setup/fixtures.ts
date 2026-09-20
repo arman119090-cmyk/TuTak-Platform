@@ -233,13 +233,27 @@ export async function fundPrepaidBalance(
     ledger.accountFor({ type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId }),
   ]);
   const value = new Decimal(amount);
-  await ledger.post({
+  // Both halves of a real top-up: the row *and* the posting. Reconciliation
+  // check A compares the two, so a fixture that wrote only one would be a
+  // planted discrepancy.
+  const prisma = (ledger as unknown as { prisma: PrismaClient }).prisma;
+  const topUp = await prisma.balanceTopUp.create({
+    data: {
+      userId,
+      amount: value,
+      status: 'COMPLETED',
+      providerReference: `fixture-${randomUUID()}`,
+      resolvedAt: new Date(),
+    },
+  });
+  const posted = await ledger.post({
     kind: 'balance.topup.completed',
     sourceType: 'BalanceTopUp',
-    sourceId: `fixture-${randomUUID()}`,
+    sourceId: topUp.id,
     postings: [
       { accountId: psp.id, direction: PostingDirection.DEBIT, amount: value },
       { accountId: balance.id, direction: PostingDirection.CREDIT, amount: value },
     ],
   });
+  await prisma.balanceTopUp.update({ where: { id: topUp.id }, data: { ledgerTransactionId: posted.id } });
 }

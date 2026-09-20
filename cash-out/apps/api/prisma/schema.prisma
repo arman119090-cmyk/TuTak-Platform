@@ -595,6 +595,8 @@ model LimitPolicy {
 model Quote {
   id                     String    @id @default(uuid()) @db.Uuid
   driverId               String    @db.Uuid
+  /// The park the quote was priced against; confirm refuses a quote from another park.
+  parkId   String?  @db.Uuid
   payoutMethodId         String    @db.Uuid
   currency               String
   grossMinor             BigInt
@@ -939,6 +941,8 @@ model AdminUser {
   mfaEnabledAt DateTime?
   failedLogins Int       @default(0)
   lockedUntil  DateTime?
+  /// The TOTP time step last accepted; a code for that step or earlier is refused.
+  lastTotpStep Int?
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

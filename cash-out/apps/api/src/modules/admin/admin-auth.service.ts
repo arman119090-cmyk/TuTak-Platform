@@ -8,7 +8,7 @@ import { AppLogger } from '../../common/logging/logger.service';
 import { RateLimiter } from '../../common/rate-limit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { generateTotpSecret, otpauthUrl, verifyTotp } from './totp';
+import { generateTotpSecret, matchTotpStep, otpauthUrl, verifyTotp } from './totp';
 
 /** Roles that can move money or change what money moves. MFA is not optional. */
 const MFA_REQUIRED_ROLES: readonly AdminRole[] = ['OPERATOR', 'FINANCE', 'ADMIN'];
@@ -64,13 +64,20 @@ export class AdminAuthService {
       if (!admin.mfaSecretEnc) {
         throw new AppError('FORBIDDEN', 'Two-factor authentication must be set up for this role');
       }
-      if (
-        !totpCode ||
-        !verifyTotp(this.crypto.decrypt(admin.mfaSecretEnc), totpCode, this.clock.nowMs())
-      ) {
+      const step = totpCode
+        ? matchTotpStep(this.crypto.decrypt(admin.mfaSecretEnc), totpCode, this.clock.nowMs())
+        : null;
+      if (step === null) {
         await this.registerFailure(admin.id, admin.failedLogins);
         throw invalid();
       }
+      // One code, one sign-in: a code seen over the shoulder must not open a
+      // second session within its 90-second validity.
+      if (admin.lastTotpStep !== null && step <= admin.lastTotpStep) {
+        await this.registerFailure(admin.id, admin.failedLogins);
+        throw invalid();
+      }
+      await this.prisma.adminUser.update({ where: { id: admin.id }, data: { lastTotpStep: step } });
     }
 
     const token = this.crypto.generateToken(32);

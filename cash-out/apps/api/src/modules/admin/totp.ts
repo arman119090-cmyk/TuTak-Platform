@@ -40,12 +40,29 @@ export function verifyTotp(
   atMs: number,
   stepSeconds = 30,
 ): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
+  return matchTotpStep(secretBase32, code, atMs, stepSeconds) !== null;
+}
+
+/**
+ * Like `verifyTotp`, but returns the time step the code matched (or null), so
+ * the caller can refuse a second use of the same step: a code captured over
+ * the shoulder is otherwise valid for up to 90 seconds.
+ */
+export function matchTotpStep(
+  secretBase32: string,
+  code: string,
+  atMs: number,
+  stepSeconds = 30,
+): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
   for (const drift of [-1, 0, 1]) {
-    const expected = totpCode(secretBase32, atMs + drift * stepSeconds * 1000, stepSeconds);
-    if (timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return true;
+    const at = atMs + drift * stepSeconds * 1000;
+    const expected = totpCode(secretBase32, at, stepSeconds);
+    if (timingSafeEqual(Buffer.from(expected), Buffer.from(code))) {
+      return Math.floor(at / 1000 / stepSeconds);
+    }
   }
-  return false;
+  return null;
 }
 
 export function otpauthUrl(secretBase32: string, account: string, issuer = 'Cash Out'): string {

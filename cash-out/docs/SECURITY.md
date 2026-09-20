@@ -137,7 +137,21 @@ panel shows the last four characters and when the key last answered. Balance
 reads, debits and roster syncs for a park use that park's key; only when a park
 has none does the process-wide key apply, and the panel says so.
 
+## Threat review
+
+A code-level review against a fixed threat list (stolen device, rooted
+device, replay, OTP and PIN brute force, session theft, refresh reuse, IDOR,
+admin escalation, webhook replay, payout duplication, races, manipulated
+client, modified amount / park / Driver ID, compromised operator) is in
+`SECURITY_REVIEW.md`, with the two findings it fixed: a quote is now bound to
+the park it was priced for, and a TOTP code opens one admin session only.
+
 ## Not done yet
+
+- **No root / jailbreak signal from the app.** On a compromised OS the
+  keystore can be read; biometrics then prove possession of the device
+  secret, not the face. The PIN still gates every payout.
+- **No four-eyes rule** on ledger adjustments or manual-review completion.
 
 - **Biometric authorization is not hardware-attested** (see above).
 

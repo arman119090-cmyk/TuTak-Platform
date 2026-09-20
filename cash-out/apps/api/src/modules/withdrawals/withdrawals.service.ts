@@ -126,6 +126,11 @@ export class WithdrawalsService {
     // Active park, membership, eligibility and driver status — all re-checked
     // now, not trusted from the quote or from the client.
     const { membership, park } = await this.memberships.requireActive(driverId);
+    if (quote.parkId !== null && quote.parkId !== park.id) {
+      // Priced against another park's balance and fee policy: switching parks
+      // between quote and confirm invalidates the quote, it never retargets it.
+      throw new AppError('QUOTE_MISMATCH', 'This quote was issued for a different taxi park');
+    }
 
     await this.payoutMethods.requireUsable(driverId, quote.payoutMethodId);
 

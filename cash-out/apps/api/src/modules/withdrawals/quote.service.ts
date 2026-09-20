@@ -85,6 +85,7 @@ export class QuoteService {
     const row = await this.prisma.quote.create({
       data: {
         driverId,
+        parkId: park.id,
         payoutMethodId: method.id,
         currency: priced.quote.currency,
         grossMinor: priced.quote.gross.minor,
@@ -153,6 +154,7 @@ export function canonicalise(quote: {
   balanceAtQuoteMinor: bigint;
   feeScheduleId: string;
   expiresAt: Date;
+  parkId?: string | null;
 }): string {
   return [
     'v1',
@@ -167,5 +169,6 @@ export function canonicalise(quote: {
     quote.balanceAtQuoteMinor.toString(),
     quote.feeScheduleId,
     quote.expiresAt.toISOString(),
+    quote.parkId ?? '',
   ].join('|');
 }

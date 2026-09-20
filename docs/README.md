@@ -38,6 +38,7 @@ got here.
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Environment, migrations, backups, point-in-time recovery, alerts, scaling past one instance |
 | [RAILWAY_RU.md](RAILWAY_RU.md) | Deploying the demonstration to Railway from a phone, in Russian. `render.demo.yaml` is the same thing for Render |
 | [RENDER_STAGING_RU.md](RENDER_STAGING_RU.md) | The root `render.yaml` staging blueprint: every Render variable, whether it is build-time, runtime or generated, and the order to apply them. In Russian |
+| [UX_TRUTH_2026-09-20_RU.md](UX_TRUTH_2026-09-20_RU.md) | Исправление пользовательских сценариев U01–U12 по аудиту: ни один экран не выдаёт неизвестность за ноль, пустой список, разрешение платить или завершённый возврат; семантика взаиморасчётов (`position` = ledger, вне расчётов, в неоплаченных расчётах, выплачено); `canBeginPayment` для PSP; постраничная история и экран операции. Таблица U01–U12, доказательства, скриншоты в `screenshots/ux-truth/`, вопросы владельцу |
 | [QARBERG_STAGING_RU.md](QARBERG_STAGING_RU.md) | The first partner on staging: what to enter for QarBerg, the order to do it in, and the exact numbers a 7000 AMD purchase at 10% must produce. In Russian |
 | [FINANCIAL_CORE_DESIGN.md](FINANCIAL_CORE_DESIGN.md) | Why the ledger is shaped the way it is; what settlement, refunds and payouts each guarantee |
 | [AUDIT_FINANCIAL_2026-08.md](AUDIT_FINANCIAL_2026-08.md) | The audit of the money paths. Defects found, fixes, what was attacked and held, what is still not proven |

@@ -1,2 +1,2 @@
-# Cash Out has its own prettier config and CI; the root formatter must not touch it.
+# Cash Out moved to its own repository; the entry stays so a stray checkout is never reformatted.
 cash-out/

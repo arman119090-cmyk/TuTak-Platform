@@ -5,10 +5,8 @@
 
 ## Cash Out — отдельный проект
 
-- `cash-out/` — **другой продукт**, не часть TuTak. Он лежит здесь временно, до
-  переноса в собственный репозиторий (`cash-out/scripts/split-to-own-repo.sh`).
-- Никогда не мержить ветки Cash Out в `main` TuTak; PR в `main`, затрагивающий
-  `cash-out/**`, валит workflow `cash-out-isolation.yml` — это намеренно.
-- Ничего из `apps/*` и `packages/*` TuTak не должно импортировать из `cash-out/`,
-  и наоборот. У Cash Out свой pnpm-workspace, lockfile, ESLint, Prettier, CI.
-- Отчёты по Cash Out — в `cash-out/docs/`, не в корневом `docs/`.
+- Cash Out живёт в собственном репозитории `arman119090-cmyk/cash-out` (перенесён
+  20.09.2026 с полной историей). В этом репозитории его больше нет и быть не должно.
+- Никогда не добавлять `cash-out/` сюда и не мержить ветки Cash Out в `main`:
+  workflow `cash-out-isolation.yml` валит такой PR — это намеренно.
+- Ничего из `apps/*` и `packages/*` TuTak не должно зависеть от Cash Out, и наоборот.

@@ -28,9 +28,7 @@ export default tseslint.config(
       'docs/**',
       // Cash Out is a separate product that lives here only until it moves to
       // its own repository. It has its own ESLint config, its own workspace
-      // and its own CI (.github/workflows/cash-out-ci.yml); linting it with
       // TuTak's rules would fail TuTak's build for a product it is not part of.
-      'cash-out/**',
       // esbuild output for the screenshot harness — a generated bundle, not
       // source anyone edits.
       'tools/preview/mobile/bundle.js',

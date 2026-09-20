@@ -36,6 +36,7 @@ import {
 } from '@cashout/contracts';
 import { ZodValidationPipe, zodBody } from '../../common/zod.pipe';
 import { Public } from '../auth/auth.guard';
+import { AutoPayoutService } from '../auto-payout/auto-payout.service';
 import { DriverIdService } from '../driver-id/driver-id.service';
 import { ParksAdminService } from '../parks/parks-admin.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
@@ -59,6 +60,9 @@ const driverQuerySchema = paginationSchema.extend({ search: z.string().max(120).
 const auditQuerySchema = paginationSchema.extend({ subjectId: z.string().uuid().optional() });
 const blockSchema = z.object({ blocked: z.boolean(), reason: z.string().min(5).max(500) });
 const resolveMismatchSchema = z.object({ note: z.string().min(5).max(1000) });
+const autoPayoutRuleQuerySchema = paginationSchema.extend({
+  status: z.enum(['active', 'paused', 'disabled']).optional(),
+});
 const driverIdRequestQuerySchema = paginationSchema.extend({
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']).optional(),
 });
@@ -95,6 +99,7 @@ export class AdminController {
     private readonly integrations: IntegrationHealthService,
     private readonly parks: ParksAdminService,
     private readonly driverIds: DriverIdService,
+    private readonly autoPayouts: AutoPayoutService,
   ) {}
 
   @Get('me')
@@ -327,6 +332,21 @@ export class AdminController {
     @Body(zodBody(decideDriverIdChangeSchema)) dto: DecideDriverIdChangeDto,
   ) {
     await this.driverIds.reject(id, admin!.id, dto.reason);
+  }
+
+  // ------------------------------------------------------------ auto payout
+
+  @Get('auto-payout/rules')
+  @RequirePermission('withdrawals:read')
+  async autoPayoutRules(
+    @Query(new ZodValidationPipe(autoPayoutRuleQuerySchema))
+    query: {
+      limit: number;
+      cursor?: string;
+      status?: 'active' | 'paused' | 'disabled';
+    },
+  ) {
+    return this.autoPayouts.listForAdmin(query);
   }
 
   /** A balanced ADJUSTMENT entry against SUSPENSE; shows in the driver's history. */

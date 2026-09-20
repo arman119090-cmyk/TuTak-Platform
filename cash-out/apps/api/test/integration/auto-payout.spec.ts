@@ -119,6 +119,34 @@ describe('automatic payout', () => {
       expect(rule?.nextCheckAt).toBeNull();
       expect(await harness.autoPayout.evaluateDue()).toBe(0);
     });
+
+    it('lists rules for operators with the driver, filtered by state', async () => {
+      await enable();
+      const all = await harness.autoPayout.listForAdmin({ limit: 10 });
+      expect(all.items).toHaveLength(1);
+      expect(all.items[0]).toMatchObject({
+        driverId: driver.driverId,
+        driverPhone: driver.phone,
+        enabled: true,
+        paused: false,
+      });
+      expect(all.nextCursor).toBeNull();
+
+      expect(
+        (await harness.autoPayout.listForAdmin({ limit: 10, status: 'active' })).items,
+      ).toHaveLength(1);
+      expect(
+        (await harness.autoPayout.listForAdmin({ limit: 10, status: 'paused' })).items,
+      ).toHaveLength(0);
+
+      await harness.autoPayout.disable(driver.driverId);
+      expect(
+        (await harness.autoPayout.listForAdmin({ limit: 10, status: 'active' })).items,
+      ).toHaveLength(0);
+      expect(
+        (await harness.autoPayout.listForAdmin({ limit: 10, status: 'disabled' })).items,
+      ).toHaveLength(1);
+    });
   });
 
   describe('evaluation', () => {

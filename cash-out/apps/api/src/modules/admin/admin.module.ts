@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AutoPayoutModule } from '../auto-payout/auto-payout.module';
 import { DriverIdModule } from '../driver-id/driver-id.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { ParksModule } from '../parks/parks.module';
@@ -15,6 +16,7 @@ import { PricingService } from './pricing.service';
 
 @Module({
   imports: [
+    AutoPayoutModule,
     DriverIdModule,
     LedgerModule,
     ParksModule,

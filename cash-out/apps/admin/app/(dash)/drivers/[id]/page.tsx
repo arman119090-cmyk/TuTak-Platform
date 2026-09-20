@@ -12,6 +12,7 @@ interface DriverDetail {
     locale: string;
     verificationStatus: string;
     parkId: string | null;
+    parkName: string | null;
     yandexContractorProfileId: string | null;
     currency: string;
     riskTier: string;
@@ -20,6 +21,24 @@ interface DriverDetail {
     createdAt: string;
   };
   outstandingPayable: { minor: string; currency: string };
+  memberships: Array<{
+    id: string;
+    parkId: string;
+    parkName: string;
+    parkStatus: string;
+    externalProfileId: string;
+    status: string;
+    eligibility: string;
+    eligibilityReason: string | null;
+    isActive: boolean;
+  }>;
+  parkSwitches: Array<{
+    id: string;
+    fromParkId: string | null;
+    toParkId: string;
+    actorType: string;
+    at: string;
+  }>;
   payoutMethods: Array<{
     id: string;
     kind: string;
@@ -52,7 +71,9 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
 
   const driver = detail.driver;
   const canWrite = admin.permissions.includes('drivers:write');
+  const canAdjust = admin.permissions.includes('ledger:adjust');
   const blocked = driver.verificationStatus === 'BLOCKED';
+  const parkNames = new Map(detail.memberships.map((row) => [row.parkId, row.parkName]));
 
   async function setBlocked(formData: FormData): Promise<void> {
     'use server';
@@ -60,6 +81,19 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
       method: 'POST',
       body: JSON.stringify({
         blocked: formData.get('blocked') === 'true',
+        reason: String(formData.get('reason')),
+      }),
+    });
+    revalidatePath(`/drivers/${id}`);
+  }
+
+  async function adjust(formData: FormData): Promise<void> {
+    'use server';
+    await adminFetch(`/v1/admin/drivers/${id}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify({
+        direction: formData.get('direction') === 'DEBIT' ? 'DEBIT' : 'CREDIT',
+        amount: { minor: String(formData.get('minor')), currency: driver.currency },
         reason: String(formData.get('reason')),
       }),
     });
@@ -96,8 +130,14 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
                 {driver.verificationStatus}
               </span>
             </dd>
-            <dt>Park</dt>
-            <dd>{driver.parkId ?? '—'}</dd>
+            <dt>Active park</dt>
+            <dd>
+              {driver.parkId ? (
+                <Link href={`/parks/${driver.parkId}`}>{driver.parkName ?? driver.parkId}</Link>
+              ) : (
+                '—'
+              )}
+            </dd>
             <dt>Contractor profile</dt>
             <dd>{driver.yandexContractorProfileId ?? '—'}</dd>
             <dt>Currency</dt>
@@ -149,6 +189,76 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
         </section>
       </div>
 
+      <h2 style={{ marginTop: 24 }}>Taxi parks</h2>
+      {detail.memberships.length === 0 ? (
+        <div className="card muted">This phone is in no park’s roster.</div>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Park</th>
+              <th>Profile id</th>
+              <th>Status</th>
+              <th>Eligibility</th>
+              <th>In the app</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detail.memberships.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <Link href={`/parks/${row.parkId}`}>{row.parkName}</Link>
+                  {row.parkStatus !== 'ACTIVE' ? (
+                    <div>
+                      <span className="chip danger">{row.parkStatus}</span>
+                    </div>
+                  ) : null}
+                </td>
+                <td className="muted">{row.externalProfileId}</td>
+                <td>
+                  <span className={`chip ${row.status === 'ACTIVE' ? 'ok' : 'neutral'}`}>
+                    {row.status}
+                  </span>
+                </td>
+                <td>
+                  <span
+                    className={`chip ${
+                      row.eligibility === 'ELIGIBLE'
+                        ? 'ok'
+                        : row.eligibility === 'PENDING_REVIEW'
+                          ? 'warn'
+                          : 'danger'
+                    }`}
+                  >
+                    {row.eligibility.replace(/_/g, ' ')}
+                  </span>
+                  {row.eligibilityReason ? (
+                    <div className="muted">{row.eligibilityReason}</div>
+                  ) : null}
+                </td>
+                <td>{row.isActive ? <span className="chip info">active park</span> : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {detail.parkSwitches.length > 0 ? (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h2>Park switches</h2>
+          <ul className="timeline">
+            {detail.parkSwitches.map((row) => (
+              <li key={row.id}>
+                {formatDateTime(row.at)} ·{' '}
+                {row.fromParkId ? (parkNames.get(row.fromParkId) ?? row.fromParkId) : 'none'} →{' '}
+                {parkNames.get(row.toParkId) ?? row.toParkId}{' '}
+                <span className="chip neutral">{row.actorType}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <h2 style={{ marginTop: 24 }}>Withdrawals</h2>
       {detail.withdrawals.length === 0 ? (
         <div className="card muted">This driver has not withdrawn anything.</div>
@@ -180,6 +290,35 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
           </tbody>
         </table>
       )}
+
+      {canAdjust ? (
+        <section className="card" style={{ marginTop: 24 }}>
+          <h2>Adjust what Cash Out owes</h2>
+          <p className="muted">
+            A balanced ledger entry against SUSPENSE, shown to the driver as an adjustment in their
+            history. It never touches the park balance inside Yandex. Amount in minor units of{' '}
+            {driver.currency} (100 = 1.00).
+          </p>
+          <form action={adjust} className="toolbar" style={{ alignItems: 'flex-end' }}>
+            <div className="field" style={{ margin: 0 }}>
+              <label htmlFor="direction">Direction</label>
+              <select id="direction" name="direction" defaultValue="CREDIT">
+                <option value="CREDIT">Credit (owe more)</option>
+                <option value="DEBIT">Debit (owe less)</option>
+              </select>
+            </div>
+            <div className="field" style={{ margin: 0 }}>
+              <label htmlFor="minor">Amount (minor units)</label>
+              <input id="minor" name="minor" inputMode="numeric" pattern="[0-9]+" required />
+            </div>
+            <div className="field" style={{ margin: 0, flex: 1 }}>
+              <label htmlFor="adjustReason">Reason</label>
+              <input id="adjustReason" name="reason" required minLength={5} maxLength={500} />
+            </div>
+            <button type="submit">Post adjustment</button>
+          </form>
+        </section>
+      ) : null}
 
       {canWrite ? (
         <section className="card" style={{ marginTop: 24 }}>

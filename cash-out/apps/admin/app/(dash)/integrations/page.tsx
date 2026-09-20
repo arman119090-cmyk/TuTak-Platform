@@ -80,6 +80,16 @@ export default async function IntegrationsPage() {
           <dd>
             The licensed bank or PSP that actually transfers the net amount to the driver’s account.
           </dd>
+          <dt>idram</dt>
+          <dd>
+            The iDram wallet rail: verifies a driver’s wallet when it is linked and receives the
+            payouts. MOCK until iDram’s merchant API is contracted and implemented.
+          </dd>
+          <dt>push</dt>
+          <dd>
+            Push notifications to the driver’s phone. MOCK records what would be sent and sends
+            nothing; preferences are real either way.
+          </dd>
         </dl>
       </section>
     </>

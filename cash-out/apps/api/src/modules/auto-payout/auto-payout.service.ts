@@ -442,6 +442,45 @@ export class AutoPayoutService {
     );
   }
 
+  /** Every rule, for the operators' screen: who, which park, when next, and why paused. */
+  async listForAdmin(query: { limit: number; cursor?: string; status?: string }) {
+    const where =
+      query.status === 'paused'
+        ? { pausedAt: { not: null } }
+        : query.status === 'active'
+          ? { enabled: true, pausedAt: null }
+          : query.status === 'disabled'
+            ? { enabled: false }
+            : {};
+    const rows = await this.prisma.autoPayoutRule.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+    });
+    const page = rows.slice(0, query.limit);
+    const drivers = await this.prisma.driver.findMany({
+      where: { id: { in: page.map((row) => row.driverId) } },
+      include: { user: { select: { phone: true } } },
+    });
+    const byId = new Map(drivers.map((driver) => [driver.id, driver]));
+    const items = await Promise.all(
+      page.map(async (row) => {
+        const driver = byId.get(row.driverId);
+        return {
+          ...(await this.toDto(row)),
+          driverId: row.driverId,
+          driverPhone: driver?.user.phone ?? null,
+          driverName: [driver?.firstName, driver?.lastName].filter(Boolean).join(' ') || null,
+        };
+      }),
+    );
+    return {
+      items,
+      nextCursor: rows.length > query.limit ? (page[page.length - 1]?.id ?? null) : null,
+    };
+  }
+
   private async toDto(rule: AutoPayoutRule): Promise<AutoPayoutRuleDto> {
     const [park, method] = await Promise.all([
       this.prisma.park.findUnique({ where: { id: rule.parkId }, select: { id: true, name: true } }),

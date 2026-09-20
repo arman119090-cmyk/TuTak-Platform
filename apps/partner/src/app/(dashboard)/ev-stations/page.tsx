@@ -5,6 +5,7 @@ import { Badge, EmptyState, PageHeader, StatTile, Surface } from '@tutak/design/
 import type { BadgeTone } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { evApi } from '@/lib/api/evApi';
+import { connectorStatusLabel } from '@/lib/labels';
 
 const num = (v: string | number | undefined) =>
   Number(v ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/,/g, ' ');
@@ -87,7 +88,7 @@ export default function EvStationsPage() {
                           {num(c.powerKw)} kW · {num(c.pricePerKwh)} ֏/kWh
                         </div>
                       </div>
-                      <Badge tone={connectorTone(c.status)}>{c.status.toLowerCase()}</Badge>
+                      <Badge tone={connectorTone(c.status)}>{connectorStatusLabel(c.status)}</Badge>
                     </div>
                   ))}
                 </div>

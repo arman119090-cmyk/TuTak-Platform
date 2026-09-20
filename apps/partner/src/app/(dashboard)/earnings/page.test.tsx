@@ -130,3 +130,66 @@ describe('EarningsPage', () => {
     expect(screen.queryByText('No collections yet')).toBeNull();
   });
 });
+
+/**
+ * U01 — a figure that has not arrived is not zero.
+ *
+ * The lifetime totals are sums over two lists; before the lists arrive the
+ * sum of nothing is 0.00, which reads as "you have earned nothing". The
+ * payouts list has the same trap: an empty array and a failed request both
+ * rendered "No payouts yet".
+ */
+describe('EarningsPage when the server has not answered', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useAuthStore.setState({ user: buildUser() });
+    mockedFinance.balance.mockResolvedValue({ availableBalance: '3800.00', currency: 'AMD' });
+    mockedFinance.settlements.mockResolvedValue([]);
+    mockedFinance.payouts.mockResolvedValue([]);
+    mockedFinance.collections.mockResolvedValue([]);
+    mockedFinance.dailyActivity.mockResolvedValue([]);
+  });
+
+  it('shows dashes for lifetime totals while the activity is still loading', () => {
+    mockedFinance.dailyActivity.mockReturnValue(new Promise(() => undefined));
+    renderPage();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText('0.00 AMD')).toBeNull();
+  });
+
+  it('never sums a list that failed to load into a lifetime figure', async () => {
+    mockedFinance.settlements.mockRejectedValue(new Error('network'));
+    renderPage();
+    expect(await screen.findAllByText('Could not load')).toBeTruthy();
+    expect(screen.queryByText('0.00 AMD')).toBeNull();
+  });
+
+  it('shows a load error for payouts instead of "no payouts yet"', async () => {
+    mockedFinance.payouts.mockRejectedValue(new Error('network'));
+    renderPage();
+    expect(await screen.findByText('Payouts could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('No payouts yet')).toBeNull();
+  });
+
+  it('shows a load error for the balance rather than a silent dash', async () => {
+    mockedFinance.balance.mockRejectedValue(new Error('network'));
+    renderPage();
+    expect(await screen.findByText('Your balance could not be loaded')).toBeTruthy();
+  });
+
+  it('names a payout status in words', async () => {
+    mockedFinance.payouts.mockResolvedValue([
+      {
+        id: 'payout-1',
+        amount: '5000.00',
+        status: 'FAILED',
+        bankReference: null,
+        failureReason: 'Account closed',
+        createdAt: '2026-08-21T00:00:00.000Z',
+      } as never,
+    ]);
+    renderPage();
+    expect(await screen.findByText('Failed — still owed')).toBeTruthy();
+    expect(screen.queryByText('failed')).toBeNull();
+  });
+});

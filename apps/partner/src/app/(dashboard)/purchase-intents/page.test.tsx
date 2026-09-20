@@ -81,8 +81,11 @@ const perUnit = (overrides: Partial<PurchaseIntentDto> = {}) =>
 
 let activeUnmount: (() => void) | undefined;
 
+let activeClient: QueryClient | undefined;
+
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  activeClient = client;
   const view = render(
     <QueryClientProvider client={client}>
       <PurchaseIntentsPage />
@@ -213,5 +216,86 @@ describe('the cashier queue', () => {
     // Nothing to check, so nothing is asked for — demanding a figure here
     // would train staff to type numbers they never looked at.
     await waitFor(() => expect(api.confirm).toHaveBeenCalledWith(intentFixture().id, {}));
+  });
+});
+
+/**
+ * U02 / U12 from the audit of 20.09.2026: an unreachable queue must never
+ * look like an empty one, and a decline that did not go through must not
+ * eat the reason the cashier typed.
+ */
+describe('when the queue cannot be trusted', () => {
+  const networkError = () => {
+    const error = new Error('Network Error') as Error & { isAxiosError: boolean; response?: undefined };
+    error.isAxiosError = true;
+    return error;
+  };
+  const stateError = (status: number, message: string) => {
+    const error = new Error(message) as Error & {
+      isAxiosError: boolean;
+      response: { status: number; data: { message: string } };
+    };
+    error.isAxiosError = true;
+    error.response = { status, data: { message } };
+    return error;
+  };
+
+  it('says it is loading, not that there are no requests', () => {
+    api.list.mockReturnValue(new Promise(() => undefined));
+    renderPage();
+    expect(screen.getByText('Loading the queue…')).toBeTruthy();
+    expect(screen.queryByText('No pending requests')).toBeNull();
+  });
+
+  it('shows a load error with a retry when nothing has arrived', async () => {
+    api.list.mockRejectedValue(networkError());
+    renderPage();
+    expect(await screen.findByText('The queue could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('No pending requests')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('keeps the queue on screen, labelled as of a time, when the poll starts failing', async () => {
+    api.list.mockResolvedValueOnce([intentFixture()]).mockRejectedValueOnce(networkError());
+    renderPage();
+    expect(await screen.findByText('At the till')).toBeTruthy();
+    await activeClient!.refetchQueries({ queryKey: ['purchase-intents', 'partner-1'] });
+    expect(await screen.findByText(/showing the queue as of/i)).toBeTruthy();
+    // The row is still there — the purchase may still be live.
+    expect(screen.getByText('At the till')).toBeTruthy();
+    expect(screen.queryByText('No pending requests')).toBeNull();
+  });
+
+  it('keeps the typed reason and the form when a decline cannot reach the server', async () => {
+    api.list.mockResolvedValue([intentFixture()]);
+    api.reject.mockRejectedValue(networkError());
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.change(screen.getByLabelText('Reason for declining'), { target: { value: 'wrong amount' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
+
+    expect(await screen.findByText(/not sent — the server could not be reached/i)).toBeTruthy();
+    expect((screen.getByLabelText('Reason for declining') as HTMLInputElement).value).toBe('wrong amount');
+    expect(screen.getByRole('button', { name: 'Confirm decline' })).toBeTruthy();
+  });
+
+  it('explains a decline the server refused because the purchase had already changed, and re-reads the queue', async () => {
+    api.list.mockResolvedValue([intentFixture()]);
+    api.reject.mockRejectedValue(stateError(400, 'This purchase intent has expired'));
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.change(screen.getByLabelText('Reason for declining'), { target: { value: 'late' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
+
+    expect(await screen.findByText(/this purchase intent has expired/i)).toBeTruthy();
+    expect(screen.queryByLabelText('Reason for declining')).toBeNull();
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('never offers to create a new purchase as a way past a connection problem', async () => {
+    api.list.mockRejectedValue(networkError());
+    renderPage();
+    await screen.findByText('The queue could not be loaded');
+    expect(screen.queryByText(/new purchase|create a purchase/i)).toBeNull();
   });
 });

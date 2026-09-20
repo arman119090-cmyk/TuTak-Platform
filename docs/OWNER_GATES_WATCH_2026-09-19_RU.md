@@ -131,3 +131,39 @@ clean`. Merge не выполнялся. В production застейджено о
 
 **NOT READY — human alert secret + alert:verify, Viva tunnel (down) + OTP,
 device review.**
+
+---
+
+# Проверка №17 — 20.09.2026 07:45–07:50 UTC: Viva CLOSED
+
+Владелец сообщил, что туннель настроен. По факту:
+
+- run 35497722125, 07:45:29 UTC: `https://217.76.49.94/health` →
+  `{"status":"ok","tunnel":"up"}` (до этого `down` во всех 24 опросах
+  с 19.09 14:43).
+- Один реальный OTP на согласованный номер владельца (+374 96 ** ** 90),
+  отправлен изнутри Railway через временную функцию (`POST
+  /v1/auth/login/request-otp` и `/register/request-otp`, оба 201).
+  Лог tutak-api 07:49:35 UTC, requestId `7e2f657a…`: **`otp login:
+  code-handed-to-carrier`**; `register` — `skipped-number-already-registered`
+  (номер зарегистрирован, ожидаемо).
+- Владелец подтвердил: **СМС пришла**.
+
+Gate Viva закрыт: туннель up, Viva приняла, человек получил.
+
+| # | Gate | Статус |
+|---|---|---|
+| GitHub ruleset / default branch | CLOSED |
+| Railway Wait for CI ×3 | CLOSED |
+| PITR + restore (RESTORE PASS) | CLOSED |
+| Viva SMS | **CLOSED** (07:49 UTC) |
+| Human alerts | OPEN — `ALERT_TELEGRAM_BOT_TOKEN` стоит, нет `ALERT_TELEGRAM_CHAT_ID`, тестовый alert не отправлен |
+| Device review | OPEN — результатов нет |
+
+PR #60: HEAD `5b8151e`, CI 10/10, `mergeable_state: clean`, 0 позади `main`.
+Merge не выполнялся. В Railway по-прежнему застейджено только удаление
+`verify-restore-20260919` (его код временно заменён на OTP-пробу; сервис
+завершил работу, ничего не хранит).
+
+**NOT READY — Telegram chat id + подтверждение тестового alert, device
+review.**

@@ -212,11 +212,16 @@ export class PartnerSettlementPartnerController {
     return this.settlements.partnerStatement(id, partnerId);
   }
 
-  /** What is accruing right now, before anybody has drafted a settlement. */
+  /**
+   * The partner's money position: what is not yet in a settlement, what is
+   * held in unpaid settlements, what is under review, what was paid, and the
+   * ledger total that ties them together. `unsettled` alone read as zero the
+   * moment a draft was created, which told a partner they had been paid.
+   */
   @Get(':partnerId/position')
   async position(@CurrentUser() actor: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(actor, partnerId);
-    return this.settlements.unsettled(partnerId);
+    return this.settlements.position(partnerId);
   }
 
   @Post(':partnerId/statement/:id/report-problem')

@@ -78,6 +78,19 @@ export interface UnsettledBreakdown {
 }
 
 /**
+ * The five figures a partner reads on their settlements page — see
+ * `UnsettledPositionDto` in shared-types for what each one means and why they
+ * never overlap.
+ */
+export interface PartnerPosition extends UnsettledBreakdown {
+  ledgerBalance: Decimal;
+  inOpenSettlements: Decimal;
+  underReview: Decimal;
+  paidTotal: Decimal;
+  asOf: Date;
+}
+
+/**
  * Turns a partner's unsettled ledger postings into a bank transfer somebody
  * makes by hand, and records that they made it.
  *
@@ -196,6 +209,54 @@ export class PartnerSettlementService {
       net: accrued.minus(deductions),
       entries,
       unrecognised: unrecognisedKinds(postings.map((p) => p.transaction.kind)),
+    };
+  }
+
+  /**
+   * What the partner is owed, in figures that do not overlap.
+   *
+   * `unsettled()` alone was what the partner's page showed as "accruing now",
+   * and a DRAFT settlement made it read zero while the money was still owed:
+   * a draft claims the postings, so they stop being unsettled, and nothing
+   * is paid until PAID. The total comes from the payable account's own
+   * balance — credit-normal, so negated here: positive means TuTak owes the
+   * partner. The open and under-review sums come from the settlements
+   * themselves. The identity `ledgerBalance = net + inOpenSettlements +
+   * underReview` holds because PAID is the only status that posts a payout,
+   * and CANCELLED releases its claims back into `net`
+   * (`partner-position.int-spec.ts` pins it).
+   */
+  async position(partnerId: string): Promise<PartnerPosition> {
+    const [breakdown, account, settlements] = await Promise.all([
+      this.unsettled(partnerId),
+      this.prisma.ledgerAccount.findFirst({
+        where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+        select: { balance: true },
+      }),
+      this.prisma.partnerSettlement.findMany({
+        where: { partnerId },
+        select: { status: true, netPayableAmount: true },
+      }),
+    ]);
+
+    const sum = (statuses: PartnerSettlementStatus[]) =>
+      settlements
+        .filter((row) => statuses.includes(row.status))
+        .reduce((total, row) => total.plus(row.netPayableAmount), new Decimal(0));
+
+    return {
+      ...breakdown,
+      ledgerBalance: account ? account.balance.negated() : new Decimal(0),
+      inOpenSettlements: sum([
+        PartnerSettlementStatus.DRAFT,
+        PartnerSettlementStatus.READY,
+        PartnerSettlementStatus.APPROVED,
+        PartnerSettlementStatus.PAYMENT_PENDING,
+        PartnerSettlementStatus.FAILED,
+      ]),
+      underReview: sum([PartnerSettlementStatus.REQUIRES_RECONCILIATION]),
+      paidTotal: sum([PartnerSettlementStatus.PAID]),
+      asOf: new Date(),
     };
   }
 

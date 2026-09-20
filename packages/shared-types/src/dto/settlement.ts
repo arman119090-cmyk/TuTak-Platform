@@ -85,13 +85,46 @@ export interface PartnerSettlementEntryDto {
  * money whose side nobody has decided, and hiding it would make the three
  * figures above it quietly incomplete.
  */
-export interface UnsettledPositionDto {
+/**
+ * A partner's money position, in five figures that do not overlap.
+ *
+ * `net` is what is *not yet in any settlement*: the balance of settleable
+ * postings nobody has claimed. It is NOT what TuTak owes in total — the moment
+ * a DRAFT settlement claims those postings `net` drops to zero while not one
+ * dram has moved. The total is `ledgerBalance`, read from the payable account
+ * itself, and it equals `net + inOpenSettlements + underReview` by
+ * construction: a settlement takes postings out of `net` and holds them until
+ * it is PAID, and PAID is the only status that posts a payout back to the
+ * ledger. `paidTotal` is history — already deducted from `ledgerBalance` — and
+ * is never added to anything.
+ */
+export interface UnsettledBreakdownDto {
   partnerId: string;
+  /** Settleable credits not yet claimed by a settlement. */
   accrued: string;
+  /** Settleable debits not yet claimed by a settlement. */
   deductions: string;
+  /** `accrued - deductions`: what is not yet in any settlement. */
   net: string;
   entries: PartnerSettlementEntryDto[];
   unrecognised: string[];
+}
+
+export interface UnsettledPositionDto extends UnsettledBreakdownDto {
+  /**
+   * What TuTak owes this partner in total, from the ledger. Positive: TuTak
+   * owes the partner. Negative: the partner owes TuTak (refunds after a
+   * payout, contributions). Includes everything below except `paidTotal`.
+   */
+  ledgerBalance: string;
+  /** Claimed by settlements that have not been paid yet (DRAFT, READY, APPROVED, PAYMENT_PENDING, FAILED). */
+  inOpenSettlements: string;
+  /** Claimed by settlements whose transfer nobody can yet confirm (REQUIRES_RECONCILIATION). */
+  underReview: string;
+  /** Paid out and posted; already subtracted from `ledgerBalance`. */
+  paidTotal: string;
+  /** When these figures were read. */
+  asOf: string;
 }
 
 /** A statement as a partner reads it: the settlement plus its itemisation. */

@@ -30,23 +30,34 @@ export function WalletScreen() {
   const { t } = useTranslation();
   const { color, space, text } = useTheme();
 
-  const {
-    data: wallet,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useQuery({
+  /*
+   * Three sources, three sets of states (U06).
+   *
+   * The wallet, its ledger and its expiring lots come from three requests
+   * that fail independently. Each is rendered from its own answer: a
+   * ledger that did not arrive is "could not load", not an endless
+   * skeleton; lots that did not arrive are not "nothing expiring soon";
+   * and no lifetime total is a number until the wallet has answered.
+   */
+  const walletQuery = useQuery({
     queryKey: ['wallet'],
     queryFn: walletApi.getMyWallet,
   });
+  const wallet = walletQuery.data;
+  const isLoading = walletQuery.isPending;
   // An account with no wallet is a state, not a fault — see `isWalletAbsent`.
-  const noWallet = isError && isWalletAbsent(error);
-  const { data: ledger } = useQuery({
+  const noWallet = walletQuery.isError && isWalletAbsent(walletQuery.error);
+  const walletFailed = walletQuery.isError && !noWallet && !wallet;
+  const walletStale = walletQuery.isError && !noWallet && !!wallet;
+  const refetch = walletQuery.refetch;
+
+  const ledgerQuery = useQuery({
     queryKey: ['wallet-ledger'],
     queryFn: () => walletApi.getMyLedger(),
   });
-  const { data: lots } = useQuery({ queryKey: ['wallet-lots'], queryFn: walletApi.getMyLots });
+  const ledger = ledgerQuery.data;
+  const lotsQuery = useQuery({ queryKey: ['wallet-lots'], queryFn: walletApi.getMyLots });
+  const lots = lotsQuery.data;
 
   // Soonest-expiring first — the only ordering that makes this list useful.
   const expiring = [...(lots ?? [])]
@@ -66,7 +77,7 @@ export function WalletScreen() {
         // the same answer, because nothing failed. The balance is still
         // not drawn — there is no wallet to draw one from.
         <EmptyState title={t('wallet.noWalletTitle')} message={t('wallet.noWalletBody')} />
-      ) : isError ? (
+      ) : walletFailed || !wallet ? (
         // A failed wallet request leaves `wallet` undefined, and every
         // `?? 0` below then renders a confident, wrong zero balance. On a
         // loyalty app that is the one number a customer will believe and
@@ -81,6 +92,14 @@ export function WalletScreen() {
         />
       ) : (
         <>
+          {walletStale ? (
+            <Text
+              accessibilityRole="alert"
+              style={[text.bodySm, { color: color.pendingText, marginBottom: space[3] }]}
+            >
+              {t('wallet.staleNotice', 'Connection lost. Showing the last known balance — it may have changed.')}
+            </Text>
+          ) : null}
           {/* The statement head: one caption, one number, the bar, the
               three states in a line. */}
           <Text style={[text.caption, { color: color.textSecondary }]}>
@@ -88,16 +107,14 @@ export function WalletScreen() {
           </Text>
           <Text style={[text.balanceSm, styles.tabular, { color: color.textPrimary, marginTop: 2 }]}>
             {formatPoints(
-              Number(wallet?.availableBonus ?? 0) +
-                Number(wallet?.pendingBonus ?? 0) +
-                Number(wallet?.reservedBonus ?? 0),
+              Number(wallet.availableBonus) + Number(wallet.pendingBonus) + Number(wallet.reservedBonus),
             )}
           </Text>
           <View style={{ marginTop: space[4] }}>
             <BonusComposition
-              available={wallet?.availableBonus ?? 0}
-              pending={wallet?.pendingBonus ?? 0}
-              reserved={wallet?.reservedBonus ?? 0}
+              available={wallet.availableBonus}
+              pending={wallet.pendingBonus}
+              reserved={wallet.reservedBonus}
             />
           </View>
 
@@ -119,7 +136,7 @@ export function WalletScreen() {
                 {t('wallet.lifetimeEarned')}
               </Text>
               <Text style={[text.headline, styles.tabular, { color: color.availableText, marginTop: 2 }]}>
-                {formatPoints(wallet?.lifetimeEarned ?? 0)}
+                {formatPoints(wallet.lifetimeEarned)}
               </Text>
             </View>
             <View style={styles.flex}>
@@ -127,13 +144,32 @@ export function WalletScreen() {
                 {t('wallet.lifetimeSpent')}
               </Text>
               <Text style={[text.headline, styles.tabular, { color: color.textPrimary, marginTop: 2 }]}>
-                {formatPoints(wallet?.lifetimeSpent ?? 0)}
+                {formatPoints(wallet.lifetimeSpent)}
               </Text>
             </View>
           </View>
         </>
       )}
 
+      {lotsQuery.isError && !lots ? (
+        // Not "nothing expiring": the list did not arrive. Said once, in
+        // its place, with a way to ask again.
+        <>
+          <SectionHeader title={t('wallet.expiringSoon')} />
+          <Text accessibilityRole="alert" style={[text.bodySm, { color: color.pendingText }]}>
+            {t('wallet.lotsFailed', 'Expiring bonuses could not be loaded — this does not mean there are none.')}
+          </Text>
+          <Text
+            accessibilityRole="button"
+            onPress={() => {
+              void lotsQuery.refetch();
+            }}
+            style={[text.bodySm, { color: color.primary, marginTop: space[2] }]}
+          >
+            {t('common.retry')}
+          </Text>
+        </>
+      ) : null}
       {expiring.length > 0 ? (
         <>
           <SectionHeader title={t('wallet.expiringSoon')} />
@@ -153,12 +189,22 @@ export function WalletScreen() {
       ) : null}
 
       <SectionHeader title={t('wallet.history')} />
-      {!ledger ? (
+      {ledgerQuery.isPending ? (
         <View style={{ paddingVertical: space[3], gap: space[4] }}>
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} width="100%" height={40} />
           ))}
         </View>
+      ) : !ledger ? (
+        // The skeleton used to stay forever here: `!ledger` is true for a
+        // failed request as well as a pending one.
+        <EmptyState
+          title={t('wallet.ledgerFailed', 'Your bonus history could not be loaded.')}
+          actionLabel={t('common.retry')}
+          onAction={() => {
+            void ledgerQuery.refetch();
+          }}
+        />
       ) : ledger.items.length === 0 ? (
         <EmptyState title={t('wallet.noTransactions')} />
       ) : (

@@ -36,7 +36,7 @@ type Tx = Prisma.TransactionClient;
  * comes from a redirect: `SUCCESS_URL` and `FAIL_URL` move a browser, and a
  * browser arriving somewhere is not evidence that money did.
  */
-export type CustomerPaymentStatus =
+export type CustomerPaymentProgress =
   | { state: 'NOT_APPLICABLE' }
   | { state: 'NOT_STARTED' }
   /** A bill is open and the provider has told us nothing yet. */
@@ -48,6 +48,26 @@ export type CustomerPaymentStatus =
   | { state: 'FAILED'; attemptId: string }
   /** Nobody can say yet. A human is looking. */
   | { state: 'REQUIRES_RECONCILIATION'; attemptId: string };
+
+/**
+ * Why a begin call would be refused right now. Mirrors, in order, the checks
+ * `beginAttempt` makes — this is the same decision previewed, not a second
+ * opinion. `beginAttempt` still checks for itself: the preview is what the
+ * app shows, the call is what the app gets.
+ */
+export type CustomerPaymentBlockReason =
+  | 'NOT_ROUTED'
+  | 'PROVIDER_DISABLED'
+  | 'PURCHASE_NOT_OPEN'
+  | 'NOTHING_TO_COLLECT'
+  | 'AWAITING_MERCHANT_APPROVAL'
+  | 'UNRESOLVED_ATTEMPT';
+
+export type CustomerPaymentStatus = CustomerPaymentProgress & {
+  purchaseStatus: PurchaseIntentStatus;
+  canBeginPayment: boolean;
+  reason: CustomerPaymentBlockReason | null;
+};
 
 /**
  * The states a verified provider confirmation may still settle from.
@@ -386,17 +406,68 @@ export class PspPaymentService {
   ): Promise<CustomerPaymentStatus> {
     const intent = await this.prisma.purchaseIntent.findUnique({
       where: { id: purchaseIntentId },
-      select: { id: true, customerId: true, status: true, paymentRoute: true },
+      select: {
+        id: true,
+        customerId: true,
+        status: true,
+        paymentRoute: true,
+        merchantApprovedAt: true,
+        ordinaryPaymentRemainder: true,
+      },
     });
     if (!intent || intent.customerId !== customerId) {
       throw new NotFoundException('Purchase not found');
     }
+
+    const progress = await this.paymentProgress(intent);
+    const reason = await this.beginBlockReason(intent);
+    return {
+      ...progress,
+      purchaseStatus: intent.status,
+      canBeginPayment: reason === null,
+      reason,
+    };
+  }
+
+  /**
+   * The same questions `beginAttempt` asks, in the same order, answered
+   * without side effects.
+   *
+   * Before this existed the app's only way to learn *why* it could not pay
+   * was to try and be refused — and it then told every customer the cashier
+   * had not agreed the amount, whatever the actual refusal said. A purchase
+   * that expired, a provider switched off, an earlier attempt that may hold
+   * the money: all of them read as "waiting for the cashier".
+   */
+  private async beginBlockReason(intent: {
+    id: string;
+    status: PurchaseIntentStatus;
+    paymentRoute: PaymentRoute;
+    merchantApprovedAt: Date | null;
+    ordinaryPaymentRemainder: Prisma.Decimal;
+  }): Promise<CustomerPaymentBlockReason | null> {
+    if (intent.paymentRoute !== PaymentRoute.TUTAK_PSP) return 'NOT_ROUTED';
+    if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
+      return 'PROVIDER_DISABLED';
+    }
+    if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) return 'PURCHASE_NOT_OPEN';
+    if (intent.ordinaryPaymentRemainder.lessThanOrEqualTo(0)) return 'NOTHING_TO_COLLECT';
+    if (!intent.merchantApprovedAt) return 'AWAITING_MERCHANT_APPROVAL';
+    if (await this.hasUnsafeAttempt(intent.id)) return 'UNRESOLVED_ATTEMPT';
+    return null;
+  }
+
+  private async paymentProgress(intent: {
+    id: string;
+    status: PurchaseIntentStatus;
+    paymentRoute: PaymentRoute;
+  }): Promise<CustomerPaymentProgress> {
     if (intent.paymentRoute !== PaymentRoute.TUTAK_PSP) {
       return { state: 'NOT_APPLICABLE' };
     }
 
     const attempt = await this.prisma.pspPaymentAttempt.findFirst({
-      where: { purchaseIntentId },
+      where: { purchaseIntentId: intent.id },
       orderBy: { createdAt: 'desc' },
       select: { id: true, status: true, providerBillId: true },
     });

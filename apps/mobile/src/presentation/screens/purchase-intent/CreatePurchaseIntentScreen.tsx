@@ -16,6 +16,14 @@ import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
 import { describeApiError } from '../../../data/api/errors';
 import { formatAmd, formatPoints } from '../../utils/format';
+import {
+  compare,
+  moneyToString,
+  parseMoney,
+  percentOfFloor,
+  subtract,
+  type Money,
+} from '../../../domain/money';
 
 /**
  * Spec §7 steps 1-8: the customer enters the amounts themselves, on the
@@ -55,8 +63,17 @@ export function CreatePurchaseIntentScreen() {
     isRefetching: partnerRetrying,
   } = useQuery({ queryKey: ['partner', partnerId], queryFn: () => partnersApi.get(partnerId) });
 
-  const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
-  const availableBonus = wallet?.availableBonus ?? '0';
+  /*
+   * The balance is a fact from the server or it is unknown — never zero by
+   * default (U07). A customer typing a bonus against "0 points available"
+   * because the request had not answered yet was told they had nothing to
+   * spend; the server would then have accepted the purchase they gave up
+   * on.
+   */
+  const walletQuery = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
+  const availableBonus: Money | null = walletQuery.data
+    ? parseMoney(walletQuery.data.availableBonus)
+    : null;
 
   const create = useMutation({
     mutationFn: () =>
@@ -77,7 +94,41 @@ export function CreatePurchaseIntentScreen() {
     },
   });
 
-  const grossValid = /^\d+(\.\d{1,4})?$/.test(grossAmount) && Number(grossAmount) > 0;
+  /*
+   * The same rules the server applies in `PurchaseIntentsService.create`,
+   * checked exactly (scaled integers, four decimals) so the preview can be
+   * believed. The server still decides — this is what the customer sees
+   * before pressing the button, and why the button is off when it would be
+   * refused. Nothing is clamped: a bonus larger than the bill is an error
+   * to fix, not a remainder of zero to admire.
+   */
+  const gross = parseMoney(grossAmount);
+  const grossValid = gross !== null && gross > 0n;
+  const bonus: Money | null = bonusAmount.trim() === '' ? 0n : parseMoney(bonusAmount);
+  const bonusCeiling =
+    gross !== null && Number.isInteger(partner?.maxBonusPaymentPercent)
+      ? percentOfFloor(gross, partner!.maxBonusPaymentPercent)
+      : null;
+  const validation: string | null = (() => {
+    if (grossAmount !== '' && !grossValid) return t('purchaseIntent.invalidAmount');
+    if (bonus === null) return t('purchaseIntent.invalidBonus');
+    if (gross === null || bonus === 0n) return null;
+    if (compare(bonus, gross) > 0) return t('purchaseIntent.bonusOverGross');
+    if (bonusCeiling !== null && compare(bonus, bonusCeiling) > 0) {
+      return t('purchaseIntent.bonusOverLimit', {
+        percent: partner?.maxBonusPaymentPercent,
+        max: formatPoints(moneyToString(bonusCeiling)),
+      });
+    }
+    if (availableBonus !== null && compare(bonus, availableBonus) > 0) {
+      return t('purchaseIntent.bonusOverBalance', {
+        amount: formatPoints(moneyToString(availableBonus)),
+      });
+    }
+    return null;
+  })();
+  const canSubmit = grossValid && bonus !== null && validation === null;
+  const youPay = gross !== null && bonus !== null ? subtract(gross, bonus) : null;
 
   if (partnerLoading) {
     return (
@@ -182,14 +233,40 @@ export function CreatePurchaseIntentScreen() {
         value={bonusAmount}
         onChangeText={setBonusAmount}
         placeholder="0"
-        hint={t('qr.availableToSpend', { amount: formatPoints(availableBonus) })}
+        hint={
+          availableBonus !== null
+            ? t('qr.availableToSpend', { amount: formatPoints(moneyToString(availableBonus)) })
+            : walletQuery.isError
+              ? t('purchaseIntent.balanceUnavailable')
+              : t('purchaseIntent.balanceLoading')
+        }
       />
+      {walletQuery.isError && !walletQuery.data ? (
+        <Text
+          accessibilityRole="button"
+          onPress={() => {
+            void walletQuery.refetch();
+          }}
+          style={[text.bodySm, { color: color.primary, marginTop: space[1] }]}
+        >
+          {t('common.retry')}
+        </Text>
+      ) : null}
+
+      {validation ? (
+        <Text
+          accessibilityRole="alert"
+          style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}
+        >
+          {validation}
+        </Text>
+      ) : null}
 
       {error ? (
         <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}>{error}</Text>
       ) : null}
 
-      {grossValid ? (
+      {canSubmit && youPay !== null ? (
         <View style={{ marginTop: space[4] }}>
           <View
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
@@ -198,7 +275,7 @@ export function CreatePurchaseIntentScreen() {
               {t('purchaseIntent.youPay')}
             </Text>
             <Text style={[text.headline, { color: color.textPrimary }]}>
-              {formatAmd(Math.max(0, Number(grossAmount || 0) - Number(bonusAmount || 0)))}
+              {formatAmd(moneyToString(youPay))}
             </Text>
           </View>
         </View>
@@ -218,7 +295,7 @@ export function CreatePurchaseIntentScreen() {
             create.mutate();
           }}
           loading={create.isPending}
-          disabled={!grossValid}
+          disabled={!canSubmit}
           icon={<JakoWingMark size={16} color={color.textInverse} />}
         />
       </View>

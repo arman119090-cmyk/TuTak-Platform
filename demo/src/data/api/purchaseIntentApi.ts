@@ -1,4 +1,8 @@
-import type { CreatePurchaseIntentRequestDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type {
+  CreatePurchaseIntentRequestDto,
+  PurchaseIntentDto,
+  PurchaseIntentRefundDto,
+} from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export const purchaseIntentApi = {
@@ -9,6 +13,14 @@ export const purchaseIntentApi = {
 
   async get(id: string) {
     const { data } = await httpClient.get<ApiEnvelope<PurchaseIntentDto>>(`/purchase-intents/${id}`);
+    return data.data;
+  },
+
+  /** Every refund recorded against one of the customer's own purchases. */
+  async refunds(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PurchaseIntentRefundDto[]>>(
+      `/purchase-intents/${id}/refunds`,
+    );
     return data.data;
   },
 

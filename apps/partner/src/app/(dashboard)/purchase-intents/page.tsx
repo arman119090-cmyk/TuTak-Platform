@@ -13,6 +13,9 @@ import { unitLabel } from '@tutak/i18n';
 import { Badge, Button, EmptyState, Input, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
+import { describeApiFailure, type ApiFailure } from '@/lib/apiError';
+import { dataStateOf } from '@/lib/queryState';
+import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
 const num = (v: string | number | undefined) =>
   Number(v ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/,/g, ' ');
@@ -162,6 +165,39 @@ function AwaitingProvider() {
   );
 }
 
+/**
+ * What the cashier is told when an action did not go through.
+ *
+ * The distinction is the whole message. A `state` refusal means the server
+ * looked and the purchase had already moved on — expired, confirmed by a
+ * colleague, cancelled by the customer — and the queue is re-read so the row
+ * shows what actually happened. A `network` failure means nothing is known:
+ * the tap may or may not have landed, so the form and its reason are kept
+ * and the person is told to look before tapping again.
+ */
+function ActionFailure({ failure }: { failure: ApiFailure }) {
+  if (failure.kind === 'state') {
+    return (
+      <p role="alert" className="max-w-[20rem] text-right text-[12px] text-pending-text">
+        This purchase changed before your tap: {failure.message} The queue has been refreshed.
+      </p>
+    );
+  }
+  if (failure.kind === 'network') {
+    return (
+      <p role="alert" className="max-w-[20rem] text-right text-[12px] text-danger-text">
+        Not sent — the server could not be reached. Nothing you typed was lost. The queue is
+        being re-read; check the row before trying again.
+      </p>
+    );
+  }
+  return (
+    <p role="alert" className="max-w-[20rem] text-right text-[12px] text-danger-text">
+      {failure.message} Nothing you typed was lost.
+    </p>
+  );
+}
+
 function IntentRow({
   intent,
   confirm,
@@ -172,6 +208,7 @@ function IntentRow({
   setReasonCode,
   onStartReject,
   onCancelReject,
+  failure,
 }: {
   intent: PurchaseIntentDto;
   confirm: UseMutationResult<PurchaseIntentDto, unknown, ConfirmArgs>;
@@ -182,6 +219,8 @@ function IntentRow({
   setReasonCode: (v: string) => void;
   onStartReject: () => void;
   onCancelReject: () => void;
+  /** The last failed action on this row, if any. */
+  failure: ApiFailure | null;
 }) {
   // The 3-minute window is a server rule (reject() now enforces it the
   // same way confirm() always has — see purchase-intents.service.ts), but
@@ -267,7 +306,7 @@ function IntentRow({
         */}
         {/*
           Rendered in every state, not only while it is editable.
-          
+
           A cashier waiting on a provider payment should still be able to see
           what was agreed — the frozen figures are the answer to "what am I
           waiting for", and hiding them would make the wait opaque.
@@ -282,26 +321,30 @@ function IntentRow({
         ) : expired ? (
           <span className="text-[12px] text-faint">Expiring…</span>
         ) : rejecting ? (
-          <div className="flex items-center justify-end gap-2">
-            <Input
-              autoFocus
-              placeholder="Reason"
-              value={reasonCode}
-              onChange={(e) => setReasonCode(e.target.value)}
-              className="h-8 w-40 text-[13px]"
-            />
-            <Button
-              size="sm"
-              variant="destructive"
-              loading={reject.isPending}
-              disabled={!reasonCode}
-              onClick={() => reject.mutate(intent.id)}
-            >
-              Confirm decline
-            </Button>
-            <Button size="sm" variant="secondary" onClick={onCancelReject}>
-              Cancel
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <Input
+                autoFocus
+                placeholder="Reason"
+                aria-label="Reason for declining"
+                value={reasonCode}
+                onChange={(e) => setReasonCode(e.target.value)}
+                className="h-8 w-40 text-[13px]"
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                loading={reject.isPending}
+                disabled={!reasonCode}
+                onClick={() => reject.mutate(intent.id)}
+              >
+                Confirm decline
+              </Button>
+              <Button size="sm" variant="secondary" onClick={onCancelReject}>
+                Cancel
+              </Button>
+            </div>
+            {failure ? <ActionFailure failure={failure} /> : null}
           </div>
         ) : (
           <div className="flex flex-col items-end gap-2">
@@ -327,6 +370,7 @@ function IntentRow({
                 </Button>
               )}
             </div>
+            {failure ? <ActionFailure failure={failure} /> : null}
           </div>
         )}
       </Td>
@@ -341,6 +385,17 @@ function IntentRow({
  * has, matching PurchaseIntentsController's actual surface
  * (`RequirePermissions(PURCHASE_INTENT_CONFIRM)`, no amount-editing
  * endpoint exists).
+ *
+ * ## An empty queue and an unreachable one are different screens
+ *
+ * The list used to be `intents ?? []`, which drew "No pending requests" while
+ * the first request was in flight, when the server refused, and when the
+ * five-second poll had been failing for ten minutes. A cashier reading that
+ * sends the customer away. Now: loading says loading, a failure with nothing
+ * received says so with a retry, and a queue that arrived once and then
+ * stopped refreshing stays on screen labelled with the time it was true.
+ * Nothing on this page ever suggests creating a new purchase to get past a
+ * connection problem — the customer's purchase is still live on the server.
  */
 export default function PurchaseIntentsPage() {
   const { user } = useAuthStore();
@@ -348,8 +403,10 @@ export default function PurchaseIntentsPage() {
   const queryClient = useQueryClient();
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [reasonCode, setReasonCode] = useState('');
+  /** The last failed action, kept on the row it belongs to. */
+  const [failure, setFailure] = useState<{ id: string; failure: ApiFailure } | null>(null);
 
-  const { data: intents } = useQuery({
+  const queue = useQuery({
     queryKey: ['purchase-intents', partnerId],
     queryFn: () => purchaseIntentApi.list(partnerId!, PurchaseIntentStatus.AWAITING_CONFIRMATION),
     enabled: !!partnerId,
@@ -358,10 +415,29 @@ export default function PurchaseIntentsPage() {
     // not on the next manual refresh.
     refetchInterval: 5000,
   });
+  const queueState = dataStateOf(queue);
+  const invalidateQueue = () =>
+    queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] });
+
+  /*
+   * One failure handler for every action.
+   *
+   * The server re-reads the purchase on confirm, approve and reject (status,
+   * expiry, branch) before doing anything, so a refusal here is the server
+   * reporting a fact — and the queue is re-read so the row shows it. A
+   * failure with no answer at all keeps the row and whatever was typed, and
+   * still re-reads the queue: the request may have landed.
+   */
+  const onActionError = (id: string) => (error: unknown) => {
+    setFailure({ id, failure: describeApiFailure(error) });
+    void invalidateQueue();
+  };
 
   const confirm = useMutation({
     mutationFn: ({ id, dto }: ConfirmArgs) => purchaseIntentApi.confirm(id, dto),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] }),
+    onMutate: () => setFailure(null),
+    onSuccess: () => void invalidateQueue(),
+    onError: (error, { id }) => onActionError(id)(error),
   });
 
   /*
@@ -372,24 +448,37 @@ export default function PurchaseIntentsPage() {
    */
   const approve = useMutation({
     mutationFn: ({ id, dto }: ConfirmArgs) => purchaseIntentApi.approveForPayment(id, dto),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] }),
+    onMutate: () => setFailure(null),
+    onSuccess: () => void invalidateQueue(),
+    onError: (error, { id }) => onActionError(id)(error),
   });
 
   const reject = useMutation({
     mutationFn: (id: string) => purchaseIntentApi.reject(id, { reasonCode: reasonCode || 'declined' }),
+    onMutate: () => setFailure(null),
     onSuccess: () => {
       setRejectingId(null);
       setReasonCode('');
-      queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] });
+      void invalidateQueue();
     },
-    // A reject can now fail because the 3-minute window closed underneath
-    // it (the server expires the row instead of rejecting it past
-    // deadline) — the row still needs to leave this queue, it just didn't
-    // leave it the way this tap intended.
-    onError: () => {
-      setRejectingId(null);
-      setReasonCode('');
-      queryClient.invalidateQueries({ queryKey: ['purchase-intents', partnerId] });
+    /*
+     * The reason is kept unless the server says the purchase is gone.
+     *
+     * This used to clear the form on every error. A cashier who typed why
+     * they were declining, lost the network for a second and found the box
+     * empty and closed had to type it again — and could not tell whether the
+     * decline had gone through. Now a `state` refusal (expired, already
+     * confirmed, cancelled) closes the form because there is nothing left to
+     * decline, and every other failure keeps it open with the reason intact.
+     */
+    onError: (error, id) => {
+      const described = describeApiFailure(error);
+      setFailure({ id, failure: described });
+      if (described.kind === 'state') {
+        setRejectingId(null);
+        setReasonCode('');
+      }
+      void invalidateQueue();
     },
   });
 
@@ -404,7 +493,7 @@ export default function PurchaseIntentsPage() {
   // does not already hold the queue.
   const [codeFilter, setCodeFilter] = useState('');
   const digitsOnly = codeFilter.replace(/\D/g, '').slice(0, 4);
-  const all = intents ?? [];
+  const all = queue.data ?? [];
   const items = digitsOnly
     ? all.filter((intent) => (intent.confirmationCode ?? '').startsWith(digitsOnly))
     : all;
@@ -416,68 +505,93 @@ export default function PurchaseIntentsPage() {
         description="Customers who scanned your code and entered an amount. Confirm a till sale to complete it. A purchase being paid in TuTak is approved here and then completes on its own — never take cash for one."
       />
 
-      {all.length > 0 ? (
-        <div className="mb-4 max-w-[220px]">
-          <Input
-            inputMode="numeric"
-            maxLength={4}
-            placeholder="Code, e.g. 0042"
-            aria-label="Find a request by the code the customer read out"
-            value={digitsOnly}
-            onChange={(event) => setCodeFilter(event.target.value)}
-          />
-        </div>
-      ) : null}
-
-      {items.length === 0 ? (
-        <EmptyState
-          title={digitsOnly ? 'No request with that code' : 'No pending requests'}
-          message={
-            digitsOnly
-              ? 'Check the digits with the customer. A request also leaves this queue on its own after 3 minutes.'
-              : 'A new request appears here the moment a customer submits one, and expires on its own after 3 minutes if nobody acts.'
-          }
+      {queueState === 'loading' ? (
+        <LoadingNotice label="Loading the queue…" />
+      ) : queueState === 'error' ? (
+        <LoadError
+          title="The queue could not be loaded"
+          onRetry={() => void queue.refetch()}
+          busy={queue.isFetching}
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              {/*
-                The code first, and the id after it: a cashier matches the
-                four digits the customer reads out, while the id is what
-                support asks for later. A row from before codes existed
-                shows a dash and is matched by its id as before.
-              */}
-              <Th>Code</Th>
-              <Th>ID</Th>
-              <Th align="right">Purchase</Th>
-              <Th align="right">Bonus requested</Th>
-              <Th align="right">To collect</Th>
-              <Th>How</Th>
-              <Th>Expires in</Th>
-              <Th align="right">Action</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((intent) => (
-              <IntentRow
-                key={intent.id}
-                intent={intent}
-                confirm={confirm}
-                approve={approve}
-                reject={reject}
-                rejecting={rejectingId === intent.id}
-                reasonCode={reasonCode}
-                setReasonCode={setReasonCode}
-                onStartReject={() => setRejectingId(intent.id)}
-                onCancelReject={() => {
-                  setRejectingId(null);
-                  setReasonCode('');
-                }}
+        <>
+          {queueState === 'stale' ? (
+            <StaleNotice
+              asOf={queue.dataUpdatedAt}
+              what="the queue"
+              onRetry={() => void queue.refetch()}
+              busy={queue.isFetching}
+            />
+          ) : null}
+
+          {all.length > 0 ? (
+            <div className="mb-4 max-w-[220px]">
+              <Input
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="Code, e.g. 0042"
+                aria-label="Find a request by the code the customer read out"
+                value={digitsOnly}
+                onChange={(event) => setCodeFilter(event.target.value)}
               />
-            ))}
-          </tbody>
-        </Table>
+            </div>
+          ) : null}
+
+          {items.length === 0 ? (
+            <EmptyState
+              title={digitsOnly ? 'No request with that code' : 'No pending requests'}
+              message={
+                digitsOnly
+                  ? 'Check the digits with the customer. A request also leaves this queue on its own after 3 minutes.'
+                  : 'A new request appears here the moment a customer submits one, and expires on its own after 3 minutes if nobody acts.'
+              }
+            />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  {/*
+                    The code first, and the id after it: a cashier matches the
+                    four digits the customer reads out, while the id is what
+                    support asks for later. A row from before codes existed
+                    shows a dash and is matched by its id as before.
+                  */}
+                  <Th>Code</Th>
+                  <Th>ID</Th>
+                  <Th align="right">Purchase</Th>
+                  <Th align="right">Bonus requested</Th>
+                  <Th align="right">To collect</Th>
+                  <Th>How</Th>
+                  <Th>Expires in</Th>
+                  <Th align="right">Action</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((intent) => (
+                  <IntentRow
+                    key={intent.id}
+                    intent={intent}
+                    confirm={confirm}
+                    approve={approve}
+                    reject={reject}
+                    rejecting={rejectingId === intent.id}
+                    reasonCode={reasonCode}
+                    setReasonCode={setReasonCode}
+                    onStartReject={() => {
+                      setFailure(null);
+                      setRejectingId(intent.id);
+                    }}
+                    onCancelReject={() => {
+                      setRejectingId(null);
+                      setReasonCode('');
+                    }}
+                    failure={failure?.id === intent.id ? failure.failure : null}
+                  />
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </>
       )}
     </>
   );

@@ -643,6 +643,13 @@ function handle(
     return envelope(cancelled);
   }
 
+  // The refunds behind a purchase (U05). The demo records none: a refund is
+  // a partner's decision, and the demo has no partner to make one.
+  const listPurchaseRefunds = /^\/purchase-intents\/([^/]+)\/refunds$/.exec(path);
+  if (method === 'GET' && listPurchaseRefunds) {
+    return envelope([]);
+  }
+
   const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
   if (method === 'GET' && getPurchaseIntent) {
     const id = getPurchaseIntent[1]!;

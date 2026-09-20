@@ -1,9 +1,10 @@
 import React from 'react';
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CreatePurchaseIntentScreen } from './CreatePurchaseIntentScreen';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
+import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 
 /**
  * GitHub issue #28 (HIGH, 2026-08-16): this screen used to trust
@@ -120,5 +121,92 @@ describe('CreatePurchaseIntentScreen', () => {
     await findByText('purchaseIntent.partnerLoadFailed');
     expect(queryByText('purchaseIntent.grossAmount')).toBeNull();
     await waitFor(() => expect(partnersApi.get).toHaveBeenCalledWith('partner-1'));
+  });
+
+  /**
+   * U07 — what the customer is told while typing, checked exactly.
+   */
+  describe('amounts and the bonus ceiling', () => {
+    beforeEach(() => {
+      (partnersApi.get as jest.Mock).mockResolvedValue(
+        partnerFixture({ maxBonusPaymentPercent: 50 }),
+      );
+    });
+
+    it('says the balance is unavailable, never zero, while the wallet has not answered', async () => {
+      (walletApi.getMyWallet as jest.Mock).mockReturnValue(new Promise(() => undefined));
+      const { findByText, queryByText } = renderScreen();
+      await findByText('purchaseIntent.balanceLoading');
+      expect(queryByText(/qr\.availableToSpend/)).toBeNull();
+    });
+
+    it('says the balance is unavailable, with a retry, when the wallet request fails', async () => {
+      (walletApi.getMyWallet as jest.Mock).mockRejectedValue(new Error('network'));
+      const { findByText, queryByText } = renderScreen();
+      await findByText('purchaseIntent.balanceUnavailable');
+      expect(queryByText(/qr\.availableToSpend/)).toBeNull();
+      expect(await findByText('common.retry')).toBeTruthy();
+    });
+
+    it('refuses a bonus above the purchase amount instead of showing zero to pay', async () => {
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+      const { findByText, getByPlaceholderText, queryByText } = renderScreen();
+      await findByText('purchaseIntent.grossAmount');
+      const [grossField, bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '1000');
+      fireEvent.changeText(bonusField!, '1200');
+      expect(await findByText('purchaseIntent.bonusOverGross')).toBeTruthy();
+      expect(queryByText('purchaseIntent.youPay')).toBeNull();
+      void getByPlaceholderText;
+    });
+
+    it("refuses a bonus above the partner's ceiling, naming the ceiling", async () => {
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.grossAmount');
+      const [grossField, bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '1000');
+      fireEvent.changeText(bonusField!, '600');
+      expect(await findByText('purchaseIntent.bonusOverLimit')).toBeTruthy();
+    });
+
+    it('refuses a bonus above the balance', async () => {
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '100' });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.grossAmount');
+      const [grossField, bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '1000');
+      fireEvent.changeText(bonusField!, '200');
+      expect(await findByText('purchaseIntent.bonusOverBalance')).toBeTruthy();
+    });
+
+    it('previews the remainder exactly, with four-decimal precision kept', async () => {
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.grossAmount');
+      const [grossField, bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '1000.0003');
+      fireEvent.changeText(bonusField!, '0.0001');
+      expect(await findByText('purchaseIntent.youPay')).toBeTruthy();
+      // 1000.0002 formatted for display — whatever the formatter does with
+      // the decimals, it was handed the exact string, not a float.
+      expect(screen.getByText(/1\D?000/)).toBeTruthy();
+    });
+
+    it('sends the amounts as typed and lets the server decide', async () => {
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+      (purchaseIntentApi.create as jest.Mock).mockResolvedValue({ id: 'pi-1' });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.grossAmount');
+      const [grossField, bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '1000');
+      fireEvent.changeText(bonusField!, '400');
+      fireEvent.press(screen.getByText('purchaseIntent.submit'));
+      await waitFor(() =>
+        expect(purchaseIntentApi.create).toHaveBeenCalledWith(
+          expect.objectContaining({ grossAmount: '1000', bonusAmountRequested: '400' }),
+        ),
+      );
+    });
   });
 });

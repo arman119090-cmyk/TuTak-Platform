@@ -1,5 +1,6 @@
 import {
   ContributionRuleKind,
+  CustomerPaymentBlockReason,
   CustomerPaymentState,
   PaymentRoute,
   PurchaseIntentStatus,
@@ -116,6 +117,15 @@ export interface PurchaseIntentDto {
 export interface CustomerPaymentStatusDto {
   state: CustomerPaymentState;
   attemptId?: string;
+  /** Where the purchase itself stands, so a closed one can be named as such. */
+  purchaseStatus: PurchaseIntentStatus;
+  /**
+   * Whether the server would accept a begin call right now. The app offers
+   * the pay button on this and nothing else — never on `state` alone.
+   */
+  canBeginPayment: boolean;
+  /** Why not, when `canBeginPayment` is false. */
+  reason: CustomerPaymentBlockReason | null;
 }
 
 /** What the client must do to let the customer pay at the provider. */

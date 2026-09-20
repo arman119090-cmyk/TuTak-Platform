@@ -7,6 +7,7 @@ import { settlementApi } from '@/lib/api/financeApi';
 import {
   PartnerSettlementStatus,
   type PartnerSettlementDto,
+  type UnsettledPositionDto,
 } from '@tutak/shared-types';
 
 /**
@@ -88,6 +89,23 @@ function statementFixture(overrides: Partial<PartnerSettlementDto> = {}): Partne
   };
 }
 
+function positionFixture(overrides: Partial<UnsettledPositionDto> = {}): UnsettledPositionDto {
+  return {
+    partnerId: 'partner-1',
+    accrued: '5000.0000',
+    deductions: '250.0000',
+    net: '4750.0000',
+    entries: [],
+    unrecognised: [],
+    ledgerBalance: '4750.0000',
+    inOpenSettlements: '0.0000',
+    underReview: '0.0000',
+    paidTotal: '18500.0000',
+    asOf: '2026-09-20T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
 let activeClient: QueryClient | undefined;
 let activeUnmount: (() => void) | undefined;
 
@@ -107,14 +125,7 @@ describe('SettlementsPage', () => {
   beforeEach(() => {
     useAuthStore.setState({ user: buildUser() });
     (settlementApi.statements as jest.Mock).mockResolvedValue([statementFixture()]);
-    (settlementApi.position as jest.Mock).mockResolvedValue({
-      partnerId: 'partner-1',
-      accrued: '5000.0000',
-      deductions: '250.0000',
-      net: '4750.0000',
-      entries: [],
-      unrecognised: [],
-    });
+    (settlementApi.position as jest.Mock).mockResolvedValue(positionFixture());
     (settlementApi.reportProblem as jest.Mock).mockResolvedValue(statementFixture());
     (settlementApi.statement as jest.Mock).mockResolvedValue({
       settlement: statementFixture(),
@@ -145,13 +156,15 @@ describe('SettlementsPage', () => {
 
   it('shows what is accruing before anybody has drafted a settlement', async () => {
     renderPage();
-    expect(await screen.findByText('4,750.00')).toBeTruthy();
+    // Nothing has been drafted, so the total and the unsettled part coincide.
+    expect((await screen.findAllByText('4,750.00')).length).toBe(2);
   });
 
   it('shows a paid statement with its transfer reference', async () => {
     renderPage();
     expect(await screen.findByText('TRF-77')).toBeTruthy();
-    expect(screen.getByText('18,500.00')).toBeTruthy();
+    // Once in the statement row, once as "paid out so far".
+    expect(screen.getAllByText('18,500.00').length).toBe(2);
   });
 
   /**
@@ -176,7 +189,7 @@ describe('SettlementsPage', () => {
       }),
     ]);
     renderPage();
-    await screen.findByText(/being prepared/i);
+    await screen.findByText('Being prepared — not paid yet');
     expect(screen.queryByRole('button', { name: /report a problem/i })).toBeNull();
   });
 
@@ -260,15 +273,103 @@ describe('SettlementsPage', () => {
     expect(screen.queryByRole('button', { name: /mark.*paid|confirm.*received/i })).toBeNull();
   });
 
+  /**
+   * The case from the audit (U09): TuTak owes 50 000, a DRAFT settlement
+   * claims it, `net` reads zero. The page must still say 50 000 is owed and
+   * must not say anything is closed or paid.
+   */
+  it('does not read a drafted settlement as money paid', async () => {
+    (settlementApi.position as jest.Mock).mockResolvedValue(
+      positionFixture({
+        accrued: '0',
+        deductions: '0',
+        net: '0',
+        ledgerBalance: '50000.0000',
+        inOpenSettlements: '50000.0000',
+        paidTotal: '0',
+      }),
+    );
+    (settlementApi.statements as jest.Mock).mockResolvedValue([
+      statementFixture({
+        status: PartnerSettlementStatus.DRAFT,
+        netPayableAmount: '50000.0000',
+        paidAt: null,
+        bankTransferReference: null,
+      }),
+    ]);
+    renderPage();
+    expect(await screen.findByText('TuTak owes you in total')).toBeTruthy();
+    // 50 000 appears as the total, as "in settlements not yet paid" and in
+    // the draft row, which says so in words.
+    expect((await screen.findAllByText('50,000.00')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('Being prepared — not paid yet')).toBeTruthy();
+    expect(screen.queryByText(/closed|settled up|paid in full/i)).toBeNull();
+  });
+
+  it('says the partner owes TuTak when the ledger total is negative', async () => {
+    (settlementApi.position as jest.Mock).mockResolvedValue(
+      positionFixture({ net: '-2500.0000', ledgerBalance: '-2500.0000', accrued: '0', deductions: '2500.0000' }),
+    );
+    renderPage();
+    expect(await screen.findByText('You owe TuTak')).toBeTruthy();
+  });
+
+  /** U01: no figure is a number until it has been received. */
+  it('shows dashes, not zeros, while the balance is loading', () => {
+    (settlementApi.position as jest.Mock).mockReturnValue(new Promise(() => undefined));
+    renderPage();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByText('0.00')).toBeNull();
+    expect(screen.getAllByText('Loading…').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows a load error for the balance, never a zero balance', async () => {
+    (settlementApi.position as jest.Mock).mockRejectedValue(new Error('network'));
+    renderPage();
+    expect(await screen.findByText('Your balance could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('0.00')).toBeNull();
+    expect(screen.getAllByText('Could not load').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('keeps the last balance on screen, labelled as of a time, when a refresh fails', async () => {
+    (settlementApi.position as jest.Mock)
+      .mockResolvedValueOnce(positionFixture())
+      .mockRejectedValueOnce(new Error('network'));
+    renderPage();
+    expect((await screen.findAllByText('4,750.00')).length).toBe(2);
+    await activeClient!.refetchQueries({ queryKey: ['partner-position', 'partner-1'] });
+    expect(await screen.findByText(/showing your balance as of/i)).toBeTruthy();
+    // The figures are still there — they were true at that time.
+    expect(screen.getAllByText('4,750.00').length).toBe(2);
+    expect(screen.queryByText('Could not load')).toBeNull();
+  });
+
+  it('shows a load error for the statements instead of "no settlements yet"', async () => {
+    (settlementApi.statements as jest.Mock).mockRejectedValue(new Error('network'));
+    renderPage();
+    expect(await screen.findByText('Your settlements could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('No settlements yet')).toBeNull();
+  });
+
+  it('shows a load error for the itemisation instead of "no lines"', async () => {
+    (settlementApi.statement as jest.Mock).mockRejectedValue(new Error('network'));
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
+    expect(await screen.findByText('The itemisation could not be loaded')).toBeTruthy();
+    expect(screen.queryByText(/no itemised lines/i)).toBeNull();
+  });
+
+  it('names a posting kind in plain words and keeps the code beside it', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
+    expect(await screen.findByText('Customer paid in TuTak')).toBeTruthy();
+    expect(screen.getByText('psp.payment.captured')).toBeTruthy();
+  });
+
   it('surfaces unclassified activity rather than quietly excluding it', async () => {
-    (settlementApi.position as jest.Mock).mockResolvedValue({
-      partnerId: 'partner-1',
-      accrued: '0',
-      deductions: '0',
-      net: '0',
-      entries: [],
-      unrecognised: ['some.new.kind'],
-    });
+    (settlementApi.position as jest.Mock).mockResolvedValue(
+      positionFixture({ accrued: '0', deductions: '0', net: '0', ledgerBalance: '0', unrecognised: ['some.new.kind'] }),
+    );
     renderPage();
     expect(await screen.findByText(/some\.new\.kind/)).toBeTruthy();
   });

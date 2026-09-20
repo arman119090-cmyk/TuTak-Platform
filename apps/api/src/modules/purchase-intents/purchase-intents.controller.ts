@@ -10,8 +10,10 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { FindPurchaseIntentByCodeDto } from './dto/find-by-code.dto';
+import { QuotePurchaseIntentDto } from './dto/quote-purchase-intent.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+import { PurchaseFundingService } from './purchase-funding.service';
 import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
@@ -24,7 +26,20 @@ export class PurchaseIntentsController {
     private readonly purchaseIntents: PurchaseIntentsService,
     private readonly purchaseIntentRefunds: PurchaseIntentRefundService,
     private readonly refundRequests: PurchaseIntentRefundRequestService,
+    private readonly funding: PurchaseFundingService,
   ) {}
+
+  /**
+   * The server's breakdown of a purchase before it exists — what bonus and
+   * stored money cover and what is still due at the till. Declared before
+   * `@Get(':id')`/`@Post(':id/...')` for the same routing reason
+   * `findByCode` gives. Any authenticated customer, for themselves; the
+   * quote reads their own balances and nobody else's.
+   */
+  @Post('quote')
+  quote(@CurrentUser() customer: RequestUser, @Body() dto: QuotePurchaseIntentDto) {
+    return this.funding.quote({ ...dto, customerId: customer.id });
+  }
 
   /** Spec §7 steps 1-8. Any authenticated customer, for themselves. */
   @Post()

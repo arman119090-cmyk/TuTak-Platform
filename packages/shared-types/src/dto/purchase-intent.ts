@@ -15,6 +15,13 @@ export interface CreatePurchaseIntentRequestDto {
   grossAmount: string;
   /** 0 up to the partner's max_bonus_payment_percent of grossAmount. */
   bonusAmountRequested?: string;
+  /**
+   * How much to take from the customer's stored money balance. Zero when
+   * omitted. `grossAmount = bonusAmountRequested + prepaidAmountApplied +
+   * externalAmountDue` — the server refuses anything that does not add up,
+   * and anything above the available balance.
+   */
+  prepaidAmountApplied?: string;
   /** Omit for the partner-direct route, which is the default. */
   paymentRoute?: PaymentRoute;
   /** All three together or none: a quantity with no unit price is a receipt
@@ -62,6 +69,13 @@ export interface PurchaseIntentDto {
   confirmationCode: string | null;
   grossAmount: string;
   bonusAmountRequested: string;
+  /** The stored-money component. `0` on every purchase that used none. */
+  prepaidAmountApplied: string;
+  /**
+   * What is still collected *outside* TuTak — the cashier's "receive from
+   * the customer" figure, or the provider bill. Always
+   * `grossAmount - bonusAmountRequested - prepaidAmountApplied`.
+   */
   ordinaryPaymentRemainder: string;
   /** How the real-money remainder is collected. Fixed at creation. */
   paymentRoute: PaymentRoute;
@@ -111,6 +125,62 @@ export interface PurchaseIntentDto {
   confirmedAt: string | null;
   rejectedAt: string | null;
   cancelledAt: string | null;
+}
+
+// ── Funding quote ──────────────────────────────────────────────────────
+
+/** What the app sends to ask how a purchase would be funded. */
+export interface QuotePurchaseIntentRequestDto {
+  partnerId: string;
+  partnerBranchId?: string;
+  grossAmount: string;
+  bonusAmountRequested?: string;
+  prepaidAmountApplied?: string;
+  paymentRoute?: PaymentRoute;
+}
+
+export type FundingProblemCode =
+  | 'BONUS_EXCEEDS_GROSS'
+  | 'BONUS_EXCEEDS_PARTNER_MAX'
+  | 'BONUS_EXCEEDS_AVAILABLE'
+  | 'PREPAID_DISABLED'
+  | 'PREPAID_EXCEEDS_AVAILABLE'
+  | 'COMPONENTS_EXCEED_GROSS'
+  | 'PROVIDER_DISABLED';
+
+export interface FundingProblemDto {
+  code: FundingProblemCode;
+  /** For logs. A client shows its own translation of `code`, never this. */
+  message: string;
+}
+
+/**
+ * The customer's stored money as the checkout sees it. `UNAVAILABLE` means
+ * the deployment does not let purchases draw on it — shown as such, never
+ * as a zero balance.
+ */
+export type PrepaidAvailabilityDto =
+  | { state: 'AVAILABLE'; availablePrepaidBalance: string; reservedPrepaid: string }
+  | { state: 'UNAVAILABLE'; availablePrepaidBalance: null; reservedPrepaid: null };
+
+/**
+ * The server-authoritative breakdown of a purchase. Every amount on a
+ * checkout, a cashier's screen or a receipt is one of these fields; the
+ * client picks sources and never does the arithmetic itself.
+ *
+ *     grossAmount = bonusApplied + prepaidAmountApplied + externalAmountDue
+ */
+export interface FundingQuoteDto {
+  grossAmount: string;
+  bonusApplied: string;
+  prepaidAmountApplied: string;
+  externalAmountDue: string;
+  paymentRoute: PaymentRoute;
+  availableBonus: string;
+  maxBonusAllowed: string;
+  prepaid: PrepaidAvailabilityDto;
+  canProceed: boolean;
+  problems: FundingProblemDto[];
 }
 
 /** What the customer's app may believe about their provider payment. */

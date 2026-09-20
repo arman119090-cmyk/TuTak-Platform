@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BalanceTopUp, BalanceTopUpStatus, Currency, LedgerAccountType, PostingDirection } from '@prisma/client';
+import {
+  BalanceTopUp,
+  BalanceTopUpStatus,
+  Currency,
+  LedgerAccountType,
+  PostingDirection,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { AppConfig } from '../../config/configuration';
@@ -9,6 +16,32 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
 import { BANK_TOPUP_ADAPTER, BankTopUpAdapter } from './bank-topup-adapter.interface';
+
+type Tx = Prisma.TransactionClient;
+
+/** Ledger kinds this service writes for the purchase-funding leg. One list, so nothing drifts. */
+export const PREPAID_LEDGER_KINDS = {
+  /** DEBIT available / CREDIT reserved — money spoken for by an open purchase. */
+  hold: 'customer.prepaid.hold',
+  /** The mirror image of a hold, via `LedgerService.reverse`. */
+  holdReleased: 'customer.prepaid.hold_released',
+  /** DEBIT reserved / CREDIT `PARTNER_PAYABLE` — the purchase confirmed; TuTak now owes the partner. */
+  partnerFunding: 'partner.prepaid_funding',
+  /** DEBIT `PARTNER_PAYABLE` / CREDIT available — a refund gives the customer's money back. */
+  partnerFundingRefund: 'partner.prepaid_funding_refund',
+} as const;
+
+/**
+ * The three numbers a customer's money splits into. `book = available +
+ * reserved` by construction: the two accounts are the two halves of one
+ * hold posting, so nothing can be in both or in neither.
+ */
+export interface CustomerBalanceDetail {
+  available: string;
+  reserved: string;
+  book: string;
+  currency: Currency;
+}
 
 /**
  * A customer's own stored-value balance — see `CUSTOMER_PREPAID_BALANCE`'s
@@ -236,6 +269,225 @@ export class CustomerBalanceService {
   }
 
   /**
+   * Whether purchases may draw on stored balances at all. Separate from the
+   * top-up gate on purpose — see `features.customerPrepaidPurchaseEnabled`.
+   */
+  purchasesEnabled(): boolean {
+    return this.config.get('features.customerPrepaidPurchaseEnabled', { infer: true });
+  }
+
+  private assertPurchasesEnabled(): void {
+    if (!this.purchasesEnabled()) {
+      throw new ForbiddenException(
+        'Paying from a stored balance is not enabled on this deployment',
+      );
+    }
+  }
+
+  /**
+   * Available, reserved and book balance — the figures the checkout quote
+   * and the wallet screen show. Both accounts are credit-normal (see the
+   * enum's docblock), negated here so the customer reads "how much I have"
+   * and "how much is spoken for". `tx` for a caller inside its own
+   * transaction; the default is a plain read.
+   */
+  async getBalanceDetail(
+    userId: string,
+    currency: Currency = Currency.AMD,
+    tx?: Tx,
+  ): Promise<CustomerBalanceDetail> {
+    const [available, reserved] = await Promise.all([
+      this.ledger.accountFor({ type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId, currency }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.CUSTOMER_PREPAID_RESERVED, userId, currency }, tx),
+    ]);
+    const availableAmount = available.balance.negated();
+    const reservedAmount = reserved.balance.negated();
+    return {
+      available: availableAmount.toFixed(MONEY_SCALE),
+      reserved: reservedAmount.toFixed(MONEY_SCALE),
+      book: availableAmount.plus(reservedAmount).toFixed(MONEY_SCALE),
+      currency,
+    };
+  }
+
+  /**
+   * Speaks for `amount` of the customer's money on behalf of a purchase that
+   * is being opened, inside the caller's transaction.
+   *
+   * ## The guarantee
+   *
+   * Two purchases opened at the same instant against one balance of 45 000
+   * for 45 000 each: exactly one gets a hold. The claim is a single
+   * conditional `UPDATE ... WHERE balance <= -amount` on the *available*
+   * account's row — the same idiom `collectFromBalance` uses, and the one
+   * `LedgerService.applyNetDeltas` explains at length. The second
+   * transaction blocks on the row until the first commits, re-evaluates the
+   * predicate against the debited balance, and matches zero rows. No
+   * `SELECT ... FOR UPDATE`, no Serializable retry loop, no application-side
+   * arithmetic on a snapshot that could be stale.
+   *
+   * ## Why it is one posting and not a column
+   *
+   * DEBIT available / CREDIT reserved: the money leaves the number the
+   * customer may spend the moment the purchase opens (so `available` can
+   * never go negative, and a second purchase cannot see money the first one
+   * already claimed), and it lands in an account rather than vanishing, so
+   * `book` is unchanged and every dram is still on a balanced ledger. The
+   * hold can later be *reversed* — its exact mirror, exactly once — or
+   * *settled* into `PARTNER_PAYABLE`, and nothing else; there is no third
+   * exit for reserved money.
+   *
+   * Returns the hold's ledger transaction, which the purchase row stores as
+   * `prepaidHoldTransactionId`. Throws `BadRequestException` when the
+   * balance cannot cover the amount, and the caller's transaction is left
+   * to roll back with it — a purchase that could not be funded is never
+   * created.
+   */
+  async holdForPurchase(
+    params: { userId: string; amount: Decimal; purchaseIntentId: string; currency?: Currency },
+    tx: Tx,
+  ): Promise<{ id: string }> {
+    this.assertPurchasesEnabled();
+    const currency = params.currency ?? Currency.AMD;
+    if (params.amount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('prepaidAmountApplied must be positive to hold');
+    }
+
+    const availableAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId: params.userId, currency },
+      tx,
+    );
+    const claimed = await tx.ledgerAccount.updateMany({
+      where: { id: availableAccount.id, balance: { lte: params.amount.negated() } },
+      data: { version: { increment: 1 } },
+    });
+    if (claimed.count === 0) {
+      throw new BadRequestException('Insufficient available balance');
+    }
+
+    const reservedAccount = await this.ledger.accountFor(
+      { type: LedgerAccountType.CUSTOMER_PREPAID_RESERVED, userId: params.userId, currency },
+      tx,
+    );
+    const hold = await this.ledger.post(
+      {
+        kind: PREPAID_LEDGER_KINDS.hold,
+        sourceType: 'PurchaseIntent',
+        sourceId: params.purchaseIntentId,
+        currency,
+        postings: [
+          { accountId: availableAccount.id, direction: PostingDirection.DEBIT, amount: params.amount },
+          { accountId: reservedAccount.id, direction: PostingDirection.CREDIT, amount: params.amount },
+        ],
+      },
+      tx,
+    );
+    return { id: hold.id };
+  }
+
+  /**
+   * Gives a held amount back to the customer's available balance — the
+   * purchase was cancelled, rejected or expired. The mirror image of the hold
+   * posting, written by `LedgerService.reverse`, whose unique `reversesId`
+   * makes a second release of the same hold a constraint violation rather
+   * than a second credit. Callers run this inside the same transaction as
+   * the status flip that authorises it, so a crash between the two is not a
+   * reachable state.
+   *
+   * Deliberately *not* gated on `purchasesEnabled`: turning the feature off
+   * must never strand a customer's money in `RESERVED`.
+   */
+  async releaseHold(holdTransactionId: string, tx: Tx): Promise<void> {
+    await this.ledger.reverse(holdTransactionId, PREPAID_LEDGER_KINDS.holdReleased, tx);
+  }
+
+  /**
+   * The purchase confirmed: the reserved money is now owed to the partner.
+   * DEBIT `CUSTOMER_PREPAID_RESERVED` (the hold is spent) / CREDIT
+   * `PARTNER_PAYABLE` (TuTak owes the partner that much more). Posted inside
+   * the purchase's own settlement transaction, next to the contribution and
+   * bonus-compensation postings, so the three commit or roll back together.
+   *
+   * This is the *only* posting that makes external-vs-TuTak money differ in
+   * the partner's ledger: cash at the till posts nothing, bonus posts the
+   * existing redemption compensation, and prepaid posts this. Everything
+   * else about the purchase's economics is identical whichever way it was
+   * funded.
+   *
+   * Not gated on `purchasesEnabled` either: a purchase that was allowed to
+   * open must be allowed to close.
+   */
+  async settleHoldToPartner(
+    params: { userId: string; partnerId: string; amount: Decimal; purchaseIntentId: string; currency?: Currency },
+    tx: Tx,
+  ): Promise<{ id: string }> {
+    const currency = params.currency ?? Currency.AMD;
+    const [reservedAccount, partnerAccount] = await Promise.all([
+      this.ledger.accountFor(
+        { type: LedgerAccountType.CUSTOMER_PREPAID_RESERVED, userId: params.userId, currency },
+        tx,
+      ),
+      this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: params.partnerId, currency },
+        tx,
+      ),
+    ]);
+    const posted = await this.ledger.post(
+      {
+        kind: PREPAID_LEDGER_KINDS.partnerFunding,
+        sourceType: 'PurchaseIntent',
+        sourceId: params.purchaseIntentId,
+        currency,
+        postings: [
+          { accountId: reservedAccount.id, direction: PostingDirection.DEBIT, amount: params.amount },
+          { accountId: partnerAccount.id, direction: PostingDirection.CREDIT, amount: params.amount },
+        ],
+      },
+      tx,
+    );
+    return { id: posted.id };
+  }
+
+  /**
+   * A refund returns part of the prepaid component to the customer's
+   * available balance and takes it back from the partner: DEBIT
+   * `PARTNER_PAYABLE` / CREDIT `CUSTOMER_PREPAID_BALANCE`. A new posting,
+   * never an edit of `partner.prepaid_funding`, so a refund after the
+   * partner has already been paid simply leaves a fresh unclaimed debit for
+   * the next settlement — or a collection — to pick up.
+   */
+  async refundPrepaidFromPartner(
+    params: { userId: string; partnerId: string; amount: Decimal; purchaseIntentId: string; currency?: Currency },
+    tx: Tx,
+  ): Promise<{ id: string }> {
+    const currency = params.currency ?? Currency.AMD;
+    const [availableAccount, partnerAccount] = await Promise.all([
+      this.ledger.accountFor(
+        { type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId: params.userId, currency },
+        tx,
+      ),
+      this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: params.partnerId, currency },
+        tx,
+      ),
+    ]);
+    const posted = await this.ledger.post(
+      {
+        kind: PREPAID_LEDGER_KINDS.partnerFundingRefund,
+        sourceType: 'PurchaseIntent',
+        sourceId: params.purchaseIntentId,
+        currency,
+        postings: [
+          { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: params.amount },
+          { accountId: availableAccount.id, direction: PostingDirection.CREDIT, amount: params.amount },
+        ],
+      },
+      tx,
+    );
+    return { id: posted.id };
+  }
+
+  /**
    * Spends a customer's prepaid balance against an app-initiated roaming
    * session's cost the moment it settles
    * (`EvCdrReconciliationService.completeAppInitiatedSession`) — the actual
@@ -253,13 +505,12 @@ export class CustomerBalanceService {
    * safe to call from outside the settlement's own atomic transaction — see
    * the call site's own reasoning for why it deliberately is.
    *
-   * This is the *only* place anything ever debits `CUSTOMER_PREPAID_BALANCE`
-   * — a closed-loop business decision (2026-08-29): this money pays for
-   * roaming-CPO charging and nothing else, deliberately with no conversion
-   * into bonus/wallet points, which are spendable anywhere a purchase
-   * accepts them. Do not add a second caller of this method, or any other
-   * way to spend this account, without revisiting that decision explicitly
-   * — see `CUSTOMER_PREPAID_BALANCE`'s own schema docblock.
+   * Until 20.09.2026 this was the *only* place anything ever debited
+   * `CUSTOMER_PREPAID_BALANCE` (closed-loop decision of 2026-08-29). The
+   * owner's hybrid-payment brief revisited that decision explicitly:
+   * `holdForPurchase` above is the second — and, with it, the last — way to
+   * spend this account. Still no conversion into bonus/wallet points; see
+   * the enum's own schema docblock for the current list.
    */
   async collectFromBalance(
     userId: string,

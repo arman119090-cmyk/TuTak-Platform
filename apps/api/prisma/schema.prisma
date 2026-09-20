@@ -727,9 +727,33 @@ model PurchaseIntent {
 
   grossAmount              Decimal @db.Decimal(18, 4)
   bonusAmountRequested     Decimal @default(0) @db.Decimal(18, 4)
-  /// = grossAmount - bonusAmountRequested, stored rather than derived so the
-  /// figure the customer saw at scan time is exactly what is on record.
+  /// What the customer still has to hand over *outside* TuTak — at the till
+  /// in cash or by card, or through the provider on a `TUTAK_PSP` purchase.
+  /// Stored rather than derived so the figure the customer saw at scan time
+  /// is exactly what is on record. Since 20.09.2026 the identity is
+  ///
+  ///     grossAmount = bonusAmountRequested + prepaidAmountApplied + ordinaryPaymentRemainder
+  ///
+  /// enforced by `purchase_intents_funding_sums_to_gross`. Every row created
+  /// before then has `prepaidAmountApplied = 0`, so the old reading
+  /// (`gross - bonus`) is still exactly true for it. Nothing is reinterpreted.
   ordinaryPaymentRemainder Decimal @db.Decimal(18, 4)
+  /// The part of the price the customer pays from their own stored money
+  /// (`CUSTOMER_PREPAID_BALANCE`) — the second TuTak-side funding component
+  /// next to bonus. Held at creation (`prepaidHoldTransactionId`), turned
+  /// into a `PARTNER_PAYABLE` credit at confirmation, released on every
+  /// other exit. Zero on every purchase that does not use it, historical
+  /// rows included. Never a third route: `paymentRoute` still says only how
+  /// `ordinaryPaymentRemainder` is collected.
+  prepaidAmountApplied     Decimal @default(0) @db.Decimal(18, 4)
+  /// The ledger transaction that moved `prepaidAmountApplied` from the
+  /// customer's available balance into `CUSTOMER_PREPAID_RESERVED` when this
+  /// purchase was opened. Unique, so a purchase has at most one hold; null
+  /// when `prepaidAmountApplied` is zero. The hold is *reversed* (never
+  /// deleted) when the purchase is cancelled, rejected or expires, and
+  /// *settled* — reserved → partner payable — when it is confirmed. See
+  /// `CustomerBalanceService.holdForPurchase`.
+  prepaidHoldTransactionId String? @unique
   /// Running total of every TuTak-side refund against this purchase's
   /// merchandise value. The guard that stops a purchase being refunded past
   /// its own grossAmount is a conditional UPDATE on this column, exactly the
@@ -927,6 +951,7 @@ model PurchaseIntent {
   branch             PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
   confirmedBy        User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
   rejectedBy         User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
+  prepaidHold        LedgerTransaction?            @relation("PurchaseIntentPrepaidHold", fields: [prepaidHoldTransactionId], references: [id])
   refunds            PurchaseIntentRefund[]
   refundRequests     PurchaseIntentRefundRequest[]
   pspPaymentAttempts PspPaymentAttempt[]
@@ -1023,26 +1048,51 @@ model PurchaseIntentRefundRequest {
 /// loyalty effect the original purchase created, proportional to how much of
 /// the merchandise the partner is taking back, tracked immutably against the
 /// intent it refunds — see `PurchaseIntentRefundService`.
+/// The state of the part of a refund that TuTak cannot move itself — the
+/// cash or card the customer paid at the till, or the provider's money.
+enum ExternalRefundStatus {
+  NOT_REQUIRED
+  PENDING_PARTNER
+  CONFIRMED
+}
+
 model PurchaseIntentRefund {
-  id                  String   @id @default(uuid())
-  purchaseIntentId    String
+  id                              String               @id @default(uuid())
+  purchaseIntentId                String
   /// The merchandise refund amount the partner entered — always ≤ what
   /// remains of `PurchaseIntent.grossAmount`, enforced by a conditional
   /// UPDATE on `refundedAmount`, the same guard `Payment.refundedAmount` uses.
-  amount              Decimal  @db.Decimal(18, 4)
+  amount                          Decimal              @db.Decimal(18, 4)
   /// This refund's own proportional slice of the bonus the customer spent on
   /// the original purchase, restored to their wallet.
-  bonusRestored       Decimal  @default(0) @db.Decimal(18, 4)
-  reason              String
+  bonusRestored                   Decimal              @default(0) @db.Decimal(18, 4)
+  /// This refund's proportional slice of `PurchaseIntent.prepaidAmountApplied`,
+  /// credited back to the customer's `CUSTOMER_PREPAID_BALANCE` and debited
+  /// from the partner's `PARTNER_PAYABLE` (kind `partner.prepaid_funding_refund`).
+  /// Zero on every refund of a purchase that used no stored money.
+  prepaidRestored                 Decimal              @default(0) @db.Decimal(18, 4)
+  /// What the *partner* owes the customer back outside TuTak for this refund:
+  /// `amount - bonusRestored - prepaidRestored`, the slice that was paid in
+  /// cash/card at the till or through the provider. TuTak never moves this
+  /// money; it only records whether the partner says they returned it.
+  externalRefundDue               Decimal              @default(0) @db.Decimal(18, 4)
+  /// Where the external slice stands. `NOT_REQUIRED` when `externalRefundDue`
+  /// is zero; `PENDING_PARTNER` until somebody at the business confirms they
+  /// handed the money back; `CONFIRMED` after. A customer is never told a
+  /// refund is complete while this reads `PENDING_PARTNER`.
+  externalRefundStatus            ExternalRefundStatus @default(NOT_REQUIRED)
+  externalRefundConfirmedAt       DateTime?
+  externalRefundConfirmedByUserId String?
+  reason                          String
   /// The reversing ledger transaction for the pool-contribution leg.
   /// Postings are immutable, so a refund is a new transaction pointing back
   /// at the original, never an edit.
-  ledgerTransactionId String?  @unique
-  actorId             String
+  ledgerTransactionId             String?              @unique
+  actorId                         String
   /// Scoped to the actor, matching `IdempotencyService`'s
   /// `purchase-intent-refund:<actorId>` scope.
-  idempotencyKey      String?
-  createdAt           DateTime @default(now())
+  idempotencyKey                  String?
+  createdAt                       DateTime             @default(now())
 
   purchaseIntent    PurchaseIntent               @relation(fields: [purchaseIntentId], references: [id])
   ledgerTransaction LedgerTransaction?           @relation(fields: [ledgerTransactionId], references: [id])
@@ -2391,18 +2441,47 @@ enum LedgerAccountType {
   /// when the balance can cover it in full — see `collectFromBalance`'s own
   /// docblock for why a partial collection is deliberately not attempted.
   ///
-  /// Closed-loop by design (business decision, 2026-08-29): this money pays
-  /// for roaming-CPO charging and nothing else. `CustomerBalanceService
-  /// .collectFromBalance` is the *only* place anything ever debits this
-  /// account — there is deliberately no conversion into `BonusEntryType`
-  /// wallet points or any other spendable form. Bonus points are usable
-  /// anywhere a purchase accepts them (QR, PurchaseIntent, internal EV);
-  /// funding them from this account would launder money out of the
-  /// "charging only" restriction the same step it claimed to respect. If a
-  /// future change adds a second way to spend this balance, it must still
-  /// be charging-only, or this restriction needs a new, explicit decision —
-  /// not a quiet side effect of adding a generic "spend my balance" helper.
+  /// Spent two ways, and only two. (1) `CustomerBalanceService
+  /// .collectFromBalance` — roaming-CPO charging, the original 2026-08-29
+  /// closed-loop decision. (2) Since 20.09.2026, by the owner's explicit
+  /// decision ("canonical hybrid payment system"), as a funding component of
+  /// an ordinary `PurchaseIntent`: `holdForPurchase` DEBITs this account and
+  /// CREDITs `CUSTOMER_PREPAID_RESERVED` when the purchase opens, and the
+  /// reservation is either reversed (cancel/reject/expiry) or turned into a
+  /// `PARTNER_PAYABLE` credit at confirmation. That is the whole list. There
+  /// is still deliberately no conversion into `BonusEntryType` wallet points
+  /// or any other spendable form — money and bonus stay separate ledgers,
+  /// separate balances, separate lines on every screen.
+  ///
+  /// The "available" figure a customer sees is this account's balance,
+  /// negated. The "reserved" figure is `CUSTOMER_PREPAID_RESERVED`'s balance,
+  /// negated. Book balance is their sum. See `CustomerBalanceService
+  /// .getBalanceDetail`.
   CUSTOMER_PREPAID_BALANCE
+  /// The part of a customer's stored money that an open `PurchaseIntent` has
+  /// spoken for but that has not yet been paid to anyone. Per-customer, like
+  /// `CUSTOMER_PREPAID_BALANCE`, and credit-normal like it: a hold moves
+  /// money *out* of the available account and *into* this one (DEBIT
+  /// available / CREDIT reserved), so its raw balance is negative-or-zero
+  /// and reads "how much of my money is spoken for" when negated.
+  ///
+  /// Why a second account and not a column on the purchase: a column is a
+  /// second source of truth that has to be reconciled against the ledger by
+  /// hand. An account is reconstructable from its own postings, balances by
+  /// construction (`ledger_transaction_balanced`), and lets the two
+  /// concurrent-hold guards this design needs be a single conditional
+  /// `UPDATE` on the *available* account — the same `balance <= -amount`
+  /// claim `collectFromBalance` already uses. Two customers' holds never
+  /// touch each other's rows; two holds by one customer serialise on their
+  /// own row, and the second one sees the first one's debit.
+  ///
+  /// Every hold leaves this account by exactly one of two transactions:
+  /// `customer.prepaid.hold_released` (the mirror image, via
+  /// `LedgerService.reverse`, exactly-once by `reversesId`) or
+  /// `partner.prepaid_funding` (DEBIT reserved / CREDIT `PARTNER_PAYABLE`,
+  /// inside the same transaction as the purchase's confirmation). A non-zero
+  /// balance here therefore means one thing: purchases are open right now.
+  CUSTOMER_PREPAID_RESERVED
 }
 
 enum PostingDirection {
@@ -2459,6 +2538,7 @@ model LedgerTransaction {
   balanceTopUp         BalanceTopUp?
   partnerSettlement    PartnerSettlement?
   pspPaymentAttempt    PspPaymentAttempt?
+  prepaidHoldFor       PurchaseIntent?       @relation("PurchaseIntentPrepaidHold")
 
   @@index([sourceType, sourceId])
   @@index([postedAt])

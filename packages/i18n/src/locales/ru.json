@@ -25,6 +25,7 @@
     "yesterday": "Вчера"
   },
   "auth": {
+    "tagline": "Больше возможностей рядом",
     "welcomeBack": "С возвращением",
     "createAccount": "Создать аккаунт",
     "login": "Войти",

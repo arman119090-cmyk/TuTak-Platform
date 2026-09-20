@@ -12,6 +12,7 @@ import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
@@ -62,6 +63,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
           {/* Every navigator here sets headerShown: false, so this is the
               only way off the screen besides Android's hardware button. */}
           <BackButton />
+          <JakoHero state="reset-password" style={{ marginBottom: space[4] }} />
           <Text style={[text.titleLg, { color: color.textPrimary }]}>
             {t('auth.forgotPasswordTitle')}
           </Text>

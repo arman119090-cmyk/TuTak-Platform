@@ -25,6 +25,7 @@
     "yesterday": "Yesterday"
   },
   "auth": {
+    "tagline": "More possibilities, closer",
     "welcomeBack": "Welcome back",
     "createAccount": "Create your account",
     "login": "Log in",

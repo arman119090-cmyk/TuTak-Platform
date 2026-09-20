@@ -2696,6 +2696,16 @@ enum BalanceTopUpStatus {
   /// retry a FAILED attempt with a fresh idempotency key, while a DECLINED
   /// one (insufficient funds, card refused) will not succeed by retrying.
   FAILED
+  /// A top-up the provider was asked to take and has not reported on for
+  /// longer than `customerBalance.topUpStaleAfterMs`. Not DECLINED and not
+  /// FAILED: the customer may have paid. Raised by the
+  /// `balance.escalate-stale-topups` sweep, which then alerts on it every
+  /// `topUpEscalateEveryMs` and never resolves it by itself — the
+  /// provider's authoritative answer (a late webhook still credits exactly
+  /// once from this state) or an operator with the provider's statement
+  /// does. Shown to the customer as "we are checking with the provider",
+  /// never as zero, never as declined.
+  UNRESOLVED
 }
 
 /// One attempt to fund a customer's `CUSTOMER_PREPAID_BALANCE` ledger
@@ -2719,6 +2729,15 @@ model BalanceTopUp {
   /// Null until COMPLETED — nothing has moved yet before then.
   ledgerTransactionId String?            @unique
   idempotencyKey      String?
+  /// When the provider's answer (or an operator's) closed this row. Null
+  /// while PENDING or UNRESOLVED.
+  resolvedAt          DateTime?
+  /// Ageing, same shape as `PspPaymentAttempt`: when the sweep first found
+  /// this top-up stale, when it last raised an alert, and how many times.
+  /// None of these ever decide the outcome.
+  unresolvedAt        DateTime?
+  escalatedAt         DateTime?
+  escalationCount     Int                @default(0)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 

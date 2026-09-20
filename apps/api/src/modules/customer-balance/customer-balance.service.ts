@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BalanceTopUp,
@@ -12,6 +19,7 @@ import {
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { AppConfig } from '../../config/configuration';
+import { ALERT_CHANNEL, AlertChannel } from '../../infrastructure/alerts/alert-channel.interface';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
@@ -62,7 +70,12 @@ export class CustomerBalanceService {
     private readonly idempotency: IdempotencyService,
     private readonly config: ConfigService<AppConfig, true>,
     @Inject(BANK_TOPUP_ADAPTER) private readonly bankAdapter: BankTopUpAdapter,
+    @Inject(ALERT_CHANNEL) private readonly alerts: AlertChannel,
   ) {}
+
+  topUpsEnabled(): boolean {
+    return this.config.get('features.customerPrepaidTopUpEnabled', { infer: true });
+  }
 
   /**
    * The second lock on the same door.
@@ -202,7 +215,12 @@ export class CustomerBalanceService {
       this.logger.warn(`Top-up webhook for unknown providerReference ${verified.providerReference}`);
       return;
     }
-    if (topUp.status !== BalanceTopUpStatus.PENDING) {
+    // PENDING and UNRESOLVED are both "the provider has not told us yet".
+    // A late answer to an UNRESOLVED top-up is the answer this whole state
+    // exists to wait for, so it credits (or declines) exactly as a timely
+    // one would — and exactly once, via the same conditional claim.
+    const OPEN: BalanceTopUpStatus[] = [BalanceTopUpStatus.PENDING, BalanceTopUpStatus.UNRESOLVED];
+    if (!OPEN.includes(topUp.status)) {
       // Already resolved — a replayed or duplicated webhook delivery is a
       // no-op, not a second credit.
       return;
@@ -210,10 +228,11 @@ export class CustomerBalanceService {
 
     if (verified.outcome !== 'COMPLETED') {
       await this.prisma.balanceTopUp.updateMany({
-        where: { id: topUp.id, status: BalanceTopUpStatus.PENDING },
+        where: { id: topUp.id, status: { in: OPEN } },
         data: {
           status: verified.outcome === 'DECLINED' ? BalanceTopUpStatus.DECLINED : BalanceTopUpStatus.FAILED,
           declineReason: verified.declineReason,
+          resolvedAt: new Date(),
         },
       });
       return;
@@ -228,8 +247,8 @@ export class CustomerBalanceService {
       // `EvCdrReconciliationService`'s `reconcilingAt`/`settlingAt` claims
       // already use.
       const claimed = await tx.balanceTopUp.updateMany({
-        where: { id: topUp.id, status: BalanceTopUpStatus.PENDING },
-        data: { status: BalanceTopUpStatus.COMPLETED },
+        where: { id: topUp.id, status: { in: OPEN } },
+        data: { status: BalanceTopUpStatus.COMPLETED, resolvedAt: new Date() },
       });
       if (claimed.count === 0) return;
 
@@ -266,6 +285,108 @@ export class CustomerBalanceService {
         data: { ledgerTransactionId: ledgerTransaction.id },
       });
     });
+  }
+
+  /**
+   * What the customer's app may believe about one top-up. Their own rows
+   * only — a top-up id is not a capability.
+   *
+   * `UNRESOLVED` is returned as itself, never mapped to anything friendlier:
+   * the app's job is to say "we are checking with the provider", and a
+   * status that read DECLINED or PENDING here would let it say something
+   * false.
+   */
+  async getTopUpStatus(userId: string, topUpId: string) {
+    const topUp = await this.prisma.balanceTopUp.findFirst({ where: { id: topUpId, userId } });
+    if (!topUp) throw new NotFoundException('Top-up not found');
+    return {
+      topUpId: topUp.id,
+      status: topUp.status,
+      amount: topUp.amount.toFixed(MONEY_SCALE),
+      currency: topUp.currency,
+      declineReason: topUp.declineReason ?? undefined,
+      createdAt: topUp.createdAt,
+      resolvedAt: topUp.resolvedAt,
+    };
+  }
+
+  /**
+   * Time makes an unanswered top-up louder; it never decides it.
+   *
+   * Step 1: a PENDING top-up older than `topUpStaleAfterMs` becomes
+   * UNRESOLVED — a state, not an outcome. The customer may have paid; the
+   * provider has not said. Step 2: every UNRESOLVED top-up is alerted on
+   * once per `topUpEscalateEveryMs` until the provider's webhook or an
+   * operator with the provider's statement closes it. Same shape and same
+   * reasoning as `PspAttemptAgeingService.escalateStaleAttempts`.
+   *
+   * Runs whether or not top-ups are enabled: a deployment that turned the
+   * feature off with a PENDING row still open must not stop watching it.
+   */
+  async escalateStaleTopUps(): Promise<{ marked: number; escalated: number }> {
+    const { topUpStaleAfterMs, topUpEscalateEveryMs } = this.config.get('customerBalance', {
+      infer: true,
+    });
+    const now = Date.now();
+
+    const stale = await this.prisma.balanceTopUp.findMany({
+      where: { status: BalanceTopUpStatus.PENDING, createdAt: { lt: new Date(now - topUpStaleAfterMs) } },
+      select: { id: true },
+    });
+    let marked = 0;
+    for (const row of stale) {
+      // Conditional on still being PENDING: a webhook may have landed
+      // between the read and this write, and a webhook beats a clock.
+      const claimed = await this.prisma.balanceTopUp.updateMany({
+        where: { id: row.id, status: BalanceTopUpStatus.PENDING },
+        data: { status: BalanceTopUpStatus.UNRESOLVED, unresolvedAt: new Date() },
+      });
+      marked += claimed.count;
+    }
+
+    const unresolved = await this.prisma.balanceTopUp.findMany({
+      where: {
+        status: BalanceTopUpStatus.UNRESOLVED,
+        OR: [{ escalatedAt: null }, { escalatedAt: { lt: new Date(now - topUpEscalateEveryMs) } }],
+      },
+      select: {
+        id: true,
+        userId: true,
+        amount: true,
+        currency: true,
+        providerReference: true,
+        createdAt: true,
+        escalationCount: true,
+      },
+    });
+    let escalated = 0;
+    for (const row of unresolved) {
+      const claimed = await this.prisma.balanceTopUp.updateMany({
+        where: {
+          id: row.id,
+          status: BalanceTopUpStatus.UNRESOLVED,
+          OR: [{ escalatedAt: null }, { escalatedAt: { lt: new Date(now - topUpEscalateEveryMs) } }],
+        },
+        data: { escalatedAt: new Date(), escalationCount: { increment: 1 } },
+      });
+      if (claimed.count === 0) continue;
+      escalated += 1;
+      const ageMinutes = Math.round((now - row.createdAt.getTime()) / 60_000);
+      // Never the secret, never the customer's phone: the id, the amount
+      // and the provider's own reference are what an operator needs to
+      // look it up on the provider's side.
+      await this.alerts.send({
+        severity: row.escalationCount === 0 ? 'warning' : 'critical',
+        title: `Customer top-up unresolved for ${ageMinutes} min`,
+        body:
+          `Top-up ${row.id} (${row.amount.toFixed(MONEY_SCALE)} ${row.currency}, provider ref ` +
+          `${row.providerReference ?? '—'}) has had no authoritative answer from the provider. ` +
+          'The customer may have paid. Check the provider statement; do not credit by hand.',
+        key: `balance.topup.unresolved:${row.id}:${row.escalationCount + 1}`,
+        context: { topUpId: row.id, userId: row.userId, escalation: row.escalationCount + 1 },
+      });
+    }
+    return { marked, escalated };
   }
 
   /**

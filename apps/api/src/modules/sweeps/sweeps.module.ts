@@ -2,6 +2,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { Logger, Module, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
+import { CustomerBalanceModule } from '../customer-balance/customer-balance.module';
+import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
 import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -58,6 +60,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
 @Module({
   imports: [
     BullModule.registerQueue({ name: SWEEPS_QUEUE }),
+    CustomerBalanceModule,
     WalletModule,
     EvChargingModule,
     LedgerModule,
@@ -89,6 +92,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         PartnerSettlementCheckService,
         PspAttemptAgeingService,
         PspCallbackWorkerService,
+        CustomerBalanceService,
         // Only resolvable when PaymentsModule was actually imported above —
         // Nest calls useFactory with exactly as many arguments as `inject`
         // has entries, so `refunds` below is simply never passed (and stays
@@ -110,6 +114,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         partnerSettlement: PartnerSettlementCheckService,
         pspAgeing: PspAttemptAgeingService,
         pspCallbacks: PspCallbackWorkerService,
+        customerBalance: CustomerBalanceService,
         refunds?: RefundEngineService,
       ): SweepDependencies => ({
         bonus,
@@ -125,6 +130,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         partnerSettlement,
         pspAgeing,
         pspCallbacks,
+        customerBalance,
         refunds,
       }),
     },

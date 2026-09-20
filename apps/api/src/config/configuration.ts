@@ -333,6 +333,16 @@ export interface AppConfig {
    * purchase stays blocked and the money's fate stays unknown. Time escalates;
    * only the provider or two people reading its statement resolve.
    */
+  /**
+   * Ageing for customer top-ups, with the same philosophy as `psp` below:
+   * time makes an unanswered top-up louder (UNRESOLVED, then an alert every
+   * `topUpEscalateEveryMs`), and never decides it. Only the provider's
+   * answer or an operator reading the provider's statement does.
+   */
+  customerBalance: {
+    topUpStaleAfterMs: number;
+    topUpEscalateEveryMs: number;
+  };
   psp: {
     /** Used for any provider with no entry of its own. */
     defaultStaleAfterMs: number;
@@ -770,6 +780,13 @@ const buildConfig = (): AppConfig => ({
     customerPrepaidPurchaseEnabled: process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED === 'true',
     // A partner's till opening purchases through the M2M checkout API.
     partnerPosPurchasesEnabled: process.env.PARTNER_POS_PURCHASES_ENABLED === 'true',
+  },
+  customerBalance: {
+    // The same thirty minutes / one hour the provider-payment ageing uses,
+    // for the same reason: a customer who paid and sees nothing is the one
+    // waiting, and half an hour is already a long time to wait.
+    topUpStaleAfterMs: positiveIntFromEnv('CUSTOMER_PREPAID_TOPUP_STALE_AFTER_MS', 30 * 60_000),
+    topUpEscalateEveryMs: positiveIntFromEnv('CUSTOMER_PREPAID_TOPUP_ESCALATE_EVERY_MS', 60 * 60_000),
   },
   psp: {
     // Thirty minutes and an hour: the same figures the code used as

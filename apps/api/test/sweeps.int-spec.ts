@@ -76,6 +76,9 @@ describe('Sweeps (integration)', () => {
   const pspCallbacks = {
     processPending: jest.fn(record('psp.process-callbacks')),
   };
+  const customerBalance = {
+    escalateStaleTopUps: jest.fn(record('balance.escalate-stale-topups')),
+  };
   const refunds = {
     reconcilePendingRefunds: jest.fn(record('payments.reconcile-pending-refunds')),
   };
@@ -119,6 +122,7 @@ describe('Sweeps (integration)', () => {
             partnerSettlement,
             pspAgeing,
             pspCallbacks,
+            customerBalance,
             refunds,
           },
         },
@@ -218,6 +222,7 @@ describe('Sweeps (integration)', () => {
       expect(partnerSettlement.checkOverdueSettlements).toHaveBeenCalledTimes(1);
       expect(pspAgeing.escalateStaleAttempts).toHaveBeenCalledTimes(1);
       expect(pspCallbacks.processPending).toHaveBeenCalledTimes(1);
+      expect(customerBalance.escalateStaleTopUps).toHaveBeenCalledTimes(1);
     });
 
     it('reconciles yesterday, not today', async () => {

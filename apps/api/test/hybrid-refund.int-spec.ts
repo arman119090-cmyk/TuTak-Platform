@@ -4,7 +4,6 @@ import {
   ExternalRefundStatus,
   LedgerAccountType,
   PartnerSettlementStatus,
-  PostingDirection,
   PrismaClient,
   RoleName,
 } from '@prisma/client';

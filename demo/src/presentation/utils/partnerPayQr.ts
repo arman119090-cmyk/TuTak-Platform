@@ -37,3 +37,23 @@ export function parseBranchQrToken(raw: string): string | null {
   const token = raw.slice(BRANCH_PREFIX.length).trim();
   return token || null;
 }
+
+/**
+ * A till-opened purchase's dynamic QR — `tutak://checkout/<token>` (what
+ * `PartnerCheckoutService` renders) or the bare `TUTAK-CHECKOUT:<token>`
+ * form. The token is all it carries; the server says what it is for.
+ */
+const CHECKOUT_URI_PREFIX = 'tutak://checkout/';
+const CHECKOUT_PREFIX = 'TUTAK-CHECKOUT:';
+
+export function parseCheckoutToken(raw: string): string | null {
+  const trimmed = raw.trim();
+  const prefix = trimmed.startsWith(CHECKOUT_URI_PREFIX)
+    ? CHECKOUT_URI_PREFIX
+    : trimmed.startsWith(CHECKOUT_PREFIX)
+      ? CHECKOUT_PREFIX
+      : null;
+  if (!prefix) return null;
+  const token = trimmed.slice(prefix.length).split(/[?#/]/)[0]?.trim() ?? '';
+  return /^[A-Za-z0-9_-]{16,}$/.test(token) ? token : null;
+}

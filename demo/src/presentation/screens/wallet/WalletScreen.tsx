@@ -12,7 +12,8 @@ import { StatePill } from '../../components/StatePill';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { isWalletAbsent, walletApi } from '../../../data/api/walletApi';
-import { formatDate, formatPoints } from '../../utils/format';
+import { balanceApi } from '../../../data/api/balanceApi';
+import { formatAmd, formatDate, formatPoints } from '../../utils/format';
 import { bonusStateFor, ledgerAmountFor } from '../../utils/transactionPresentation';
 
 /**
@@ -117,6 +118,8 @@ export function WalletScreen() {
               reserved={wallet.reservedBonus}
             />
           </View>
+
+          <MoneyBalance />
 
           {/* Lifetime totals as one quiet line under a rule — a footnote to
               the balance, which is what they are, not two more cards. */}
@@ -252,3 +255,74 @@ const styles = StyleSheet.create({
   tabular: { fontVariant: ['tabular-nums'] },
   totals: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth },
 });
+
+/**
+ * The customer's stored money, next to — never inside — the points balance
+ * (brief §27). Three honest states: a figure from the server; "not
+ * available in this version" when the deployment lets a purchase draw on
+ * no balance at all (the server's 404, worded as the answer it is); and
+ * "could not load", with a retry, when nothing arrived. None of them is a
+ * zero the app made up.
+ */
+function MoneyBalance() {
+  const { t } = useTranslation();
+  const { color, space, text } = useTheme();
+  const query = useQuery({ queryKey: ['customer-balance'], queryFn: balanceApi.getMyBalance });
+
+  if (query.isLoading) {
+    return (
+      <View style={{ marginTop: space[5] }}>
+        <Skeleton width="40%" height={14} />
+      </View>
+    );
+  }
+  if (query.isError && !query.data) {
+    return (
+      <View style={{ marginTop: space[5] }}>
+        <Text style={[text.caption, { color: color.textSecondary }]}>{t('wallet.moneyTitle')}</Text>
+        <Text accessibilityRole="alert" style={[text.bodySm, { color: color.pendingText, marginTop: 2 }]}>
+          {t('wallet.moneyLoadFailed')}
+        </Text>
+        <Text
+          accessibilityRole="button"
+          onPress={() => {
+            void query.refetch();
+          }}
+          style={[text.bodySm, { color: color.primary, marginTop: space[1] }]}
+        >
+          {t('common.retry')}
+        </Text>
+      </View>
+    );
+  }
+  if (!query.data || query.data.state === 'UNAVAILABLE') {
+    return (
+      <View style={{ marginTop: space[5] }}>
+        <Text style={[text.caption, { color: color.textSecondary }]}>{t('wallet.moneyTitle')}</Text>
+        <Text style={[text.bodySm, { color: color.textSecondary, marginTop: 2 }]}>
+          {t('wallet.moneyUnavailable')}
+        </Text>
+      </View>
+    );
+  }
+  const { balance } = query.data;
+  return (
+    <View style={{ marginTop: space[5] }}>
+      <Text style={[text.caption, { color: color.textSecondary }]}>{t('wallet.moneyTitle')}</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+        <Text style={[text.bodySm, { color: color.textSecondary }]}>{t('wallet.moneyAvailable')}</Text>
+        <Text style={[text.headline, styles.tabular, { color: color.textPrimary }]}>
+          {formatAmd(balance.available)}
+        </Text>
+      </View>
+      {Number(balance.reserved) > 0 ? (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+          <Text style={[text.bodySm, { color: color.textSecondary }]}>{t('wallet.moneyReserved')}</Text>
+          <Text style={[text.bodySm, styles.tabular, { color: color.reservedText }]}>
+            {formatAmd(balance.reserved)}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}

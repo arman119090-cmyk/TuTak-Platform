@@ -12,8 +12,9 @@ import { Screen } from '../../components/Screen';
 import { Button } from '../../components/Button';
 import { DemoOnly } from '../../components/DemoOnly';
 import { JakoWingMark } from '../../components/V2NavIcon';
-import { parseBranchQrToken, parsePartnerPayQr } from '../../utils/partnerPayQr';
+import { parseBranchQrToken, parsePartnerPayQr, parseCheckoutToken } from '../../utils/partnerPayQr';
 import { partnerBranchQrApi } from '../../../data/api/partnerBranchQrApi';
+import { partnerCheckoutApi } from '../../../data/api/partnerCheckoutApi';
 
 /**
  * NEXT_CLAUDE_TASK.md requirement 1: scanning a partner's payment code opens
@@ -46,6 +47,33 @@ export function ScanQrScreen() {
     // all — only the server can say what it names, and an unresolvable
     // token (revoked, unknown, or a since-closed branch) is a scan
     // failure, never a fallback to the plain form below.
+    // A till-opened purchase: the gross is the till's, the token is all the
+    // code carries, and only the server can say what it names. An expired
+    // or claimed token is a scan failure, never a fallback to the form.
+    const checkoutToken = parseCheckoutToken(data);
+    if (checkoutToken) {
+      setScanned(true);
+      partnerCheckoutApi
+        .resolve(checkoutToken)
+        .then((resolved) => {
+          navigation.replace('CreatePurchaseIntent', {
+            partnerId: resolved.partnerId,
+            partnerBranchId: resolved.partnerBranchId ?? undefined,
+            partnerName: resolved.partnerDisplayName,
+            checkout: {
+              token: checkoutToken,
+              checkoutId: resolved.checkoutId,
+              grossAmount: resolved.grossAmount,
+            },
+          });
+        })
+        .catch(() => {
+          setScanned(false);
+          setInvalid(true);
+        });
+      return;
+    }
+
     const branchToken = parseBranchQrToken(data);
     if (branchToken) {
       setScanned(true);

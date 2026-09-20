@@ -15,6 +15,7 @@ import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { walletApi } from '../../../data/api/walletApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeleteAccount'>;
 
@@ -79,6 +80,10 @@ export function DeleteAccountScreen({ navigation }: Props) {
   return (
       <Screen title={t('settings.deleteAccount')}>
         <View>
+          {/* An important, irreversible confirmation: the quiet green check,
+              not the warning triangle — the person is being asked to decide,
+              not told something went wrong. */}
+          <JakoHero state="confirm" size="compact" style={{ marginBottom: space[5] }} />
           <View style={styles.heading}>
             <View
               style={[

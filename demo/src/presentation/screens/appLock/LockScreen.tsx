@@ -4,12 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { PinPad } from '../../components/PinPad';
-import { JakoWingMark } from '../../components/V2NavIcon';
 import { useAppLockStore } from '../../../data/stores/appLockStore';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
 import { PIN_LENGTH } from '../../../data/appLock/pinCode';
 import { useBiometricLabel } from './useBiometricLabel';
+import { JakoHero } from '../../components/JakoHero';
 
 /**
  * Shown instead of the private navigator while the lock is `locked`.
@@ -111,7 +111,7 @@ export function LockScreen() {
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: color.background }]}>
       <View style={[styles.top, { paddingHorizontal: space[5], paddingTop: space[8] }]}>
-        <JakoWingMark size={36} color={color.primary} />
+        <JakoHero state="password" size="compact" />
         <Text accessibilityRole="header" style={[text.title, { color: color.textPrimary, marginTop: space[5] }]}>
           {t('appLock.enterTitle')}
         </Text>

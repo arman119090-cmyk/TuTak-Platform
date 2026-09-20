@@ -8,6 +8,7 @@ import { Button } from '../../components/Button';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { formatRate } from './CashbackRateField';
 import type { RootStackParamList } from '../../../app/navigation/types';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PartnerApplicationSent'>;
 
@@ -31,10 +32,11 @@ export function PartnerApplicationSentScreen({ navigation, route }: Props) {
 
   return (
     <Screen title={t('partnerApplication.title')}>
+      <JakoHero state="partner-submitted" style={{ marginTop: space[2] }} />
       <Text
         style={[
           text.titleLg,
-          { color: color.textPrimary, marginTop: space[6], marginBottom: space[3] },
+          { color: color.textPrimary, marginTop: space[5], marginBottom: space[3] },
         ]}
       >
         {t('partnerApplication.sentTitle')}

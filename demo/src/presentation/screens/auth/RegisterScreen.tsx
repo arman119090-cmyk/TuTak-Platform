@@ -14,6 +14,7 @@ import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
@@ -74,6 +75,7 @@ export function RegisterScreen({ navigation }: Props) {
           {/* Every navigator here sets headerShown: false, so this is the
               only way off the screen besides Android's hardware button. */}
           <BackButton />
+          <JakoHero state="phone" style={{ marginBottom: space[4] }} />
           <Text style={[text.titleLg, { color: color.textPrimary }]}>
             {t('auth.createAccount')}
           </Text>

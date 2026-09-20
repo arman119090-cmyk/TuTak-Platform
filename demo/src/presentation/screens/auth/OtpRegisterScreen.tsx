@@ -23,6 +23,7 @@ import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
@@ -301,6 +302,18 @@ export function OtpRegisterScreen({ navigation }: Props) {
         ]}
       >
         <BackButton />
+        <JakoHero
+          state={
+            stage === 'phone'
+              ? 'phone'
+              : stage === 'code'
+                ? 'otp-waiting'
+                : stage === 'password'
+                  ? 'password'
+                  : 'login'
+          }
+          style={{ marginBottom: space[4] }}
+        />
         <Text style={[text.titleLg, { color: color.textPrimary }]}>
           {stage === 'password'
             ? t('auth.createPasswordTitle')

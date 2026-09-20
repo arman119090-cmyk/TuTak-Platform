@@ -20,6 +20,7 @@ import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { formatAmd, formatPoints } from '../../utils/format';
+import { JakoHero } from '../../components/JakoHero';
 
 /**
  * Tracks one intent from creation to a terminal state, polling
@@ -121,15 +122,9 @@ export function PurchaseIntentStatusScreen() {
     return (
       <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
         <View style={[styles.wrap, { padding: layout.screenPaddingX }]}>
-          <View
-            style={[
-              styles.mark,
-              { backgroundColor: color.availableSurface, borderRadius: radius.full },
-            ]}
-          >
-            <Ionicons name="checkmark" size={40} color={color.availableText} />
-          </View>
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
+          {/* Paid: the one place the bright success check belongs. */}
+          <JakoHero state="success" size="compact" />
+          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[5] }]}>
             {t('purchaseIntent.confirmed')}
           </Text>
           <BrandLine brand={intent.partnerBrand} />

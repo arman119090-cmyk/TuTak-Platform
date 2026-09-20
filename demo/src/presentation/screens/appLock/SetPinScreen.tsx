@@ -4,10 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { PinPad } from '../../components/PinPad';
-import { JakoWingMark } from '../../components/V2NavIcon';
 import { useAppLockStore } from '../../../data/stores/appLockStore';
 import { PIN_LENGTH } from '../../../data/appLock/pinCode';
 import { useBiometricLabel } from './useBiometricLabel';
+import { JakoHero } from '../../components/JakoHero';
 
 interface Props {
   /** Called once the code is saved (and the biometric offer, if any, answered). Absent during first setup, where the store's status change is the exit. */
@@ -90,7 +90,7 @@ export function SetPinScreen({ onDone, title }: Props) {
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: color.background }]}>
       <View style={[styles.top, { paddingHorizontal: space[5], paddingTop: space[8] }]}>
-        <JakoWingMark size={36} color={color.primary} />
+        <JakoHero state="password" size="compact" />
         <Text accessibilityRole="header" style={[text.title, { color: color.textPrimary, marginTop: space[5] }]}>
           {confirming ? t('appLock.confirmTitle') : (title ?? t('appLock.setupTitle'))}
         </Text>

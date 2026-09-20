@@ -16,6 +16,7 @@ import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpLogin'>;
 
@@ -98,6 +99,9 @@ export function OtpLoginScreen({ navigation }: Props) {
         ]}
       >
         <BackButton />
+        {/* Phone on its stand while the number is typed; the phone in his
+            claws once the code is on its way. */}
+        <JakoHero state={codeSent ? 'otp-entry' : 'phone'} style={{ marginBottom: space[4] }} />
         <Text style={[text.titleLg, { color: color.textPrimary }]}>
           {t('auth.otpLoginTitle')}
         </Text>

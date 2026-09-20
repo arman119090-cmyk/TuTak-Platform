@@ -15,6 +15,7 @@ import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { JakoHero } from '../../components/JakoHero';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -102,7 +103,9 @@ export function LoginScreen({ navigation }: Props) {
             { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
           ]}
         >
-          {/* The logo appears once, at the top, as the mark — not decoration. */}
+          {/* The logo appears once, at the top, as the mark — not decoration.
+              Jako below it is the welcome: wings open, the one state of the
+              brand set that greets rather than assists. */}
           <Image
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             source={require('../../../../assets/logo-mark.png')}
@@ -110,12 +113,13 @@ export function LoginScreen({ navigation }: Props) {
             resizeMode="contain"
             accessibilityIgnoresInvertColors
           />
+          <JakoHero state="login" style={{ marginTop: space[4] }} />
 
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[7] }]}>
+          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[5] }]}>
             {t('auth.welcomeBack')}
           </Text>
           <Text style={[text.body, { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[6] : space[8] }]}>
-            {t('auth.loginSubtitle')}
+            {t('auth.tagline')}
           </Text>
 
           <TextField

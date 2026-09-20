@@ -19,6 +19,28 @@ import { SWEEPS, SWEEPS_QUEUE } from './sweeps.jobs';
  * and every one of them fails with "no sweep is defined" — noise that survives
  * deploys and outlives the person who renamed it.
  */
+/**
+ * How a sweep that throws is retried before it is declared failed.
+ *
+ * Without this BullMQ's default applied — `attempts: 0`, one try and straight
+ * to failed — and on 19.09.2026 17:32 UTC a 70-second database restart made
+ * `psp.process-callbacks` and `outbox.drain` "fail permanently after 0
+ * attempt(s)" and page as critical. A sweep is idempotent by construction
+ * (every one runs under a distributed lock and re-reads its own state), so
+ * retrying is always safe; what it must not do is give up on a blip. Five
+ * tries with exponential backoff from five seconds cover roughly two and a
+ * half minutes — longer than any restart Railway has shown, shorter than the
+ * next scheduled run of every sweep.
+ */
+export const SWEEP_JOB_OPTS = {
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 5_000 },
+  // A job scheduler produces one job per tick; keep the last few outcomes for
+  // the dashboard and no more, or Redis fills with a year of "completed".
+  removeOnComplete: { count: 20 },
+  removeOnFail: { count: 50 },
+} as const;
+
 @Injectable()
 export class SweepsScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(SweepsScheduler.name);
@@ -52,7 +74,10 @@ export class SweepsScheduler implements OnApplicationBootstrap {
   /** Exposed for tests, and for anyone who needs to re-apply the schedule. */
   async sync(): Promise<void> {
     for (const sweep of SWEEPS) {
-      await this.queue.upsertJobScheduler(sweep.name, sweep.repeat, { name: sweep.name });
+      await this.queue.upsertJobScheduler(sweep.name, sweep.repeat, {
+        name: sweep.name,
+        opts: SWEEP_JOB_OPTS,
+      });
     }
 
     const defined = new Set(SWEEPS.map((sweep) => sweep.name));

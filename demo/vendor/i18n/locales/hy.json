@@ -247,6 +247,10 @@
   "settings": {
     "title": "Կարգավորումներ",
     "language": "Լեզու",
+    "appearance": "Տեսք",
+    "appearanceSystem": "Ինչպես սարքում",
+    "appearanceLight": "Բաց",
+    "appearanceDark": "Մուգ",
     "notifications": "Ծանուցումներ",
     "privacy": "Գաղտնիություն",
     "personalizationTitle": "Անհատականացված առաջարկներ",

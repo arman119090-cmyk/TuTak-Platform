@@ -11,7 +11,7 @@ import { formatDateTime } from '../../utils/format';
 
 export function NotificationsScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, palette } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -90,7 +90,7 @@ export function NotificationsScreen() {
               </View>
             </View>
             {i === items.length - 1 ? null : (
-              <View style={[styles.separator, { backgroundColor: palette.neutral[100] }]} />
+              <View style={[styles.separator, { backgroundColor: color.divider }]} />
             )}
           </Pressable>
         ))

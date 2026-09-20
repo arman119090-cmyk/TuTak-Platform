@@ -574,15 +574,16 @@ export function TileMap({
         />
       ))}
 
-      {/* v1 painted a translucent scrim here to darken OSM's light basemap
-          for a near-black app. The app is light now (see
-          `ThemeProvider.tsx`'s doc comment), so a light basemap needs no
-          darkening — `light-premium.ts`'s `background.base` already made
-          this scrim fully transparent, which is why it is gone rather than
-          retuned: a `View` painting nothing at any opacity was dead code
-          describing behaviour nobody saw. Nothing replaces it — the frame's
-          own border and rounded corners are enough to separate the map from
-          the rest of the screen. */}
+      {/* A scrim over the tiles, coloured by the theme: transparent on the
+          light scheme (`light-premium.ts` sets `background.base` so), a
+          low-opacity ink wash on the dark one (`dark-premium.ts`), where an
+          OSM basemap would otherwise be a bright rectangle in a dark UI.
+          Under the markers and the controls, so those keep full contrast;
+          `pointerEvents="none"` so it never takes a touch. */}
+      <View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { backgroundColor: premium.background.base }]}
+      />
 
       {basemapUnavailable && unavailableLabel ? (
         <View style={styles.unavailable} pointerEvents="none">

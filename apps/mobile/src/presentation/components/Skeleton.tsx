@@ -20,7 +20,7 @@ export function Skeleton({
   height?: number;
   style?: ViewStyle;
 }) {
-  const { palette, radius } = useTheme();
+  const { color, radius } = useTheme();
   const pulse = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function Skeleton({
   return (
     <Animated.View
       style={[
-        { width, height, backgroundColor: palette.neutral[100], borderRadius: radius.sm, opacity: pulse },
+        { width, height, backgroundColor: color.fillSubtle, borderRadius: radius.sm, opacity: pulse },
         style,
       ]}
     />

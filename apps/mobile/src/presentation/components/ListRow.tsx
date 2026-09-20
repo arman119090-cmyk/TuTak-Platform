@@ -38,7 +38,7 @@ export function ListRow({
   onPress,
   last,
 }: Props) {
-  const { color, space, text, palette } = useTheme();
+  const { color, space, text } = useTheme();
 
   const valueColor = {
     default: color.textPrimary,
@@ -54,7 +54,7 @@ export function ListRow({
         {
           paddingVertical: space[4] - 2,
           gap: space[3],
-          backgroundColor: pressed ? palette.neutral[100] : 'transparent',
+          backgroundColor: pressed ? color.fillSubtle : 'transparent',
           marginHorizontal: -space[2],
           paddingHorizontal: space[2],
           borderRadius: space[3],
@@ -91,7 +91,7 @@ export function ListRow({
           <View
             style={[
               styles.separator,
-              { backgroundColor: palette.neutral[100], marginTop: space[4] - 2 },
+              { backgroundColor: color.divider, marginTop: space[4] - 2 },
             ]}
           />
         )}

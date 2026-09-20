@@ -41,7 +41,7 @@ import { UserAvatar } from './UserAvatar';
  */
 export function AvatarControl() {
   const { t } = useTranslation();
-  const { color, space, text, radius, palette } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const user = useAuthStore((s) => s.user);
   const patchUser = useAuthStore((s) => s.patchUser);
   const queryClient = useQueryClient();
@@ -219,7 +219,7 @@ export function AvatarControl() {
           value={user?.showAvatarInReferralList ?? false}
           onValueChange={(next) => consent.mutate(next)}
           disabled={consent.isPending}
-          trackColor={{ true: color.primary, false: palette.neutral[300] }}
+          trackColor={{ true: color.primary, false: color.borderStrong }}
           thumbColor="#FFFFFF"
         />
       </View>

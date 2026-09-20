@@ -44,7 +44,7 @@ export function PinPad({
   error,
   biometricLabel,
 }: Props) {
-  const { color, space, palette, text } = useTheme();
+  const { color, space, text } = useTheme();
   const rows: (string | 'bio' | 'back' | null)[][] = [
     ['1', '2', '3'],
     ['4', '5', '6'],
@@ -65,7 +65,7 @@ export function PinPad({
               style={[
                 styles.dot,
                 {
-                  borderColor: error ? color.dangerFill : filled ? color.primary : palette.neutral[300],
+                  borderColor: error ? color.dangerFill : filled ? color.primary : color.borderStrong,
                   backgroundColor: error ? color.dangerFill : filled ? color.primary : 'transparent',
                 },
               ]}

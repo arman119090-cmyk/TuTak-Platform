@@ -17,7 +17,7 @@ import type { RootStackParamList } from '../../app/navigation/types';
  */
 export function AppLockSettings() {
   const { t } = useTranslation();
-  const { color, space, text, palette } = useTheme();
+  const { color, space, text } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { biometricKind, biometricsEnabled, busy, enableBiometrics, disableBiometrics } = useAppLockStore();
   const label = useBiometricLabel(biometricKind);
@@ -37,7 +37,7 @@ export function AppLockSettings() {
       <ListRow
         title={t('appLock.changeCode')}
         leading={<RowIcon name="keypad-outline" />}
-        trailing={<Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />}
+        trailing={<Ionicons name="chevron-forward" size={18} color={color.borderStrong} />}
         onPress={() => navigation.navigate('ChangePin')}
       />
       {biometricKind || biometricsEnabled ? (
@@ -54,7 +54,7 @@ export function AppLockSettings() {
             value={biometricsEnabled}
             onValueChange={toggle}
             disabled={busy}
-            trackColor={{ true: color.primary, false: palette.neutral[300] }}
+            trackColor={{ true: color.primary, false: color.borderStrong }}
             thumbColor="#FFFFFF"
           />
         </View>

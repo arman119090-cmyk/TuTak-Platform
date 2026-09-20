@@ -4,6 +4,7 @@ export * from './tokens/layout';
 export * from './tokens/motion';
 export * from './tokens/premium';
 export * from './tokens/light-premium';
+export * from './tokens/dark-premium';
 export * from './brand/v2-icons';
 export { buildCssVariables } from './css';
 
@@ -20,6 +21,7 @@ import {
   premiumTextWeights,
 } from './tokens/premium';
 import { lightPremium, lightPremiumBonusStateColors } from './tokens/light-premium';
+import { darkPremium, darkPremiumBonusStateColors, darkSemantic } from './tokens/dark-premium';
 
 /**
  * The heading styles with the dark scheme's weights folded in.
@@ -147,11 +149,41 @@ export const tutakMobileLightTheme = {
   motion: { duration, easing, springConfig },
 } as const;
 
+/**
+ * The phone's dark theme: the same premium product as
+ * `tutakMobileLightTheme` on an ink ground — see `tokens/dark-premium.ts`
+ * for the rules. Offered from Settings → Appearance (light / dark / same as
+ * device) since 20.09.2026, by the owner's decision; the v2 light-only
+ * brief that removed the old toggle is superseded by that decision.
+ *
+ * Not `tutakTheme` above: that is the legacy blue/violet shell, kept only
+ * so its exports stay stable. A customer switching to dark must get TuTak
+ * green in the dark, not a different brand.
+ */
+export const tutakMobileDarkTheme = {
+  mode: 'dark',
+  color: darkSemantic,
+  palette,
+  premium: darkPremium,
+  gradients: darkPremium.gradients,
+  glass: darkPremium.glass,
+  glow: darkPremium.glow,
+  bonusState: darkPremiumBonusStateColors,
+  text: premiumTextStyles,
+  fontFamily,
+  space,
+  radius: premiumRadius,
+  elevation,
+  layout,
+  motion: { duration, easing, springConfig },
+} as const;
+
 // Verified once, here, rather than trusted by convention: if a future edit
-// to either theme drops or retypes a key, this line stops compiling instead
+// to any theme drops or retypes a key, these lines stop compiling instead
 // of a screen quietly reading `undefined` from whichever theme it is not
 // being visually tested against.
 const _themeShapesMatch: TutakTheme = tutakMobileLightTheme;
+const _darkThemeShapeMatches: TutakTheme = tutakMobileDarkTheme;
 
 /**
  * The light scheme, for anything that has to render on white — the

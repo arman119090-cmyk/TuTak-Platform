@@ -60,7 +60,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  */
 export function PartnerDetailScreen() {
   const { t } = useTranslation();
-  const { color, space, text, palette } = useTheme();
+  const { color, space, text } = useTheme();
   const { params } = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   /*
@@ -121,7 +121,7 @@ export function PartnerDetailScreen() {
             gap: space[4],
             borderTopWidth: StyleSheet.hairlineWidth,
             borderBottomWidth: StyleSheet.hairlineWidth,
-            borderColor: palette.neutral[100],
+            borderColor: color.divider,
           },
         ]}
       >

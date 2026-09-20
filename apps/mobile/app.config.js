@@ -376,12 +376,13 @@ module.exports = ({ config }) => ({
   version: '0.1.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
-  // v2 is a light-only release (TUTAK_V2_CLAUDE_READ_FIRST.md: "the v2
-  // customer release is light-only... neither a fresh nor an existing
-  // customer [may] silently land in the legacy dark shell"). 'automatic'
-  // would hand a system-driven scheme to anything the app had not painted
-  // itself, which is exactly the partial-dark outcome that document forbids.
-  userInterfaceStyle: 'light',
+  // Both schemes ship (Settings → Appearance: light / dark / same as
+  // device, owner's decision of 20.09.2026, superseding the v2 light-only
+  // brief). 'automatic' lets the OS report its scheme to the app, which is
+  // what "same as device" reads through `useColorScheme()`; native chrome
+  // the app does not paint (alerts, the keyboard, share sheets) follows the
+  // phone too, so it matches whichever theme the app is showing.
+  userInterfaceStyle: 'automatic',
   scheme: 'tutak',
   splash: {
     image: './assets/splash-icon.png',

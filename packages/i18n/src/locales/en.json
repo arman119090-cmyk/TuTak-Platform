@@ -247,6 +247,10 @@
   "settings": {
     "title": "Settings",
     "language": "Language",
+    "appearance": "Appearance",
+    "appearanceSystem": "Same as device",
+    "appearanceLight": "Light",
+    "appearanceDark": "Dark",
     "notifications": "Notifications",
     "privacy": "Privacy",
     "personalizationTitle": "Personalized recommendations",

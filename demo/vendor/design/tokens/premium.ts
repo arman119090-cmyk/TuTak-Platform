@@ -157,6 +157,9 @@ export const premiumSemantic = {
   // backing — and a panel darker than the card it sits on is invisible at
   // that size. A faint wash of white is what reads as recessed here.
   surfaceSunken: premiumGlass.light,
+  divider: premiumGlass.border,
+  fillSubtle: premiumGlass.light,
+  fillSubtlePressed: premiumGlass.border,
   overlay: 'rgba(0, 0, 0, 0.72)',
 
   // Lines

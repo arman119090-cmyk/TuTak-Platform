@@ -37,7 +37,7 @@ const ICONS: Record<keyof MainTabParamList, V2NavIconName> = {
 
 export function MainTabNavigator() {
   const { t } = useTranslation();
-  const { color, text, layout, palette } = useTheme();
+  const { color, text, layout } = useTheme();
   const insets = useSafeAreaInsets();
   // One rule for both platforms. The bar grows by the live bottom inset —
   // a gesture pill, a Samsung navigation row, an iPhone home indicator —
@@ -55,7 +55,7 @@ export function MainTabNavigator() {
         tabBarActiveTintColor: color.primary,
         // 500, not 400: an inactive tab is a place the customer can go, not
         // a disabled one, and 400 on white read as the latter.
-        tabBarInactiveTintColor: palette.neutral[500],
+        tabBarInactiveTintColor: color.textSecondary,
         // White, edgeless. The hairline that used to run across the top of
         // the bar was one more line under a screen already full of them;
         // the bar is separated from content by tone alone (content scrolls

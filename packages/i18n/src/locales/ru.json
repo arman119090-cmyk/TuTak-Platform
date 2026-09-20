@@ -247,6 +247,10 @@
   "settings": {
     "title": "Настройки",
     "language": "Язык",
+    "appearance": "Оформление",
+    "appearanceSystem": "Как на устройстве",
+    "appearanceLight": "Светлая",
+    "appearanceDark": "Тёмная",
     "notifications": "Уведомления",
     "privacy": "Конфиденциальность",
     "personalizationTitle": "Персональные рекомендации",

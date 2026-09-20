@@ -27,6 +27,22 @@ export class CreatePurchaseIntentDto {
   bonusAmountRequested?: string;
 
   /**
+   * How much of the price to take from the customer's own stored money —
+   * the hybrid model's second TuTak-side component (20.09.2026):
+   *
+   *     grossAmount = bonusAmountRequested + prepaidAmountApplied + externalAmountDue
+   *
+   * Optional and zero by default, so every client built before it existed
+   * keeps working unchanged. Refused outright when
+   * `CUSTOMER_PREPAID_PURCHASE_ENABLED` is off, refused when it exceeds the
+   * available balance, and held atomically with the purchase's creation
+   * when accepted — see `CustomerBalanceService.holdForPurchase`.
+   */
+  @IsNumberString()
+  @IsOptional()
+  prepaidAmountApplied?: string;
+
+  /**
    * How the remainder is paid.
    *
    * Optional, and omitting it means `DIRECT_PARTNER` — the route every

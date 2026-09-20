@@ -1,13 +1,25 @@
 import type {
   CreatePurchaseIntentRequestDto,
+  FundingQuoteDto,
   PurchaseIntentDto,
   PurchaseIntentRefundDto,
+  QuotePurchaseIntentRequestDto,
 } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export const purchaseIntentApi = {
   async create(dto: CreatePurchaseIntentRequestDto) {
     const { data } = await httpClient.post<ApiEnvelope<PurchaseIntentDto>>('/purchase-intents', dto);
+    return data.data;
+  },
+
+  /**
+   * The server's breakdown before a purchase exists — what bonus and
+   * balance cover and what is still due at the till. The app shows these
+   * figures; it never does the arithmetic itself once they arrive.
+   */
+  async quote(dto: QuotePurchaseIntentRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<FundingQuoteDto>>('/purchase-intents/quote', dto);
     return data.data;
   },
 

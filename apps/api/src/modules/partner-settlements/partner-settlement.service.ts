@@ -12,6 +12,7 @@ import {
   Currency,
   LedgerAccountType,
   PartnerSettlementStatus,
+  PurchaseIntentStatus,
   PostingDirection,
   Prisma,
   ReconciliationOutcome,
@@ -88,6 +89,35 @@ export interface PartnerPosition extends UnsettledBreakdown {
   underReview: Decimal;
   paidTotal: Decimal;
   asOf: Date;
+  funding: PartnerFundingBreakdown;
+}
+
+/**
+ * The owner's brief §29 (20.09.2026): where the money in a partner's sales
+ * actually came from, and what each source did to the position. All-time,
+ * confirmed purchases only, net of refunds where a refund reverses the
+ * figure. Every line is either a sum over `PurchaseIntent` rows or a sum of
+ * postings of one ledger kind on the partner's payable — nothing here is a
+ * second arithmetic of the position, which is why `ledgerBalance` is not
+ * derivable from these and is not meant to be.
+ */
+export interface PartnerFundingBreakdown {
+  /** Gross of every confirmed sale. */
+  salesGross: Decimal;
+  /** What the partner took directly at the till or through the provider — never TuTak's money. */
+  receivedDirectly: Decimal;
+  /** Paid from customers' stored balances: TuTak owes this to the partner (`partner.prepaid_funding`, net of refunds). */
+  fundedByPrepaid: Decimal;
+  /** Paid in bonus: TuTak compensates it (`partner.bonus_redemption_compensation`, net of refunds). */
+  fundedByBonus: Decimal;
+  /** The partner's contribution to the pool (`partner.contribution`, net of refunds). Reduces what TuTak owes. */
+  contribution: Decimal;
+  /** Merchandise value refunded across all sales. */
+  refundedGross: Decimal;
+  /** What the partner currently owes TuTak, if the ledger is on that side; zero otherwise. */
+  owedToTuTak: Decimal;
+  /** Transfers the partner made to TuTak that both sides have confirmed. */
+  collectionsConfirmed: Decimal;
 }
 
 /**
@@ -227,7 +257,7 @@ export class PartnerSettlementService {
    * (`partner-position.int-spec.ts` pins it).
    */
   async position(partnerId: string): Promise<PartnerPosition> {
-    const [breakdown, account, settlements] = await Promise.all([
+    const [breakdown, account, settlements, funding] = await Promise.all([
       this.unsettled(partnerId),
       this.prisma.ledgerAccount.findFirst({
         where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
@@ -237,6 +267,7 @@ export class PartnerSettlementService {
         where: { partnerId },
         select: { status: true, netPayableAmount: true },
       }),
+      this.fundingBreakdown(partnerId),
     ]);
 
     const sum = (statuses: PartnerSettlementStatus[]) =>
@@ -257,6 +288,70 @@ export class PartnerSettlementService {
       underReview: sum([PartnerSettlementStatus.REQUIRES_RECONCILIATION]),
       paidTotal: sum([PartnerSettlementStatus.PAID]),
       asOf: new Date(),
+      funding,
+    };
+  }
+
+  private async fundingBreakdown(partnerId: string): Promise<PartnerFundingBreakdown> {
+    const zero = new Decimal(0);
+    const [sales, byKind, account] = await Promise.all([
+      this.prisma.purchaseIntent.aggregate({
+        where: { partnerId, status: PurchaseIntentStatus.CONFIRMED },
+        _sum: {
+          grossAmount: true,
+          ordinaryPaymentRemainder: true,
+          prepaidAmountApplied: true,
+          bonusAmountRequested: true,
+          refundedAmount: true,
+        },
+      }),
+      this.prisma.ledgerPosting.findMany({
+        where: {
+          account: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+          transaction: {
+            kind: {
+              in: [
+                'partner.contribution',
+                'partner.contribution_refund',
+                'partner.bonus_redemption_compensation',
+                'partner.bonus_redemption_compensation_refund',
+                'partner.prepaid_funding',
+                'partner.prepaid_funding_refund',
+                'partner.collection.confirmed',
+              ],
+            },
+          },
+        },
+        select: { amount: true, direction: true, transaction: { select: { kind: true } } },
+      }),
+      this.prisma.ledgerAccount.findFirst({
+        where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+        select: { balance: true },
+      }),
+    ]);
+
+    // Credits positive, debits negative — so a kind and its refund net out.
+    const signed = new Map<string, Decimal>();
+    for (const posting of byKind) {
+      const kind = posting.transaction.kind;
+      const delta = posting.direction === PostingDirection.CREDIT ? posting.amount : posting.amount.negated();
+      signed.set(kind, (signed.get(kind) ?? zero).plus(delta));
+    }
+    const net = (kind: string, refundKind: string) =>
+      (signed.get(kind) ?? zero).plus(signed.get(refundKind) ?? zero);
+
+    const raw = account?.balance ?? zero;
+    return {
+      salesGross: sales._sum.grossAmount ?? zero,
+      receivedDirectly: sales._sum.ordinaryPaymentRemainder ?? zero,
+      fundedByPrepaid: net('partner.prepaid_funding', 'partner.prepaid_funding_refund'),
+      fundedByBonus: net('partner.bonus_redemption_compensation', 'partner.bonus_redemption_compensation_refund'),
+      // Contribution is a debit; shown as the positive amount the partner contributes.
+      contribution: net('partner.contribution', 'partner.contribution_refund').negated(),
+      refundedGross: sales._sum.refundedAmount ?? zero,
+      owedToTuTak: raw.greaterThan(0) ? raw : zero,
+      // A confirmed collection credits the payable (the partner's debt shrinks).
+      collectionsConfirmed: signed.get('partner.collection.confirmed') ?? zero,
     };
   }
 

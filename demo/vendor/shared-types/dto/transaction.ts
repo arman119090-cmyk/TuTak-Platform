@@ -46,6 +46,32 @@ export interface PurchaseIntentRefundDto {
   amount: string;
   /** Bonus given back to the customer's wallet, 4dp. */
   bonusRestored: string;
+  /** Stored money given back to the customer's balance, 4dp. */
+  prepaidRestored: string;
+  /** What the partner owes the customer back in cash/card, 4dp. `0` when nothing was paid at the till. */
+  externalRefundDue: string;
+  /**
+   * Where the cash/card slice stands. A refund is complete for the customer
+   * only when this is `NOT_REQUIRED` or `CONFIRMED`; `PENDING_PARTNER`
+   * means the business has not yet said it handed the money back.
+   */
+  externalRefundStatus: 'NOT_REQUIRED' | 'PENDING_PARTNER' | 'CONFIRMED';
+  externalRefundConfirmedAt: string | null;
+  reason: string;
+  createdAt: string;
+}
+
+/** A refund whose cash slice the business still has to hand back — the till's list. */
+export interface PendingExternalRefundDto {
+  id: string;
+  purchaseIntentId: string;
+  confirmationCode: string | null;
+  purchaseGross: string;
+  amount: string;
+  bonusRestored: string;
+  prepaidRestored: string;
+  externalRefundDue: string;
+  externalRefundStatus: 'PENDING_PARTNER';
   reason: string;
   createdAt: string;
 }

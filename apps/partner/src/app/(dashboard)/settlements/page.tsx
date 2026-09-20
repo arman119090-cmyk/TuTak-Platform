@@ -227,6 +227,61 @@ export default function SettlementsPage() {
         ) : null}
       </div>
 
+      {/*
+        Where the money in the sales came from (brief §29). Cash and card the
+        customer handed over at the till are the business's own and never
+        TuTak's; the balance and bonus components are what TuTak owes for;
+        the contribution reduces it. None of these is a second arithmetic of
+        the total above — they are what the total is made of.
+      */}
+      {position && positionState !== 'error' ? (
+        <section className="space-y-3">
+          <h2 className="text-[15px] font-semibold text-ink">Where your sales were paid from</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatTile label="Sales total" value={money(position.funding.salesGross)} hint="All confirmed sales" />
+            <StatTile
+              label="Received at your till"
+              value={money(position.funding.receivedDirectly)}
+              hint="Cash and card. Yours already — not part of what TuTak owes"
+            />
+            <StatTile
+              label="Paid from TuTak balances"
+              value={money(position.funding.fundedByPrepaid)}
+              tone={Number(position.funding.fundedByPrepaid) > 0 ? 'available' : 'default'}
+              hint="Customers' stored money. TuTak owes you this"
+            />
+            <StatTile
+              label="Paid with bonus"
+              value={money(position.funding.fundedByBonus)}
+              tone={Number(position.funding.fundedByBonus) > 0 ? 'available' : 'default'}
+              hint="Compensated by TuTak"
+            />
+            <StatTile
+              label="Your contribution"
+              value={money(position.funding.contribution)}
+              tone={Number(position.funding.contribution) > 0 ? 'reserved' : 'default'}
+              hint="Under your terms. Reduces what TuTak owes you"
+            />
+            <StatTile label="Refunded" value={money(position.funding.refundedGross)} hint="Merchandise value returned" />
+            {Number(position.funding.owedToTuTak) > 0 ? (
+              <StatTile
+                label="You owe TuTak"
+                value={money(position.funding.owedToTuTak)}
+                tone="reserved"
+                hint="Settled by a transfer you make; TuTak records it"
+              />
+            ) : null}
+            {Number(position.funding.collectionsConfirmed) > 0 ? (
+              <StatTile
+                label="Transfers to TuTak confirmed"
+                value={money(position.funding.collectionsConfirmed)}
+                hint="Both sides have confirmed these"
+              />
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       {position && positionState !== 'error' ? (
         <p className="text-[12px] text-faint">
           Total = not yet in a settlement + in settlements not yet paid

@@ -37,7 +37,14 @@ describe('Money flags off, through the API routes (integration)', () => {
   let jwt: JwtService;
 
   const MERCHANT = '110000110';
-  const FLAGS = ['TUTAK_PSP_ENABLED', 'PSP_REFUNDS_ENABLED', 'CUSTOMER_PREPAID_TOPUP_ENABLED'] as const;
+  const FLAGS = [
+    'TUTAK_PSP_ENABLED',
+    'PSP_REFUNDS_ENABLED',
+    'CUSTOMER_PREPAID_TOPUP_ENABLED',
+    // The hybrid-funding flags (20.09.2026): off in production like the rest.
+    'CUSTOMER_PREPAID_PURCHASE_ENABLED',
+    'PARTNER_POS_PURCHASES_ENABLED',
+  ] as const;
   const CREDS = ['IDRAM_MERCHANT_ID', 'IDRAM_SECRET_KEY', 'IDRAM_FORM_ACTION'] as const;
   const saved: Record<string, string | undefined> = {};
 

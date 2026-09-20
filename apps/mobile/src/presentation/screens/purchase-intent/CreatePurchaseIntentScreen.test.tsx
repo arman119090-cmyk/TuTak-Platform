@@ -5,6 +5,8 @@ import { CreatePurchaseIntentScreen } from './CreatePurchaseIntentScreen';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
+import { balanceApi } from '../../../data/api/balanceApi';
+import { partnerCheckoutApi } from '../../../data/api/partnerCheckoutApi';
 
 /**
  * GitHub issue #28 (HIGH, 2026-08-16): this screen used to trust
@@ -16,7 +18,12 @@ import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
  */
 
 const mockReplace = jest.fn();
-const routeParams: { partnerId: string; partnerBranchId?: string; partnerName?: string } = {
+const routeParams: {
+  partnerId: string;
+  partnerBranchId?: string;
+  partnerName?: string;
+  checkout?: { token: string; checkoutId: string; grossAmount: string };
+} = {
   partnerId: 'partner-1',
   partnerName: 'Unverified Route Placeholder',
 };
@@ -33,7 +40,13 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('../../../data/api/partnersApi', () => ({ partnersApi: { get: jest.fn() } }));
 jest.mock('../../../data/api/walletApi', () => ({ walletApi: { getMyWallet: jest.fn() } }));
-jest.mock('../../../data/api/purchaseIntentApi', () => ({ purchaseIntentApi: { create: jest.fn() } }));
+jest.mock('../../../data/api/purchaseIntentApi', () => ({
+  purchaseIntentApi: { create: jest.fn(), quote: jest.fn() },
+}));
+jest.mock('../../../data/api/balanceApi', () => ({ balanceApi: { getMyBalance: jest.fn() } }));
+jest.mock('../../../data/api/partnerCheckoutApi', () => ({
+  partnerCheckoutApi: { claim: jest.fn() },
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { ThemeProvider } = require('../../../app/theme/ThemeProvider');
@@ -68,7 +81,12 @@ function renderScreen() {
 describe('CreatePurchaseIntentScreen', () => {
   beforeEach(() => {
     mockReplace.mockClear();
+    delete routeParams.checkout;
     (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '0' });
+    // The default deployment: the balance cannot be used, and the screen
+    // says so in words. Suites about the balance override this.
+    (balanceApi.getMyBalance as jest.Mock).mockResolvedValue({ state: 'UNAVAILABLE' });
+    (purchaseIntentApi.quote as jest.Mock).mockRejectedValue(new Error('no quote in this test'));
   });
 
   afterEach(() => {
@@ -207,6 +225,120 @@ describe('CreatePurchaseIntentScreen', () => {
           expect.objectContaining({ grossAmount: '1000', bonusAmountRequested: '400' }),
         ),
       );
+    });
+  });
+
+  /**
+   * The second TuTak-side source (brief §27): money, next to bonus, never
+   * mixed with it, and never drawn as zero when it is unknown or off.
+   */
+  describe('paying from the TuTak balance', () => {
+    beforeEach(() => {
+      (partnersApi.get as jest.Mock).mockResolvedValue(partnerFixture({ maxBonusPaymentPercent: 50 }));
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+    });
+
+    it('says the balance is not available — in words, with no field — when the deployment has it off', async () => {
+      const { findByText, queryByPlaceholderText } = renderScreen();
+      expect(await findByText('purchaseIntent.prepaidUnavailable')).toBeTruthy();
+      // Gross and bonus only: no third field pretending a zero balance.
+      expect(screen.getAllByPlaceholderText('0')).toHaveLength(2);
+      expect(queryByPlaceholderText('purchaseIntent.prepaidAmount')).toBeNull();
+    });
+
+    it('says the balance could not be checked, with a retry, and never shows zero', async () => {
+      (balanceApi.getMyBalance as jest.Mock).mockRejectedValue(new Error('network down'));
+      const { findByText } = renderScreen();
+      expect(await findByText('purchaseIntent.prepaidLoadFailed')).toBeTruthy();
+      expect(screen.queryByText('purchaseIntent.prepaidHint')).toBeNull();
+    });
+
+    it('refuses more balance than the customer has, naming what they have', async () => {
+      (balanceApi.getMyBalance as jest.Mock).mockResolvedValue({
+        state: 'AVAILABLE',
+        balance: { available: '3000', reserved: '0', book: '3000', balance: '3000', currency: 'AMD', purchasesEnabled: true, topUpsEnabled: false },
+      });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.prepaidHint');
+      const [grossField, , prepaidField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '10000');
+      fireEvent.changeText(prepaidField!, '3001');
+      expect(await findByText('purchaseIntent.prepaidOverBalance')).toBeTruthy();
+      expect(screen.queryByText('purchaseIntent.youPay')).toBeNull();
+    });
+
+    it('refuses bonus and balance that together exceed the purchase', async () => {
+      (balanceApi.getMyBalance as jest.Mock).mockResolvedValue({
+        state: 'AVAILABLE',
+        balance: { available: '30000', reserved: '0', book: '30000', balance: '30000', currency: 'AMD', purchasesEnabled: true, topUpsEnabled: false },
+      });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.prepaidHint');
+      const [grossField, bonusField, prepaidField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '10000');
+      fireEvent.changeText(bonusField!, '4000');
+      fireEvent.changeText(prepaidField!, '7000');
+      expect(await findByText('purchaseIntent.componentsOverGross')).toBeTruthy();
+    });
+
+    it('shows the server\'s split — bonus, balance, nothing at the till — and sends all three components', async () => {
+      (balanceApi.getMyBalance as jest.Mock).mockResolvedValue({
+        state: 'AVAILABLE',
+        balance: { available: '50000', reserved: '0', book: '50000', balance: '50000', currency: 'AMD', purchasesEnabled: true, topUpsEnabled: false },
+      });
+      (purchaseIntentApi.quote as jest.Mock).mockResolvedValue({
+        grossAmount: '50000.0000',
+        bonusApplied: '5000.0000',
+        prepaidAmountApplied: '45000.0000',
+        externalAmountDue: '0.0000',
+        paymentRoute: 'DIRECT_PARTNER',
+        availableBonus: '5000.0000',
+        maxBonusAllowed: '25000.0000',
+        prepaid: { state: 'AVAILABLE', availablePrepaidBalance: '50000.0000', reservedPrepaid: '0.0000' },
+        canProceed: true,
+        problems: [],
+      });
+      (purchaseIntentApi.create as jest.Mock).mockResolvedValue({ id: 'pi-1' });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.prepaidHint');
+      const [grossField, bonusField, prepaidField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '50000');
+      fireEvent.changeText(bonusField!, '5000');
+      fireEvent.changeText(prepaidField!, '45000');
+      expect(await findByText('purchaseIntent.fromBalance')).toBeTruthy();
+      expect(await findByText('purchaseIntent.nothingAtTill')).toBeTruthy();
+      fireEvent.press(screen.getByText('purchaseIntent.submit'));
+      await waitFor(() =>
+        expect(purchaseIntentApi.create).toHaveBeenCalledWith(
+          expect.objectContaining({ grossAmount: '50000', bonusAmountRequested: '5000', prepaidAmountApplied: '45000' }),
+        ),
+      );
+    });
+  });
+
+  /** A till-opened purchase (brief §21): the gross is the till's, the funding is the customer's. */
+  describe('claiming a checkout the till opened', () => {
+    it('shows the till\'s amount read-only and claims instead of creating', async () => {
+      routeParams.checkout = { token: 'tok_abcdefghijklmnop', checkoutId: 'chk-1', grossAmount: '50000.0000' };
+      (partnersApi.get as jest.Mock).mockResolvedValue(partnerFixture({ maxBonusPaymentPercent: 50 }));
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+      (partnerCheckoutApi.claim as jest.Mock).mockResolvedValue({ id: 'pi-claimed' });
+      (purchaseIntentApi.create as jest.Mock).mockClear();
+      const { findByText, queryByText } = renderScreen();
+
+      expect(await findByText('purchaseIntent.tillAmount')).toBeTruthy();
+      expect(queryByText('purchaseIntent.grossAmount')).toBeNull();
+      const [bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(bonusField!, '5000');
+      fireEvent.press(screen.getByText('purchaseIntent.submit'));
+      await waitFor(() =>
+        expect(partnerCheckoutApi.claim).toHaveBeenCalledWith(
+          'tok_abcdefghijklmnop',
+          expect.objectContaining({ bonusAmountRequested: '5000' }),
+        ),
+      );
+      expect(purchaseIntentApi.create).not.toHaveBeenCalled();
+      expect(mockReplace).toHaveBeenCalledWith('PurchaseIntentStatus', { intent: { id: 'pi-claimed' } });
     });
   });
 });

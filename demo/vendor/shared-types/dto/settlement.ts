@@ -125,6 +125,24 @@ export interface UnsettledPositionDto extends UnsettledBreakdownDto {
   paidTotal: string;
   /** When these figures were read. */
   asOf: string;
+  /** Where the money in this partner's sales came from — brief §29. */
+  funding: PartnerFundingBreakdownDto;
+}
+
+/**
+ * All-time, confirmed sales, net of refunds. `receivedDirectly` is the
+ * partner's own money (till or provider) and never TuTak's; `fundedByPrepaid`
+ * and `fundedByBonus` are what TuTak owes for; `contribution` reduces it.
+ */
+export interface PartnerFundingBreakdownDto {
+  salesGross: string;
+  receivedDirectly: string;
+  fundedByPrepaid: string;
+  fundedByBonus: string;
+  contribution: string;
+  refundedGross: string;
+  owedToTuTak: string;
+  collectionsConfirmed: string;
 }
 
 /** A statement as a partner reads it: the settlement plus its itemisation. */

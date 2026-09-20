@@ -31,7 +31,11 @@ jest.mock('@/lib/api/refundRequestApi', () => ({
   },
 }));
 jest.mock('@/lib/api/purchaseIntentApi', () => ({
-  purchaseIntentApi: { list: jest.fn() },
+  purchaseIntentApi: {
+    list: jest.fn(),
+    pendingExternalRefunds: jest.fn().mockResolvedValue([]),
+    confirmExternalRefund: jest.fn(),
+  },
 }));
 
 function buildUser(role: Role): AuthenticatedUserDto {
@@ -83,6 +87,7 @@ function purchaseFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIn
     grossAmount: '10000',
     bonusAmountRequested: '0',
     ordinaryPaymentRemainder: '10000',
+    prepaidAmountApplied: '0',
     refundedAmount: '0',
     // Added by the purchase-intent work this screen now sits alongside: the
     // till code (#36), the customer's own cancellation (#35) and who refused

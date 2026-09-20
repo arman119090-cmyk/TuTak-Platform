@@ -30,6 +30,7 @@ import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
 import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
 import { PurchaseIntentsModule } from '../../src/modules/purchase-intents/purchase-intents.module';
+import { PartnerCheckoutModule } from '../../src/modules/partner-checkout/partner-checkout.module';
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
 import { PromosModule } from '../../src/modules/promos/promos.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
@@ -197,6 +198,7 @@ function domainTestingModuleBuilder(
         AdminModule,
         ReferralModule,
         PurchaseIntentsModule,
+        PartnerCheckoutModule,
         NotificationsModule,
         AuthModule,
         SecurityModule,

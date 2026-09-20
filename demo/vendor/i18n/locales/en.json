@@ -106,7 +106,12 @@
     "noWalletBody": "This account has no points wallet. Register with a phone number to start earning.",
     "ledgerFailed": "Your bonus history could not be loaded.",
     "lotsFailed": "Expiring bonuses could not be loaded — this does not mean there are none.",
-    "staleNotice": "Connection lost. Showing the last known balance — it may have changed."
+    "staleNotice": "Connection lost. Showing the last known balance — it may have changed.",
+    "moneyTitle": "TuTak balance",
+    "moneyAvailable": "Available to spend",
+    "moneyReserved": "Held for open purchases",
+    "moneyUnavailable": "Your TuTak balance is not available in this version yet.",
+    "moneyLoadFailed": "Your TuTak balance could not be loaded — this does not mean it is zero."
   },
   "history": {
     "detailTitle": "Operation",
@@ -141,7 +146,11 @@
       "REJECTED": "Declined",
       "EXPIRED": "Expired",
       "CANCELLED": "Cancelled"
-    }
+    },
+    "prepaidRestored": "+{{amount}} back to your TuTak balance",
+    "externalRefundPending": "{{amount}} still to be handed back by the business",
+    "externalRefundConfirmed": "{{amount}} handed back by the business",
+    "prepaidApplied": "Paid from TuTak balance"
   },
   "bonus": {
     "earned": "Earned",
@@ -174,7 +183,8 @@
     "cameraMessage": "TuTak uses your camera only to read QR codes for payments.",
     "allowCamera": "Allow camera",
     "demoSimulateScan": "Simulate a scan (demo)",
-    "invalidCode": "This isn't a TuTak partner code. Ask staff for the payment code and try again."
+    "invalidCode": "This isn't a TuTak partner code. Ask staff for the payment code and try again.",
+    "checkoutInvalid": "This till code is no longer valid. Ask the cashier for a new one."
   },
   "ev": {
     "stations": "Charging stations",
@@ -489,7 +499,23 @@
     "invalidBonus": "Enter the bonus as a number, up to four decimals.",
     "bonusOverGross": "Bonus cannot exceed the purchase amount.",
     "bonusOverLimit": "This partner lets bonus cover at most {{percent}}% of the bill — {{max}} points here.",
-    "bonusOverBalance": "You only have {{amount}} points."
+    "bonusOverBalance": "You only have {{amount}} points.",
+    "prepaidAmount": "Pay from TuTak balance",
+    "prepaidHint": "{{amount}} on your TuTak balance",
+    "prepaidLoading": "Checking your TuTak balance…",
+    "prepaidUnavailable": "Paying from your TuTak balance is not available right now.",
+    "prepaidLoadFailed": "Your TuTak balance could not be checked — this does not mean it is empty.",
+    "prepaidOverBalance": "You only have {{amount}} on your TuTak balance",
+    "invalidPrepaid": "Enter a valid balance amount",
+    "componentsOverGross": "Bonus and balance together cannot exceed the purchase amount",
+    "fromBalance": "From TuTak balance",
+    "atTill": "To pay at the till",
+    "inTutak": "To pay in TuTak",
+    "nothingAtTill": "Nothing to pay at the till — covered by TuTak once the cashier confirms",
+    "paidViaTutak": "Paid through TuTak — nothing was due at the till",
+    "tillAmount": "Amount from the till",
+    "tillAmountHint": "The business entered this amount. You choose only how to pay it.",
+    "claimFailed": "Could not take this purchase"
   },
   "psp": {
     "readyToPay": "Pay for this purchase inside TuTak.",

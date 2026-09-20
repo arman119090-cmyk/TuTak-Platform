@@ -102,6 +102,16 @@ function positionFixture(overrides: Partial<UnsettledPositionDto> = {}): Unsettl
     underReview: '0.0000',
     paidTotal: '18500.0000',
     asOf: '2026-09-20T12:00:00.000Z',
+    funding: {
+      salesGross: '120000.0000',
+      receivedDirectly: '95000.0000',
+      fundedByPrepaid: '20000.0000',
+      fundedByBonus: '5000.0000',
+      contribution: '6000.0000',
+      refundedGross: '0.0000',
+      owedToTuTak: '0.0000',
+      collectionsConfirmed: '0.0000',
+    },
     ...overrides,
   };
 }
@@ -152,6 +162,15 @@ describe('SettlementsPage', () => {
     activeClient?.clear();
     activeClient = undefined;
     jest.clearAllMocks();
+  });
+
+  it('tells the owner where the sales were paid from, and keeps till money out of what TuTak owes', async () => {
+    renderPage();
+    expect(await screen.findByText('Where your sales were paid from')).toBeTruthy();
+    expect(screen.getByText('Received at your till')).toBeTruthy();
+    expect(screen.getByText('Paid from TuTak balances')).toBeTruthy();
+    expect(screen.getByText('95,000.00')).toBeTruthy();
+    expect(screen.getByText('20,000.00')).toBeTruthy();
   });
 
   it('shows what is accruing before anybody has drafted a settlement', async () => {

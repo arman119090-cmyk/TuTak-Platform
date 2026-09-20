@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { LedgerModule } from '../ledger/ledger.module';
 import { CustomerBalanceController } from './customer-balance.controller';
+import { CustomerBalanceTopUpController } from './customer-balance-topup.controller';
 import { CustomerBalanceService } from './customer-balance.service';
 import { BANK_TOPUP_ADAPTER } from './bank-topup-adapter.interface';
 import { NoopBankTopUpAdapter } from './noop-bank-topup.adapter';
@@ -40,7 +41,9 @@ const topUpEnabled = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED === 'true';
 
 @Module({
   imports: [LedgerModule],
-  controllers: topUpEnabled ? [CustomerBalanceController] : [],
+  // The read controller is always present and gates itself per request —
+  // see its own docblock. Only the paying-in surface is absent when off.
+  controllers: [CustomerBalanceController, ...(topUpEnabled ? [CustomerBalanceTopUpController] : [])],
   providers: [CustomerBalanceService, { provide: BANK_TOPUP_ADAPTER, useClass: NoopBankTopUpAdapter }],
   exports: [CustomerBalanceService],
 })

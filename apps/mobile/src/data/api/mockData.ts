@@ -89,6 +89,8 @@ export function mockTokens() {
  * something being looked at rather than used.
  */
 export interface MockState {
+  /** The stored money balance (hybrid funding). Money, not points — kept apart from `wallet`. */
+  prepaidAvailable: string;
   wallet: {
     id: string;
     userId: string;
@@ -194,6 +196,7 @@ function ledgerEntry(
 export function freshMockState(): MockState {
   return {
     user: { ...MOCK_USER },
+    prepaidAvailable: '25000.0000',
     wallet: {
       id: WALLET_ID,
       userId: MOCK_USER.id,

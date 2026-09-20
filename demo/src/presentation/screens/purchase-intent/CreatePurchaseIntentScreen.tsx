@@ -12,11 +12,14 @@ import { Button } from '../../components/Button';
 import { TextField } from '../../components/TextField';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
+import { partnerCheckoutApi } from '../../../data/api/partnerCheckoutApi';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
+import { balanceApi } from '../../../data/api/balanceApi';
 import { describeApiError } from '../../../data/api/errors';
 import { formatAmd, formatPoints } from '../../utils/format';
 import {
+  add,
   compare,
   moneyToString,
   parseMoney,
@@ -49,10 +52,14 @@ export function CreatePurchaseIntentScreen() {
   const { color, space, text } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CreatePurchaseIntent'>>();
-  const { partnerId, partnerBranchId, partnerName } = route.params;
+  const { partnerId, partnerBranchId, partnerName, checkout } = route.params;
 
-  const [grossAmount, setGrossAmount] = useState('');
+  // A till-opened purchase arrives with its gross already stated by the
+  // business; the customer chooses only the funding. Everything else on
+  // this screen is the same, which is the point (brief §40).
+  const [grossAmount, setGrossAmount] = useState(checkout?.grossAmount ?? '');
   const [bonusAmount, setBonusAmount] = useState('');
+  const [prepaidAmount, setPrepaidAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -75,14 +82,39 @@ export function CreatePurchaseIntentScreen() {
     ? parseMoney(walletQuery.data.availableBonus)
     : null;
 
+  /*
+   * Money and bonus are two balances, never one number (§27). The stored
+   * balance is a fact from the server, "not available on this deployment"
+   * (also a fact, worded as one), or unknown while the request is in
+   * flight or failed — and unknown is never drawn as zero.
+   */
+  const balanceQuery = useQuery({ queryKey: ['customer-balance'], queryFn: balanceApi.getMyBalance });
+  const prepaidState: 'available' | 'unavailable' | 'loading' | 'error' = balanceQuery.data
+    ? balanceQuery.data.state === 'AVAILABLE' && balanceQuery.data.balance.purchasesEnabled
+      ? 'available'
+      : 'unavailable'
+    : balanceQuery.isError
+      ? 'error'
+      : 'loading';
+  const availablePrepaid: Money | null =
+    balanceQuery.data?.state === 'AVAILABLE' && balanceQuery.data.balance.purchasesEnabled
+      ? parseMoney(balanceQuery.data.balance.available)
+      : null;
+
   const create = useMutation({
     mutationFn: () =>
-      purchaseIntentApi.create({
-        partnerId,
-        partnerBranchId,
-        grossAmount,
-        bonusAmountRequested: bonusAmount || undefined,
-      }),
+      checkout
+        ? partnerCheckoutApi.claim(checkout.token, {
+            bonusAmountRequested: bonusAmount || undefined,
+            prepaidAmountApplied: prepaidAmount || undefined,
+          })
+        : purchaseIntentApi.create({
+            partnerId,
+            partnerBranchId,
+            grossAmount,
+            bonusAmountRequested: bonusAmount || undefined,
+            prepaidAmountApplied: prepaidAmount || undefined,
+          }),
     onSuccess: (intent) => {
       navigation.replace('PurchaseIntentStatus', { intent });
     },
@@ -90,7 +122,10 @@ export function CreatePurchaseIntentScreen() {
       // The server explains exactly why — over max_bonus_payment_percent,
       // not a number, exceeds the wallet balance — and that reason is worth
       // more to the customer than a generic failure message.
-      setError(describeApiError(err) ?? t('purchaseIntent.createFailed'));
+      setError(
+        describeApiError(err) ??
+          t(checkout ? 'purchaseIntent.claimFailed' : 'purchaseIntent.createFailed'),
+      );
     },
   });
 
@@ -109,26 +144,64 @@ export function CreatePurchaseIntentScreen() {
     gross !== null && Number.isInteger(partner?.maxBonusPaymentPercent)
       ? percentOfFloor(gross, partner!.maxBonusPaymentPercent)
       : null;
+  const prepaid: Money | null = prepaidAmount.trim() === '' ? 0n : parseMoney(prepaidAmount);
   const validation: string | null = (() => {
     if (grossAmount !== '' && !grossValid) return t('purchaseIntent.invalidAmount');
     if (bonus === null) return t('purchaseIntent.invalidBonus');
-    if (gross === null || bonus === 0n) return null;
-    if (compare(bonus, gross) > 0) return t('purchaseIntent.bonusOverGross');
-    if (bonusCeiling !== null && compare(bonus, bonusCeiling) > 0) {
-      return t('purchaseIntent.bonusOverLimit', {
-        percent: partner?.maxBonusPaymentPercent,
-        max: formatPoints(moneyToString(bonusCeiling)),
-      });
+    if (prepaid === null) return t('purchaseIntent.invalidPrepaid');
+    if (gross === null) return null;
+    if (bonus !== 0n) {
+      if (compare(bonus, gross) > 0) return t('purchaseIntent.bonusOverGross');
+      if (bonusCeiling !== null && compare(bonus, bonusCeiling) > 0) {
+        return t('purchaseIntent.bonusOverLimit', {
+          percent: partner?.maxBonusPaymentPercent,
+          max: formatPoints(moneyToString(bonusCeiling)),
+        });
+      }
+      if (availableBonus !== null && compare(bonus, availableBonus) > 0) {
+        return t('purchaseIntent.bonusOverBalance', {
+          amount: formatPoints(moneyToString(availableBonus)),
+        });
+      }
     }
-    if (availableBonus !== null && compare(bonus, availableBonus) > 0) {
-      return t('purchaseIntent.bonusOverBalance', {
-        amount: formatPoints(moneyToString(availableBonus)),
-      });
+    if (prepaid !== 0n) {
+      if (prepaidState === 'unavailable') return t('purchaseIntent.prepaidUnavailable');
+      if (availablePrepaid !== null && compare(prepaid, availablePrepaid) > 0) {
+        return t('purchaseIntent.prepaidOverBalance', {
+          amount: formatAmd(moneyToString(availablePrepaid)),
+        });
+      }
     }
+    if (compare(add(bonus, prepaid), gross) > 0) return t('purchaseIntent.componentsOverGross');
     return null;
   })();
-  const canSubmit = grossValid && bonus !== null && validation === null;
-  const youPay = gross !== null && bonus !== null ? subtract(gross, bonus) : null;
+  const canSubmit = grossValid && bonus !== null && prepaid !== null && validation === null;
+  const localRemainder =
+    gross !== null && bonus !== null && prepaid !== null ? subtract(subtract(gross, bonus), prepaid) : null;
+
+  /*
+   * The server's own breakdown for exactly these inputs (§2). The local
+   * arithmetic above decides whether the button is on; the figure the
+   * customer commits to is the server's when it has answered, and the same
+   * local figure — computed by the same rule — until then.
+   */
+  const quoteQuery = useQuery({
+    queryKey: ['purchase-quote', partnerId, grossAmount, bonusAmount, prepaidAmount],
+    queryFn: () =>
+      purchaseIntentApi.quote({
+        partnerId,
+        partnerBranchId,
+        grossAmount,
+        bonusAmountRequested: bonusAmount || undefined,
+        prepaidAmountApplied: prepaidAmount || undefined,
+      }),
+    enabled: canSubmit,
+    staleTime: 10_000,
+  });
+  const youPay: Money | null =
+    quoteQuery.data && quoteQuery.data.canProceed
+      ? parseMoney(quoteQuery.data.externalAmountDue)
+      : localRemainder;
 
   if (partnerLoading) {
     return (
@@ -219,13 +292,30 @@ export function CreatePurchaseIntentScreen() {
         </View>
       </View>
 
-      <TextField
-        label={t('purchaseIntent.grossAmount')}
-        keyboardType="decimal-pad"
-        value={grossAmount}
-        onChangeText={setGrossAmount}
-        placeholder="0"
-      />
+      {checkout ? (
+        // The business stated the amount at its till. Shown, not editable:
+        // a customer cannot lower a till's figure, and the server would
+        // refuse anything but the till's own number anyway.
+        <View style={{ marginBottom: space[4] }}>
+          <Text style={[text.caption, { color: color.textSecondary }]}>
+            {t('purchaseIntent.tillAmount')}
+          </Text>
+          <Text style={[text.headline, { color: color.textPrimary, marginTop: space[1] }]}>
+            {formatAmd(checkout.grossAmount)}
+          </Text>
+          <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>
+            {t('purchaseIntent.tillAmountHint')}
+          </Text>
+        </View>
+      ) : (
+        <TextField
+          label={t('purchaseIntent.grossAmount')}
+          keyboardType="decimal-pad"
+          value={grossAmount}
+          onChangeText={setGrossAmount}
+          placeholder="0"
+        />
+      )}
 
       <TextField
         label={t('purchaseIntent.bonusAmount')}
@@ -253,6 +343,44 @@ export function CreatePurchaseIntentScreen() {
         </Text>
       ) : null}
 
+      {/*
+        The second TuTak-side source (§27). Shown as "not available" — in
+        words — when this deployment does not let a purchase draw on the
+        balance; never hidden, never a zero. While the balance is unknown the
+        field stays, with a hint saying so, because unknown is not empty.
+      */}
+      {prepaidState === 'unavailable' ? (
+        <Text style={[text.caption, { color: color.textSecondary, marginTop: space[3] }]}>
+          {t('purchaseIntent.prepaidUnavailable')}
+        </Text>
+      ) : (
+        <TextField
+          label={t('purchaseIntent.prepaidAmount')}
+          keyboardType="decimal-pad"
+          value={prepaidAmount}
+          onChangeText={setPrepaidAmount}
+          placeholder="0"
+          hint={
+            availablePrepaid !== null
+              ? t('purchaseIntent.prepaidHint', { amount: formatAmd(moneyToString(availablePrepaid)) })
+              : prepaidState === 'error'
+                ? t('purchaseIntent.prepaidLoadFailed')
+                : t('purchaseIntent.prepaidLoading')
+          }
+        />
+      )}
+      {prepaidState === 'error' ? (
+        <Text
+          accessibilityRole="button"
+          onPress={() => {
+            void balanceQuery.refetch();
+          }}
+          style={[text.bodySm, { color: color.primary, marginTop: space[1] }]}
+        >
+          {t('common.retry')}
+        </Text>
+      ) : null}
+
       {validation ? (
         <Text
           accessibilityRole="alert"
@@ -267,7 +395,25 @@ export function CreatePurchaseIntentScreen() {
       ) : null}
 
       {canSubmit && youPay !== null ? (
-        <View style={{ marginTop: space[4] }}>
+        <View style={{ marginTop: space[4], gap: space[2] }}>
+          {bonus !== null && bonus > 0n ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={[text.bodySm, { color: color.textSecondary }]}>{t('qr.applyBonus')}</Text>
+              <Text style={[text.bodySm, { color: color.reservedText }]}>
+                −{formatPoints(moneyToString(bonus))}
+              </Text>
+            </View>
+          ) : null}
+          {prepaid !== null && prepaid > 0n ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={[text.bodySm, { color: color.textSecondary }]}>
+                {t('purchaseIntent.fromBalance')}
+              </Text>
+              <Text style={[text.bodySm, { color: color.reservedText }]}>
+                −{formatAmd(moneyToString(prepaid))}
+              </Text>
+            </View>
+          ) : null}
           <View
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
@@ -278,6 +424,11 @@ export function CreatePurchaseIntentScreen() {
               {formatAmd(moneyToString(youPay))}
             </Text>
           </View>
+          {youPay === 0n ? (
+            <Text style={[text.caption, { color: color.textSecondary }]}>
+              {t('purchaseIntent.nothingAtTill')}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 

@@ -1,44 +1,44 @@
-import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
+import { Controller, Get, NotFoundException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Public } from '../../common/decorators/public.decorator';
 import { RequestUser } from '../auth/types/request-user.type';
-import { InitiateTopUpDto } from './dto/initiate-topup.dto';
 import { CustomerBalanceService } from './customer-balance.service';
 
+/**
+ * The read side of a customer's stored money.
+ *
+ * Always registered, unlike the top-up controller, and gated per request:
+ * a deployment where the balance can be used for nothing — neither funded
+ * nor spent on a purchase, which is production today — answers 404, so
+ * there is still no balance surface to find. Per request rather than at
+ * module load because `@Module()` metadata is read when the file is
+ * imported, before any test or deployment gets to decide the flags, and a
+ * read route whose existence depends on import order is not a route
+ * anybody can reason about.
+ */
 @ApiTags('customer-balance')
 @ApiBearerAuth()
 @Controller('balance')
 export class CustomerBalanceController {
   constructor(private readonly balance: CustomerBalanceService) {}
 
-  @Get('me')
-  getMyBalance(@CurrentUser() user: RequestUser) {
-    return this.balance.getBalance(user.id);
-  }
-
-  @Post('topup')
-  initiateTopUp(@CurrentUser() user: RequestUser, @Body() dto: InitiateTopUpDto) {
-    return this.balance.initiateTopUp(user.id, dto.amount, dto.idempotencyKey);
-  }
-
   /**
-   * The provider-facing half of the top-up flow — the bank calls this, not
-   * a logged-in customer, so it is `@Public()` (no TuTak session) exactly
-   * like `RoamingCpoController`'s own M2M routes. Unlike those, this one
-   * has no API-key guard in front of it: verification is the configured
-   * `BankTopUpAdapter`'s own job (`verifyTopUpWebhook`), because a real
-   * bank's signature scheme is provider-specific in a way an API key isn't
-   * — the No-op adapter always returns null here, so this route does
-   * nothing at all until a real adapter is wired in.
+   * Available, reserved, book — and which of the two capabilities this
+   * deployment has switched on, so the app renders "top up" only where a
+   * top-up can happen and never shows an unavailable balance as zero.
    */
-  @Post('topup/webhook')
-  @Public()
-  async topUpWebhook(
-    @Body() body: Record<string, unknown>,
-    @Headers() headers: Record<string, string | string[] | undefined>,
-  ) {
-    await this.balance.confirmTopUpWebhook(body, headers);
-    return { received: true };
+  @Get('me')
+  async getMyBalance(@CurrentUser() user: RequestUser) {
+    if (!this.balance.purchasesEnabled() && !this.balance.topUpsEnabled()) {
+      throw new NotFoundException();
+    }
+    const detail = await this.balance.getBalanceDetail(user.id);
+    return {
+      ...detail,
+      // Kept for every client that read the old single-number shape.
+      balance: detail.available,
+      purchasesEnabled: this.balance.purchasesEnabled(),
+      topUpsEnabled: this.balance.topUpsEnabled(),
+    };
   }
 }

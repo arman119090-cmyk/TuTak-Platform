@@ -1,12 +1,16 @@
 import {
   EvConnectorType,
+  LedgerAccountType,
   Partner,
+  PostingDirection,
   PrismaClient,
   QrCodeType,
   User,
   Wallet,
 } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { randomUUID } from 'node:crypto';
+import type { LedgerService } from '../../src/modules/ledger/ledger.service';
 
 /**
  * Minimal, explicit fixtures. Each builder creates only what the row needs so
@@ -210,4 +214,46 @@ export async function linkRoamingCpoCustomer(
       verifiedAt: params.verified === false ? null : new Date(),
     },
   });
+}
+
+/**
+ * Gives a customer stored money, the way a completed top-up would — the
+ * exact posting `CustomerBalanceService.confirmTopUpWebhook` writes (DEBIT
+ * `PSP_RECEIVABLE` / CREDIT `CUSTOMER_PREPAID_BALANCE`), without a bank
+ * adapter in the loop. Suites about the funding *split* use this; the
+ * top-up mechanism itself has its own suite.
+ */
+export async function fundPrepaidBalance(
+  ledger: LedgerService,
+  userId: string,
+  amount: string,
+): Promise<void> {
+  const [psp, balance] = await Promise.all([
+    ledger.accountFor({ type: LedgerAccountType.PSP_RECEIVABLE }),
+    ledger.accountFor({ type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId }),
+  ]);
+  const value = new Decimal(amount);
+  // Both halves of a real top-up: the row *and* the posting. Reconciliation
+  // check A compares the two, so a fixture that wrote only one would be a
+  // planted discrepancy.
+  const prisma = (ledger as unknown as { prisma: PrismaClient }).prisma;
+  const topUp = await prisma.balanceTopUp.create({
+    data: {
+      userId,
+      amount: value,
+      status: 'COMPLETED',
+      providerReference: `fixture-${randomUUID()}`,
+      resolvedAt: new Date(),
+    },
+  });
+  const posted = await ledger.post({
+    kind: 'balance.topup.completed',
+    sourceType: 'BalanceTopUp',
+    sourceId: topUp.id,
+    postings: [
+      { accountId: psp.id, direction: PostingDirection.DEBIT, amount: value },
+      { accountId: balance.id, direction: PostingDirection.CREDIT, amount: value },
+    ],
+  });
+  await prisma.balanceTopUp.update({ where: { id: topUp.id }, data: { ledgerTransactionId: posted.id } });
 }

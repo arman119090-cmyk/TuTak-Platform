@@ -35,6 +35,13 @@ export const SETTLEABLE_LEDGER_KINDS: ReadonlySet<string> = new Set([
   'partner.contribution_refund',
   'partner.bonus_redemption_compensation',
   'partner.bonus_redemption_compensation_refund',
+  // The prepaid funding component (20.09.2026): the customer's own stored
+  // money that a confirmed purchase turned into money TuTak owes the
+  // partner, and the reversal a refund writes. Settleable for the same
+  // reason the bonus compensation is — the partner delivered goods and is
+  // owed for them by TuTak, not by the customer.
+  'partner.prepaid_funding',
+  'partner.prepaid_funding_refund',
   'qr.redeemed.mirror',
   // EV charging the partner hosts.
   'ev.charging.contribution',

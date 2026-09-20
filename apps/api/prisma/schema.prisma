@@ -213,6 +213,7 @@ model User {
   challengesReferred        ReferralChallengeParticipant[] @relation("ChallengeReferrer")
   challengeParticipation    ReferralChallengeParticipant?  @relation("ChallengeReferee")
   purchaseIntentsAsCustomer PurchaseIntent[]               @relation("PurchaseIntentCustomer")
+  claimedCheckouts          PartnerCheckout[]              @relation("PartnerCheckoutClaimedBy")
   purchaseIntentsConfirmed  PurchaseIntent[]               @relation("PurchaseIntentConfirmedBy")
   purchaseIntentsRejected   PurchaseIntent[]               @relation("PurchaseIntentRejectedBy")
   refundRequestsMade        PurchaseIntentRefundRequest[]  @relation("RefundRequestRequestedBy")
@@ -811,11 +812,16 @@ model PurchaseIntent {
   /// For an integrated POS or pump this is where an authoritative integration
   /// event will sit instead. `PartnerIntegration` exists as a registry with
   /// no event path yet, so that is deliberately not built.
-  merchantApprovedByUserId String?
-  merchantApprovedAt       DateTime?
+  merchantApprovedByUserId   String?
+  /// The till's credential, when the merchant approval came from the
+  /// partner's own POS integration rather than a person (20.09.2026, brief
+  /// §20). Exactly one of this and `merchantApprovedByUserId` is set with
+  /// `merchantApprovedAt` — `purchase_intents_merchant_approval_is_complete`.
+  merchantApprovedByApiKeyId String?
+  merchantApprovedAt         DateTime?
   /// What the member of staff actually keyed in to confirm the line item,
   /// kept as evidence that they saw it rather than clicked past it.
-  merchantApprovalNote     String?
+  merchantApprovalNote       String?
 
   /// The commercial terms this purchase was priced under, named exactly.
   ///
@@ -945,16 +951,18 @@ model PurchaseIntent {
 
   brandLogoAsset MediaAsset? @relation("PurchaseIntentBrandLogo", fields: [brandLogoAssetId], references: [id])
 
-  customer           User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
-  partner            Partner                       @relation(fields: [partnerId], references: [id])
-  contributionRule   PartnerContributionRule?      @relation(fields: [contributionRuleId], references: [id])
-  branch             PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
-  confirmedBy        User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
-  rejectedBy         User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
-  prepaidHold        LedgerTransaction?            @relation("PurchaseIntentPrepaidHold", fields: [prepaidHoldTransactionId], references: [id])
-  refunds            PurchaseIntentRefund[]
-  refundRequests     PurchaseIntentRefundRequest[]
-  pspPaymentAttempts PspPaymentAttempt[]
+  customer                 User                          @relation("PurchaseIntentCustomer", fields: [customerId], references: [id])
+  partner                  Partner                       @relation(fields: [partnerId], references: [id])
+  contributionRule         PartnerContributionRule?      @relation(fields: [contributionRuleId], references: [id])
+  branch                   PartnerBranch?                @relation(fields: [partnerBranchId], references: [id])
+  confirmedBy              User?                         @relation("PurchaseIntentConfirmedBy", fields: [confirmedByUserId], references: [id])
+  rejectedBy               User?                         @relation("PurchaseIntentRejectedBy", fields: [rejectedByUserId], references: [id])
+  prepaidHold              LedgerTransaction?            @relation("PurchaseIntentPrepaidHold", fields: [prepaidHoldTransactionId], references: [id])
+  merchantApprovedByApiKey PartnerApiKey?                @relation("PurchaseIntentApprovedByApiKey", fields: [merchantApprovedByApiKeyId], references: [id])
+  checkout                 PartnerCheckout?
+  refunds                  PurchaseIntentRefund[]
+  refundRequests           PurchaseIntentRefundRequest[]
+  pspPaymentAttempts       PspPaymentAttempt[]
 
   @@index([partnerId, status])
   @@index([status, expiresAt])
@@ -1242,6 +1250,7 @@ model Partner {
   branches               PartnerBranch[]
   branchStaffAssignments PartnerBranchStaffAssignment[]
   branchQrCodes          PartnerBranchQrCode[]
+  checkouts              PartnerCheckout[]
   integrations           PartnerIntegration[]
   transactions           Transaction[]
   qrCodes                QrCode[]
@@ -1390,6 +1399,71 @@ model PartnerIntegration {
   @@map("partner_integrations")
 }
 
+/// Where a till-opened purchase stands, before and after a customer claims it.
+/// After `CLAIMED` the linked `PurchaseIntent` is the truth; this row only
+/// says which purchase the till's receipt became.
+enum PartnerCheckoutStatus {
+  OPEN
+  CLAIMED
+  CANCELLED
+  EXPIRED
+}
+
+/// A purchase the partner's till (POS) opened, waiting for a customer to
+/// claim it by scanning a dynamic QR — the owner's brief §20–21 (20.09.2026).
+///
+/// The point of the row: the *amount is partner-originated*. On the QR path
+/// the customer types the gross and the cashier approves it; here the till
+/// states it, under the partner's own M2M credential, and the customer only
+/// chooses how to fund it. Everything after the claim is the same
+/// `PurchaseIntent` engine, the same funding split, the same postings — a
+/// checkout never produces different economics from a scan (§40, proved by
+/// `partner-checkout.int-spec.ts`).
+///
+/// `token` is the only thing in the QR. Opaque, 24 random bytes, single-use,
+/// and worth nothing after `expiresAt` — exactly like `PartnerBranchQrCode
+/// .token`, but per purchase rather than per branch.
+///
+/// `externalReference` is the till's own receipt/order id, unique per
+/// partner: a POS that retries a lost response cannot open the same sale
+/// twice. `idempotencyKey` is the same idea for a client that has one.
+model PartnerCheckout {
+  id                String                @id @default(uuid())
+  partnerId         String
+  partnerBranchId   String?
+  /// Which credential opened it — the till, by key, for the audit trail.
+  apiKeyId          String
+  externalReference String
+  idempotencyKey    String?
+  status            PartnerCheckoutStatus @default(OPEN)
+  grossAmount       Decimal               @db.Decimal(18, 4)
+  quantity          Decimal?              @db.Decimal(18, 4)
+  quantityUnit      UnitOfMeasure?
+  unitPrice         Decimal?              @db.Decimal(18, 4)
+  /// The till's own clock for the sale, kept separately from `createdAt`.
+  occurredAt        DateTime
+  token             String                @unique
+  expiresAt         DateTime
+  purchaseIntentId  String?               @unique
+  claimedByUserId   String?
+  claimedAt         DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  partner        Partner         @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  branch         PartnerBranch?  @relation(fields: [partnerBranchId], references: [id])
+  apiKey         PartnerApiKey   @relation(fields: [apiKeyId], references: [id])
+  purchaseIntent PurchaseIntent? @relation(fields: [purchaseIntentId], references: [id])
+  claimedBy      User?           @relation("PartnerCheckoutClaimedBy", fields: [claimedByUserId], references: [id])
+
+  @@unique([partnerId, externalReference])
+  @@unique([partnerId, idempotencyKey])
+  @@index([partnerId, status])
+  @@index([status, expiresAt])
+  @@map("partner_checkouts")
+}
+
 /// One machine-to-machine credential for a `PartnerIntegration` — the "not a
 /// human login/password" M2M mechanism requirement 3 of
 /// docs/ROAMING_CPO_INTEGRATION_2026-08-25.md asks for, built on top of the
@@ -1413,8 +1487,10 @@ model PartnerApiKey {
   lastUsedAt    DateTime?
   createdAt     DateTime  @default(now())
 
-  partner     Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  integration PartnerIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  partner           Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  integration       PartnerIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  checkouts         PartnerCheckout[]
+  approvedPurchases PurchaseIntent[]    @relation("PurchaseIntentApprovedByApiKey")
 
   @@index([partnerId])
   @@map("partner_api_keys")
@@ -1511,6 +1587,7 @@ model PartnerBranch {
   partner          Partner                        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   integrations     PartnerIntegration[]
   purchaseIntents  PurchaseIntent[]
+  checkouts        PartnerCheckout[]
   refundRequests   PurchaseIntentRefundRequest[]
   staffAssignments PartnerBranchStaffAssignment[]
   qrCodes          PartnerBranchQrCode[]

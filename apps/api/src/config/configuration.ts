@@ -343,6 +343,14 @@ export interface AppConfig {
     topUpStaleAfterMs: number;
     topUpEscalateEveryMs: number;
   };
+  /**
+   * A till-opened checkout waits for a scan, not for a cashier, so it may
+   * live longer than a purchase intent's three minutes — but not for ever:
+   * a dynamic QR left on a screen must stop being claimable.
+   */
+  partnerCheckout: {
+    ttlSeconds: number;
+  };
   psp: {
     /** Used for any provider with no entry of its own. */
     defaultStaleAfterMs: number;
@@ -780,6 +788,11 @@ const buildConfig = (): AppConfig => ({
     customerPrepaidPurchaseEnabled: process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED === 'true',
     // A partner's till opening purchases through the M2M checkout API.
     partnerPosPurchasesEnabled: process.env.PARTNER_POS_PURCHASES_ENABLED === 'true',
+  },
+  partnerCheckout: {
+    // Ten minutes: the queue at a till moves faster than that, and a
+    // receipt nobody scanned in ten minutes is a receipt nobody will scan.
+    ttlSeconds: positiveIntFromEnv('PARTNER_CHECKOUT_TTL_SECONDS', 600),
   },
   customerBalance: {
     // The same thirty minutes / one hour the provider-payment ageing uses,

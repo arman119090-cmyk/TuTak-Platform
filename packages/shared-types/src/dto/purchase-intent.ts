@@ -183,6 +183,32 @@ export interface FundingQuoteDto {
   problems: FundingProblemDto[];
 }
 
+// ── Till-opened checkouts (POS) ─────────────────────────────────────────
+
+/** What a scanned `tutak://checkout/<token>` resolves to. Never the customer's balances. */
+export interface PartnerCheckoutResolveDto {
+  checkoutId: string;
+  status: 'OPEN' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED';
+  partnerId: string;
+  partnerBranchId: string | null;
+  partnerDisplayName: string;
+  branchName: string | null;
+  /** The till's statement of the sale. The customer never edits it. */
+  grossAmount: string;
+  quantity: string | null;
+  quantityUnit: UnitOfMeasure | null;
+  unitPrice: string | null;
+  expiresAt: string;
+  purchaseIntentId: string | null;
+}
+
+/** How the customer funds a till-opened purchase; the gross is the till's. */
+export interface ClaimPartnerCheckoutRequestDto {
+  bonusAmountRequested?: string;
+  prepaidAmountApplied?: string;
+  paymentRoute?: PaymentRoute;
+}
+
 /** What the customer's app may believe about their provider payment. */
 export interface CustomerPaymentStatusDto {
   state: CustomerPaymentState;

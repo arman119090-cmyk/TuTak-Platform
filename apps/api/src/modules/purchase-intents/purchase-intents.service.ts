@@ -50,6 +50,16 @@ import { PurchaseFundingService } from './purchase-funding.service';
 type Tx = Prisma.TransactionClient;
 
 /**
+ * Who is agreeing to a purchase's economics: a member of staff at the till,
+ * or the partner's own POS integration acting under its API key (brief §20,
+ * 20.09.2026). Exactly one, never both — the database says the same.
+ */
+export type MerchantActor = { staffUserId: string } | { apiKeyId: string };
+
+const toMerchantActor = (actor: string | MerchantActor): MerchantActor =>
+  typeof actor === 'string' ? { staffUserId: actor } : actor;
+
+/**
  * The new standard purchase flow — spec §7-16. Additive alongside the
  * existing `POST /qr/redeem` (see
  * docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3 for why that one is left
@@ -962,10 +972,11 @@ export class PurchaseIntentsService {
       contributionRuleKind: ContributionRuleKind | null;
       merchantApprovedAt: Date | null;
     },
-    staffUserId: string,
+    actor: string | MerchantActor,
     dto: ApprovePurchaseIntentDto,
   ): Promise<void> {
     if (intent.merchantApprovedAt) return;
+    const merchant = toMerchantActor(actor);
 
     const perUnit =
       intent.contributionRuleKind === ContributionRuleKind.FIXED_PER_UNIT ||
@@ -1015,7 +1026,9 @@ export class PurchaseIntentsService {
     const claimed = await this.prisma.purchaseIntent.updateMany({
       where: { id: intent.id, merchantApprovedAt: null },
       data: {
-        merchantApprovedByUserId: staffUserId,
+        ...('staffUserId' in merchant
+          ? { merchantApprovedByUserId: merchant.staffUserId }
+          : { merchantApprovedByApiKeyId: merchant.apiKeyId }),
         merchantApprovedAt: new Date(),
         merchantApprovalNote:
           dto.note ??
@@ -1041,7 +1054,13 @@ export class PurchaseIntentsService {
    * `FIXED_PER_UNIT` and `HYBRID` terms, where the quantity *is* the price of
    * the sale — see `stampMerchantApproval`.
    */
-  async confirm(intentId: string, staffUserId: string, dto: ApprovePurchaseIntentDto = {}) {
+  async confirm(
+    intentId: string,
+    actor: string | MerchantActor,
+    dto: ApprovePurchaseIntentDto = {},
+  ) {
+    const merchant = toMerchantActor(actor);
+    const staffUserId = 'staffUserId' in merchant ? merchant.staffUserId : null;
     const intent = await this.findByIdOrThrow(intentId);
 
     if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
@@ -1087,7 +1106,7 @@ export class PurchaseIntentsService {
      * Payment` checks it — a per-unit partner's cashier confirms the quantity
      * whichever route the money takes.
      */
-    await this.stampMerchantApproval(intent, staffUserId, dto);
+    await this.stampMerchantApproval(intent, merchant, dto);
 
     const outcome = await this.settlePurchase(intent, staffUserId);
     if (outcome === 'already-resolved') {
@@ -1101,7 +1120,11 @@ export class PurchaseIntentsService {
       action: AuditAction.PURCHASE_INTENT_CONFIRMED,
       entityType: 'PurchaseIntent',
       entityId: intentId,
-      metadata: { partnerId: intent.partnerId, grossAmount: intent.grossAmount.toString() },
+      metadata: {
+        partnerId: intent.partnerId,
+        grossAmount: intent.grossAmount.toString(),
+        ...('apiKeyId' in merchant ? { via: 'pos', apiKeyId: merchant.apiKeyId } : {}),
+      },
     });
 
     return this.findByIdOrThrow(intentId);

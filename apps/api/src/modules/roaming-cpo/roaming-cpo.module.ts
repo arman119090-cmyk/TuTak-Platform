@@ -39,6 +39,13 @@ import { NoopRoamingCpoProvider } from './noop-roaming-cpo-provider.service';
       useClass: NoopRoamingCpoProvider,
     },
   ],
-  exports: [RoamingCpoStationsService, RoamingCpoSettlementService, RoamingCpoCustomersService],
+  exports: [
+    RoamingCpoStationsService,
+    RoamingCpoSettlementService,
+    RoamingCpoCustomersService,
+    // The M2M credential mechanism is partner-generic; the POS checkout API
+    // authenticates with the same keys.
+    PartnerApiKeyService,
+  ],
 })
 export class RoamingCpoModule {}

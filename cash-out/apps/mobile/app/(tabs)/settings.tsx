@@ -45,14 +45,24 @@ export default function ProfileScreen() {
 
       <Card padded={false} style={{ marginBottom: theme.spacing.base }}>
         <ListRow
+          label={t('profileScreen.open')}
+          value={[profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || undefined}
+          onPress={() => router.push('/profile')}
+          first
+        />
+        <ListRow
           label={t('profile.fleet')}
           value={profile?.activePark?.name ?? '—'}
           onPress={
             (profile?.membershipCount ?? 0) > 1 ? () => router.push('/park/select') : undefined
           }
-          first
         />
-        <ListRow label={t('profile.driverId')} value={profile?.driverId ?? '—'} last />
+        <ListRow
+          label={t('profile.driverId')}
+          value={profile?.driverId ?? '—'}
+          onPress={() => router.push('/driver-id')}
+          last
+        />
       </Card>
 
       <Card padded={false} style={{ marginBottom: theme.spacing.base }}>

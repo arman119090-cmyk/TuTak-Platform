@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import {
   adjustDriverBalanceSchema,
+  decideDriverIdChangeSchema,
   adminWithdrawalFilterSchema,
   createParkSchema,
   importRosterSchema,
@@ -26,6 +27,7 @@ import {
   type AdminRole,
   type AdminWithdrawalFilter,
   type CreateParkDto,
+  type DecideDriverIdChangeDto,
   type ImportRosterDto,
   type ResolveManualReviewDto,
   type SetParkCredentialDto,
@@ -34,6 +36,7 @@ import {
 } from '@cashout/contracts';
 import { ZodValidationPipe, zodBody } from '../../common/zod.pipe';
 import { Public } from '../auth/auth.guard';
+import { DriverIdService } from '../driver-id/driver-id.service';
 import { ParksAdminService } from '../parks/parks-admin.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { AdminAuthService } from './admin-auth.service';
@@ -56,6 +59,9 @@ const driverQuerySchema = paginationSchema.extend({ search: z.string().max(120).
 const auditQuerySchema = paginationSchema.extend({ subjectId: z.string().uuid().optional() });
 const blockSchema = z.object({ blocked: z.boolean(), reason: z.string().min(5).max(500) });
 const resolveMismatchSchema = z.object({ note: z.string().min(5).max(1000) });
+const driverIdRequestQuerySchema = paginationSchema.extend({
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']).optional(),
+});
 
 /** Sign-in is the only admin route reachable without an admin session. */
 @Controller('v1/admin/auth')
@@ -88,6 +94,7 @@ export class AdminController {
     private readonly pricing: PricingService,
     private readonly integrations: IntegrationHealthService,
     private readonly parks: ParksAdminService,
+    private readonly driverIds: DriverIdService,
   ) {}
 
   @Get('me')
@@ -283,6 +290,43 @@ export class AdminController {
     @Body(zodBody(blockSchema)) dto: { blocked: boolean; reason: string },
   ) {
     await this.admin.setDriverBlocked(id, dto.blocked, admin!.id, dto.reason);
+  }
+
+  // ------------------------------------------------------ driver id changes
+
+  @Get('driver-id-requests')
+  @RequirePermission('drivers:read')
+  async driverIdRequests(
+    @Query(new ZodValidationPipe(driverIdRequestQuerySchema))
+    query: {
+      limit: number;
+      cursor?: string;
+      status?: string;
+    },
+  ) {
+    return this.driverIds.listForAdmin(query);
+  }
+
+  @Post('driver-id-requests/:id/approve')
+  @RequirePermission('drivers:write')
+  @HttpCode(204)
+  async approveDriverId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(decideDriverIdChangeSchema)) dto: DecideDriverIdChangeDto,
+  ) {
+    await this.driverIds.approve(id, admin!.id, dto.reason);
+  }
+
+  @Post('driver-id-requests/:id/reject')
+  @RequirePermission('drivers:write')
+  @HttpCode(204)
+  async rejectDriverId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(decideDriverIdChangeSchema)) dto: DecideDriverIdChangeDto,
+  ) {
+    await this.driverIds.reject(id, admin!.id, dto.reason);
   }
 
   /** A balanced ADJUSTMENT entry against SUSPENSE; shows in the driver's history. */

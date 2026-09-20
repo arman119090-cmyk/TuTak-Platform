@@ -7,3 +7,4 @@ export * from './admin';
 export * from './security';
 export * from './auto-payout';
 export * from './history';
+export * from './driver-id';

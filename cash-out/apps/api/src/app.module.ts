@@ -12,6 +12,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AutoPayoutModule } from './modules/auto-payout/auto-payout.module';
 import { DriverAuthGuard } from './modules/auth/auth.guard';
+import { DriverIdModule } from './modules/driver-id/driver-id.module';
 import { DriversModule } from './modules/drivers/drivers.module';
 import { FeesModule } from './modules/fees/fees.module';
 import { HealthModule } from './modules/health/health.module';
@@ -50,6 +51,7 @@ export class AppModule implements NestModule {
         AuthModule,
         ParksModule,
         DriversModule,
+        DriverIdModule,
         PayoutMethodsModule,
         IdramModule,
         SecurityModule,

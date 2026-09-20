@@ -28,6 +28,7 @@ import { MembershipService } from '../src/modules/parks/membership.service';
 import { SecurityService } from '../src/modules/security/security.service';
 import { AutoPayoutService } from '../src/modules/auto-payout/auto-payout.service';
 import { HistoryService } from '../src/modules/history/history.service';
+import { DriverIdService } from '../src/modules/driver-id/driver-id.service';
 import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
 /**
@@ -92,6 +93,7 @@ export interface Harness {
   security: SecurityService;
   autoPayout: AutoPayoutService;
   history: HistoryService;
+  driverIds: DriverIdService;
   close(): Promise<void>;
 }
 
@@ -142,6 +144,7 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     security: app.get(SecurityService),
     autoPayout: app.get(AutoPayoutService),
     history: app.get(HistoryService),
+    driverIds: app.get(DriverIdService),
     async close() {
       await app.close();
     },

@@ -5,6 +5,8 @@ import type {
   AutoPayoutRuleDto,
   AutoPayoutStateDto,
   ChangePinDto,
+  DriverIdChangeRequestDto,
+  DriverIdStateDto,
   BalanceDto,
   ConfirmWithdrawalDto,
   CreateQuoteDto,
@@ -55,6 +57,17 @@ export const endpoints = {
     api.request<{ ok: boolean }>('/v1/me/locale', { method: 'PATCH', body: { locale } }),
 
   balance: (api: ApiClient) => api.request<BalanceDto>('/v1/me/balance'),
+
+  driverId: (api: ApiClient) => api.request<DriverIdStateDto>('/v1/me/driver-id'),
+
+  requestDriverIdChange: (api: ApiClient, newDriverId: string) =>
+    api.request<DriverIdChangeRequestDto>('/v1/me/driver-id/requests', {
+      method: 'POST',
+      body: { newDriverId },
+    }),
+
+  cancelDriverIdRequest: (api: ApiClient, id: string) =>
+    api.request<void>(`/v1/me/driver-id/requests/${id}/cancel`, { method: 'POST' }),
 
   /** A fresh read from the fleet, never the cache. Required before withdrawing. */
   freshBalance: (api: ApiClient) => api.request<BalanceDto>('/v1/me/balance/fresh'),

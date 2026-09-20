@@ -43,6 +43,8 @@ got here.
 | [AUDIT_FINANCIAL_2026-08.md](AUDIT_FINANCIAL_2026-08.md) | The audit of the money paths. Defects found, fixes, what was attacked and held, what is still not proven |
 | [WEAK_SPOTS_RU.md](WEAK_SPOTS_RU.md) | Things that work but are poorly defended or will not scale — owner's decisions, cost against risk |
 | [LOAD_TEST.md](LOAD_TEST.md) | Throughput and latency of the money paths, re-measured 9 August 2026 |
+| [SYSTEM_AUDIT_2026-09-20_RU.md](SYSTEM_AUDIT_2026-09-20_RU.md) | Full read-only audit of 20 September 2026: repository exposure, alerting, the 19.09 database blip, backups, dependencies, configuration, hygiene — graded, with the action list. In Russian |
+| [JAKO_SCENE_2026-09-20_RU.md](JAKO_SCENE_2026-09-20_RU.md) | The Jako scene on the auth, lock, status and partner screens (`JakoScene`), decisions, evidence and what is unverified. In Russian |
 | [DESIGN.md](DESIGN.md) · [DESIGN_PREVIEW.md](DESIGN_PREVIEW.md) · [DESIGN_HANDOFF_RU.md](DESIGN_HANDOFF_RU.md) | The design system, screenshots of every screen, and the handoff notes for the unified map/branch-QR redesigns |
 | [TESTING_RU.md](TESTING_RU.md) · [LAUNCH_RU.md](LAUNCH_RU.md) | Running and testing the stack, in Russian |
 | [REFERRAL_COMMISSION_MODEL_RU.md](REFERRAL_COMMISSION_MODEL_RU.md) | The 3-level referral chain / commission model in plain Russian |

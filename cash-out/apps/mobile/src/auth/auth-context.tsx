@@ -10,7 +10,7 @@ interface AuthValue {
   profile: DriverProfileDto | null;
   api: ApiClient;
   deviceId: string;
-  signIn: (tokens: AuthTokens) => Promise<void>;
+  signIn: (tokens: AuthTokens) => Promise<DriverProfileDto | null>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<DriverProfileDto | null>;
 }
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (tokens: AuthTokens) => {
       await tokenStore.save(tokens);
-      await refreshProfile();
+      return refreshProfile();
     },
     [refreshProfile],
   );

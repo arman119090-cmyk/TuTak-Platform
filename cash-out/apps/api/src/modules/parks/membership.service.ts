@@ -6,6 +6,7 @@ import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
 import { PrismaService, TransactionClient } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 export type MembershipWithPark = DriverParkMembership & { park: Park };
 
@@ -34,6 +35,7 @@ export class MembershipService {
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -234,6 +236,16 @@ export class MembershipService {
         },
         tx,
       );
+      if (actorType !== 'AUTO') {
+        await this.notifications.enqueue(
+          {
+            driverId,
+            kind: 'PARK_SWITCHED',
+            payload: { parkId: membership.parkId, parkName: membership.park.name },
+          },
+          tx,
+        );
+      }
     });
   }
 
@@ -260,6 +272,10 @@ export class MembershipService {
           reason,
           before: { parkId: membership.parkId },
         },
+        tx,
+      );
+      await this.notifications.enqueue(
+        { driverId, kind: 'PARK_ACCESS_CHANGED', payload: { parkId: membership.parkId, reason } },
         tx,
       );
     });

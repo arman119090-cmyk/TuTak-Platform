@@ -27,7 +27,7 @@ export function Card({
         styles.card,
         {
           backgroundColor: background,
-          borderRadius: theme.radius.lg,
+          borderRadius: theme.radius.card,
           padding: padded ? theme.spacing.base : 0,
           borderColor: theme.colors.border,
         },

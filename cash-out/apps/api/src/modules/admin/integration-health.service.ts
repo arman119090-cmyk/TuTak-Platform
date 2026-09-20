@@ -6,6 +6,7 @@ import { Clock } from '../../common/clock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentProviderPort } from '../payment-provider/payment-provider.port';
 import { YandexFleetPort } from '../yandex/yandex.port';
+import { NotificationPort } from '../notifications/notification.port';
 
 /**
  * Integration health, recorded rather than inferred.
@@ -22,6 +23,7 @@ export class IntegrationHealthService {
     private readonly prisma: PrismaService,
     private readonly yandex: YandexFleetPort,
     private readonly provider: PaymentProviderPort,
+    private readonly push: NotificationPort,
     private readonly clock: Clock,
   ) {}
 
@@ -47,6 +49,7 @@ export class IntegrationHealthService {
     return [
       this.describe('yandex-fleet', byName.get('yandex-fleet'), this.env.YANDEX_MODE),
       this.describe('idram', byName.get('idram'), this.env.PROVIDER_MODE),
+      this.describe('push', byName.get('push'), this.push.mode),
     ];
   }
 

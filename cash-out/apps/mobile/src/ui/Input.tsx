@@ -40,7 +40,7 @@ export const Input = forwardRef<TextInputHandle, InputProps>(function Input(
           styles.field,
           {
             minHeight: theme.touchTarget.comfortable,
-            borderRadius: theme.radius.md,
+            borderRadius: theme.radius.control,
             borderColor,
             borderWidth: focused || error ? 2 : 1,
             backgroundColor: theme.colors.surface,

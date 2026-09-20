@@ -6,6 +6,7 @@ import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
 import { PrismaService, TransactionClient, isUniqueViolation } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 import { MembershipService } from '../parks/membership.service';
 import { YandexFleetPort } from '../yandex/yandex.port';
 
@@ -29,6 +30,7 @@ export class DriverIdService {
     private readonly yandex: YandexFleetPort,
     private readonly clock: Clock,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -212,6 +214,11 @@ export class DriverIdService {
       reason,
       after: { requestId: row.id, requested: row.requestedExternalId },
     });
+    await this.notifications.enqueue({
+      driverId: row.driverId,
+      kind: 'DRIVER_ID_DECIDED',
+      payload: { requestId: row.id, status: 'REJECTED' },
+    });
   }
 
   // ------------------------------------------------------------------ internals
@@ -283,6 +290,14 @@ export class DriverIdService {
           reason,
           before: { driverId: row.previousExternalId },
           after: { driverId: row.requestedExternalId, requestId: row.id },
+        },
+        tx as TransactionClient,
+      );
+      await this.notifications.enqueue(
+        {
+          driverId: row.driverId,
+          kind: 'DRIVER_ID_DECIDED',
+          payload: { requestId: row.id, status: 'APPROVED' },
         },
         tx as TransactionClient,
       );

@@ -1,31 +1,75 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
-import { darkTheme, lightTheme, type Theme } from '@cashout/design-tokens';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { darkTheme, lightTheme, type Theme, type ThemeName } from '@cashout/design-tokens';
 
-const ThemeContext = createContext<Theme>(lightTheme);
+export type ThemePreference = 'light' | 'dark' | 'system';
+
+const STORAGE_KEY = 'cashout.theme';
+
+interface ThemeValue {
+  theme: Theme;
+  preference: ThemePreference;
+  setPreference: (next: ThemePreference) => void;
+}
+
+const ThemeContext = createContext<ThemeValue>({
+  theme: lightTheme,
+  preference: 'light',
+  setPreference: () => undefined,
+});
 
 /**
- * The app ships light-first, as the brief asks: a driver uses this in daylight,
- * often through a windscreen, and the light palette is the one that has been
- * contrast-checked for that. The dark theme exists and is wired up here so that
- * enabling it later is a one-line change rather than a repaint of every screen —
- * `followSystem` is the switch.
+ * Light or dark, chosen by the driver and remembered across restarts.
+ *
+ * The choice lives above navigation and above the session: changing it swaps
+ * the token set every screen reads and nothing else. No screen holds a colour
+ * of its own, so there is nothing to reset.
  */
-export function ThemeProvider({
-  children,
-  followSystem = false,
-}: {
-  children: React.ReactNode;
-  followSystem?: boolean;
-}) {
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const scheme = useColorScheme();
-  const theme = useMemo(
-    () => (followSystem && scheme === 'dark' ? darkTheme : lightTheme),
-    [followSystem, scheme],
+  const [preference, setPreferenceState] = useState<ThemePreference>('light');
+
+  useEffect(() => {
+    void AsyncStorage.getItem(STORAGE_KEY)
+      .then((stored) => {
+        if (stored === 'light' || stored === 'dark' || stored === 'system') {
+          setPreferenceState(stored);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const setPreference = useCallback((next: ThemePreference) => {
+    setPreferenceState(next);
+    void AsyncStorage.setItem(STORAGE_KEY, next).catch(() => undefined);
+  }, []);
+
+  const name: ThemeName =
+    preference === 'system' ? (scheme === 'dark' ? 'dark' : 'light') : preference;
+
+  const value = useMemo<ThemeValue>(
+    () => ({ theme: name === 'dark' ? darkTheme : lightTheme, preference, setPreference }),
+    [name, preference, setPreference],
   );
-  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): Theme {
-  return useContext(ThemeContext);
+  return useContext(ThemeContext).theme;
+}
+
+export function useThemePreference(): Pick<ThemeValue, 'preference' | 'setPreference'> {
+  const { preference, setPreference } = useContext(ThemeContext);
+  return { preference, setPreference };
+}
+
+/** Pure: what the persisted preference resolves to for a given system scheme. */
+export function resolveThemeName(
+  preference: ThemePreference,
+  systemScheme: 'light' | 'dark' | null | undefined,
+): ThemeName {
+  if (preference === 'system') return systemScheme === 'dark' ? 'dark' : 'light';
+  return preference;
 }

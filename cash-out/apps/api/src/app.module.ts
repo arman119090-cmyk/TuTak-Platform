@@ -20,6 +20,7 @@ import { HistoryModule } from './modules/history/history.module';
 import { IdramModule } from './modules/idram/idram.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { LimitsModule } from './modules/limits/limits.module';
+import { NotificationModule } from './modules/notifications/notification.module';
 import { PaymentProviderModule } from './modules/payment-provider/payment-provider.module';
 import { ParksModule } from './modules/parks/parks.module';
 import { PayoutMethodsModule } from './modules/payout-methods/payout-methods.module';
@@ -48,6 +49,7 @@ export class AppModule implements NestModule {
         PrismaModule,
         CryptoModule,
         AuditModule,
+        NotificationModule,
         AuthModule,
         ParksModule,
         DriversModule,

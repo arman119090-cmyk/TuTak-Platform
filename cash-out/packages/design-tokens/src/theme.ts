@@ -38,67 +38,68 @@ export interface ThemeColors {
 }
 
 export const lightColors: ThemeColors = {
-  background: palette.ink[25],
-  backgroundElevated: palette.ink[0],
-  surface: palette.ink[0],
-  surfaceMuted: palette.ink[50],
-  surfaceInverse: palette.ink[900],
-  border: palette.ink[100],
-  borderStrong: palette.ink[200],
-  textPrimary: palette.ink[900],
+  background: palette.paper[50],
+  backgroundElevated: palette.paper[0],
+  surface: palette.paper[0],
+  surfaceMuted: palette.paper[100],
+  surfaceInverse: palette.ink[950],
+  border: palette.paper[200],
+  borderStrong: palette.paper[300],
+  textPrimary: palette.ink[950],
   textSecondary: palette.ink[500],
-  textTertiary: palette.ink[400],
+  textTertiary: palette.ink[300],
   textInverse: palette.ink[0],
-  primary: palette.jade[600],
-  primaryPressed: palette.jade[700],
-  primaryDisabled: palette.jade[200],
+  primary: palette.emerald[600],
+  primaryPressed: palette.emerald[700],
+  primaryDisabled: palette.emerald[200],
   onPrimary: palette.ink[0],
-  primarySoft: palette.jade[50],
-  success: palette.jade[600],
-  successSoft: palette.jade[50],
+  primarySoft: palette.emerald[50],
+  success: palette.emerald[600],
+  successSoft: palette.emerald[50],
   warning: palette.amber[600],
   warningSoft: palette.amber[50],
   danger: palette.crimson[600],
   dangerSoft: palette.crimson[50],
   info: palette.sapphire[600],
   infoSoft: palette.sapphire[50],
-  focusRing: palette.jade[400],
-  skeleton: palette.ink[100],
-  overlay: 'rgba(14, 18, 17, 0.55)',
+  focusRing: palette.emerald[400],
+  skeleton: palette.paper[200],
+  overlay: 'rgba(10, 19, 34, 0.55)',
 };
 
 /**
- * Present from the start so that components are written against roles rather
- * than against light-theme hex values. The product ships light-first; this
- * exists so that shipping dark later is a switch, not a rewrite.
+ * Dark is a first-class theme, not an inversion: navy canvas, a lighter navy
+ * surface, and the emerald lifted two steps so it reads as text on navy. The
+ * primary button keeps a deep-emerald label on the lifted emerald, which is
+ * the pairing that clears AA (the contrast tests hold it there).
  */
 export const darkColors: ThemeColors = {
   background: palette.ink[900],
-  backgroundElevated: palette.ink[800],
-  surface: palette.ink[800],
-  surfaceMuted: palette.ink[700],
-  surfaceInverse: palette.ink[0],
-  border: palette.ink[700],
-  borderStrong: palette.ink[600],
-  textPrimary: palette.ink[25],
-  textSecondary: palette.ink[300],
+  backgroundElevated: palette.ink[850],
+  surface: palette.ink[850],
+  surfaceMuted: palette.ink[800],
+  surfaceInverse: palette.ink[50],
+  border: palette.ink[750],
+  borderStrong: palette.ink[700],
+  textPrimary: palette.ink[50],
+  textSecondary: palette.ink[200],
   textTertiary: palette.ink[400],
-  textInverse: palette.ink[900],
-  primary: palette.jade[400],
-  primaryPressed: palette.jade[300],
-  primaryDisabled: palette.jade[800],
-  onPrimary: palette.ink[900],
-  primarySoft: palette.jade[900],
-  success: palette.jade[400],
-  successSoft: palette.jade[900],
-  warning: palette.amber[100],
-  warningSoft: palette.amber[700],
-  danger: palette.crimson[100],
-  dangerSoft: palette.crimson[700],
-  info: palette.sapphire[100],
-  infoSoft: palette.sapphire[700],
-  focusRing: palette.jade[300],
-  skeleton: palette.ink[700],
+  textInverse: palette.ink[950],
+  primary: palette.emerald[400],
+  primaryPressed: palette.emerald[300],
+  primaryDisabled: palette.emerald[800],
+  onPrimary: palette.emerald[900],
+  primarySoft: '#0F3A31',
+  success: palette.emerald[300],
+  successSoft: '#0F3A31',
+  warning: palette.amber[300],
+  warningSoft: palette.amber[900],
+  danger: palette.crimson[300],
+  dangerSoft: palette.crimson[900],
+  info: palette.sapphire[300],
+  infoSoft: palette.sapphire[900],
+  focusRing: palette.emerald[300],
+  skeleton: palette.ink[750],
   overlay: 'rgba(0, 0, 0, 0.66)',
 };
 
@@ -118,12 +119,18 @@ export const spacing = {
   giant: 64,
 } as const;
 
+/**
+ * Radii from the design system: cards at 28, controls (buttons, fields,
+ * segments) at 18. `xl` remains for sheets' inner elements and dialogs.
+ */
 export const radius = {
   none: 0,
   sm: 8,
   md: 12,
   lg: 16,
+  control: 18,
   xl: 20,
+  card: 28,
   xxl: 28,
   pill: 999,
 } as const;
@@ -149,26 +156,27 @@ export const typography = {
 } as const;
 
 /**
- * Minimum tap target. 56 rather than the platform minimum of 44: the primary
- * flow is used with gloves on, in the cold, without looking.
+ * Tap targets. The design system's floor is 48, above the platform minimum
+ * of 44; the primary CTA sits in the 54–58 band, because the main flow is used
+ * with gloves on, in the cold, without looking.
  */
 export const touchTarget = {
-  minimum: 44,
-  comfortable: 56,
-  primaryAction: 60,
+  minimum: 48,
+  comfortable: 52,
+  primaryAction: 56,
 } as const;
 
 export const elevation = {
   none: { shadowOpacity: 0, shadowRadius: 0, elevation: 0, shadowOffset: { width: 0, height: 0 } },
   card: {
-    shadowColor: '#0E1211',
+    shadowColor: '#0A1322',
     shadowOpacity: 0.06,
     shadowRadius: 16,
     elevation: 2,
     shadowOffset: { width: 0, height: 4 },
   },
   sheet: {
-    shadowColor: '#0E1211',
+    shadowColor: '#0A1322',
     shadowOpacity: 0.14,
     shadowRadius: 28,
     elevation: 12,

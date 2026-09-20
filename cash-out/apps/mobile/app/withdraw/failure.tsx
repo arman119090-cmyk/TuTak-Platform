@@ -20,6 +20,33 @@ export default function FailureScreen() {
   const { withdrawal } = useWithdrawalStatus(id);
 
   const underReview = withdrawal?.status === 'UNDER_REVIEW';
+  // The history vocabulary decides the words: a cancelled payout kept the
+  // money, a rejected one was refused by the rail or the park.
+  const variant: 'review' | 'cancelled' | 'rejected' | 'failed' = underReview
+    ? 'review'
+    : withdrawal?.userStatus === 'CANCELLED'
+      ? 'cancelled'
+      : withdrawal?.userStatus === 'REJECTED'
+        ? 'rejected'
+        : 'failed';
+  const title =
+    variant === 'review'
+      ? t('withdraw.underReviewTitle')
+      : variant === 'cancelled'
+        ? t('withdraw.cancelledTitle')
+        : variant === 'rejected'
+          ? t('withdraw.rejectedTitle')
+          : t('withdraw.failureTitle');
+  const body =
+    variant === 'review'
+      ? t('withdraw.underReviewBody')
+      : variant === 'cancelled'
+        ? withdrawal
+          ? t('withdraw.reversedBody', { amount: money(withdrawal.gross) })
+          : t('withdraw.cancelledBody')
+        : variant === 'rejected'
+          ? t('withdraw.rejectedBody')
+          : t('withdraw.failureBody');
 
   return (
     <Screen
@@ -50,16 +77,12 @@ export default function FailureScreen() {
         </View>
 
         <Text variant="titleLarge" align="center" style={{ marginTop: theme.spacing.xl }}>
-          {underReview ? t('withdraw.underReviewTitle') : t('withdraw.failureTitle')}
+          {title}
         </Text>
 
         <Card tone="muted" style={{ marginTop: theme.spacing.xl, width: '100%' }}>
           <Text variant="bodyLarge" align="center">
-            {underReview
-              ? t('withdraw.underReviewBody')
-              : withdrawal
-                ? t('withdraw.reversedBody', { amount: money(withdrawal.gross) })
-                : t('withdraw.failureBody')}
+            {body}
           </Text>
         </Card>
 

@@ -31,7 +31,7 @@ export function SegmentedControl<T extends string>({
         styles.root,
         {
           backgroundColor: theme.colors.surfaceMuted,
-          borderRadius: theme.radius.lg,
+          borderRadius: theme.radius.control,
           padding: theme.spacing.xs,
         },
       ]}

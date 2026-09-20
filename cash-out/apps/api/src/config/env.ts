@@ -111,6 +111,14 @@ export const envSchema = z
       .default('true')
       .transform((value) => value === 'true'),
 
+    /**
+     * Push delivery. `mock` records notifications without sending anything and
+     * is allowed in production — it protects no money — but the integrations
+     * tile shows it as MOCK and the process logs it at start-up. `live` has no
+     * adapter yet and refuses to start.
+     */
+    PUSH_MODE: z.enum(['mock', 'live']).default('mock'),
+
     /** How often an ON_THRESHOLD rule re-reads the balance. */
     AUTO_PAYOUT_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
     /** Consecutive failed evaluations before a rule pauses itself. */

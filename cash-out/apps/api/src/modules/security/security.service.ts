@@ -9,6 +9,7 @@ import { AppLogger } from '../../common/logging/logger.service';
 import { RateLimiter } from '../../common/rate-limit.service';
 import { PrismaService, TransactionClient } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 /** Wrong PINs before a lockout. */
 const MAX_PIN_FAILURES = 5;
@@ -53,6 +54,7 @@ export class SecurityService {
     private readonly clock: Clock,
     private readonly limiter: RateLimiter,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -105,6 +107,7 @@ export class SecurityService {
       subjectId: driverId,
       actorType: 'DRIVER',
     });
+    await this.notifications.enqueue({ driverId, kind: 'SECURITY_PIN_CHANGED' });
   }
 
   /**
@@ -135,6 +138,11 @@ export class SecurityService {
       actorType: 'DRIVER',
       after: { deviceId: device.deviceId },
     });
+    await this.notifications.enqueue({
+      driverId,
+      kind: 'SECURITY_BIOMETRIC_CHANGED',
+      payload: { enabled: 1 },
+    });
     return { deviceSecret: secret };
   }
 
@@ -150,6 +158,11 @@ export class SecurityService {
       subjectType: 'driver',
       subjectId: driverId,
       actorType: 'DRIVER',
+    });
+    await this.notifications.enqueue({
+      driverId,
+      kind: 'SECURITY_BIOMETRIC_CHANGED',
+      payload: { enabled: 0 },
     });
   }
 

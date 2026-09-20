@@ -4,6 +4,7 @@ import { assertTransition } from '@cashout/contracts';
 import { TransactionClient } from '../../prisma/prisma.service';
 import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
+import { NotificationService } from '../notifications/notification.service';
 
 export class WithdrawalConflictError extends Error {
   constructor(
@@ -44,6 +45,7 @@ export class WithdrawalStateService {
   constructor(
     private readonly clock: Clock,
     private readonly logger: AppLogger,
+    private readonly notifications: NotificationService,
   ) {}
 
   async transition(
@@ -88,7 +90,29 @@ export class WithdrawalStateService {
       note: options.note,
     });
 
-    return tx.withdrawal.findUniqueOrThrow({ where: { id: current.id } });
+    const updated = await tx.withdrawal.findUniqueOrThrow({ where: { id: current.id } });
+
+    // Announce the outcomes a driver cares about, in the same transaction, so
+    // the announcement exists exactly when the state does.
+    const kind = notificationFor(to);
+    if (kind) {
+      await this.notifications.enqueue(
+        {
+          driverId: updated.driverId,
+          kind,
+          payload: {
+            withdrawalId: updated.id,
+            reference: updated.reference,
+            netMinor: updated.netMinor.toString(),
+            grossMinor: updated.grossMinor.toString(),
+            currency: updated.currency,
+          },
+        },
+        tx,
+      );
+    }
+
+    return updated;
   }
 
   /** Updates columns without changing state; still version-guarded. */
@@ -122,5 +146,24 @@ function timestampsFor(to: WithdrawalState, now: Date): Prisma.WithdrawalUncheck
       return { completedAt: now };
     default:
       return {};
+  }
+}
+
+function notificationFor(
+  to: WithdrawalState,
+): 'PAYOUT_COMPLETED' | 'PAYOUT_CANCELLED' | 'PAYOUT_REJECTED' | 'PAYOUT_UNDER_REVIEW' | null {
+  switch (to) {
+    case 'COMPLETED':
+      return 'PAYOUT_COMPLETED';
+    case 'REVERSED':
+      return 'PAYOUT_CANCELLED';
+    case 'FAILED':
+    case 'REJECTED':
+      return 'PAYOUT_REJECTED';
+    case 'MANUAL_REVIEW':
+    case 'RISK_REVIEW':
+      return 'PAYOUT_UNDER_REVIEW';
+    default:
+      return null;
   }
 }

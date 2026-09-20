@@ -5,10 +5,10 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "cashout",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#0B7557",
+      "backgroundColor": "#0A7A63",
       "resizeMode": "contain"
     },
     "ios": {
@@ -18,10 +18,15 @@
     "android": {
       "package": "com.cashout.driver",
       "adaptiveIcon": {
-        "backgroundColor": "#0B7557"
+        "backgroundColor": "#0A7A63"
       }
     },
-    "plugins": ["expo-router", "expo-secure-store", "expo-localization"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-localization",
+      "expo-local-authentication"
+    ],
     "experiments": {
       "typedRoutes": true
     },

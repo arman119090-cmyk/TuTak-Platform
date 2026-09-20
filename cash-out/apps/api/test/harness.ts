@@ -29,6 +29,8 @@ import { SecurityService } from '../src/modules/security/security.service';
 import { AutoPayoutService } from '../src/modules/auto-payout/auto-payout.service';
 import { HistoryService } from '../src/modules/history/history.service';
 import { DriverIdService } from '../src/modules/driver-id/driver-id.service';
+import { NotificationMockAdapter } from '../src/modules/notifications/notification-mock.adapter';
+import { NotificationService } from '../src/modules/notifications/notification.service';
 import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
 /**
@@ -94,6 +96,8 @@ export interface Harness {
   autoPayout: AutoPayoutService;
   history: HistoryService;
   driverIds: DriverIdService;
+  notifications: NotificationService;
+  push: NotificationMockAdapter;
   close(): Promise<void>;
 }
 
@@ -145,6 +149,8 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     autoPayout: app.get(AutoPayoutService),
     history: app.get(HistoryService),
     driverIds: app.get(DriverIdService),
+    notifications: app.get(NotificationService),
+    push: app.get(NotificationMockAdapter),
     async close() {
       await app.close();
     },
@@ -164,6 +170,7 @@ const TABLES = [
   'quotes',
   'balance_snapshots',
   'payout_methods',
+  'notification_preferences',
   'auto_payout_rules',
   'withdrawal_authorizations',
   'driver_security',

@@ -15,6 +15,7 @@ import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 import { BalanceService } from '../drivers/balance.service';
 import { LimitsService } from '../limits/limits.service';
 import { MembershipService } from '../parks/membership.service';
@@ -63,6 +64,7 @@ export class AutoPayoutService {
     private readonly withdrawals: WithdrawalsService,
     private readonly clock: Clock,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -344,6 +346,11 @@ export class AutoPayoutService {
         actorType: 'SYSTEM',
         after: { withdrawalId: created.id, gross: amount.minor.toString() },
       });
+      await this.notifications.enqueue({
+        driverId: rule.driverId,
+        kind: 'AUTO_PAYOUT_CREATED',
+        payload: { withdrawalId: created.id, grossMinor: amount.minor.toString() },
+      });
       return { outcome: 'CREATED', withdrawalId: created.id };
     } catch (error) {
       return this.fail(rule, now, error instanceof AppError ? error.code : 'INTERNAL_ERROR');
@@ -373,6 +380,13 @@ export class AutoPayoutService {
       actorType: 'SYSTEM',
       after: { code, failures },
     });
+    if (paused) {
+      await this.notifications.enqueue({
+        driverId: rule.driverId,
+        kind: 'AUTO_PAYOUT_PAUSED',
+        payload: { reason: `repeated_failures:${code}` },
+      });
+    }
     this.logger.warning('Auto payout evaluation failed', { ruleId: rule.id, code, paused });
     return { outcome: 'FAILED', code, paused };
   }
@@ -389,6 +403,11 @@ export class AutoPayoutService {
       subjectId: rule.id,
       actorType: 'SYSTEM',
       reason,
+    });
+    await this.notifications.enqueue({
+      driverId: rule.driverId,
+      kind: 'AUTO_PAYOUT_PAUSED',
+      payload: { reason },
     });
     return { outcome: 'PAUSED', reason };
   }

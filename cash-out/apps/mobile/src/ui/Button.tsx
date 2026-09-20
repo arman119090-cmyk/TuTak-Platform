@@ -80,7 +80,7 @@ export function Button({
           minHeight: height,
           paddingVertical: caption ? theme.spacing.md : theme.spacing.sm,
           backgroundColor: background(pressed),
-          borderRadius: theme.radius.lg,
+          borderRadius: theme.radius.control,
           alignSelf: fullWidth ? 'stretch' : 'flex-start',
           paddingHorizontal: fullWidth ? theme.spacing.base : theme.spacing.xl,
           borderWidth: variant === 'ghost' ? 0 : 0,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { endpoints } from '../../src/api/endpoints';
@@ -6,7 +6,7 @@ import { useAuth } from '../../src/auth/auth-context';
 import { useErrorMessage } from '../../src/hooks/useErrorMessage';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
-import { Button, Input, Screen, Text, type TextInputHandle } from '../../src/ui';
+import { Button, OtpField, Screen, Text } from '../../src/ui';
 
 export default function OtpScreen() {
   const theme = useTheme();
@@ -20,7 +20,6 @@ export default function OtpScreen() {
   const { api, deviceId, signIn } = useAuth();
   const { t, locale } = useI18n();
   const describeError = useErrorMessage();
-  const inputRef = useRef<TextInputHandle>(null);
 
   const codeLength = Number(params.codeLength ?? 6);
   const [code, setCode] = useState('');
@@ -52,12 +51,16 @@ export default function OtpScreen() {
         code: value,
         deviceId,
       });
-      await signIn(tokens);
-      router.replace('/');
+      const profile = await signIn(tokens);
+      // One park: it is chosen for the driver, and shown, rather than skipped.
+      if (profile?.resolution === 'ACTIVE' && profile.membershipCount === 1) {
+        router.replace('/park/auto');
+      } else {
+        router.replace('/');
+      }
     } catch (caught) {
       setError(describeError(caught));
       setCode('');
-      inputRef.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -97,21 +100,15 @@ export default function OtpScreen() {
         </Text>
 
         <View style={{ marginTop: theme.spacing.xxl }}>
-          <Input
-            ref={inputRef}
+          <OtpField
             value={code}
-            onChangeText={(text) => {
-              setCode(text.replace(/\D/g, '').slice(0, codeLength));
+            onChange={(next) => {
+              setCode(next);
               setError(null);
             }}
-            keyboardType="number-pad"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            textContentType="oneTimeCode"
-            autoFocus
-            maxLength={codeLength}
+            length={codeLength}
             error={error}
-            style={{ fontSize: 32, letterSpacing: 8, textAlign: 'center' }}
+            disabled={busy}
           />
         </View>
 

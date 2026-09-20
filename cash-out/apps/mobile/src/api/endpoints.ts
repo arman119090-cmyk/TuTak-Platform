@@ -15,10 +15,12 @@ import type {
   HistoryPageDto,
   LinkIdramAccountDto,
   MembershipDto,
+  NotificationPreferencesDto,
   PayoutMethodDto,
   QuoteDto,
   RequestOtpResponse,
   SecurityStatusDto,
+  UpdateNotificationPreferencesDto,
   UpsertAutoPayoutDto,
   SessionDto,
   WithdrawalDto,
@@ -149,6 +151,21 @@ export const endpoints = {
 
   disableAutoPayout: (api: ApiClient) =>
     api.request<void>('/v1/auto-payout/disable', { method: 'POST' }),
+
+  notificationPreferences: (api: ApiClient) =>
+    api.request<NotificationPreferencesDto>('/v1/notifications/preferences'),
+
+  updateNotificationPreferences: (api: ApiClient, body: UpdateNotificationPreferencesDto) =>
+    api.request<NotificationPreferencesDto>('/v1/notifications/preferences', {
+      method: 'PUT',
+      body,
+    }),
+
+  registerPushToken: (api: ApiClient, token: string, platform: 'ios' | 'android') =>
+    api.request<void>('/v1/notifications/push-token', {
+      method: 'POST',
+      body: { token, platform },
+    }),
 
   /** A single-use authorization for a money operation. */
   authorize: (api: ApiClient, body: AuthorizeDto) =>

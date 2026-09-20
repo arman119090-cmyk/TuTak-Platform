@@ -6,7 +6,7 @@ import { useAuth } from '../../src/auth/auth-context';
 import { useErrorMessage } from '../../src/hooks/useErrorMessage';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
-import { Button, Input, Screen, Text } from '../../src/ui';
+import { Button, PhoneField, Screen, Text } from '../../src/ui';
 
 /**
  * Phone entry.
@@ -72,22 +72,15 @@ export default function PhoneScreen() {
         </Text>
 
         <View style={{ marginTop: theme.spacing.xxl }}>
-          <Input
+          <PhoneField
             label={t('auth.phonePlaceholder')}
-            prefix="+374"
-            value={digits}
-            onChangeText={(text) => {
-              setDigits(text.replace(/\D/g, '').slice(0, 8));
+            digits={digits}
+            onDigitsChange={(next) => {
+              setDigits(next);
               setError(null);
             }}
-            keyboardType="phone-pad"
-            inputMode="tel"
-            autoComplete="tel"
-            textContentType="telephoneNumber"
-            placeholder="00 00 00 00"
             autoFocus
             error={error}
-            maxLength={8}
             onSubmitEditing={submit}
             returnKeyType="go"
           />

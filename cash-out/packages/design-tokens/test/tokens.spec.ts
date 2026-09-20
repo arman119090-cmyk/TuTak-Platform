@@ -1,6 +1,6 @@
 import { contrastRatio, meetsContrast, parseHexColor, relativeLuminance } from '../src/contrast';
 import { themeToCssBlock, themeToCssVariables } from '../src/css';
-import { darkTheme, lightTheme, spacing, touchTarget, typography } from '../src/theme';
+import { darkTheme, lightTheme, radius, spacing, touchTarget, typography } from '../src/theme';
 
 describe('contrast maths', () => {
   it('parses short and long hex', () => {
@@ -72,6 +72,50 @@ describe('the dark theme meets WCAG AA', () => {
 
   it('the primary button label on the primary button', () => {
     expect(meetsContrast(c.onPrimary, c.primary)).toBe(true);
+  });
+
+  it('brand text on the canvas and on a card', () => {
+    expect(meetsContrast(c.primary, c.background)).toBe(true);
+    expect(meetsContrast(c.primary, c.surface)).toBe(true);
+  });
+
+  it('every status colour on its own soft background and on the surface', () => {
+    const pairs: ReadonlyArray<[string, string]> = [
+      [c.success, c.successSoft],
+      [c.warning, c.warningSoft],
+      [c.danger, c.dangerSoft],
+      [c.info, c.infoSoft],
+    ];
+    for (const [foreground, background] of pairs) {
+      expect(meetsContrast(foreground, background)).toBe(true);
+      expect(meetsContrast(foreground, c.surface)).toBe(true);
+    }
+  });
+});
+
+describe('the design system’s fixed points', () => {
+  it('uses the specified canvas, surface, text and emerald in light', () => {
+    expect(lightTheme.colors.background.toUpperCase()).toBe('#F6F2EA');
+    expect(lightTheme.colors.surface.toUpperCase()).toBe('#FFFFFF');
+    expect(lightTheme.colors.textPrimary.toUpperCase()).toBe('#0A1322');
+    expect(lightTheme.colors.primary.toUpperCase()).toBe('#0A7A63');
+  });
+
+  it('uses the specified navy canvas and surface in dark', () => {
+    expect(darkTheme.colors.background.toUpperCase()).toBe('#0B1424');
+    expect(darkTheme.colors.surface.toUpperCase()).toBe('#111D31');
+  });
+
+  it('keeps cards at 28, controls at 18, the CTA in the 54–58 band, targets at 48+', () => {
+    expect(radius.card).toBe(28);
+    expect(radius.control).toBe(18);
+    expect(touchTarget.primaryAction).toBeGreaterThanOrEqual(54);
+    expect(touchTarget.primaryAction).toBeLessThanOrEqual(58);
+    expect(touchTarget.minimum).toBeGreaterThanOrEqual(48);
+  });
+
+  it('exposes the same roles in both themes, so no screen can style for one only', () => {
+    expect(Object.keys(darkTheme.colors).sort()).toEqual(Object.keys(lightTheme.colors).sort());
   });
 });
 

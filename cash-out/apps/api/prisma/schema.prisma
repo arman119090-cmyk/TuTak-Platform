@@ -148,6 +148,27 @@ model Driver {
   @@map("drivers")
 }
 
+// ------------------------------------------------------------ notifications
+
+/**
+ * What the driver wants to hear about. Absent row = everything on. The push
+ * token is stored so a live provider can address the device; with the mock
+ * provider it is recorded and never used.
+ */
+model NotificationPreference {
+  driverId       String   @id @db.Uuid
+  payoutStatus   Boolean  @default(true)
+  autoPayout     Boolean  @default(true)
+  securityAlerts Boolean  @default(true)
+  parkChanges    Boolean  @default(true)
+  pushToken      String?
+  pushPlatform   String?
+  pushTokenAt    DateTime?
+  updatedAt      DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
 // ------------------------------------------------------------ auto payout
 
 enum AutoPayoutCadence {

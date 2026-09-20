@@ -14,6 +14,7 @@ import { withSerializationRetry } from '../../prisma/retry';
 import { AuditService } from '../audit/audit.service';
 import { BalanceService } from '../drivers/balance.service';
 import { LimitsService } from '../limits/limits.service';
+import { MembershipService } from '../parks/membership.service';
 import { PayoutMethodsService } from '../payout-methods/payout-methods.service';
 import { QuoteService } from './quote.service';
 import { WithdrawalOrchestrator } from './withdrawal.orchestrator';
@@ -27,6 +28,7 @@ export class WithdrawalsService {
     private readonly balances: BalanceService,
     private readonly limits: LimitsService,
     private readonly payoutMethods: PayoutMethodsService,
+    private readonly memberships: MembershipService,
     private readonly orchestrator: WithdrawalOrchestrator,
     private readonly crypto: CryptoService,
     private readonly clock: Clock,
@@ -87,14 +89,9 @@ export class WithdrawalsService {
     requestHash: string,
   ): Promise<Withdrawal> {
     const quote = await this.quotes.validate(driverId, dto.quoteId, dto.signature);
-    const driver = await this.prisma.driver.findUniqueOrThrow({ where: { id: driverId } });
-
-    if (driver.verificationStatus !== 'VERIFIED') {
-      throw new AppError('DRIVER_NOT_VERIFIED', 'This driver is not verified');
-    }
-    if (!driver.parkId || !driver.yandexContractorProfileId) {
-      throw new AppError('DRIVER_NOT_VERIFIED', 'This driver is not linked to a Yandex profile');
-    }
+    // Active park, membership, eligibility and driver status — all re-checked
+    // now, not trusted from the quote or from the client.
+    const { membership, park } = await this.memberships.requireActive(driverId);
 
     await this.payoutMethods.requireUsable(driverId, quote.payoutMethodId);
 
@@ -126,7 +123,7 @@ export class WithdrawalsService {
         );
       }
 
-      const decision = await this.limits.check({ driverId, parkId: driver.parkId, gross }, tx);
+      const decision = await this.limits.check({ driverId, parkId: park.id, gross }, tx);
       if (decision.outcome === 'DENY') {
         throw new AppError(decision.code, decision.message, decision.details);
       }
@@ -153,8 +150,9 @@ export class WithdrawalsService {
             platformFeeMinor: quote.platformFeeMinor,
             providerFeeMinor: quote.providerFeeMinor,
             netMinor: quote.netMinor,
-            parkId: driver.parkId!,
-            yandexContractorProfileId: driver.yandexContractorProfileId!,
+            parkId: park.id,
+            yandexParkId: park.yandexParkId,
+            yandexContractorProfileId: membership.externalProfileId,
             yandexBalanceBeforeMinor: balance.available.minor,
             // Generated once, reused by every retry of every step.
             yandexIdempotencyToken: randomUUID().replace(/-/g, ''),

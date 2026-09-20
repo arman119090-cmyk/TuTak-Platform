@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BalanceService } from '../drivers/balance.service';
 import { FeesService } from '../fees/fees.service';
 import { LimitsService } from '../limits/limits.service';
+import { MembershipService } from '../parks/membership.service';
 import { PayoutMethodsService } from '../payout-methods/payout-methods.service';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class QuoteService {
     private readonly fees: FeesService,
     private readonly limits: LimitsService,
     private readonly payoutMethods: PayoutMethodsService,
+    private readonly memberships: MembershipService,
     private readonly crypto: CryptoService,
     private readonly clock: Clock,
   ) {}
@@ -34,10 +36,8 @@ export class QuoteService {
    * modified client cannot submit a quote of its own invention.
    */
   async create(driverId: string, dto: CreateQuoteDto): Promise<QuoteDto> {
-    const driver = await this.prisma.driver.findUniqueOrThrow({ where: { id: driverId } });
-    if (driver.verificationStatus !== 'VERIFIED') {
-      throw new AppError('DRIVER_NOT_VERIFIED', 'This driver is not verified');
-    }
+    // The active park is verified first: no membership, no quote.
+    const { park } = await this.memberships.requireActive(driverId);
 
     const method = await this.payoutMethods.requireUsable(driverId, dto.payoutMethodId);
     const balance = await this.balances.requireFresh(driverId);
@@ -65,7 +65,7 @@ export class QuoteService {
       });
     }
 
-    const priced = await this.fees.quote(driver.parkId, requested).catch((error: unknown) => {
+    const priced = await this.fees.quote(park.id, requested).catch((error: unknown) => {
       if (error instanceof Error && error.name === 'AmountTooSmallError') {
         throw new AppError('AMOUNT_DOES_NOT_COVER_FEES', error.message);
       }
@@ -74,7 +74,7 @@ export class QuoteService {
 
     const decision = await this.limits.check({
       driverId,
-      parkId: driver.parkId,
+      parkId: park.id,
       gross: priced.quote.gross,
     });
     if (decision.outcome === 'DENY') {

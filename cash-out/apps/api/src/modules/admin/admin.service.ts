@@ -349,13 +349,17 @@ export class AdminService {
         ? {
             OR: [
               { user: { phone: { contains: query.search } } },
-              { yandexContractorProfileId: { contains: query.search } },
+              { memberships: { some: { externalProfileId: { contains: query.search } } } },
               { firstName: { contains: query.search, mode: 'insensitive' } },
               { lastName: { contains: query.search, mode: 'insensitive' } },
             ],
           }
         : {},
-      include: { user: true, _count: { select: { withdrawals: true } } },
+      include: {
+        user: true,
+        activeMembership: { include: { park: true } },
+        _count: { select: { withdrawals: true, memberships: true } },
+      },
       orderBy: { createdAt: 'desc' },
       take: query.limit + 1,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
@@ -368,8 +372,10 @@ export class AdminService {
         phone: row.user.phone,
         name: [row.firstName, row.lastName].filter(Boolean).join(' ') || null,
         verificationStatus: row.verificationStatus,
-        parkId: row.parkId,
-        yandexContractorProfileId: row.yandexContractorProfileId,
+        parkId: row.activeMembership?.parkId ?? null,
+        parkName: row.activeMembership?.park.name ?? null,
+        yandexContractorProfileId: row.activeMembership?.externalProfileId ?? null,
+        membershipCount: row._count.memberships,
         riskTier: row.riskTier,
         withdrawalCount: row._count.withdrawals,
         createdAt: row.createdAt.toISOString(),
@@ -383,6 +389,9 @@ export class AdminService {
       where: { id: driverId },
       include: {
         user: true,
+        activeMembership: { include: { park: true } },
+        memberships: { include: { park: true }, orderBy: { createdAt: 'asc' } },
+        parkSwitches: { orderBy: { at: 'desc' }, take: 20 },
         payoutMethods: { orderBy: { createdAt: 'desc' } },
         withdrawals: { orderBy: { createdAt: 'desc' }, take: 50 },
       },
@@ -399,8 +408,9 @@ export class AdminService {
         name: [driver.firstName, driver.lastName].filter(Boolean).join(' ') || null,
         locale: driver.user.locale,
         verificationStatus: driver.verificationStatus,
-        parkId: driver.parkId,
-        yandexContractorProfileId: driver.yandexContractorProfileId,
+        parkId: driver.activeMembership?.parkId ?? null,
+        parkName: driver.activeMembership?.park.name ?? null,
+        yandexContractorProfileId: driver.activeMembership?.externalProfileId ?? null,
         currency,
         riskTier: driver.riskTier,
         blockReason: driver.blockReason,
@@ -409,6 +419,24 @@ export class AdminService {
       },
       /** What Cash Out still owes this driver, straight from the ledger. */
       outstandingPayable: payable.toJSON(),
+      memberships: driver.memberships.map((row) => ({
+        id: row.id,
+        parkId: row.parkId,
+        parkName: row.park.name,
+        parkStatus: row.park.status,
+        externalProfileId: row.externalProfileId,
+        status: row.status,
+        eligibility: row.eligibility,
+        eligibilityReason: row.eligibilityReason,
+        isActive: row.id === driver.activeMembershipId,
+      })),
+      parkSwitches: driver.parkSwitches.map((row) => ({
+        id: row.id,
+        fromParkId: row.fromParkId,
+        toParkId: row.toParkId,
+        actorType: row.actorType,
+        at: row.at.toISOString(),
+      })),
       payoutMethods: driver.payoutMethods.map((method) => ({
         id: method.id,
         kind: method.kind,
@@ -440,7 +468,7 @@ export class AdminService {
       data: {
         verificationStatus: blocked
           ? 'BLOCKED'
-          : driver.yandexContractorProfileId
+          : driver.activeMembershipId
             ? 'VERIFIED'
             : 'UNLINKED',
         blockedAt: blocked ? this.clock.now() : null,

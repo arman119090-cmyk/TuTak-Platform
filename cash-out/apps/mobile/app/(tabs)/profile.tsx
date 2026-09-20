@@ -44,12 +44,15 @@ export default function ProfileScreen() {
       </View>
 
       <Card padded={false} style={{ marginBottom: theme.spacing.base }}>
-        <ListRow label={t('profile.fleet')} value={profile?.parkId ?? '—'} first />
         <ListRow
-          label={t('profile.driverId')}
-          value={profile?.yandexContractorProfileId ?? '—'}
-          last
+          label={t('profile.fleet')}
+          value={profile?.activePark?.name ?? '—'}
+          onPress={
+            (profile?.membershipCount ?? 0) > 1 ? () => router.push('/park/select') : undefined
+          }
+          first
         />
+        <ListRow label={t('profile.driverId')} value={profile?.driverId ?? '—'} last />
       </Card>
 
       <Card padded={false} style={{ marginBottom: theme.spacing.base }}>

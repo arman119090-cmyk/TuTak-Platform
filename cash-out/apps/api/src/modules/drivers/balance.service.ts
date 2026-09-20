@@ -1,16 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import type { Park } from '@prisma/client';
+import { BalanceDto } from '@cashout/contracts';
 import { Money } from '@cashout/money';
 import type { CurrencyCode } from '@cashout/money';
 import { PrismaService, TransactionClient } from '../../prisma/prisma.service';
 import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
 import { AppError } from '../../common/app-error';
+import { ActiveContext, MembershipService, toParkSummary } from '../parks/membership.service';
 import { YandexFleetPort } from '../yandex/yandex.port';
 
 export interface DriverBalance {
   readonly available: Money;
   readonly reserved: Money;
   readonly withdrawable: Money;
+  readonly park: Park;
   readonly asOf: Date;
   readonly fresh: boolean;
   readonly staleSeconds?: number;
@@ -18,33 +22,35 @@ export interface DriverBalance {
 
 /** How long a cached balance may be shown on the home screen. */
 const DISPLAY_CACHE_SECONDS = 20;
-/** How old a cached balance may be before it is refused as a basis for a payout. */
+/** How old a cached balance may be before it is refused even for display. */
 const MAX_STALE_FOR_DISPLAY_SECONDS = 15 * 60;
 
+/**
+ * The driver's balance, always for the active park.
+ *
+ * Yandex is the source of truth. The mobile app's copy is for display; the
+ * server's cache is for display; neither is ever the basis of a payout — that
+ * is `requireFresh`, which reads Yandex or refuses.
+ *
+ * Every snapshot carries the park it was read for, and switching parks deletes
+ * them anyway: a figure from one park is never shown under another.
+ */
 @Injectable()
 export class BalanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly yandex: YandexFleetPort,
+    private readonly memberships: MembershipService,
     private readonly clock: Clock,
     private readonly logger: AppLogger,
   ) {}
 
-  /**
-   * The balance for the home screen.
-   *
-   * Yandex is the source of truth, but it is also a system we do not control,
-   * and a driver opening the app during a Yandex outage should see their last
-   * known balance with an honest "this may be out of date" rather than an error
-   * screen. What they must *not* be able to do is start a payout against a
-   * stale number — that is enforced separately, in `requireFresh`.
-   */
   async forDisplay(driverId: string): Promise<DriverBalance> {
-    const driver = await this.requireLinkedDriver(driverId);
-    const currency = (driver.currency ?? 'AMD') as CurrencyCode;
+    const context = await this.memberships.requireActive(driverId);
+    const currency = context.park.currency as CurrencyCode;
 
     const cached = await this.prisma.balanceSnapshot.findFirst({
-      where: { driverId },
+      where: { driverId, parkId: context.park.id },
       orderBy: { fetchedAt: 'desc' },
     });
 
@@ -54,7 +60,7 @@ export class BalanceService {
 
     if (cached && cacheAgeSeconds < DISPLAY_CACHE_SECONDS) {
       return this.withReserved(
-        driverId,
+        context,
         Money.fromMinor(cached.balanceMinor, cached.currency as CurrencyCode),
         cached.fetchedAt,
         true,
@@ -62,19 +68,15 @@ export class BalanceService {
     }
 
     try {
-      const fresh = await this.fetchAndStore(
-        driverId,
-        driver.parkId!,
-        driver.yandexContractorProfileId!,
-      );
-      return this.withReserved(driverId, fresh.amount, fresh.fetchedAt, true);
+      const fresh = await this.fetchAndStore(context);
+      return this.withReserved(context, fresh.amount, fresh.fetchedAt, true);
     } catch (error) {
       this.logger.fail('Falling back to cached balance', error, { driverId });
       if (!cached || cacheAgeSeconds > MAX_STALE_FOR_DISPLAY_SECONDS) {
-        throw new AppError('YANDEX_UNAVAILABLE', 'Could not read the balance from the fleet');
+        throw new AppError('BALANCE_UNAVAILABLE', 'Could not read the balance from the fleet');
       }
       return this.withReserved(
-        driverId,
+        context,
         Money.fromMinor(cached.balanceMinor, currency),
         cached.fetchedAt,
         false,
@@ -88,25 +90,42 @@ export class BalanceService {
    * cannot tell us the balance right now, we do not debit it.
    */
   async requireFresh(driverId: string): Promise<DriverBalance> {
-    const driver = await this.requireLinkedDriver(driverId);
+    const context = await this.memberships.requireActive(driverId);
     try {
-      const fresh = await this.fetchAndStore(
-        driverId,
-        driver.parkId!,
-        driver.yandexContractorProfileId!,
-      );
-      return this.withReserved(driverId, fresh.amount, fresh.fetchedAt, true);
+      const fresh = await this.fetchAndStore(context);
+      return this.withReserved(context, fresh.amount, fresh.fetchedAt, true);
     } catch (error) {
       this.logger.fail('Fresh balance required but unavailable', error, { driverId });
       throw new AppError('YANDEX_UNAVAILABLE', 'The fleet system is not responding');
     }
   }
 
-  private async fetchAndStore(driverId: string, parkId: string, profileId: string) {
-    const balance = await this.yandex.getBalance(parkId, profileId);
+  /** Drops every cached figure for the driver, whatever park it was for. */
+  async invalidate(driverId: string, tx?: TransactionClient): Promise<void> {
+    await (tx ?? this.prisma).balanceSnapshot.deleteMany({ where: { driverId } });
+  }
+
+  toDto(balance: DriverBalance): BalanceDto {
+    return {
+      available: balance.available.toJSON(),
+      reservedByPendingWithdrawals: balance.reserved.toJSON(),
+      withdrawable: balance.withdrawable.toJSON(),
+      park: toParkSummary(balance.park),
+      asOf: balance.asOf.toISOString(),
+      fresh: balance.fresh,
+      staleSeconds: balance.staleSeconds,
+    };
+  }
+
+  private async fetchAndStore(context: ActiveContext) {
+    const balance = await this.yandex.getBalance(
+      context.park.yandexParkId,
+      context.membership.externalProfileId,
+    );
     await this.prisma.balanceSnapshot.create({
       data: {
-        driverId,
+        driverId: context.driver.id,
+        parkId: context.park.id,
         balanceMinor: balance.amount.minor,
         currency: balance.amount.currency,
         yandexAccountId: balance.accountId,
@@ -147,30 +166,14 @@ export class BalanceService {
   }
 
   private async withReserved(
-    driverId: string,
+    context: ActiveContext,
     available: Money,
     asOf: Date,
     fresh: boolean,
     staleSeconds?: number,
   ): Promise<DriverBalance> {
-    const reserved = await this.reservedFor(driverId, available.currency);
+    const reserved = await this.reservedFor(context.driver.id, available.currency);
     const withdrawable = Money.max(available.subtract(reserved), Money.zero(available.currency));
-    return { available, reserved, withdrawable, asOf, fresh, staleSeconds };
-  }
-
-  private async requireLinkedDriver(driverId: string) {
-    const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
-    if (!driver) throw AppError.notFound('Driver');
-    if (driver.verificationStatus === 'BLOCKED') {
-      throw new AppError('DRIVER_BLOCKED', driver.blockReason ?? 'Withdrawals are blocked');
-    }
-    if (
-      driver.verificationStatus !== 'VERIFIED' ||
-      !driver.parkId ||
-      !driver.yandexContractorProfileId
-    ) {
-      throw new AppError('DRIVER_NOT_VERIFIED', 'This driver is not linked to a Yandex profile');
-    }
-    return driver;
+    return { available, reserved, withdrawable, park: context.park, asOf, fresh, staleSeconds };
   }
 }

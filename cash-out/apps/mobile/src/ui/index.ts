@@ -11,3 +11,5 @@ export * from './Rows';
 export * from './StatusChip';
 export * from './BalanceHero';
 export * from './AmountField';
+export * from './StatusPill';
+export * from './TaxiParkCard';

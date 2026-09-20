@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -12,15 +13,26 @@ import {
 import { z } from 'zod';
 import {
   adminWithdrawalFilterSchema,
+  createParkSchema,
+  importRosterSchema,
   paginationSchema,
   permissionsFor,
   resolveManualReviewSchema,
+  setParkCredentialSchema,
+  updateMembershipSchema,
+  updateParkSchema,
   type AdminRole,
   type AdminWithdrawalFilter,
+  type CreateParkDto,
+  type ImportRosterDto,
   type ResolveManualReviewDto,
+  type SetParkCredentialDto,
+  type UpdateMembershipDto,
+  type UpdateParkDto,
 } from '@cashout/contracts';
 import { ZodValidationPipe, zodBody } from '../../common/zod.pipe';
 import { Public } from '../auth/auth.guard';
+import { ParksAdminService } from '../parks/parks-admin.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminGuard, AdminRequest, RequirePermission } from './admin.guard';
@@ -73,6 +85,7 @@ export class AdminController {
     private readonly reconciliation: ReconciliationService,
     private readonly pricing: PricingService,
     private readonly integrations: IntegrationHealthService,
+    private readonly parks: ParksAdminService,
   ) {}
 
   @Get('me')
@@ -142,6 +155,100 @@ export class AdminController {
     @Body(zodBody(resolveManualReviewSchema)) dto: ResolveManualReviewDto,
   ) {
     await this.admin.resolveManualReview(id, admin!.id, dto);
+  }
+
+  // ------------------------------------------------------------------- parks
+
+  @Get('parks')
+  @RequirePermission('parks:read')
+  async parksList() {
+    return { items: await this.parks.list() };
+  }
+
+  @Post('parks')
+  @RequirePermission('parks:write')
+  async createPark(
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(createParkSchema)) dto: CreateParkDto,
+  ) {
+    return this.parks.create(dto, admin!.id);
+  }
+
+  @Get('parks/:id')
+  @RequirePermission('parks:read')
+  async park(@Param('id', ParseUUIDPipe) id: string) {
+    return this.parks.detail(id);
+  }
+
+  @Patch('parks/:id')
+  @RequirePermission('parks:write')
+  async updatePark(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(updateParkSchema)) dto: UpdateParkDto,
+  ) {
+    return this.parks.update(id, dto, admin!.id);
+  }
+
+  /** Writes the park's Fleet API key. Never readable back. */
+  @Post('parks/:id/credential')
+  @RequirePermission('parks:write')
+  @HttpCode(204)
+  async setParkCredential(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(setParkCredentialSchema)) dto: SetParkCredentialDto,
+  ) {
+    await this.parks.setCredential(id, dto, admin!.id);
+  }
+
+  @Post('parks/:id/credential/verify')
+  @RequirePermission('parks:write')
+  async verifyParkCredential(@Param('id', ParseUUIDPipe) id: string) {
+    return this.parks.verifyCredential(id);
+  }
+
+  @Get('parks/:id/memberships')
+  @RequirePermission('parks:read')
+  async parkMemberships(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query(new ZodValidationPipe(driverQuerySchema))
+    query: {
+      limit: number;
+      cursor?: string;
+      search?: string;
+    },
+  ) {
+    return this.parks.listMemberships(id, query);
+  }
+
+  @Post('parks/:id/roster/import')
+  @RequirePermission('parks:write')
+  async importRoster(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(importRosterSchema)) dto: ImportRosterDto,
+  ) {
+    return this.parks.importRoster(id, dto, admin!.id);
+  }
+
+  @Post('parks/:id/roster/sync')
+  @RequirePermission('parks:write')
+  async syncRoster(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+  ) {
+    return this.parks.syncFromYandex(id, admin!.id);
+  }
+
+  @Patch('memberships/:id')
+  @RequirePermission('parks:write')
+  async updateMembership(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(updateMembershipSchema)) dto: UpdateMembershipDto,
+  ) {
+    return this.parks.updateMembership(id, dto, admin!.id);
   }
 
   // ----------------------------------------------------------------- drivers

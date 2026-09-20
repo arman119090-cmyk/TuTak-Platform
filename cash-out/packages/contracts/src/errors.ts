@@ -17,8 +17,18 @@ export const ERROR_CODES = [
   'OTP_TOO_MANY_ATTEMPTS',
   'OTP_REQUEST_TOO_SOON',
   'PHONE_NOT_LINKED_TO_DRIVER',
+  /** The phone number is in no park's roster. */
+  'DRIVER_NOT_FOUND',
   'DRIVER_NOT_VERIFIED',
   'DRIVER_BLOCKED',
+  /** The driver asked for a park they hold no eligible membership in. */
+  'PARK_ACCESS_DENIED',
+  /** No active park is selected yet. */
+  'PARK_NOT_SELECTED',
+  /** The balance could not be read at all. */
+  'BALANCE_UNAVAILABLE',
+  /** Only a cached figure is available and the operation needs a fresh one. */
+  'BALANCE_STALE',
   'PAYOUT_METHOD_NOT_FOUND',
   'PAYOUT_METHOD_NOT_VERIFIED',
   'INSUFFICIENT_BALANCE',
@@ -37,6 +47,24 @@ export const ERROR_CODES = [
   'UNDER_MANUAL_REVIEW',
   'YANDEX_UNAVAILABLE',
   'PROVIDER_UNAVAILABLE',
+  'IDRAM_UNAVAILABLE',
+  'IDRAM_ACCOUNT_NOT_LINKED',
+  'IDRAM_ACCOUNT_REJECTED',
+  /** A withdrawal that has not finished yet; the client should keep polling. */
+  'PAYOUT_PROCESSING',
+  'PAYOUT_REJECTED',
+  'PAYOUT_UNCERTAIN',
+  /** A money operation was attempted without a PIN/biometric authorization. */
+  'AUTHORIZATION_REQUIRED',
+  'AUTHORIZATION_INVALID',
+  'PIN_NOT_SET',
+  'PIN_INVALID',
+  'PIN_LOCKED',
+  'PIN_ALREADY_SET',
+  'BIOMETRIC_NOT_ENROLLED',
+  'DRIVER_ID_CHANGE_PENDING',
+  'DRIVER_ID_INVALID',
+  'AUTO_PAYOUT_INVALID',
   'INTERNAL_ERROR',
 ] as const;
 

@@ -68,8 +68,10 @@ describe('Yandex Fleet API v3 integration', () => {
     const created = await requestWithdrawal(harness, driver, 1_000_000n);
     expect(await drive(created.id)).toBe('COMPLETED');
 
-    expect(harness.yandex.transactionCount(driver.parkId, driver.contractorProfileId)).toBe(1);
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.transactionCount(driver.yandexParkId, driver.contractorProfileId)).toBe(
+      1,
+    );
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       4_000_000n,
     );
     const row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: created.id } });
@@ -109,7 +111,7 @@ describe('Yandex Fleet API v3 integration', () => {
     expect(await drive(created.id)).toBe('FAILED');
     const row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: created.id } });
     expect(row.failureCode).toBe('mock_failed');
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       5_000_000n,
     );
     expect(await harness.prisma.journalEntry.count()).toBe(0);
@@ -129,8 +131,10 @@ describe('Yandex Fleet API v3 integration', () => {
     expect(await drive(created.id)).toBe('COMPLETED');
 
     expect(harness.yandex.createdCount()).toBe(1);
-    expect(harness.yandex.transactionCount(driver.parkId, driver.contractorProfileId)).toBe(1);
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.transactionCount(driver.yandexParkId, driver.contractorProfileId)).toBe(
+      1,
+    );
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       4_000_000n,
     );
     const states = await statesOf(created.id);
@@ -149,14 +153,14 @@ describe('Yandex Fleet API v3 integration', () => {
     harness.yandex.behaviour = { mode: 'normal' };
     expect(await drive(created.id)).toBe('COMPLETED');
     expect(harness.yandex.createdCount()).toBe(1);
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       4_000_000n,
     );
   });
 
   it('duplicate idempotency token: the adapter returns the same transaction and debits once', async () => {
     const input = {
-      parkId: driver.parkId,
+      parkId: driver.yandexParkId,
       contractorProfileId: driver.contractorProfileId,
       amount: Money.fromMinor(1_000_000n, 'AMD'),
       kind: 'payout',
@@ -173,14 +177,14 @@ describe('Yandex Fleet API v3 integration', () => {
       expect(second.transaction.id).toBe(first.transaction.id);
     }
     expect(harness.yandex.createdCount()).toBe(1);
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       4_000_000n,
     );
   });
 
   it('a replay does not re-evaluate the condition against the already-debited balance', async () => {
     const input = {
-      parkId: driver.parkId,
+      parkId: driver.yandexParkId,
       contractorProfileId: driver.contractorProfileId,
       amount: Money.fromMinor(4_000_000n, 'AMD'),
       kind: 'payout',
@@ -198,7 +202,7 @@ describe('Yandex Fleet API v3 integration', () => {
     const created = await requestWithdrawal(harness, driver, 1_000_000n);
     // The park posts a debit of its own before we get to ours.
     harness.yandex.setBalance(
-      driver.parkId,
+      driver.yandexParkId,
       driver.contractorProfileId,
       Money.fromMinor(500_000n, 'AMD'),
     );
@@ -207,7 +211,7 @@ describe('Yandex Fleet API v3 integration', () => {
     const row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: created.id } });
     expect(row.failureCode).toBe('condition_failed');
     expect(harness.yandex.createdCount()).toBe(0);
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       500_000n,
     );
     expect(harness.provider.payoutCount()).toBe(0);
@@ -269,7 +273,7 @@ describe('Yandex Fleet API v3 integration', () => {
     const row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: created.id } });
     expect(row.yandexTransactionId).toBe('mock-tx-1');
     expect(row.yandexReversalTransactionId).toBe('mock-tx-2');
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       5_000_000n,
     );
     for (const balance of await harness.ledger.trialBalance()) {
@@ -290,7 +294,7 @@ describe('Yandex Fleet API v3 integration', () => {
     const row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: created.id } });
     expect(row.yandexReversalTransactionId).toBe('mock-tx-2');
     expect(harness.yandex.createdCount()).toBe(2);
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       5_000_000n,
     );
   });
@@ -305,7 +309,7 @@ describe('Yandex Fleet API v3 integration', () => {
     harness.yandex.behaviour = { mode: 'reject' };
     expect(await drive(created.id, 8)).toBe('MANUAL_REVIEW');
     // The driver's money is still held; nothing pretended it was returned.
-    expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+    expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
       4_000_000n,
     );
   });

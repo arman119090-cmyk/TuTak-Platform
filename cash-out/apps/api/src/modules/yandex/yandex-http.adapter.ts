@@ -4,11 +4,13 @@ import type { CurrencyCode } from '@cashout/money';
 import { ENV, Env } from '../../config/env';
 import { AppLogger } from '../../common/logging/logger.service';
 import { Clock } from '../../common/clock';
+import { YandexCredentialsResolver } from './yandex-credentials.service';
 import {
   assertIdempotencyToken,
   YandexBalance,
   YandexContractorProfile,
   YandexFleetPort,
+  YandexProfilePage,
   YandexTransaction,
   YandexTransactionInput,
   YandexTransactionOutcome,
@@ -48,11 +50,36 @@ export class YandexHttpAdapter extends YandexFleetPort {
     @Inject(ENV) private readonly env: Env,
     private readonly logger: AppLogger,
     private readonly clock: Clock,
+    private readonly credentials: YandexCredentialsResolver,
   ) {
     super();
   }
 
   // ------------------------------------------------------------- profiles
+
+  async listProfiles(
+    parkId: string,
+    page: { limit: number; offset: number },
+  ): Promise<YandexProfilePage> {
+    const response = await this.call<DriverProfilesListResponse>(
+      parkId,
+      'POST',
+      '/v1/parks/driver-profiles/list',
+      {
+        limit: page.limit,
+        offset: page.offset,
+        query: { park: { id: parkId } },
+        fields: {
+          driver_profile: ['id', 'first_name', 'last_name', 'phones', 'license', 'work_rule_id'],
+          account: ['id', 'balance', 'currency', 'balance_limit'],
+        },
+      },
+    );
+    return {
+      items: (response.body.driver_profiles ?? []).map((item) => this.toProfile(parkId, item)),
+      total: typeof response.body.total === 'number' ? response.body.total : null,
+    };
+  }
 
   async findProfilesByPhone(parkId: string, phone: string): Promise<YandexContractorProfile[]> {
     const response = await this.call<DriverProfilesListResponse>(
@@ -313,14 +340,17 @@ export class YandexHttpAdapter extends YandexFleetPort {
     idempotencyToken?: string,
   ): Promise<CallResult<T>> {
     await this.throttle(parkId);
+    // Credentials are scoped per park: the park's own row first, the process
+    // environment only as a fallback for a single-park deployment.
+    const credential = await this.credentials.forPark(parkId);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.env.YANDEX_TIMEOUT_MS);
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'X-Client-ID': this.env.YANDEX_CLIENT_ID ?? '',
-      'X-API-Key': this.env.YANDEX_API_KEY ?? '',
+      'X-Client-ID': credential.clientId,
+      'X-API-Key': credential.apiKey,
       'X-Park-ID': parkId,
       'Accept-Language': 'en',
     };
@@ -463,6 +493,7 @@ function safeErrorCode(body: string): string {
 
 interface DriverProfilesListResponse {
   driver_profiles?: DriverProfileItem[];
+  total?: number;
 }
 
 interface DriverProfileItem {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { LedgerModule } from '../ledger/ledger.module';
+import { ParksModule } from '../parks/parks.module';
 import { PaymentProviderModule } from '../payment-provider/payment-provider.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { WithdrawalsModule } from '../withdrawals/withdrawals.module';
@@ -14,6 +15,7 @@ import { PricingService } from './pricing.service';
 @Module({
   imports: [
     LedgerModule,
+    ParksModule,
     PaymentProviderModule,
     ReconciliationModule,
     WithdrawalsModule,

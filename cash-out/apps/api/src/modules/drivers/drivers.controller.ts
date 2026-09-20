@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
-import { linkDriverSchema, localeSchema, type LinkDriverDto } from '@cashout/contracts';
+import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { localeSchema } from '@cashout/contracts';
 import { z } from 'zod';
 import { zodBody } from '../../common/zod.pipe';
 import { CurrentDriverId, CurrentUser } from '../auth/auth.decorators';
@@ -15,17 +15,10 @@ export class DriversController {
     private readonly balance: BalanceService,
   ) {}
 
+  /** Profile plus park resolution: NONE / ACTIVE / CHOOSE. */
   @Get()
   async me(@CurrentUser() user: { userId: string }) {
     return this.drivers.profile(user.userId);
-  }
-
-  @Post('link')
-  async link(
-    @CurrentUser() user: { userId: string },
-    @Body(zodBody(linkDriverSchema)) dto: LinkDriverDto,
-  ) {
-    return this.drivers.link(user.userId, dto);
   }
 
   @Patch('locale')
@@ -37,16 +30,15 @@ export class DriversController {
     return { ok: true };
   }
 
+  /** The balance of the active park. Cached for display only; see BalanceService. */
   @Get('balance')
   async balanceOf(@CurrentDriverId() driverId: string) {
-    const balance = await this.balance.forDisplay(driverId);
-    return {
-      available: balance.available.toJSON(),
-      reservedByPendingWithdrawals: balance.reserved.toJSON(),
-      withdrawable: balance.withdrawable.toJSON(),
-      asOf: balance.asOf.toISOString(),
-      fresh: balance.fresh,
-      staleSeconds: balance.staleSeconds,
-    };
+    return this.balance.toDto(await this.balance.forDisplay(driverId));
+  }
+
+  /** A fresh read, never the cache: what the withdraw screen calls before enabling the button. */
+  @Get('balance/fresh')
+  async freshBalance(@CurrentDriverId() driverId: string) {
+    return this.balance.toDto(await this.balance.requireFresh(driverId));
   }
 }

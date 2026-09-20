@@ -23,6 +23,8 @@ import { PayoutMethodsService } from '../src/modules/payout-methods/payout-metho
 import { AuthService } from '../src/modules/auth/auth.service';
 import { DriversService } from '../src/modules/drivers/drivers.service';
 import { BalanceService } from '../src/modules/drivers/balance.service';
+import { MembershipService } from '../src/modules/parks/membership.service';
+import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
 /**
  * Integration tests run against a real PostgreSQL database, not an in-memory
@@ -80,6 +82,8 @@ export interface Harness {
   auth: AuthService;
   drivers: DriversService;
   balances: BalanceService;
+  memberships: MembershipService;
+  parksAdmin: ParksAdminService;
   close(): Promise<void>;
 }
 
@@ -124,6 +128,8 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     auth: app.get(AuthService),
     drivers: app.get(DriversService),
     balances: app.get(BalanceService),
+    memberships: app.get(MembershipService),
+    parksAdmin: app.get(ParksAdminService),
     async close() {
       await app.close();
     },
@@ -145,6 +151,12 @@ const TABLES = [
   'payout_methods',
   'sessions',
   'devices',
+  'driver_id_change_requests',
+  'park_switches',
+  'roster_imports',
+  'driver_park_memberships',
+  'park_integration_credentials',
+  'parks',
   'drivers',
   'users',
   'otp_challenges',
@@ -230,13 +242,78 @@ export interface SeededDriver {
   driverId: string;
   payoutMethodId: string;
   phone: string;
+  /** The park's internal id — what ledger keys, fees and limits are scoped by. */
   parkId: string;
+  /** The park's Yandex id — what the mock Fleet API is addressed by. */
+  yandexParkId: string;
   contractorProfileId: string;
 }
 
+/** A park with a roster row for `phone`, plus the matching mock Yandex profile. */
+export async function seedPark(
+  harness: Harness,
+  options: {
+    yandexParkId?: string;
+    code?: string;
+    name?: string;
+    status?: 'ACTIVE' | 'SUSPENDED';
+  } = {},
+): Promise<{ id: string; yandexParkId: string }> {
+  const yandexParkId = options.yandexParkId ?? 'park-1';
+  const park = await harness.prisma.park.create({
+    data: {
+      code: options.code ?? yandexParkId,
+      name: options.name ?? `Park ${yandexParkId}`,
+      yandexParkId,
+      currency: 'AMD',
+      status: options.status ?? 'ACTIVE',
+    },
+  });
+  return { id: park.id, yandexParkId };
+}
+
+export async function seedMembership(
+  harness: Harness,
+  park: { id: string; yandexParkId: string },
+  options: {
+    phone: string;
+    contractorProfileId: string;
+    balance?: bigint;
+    firstName?: string;
+    lastName?: string;
+    eligibility?: 'ELIGIBLE' | 'INELIGIBLE' | 'PENDING_REVIEW';
+    status?: 'ACTIVE' | 'SUSPENDED' | 'REMOVED';
+    blocked?: boolean;
+  },
+): Promise<string> {
+  harness.yandex.seed({
+    parkId: park.yandexParkId,
+    contractorProfileId: options.contractorProfileId,
+    phone: options.phone,
+    firstName: options.firstName ?? 'Ara',
+    lastName: options.lastName ?? 'Sargsyan',
+    licenceNumber: 'AM1234567',
+    balance: Money.fromMinor(options.balance ?? 5_000_000n, 'AMD'),
+    blocked: options.blocked,
+  });
+  const row = await harness.prisma.driverParkMembership.create({
+    data: {
+      parkId: park.id,
+      phone: options.phone,
+      externalProfileId: options.contractorProfileId,
+      firstName: options.firstName ?? 'Ara',
+      lastName: options.lastName ?? 'Sargsyan',
+      eligibility: options.eligibility ?? 'ELIGIBLE',
+      status: options.status ?? 'ACTIVE',
+    },
+  });
+  return row.id;
+}
+
 /**
- * A driver who is signed up, linked to a (mock) Yandex profile and has an
- * active card. The starting point for every money test.
+ * A driver who is in one park's roster, has signed in (so the roster row is
+ * attached and the park auto-selected) and has an active payout method. The
+ * starting point for every money test.
  */
 export async function seedDriver(
   harness: Harness,
@@ -249,25 +326,33 @@ export async function seedDriver(
   } = {},
 ): Promise<SeededDriver> {
   const phone = options.phone ?? '+37411000001';
-  const parkId = options.parkId ?? 'park-1';
+  const yandexParkId = options.parkId ?? 'park-1';
   const contractorProfileId = options.contractorProfileId ?? `contractor-${phone.slice(-4)}`;
 
-  harness.yandex.seed({
-    parkId,
-    contractorProfileId,
-    phone,
-    firstName: 'Ara',
-    lastName: 'Sargsyan',
-    licenceNumber: 'AM1234567',
-    balance: Money.fromMinor(options.balance ?? 5_000_000n, 'AMD'),
-  });
+  const park =
+    (await harness.prisma.park.findUnique({ where: { yandexParkId } })) ??
+    (await seedPark(harness, { yandexParkId }));
+  await seedMembership(
+    harness,
+    { id: park.id, yandexParkId },
+    {
+      phone,
+      contractorProfileId,
+      balance: options.balance,
+    },
+  );
 
   const user = await harness.prisma.user.create({
     data: { phone, locale: 'hy', driver: { create: {} } },
   });
   const driver = await harness.prisma.driver.findUniqueOrThrow({ where: { userId: user.id } });
 
-  await harness.drivers.link(user.id, { parkId, licenceLast4: '4567' });
+  const profile = await harness.memberships.resolve(user.id);
+  if (profile.resolution !== 'ACTIVE') {
+    throw new Error(
+      `seedDriver: expected the single park to be auto-selected, got ${profile.resolution}`,
+    );
+  }
 
   const method = await harness.payoutMethods.add(driver.id, {
     kind: 'CARD',
@@ -281,7 +366,8 @@ export async function seedDriver(
     driverId: driver.id,
     payoutMethodId: method.id,
     phone,
-    parkId,
+    parkId: park.id,
+    yandexParkId,
     contractorProfileId,
   };
 }

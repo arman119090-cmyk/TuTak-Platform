@@ -43,3 +43,32 @@ export const idempotencyKeySchema = z
   .min(16)
   .max(128)
   .regex(/^[A-Za-z0-9_-]+$/, 'Idempotency key must be URL-safe');
+
+/**
+ * Normalises what a person typed into E.164, or returns null.
+ *
+ * Armenian numbers are the common case: "094 12 34 56", "094123456",
+ * "+374 94 123456" and "374941234 56" all mean +37494123456. Anything that
+ * already starts with "+" is kept as typed once the separators are gone.
+ */
+export function normalisePhone(raw: string, defaultCountryCode = '374'): string | null {
+  const digits = raw.replace(/[\s\-().]/g, '');
+  let candidate: string;
+  if (digits.startsWith('+')) {
+    candidate = digits;
+  } else if (digits.startsWith('00')) {
+    candidate = `+${digits.slice(2)}`;
+  } else if (digits.startsWith('0') && digits.length === 9) {
+    candidate = `+${defaultCountryCode}${digits.slice(1)}`;
+  } else if (
+    digits.startsWith(defaultCountryCode) &&
+    digits.length === defaultCountryCode.length + 8
+  ) {
+    candidate = `+${digits}`;
+  } else if (/^\d{8}$/.test(digits)) {
+    candidate = `+${defaultCountryCode}${digits}`;
+  } else {
+    candidate = `+${digits}`;
+  }
+  return /^\+[1-9]\d{7,14}$/.test(candidate) ? candidate : null;
+}

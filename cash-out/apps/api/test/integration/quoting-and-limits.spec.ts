@@ -170,7 +170,7 @@ describe('quoting and limits', () => {
       // The driver spent their balance elsewhere in the meantime.
       harness.yandex.reset();
       harness.yandex.seed({
-        parkId: driver.parkId,
+        parkId: driver.yandexParkId,
         contractorProfileId: driver.contractorProfileId,
         phone: driver.phone,
         firstName: 'Ara',

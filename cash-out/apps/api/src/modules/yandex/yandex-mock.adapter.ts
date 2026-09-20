@@ -7,6 +7,7 @@ import {
   YandexBalance,
   YandexContractorProfile,
   YandexFleetPort,
+  YandexProfilePage,
   YandexTransaction,
   YandexTransactionInput,
   YandexTransactionOutcome,
@@ -158,6 +159,21 @@ export class YandexMockAdapter extends YandexFleetPort {
     return [...this.drivers.values()]
       .filter((driver) => driver.parkId === parkId && driver.phone === phone)
       .map((driver) => this.toProfile(driver));
+  }
+
+  async listProfiles(
+    parkId: string,
+    page: { limit: number; offset: number },
+  ): Promise<YandexProfilePage> {
+    this.callLog.push({ method: 'listProfiles' });
+    this.assertUp();
+    const all = [...this.drivers.values()].filter((driver) => driver.parkId === parkId);
+    return {
+      items: all
+        .slice(page.offset, page.offset + page.limit)
+        .map((driver) => this.toProfile(driver)),
+      total: all.length,
+    };
   }
 
   async getProfile(

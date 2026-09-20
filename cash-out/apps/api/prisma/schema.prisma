@@ -116,8 +116,12 @@ enum DriverVerificationStatus {
 model Driver {
   id                        String                   @id @default(uuid()) @db.Uuid
   userId                    String                   @unique @db.Uuid
-  parkId                    String?
-  yandexContractorProfileId String?
+  /**
+   * The membership the driver is currently working through. Everything that
+   * touches money — the balance, quotes, withdrawals — is scoped to it, and
+   * switching it invalidates every cached balance of the previous park.
+   */
+  activeMembershipId        String?                  @unique @db.Uuid
   verificationStatus        DriverVerificationStatus @default(UNLINKED)
   firstName                 String?
   lastName                  String?
@@ -131,22 +135,210 @@ model Driver {
   createdAt                 DateTime                 @default(now())
   updatedAt                 DateTime                 @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  payoutMethods  PayoutMethod[]
-  withdrawals    Withdrawal[]
-  quotes         Quote[]
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeMembership DriverParkMembership? @relation("ActiveMembership", fields: [activeMembershipId], references: [id])
+  memberships      DriverParkMembership[]
+  payoutMethods    PayoutMethod[]
+  withdrawals      Withdrawal[]
+  quotes           Quote[]
   balanceSnapshots BalanceSnapshot[]
+  parkSwitches     ParkSwitch[]
 
-  /// One Cash Out account per Yandex contractor profile: this is what stops two
-  /// phone numbers from draining the same driver's balance.
-  @@unique([parkId, yandexContractorProfileId])
   @@index([verificationStatus])
   @@map("drivers")
+}
+
+// ------------------------------------------------------------------- parks
+
+enum ParkStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+/// A taxi park (a Yandex fleet) that Cash Out serves.
+model Park {
+  id            String     @id @default(uuid()) @db.Uuid
+  /// Short operator-facing code, e.g. "erevan-north".
+  code          String     @unique
+  name          String
+  /// The park's id inside Yandex Fleet — what every Fleet API call carries.
+  yandexParkId  String     @unique
+  currency      String     @default("AMD")
+  status        ParkStatus @default(ACTIVE)
+  /// Shown to drivers when the park is suspended, in their own language via a key.
+  suspendedReason String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  createdByAdminId String? @db.Uuid
+
+  credential  ParkIntegrationCredential?
+  memberships DriverParkMembership[]
+  rosterImports RosterImport[]
+
+  @@index([status])
+  @@map("parks")
+}
+
+/**
+ * The park's own Fleet API credentials. One row per park, encrypted at rest,
+ * never returned by any endpoint — the admin panel shows only that a key is
+ * set and when it was last verified.
+ */
+model ParkIntegrationCredential {
+  id             String    @id @default(uuid()) @db.Uuid
+  parkId         String    @unique @db.Uuid
+  provider       String    @default("YANDEX_FLEET")
+  clientId       String
+  apiKeyEnc      String
+  /// Last four characters of the key, so an operator can tell two keys apart.
+  apiKeyHint     String
+  lastVerifiedAt DateTime?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  updatedByAdminId String? @db.Uuid
+
+  park Park @relation(fields: [parkId], references: [id], onDelete: Cascade)
+
+  @@map("park_integration_credentials")
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum MembershipEligibility {
+  ELIGIBLE
+  INELIGIBLE
+  PENDING_REVIEW
+}
+
+enum MembershipSource {
+  ROSTER_IMPORT
+  YANDEX_SYNC
+  ADMIN
+}
+
+/**
+ * The roster: who works in which park, under which Yandex profile.
+ *
+ * A row exists before the driver ever installs the app — it is what the phone
+ * number is looked up against after the OTP. `driverId` is attached the first
+ * time that phone signs in. A driver may hold rows in several parks; exactly
+ * one of them is the driver's active membership at a time.
+ */
+model DriverParkMembership {
+  id                String                @id @default(uuid()) @db.Uuid
+  parkId            String                @db.Uuid
+  driverId          String?               @db.Uuid
+  /// E.164. The login key.
+  phone             String
+  /// The contractor_profile_id inside the park. The driver sees this as "Driver ID".
+  externalProfileId String
+  firstName         String?
+  lastName          String?
+  status            MembershipStatus      @default(ACTIVE)
+  eligibility       MembershipEligibility @default(ELIGIBLE)
+  eligibilityReason String?
+  source            MembershipSource      @default(ROSTER_IMPORT)
+  lastSyncedAt      DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  park    Park     @relation(fields: [parkId], references: [id], onDelete: Cascade)
+  driver  Driver?  @relation(fields: [driverId], references: [id])
+  activeFor Driver? @relation("ActiveMembership")
+  idChangeRequests DriverIdChangeRequest[]
+
+  /// One Cash Out membership per Yandex profile: two phones cannot drain one balance.
+  @@unique([parkId, externalProfileId])
+  /// One profile per phone per park.
+  @@unique([parkId, phone])
+  @@index([phone])
+  @@index([driverId])
+  @@map("driver_park_memberships")
+}
+
+/// Every change of a driver's active park, for the read model and support.
+model ParkSwitch {
+  id             String   @id @default(uuid()) @db.Uuid
+  driverId       String   @db.Uuid
+  fromParkId     String?  @db.Uuid
+  toParkId       String   @db.Uuid
+  /// AUTO (single membership), DRIVER (chose it), ADMIN.
+  actorType      String
+  actorId        String?
+  at             DateTime @default(now())
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, at])
+  @@map("park_switches")
+}
+
+/// A roster import batch: who uploaded what, and what happened to each row.
+model RosterImport {
+  id            String   @id @default(uuid()) @db.Uuid
+  parkId        String   @db.Uuid
+  source        MembershipSource
+  totalRows     Int
+  createdCount  Int
+  updatedCount  Int
+  skippedCount  Int
+  errors        Json?
+  createdAt     DateTime @default(now())
+  createdByAdminId String? @db.Uuid
+
+  park Park @relation(fields: [parkId], references: [id], onDelete: Cascade)
+
+  @@index([parkId, createdAt])
+  @@map("roster_imports")
+}
+
+enum DriverIdChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/**
+ * A driver asking for their Driver ID (Yandex contractor profile id) to be
+ * changed. The new id never becomes active until it is verified — either
+ * automatically against the park's Fleet API, or by an operator.
+ */
+model DriverIdChangeRequest {
+  id                  String               @id @default(uuid()) @db.Uuid
+  membershipId        String               @db.Uuid
+  driverId            String               @db.Uuid
+  parkId              String               @db.Uuid
+  previousExternalId  String
+  requestedExternalId String
+  status              DriverIdChangeStatus @default(PENDING)
+  /// DRIVER or ADMIN.
+  source              String               @default("DRIVER")
+  requestedAt         DateTime             @default(now())
+  verifiedAt          DateTime?
+  decidedAt           DateTime?
+  decidedByAdminId    String?              @db.Uuid
+  decisionReason      String?
+  /// What the automatic check found, for the operator.
+  verificationNote    String?
+
+  membership DriverParkMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, requestedAt])
+  @@index([status, requestedAt])
+  @@map("driver_id_change_requests")
 }
 
 model BalanceSnapshot {
   id          String   @id @default(uuid()) @db.Uuid
   driverId    String   @db.Uuid
+  /// The park the figure belongs to. A snapshot is never shown for another park.
+  parkId      String   @db.Uuid
   balanceMinor BigInt
   currency    String
   fetchedAt   DateTime @default(now())
@@ -155,7 +347,7 @@ model BalanceSnapshot {
 
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
-  @@index([driverId, fetchedAt])
+  @@index([driverId, parkId, fetchedAt])
   @@map("balance_snapshots")
 }
 
@@ -330,6 +522,8 @@ model Withdrawal {
   /// later moved to another park, this withdrawal still says where the money
   /// actually came from.
   parkId                    String
+  /// The park's id inside Yandex Fleet, as it was when the debit was posted.
+  yandexParkId              String
   yandexContractorProfileId String
 
   yandexBalanceBeforeMinor BigInt?

@@ -20,7 +20,7 @@ export default function SupportScreen() {
    * look anything up.
    */
   const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
-    `Cash Out — ${profile?.phone ?? ''} — ${profile?.parkId ?? ''}`,
+    `Cash Out — ${profile?.phone ?? ''} — ${profile?.activePark?.name ?? ''}`,
   )}`;
 
   return (
@@ -52,10 +52,10 @@ export default function SupportScreen() {
 
       <Card tone="muted" style={{ marginTop: theme.spacing.base }}>
         <Text variant="caption" tone="secondary">
-          {t('profile.fleet')}: {profile?.parkId ?? '—'}
+          {t('profile.fleet')}: {profile?.activePark?.name ?? '—'}
         </Text>
         <Text variant="caption" tone="secondary" style={{ marginTop: 2 }}>
-          {t('profile.driverId')}: {profile?.yandexContractorProfileId ?? '—'}
+          {t('profile.driverId')}: {profile?.driverId ?? '—'}
         </Text>
       </Card>
     </Screen>

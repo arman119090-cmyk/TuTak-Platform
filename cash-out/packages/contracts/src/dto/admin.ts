@@ -16,6 +16,8 @@ export type AdminRole = z.infer<typeof adminRoleSchema>;
 
 export const adminPermissionSchema = z.enum([
   'dashboard:read',
+  'parks:read',
+  'parks:write',
   'drivers:read',
   'drivers:write',
   'withdrawals:read',
@@ -42,6 +44,7 @@ export type AdminPermission = z.infer<typeof adminPermissionSchema>;
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> = {
   VIEWER: [
     'dashboard:read',
+    'parks:read',
     'drivers:read',
     'withdrawals:read',
     'ledger:read',
@@ -52,6 +55,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermissi
   ],
   OPERATOR: [
     'dashboard:read',
+    'parks:read',
+    'parks:write',
     'drivers:read',
     'drivers:write',
     'withdrawals:read',
@@ -67,6 +72,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermissi
   ],
   FINANCE: [
     'dashboard:read',
+    'parks:read',
     'drivers:read',
     'withdrawals:read',
     'withdrawals:retry',
@@ -84,6 +90,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermissi
   ],
   ADMIN: [
     'dashboard:read',
+    'parks:read',
+    'parks:write',
     'drivers:read',
     'drivers:write',
     'withdrawals:read',
@@ -143,3 +151,53 @@ export const resolveManualReviewSchema = z.object({
   evidenceReference: z.string().max(200).optional(),
 });
 export type ResolveManualReviewDto = z.infer<typeof resolveManualReviewSchema>;
+
+// ------------------------------------------------------------------- parks
+
+export const parkStatusAdminSchema = z.enum(['ACTIVE', 'SUSPENDED']);
+
+export const createParkSchema = z.object({
+  code: z
+    .string()
+    .min(2)
+    .max(48)
+    .regex(/^[a-z0-9][a-z0-9-]*$/, 'lowercase letters, digits and dashes'),
+  name: z.string().min(2).max(120),
+  yandexParkId: z.string().min(4).max(64),
+  currency: z.enum(['AMD', 'RUB', 'USD', 'EUR', 'GEL', 'KZT']).default('AMD'),
+});
+export type CreateParkDto = z.infer<typeof createParkSchema>;
+
+export const updateParkSchema = z.object({
+  name: z.string().min(2).max(120).optional(),
+  status: parkStatusAdminSchema.optional(),
+  suspendedReason: z.string().max(300).nullable().optional(),
+});
+export type UpdateParkDto = z.infer<typeof updateParkSchema>;
+
+/** The key is written once and never read back. */
+export const setParkCredentialSchema = z.object({
+  clientId: z.string().min(2).max(120),
+  apiKey: z.string().min(8).max(512),
+});
+export type SetParkCredentialDto = z.infer<typeof setParkCredentialSchema>;
+
+export const rosterRowSchema = z.object({
+  phone: z.string().min(6).max(24),
+  externalProfileId: z.string().min(2).max(64),
+  firstName: z.string().max(80).optional(),
+  lastName: z.string().max(80).optional(),
+});
+export type RosterRowDto = z.infer<typeof rosterRowSchema>;
+
+export const importRosterSchema = z.object({
+  rows: z.array(rosterRowSchema).min(1).max(5000),
+});
+export type ImportRosterDto = z.infer<typeof importRosterSchema>;
+
+export const updateMembershipSchema = z.object({
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'REMOVED']).optional(),
+  eligibility: z.enum(['ELIGIBLE', 'INELIGIBLE', 'PENDING_REVIEW']).optional(),
+  reason: z.string().min(3).max(300),
+});
+export type UpdateMembershipDto = z.infer<typeof updateMembershipSchema>;

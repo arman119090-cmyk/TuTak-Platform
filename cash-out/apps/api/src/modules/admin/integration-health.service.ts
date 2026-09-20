@@ -27,9 +27,15 @@ export class IntegrationHealthService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async probe(): Promise<void> {
+    const park = await this.prisma.park.findFirst({
+      where: { status: 'ACTIVE', credential: { isNot: null } },
+      orderBy: { createdAt: 'asc' },
+      select: { yandexParkId: true },
+    });
+    const yandexParkId = park?.yandexParkId ?? this.env.YANDEX_PARK_ID;
     await this.record(
       'yandex-fleet',
-      await this.safe(() => this.yandex.ping(this.env.YANDEX_PARK_ID ?? 'unknown')),
+      yandexParkId ? await this.safe(() => this.yandex.ping(yandexParkId)) : false,
     );
     await this.record('payment-provider', await this.safe(() => this.provider.ping()));
   }

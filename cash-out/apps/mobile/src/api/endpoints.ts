@@ -4,7 +4,7 @@ import type {
   ConfirmWithdrawalDto,
   CreateQuoteDto,
   DriverProfileDto,
-  LinkDriverDto,
+  MembershipDto,
   PayoutMethodDto,
   QuoteDto,
   RequestOtpResponse,
@@ -36,13 +36,18 @@ export const endpoints = {
 
   me: (api: ApiClient) => api.request<DriverProfileDto>('/v1/me'),
 
-  link: (api: ApiClient, body: LinkDriverDto) =>
-    api.request<DriverProfileDto>('/v1/me/link', { method: 'POST', body }),
+  parks: (api: ApiClient) => api.request<{ items: MembershipDto[] }>('/v1/me/parks'),
+
+  activatePark: (api: ApiClient, parkId: string) =>
+    api.request<DriverProfileDto>('/v1/me/parks/activate', { method: 'POST', body: { parkId } }),
 
   setLocale: (api: ApiClient, locale: string) =>
     api.request<{ ok: boolean }>('/v1/me/locale', { method: 'PATCH', body: { locale } }),
 
   balance: (api: ApiClient) => api.request<BalanceDto>('/v1/me/balance'),
+
+  /** A fresh read from the fleet, never the cache. Required before withdrawing. */
+  freshBalance: (api: ApiClient) => api.request<BalanceDto>('/v1/me/balance/fresh'),
 
   payoutMethods: (api: ApiClient) =>
     api.request<{ items: PayoutMethodDto[] }>('/v1/payout-methods'),

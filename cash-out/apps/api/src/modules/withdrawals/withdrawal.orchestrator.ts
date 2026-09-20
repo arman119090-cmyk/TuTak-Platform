@@ -223,7 +223,7 @@ export class WithdrawalOrchestrator {
   private async reserve(withdrawal: Withdrawal): Promise<boolean> {
     const gross = moneyOf(withdrawal.grossMinor, withdrawal.currency);
     const outcome = await this.yandex.createDebit({
-      parkId: withdrawal.parkId,
+      parkId: withdrawal.yandexParkId,
       contractorProfileId: withdrawal.yandexContractorProfileId,
       amount: gross,
       kind: this.env.YANDEX_PAYOUT_KIND,
@@ -301,7 +301,7 @@ export class WithdrawalOrchestrator {
     let found: Awaited<ReturnType<YandexFleetPort['findTransaction']>> = null;
     try {
       found = await this.yandex.findTransaction(
-        withdrawal.parkId,
+        withdrawal.yandexParkId,
         withdrawal.yandexContractorProfileId,
         withdrawal.reference,
         new Date(withdrawal.createdAt.getTime() - 60_000),
@@ -351,7 +351,7 @@ export class WithdrawalOrchestrator {
     }
 
     const status = await this.yandex.getTransactionStatus(
-      withdrawal.parkId,
+      withdrawal.yandexParkId,
       withdrawal.yandexTransactionId,
     );
 
@@ -636,7 +636,7 @@ export class WithdrawalOrchestrator {
     // A credit we already hold an id for is followed up, not re-posted.
     if (withdrawal.yandexReversalTransactionId) {
       const status = await this.yandex.getTransactionStatus(
-        withdrawal.parkId,
+        withdrawal.yandexParkId,
         withdrawal.yandexReversalTransactionId,
       );
       if (status.status === 'SUCCESS') {
@@ -654,7 +654,7 @@ export class WithdrawalOrchestrator {
     }
 
     const outcome = await this.yandex.createCredit({
-      parkId: withdrawal.parkId,
+      parkId: withdrawal.yandexParkId,
       contractorProfileId: withdrawal.yandexContractorProfileId,
       amount: gross,
       kind: this.env.YANDEX_REVERSAL_KIND,

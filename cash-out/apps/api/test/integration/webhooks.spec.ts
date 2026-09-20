@@ -172,7 +172,7 @@ describe('provider webhooks', () => {
 
       let row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: withdrawal.id } });
       expect(row.state).toBe('COMPLETED');
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         4_000_000n,
       );
 
@@ -187,7 +187,7 @@ describe('provider webhooks', () => {
 
       row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: withdrawal.id } });
       expect(row.state).toBe('REVERSED');
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         5_000_000n,
       );
 

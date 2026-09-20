@@ -17,6 +17,7 @@ import { HealthModule } from './modules/health/health.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { LimitsModule } from './modules/limits/limits.module';
 import { PaymentProviderModule } from './modules/payment-provider/payment-provider.module';
+import { ParksModule } from './modules/parks/parks.module';
 import { PayoutMethodsModule } from './modules/payout-methods/payout-methods.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module';
@@ -43,6 +44,7 @@ export class AppModule implements NestModule {
         CryptoModule,
         AuditModule,
         AuthModule,
+        ParksModule,
         DriversModule,
         PayoutMethodsModule,
         WithdrawalsModule,

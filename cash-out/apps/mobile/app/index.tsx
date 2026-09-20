@@ -8,9 +8,9 @@ import { Text } from '../src/ui';
 /**
  * Splash and router.
  *
- * It decides where the driver belongs — onboarding, sign-in, driver linking, or
- * home — and it is the only place that decision is made, so no screen has to
- * guess whether it may be shown.
+ * It decides where the driver belongs — onboarding, park selection, a "not in
+ * any park" screen, or home — and it is the only place that decision is made,
+ * so no screen has to guess whether it may be shown.
  */
 export default function SplashScreen() {
   const theme = useTheme();
@@ -23,11 +23,26 @@ export default function SplashScreen() {
       router.replace('/onboarding');
       return;
     }
-    if (profile && profile.verificationStatus !== 'VERIFIED') {
-      router.replace('/link');
+    if (!profile) {
+      router.replace('/onboarding');
       return;
     }
-    router.replace('/(tabs)');
+    // The server decided where this phone stands; the app only routes on it.
+    if (profile.verificationStatus === 'BLOCKED') {
+      router.replace('/park/denied');
+      return;
+    }
+    switch (profile.resolution) {
+      case 'CHOOSE':
+        router.replace('/park/select');
+        return;
+      case 'NONE':
+        router.replace(profile.membershipCount === 0 ? '/park/not-found' : '/park/denied');
+        return;
+      case 'ACTIVE':
+      default:
+        router.replace('/(tabs)');
+    }
   }, [status, profile, router]);
 
   return (

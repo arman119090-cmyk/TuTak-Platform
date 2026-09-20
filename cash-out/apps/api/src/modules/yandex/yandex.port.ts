@@ -27,6 +27,16 @@ export abstract class YandexFleetPort {
     contractorProfileId: string,
   ): Promise<YandexContractorProfile | null>;
 
+  /**
+   * A page of the park's contractor profiles, for roster synchronisation
+   * (`POST /v1/parks/driver-profiles/list` with no filter). Classified
+   * LIVE-UNVERIFIED in docs/YANDEX_INTEGRATION.md.
+   */
+  abstract listProfiles(
+    parkId: string,
+    page: { limit: number; offset: number },
+  ): Promise<YandexProfilePage>;
+
   /** The driver's current park balance, as Yandex reports it right now. */
   abstract getBalance(parkId: string, contractorProfileId: string): Promise<YandexBalance>;
 
@@ -81,6 +91,12 @@ export interface YandexContractorProfile {
   readonly workRuleId: string | null;
   readonly balance: YandexBalance | null;
   readonly blocked: boolean;
+}
+
+export interface YandexProfilePage {
+  readonly items: readonly YandexContractorProfile[];
+  /** Total in the park when the API reports it; null when it does not. */
+  readonly total: number | null;
 }
 
 export interface YandexBalance {

@@ -173,7 +173,7 @@ export class ReconciliationService {
       scanned += 1;
       try {
         const transaction = await this.yandex.findTransaction(
-          withdrawal.parkId,
+          withdrawal.yandexParkId,
           withdrawal.yandexContractorProfileId,
           withdrawal.reference,
           new Date(withdrawal.createdAt.getTime() - 60_000),

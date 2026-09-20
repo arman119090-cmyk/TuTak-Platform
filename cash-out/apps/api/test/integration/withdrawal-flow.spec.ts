@@ -64,7 +64,7 @@ describe('the withdrawal flow', () => {
       expect(await drive(created.id)).toBe('COMPLETED');
 
       // The driver's Yandex balance really moved, by the gross.
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         4_000_000n,
       );
       // The bank was instructed for the net, once.
@@ -135,7 +135,9 @@ describe('the withdrawal flow', () => {
         idempotencyKey: 'withdraw-everything-key-0001',
       });
       expect(await drive(created.id)).toBe('COMPLETED');
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(0n);
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
+        0n,
+      );
     });
   });
 
@@ -193,8 +195,10 @@ describe('the withdrawal flow', () => {
       });
 
       expect(outcome.status).toBe('APPLIED');
-      expect(harness.yandex.transactionCount(driver.parkId, driver.contractorProfileId)).toBe(1);
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.transactionCount(driver.yandexParkId, driver.contractorProfileId)).toBe(
+        1,
+      );
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         4_000_000n,
       );
     });
@@ -262,7 +266,7 @@ describe('the withdrawal flow', () => {
       const created = await requestWithdrawal(harness, driver, 1_000_000n);
 
       expect(await drive(created.id)).toBe('FAILED');
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         5_000_000n,
       );
       expect(harness.provider.payoutCount()).toBe(0);
@@ -283,8 +287,10 @@ describe('the withdrawal flow', () => {
 
       row = await harness.prisma.withdrawal.findUniqueOrThrow({ where: { id: created.id } });
       expect(row.yandexTransactionId).toBeTruthy();
-      expect(harness.yandex.transactionCount(driver.parkId, driver.contractorProfileId)).toBe(1);
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.transactionCount(driver.yandexParkId, driver.contractorProfileId)).toBe(
+        1,
+      );
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         4_000_000n,
       );
     });
@@ -316,7 +322,7 @@ describe('the withdrawal flow', () => {
       expect(await drive(created.id, 8)).toBe('REVERSED');
 
       // The driver is whole again, on Yandex and in our books.
-      expect(harness.yandex.balanceOf(driver.parkId, driver.contractorProfileId)?.minor).toBe(
+      expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
         5_000_000n,
       );
       const payable = await harness.ledger.balanceOf('DRIVER_PAYABLE', driver.driverId, 'AMD');

@@ -3,6 +3,7 @@ import { DriversModule } from '../drivers/drivers.module';
 import { FeesModule } from '../fees/fees.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { LimitsModule } from '../limits/limits.module';
+import { ParksModule } from '../parks/parks.module';
 import { PaymentProviderModule } from '../payment-provider/payment-provider.module';
 import { PayoutMethodsModule } from '../payout-methods/payout-methods.module';
 import { YandexModule } from '../yandex/yandex.module';
@@ -21,6 +22,7 @@ import { WithdrawalsService } from './withdrawals.service';
     FeesModule,
     LedgerModule,
     LimitsModule,
+    ParksModule,
     PaymentProviderModule,
     PayoutMethodsModule,
     YandexModule,

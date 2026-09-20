@@ -1,5 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  GestureResponderEvent,
+  LayoutChangeEvent,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -8,8 +16,9 @@ import {
   panBy,
   screenPosition,
   tilesForViewport,
-  TILE_SIZE,
+  zoomAround,
   type LatLng,
+  type WorldPoint,
 } from './mercator';
 import { attribution, tileRequestHeaders, tileUrl } from './tileSource';
 
@@ -37,6 +46,15 @@ const MIN_ZOOM = 3;
 const MAX_ZOOM = 18;
 
 /**
+ * Two taps this close together, in time and in place, are one double-tap.
+ *
+ * 300 ms is what every platform's own tap detection uses; the distance is
+ * generous because a thumb does not land twice on the same pixel.
+ */
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_RADIUS = 24;
+
+/**
  * How much of a screenful has to fail before the map admits it.
  *
  * One tile that does not arrive is a dropped request, and the map still reads
@@ -58,6 +76,7 @@ export function TileMap({
   onSelect,
   height = 260,
   unavailableLabel,
+  onInteractionChange,
 }: {
   markers: MapMarker[];
   /**
@@ -86,6 +105,14 @@ export function TileMap({
    * way it always did — silently.
    */
   unavailableLabel?: string;
+  /**
+   * Told `true` when a finger lands on the map and `false` when the last one
+   * lifts. A parent that scrolls — the partners list does — uses it to stop
+   * scrolling for the duration, because on Android a vertical drag on the
+   * map is otherwise taken by the list before the map sees it, and a map
+   * that only pans sideways reads as a map that does not pan.
+   */
+  onInteractionChange?: (active: boolean) => void;
 }) {
   const { color, radius, space, text, premium } = useTheme();
 
@@ -120,10 +147,60 @@ export function TileMap({
     setCentre(initialCentre);
   }
 
-  // The pan is read and written between renders, so it is a ref: routing it
-  // through state would re-render on every one of the sixty frames a drag
-  // produces and re-fetch the tile grid each time.
-  const dragStart = useRef<{ centre: LatLng; zoom: number } | null>(null);
+  /**
+   * The gesture in progress, read and written between renders, so a ref:
+   * routing it through state would re-render on every one of the sixty
+   * frames a drag produces and re-fetch the tile grid each time.
+   *
+   * `drag` is where a one-finger pan started, plus the responder's running
+   * `dx`/`dy` at that moment — zero for a drag that began on touch, and
+   * whatever the responder had accumulated when a pinch ended and the last
+   * finger carried on alone. `pinch` is where a two-finger pinch started:
+   * the map's centre and zoom, the distance between the fingers and the
+   * point between them, all relative to the start so nothing drifts.
+   */
+  const gesture = useRef<{
+    drag: { centre: LatLng; zoom: number; dx0: number; dy0: number } | null;
+    pinch: { centre: LatLng; zoom: number; distance: number; mid: WorldPoint } | null;
+  }>({ drag: null, pinch: null });
+
+  /**
+   * Where the map's frame sits in the window, so a finger's `pageX`/`pageY`
+   * can be turned into a point on the map. Measured on layout and again on
+   * every touch-down, because a list scrolls the map around the screen
+   * between layouts. Unmeasurable — a test renderer, a detached view — it
+   * stays at the origin and a pinch zooms about the map's centre, which is
+   * wrong by a little rather than broken.
+   */
+  const frameRef = useRef<View>(null);
+  const frameOrigin = useRef<WorldPoint>({ x: 0, y: 0 });
+  const measureFrame = useCallback(() => {
+    frameRef.current?.measureInWindow?.((x, y) => {
+      if (Number.isFinite(x) && Number.isFinite(y)) frameOrigin.current = { x, y };
+    });
+  }, []);
+  // Both read refs only, so both are stable: the responder below is built
+  // once and must not be rebuilt for them (see its comment).
+  const toFrame = useCallback(
+    (pageX: number, pageY: number): WorldPoint => ({
+      x: pageX - frameOrigin.current.x,
+      y: pageY - frameOrigin.current.y,
+    }),
+    [],
+  );
+  /** The first two fingers on the map: how far apart, and the point between them. */
+  const fingers = useCallback(
+    (event: GestureResponderEvent): { distance: number; mid: WorldPoint } | null => {
+      const touches = event.nativeEvent.touches ?? [];
+      if (touches.length < 2) return null;
+      const [a, b] = touches;
+      return {
+        distance: Math.hypot(b.pageX - a.pageX, b.pageY - a.pageY),
+        mid: toFrame((a.pageX + b.pageX) / 2, (a.pageY + b.pageY) / 2),
+      };
+    },
+    [toFrame],
+  );
 
   /**
    * Where the map is, readable from a callback that outlives the render it
@@ -137,8 +214,31 @@ export function TileMap({
    */
   const centreRef = useRef(centre);
   const zoomRef = useRef(zoom);
+  const sizeRef = useRef(size);
   centreRef.current = centre;
   zoomRef.current = zoom;
+  sizeRef.current = size;
+
+  /**
+   * Zoom so that the place under `focal` stays under `focal`. Every way of
+   * zooming goes through here — the pinch, the double-tap and the buttons
+   * (which zoom about the middle) — so they cannot disagree about the limits.
+   */
+  const zoomTo = useCallback((toZoom: number, focal?: WorldPoint) => {
+    const { width, height: h } = sizeRef.current;
+    const next = zoomAround({
+      centre: centreRef.current,
+      zoom: zoomRef.current,
+      toZoom,
+      focal: focal ?? { x: width / 2, y: h / 2 },
+      width,
+      height: h,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+    });
+    setCentre(next.centre);
+    setZoom(next.zoom);
+  }, []);
 
   // What the map was last told to fit. A screen whose results change — a
   // category chip, a search — should reframe; a screen the user has just
@@ -161,10 +261,14 @@ export function TileMap({
     takenOver.current = false;
   }
 
-  const onLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height: h } = event.nativeEvent.layout;
-    setSize((prev) => (prev.width === width && prev.height === h ? prev : { width, height: h }));
-  }, []);
+  const onLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { width, height: h } = event.nativeEvent.layout;
+      setSize((prev) => (prev.width === width && prev.height === h ? prev : { width, height: h }));
+      measureFrame();
+    },
+    [measureFrame],
+  );
 
   // Frame the pins as soon as there is both a viewport and something to show.
   // Done during render rather than in an effect so the first painted frame is
@@ -218,33 +322,170 @@ export function TileMap({
       PanResponder.create({
         // Claimed on move rather than on touch, so a tap still reaches the
         // markers underneath. A responder that grabs the gesture at
-        // `onStartShouldSet` swallows every pin press on the map.
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_event, gesture) =>
-          Math.abs(gesture.dx) > 3 || Math.abs(gesture.dy) > 3,
-        onPanResponderGrant: () => {
+        // `onStartShouldSet` swallows every pin press on the map. Two
+        // fingers are the exception: nobody taps a pin with two fingers,
+        // and a pinch that had to move first would start with a jump.
+        // Counted on the event: the responder's own `numberActiveTouches`
+        // is only brought up to date once a gesture has been granted.
+        onStartShouldSetPanResponder: (event) => (event.nativeEvent.touches?.length ?? 0) >= 2,
+        onMoveShouldSetPanResponder: (_event, state) =>
+          state.numberActiveTouches >= 2 || Math.abs(state.dx) > 3 || Math.abs(state.dy) > 3,
+        // Once the map has the gesture it keeps it. The list around it asks
+        // for every vertical drag, and a map that hands those over cannot be
+        // panned up or down.
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (event) => {
           // From here on the person is driving: a location fix that lands
           // mid-pan must not pull the view out from under them.
           takenOver.current = true;
-          dragStart.current = { centre: centreRef.current, zoom: zoomRef.current };
+          gesture.current = {
+            drag: { centre: centreRef.current, zoom: zoomRef.current, dx0: 0, dy0: 0 },
+            pinch: null,
+          };
+          // Granted with two fingers already down: the pinch measures from
+          // here. Taking the baseline from the first *move* instead lost
+          // whatever the fingers did before it — a spread to twice the
+          // distance came out as a spread to one and a half.
+          const pair = fingers(event);
+          if (pair) gesture.current = { drag: null, pinch: { centre: centreRef.current, zoom: zoomRef.current, ...pair } };
         },
-        onPanResponderMove: (_event, gesture) => {
-          const from = dragStart.current;
+        onPanResponderMove: (event, state) => {
+          const current = gesture.current;
+          const pair = fingers(event);
+
+          if (pair) {
+            const { distance, mid } = pair;
+            if (!current.pinch) {
+              // The second finger has just landed: this frame is the
+              // baseline, and there is nothing to apply yet.
+              current.pinch = { centre: centreRef.current, zoom: zoomRef.current, distance, mid };
+              current.drag = null;
+              return;
+            }
+            const from = current.pinch;
+            if (from.distance <= 0) return;
+            // Spreading the fingers to twice the distance is one level in;
+            // the place between them stays between them; and if the pair
+            // has moved as a whole, the map has moved with it.
+            const { width, height: h } = sizeRef.current;
+            const zoomed = zoomAround({
+              centre: from.centre,
+              zoom: from.zoom,
+              toZoom: from.zoom + Math.log2(distance / from.distance),
+              focal: from.mid,
+              width,
+              height: h,
+              minZoom: MIN_ZOOM,
+              maxZoom: MAX_ZOOM,
+            });
+            setCentre(
+              panBy({
+                centre: zoomed.centre,
+                zoom: zoomed.zoom,
+                dx: mid.x - from.mid.x,
+                dy: mid.y - from.mid.y,
+              }),
+            );
+            setZoom(zoomed.zoom);
+            return;
+          }
+
+          if (current.pinch) {
+            // One finger has lifted and the other carries on. The responder's
+            // `dx`/`dy` kept counting through the pinch, so the drag that
+            // follows measures from here rather than from the touch-down.
+            current.pinch = null;
+            current.drag = {
+              centre: centreRef.current,
+              zoom: zoomRef.current,
+              dx0: state.dx,
+              dy0: state.dy,
+            };
+            return;
+          }
+
+          const from = current.drag;
           if (!from) return;
           // Always from where the drag began, never incrementally from the
           // last frame: accumulating deltas drifts, and the map ends up a
           // little behind the finger by the end of a long swipe.
-          setCentre(panBy({ centre: from.centre, zoom: from.zoom, dx: gesture.dx, dy: gesture.dy }));
+          setCentre(
+            panBy({
+              centre: from.centre,
+              zoom: from.zoom,
+              dx: state.dx - from.dx0,
+              dy: state.dy - from.dy0,
+            }),
+          );
         },
         onPanResponderRelease: () => {
-          dragStart.current = null;
+          gesture.current = { drag: null, pinch: null };
         },
         onPanResponderTerminate: () => {
-          dragStart.current = null;
+          gesture.current = { drag: null, pinch: null };
         },
       }),
-    [],
+    [fingers],
   );
+
+  /**
+   * Touches, below the responder system.
+   *
+   * These fire for every finger that lands on the frame or anything in it,
+   * whether or not the responder claims the gesture, which makes them the
+   * right place for two things the responder cannot do: tell the parent a
+   * finger is down *before* the parent's own scroll view has decided to take
+   * the drag, and see the taps the responder deliberately leaves alone —
+   * two of which, close together, zoom in on where they landed.
+   */
+  const touching = useRef(false);
+  const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
+  const onTouchStart = useCallback(
+    (event: GestureResponderEvent) => {
+      measureFrame();
+      if ((event.nativeEvent.touches?.length ?? 0) > 1) lastTap.current = null;
+      if (!touching.current) {
+        touching.current = true;
+        onInteractionChange?.(true);
+      }
+    },
+    [measureFrame, onInteractionChange],
+  );
+  const onTouchEnd = useCallback(
+    (event: GestureResponderEvent) => {
+      if ((event.nativeEvent.touches?.length ?? 0) > 0) return;
+      touching.current = false;
+      onInteractionChange?.(false);
+
+      // A tap is a touch that the responder never claimed: a drag or a
+      // pinch cleared this on release before the finger came up.
+      const wasGesture = gesture.current.drag !== null || gesture.current.pinch !== null;
+      if (wasGesture) {
+        lastTap.current = null;
+        return;
+      }
+      const { pageX, pageY, timestamp } = event.nativeEvent;
+      const now = typeof timestamp === 'number' ? timestamp : Date.now();
+      const previous = lastTap.current;
+      if (
+        previous &&
+        now - previous.at <= DOUBLE_TAP_MS &&
+        Math.hypot(pageX - previous.x, pageY - previous.y) <= DOUBLE_TAP_RADIUS
+      ) {
+        lastTap.current = null;
+        takenOver.current = true;
+        zoomTo(Math.floor(zoomRef.current) + 1, toFrame(pageX, pageY));
+        return;
+      }
+      lastTap.current = { at: now, x: pageX, y: pageY };
+    },
+    [onInteractionChange, zoomTo, toFrame],
+  );
+  const onTouchCancel = useCallback(() => {
+    touching.current = false;
+    lastTap.current = null;
+    onInteractionChange?.(false);
+  }, [onInteractionChange]);
 
   const tiles = useMemo(
     () =>
@@ -287,7 +528,11 @@ export function TileMap({
 
   return (
     <View
+      ref={frameRef}
       onLayout={onLayout}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
       style={[
         styles.frame,
         {
@@ -311,8 +556,8 @@ export function TileMap({
             position: 'absolute',
             left: tile.left,
             top: tile.top,
-            width: TILE_SIZE,
-            height: TILE_SIZE,
+            width: tile.size,
+            height: tile.size,
           }}
           // Tiles are opaque squares that tile exactly; fading each one in
           // makes a screenful arrive as a visible patchwork. (`expo-image`
@@ -390,16 +635,19 @@ export function TileMap({
             }}
           />
         ) : null}
+        {/* The buttons land on whole levels: from 13.4, "in" goes to 14 and
+            "out" to 13, so a pinch left half-way is tidied rather than
+            carried on as 14.4. */}
         <ZoomButton
           icon="add"
           accessibilityLabel="Zoom in"
-          onPress={() => setZoom((z) => Math.min(MAX_ZOOM, z + 1))}
+          onPress={() => zoomTo(Math.floor(zoom) + 1)}
           disabled={zoom >= MAX_ZOOM}
         />
         <ZoomButton
           icon="remove"
           accessibilityLabel="Zoom out"
-          onPress={() => setZoom((z) => Math.max(MIN_ZOOM, z - 1))}
+          onPress={() => zoomTo(Math.ceil(zoom) - 1)}
           disabled={zoom <= MIN_ZOOM}
         />
       </View>

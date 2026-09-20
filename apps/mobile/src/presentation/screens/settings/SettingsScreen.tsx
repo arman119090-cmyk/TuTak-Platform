@@ -16,6 +16,7 @@ import { UserAvatar } from '../../components/UserAvatar';
 import { AvatarControl } from '../../components/AvatarControl';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { BuildInfo } from '../../components/BuildInfo';
+import { AppLockSettings } from '../../components/AppLockSettings';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
 import { usersApi } from '../../../data/api/usersApi';
@@ -229,6 +230,10 @@ export function SettingsScreen() {
           onPress={() => navigation.navigate('VerifyPhone')}
         />
       ) : null}
+      {/* The app lock: change the four-digit code, and the biometric switch
+          when the phone offers one. Mandatory for every account, so there is
+          no "turn the lock off" row here. */}
+      <AppLockSettings />
       <ListRow
         title={t('settings.changePassword')}
         leading={<SettingIcon name="lock-closed-outline" />}

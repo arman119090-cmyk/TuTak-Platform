@@ -10,6 +10,7 @@ import { ReferralScreen } from '../../presentation/screens/referral/ReferralScre
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { ChangePinScreen } from '../../presentation/screens/appLock/ChangePinScreen';
 import { EditProfileScreen } from '../../presentation/screens/settings/EditProfileScreen';
 import { BecomePartnerScreen } from '../../presentation/screens/partner-application/BecomePartnerScreen';
 import { PartnerApplicationSentScreen } from '../../presentation/screens/partner-application/PartnerApplicationSentScreen';
@@ -101,6 +102,11 @@ export function RootNavigator() {
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ title: t('settings.changePassword'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChangePin"
+        component={ChangePinScreen}
+        options={{ title: t('appLock.changeCode'), headerShown: false }}
       />
       <Stack.Screen
         name="VerifyPhone"

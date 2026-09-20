@@ -422,6 +422,13 @@ module.exports = ({ config }) => ({
     favicon: './assets/icon.png',
   },
   plugins: [
+    // The app lock's biometric half: Face ID / fingerprint through
+    // expo-local-authentication, and the biometric-bound keystore entry the
+    // lock verifies through expo-secure-store's `requireAuthentication`.
+    // Both plugins write NSFaceIDUsageDescription; same string so the plist
+    // does not end up with two.
+    ['expo-local-authentication', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
+    ['expo-secure-store', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
     [
       'expo-camera',
       {

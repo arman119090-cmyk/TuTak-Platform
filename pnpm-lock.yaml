@@ -350,6 +350,9 @@ importers:
       expo-constants:
         specifier: ~57.0.9
         version: 57.0.9(expo@57.0.10)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))
+      expo-crypto:
+        specifier: ~57.0.1
+        version: 57.0.3(expo@57.0.10)
       expo-device:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.10)
@@ -368,6 +371,9 @@ importers:
       expo-linear-gradient:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.10)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+      expo-local-authentication:
+        specifier: ~57.0.2
+        version: 57.0.3(expo@57.0.10)
       expo-localization:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.10)(react@19.2.3)
@@ -4814,6 +4820,11 @@ packages:
       expo: '*'
       react-native: '*'
 
+  expo-crypto@57.0.3:
+    resolution: {integrity: sha512-SAWqEfF37nc8ot7bXsVmu9AFYwQdC2kGvH/eNAHiR3bmlcf1Vv8wu9AnGKT+a90r3T8YfwMpZP4QAYlo4vCn9w==}
+    peerDependencies:
+      expo: '*'
+
   expo-device@57.0.1:
     resolution: {integrity: sha512-jyEMDUticH+dhcL3GHa2aiifOvGXJsmb3oVT2R2q4i8bN7Bddy61+NkpMmuS2VAZrvoLQwf0TJJ/1vi1ukvutA==}
     peerDependencies:
@@ -4865,6 +4876,11 @@ packages:
       expo: '*'
       react: '*'
       react-native: '*'
+
+  expo-local-authentication@57.0.3:
+    resolution: {integrity: sha512-1oQCBKz8JOpai+Zp+Z2RkBFIi2CHHWLSJk/pjvT9VEyf8nPFslo4kt1ZlQvtJ4rupbKNCmxqKfYr8Mlo8nJEug==}
+    peerDependencies:
+      expo: '*'
 
   expo-localization@57.0.1:
     resolution: {integrity: sha512-8Ffl4UTbOsQeGT0v5fxMbyPHyPMPnhSPDFQJa8p9rjJrthFoAtNi+fL6Ssmrvf1/7dmPq1mVY52MEt0TMEfgjA==}
@@ -12742,6 +12758,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  expo-crypto@57.0.3(expo@57.0.10):
+    dependencies:
+      expo: 57.0.10(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
+
   expo-device@57.0.1(expo@57.0.10):
     dependencies:
       expo: 57.0.10(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
@@ -12787,6 +12807,11 @@ snapshots:
       expo: 57.0.10(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
       react: 19.2.3
       react-native: 0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3)
+
+  expo-local-authentication@57.0.3(expo@57.0.10):
+    dependencies:
+      expo: 57.0.10(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7)(@react-native/jest-preset@0.86.2(@babel/core@7.29.7)(react@19.2.3))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
+      invariant: 2.2.4
 
   expo-localization@57.0.1(expo@57.0.10)(react@19.2.3):
     dependencies:

@@ -1,5 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useMemo, useState } from 'react';
+import { AppState, StyleSheet, View } from 'react-native';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -17,6 +18,9 @@ import { AuthNavigator } from './src/app/navigation/AuthNavigator';
 import { RootNavigator } from './src/app/navigation/RootNavigator';
 import { SplashScreen } from './src/presentation/screens/SplashScreen';
 import { useAuthStore } from './src/data/stores/authStore';
+import { useAppLockStore } from './src/data/stores/appLockStore';
+import { LockScreen } from './src/presentation/screens/appLock/LockScreen';
+import { SetPinScreen } from './src/presentation/screens/appLock/SetPinScreen';
 import { usePushRegistration } from './src/app/usePushRegistration';
 import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
 import { useMountTrace } from './src/diagnostics/instanceTrace';
@@ -36,6 +40,21 @@ function Root() {
   const theme = useTheme();
   const { user, hydrate } = useAuthStore();
   const [ready, setReady] = useState(false);
+  const lockStatus = useAppLockStore((s) => s.status);
+  /*
+   * The app lock (see `appLockStore`). Locked the moment the app leaves the
+   * foreground — not after a grace period; owner decision, 20.09.2026 — and
+   * covered with the splash while it is `inactive`, so the task switcher's
+   * snapshot shows a logo rather than a balance.
+   */
+  const [obscured, setObscured] = useState(AppState.currentState !== 'active');
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      setObscured(state !== 'active');
+      if (state === 'background') useAppLockStore.getState().lock();
+    });
+    return () => subscription.remove();
+  }, []);
 
   /*
    * The reference mark every other mount line is read against.
@@ -135,6 +154,10 @@ function Root() {
     // passes the rejection along to nobody, which is an unhandled rejection
     // and a red box on top of an app that did start.
     hydrate()
+      // The lock's answer is part of "hydrated": the private screens must
+      // not draw for the instant between the session appearing and the lock
+      // deciding it is locked.
+      .then(() => useAppLockStore.getState().hydrate())
       .catch(() => undefined)
       .then(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,7 +166,7 @@ function Root() {
   // Asks for notification permission once a session exists — after someone
   // has signed in and seen what the app does, which is when a prompt has a
   // chance of being allowed.
-  usePushRegistration();
+  usePushRegistration(ready && lockStatus === 'unlocked');
 
   // One subscription for the whole app: it drives both the banner below and
   // TanStack Query's own online state, so a paused query and the message on
@@ -168,7 +191,7 @@ function Root() {
           fixed "light" style here left the status bar unreadable against a
           white screen. */}
       <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
-      {user ? <RootNavigator /> : <AuthNavigator />}
+      {user ? <PrivateArea status={lockStatus} /> : <AuthNavigator />}
       {/*
         Inside the navigator so it sits over whatever screen is showing, and
         last so nothing paints over it. Renders `null` in every build except
@@ -177,9 +200,26 @@ function Root() {
       {/* Above the navigator and below the diagnostic overlay: it must be
           visible on every screen without taking the screen away. */}
       <OfflineBanner />
-      <DiagnosticOverlay />
+      {lockStatus !== 'locked' && <DiagnosticOverlay />}
+      {user && obscured ? (
+        <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
+          <SplashScreen />
+        </View>
+      ) : null}
     </NavigationContainer>
   );
+}
+
+/**
+ * What a signed-in person sees, by lock state. `idle` with a user present
+ * means the lock has not answered yet (a sign-in a moment ago) — the splash,
+ * never the navigator, until it does.
+ */
+function PrivateArea({ status }: { status: ReturnType<typeof useAppLockStore.getState>['status'] }) {
+  if (status === 'unlocked') return <RootNavigator />;
+  if (status === 'locked') return <LockScreen />;
+  if (status === 'setup') return <SetPinScreen />;
+  return <SplashScreen />;
 }
 
 export default function App() {

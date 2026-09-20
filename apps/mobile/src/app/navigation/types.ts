@@ -1,4 +1,9 @@
-import type { EvSessionDto, NearbyPartnerDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type {
+  EvSessionDto,
+  NearbyPartnerDto,
+  PurchaseIntentDto,
+  TransactionDto,
+} from '@tutak/shared-types';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -33,6 +38,9 @@ export type RootStackParamList = {
   ScanQr: undefined;
   Notifications: undefined;
   TransactionHistory: undefined;
+  /** The row is passed through so the screen renders instantly; the purchase
+      behind it (route, refunds) is loaded from the server. */
+  TransactionDetail: { transaction: TransactionDto };
   Referral: undefined;
   EvHistory: undefined;
   /** The session is passed through so the screen renders instantly on start;

@@ -47,6 +47,9 @@ describe('Transaction disclosure (integration)', () => {
     // key must never reach a client (spec §3.3), and this list is exactly the
     // place a leak like that would otherwise slip in unnoticed.
     'partnerBrand',
+    // Which purchase this row settled, so the customer can open it — added
+    // 2026-09-20 (U05). An id, never the purchase itself.
+    'purchaseIntentId',
     'createdAt',
     'updatedAt',
   ];

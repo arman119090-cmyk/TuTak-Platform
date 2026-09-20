@@ -194,7 +194,7 @@ PARTNER_PAYABLE` при подтверждении; PLATFORM_BANK/PSP_RECEIVABLE
 | `prisma migrate diff` migrations→schema | No difference |
 | Demo parity | `demo/` перегенерирован и закоммичен |
 | Скриншоты `docs/screenshots/hybrid/` | 52 кадра: mobile 48 (EN 15, RU 11, HY 11, EN@360px 11), partner 4 |
-| CI на PR #64 | **UNVERIFIED на момент написания** — PR только создан; сессия подписана на события |
+| CI на PR #64 (head `f289d0e`) | зелёный: Lint/test/build, Integration 1/3–3/3, Build the container images — 5 check-run'ов × 2 прогона, все success (22:03 UTC); mergeable clean, тредов нет |
 
 Что использовало mocks / реальную БД / устройство (§45.23): все
 `*.int-spec.ts` — реальная PostgreSQL + Redis; экраны — jest/RNTL с
@@ -203,7 +203,6 @@ PARTNER_PAYABLE` при подтверждении; PLATFORM_BANK/PSP_RECEIVABLE
 
 ## 6. UNVERIFIED
 
-- CI GitHub Actions на HEAD PR #64 (запущен, результата ещё нет).
 - Поведение с реальным провайдером пополнения и реальным POS.
 - Экраны на реальном устройстве, fontScale 1.3, стейл-состояние баланса на
   экране (unit-тест есть, кадра нет).

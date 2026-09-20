@@ -480,17 +480,6 @@
     "rateRecommended": "we suggest 5–10%",
     "ratePreview": "On a {{bill}} bill a customer earns {{points}} points",
     "rateAdvantage": "A \"good value\" marker and a higher place in the nearby list",
-    "welcomeTitle": "Grow with TuTak",
-    "welcomeBody": "Customers who pay you earn points and come back. You set the cashback; TuTak brings the customers.",
-    "welcomePoint1": "Your shop on the map and in the nearby list",
-    "welcomePoint2": "You decide the cashback, from 0.5% to 20%",
-    "welcomePoint3": "No card fees — customers pay you directly",
-    "start": "Start",
-    "stepOf": "Step {{n}} of {{total}}",
-    "detailsTitle": "About your business",
-    "detailsBody": "The legal name goes on the agreement; the shop name is what customers see.",
-    "offerTitle": "Your offer to customers",
-    "offerBody": "Choose the category and how much a customer earns on each bill.",
     "submit": "Send application",
     "failed": "Could not send the application. Please try again.",
     "alreadyApplied": "Your application is already under review. We will be in touch."
@@ -529,5 +518,21 @@
     "KILOGRAM": "kg",
     "ITEM": "pcs",
     "HOUR": "h"
+  },
+  "scene": {
+    "bubble": "Your smart partner on the go",
+    "dataSafe": "Your data is safe",
+    "note": {
+      "login": "Onward together ♡",
+      "phone": "One code and you're in",
+      "otp": "The code is on its way",
+      "password": "Safe as a vault",
+      "reset": "Happens to everyone. Let's fix it",
+      "verification": "Just checking it's you",
+      "confirm": "We'll miss you",
+      "success": "Done ✓",
+      "partnerSubmitted": "Your application is with us ✓",
+      "lock": "For your eyes only"
+    }
   }
 }

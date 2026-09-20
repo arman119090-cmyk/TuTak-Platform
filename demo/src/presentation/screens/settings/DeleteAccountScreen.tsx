@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
-import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
@@ -15,7 +14,7 @@ import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { walletApi } from '../../../data/api/walletApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
-import { JakoHero } from '../../components/JakoHero';
+import { JakoScene } from '../../components/JakoScene';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeleteAccount'>;
 
@@ -78,12 +77,13 @@ export function DeleteAccountScreen({ navigation }: Props) {
   };
 
   return (
-      <Screen title={t('settings.deleteAccount')}>
+    <JakoScene
+      state="confirm"
+      size="compact"
+      title={t('settings.deleteAccount')}
+      note={t('scene.note.confirm')}
+    >
         <View>
-          {/* An important, irreversible confirmation: the quiet green check,
-              not the warning triangle — the person is being asked to decide,
-              not told something went wrong. */}
-          <JakoHero state="confirm" size="compact" style={{ marginBottom: space[5] }} />
           <View style={styles.heading}>
             <View
               style={[
@@ -147,7 +147,7 @@ export function DeleteAccountScreen({ navigation }: Props) {
             icon={<JakoWingMark size={16} color={color.textBrand} />}
           />
         </View>
-      </Screen>
+    </JakoScene>
   );
 }
 

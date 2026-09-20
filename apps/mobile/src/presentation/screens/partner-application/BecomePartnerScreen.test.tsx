@@ -8,10 +8,10 @@ import { partnersApi } from '../../../data/api/partnersApi';
 import { DEFAULT_RATE_BPS } from './CashbackRateField';
 
 /**
- * The journey is now three steps and a filed state, but the request is the
- * one the single-page form sent: same fields, same trims, same optional tax
- * id, same navigation on success. These tests pin that — a redesign that
- * changed what reaches `POST /partners/apply` would fail here.
+ * The form is one page with Jako at the top, and the request is exactly what
+ * it has always been: same fields, same trims, same optional tax id, same
+ * navigation on success. These tests pin that — a redesign that changed what
+ * reaches `POST /partners/apply` would fail here.
  */
 jest.mock('../../../data/api/partnersApi', () => ({
   partnersApi: { apply: jest.fn() },
@@ -53,49 +53,35 @@ describe('BecomePartnerScreen', () => {
     mockedApply.mockReset();
   });
 
-  it('opens on the welcome step with the greeting Jako and no fields', () => {
+  it('is one page: Jako greeting, three fields, category, cashback and the button', () => {
     renderScreen();
-    expect(screen.getByTestId('jako-partner-welcome', hidden)).toBeTruthy();
-    expect(screen.queryByText('becomePartner.legalName')).toBeNull();
-    expect(screen.getByText('becomePartner.start')).toBeTruthy();
-  });
-
-  it('walks welcome → details → offer, each with its own Jako, and does not let details through empty', () => {
-    renderScreen();
-    fireEvent.press(screen.getByText('becomePartner.start'));
-    expect(screen.getByTestId('jako-partner-details', hidden)).toBeTruthy();
-    expect(screen.getByText('becomePartner.stepOf')).toBeTruthy();
-
-    // Both names are required by the server (min 2), so "next" waits.
-    const next = screen.getByText('common.next');
-    fireEvent.press(next);
-    expect(screen.queryByTestId('jako-partner-offer', hidden)).toBeNull();
-
-    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.legalNamePlaceholder'), 'Nairi Foods LLC');
-    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.displayNamePlaceholder'), 'Nairi');
-    fireEvent.press(screen.getByText('common.next'));
-    expect(screen.getByTestId('jako-partner-offer', hidden)).toBeTruthy();
+    expect(screen.getByTestId('scene-partner-welcome', hidden)).toBeTruthy();
+    expect(screen.getByText('scene.note.login', hidden)).toBeTruthy();
+    expect(screen.getByPlaceholderText('becomePartner.legalNamePlaceholder')).toBeTruthy();
+    expect(screen.getByPlaceholderText('becomePartner.taxIdPlaceholder')).toBeTruthy();
+    expect(screen.getByText(`partnerCategory.${PartnerCategory.GROCERY}`)).toBeTruthy();
     expect(screen.getByText('becomePartner.submit')).toBeTruthy();
+    expect(screen.getByText('scene.dataSafe')).toBeTruthy();
   });
 
-  it('goes back a step, and back off the screen from the first one', () => {
-    const { goBack } = renderScreen();
-    fireEvent.press(screen.getByText('becomePartner.start'));
-    fireEvent.press(screen.getByText('common.back'));
-    expect(screen.getByTestId('jako-partner-welcome', hidden)).toBeTruthy();
-    expect(goBack).not.toHaveBeenCalled();
+  it('keeps the button off until both names reach the server minimum', () => {
+    renderScreen();
+    const button = () => screen.getByRole('button', { name: 'becomePartner.submit' });
+    expect(button().props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.legalNamePlaceholder'), 'Nairi Foods LLC');
+    expect(button().props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.displayNamePlaceholder'), 'N');
+    expect(button().props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.displayNamePlaceholder'), 'Nairi');
+    expect(button().props.accessibilityState.disabled).toBe(false);
   });
 
-  it('sends exactly what the single-page form sent, and replaces the screen on success', async () => {
+  it('sends exactly what the form has always sent, and replaces the screen on success', async () => {
     mockedApply.mockResolvedValue({ id: 'p1' });
     const { replace } = renderScreen();
-    fireEvent.press(screen.getByText('becomePartner.start'));
     fireEvent.changeText(screen.getByPlaceholderText('becomePartner.legalNamePlaceholder'), '  Nairi Foods LLC ');
     fireEvent.changeText(screen.getByPlaceholderText('becomePartner.displayNamePlaceholder'), 'Nairi ');
     fireEvent.changeText(screen.getByPlaceholderText('becomePartner.taxIdPlaceholder'), ' 01234567 ');
-    fireEvent.press(screen.getByText('common.next'));
-
-    // Pick a category other than the default, then file.
     fireEvent.press(screen.getByText(`partnerCategory.${PartnerCategory.CAFE}`));
     fireEvent.press(screen.getByText('becomePartner.submit'));
 
@@ -117,14 +103,22 @@ describe('BecomePartnerScreen', () => {
     );
   });
 
+  it('leaves the tax id out of the request when the field is empty', async () => {
+    mockedApply.mockResolvedValue({ id: 'p1' });
+    renderScreen();
+    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.legalNamePlaceholder'), 'Nairi Foods LLC');
+    fireEvent.changeText(screen.getByPlaceholderText('becomePartner.displayNamePlaceholder'), 'Nairi');
+    fireEvent.press(screen.getByText('becomePartner.submit'));
+    await waitFor(() => expect(mockedApply).toHaveBeenCalledTimes(1));
+    expect(mockedApply.mock.calls[0][0]).not.toHaveProperty('taxId');
+  });
+
   it('says "already under review" in the person\'s language on a 409', async () => {
     const axios = jest.requireActual('axios');
     mockedApply.mockRejectedValue(new axios.AxiosError('conflict', '409', undefined, undefined, { status: 409, data: {}, statusText: '', headers: {}, config: {} } as never));
     renderScreen();
-    fireEvent.press(screen.getByText('becomePartner.start'));
     fireEvent.changeText(screen.getByPlaceholderText('becomePartner.legalNamePlaceholder'), 'Nairi Foods LLC');
     fireEvent.changeText(screen.getByPlaceholderText('becomePartner.displayNamePlaceholder'), 'Nairi');
-    fireEvent.press(screen.getByText('common.next'));
     fireEvent.press(screen.getByText('becomePartner.submit'));
     expect(await screen.findByText('becomePartner.alreadyApplied')).toBeTruthy();
   });

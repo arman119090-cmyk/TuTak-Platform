@@ -1,9 +1,5 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
-import { BackButton } from '../../components/BackButton';
-import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -14,14 +10,14 @@ import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
-import { JakoHero } from '../../components/JakoHero';
+import { JakoScene } from '../../components/JakoScene';
+import { DataSafeNote } from '../../components/DataSafeNote';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
 export function RegisterScreen({ navigation }: Props) {
   const { t, i18n } = useTranslation();
-  const { color, space, text, layout } = useTheme();
-  const compact = useCompactLayout();
+  const { color, space, text } = useTheme();
   const { deviceId, setSession } = useAuthStore();
 
   const [firstName, setFirstName] = useState('');
@@ -62,32 +58,13 @@ export function RegisterScreen({ navigation }: Props) {
     !loading;
 
   return (
-    <SafeAreaView
-      style={[styles.flex, { backgroundColor: color.background }]}
-      edges={['top', 'bottom']}
+    <JakoScene
+      state="phone"
+      title={t('auth.createAccount')}
+      subtitle={t('auth.registerSubtitle')}
+      note={t('scene.note.phone')}
+      bubble={t('scene.bubble')}
     >
-        <KeyboardAwareScroll
-          contentContainerStyle={[
-            styles.content,
-            { paddingHorizontal: layout.screenPaddingX, paddingTop: space[6] },
-          ]}
-        >
-          {/* Every navigator here sets headerShown: false, so this is the
-              only way off the screen besides Android's hardware button. */}
-          <BackButton />
-          <JakoHero state="phone" style={{ marginBottom: space[4] }} />
-          <Text style={[text.titleLg, { color: color.textPrimary }]}>
-            {t('auth.createAccount')}
-          </Text>
-          <Text
-            style={[
-              text.bodySm,
-              { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] },
-            ]}
-          >
-            {t('auth.registerSubtitle')}
-          </Text>
-
           <View style={[styles.nameRow, { gap: space[3] }]}>
             <View style={styles.flex}>
               <TextField
@@ -140,6 +117,7 @@ export function RegisterScreen({ navigation }: Props) {
               disabled={!canSubmit}
               icon={<JakoWingMark size={16} color={color.textInverse} />}
             />
+            <DataSafeNote />
             <Button
               label={t('auth.useSmsCodeInstead')}
               variant="secondary"
@@ -157,14 +135,12 @@ export function RegisterScreen({ navigation }: Props) {
               <Text style={[text.label, { color: color.primary }]}>{t('auth.login')}</Text>
             </Pressable>
           </View>
-        </KeyboardAwareScroll>
-    </SafeAreaView>
+    </JakoScene>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, paddingBottom: 40 },
   nameRow: { flexDirection: 'row' },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
 });

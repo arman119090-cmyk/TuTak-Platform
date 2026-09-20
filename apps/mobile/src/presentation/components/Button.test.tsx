@@ -31,13 +31,13 @@ describe('Button sizing', () => {
     renderButton();
     const style = shapeOf();
 
-    expect(style.minHeight).toBe(52);
+    expect(style.minHeight).toBe(56);
     // The assertion that matters: a fixed height is what clipped the label.
     expect(style.height).toBeUndefined();
   });
 
   it.each([
-    ['lg', 52],
+    ['lg', 56],
     ['md', 44],
     ['sm', 36],
   ])('keeps the %s size as a floor, not a ceiling', (size, expected) => {

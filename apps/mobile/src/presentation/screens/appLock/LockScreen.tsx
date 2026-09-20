@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { PinPad } from '../../components/PinPad';
@@ -9,7 +8,7 @@ import { useAuthStore } from '../../../data/stores/authStore';
 import { authApi } from '../../../data/api/authApi';
 import { PIN_LENGTH } from '../../../data/appLock/pinCode';
 import { useBiometricLabel } from './useBiometricLabel';
-import { JakoHero } from '../../components/JakoHero';
+import { JakoScene } from '../../components/JakoScene';
 
 /**
  * Shown instead of the private navigator while the lock is `locked`.
@@ -109,15 +108,16 @@ export function LockScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.screen, { backgroundColor: color.background }]}>
-      <View style={[styles.top, { paddingHorizontal: space[5], paddingTop: space[8] }]}>
-        <JakoHero state="password" size="compact" />
-        <Text accessibilityRole="header" style={[text.title, { color: color.textPrimary, marginTop: space[5] }]}>
-          {t('appLock.enterTitle')}
-        </Text>
-        <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], textAlign: 'center' }]}>
-          {t('appLock.enterSubtitle')}
-        </Text>
+    <JakoScene
+      state="password"
+      size="compact"
+      scroll={false}
+      title={t('appLock.enterTitle')}
+      subtitle={t('appLock.enterSubtitle')}
+      note={t('scene.note.lock')}
+      sheetStyle={styles.sheet}
+    >
+      <View style={styles.top}>
         <Text
           accessibilityRole={error ? 'alert' : undefined}
           style={[text.bodySm, styles.error, { color: color.dangerText, marginTop: space[4], minHeight: 20 }]}
@@ -140,7 +140,7 @@ export function LockScreen() {
           <Text style={[text.bodySm, { color: color.textSecondary }]}>{t('appLock.forgot')}</Text>
         </Pressable>
       </View>
-    </SafeAreaView>
+    </JakoScene>
   );
 }
 
@@ -148,7 +148,7 @@ export function LockScreen() {
 const MAX_VISIBLE_HINT = 3;
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, justifyContent: 'space-between' },
+  sheet: { justifyContent: 'space-between' },
   top: { alignItems: 'center' },
   error: { textAlign: 'center' },
 });

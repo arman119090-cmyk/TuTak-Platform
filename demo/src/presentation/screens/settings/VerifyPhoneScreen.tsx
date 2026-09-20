@@ -11,7 +11,7 @@ import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { RootStackParamList } from '../../../app/navigation/types';
-import { JakoHero } from '../../components/JakoHero';
+import { JakoScene } from '../../components/JakoScene';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VerifyPhone'>;
 
@@ -82,9 +82,13 @@ export function VerifyPhoneScreen({ navigation }: Props) {
   }
 
   return (
-      <Screen title={t('auth.otpTitle')} subtitle={t('auth.verifyPhoneSubtitle', { phone: user?.phone })}>
-        {/* The one verification there is: the account's own phone. */}
-        <JakoHero state="verification" size="compact" style={{ marginBottom: space[5] }} />
+    <JakoScene
+      state="verification"
+      size="compact"
+      title={t('auth.otpTitle')}
+      subtitle={t('auth.verifyPhoneSubtitle', { phone: user?.phone })}
+      note={t('scene.note.verification')}
+    >
         {!codeSent ? (
           <Button
             label={t('auth.sendVerificationCode')}
@@ -119,6 +123,6 @@ export function VerifyPhoneScreen({ navigation }: Props) {
             />
           </>
         )}
-      </Screen>
+    </JakoScene>
   );
 }

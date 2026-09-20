@@ -1,8 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
-import { useCompactLayout } from '../../components/useCompactLayout';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -15,14 +12,14 @@ import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
-import { JakoHero } from '../../components/JakoHero';
+import { JakoScene } from '../../components/JakoScene';
+import { DataSafeNote } from '../../components/DataSafeNote';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { color, space, text, layout } = useTheme();
-  const compact = useCompactLayout();
+  const { color, space, text } = useTheme();
   const { deviceId, setSession } = useAuthStore();
 
   const [phone, setPhone] = useState('');
@@ -93,35 +90,13 @@ export function LoginScreen({ navigation }: Props) {
   const canSubmit = phone.length >= 8 && password.length >= 8 && !loading;
 
   return (
-    <SafeAreaView
-      style={[styles.flex, { backgroundColor: color.background }]}
-      edges={['top', 'bottom']}
+    <JakoScene
+      state="login"
+      title={t('auth.welcomeBack')}
+      subtitle={t('auth.tagline')}
+      note={t('scene.note.login')}
+      bubble={t('scene.bubble')}
     >
-        <KeyboardAwareScroll
-          contentContainerStyle={[
-            styles.content,
-            { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
-          ]}
-        >
-          {/* The logo appears once, at the top, as the mark — not decoration.
-              Jako below it is the welcome: wings open, the one state of the
-              brand set that greets rather than assists. */}
-          <Image
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            source={require('../../../../assets/logo-mark.png')}
-            style={styles.mark}
-            resizeMode="contain"
-            accessibilityIgnoresInvertColors
-          />
-          <JakoHero state="login" style={{ marginTop: space[4] }} />
-
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[5] }]}>
-            {t('auth.welcomeBack')}
-          </Text>
-          <Text style={[text.body, { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[6] : space[8] }]}>
-            {t('auth.tagline')}
-          </Text>
-
           <TextField
             label={t('auth.phoneNumber')}
             traceId="phone"
@@ -159,6 +134,7 @@ export function LoginScreen({ navigation }: Props) {
               disabled={!canSubmit}
               icon={<JakoWingMark size={16} color={color.textInverse} />}
             />
+            <DataSafeNote />
           </View>
 
           <View style={{ marginTop: space[3] }}>
@@ -204,14 +180,10 @@ export function LoginScreen({ navigation }: Props) {
               <Text style={[text.label, { color: color.primary }]}>{t('auth.register')}</Text>
             </Pressable>
           </View>
-        </KeyboardAwareScroll>
-    </SafeAreaView>
+    </JakoScene>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: { flexGrow: 1, paddingBottom: 40 },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  mark: { width: 56, height: 56 },
 });

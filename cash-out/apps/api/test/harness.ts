@@ -25,6 +25,7 @@ import { AuthService } from '../src/modules/auth/auth.service';
 import { DriversService } from '../src/modules/drivers/drivers.service';
 import { BalanceService } from '../src/modules/drivers/balance.service';
 import { MembershipService } from '../src/modules/parks/membership.service';
+import { SecurityService } from '../src/modules/security/security.service';
 import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
 /**
@@ -86,6 +87,7 @@ export interface Harness {
   balances: BalanceService;
   memberships: MembershipService;
   parksAdmin: ParksAdminService;
+  security: SecurityService;
   close(): Promise<void>;
 }
 
@@ -133,6 +135,7 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     balances: app.get(BalanceService),
     memberships: app.get(MembershipService),
     parksAdmin: app.get(ParksAdminService),
+    security: app.get(SecurityService),
     async close() {
       await app.close();
     },
@@ -152,6 +155,8 @@ const TABLES = [
   'quotes',
   'balance_snapshots',
   'payout_methods',
+  'withdrawal_authorizations',
+  'driver_security',
   'sessions',
   'devices',
   'driver_id_change_requests',
@@ -240,11 +245,16 @@ export async function seedPricing(
   });
 }
 
+/** The PIN every seeded driver has. */
+export const TEST_PIN = '482913';
+
 export interface SeededDriver {
   userId: string;
   driverId: string;
   payoutMethodId: string;
   phone: string;
+  /** The installation the driver signed in from; authorizations are bound to it. */
+  deviceId: string;
   /** The park's internal id — what ledger keys, fees and limits are scoped by. */
   parkId: string;
   /** The park's Yandex id — what the mock Fleet API is addressed by. */
@@ -345,10 +355,17 @@ export async function seedDriver(
     },
   );
 
+  const deviceId = `device-${phone.slice(-6)}-seed`;
   const user = await harness.prisma.user.create({
-    data: { phone, locale: 'hy', driver: { create: {} } },
+    data: {
+      phone,
+      locale: 'hy',
+      driver: { create: {} },
+      devices: { create: { deviceId, platform: 'android' } },
+    },
   });
   const driver = await harness.prisma.driver.findUniqueOrThrow({ where: { userId: user.id } });
+  await harness.security.setPin(driver.id, TEST_PIN);
 
   const profile = await harness.memberships.resolve(user.id);
   if (profile.resolution !== 'ACTIVE') {
@@ -369,13 +386,29 @@ export async function seedDriver(
     driverId: driver.id,
     payoutMethodId: method.id,
     phone,
+    deviceId,
     parkId: park.id,
     yandexParkId,
     contractorProfileId,
   };
 }
 
-/** Requests a quote and immediately confirms it, as the app does. */
+/** A PIN authorization for `quoteId`, as the app obtains one before confirming. */
+export async function authorizeWithPin(
+  harness: Harness,
+  driver: SeededDriver,
+  quoteId: string,
+  purpose: 'WITHDRAWAL' | 'AUTO_PAYOUT' = 'WITHDRAWAL',
+): Promise<string> {
+  const result = await harness.security.authorize(
+    driver.driverId,
+    { userId: driver.userId, deviceId: driver.deviceId },
+    { method: 'PIN', pin: TEST_PIN, purpose, quoteId },
+  );
+  return result.authorizationToken;
+}
+
+/** Requests a quote, authorizes it with the PIN, and confirms it, as the app does. */
 export async function requestWithdrawal(
   harness: Harness,
   driver: SeededDriver,
@@ -387,9 +420,11 @@ export async function requestWithdrawal(
     amount: { minor: amountMinor.toString(), currency: 'AMD' },
     all: false,
   });
+  const authorizationToken = await authorizeWithPin(harness, driver, quote.quoteId);
   return harness.withdrawals.confirm(driver.driverId, {
     quoteId: quote.quoteId,
     signature: quote.signature,
     idempotencyKey,
+    authorizationToken,
   });
 }

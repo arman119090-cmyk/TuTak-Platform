@@ -1,5 +1,8 @@
 import type {
+  AuthorizationDto,
+  AuthorizeDto,
   AuthTokens,
+  ChangePinDto,
   BalanceDto,
   ConfirmWithdrawalDto,
   CreateQuoteDto,
@@ -9,6 +12,7 @@ import type {
   PayoutMethodDto,
   QuoteDto,
   RequestOtpResponse,
+  SecurityStatusDto,
   SessionDto,
   WithdrawalDto,
   WithdrawalListDto,
@@ -90,4 +94,25 @@ export const endpoints = {
     api.request<{ items: WithdrawalTimelineEntryDto[] }>(`/v1/withdrawals/${id}/timeline`),
 
   sessions: (api: ApiClient) => api.request<{ items: SessionDto[] }>('/v1/auth/sessions'),
+
+  securityStatus: (api: ApiClient) => api.request<SecurityStatusDto>('/v1/security'),
+
+  setPin: (api: ApiClient, pin: string) =>
+    api.request<void>('/v1/security/pin', { method: 'POST', body: { pin } }),
+
+  changePin: (api: ApiClient, body: ChangePinDto) =>
+    api.request<void>('/v1/security/pin/change', { method: 'POST', body }),
+
+  enableBiometric: (api: ApiClient, pin: string) =>
+    api.request<{ deviceSecret: string }>('/v1/security/biometric/enable', {
+      method: 'POST',
+      body: { pin },
+    }),
+
+  disableBiometric: (api: ApiClient) =>
+    api.request<void>('/v1/security/biometric/disable', { method: 'POST' }),
+
+  /** A single-use authorization for a money operation. */
+  authorize: (api: ApiClient, body: AuthorizeDto) =>
+    api.request<AuthorizationDto>('/v1/security/authorize', { method: 'POST', body }),
 };

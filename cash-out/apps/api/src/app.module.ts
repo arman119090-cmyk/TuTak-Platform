@@ -21,6 +21,7 @@ import { PaymentProviderModule } from './modules/payment-provider/payment-provid
 import { ParksModule } from './modules/parks/parks.module';
 import { PayoutMethodsModule } from './modules/payout-methods/payout-methods.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
+import { SecurityModule } from './modules/security/security.module';
 import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module';
 import { YandexModule } from './modules/yandex/yandex.module';
 
@@ -49,6 +50,7 @@ export class AppModule implements NestModule {
         DriversModule,
         PayoutMethodsModule,
         IdramModule,
+        SecurityModule,
         WithdrawalsModule,
         LedgerModule,
         FeesModule,

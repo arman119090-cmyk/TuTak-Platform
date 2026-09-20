@@ -27,7 +27,7 @@ import { AmountRow, Button, Card, ListRow, Screen, Sheet, Text } from '../../src
 export default function ReviewScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const params = useLocalSearchParams<{ quote: string }>();
+  const params = useLocalSearchParams<{ quote: string; authorizationToken?: string }>();
   const { api, profile } = useAuth();
   const { t, money } = useI18n();
   const describeError = useErrorMessage();
@@ -76,10 +76,17 @@ export default function ReviewScreen() {
     setBusy(true);
     setError(null);
     try {
+      if (!params.authorizationToken) {
+        // No proof: back to the authorization step rather than a silent
+        // server rejection.
+        router.replace({ pathname: '/withdraw/authorize', params: { quote: params.quote } });
+        return;
+      }
       const withdrawal = await endpoints.confirm(api, {
         quoteId: quote.quoteId,
         signature: quote.signature,
         idempotencyKey,
+        authorizationToken: params.authorizationToken,
       });
       setConfirming(false);
       router.replace({ pathname: '/withdraw/processing', params: { id: withdrawal.id } });

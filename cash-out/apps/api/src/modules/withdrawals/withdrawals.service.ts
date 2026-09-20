@@ -16,6 +16,7 @@ import { BalanceService } from '../drivers/balance.service';
 import { LimitsService } from '../limits/limits.service';
 import { MembershipService } from '../parks/membership.service';
 import { PayoutMethodsService } from '../payout-methods/payout-methods.service';
+import { SecurityService } from '../security/security.service';
 import { QuoteService } from './quote.service';
 import { WithdrawalOrchestrator } from './withdrawal.orchestrator';
 
@@ -29,6 +30,7 @@ export class WithdrawalsService {
     private readonly limits: LimitsService,
     private readonly payoutMethods: PayoutMethodsService,
     private readonly memberships: MembershipService,
+    private readonly security: SecurityService,
     private readonly orchestrator: WithdrawalOrchestrator,
     private readonly crypto: CryptoService,
     private readonly clock: Clock,
@@ -87,6 +89,7 @@ export class WithdrawalsService {
     driverId: string,
     dto: ConfirmWithdrawalDto,
     requestHash: string,
+    origin: WithdrawalOrigin = { kind: 'DRIVER' },
   ): Promise<Withdrawal> {
     const quote = await this.quotes.validate(driverId, dto.quoteId, dto.signature);
     // Active park, membership, eligibility and driver status — all re-checked
@@ -107,6 +110,19 @@ export class WithdrawalsService {
 
     return this.prisma.inSerializableTransaction(async (tx) => {
       await this.prisma.lockForUpdate(tx, 'driver', driverId);
+
+      // The PIN/biometric proof is spent here, inside the same transaction as
+      // the row it authorises. No token, no withdrawal; no withdrawal, no
+      // spent token.
+      const authorization =
+        origin.kind === 'DRIVER'
+          ? await this.security.consume(tx, {
+              driverId,
+              token: dto.authorizationToken,
+              quoteId: quote.id,
+              purpose: 'WITHDRAWAL',
+            })
+          : null;
 
       const live = await tx.withdrawal.findFirst({
         where: {
@@ -178,15 +194,21 @@ export class WithdrawalsService {
         where: { id: quote.id },
         data: { consumedByWithdrawalId: created.id },
       });
+      if (authorization) {
+        await this.security.bindConsumed(tx, dto.authorizationToken, created.id);
+      }
 
       await tx.withdrawalEvent.create({
         data: {
           withdrawalId: created.id,
           fromState: null,
           toState: 'CREATED',
-          actorType: 'DRIVER',
-          actorId: driverId,
-          note: `confirmed quote ${quote.id}`,
+          actorType: origin.kind === 'DRIVER' ? 'DRIVER' : 'SYSTEM',
+          actorId: origin.kind === 'DRIVER' ? driverId : origin.ruleId,
+          note:
+            origin.kind === 'DRIVER'
+              ? `confirmed quote ${quote.id} (${authorization?.method ?? 'PIN'})`
+              : `automatic payout rule ${origin.ruleId}: quote ${quote.id}`,
         },
       });
 
@@ -202,6 +224,7 @@ export class WithdrawalsService {
             gross: created.grossMinor.toString(),
             net: created.netMinor.toString(),
             currency: created.currency,
+            authorization: authorization?.method ?? 'AUTO_PAYOUT',
           },
         },
         tx,
@@ -316,5 +339,12 @@ export class WithdrawalsService {
 function hashRequest(dto: ConfirmWithdrawalDto): string {
   return createHash('sha256').update(`${dto.quoteId}|${dto.signature}`).digest('base64url');
 }
+
+/**
+ * Who is confirming. A driver confirms with a spent PIN/biometric
+ * authorization; an automatic payout rule confirms on the strength of the
+ * authorization the driver gave when enabling it, and names the rule.
+ */
+export type WithdrawalOrigin = { kind: 'DRIVER' } | { kind: 'AUTO_PAYOUT'; ruleId: string };
 
 export type { Prisma };

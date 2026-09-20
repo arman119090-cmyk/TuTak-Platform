@@ -71,6 +71,8 @@ export const confirmWithdrawalSchema = z.object({
   quoteId: z.string().uuid(),
   signature: z.string(),
   idempotencyKey: idempotencyKeySchema,
+  /** From `POST /v1/security/authorize`; single-use, bound to this quote. */
+  authorizationToken: z.string().min(16).max(256),
 });
 export type ConfirmWithdrawalDto = z.infer<typeof confirmWithdrawalSchema>;
 

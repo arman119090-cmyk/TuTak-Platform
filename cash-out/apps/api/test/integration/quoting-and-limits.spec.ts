@@ -1,6 +1,7 @@
 import {
   createHarness,
   Harness,
+  authorizeWithPin,
   requestWithdrawal,
   resetDatabase,
   seedDriver,
@@ -63,6 +64,7 @@ describe('quoting and limits', () => {
           quoteId: result.quoteId,
           signature: 'not-the-signature',
           idempotencyKey: 'tampered-signature-key-01',
+          authorizationToken: await authorizeWithPin(harness, driver, result.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'QUOTE_MISMATCH' });
     });
@@ -91,6 +93,7 @@ describe('quoting and limits', () => {
           quoteId: result.quoteId,
           signature: result.signature,
           idempotencyKey: 'edited-quote-key-01234567',
+          authorizationToken: await authorizeWithPin(harness, driver, result.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'QUOTE_MISMATCH' });
     });
@@ -105,6 +108,7 @@ describe('quoting and limits', () => {
           quoteId: result.quoteId,
           signature: result.signature,
           idempotencyKey: 'expired-quote-key-0123456',
+          authorizationToken: await authorizeWithPin(harness, driver, result.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'QUOTE_EXPIRED' });
     });
@@ -122,6 +126,7 @@ describe('quoting and limits', () => {
           quoteId: mine.quoteId,
           signature: mine.signature,
           idempotencyKey: 'someone-elses-quote-key-1',
+          authorizationToken: await authorizeWithPin(harness, other, undefined as never),
         }),
       ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
@@ -133,6 +138,7 @@ describe('quoting and limits', () => {
         quoteId: result.quoteId,
         signature: result.signature,
         idempotencyKey: 'spend-once-key-0123456789',
+        authorizationToken: await authorizeWithPin(harness, driver, result.quoteId),
       });
       await harness.orchestrator.advance(created.id, 8);
 
@@ -141,6 +147,7 @@ describe('quoting and limits', () => {
           quoteId: result.quoteId,
           signature: result.signature,
           idempotencyKey: 'spend-twice-key-012345678',
+          authorizationToken: await authorizeWithPin(harness, driver, result.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'QUOTE_MISMATCH' });
     });
@@ -184,6 +191,7 @@ describe('quoting and limits', () => {
           quoteId: result.quoteId,
           signature: result.signature,
           idempotencyKey: 'balance-dropped-key-01234',
+          authorizationToken: await authorizeWithPin(harness, driver, result.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'BALANCE_CHANGED' });
     });

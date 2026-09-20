@@ -70,6 +70,7 @@ export default function ProfileScreen() {
           value={languages.find((item) => item.code === locale)?.label}
           onPress={() => setLanguageOpen(true)}
         />
+        <ListRow label={t('security.title')} onPress={() => router.push('/security')} />
         <ListRow label={t('profile.devices')} onPress={() => router.push('/devices')} last />
       </Card>
 

@@ -6,6 +6,7 @@ import { LimitsModule } from '../limits/limits.module';
 import { ParksModule } from '../parks/parks.module';
 import { PaymentProviderModule } from '../payment-provider/payment-provider.module';
 import { PayoutMethodsModule } from '../payout-methods/payout-methods.module';
+import { SecurityModule } from '../security/security.module';
 import { YandexModule } from '../yandex/yandex.module';
 import { ProviderWebhookController } from './provider-webhook.controller';
 import { ProviderWebhookService } from './provider-webhook.service';
@@ -25,6 +26,7 @@ import { WithdrawalsService } from './withdrawals.service';
     ParksModule,
     PaymentProviderModule,
     PayoutMethodsModule,
+    SecurityModule,
     YandexModule,
   ],
   controllers: [WithdrawalsController, ProviderWebhookController],

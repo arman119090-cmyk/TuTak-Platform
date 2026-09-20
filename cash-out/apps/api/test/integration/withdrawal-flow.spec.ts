@@ -2,6 +2,7 @@ import { Money } from '@cashout/money';
 import {
   createHarness,
   Harness,
+  authorizeWithPin,
   requestWithdrawal,
   resetDatabase,
   seedDriver,
@@ -137,6 +138,7 @@ describe('the withdrawal flow', () => {
         quoteId: quote.quoteId,
         signature: quote.signature,
         idempotencyKey: 'withdraw-everything-key-0001',
+        authorizationToken: await authorizeWithPin(harness, driver, quote.quoteId),
       });
       expect(await drive(created.id)).toBe('COMPLETED');
       expect(harness.yandex.balanceOf(driver.yandexParkId, driver.contractorProfileId)?.minor).toBe(
@@ -152,10 +154,13 @@ describe('the withdrawal flow', () => {
 
       // The second call cannot reuse the quote (it is spent), so it must be
       // answered from the idempotency key alone.
+      // ...and it must be answered before any authorization is spent: the
+      // retry carries the token that was already consumed the first time.
       const second = await harness.withdrawals.confirm(driver.driverId, {
         quoteId: first.id === '' ? '' : await quoteIdOf(harness, first.id),
         signature: await signatureOf(harness, first.id),
         idempotencyKey: key,
+        authorizationToken: 'already-spent-token-from-the-first-attempt',
       });
 
       expect(second.id).toBe(first.id);
@@ -178,6 +183,7 @@ describe('the withdrawal flow', () => {
           quoteId: quote.quoteId,
           signature: quote.signature,
           idempotencyKey: key,
+          authorizationToken: await authorizeWithPin(harness, driver, quote.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD' });
     });
@@ -226,11 +232,13 @@ describe('the withdrawal flow', () => {
           quoteId: quoteA.quoteId,
           signature: quoteA.signature,
           idempotencyKey: 'device-a-key-0123456789ab',
+          authorizationToken: await authorizeWithPin(harness, driver, quoteA.quoteId),
         }),
         harness.withdrawals.confirm(driver.driverId, {
           quoteId: quoteB.quoteId,
           signature: quoteB.signature,
           idempotencyKey: 'device-b-key-0123456789ab',
+          authorizationToken: await authorizeWithPin(harness, driver, quoteB.quoteId),
         }),
       ]);
 
@@ -259,6 +267,7 @@ describe('the withdrawal flow', () => {
           quoteId: quote.quoteId,
           signature: quote.signature,
           idempotencyKey: 'second-while-first-runs-01',
+          authorizationToken: await authorizeWithPin(harness, driver, quote.quoteId),
         }),
       ).rejects.toMatchObject({ code: 'WITHDRAWAL_ALREADY_IN_PROGRESS' });
     });

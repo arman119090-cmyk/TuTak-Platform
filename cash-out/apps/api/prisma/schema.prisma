@@ -148,6 +148,67 @@ model Driver {
   @@map("drivers")
 }
 
+// ---------------------------------------------------------------- security
+
+/**
+ * The driver's PIN and biometric enrolment.
+ *
+ * The PIN is stored as a scrypt hash only. Biometrics are never stored at all:
+ * the phone's own keystore holds a random device secret that the OS releases
+ * after a successful biometric check, and this row holds only that secret's
+ * hash, bound to the device row it was issued to.
+ */
+model DriverSecurity {
+  driverId             String    @id @db.Uuid
+  pinHash              String?
+  pinSetAt             DateTime?
+  pinChangedAt         DateTime?
+  failedPinAttempts    Int       @default(0)
+  pinLockedUntil       DateTime?
+  /// How many lockouts so far; each one lasts longer than the last.
+  pinLockCount         Int       @default(0)
+  biometricEnabledAt   DateTime?
+  biometricDeviceRowId String?   @db.Uuid
+  biometricSecretHash  String?
+  updatedAt            DateTime  @updatedAt
+
+  @@map("driver_security")
+}
+
+enum AuthorizationMethod {
+  PIN
+  BIOMETRIC
+}
+
+enum AuthorizationPurpose {
+  WITHDRAWAL
+  AUTO_PAYOUT
+}
+
+/**
+ * A short-lived, single-use proof that the driver confirmed a money operation
+ * with their PIN or biometrics. The withdrawal is created only by consuming
+ * one of these, inside the same transaction, bound to the quote it was issued
+ * for.
+ */
+model WithdrawalAuthorization {
+  id                     String               @id @default(uuid()) @db.Uuid
+  driverId               String               @db.Uuid
+  deviceRowId            String               @db.Uuid
+  method                 AuthorizationMethod
+  purpose                AuthorizationPurpose @default(WITHDRAWAL)
+  quoteId                String?              @db.Uuid
+  tokenHash              String               @unique
+  createdAt              DateTime             @default(now())
+  expiresAt              DateTime
+  consumedAt             DateTime?
+  consumedByWithdrawalId String?              @db.Uuid
+
+  @@index([driverId, createdAt])
+  @@index([expiresAt])
+  @@map("withdrawal_authorizations")
+}
+
 // ------------------------------------------------------------------- parks
 
 enum ParkStatus {

@@ -52,7 +52,7 @@ export default function WithdrawIdramScreen() {
             label={account ? t('common.continue') : t('idram.notLinkedCta')}
             onPress={() =>
               account
-                ? router.push({ pathname: '/withdraw/review', params: { quote: params.quote } })
+                ? router.push({ pathname: '/withdraw/authorize', params: { quote: params.quote } })
                 : router.push('/idram/account')
             }
             disabled={!!account && !usable}

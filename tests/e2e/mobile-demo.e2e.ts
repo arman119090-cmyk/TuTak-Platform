@@ -81,6 +81,23 @@ test.describe('the mobile app against a live API', () => {
     // month.
     await expect(demoButton).toBeHidden({ timeout: 30_000 });
 
+    // Every account sets a four-digit app code right after signing in, and
+    // nothing private renders until it is saved (see `docs/MOBILE_APP_LOCK_RU.md`).
+    // Type it the way a person does: four keys, then the same four again.
+    // The keypad is drawn by the app — no text field, no system keyboard —
+    // so the keys are pressed by their test ids rather than typed.
+    const setupHeading = page.getByText(/Choose a code|Придумайте код|Ընտրեք կոդ/);
+    await expect(setupHeading, 'the app-lock setup never appeared after sign-in').toBeVisible({ timeout: 30_000 });
+    for (const round of ['first', 'confirm']) {
+      for (const digit of ['2', '0', '2', '6']) {
+        await page.getByTestId(`pin-key-${digit}`).click();
+      }
+      if (round === 'first') {
+        await expect(page.getByText(/Repeat the code|Повторите код|Կրկնեք կոդը/)).toBeVisible({ timeout: 10_000 });
+      }
+    }
+    await expect(setupHeading).toBeHidden({ timeout: 30_000 });
+
     // A session that only exists in memory is not a session. The app writes
     // its tokens through the storage adapter, which is localStorage in a
     // browser and the Keystore on a phone; either way, nothing is stored if

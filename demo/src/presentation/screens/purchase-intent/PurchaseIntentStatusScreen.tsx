@@ -19,6 +19,7 @@ import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
+import { invalidateMoney } from '../../../data/query/invalidateMoney';
 import { formatAmd, formatPoints } from '../../utils/format';
 
 /**
@@ -69,8 +70,7 @@ export function PurchaseIntentStatusScreen() {
     // The purchase, if confirmed, already moved real money and bonus — the
     // wallet and transaction history must reflect it the moment this screen
     // is left, not on the next unrelated refetch.
-    queryClient.invalidateQueries({ queryKey: ['wallet'] });
-    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    invalidateMoney(queryClient);
     navigation.goBack();
   };
 
@@ -87,7 +87,7 @@ export function PurchaseIntentStatusScreen() {
       queryClient.setQueryData(['purchase-intent', route.params.intent.id], updated);
       // The bonus this intent reserved is available again the moment the
       // server says CANCELLED — the balance must not keep showing it held.
-      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      invalidateMoney(queryClient);
     } catch (error) {
       // 400 is the server saying the purchase left AWAITING_CONFIRMATION
       // first — the cashier got there, or the window ran out. That is not a

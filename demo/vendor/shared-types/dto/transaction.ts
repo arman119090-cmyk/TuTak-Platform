@@ -25,8 +25,29 @@ export interface TransactionDto {
    * to know where they spent.
    */
   partnerBrand: PartnerBrandDto | null;
+  /**
+   * The purchase this row settled, when it is one — the id of the
+   * `PurchaseIntent` whose `sourceTransactionId` is this transaction. Lets
+   * the customer open the purchase itself: its route, what was refunded,
+   * and the refunds behind that figure. Null for every row that is not a
+   * purchase (bonus accruals, EV sessions, adjustments) and for purchases
+   * written before intents existed.
+   */
+  purchaseIntentId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One refund recorded against a purchase — what the customer may see of it. */
+export interface PurchaseIntentRefundDto {
+  id: string;
+  purchaseIntentId: string;
+  /** Real money returned, 4dp. */
+  amount: string;
+  /** Bonus given back to the customer's wallet, 4dp. */
+  bonusRestored: string;
+  reason: string;
+  createdAt: string;
 }
 
 export interface PaginatedResultDto<T> {

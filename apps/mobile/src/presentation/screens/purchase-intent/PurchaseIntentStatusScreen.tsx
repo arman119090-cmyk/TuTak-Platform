@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
@@ -20,6 +19,7 @@ import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { formatAmd, formatPoints } from '../../utils/format';
+import { JakoScene } from '../../components/JakoScene';
 
 /**
  * Tracks one intent from creation to a terminal state, polling
@@ -35,7 +35,7 @@ import { formatAmd, formatPoints } from '../../utils/format';
  */
 export function PurchaseIntentStatusScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, layout } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'PurchaseIntentStatus'>>();
   const queryClient = useQueryClient();
@@ -119,19 +119,8 @@ export function PurchaseIntentStatusScreen() {
 
   if (status === Status.CONFIRMED) {
     return (
-      <SafeAreaView style={[styles.flex, { backgroundColor: color.background }]}>
-        <View style={[styles.wrap, { padding: layout.screenPaddingX }]}>
-          <View
-            style={[
-              styles.mark,
-              { backgroundColor: color.availableSurface, borderRadius: radius.full },
-            ]}
-          >
-            <Ionicons name="checkmark" size={40} color={color.availableText} />
-          </View>
-          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[6] }]}>
-            {t('purchaseIntent.confirmed')}
-          </Text>
+      <JakoScene state="success" size="compact" title={t('purchaseIntent.confirmed')} note={t('scene.note.success')} logo={false}>
+        <View style={styles.wrap}>
           <BrandLine brand={intent.partnerBrand} />
           <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
             {formatAmd(intent.grossAmount)}
@@ -157,17 +146,8 @@ export function PurchaseIntentStatusScreen() {
               icon={<JakoWingMark size={16} color={color.textInverse} />}
             />
           </View>
-          <View style={{ marginTop: space[8], opacity: 0.35 }}>
-            <Image
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              source={require('../../../../assets/logo-mark.png')}
-              style={{ width: 32, height: 32 }}
-              resizeMode="contain"
-              accessibilityIgnoresInvertColors
-            />
-          </View>
         </View>
-      </SafeAreaView>
+      </JakoScene>
     );
   }
 

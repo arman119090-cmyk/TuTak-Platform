@@ -25,6 +25,7 @@
     "yesterday": "Yesterday"
   },
   "auth": {
+    "tagline": "More possibilities, closer",
     "welcomeBack": "Welcome back",
     "createAccount": "Create your account",
     "login": "Log in",
@@ -517,5 +518,21 @@
     "KILOGRAM": "kg",
     "ITEM": "pcs",
     "HOUR": "h"
+  },
+  "scene": {
+    "bubble": "Your smart partner on the go",
+    "dataSafe": "Your data is safe",
+    "note": {
+      "login": "Onward together ♡",
+      "phone": "One code and you're in",
+      "otp": "The code is on its way",
+      "password": "Safe as a vault",
+      "reset": "Happens to everyone. Let's fix it",
+      "verification": "Just checking it's you",
+      "confirm": "We'll miss you",
+      "success": "Done ✓",
+      "partnerSubmitted": "Your application is with us ✓",
+      "lock": "For your eyes only"
+    }
   }
 }

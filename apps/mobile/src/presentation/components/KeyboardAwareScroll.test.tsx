@@ -361,7 +361,7 @@ describe('TextField sizing', () => {
 
     // A fixed height clipped the text on a phone with large fonts: the box
     // kept its size and the characters lost theirs.
-    expect(style.minHeight).toBe(52);
+    expect(style.minHeight).toBe(56);
     expect(style.height).toBeUndefined();
   });
 });

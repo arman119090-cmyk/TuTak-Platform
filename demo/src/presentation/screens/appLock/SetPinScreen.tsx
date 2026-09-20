@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { PinPad } from '../../components/PinPad';
-import { JakoWingMark } from '../../components/V2NavIcon';
 import { useAppLockStore } from '../../../data/stores/appLockStore';
 import { PIN_LENGTH } from '../../../data/appLock/pinCode';
 import { useBiometricLabel } from './useBiometricLabel';
+import { JakoScene } from '../../components/JakoScene';
 
 interface Props {
   /** Called once the code is saved (and the biometric offer, if any, answered). Absent during first setup, where the store's status change is the exit. */
@@ -88,15 +87,16 @@ export function SetPinScreen({ onDone, title }: Props) {
 
   const confirming = first !== null;
   return (
-    <SafeAreaView style={[styles.screen, { backgroundColor: color.background }]}>
-      <View style={[styles.top, { paddingHorizontal: space[5], paddingTop: space[8] }]}>
-        <JakoWingMark size={36} color={color.primary} />
-        <Text accessibilityRole="header" style={[text.title, { color: color.textPrimary, marginTop: space[5] }]}>
-          {confirming ? t('appLock.confirmTitle') : (title ?? t('appLock.setupTitle'))}
-        </Text>
-        <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], textAlign: 'center' }]}>
-          {confirming ? t('appLock.confirmSubtitle') : t('appLock.setupSubtitle')}
-        </Text>
+    <JakoScene
+      state="password"
+      size="compact"
+      scroll={false}
+      title={confirming ? t('appLock.confirmTitle') : (title ?? t('appLock.setupTitle'))}
+      subtitle={confirming ? t('appLock.confirmSubtitle') : t('appLock.setupSubtitle')}
+      note={t('scene.note.lock')}
+      sheetStyle={styles.sheet}
+    >
+      <View style={styles.top}>
         <Text
           accessibilityRole={error ? 'alert' : undefined}
           style={[text.bodySm, styles.error, { color: color.dangerText, marginTop: space[4], minHeight: 20 }]}
@@ -113,12 +113,12 @@ export function SetPinScreen({ onDone, title }: Props) {
           error={!!error}
         />
       </View>
-    </SafeAreaView>
+    </JakoScene>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, justifyContent: 'space-between' },
+  sheet: { justifyContent: 'space-between' },
   top: { alignItems: 'center' },
   error: { textAlign: 'center' },
 });

@@ -257,7 +257,9 @@ export function TextField({
           {
             backgroundColor: focused ? color.surface : color.backgroundSubtle,
             borderColor,
-            borderRadius: radius.md,
+            // `lg`, not `md`: a field sits on the sheet next to a pill button
+            // and a 12pt corner beside a 9999pt one read as two products.
+            borderRadius: radius.lg,
             paddingHorizontal: space[4],
             gap: space[2],
           },
@@ -427,7 +429,7 @@ const styles = StyleSheet.create({
   // the system font scale turned up — the control kept its size and the
   // characters lost theirs. The field grows instead; nothing else about it
   // changes at the default scale.
-  field: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderWidth: 1 },
+  field: { flexDirection: 'row', alignItems: 'center', minHeight: 56, borderWidth: 1 },
   input: { flex: 1, paddingVertical: 14 },
   /*
    * The focus glow.

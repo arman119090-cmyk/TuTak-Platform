@@ -53,7 +53,11 @@ export interface RequestOptions {
 }
 
 export const API_BASE_URL: string =
-  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ?? 'http://localhost:3000';
+  // The build profile (eas.json) sets EXPO_PUBLIC_API_BASE_URL; app.json's
+  // `extra.apiBaseUrl` is the `expo start` default; localhost is the last resort.
+  process.env.EXPO_PUBLIC_API_BASE_URL ??
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
+  'http://localhost:3000';
 
 export class ApiClient {
   private refreshing: Promise<boolean> | null = null;

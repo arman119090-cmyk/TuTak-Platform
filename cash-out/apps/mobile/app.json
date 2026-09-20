@@ -13,13 +13,19 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.cashout.driver"
+      "bundleIdentifier": "com.cashout.driver",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Cash Out uses Face ID to confirm payouts on this phone."
+      }
     },
     "android": {
       "package": "com.cashout.driver",
       "adaptiveIcon": {
         "backgroundColor": "#0A7A63"
-      }
+      },
+      "versionCode": 1,
+      "permissions": ["android.permission.USE_BIOMETRIC", "android.permission.USE_FINGERPRINT"]
     },
     "plugins": [
       "expo-router",
@@ -31,7 +37,16 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:3000"
+      "apiBaseUrl": "http://localhost:3000",
+      "eas": {
+        "projectId": "SET-BY-eas-init"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": false
     }
   }
 }

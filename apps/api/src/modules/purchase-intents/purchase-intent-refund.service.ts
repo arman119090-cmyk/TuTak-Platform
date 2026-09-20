@@ -9,6 +9,7 @@ import {
 import {
   AuditAction,
   BonusEntryType,
+  ExternalRefundStatus,
   LedgerAccountType,
   PostingDirection,
   Prisma,
@@ -23,6 +24,7 @@ import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -56,6 +58,38 @@ export interface PurchaseIntentRefundResult {
   /** Total merchandise value refunded against this purchase after this refund, including this one. */
   totalRefunded: string;
   bonusRestored: string;
+  /** This refund's slice of the stored-money component, back on the customer's balance. */
+  prepaidRestored: string;
+  /** The slice the partner owes the customer outside TuTak. Zero when nothing was paid at the till. */
+  externalRefundDue: string;
+  /** `NOT_REQUIRED` / `PENDING_PARTNER` / `CONFIRMED` — never "completed" while the partner still owes. */
+  externalRefundStatus: ExternalRefundStatus;
+}
+
+/**
+ * The three slices of one refund, each computed by the same watermark rule
+ * (`entitlement(after) − entitlement(before)`), which is what makes them sum
+ * exactly and never drift across partial refunds. `external` is the
+ * residual, never independently rounded, for the reason
+ * `ReferralService.computePoolSplit` gives for its own `tutak` leg.
+ */
+export function splitRefundAcrossComponents(params: {
+  amount: Decimal;
+  grossAmount: Decimal;
+  bonusAmountRequested: Decimal;
+  prepaidAmountApplied: Decimal;
+  cumulativeBefore: Decimal;
+  cumulativeAfter: Decimal;
+}): { bonus: Decimal; prepaid: Decimal; external: Decimal } {
+  const shareAt = (total: Decimal, cumulative: Decimal): Decimal =>
+    total.lessThanOrEqualTo(0)
+      ? new Decimal(0)
+      : roundIssued(total.times(cumulative).dividedBy(params.grossAmount));
+  const delta = (total: Decimal): Decimal =>
+    shareAt(total, params.cumulativeAfter).minus(shareAt(total, params.cumulativeBefore));
+  const bonus = delta(params.bonusAmountRequested);
+  const prepaid = delta(params.prepaidAmountApplied);
+  return { bonus, prepaid, external: params.amount.minus(bonus).minus(prepaid) };
 }
 
 /** Did this come from the (actorId, idempotencyKey) unique index? Same reasoning as RefundEngineService's own check. */
@@ -101,6 +135,7 @@ export class PurchaseIntentRefundService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly auditService: AuditService,
+    private readonly customerBalance: CustomerBalanceService,
   ) {}
 
   /**
@@ -317,11 +352,55 @@ export class PurchaseIntentRefundService {
             reason,
           );
 
+    /*
+     * The funding split of this refund (20.09.2026). `bonus` here equals the
+     * `bonusRestored` the loyalty reversal above computed — same watermark
+     * formula on the same column — and is asserted to, because two
+     * arithmetics for one number is how drift starts. `prepaid` goes back to
+     * the customer's money balance and comes out of the partner's payable
+     * (a new posting, never an edit — a refund after the partner was paid
+     * leaves a fresh debit for the next settlement or a collection).
+     * `external` is what the partner owes the customer in cash: TuTak moves
+     * nothing for it and only records whether the partner says it was
+     * handed back.
+     */
+    const split = splitRefundAcrossComponents({
+      amount,
+      grossAmount: intent.grossAmount,
+      bonusAmountRequested: intent.bonusAmountRequested,
+      prepaidAmountApplied: intent.prepaidAmountApplied,
+      cumulativeBefore,
+      cumulativeAfter,
+    });
+    if (!split.bonus.equals(bonusRestored)) {
+      throw new InternalServerErrorException(
+        `Purchase intent ${intent.id} refund: bonus slice ${split.bonus.toString()} disagrees with ` +
+          `the loyalty reversal's ${bonusRestored.toString()}`,
+      );
+    }
+    if (split.prepaid.greaterThan(0)) {
+      await this.customerBalance.refundPrepaidFromPartner(
+        {
+          userId: intent.customerId,
+          partnerId: intent.partnerId,
+          amount: split.prepaid,
+          purchaseIntentId: intent.id,
+        },
+        tx,
+      );
+    }
+    const externalRefundStatus = split.external.greaterThan(0)
+      ? ExternalRefundStatus.PENDING_PARTNER
+      : ExternalRefundStatus.NOT_REQUIRED;
+
     const refund = await tx.purchaseIntentRefund.create({
       data: {
         purchaseIntentId: intent.id,
         amount,
         bonusRestored,
+        prepaidRestored: split.prepaid,
+        externalRefundDue: split.external,
+        externalRefundStatus,
         reason,
         ledgerTransactionId,
         actorId,
@@ -340,6 +419,8 @@ export class PurchaseIntentRefundService {
           amount: amount.toString(),
           totalRefunded: cumulativeAfter.toString(),
           bonusRestored: bonusRestored.toString(),
+          prepaidRestored: split.prepaid.toString(),
+          externalRefundDue: split.external.toString(),
           // Earned-bonus liability that could not be reclaimed from wallets
           // (already spent elsewhere or expired) — see `reverseLoyaltyEffects`.
           unrecoverableShortfall: shortfall.toString(),
@@ -358,7 +439,70 @@ export class PurchaseIntentRefundService {
       amount: amount.toFixed(MONEY_SCALE),
       totalRefunded: cumulativeAfter.toFixed(MONEY_SCALE),
       bonusRestored: bonusRestored.toFixed(MONEY_SCALE),
+      prepaidRestored: split.prepaid.toFixed(MONEY_SCALE),
+      externalRefundDue: split.external.toFixed(MONEY_SCALE),
+      externalRefundStatus,
     };
+  }
+
+  /**
+   * Somebody at the business states that the cash/card slice of a refund
+   * was handed back to the customer.
+   *
+   * TuTak cannot know this by itself — the money never passed through it —
+   * so the state is a partner's statement, recorded with who made it and
+   * when, and nothing more. Until it is made, the refund is *not* complete
+   * from the customer's point of view and no screen may say it is (§26).
+   * Idempotent: confirming twice is one confirmation.
+   */
+  async confirmExternalRefund(refundId: string, actorId: string) {
+    const refund = await this.prisma.purchaseIntentRefund.findUnique({
+      where: { id: refundId },
+      include: { purchaseIntent: { select: { partnerId: true, partnerBranchId: true } } },
+    });
+    if (!refund) throw new NotFoundException('Refund not found');
+    if (refund.externalRefundStatus === ExternalRefundStatus.NOT_REQUIRED) {
+      throw new BadRequestException(
+        'Nothing was paid at the till for this refund — there is no external part to confirm',
+      );
+    }
+    if (refund.externalRefundStatus === ExternalRefundStatus.CONFIRMED) return refund;
+
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.purchaseIntentRefund.updateMany({
+        where: { id: refundId, externalRefundStatus: ExternalRefundStatus.PENDING_PARTNER },
+        data: {
+          externalRefundStatus: ExternalRefundStatus.CONFIRMED,
+          externalRefundConfirmedAt: new Date(),
+          externalRefundConfirmedByUserId: actorId,
+        },
+      });
+      if (claimed.count === 0) return;
+      await this.auditService.record(
+        {
+          actorUserId: actorId,
+          action: AuditAction.PURCHASE_INTENT_REFUNDED,
+          entityType: 'PurchaseIntentRefund',
+          entityId: refundId,
+          metadata: {
+            event: 'external_refund_confirmed',
+            purchaseIntentId: refund.purchaseIntentId,
+            externalRefundDue: refund.externalRefundDue.toString(),
+          },
+        },
+        tx,
+      );
+    });
+    return this.prisma.purchaseIntentRefund.findUniqueOrThrow({ where: { id: refundId } });
+  }
+
+  async findRefundOrThrow(refundId: string) {
+    const refund = await this.prisma.purchaseIntentRefund.findUnique({
+      where: { id: refundId },
+      include: { purchaseIntent: { select: { partnerId: true, partnerBranchId: true, customerId: true } } },
+    });
+    if (!refund) throw new NotFoundException('Refund not found');
+    return refund;
   }
 
   /**
@@ -1025,6 +1169,9 @@ export class PurchaseIntentRefundService {
     id: string;
     amount: Decimal;
     bonusRestored: Decimal;
+    prepaidRestored: Decimal;
+    externalRefundDue: Decimal;
+    externalRefundStatus: ExternalRefundStatus;
     purchaseIntentId: string;
   }): Promise<PurchaseIntentRefundResult> {
     // Re-read rather than trust a stored snapshot: other refunds may have
@@ -1037,6 +1184,9 @@ export class PurchaseIntentRefundService {
         amount: refund.amount.toFixed(MONEY_SCALE),
         totalRefunded: intent.refundedAmount.toFixed(MONEY_SCALE),
         bonusRestored: refund.bonusRestored.toFixed(MONEY_SCALE),
+        prepaidRestored: refund.prepaidRestored.toFixed(MONEY_SCALE),
+        externalRefundDue: refund.externalRefundDue.toFixed(MONEY_SCALE),
+        externalRefundStatus: refund.externalRefundStatus,
       }));
   }
 

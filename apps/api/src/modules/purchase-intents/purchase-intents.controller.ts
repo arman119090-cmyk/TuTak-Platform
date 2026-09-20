@@ -235,6 +235,29 @@ export class PurchaseIntentsController {
     });
   }
 
+  /**
+   * A member of staff states that the cash/card part of a refund was handed
+   * back to the customer (§26). Any staff tier scoped to the partner and the
+   * branch: handing cash back is till work, and the record is a statement
+   * of fact rather than a financial decision — the decision was the refund
+   * itself. Declared before `:id/refunds` so the literal segment wins.
+   */
+  @Post('refunds/:refundId/confirm-external')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async confirmExternalRefund(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('refundId') refundId: string,
+  ) {
+    const refund = await this.purchaseIntentRefunds.findRefundOrThrow(refundId);
+    assertPartnerScope(staff, refund.purchaseIntent.partnerId);
+    assertResourceBranchScope(
+      staff,
+      refund.purchaseIntent.partnerId,
+      refund.purchaseIntent.partnerBranchId,
+    );
+    return this.purchaseIntentRefunds.confirmExternalRefund(refundId, staff.id);
+  }
+
   @Get(':id/refunds')
   async listRefunds(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);

@@ -116,7 +116,7 @@ PIN — scrypt, блокировка с растущей задержкой, с�
 | ----------- | --------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Cash Out CI | `549eca1` | [#3](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35501203648)   | **failure** — шаг Formatting: `docs/TZ_GAP_2026-09-20.md` не был отформатирован prettier (исправлено в `2404c6c`) |
 | Cash Out CI | `2404c6c` | [#4](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35505839504)   | **success** (все шаги: миграции, typecheck, lint, format, tests, admin build, mobile checks)                      |
-| CI (TuTak)  | `2404c6c` | [#888](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35505839509) | CI_RESULT_888                                                                                                     |
+| CI (TuTak)  | `2404c6c` | [#888](https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35505839509) | **success** (TuTak не сломан: lint, typecheck, unit, integration, mobile, admin, partner, build, образы, e2e)     |
 
 Коммит с этим отчётом и барьерами изоляции запускает ещё один прогон; его результат сообщён в ответе, а не здесь.
 

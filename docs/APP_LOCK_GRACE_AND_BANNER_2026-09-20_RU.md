@@ -91,8 +91,8 @@ Android это событие приходит не только когда пр
 | App, LockScreen тесты | проходят |
 | Вся `apps/mobile` Jest | 70 suites, 611 тестов, 0 падений |
 | `tsc --noEmit`, `eslint` | 0 ошибок |
-| CI | __CI__ |
-| APK | __APK__ |
+| CI на `9bee56b` | 6/6 зелёный (Lint/test/build, Integration 1–3, Build the container images, Android APK) |
+| APK `apk-preview-64` (`9bee56b`, боевой API) | 127 382 995 байт, SHA-256 `5b02797c002c0027716ef14559fad50bb4b6ae23c61f39d751154083cc59d2f2`, https://github.com/arman119090-cmyk/TuTak-Platform/releases/tag/apk-preview-64 |
 
 ## 6. UNVERIFIED
 

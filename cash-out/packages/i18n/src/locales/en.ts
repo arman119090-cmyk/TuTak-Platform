@@ -33,6 +33,7 @@ export const en = {
     legalNote: 'By continuing you accept the Terms and the Privacy Policy',
   },
   onboarding: {
+    language: 'App language',
     title: 'Get your earnings right away',
     body: 'Cash Out pays out your Yandex Pro balance to your card, any day, any hour.',
     step1: 'See your real balance',

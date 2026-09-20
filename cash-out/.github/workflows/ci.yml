@@ -1,5 +1,5 @@
-# Cash Out CI. This is the workflow for the standalone repository; while the
-# code still lives inside TuTak-Platform, the copy at the parent root drives it.
+# Cash Out CI: clean PostgreSQL and Redis, every migration, typecheck, lint,
+# format, every test suite, the admin build and the Expo config check.
 name: Cash Out CI
 
 on:

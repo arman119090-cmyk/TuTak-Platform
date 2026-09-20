@@ -120,3 +120,10 @@ unrecoverable loss, one per affected withdrawal.
 
 The argument in full, with the state machine it produces, is at the top of
 [`packages/contracts/src/withdrawal-state.ts`](packages/contracts/src/withdrawal-state.ts).
+
+## History
+
+Cash Out was developed inside the `TuTak-Platform` repository under
+`cash-out/` and moved to this repository with its full history
+(`git subtree split`). It shares no code with TuTak; `docs/ISOLATION.md`
+records the walls that kept the two apart while they shared a tree.

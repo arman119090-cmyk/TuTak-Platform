@@ -71,6 +71,12 @@ interface AppLockState {
   unlockWithBiometrics: (prompt: string) => Promise<boolean>;
   enableBiometrics: (prompt: string) => Promise<boolean>;
   disableBiometrics: () => Promise<void>;
+  /**
+   * Feed every `AppState` change here. Locks on return to the foreground
+   * when the app was away for `LOCK_AFTER_BACKGROUND_MS` or more; a short
+   * absence (a system dialog, a quick app switch) does not lock.
+   */
+  onAppStateChange: (state: string, now?: number) => void;
   lock: () => void;
 }
 
@@ -87,6 +93,28 @@ function serial<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 let generation = 0;
+
+/**
+ * How long the app has to be away before coming back asks for the code.
+ *
+ * Not zero, and not because of taste: on Android the activity is *paused*
+ * — and React Native reports `background` — every time something opens on
+ * top of it that is not the app: the camera-permission dialog, the share
+ * sheet, the biometric prompt on some handsets. Locking on the event
+ * itself meant the code was demanded in the middle of paying, right after
+ * granting the camera, and again after the fingerprint dialog closed —
+ * "it asks for the code everywhere" (owner, 20.09.2026, on a Samsung).
+ *
+ * So the lock is armed on `background` and fired on `active` only if the
+ * gap was long enough to mean the person actually left. Five minutes: a
+ * dialog or a quick switch to another app is seconds; a phone left on a
+ * table is minutes. A cold start is always locked regardless (see
+ * `hydrate`), which is what "the code when you open the app" means.
+ */
+export const LOCK_AFTER_BACKGROUND_MS = 5 * 60_000;
+
+/** When the app last went to the background, or null while it is in front. */
+let backgroundedAt: number | null = null;
 /** The parsed record for the current session, so an unlock does not hit the keystore twice. */
 let record: PinRecord | null = null;
 
@@ -214,6 +242,17 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
   disableBiometrics: async () => {
     await serial(removeBiometricProof).catch(() => undefined);
     set({ biometricsEnabled: false });
+  },
+
+  onAppStateChange: (state, now = Date.now()) => {
+    if (state === 'background') {
+      if (backgroundedAt === null) backgroundedAt = now;
+      return;
+    }
+    if (state !== 'active') return;
+    const since = backgroundedAt;
+    backgroundedAt = null;
+    if (since !== null && now - since >= LOCK_AFTER_BACKGROUND_MS) get().lock();
   },
 
   lock: () => {

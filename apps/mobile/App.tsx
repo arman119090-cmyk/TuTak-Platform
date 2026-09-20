@@ -42,16 +42,21 @@ function Root() {
   const [ready, setReady] = useState(false);
   const lockStatus = useAppLockStore((s) => s.status);
   /*
-   * The app lock (see `appLockStore`). Locked the moment the app leaves the
-   * foreground — not after a grace period; owner decision, 20.09.2026 — and
-   * covered with the splash while it is `inactive`, so the task switcher's
+   * The app lock (see `appLockStore`). Every cold start is locked; coming
+   * back from the background locks only after a real absence
+   * (`LOCK_AFTER_BACKGROUND_MS`) — the first cut locked on the `background`
+   * event itself and, on Android, that event also fires for the camera
+   * permission dialog and the fingerprint prompt, so the code was demanded
+   * inside the app. The store decides; this only feeds it the events.
+   *
+   * Covered with the splash while not `active`, so the task switcher's
    * snapshot shows a logo rather than a balance.
    */
   const [obscured, setObscured] = useState(AppState.currentState !== 'active');
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       setObscured(state !== 'active');
-      if (state === 'background') useAppLockStore.getState().lock();
+      useAppLockStore.getState().onAppStateChange(state);
     });
     return () => subscription.remove();
   }, []);

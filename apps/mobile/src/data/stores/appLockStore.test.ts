@@ -1,6 +1,6 @@
 import type { AuthenticatedUserDto } from '@tutak/shared-types';
 import { useAuthStore } from './authStore';
-import { MAX_ATTEMPTS, useAppLockStore } from './appLockStore';
+import { LOCK_AFTER_BACKGROUND_MS, MAX_ATTEMPTS, useAppLockStore } from './appLockStore';
 import * as storage from '../storage/secureStorage';
 import * as device from '../biometrics/biometricDevice';
 
@@ -194,5 +194,74 @@ describe('appLockStore', () => {
     expect(lock().status).toBe('idle');
     expect(mockMemory.has('tutak.appLock.pin.v1')).toBe(false);
     expect(mockMemory.has('tutak.appLock.owner.v1')).toBe(false);
+  });
+});
+
+/**
+ * When coming back asks for the code — and, as important, when it does not.
+ *
+ * On Android `background` is reported for every dialog that opens on top of
+ * the activity (camera permission, the fingerprint prompt on some phones),
+ * so a lock keyed on the event itself demanded the code in the middle of a
+ * payment. The store now arms on `background` and decides on `active` by
+ * how long the app was away.
+ */
+describe('appLockStore: lock on return from the background', () => {
+  const MINUTE = 60_000;
+
+  async function unlocked() {
+    await signIn(userA);
+    await lock().createPin('1234');
+    expect(lock().status).toBe('unlocked');
+  }
+
+  it('does not lock for a short absence — a permission dialog, a quick app switch', async () => {
+    await unlocked();
+    lock().onAppStateChange('background', 1_000);
+    lock().onAppStateChange('active', 1_000 + 8_000);
+    expect(lock().status).toBe('unlocked');
+  });
+
+  it('locks when the app was away long enough to have been left', async () => {
+    await unlocked();
+    lock().onAppStateChange('background', 1_000);
+    lock().onAppStateChange('active', 1_000 + LOCK_AFTER_BACKGROUND_MS);
+    expect(lock().status).toBe('locked');
+  });
+
+  it('measures from the first background event, not the last', async () => {
+    // Android can report `background` more than once while the app is
+    // away; the clock starts at the first one.
+    await unlocked();
+    lock().onAppStateChange('background', 0);
+    lock().onAppStateChange('background', 4 * MINUTE);
+    lock().onAppStateChange('active', 5 * MINUTE);
+    expect(lock().status).toBe('locked');
+  });
+
+  it('a return resets the clock, so two short absences do not add up to a lock', async () => {
+    await unlocked();
+    lock().onAppStateChange('background', 0);
+    lock().onAppStateChange('active', 3 * MINUTE);
+    lock().onAppStateChange('background', 3 * MINUTE);
+    lock().onAppStateChange('active', 6 * MINUTE);
+    expect(lock().status).toBe('unlocked');
+  });
+
+  it('ignores `inactive` (iOS control centre, an incoming call) entirely', async () => {
+    await unlocked();
+    lock().onAppStateChange('inactive', 0);
+    lock().onAppStateChange('active', 10 * MINUTE);
+    expect(lock().status).toBe('unlocked');
+  });
+
+  it('a cold start is still locked regardless of any grace', async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    // The same phone, the same account, a fresh process: hydrate reads the
+    // stored code and lands on `locked`.
+    useAppLockStore.setState({ status: 'idle' });
+    await lock().hydrate();
+    expect(lock().status).toBe('locked');
   });
 });

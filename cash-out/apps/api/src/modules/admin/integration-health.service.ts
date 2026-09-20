@@ -8,6 +8,8 @@ import { PaymentProviderPort } from '../payment-provider/payment-provider.port';
 import { YandexFleetPort } from '../yandex/yandex.port';
 import { NotificationPort } from '../notifications/notification.port';
 import { RateLimiter } from '../../common/rate-limit.service';
+import { IntegrationHealthRecorder } from '../integration-health/integration-health.recorder';
+import { SmsGatewayPort } from '../auth/sms-gateway.port';
 import { RedisRateLimiter } from '../../common/rate-limit/redis-rate-limiter';
 
 /**
@@ -27,6 +29,8 @@ export class IntegrationHealthService {
     private readonly provider: PaymentProviderPort,
     private readonly push: NotificationPort,
     private readonly limiter: RateLimiter,
+    private readonly sms: SmsGatewayPort,
+    private readonly recorder: IntegrationHealthRecorder,
     private readonly clock: Clock,
   ) {}
 
@@ -43,6 +47,9 @@ export class IntegrationHealthService {
       yandexParkId ? await this.safe(() => this.yandex.ping(yandexParkId)) : false,
     );
     await this.record('idram', await this.safe(() => this.provider.ping()));
+    if (this.sms.mode === 'live') {
+      await this.record(this.sms.name, await this.safe(() => this.sms.ping()));
+    }
     if (this.limiter instanceof RedisRateLimiter) {
       await this.record('redis', await this.limiter.ping());
     }
@@ -55,7 +62,8 @@ export class IntegrationHealthService {
     return [
       this.describe('yandex-fleet', byName.get('yandex-fleet'), this.env.YANDEX_MODE),
       this.describe('idram', byName.get('idram'), this.env.PROVIDER_MODE),
-      this.describe('push', byName.get('push'), this.push.mode),
+      this.describe('sms', byName.get(this.sms.name), this.sms.mode),
+      this.describe('push', byName.get(this.push.name), this.push.mode),
       // The rate limiter's store: `memory` is a mode, not a fake, but it is
       // shown the same way so an operator sees at once that only one API
       // instance is being limited.
@@ -102,24 +110,7 @@ export class IntegrationHealthService {
     }
   }
 
-  private async record(integration: string, ok: boolean): Promise<void> {
-    const now = this.clock.now();
-    await this.prisma.integrationHealth.upsert({
-      where: { integration },
-      create: {
-        integration,
-        status: ok ? 'OK' : 'DOWN',
-        lastOkAt: ok ? now : null,
-        lastErrorAt: ok ? null : now,
-        okCount: ok ? 1 : 0,
-        errorCount: ok ? 0 : 1,
-      },
-      update: {
-        status: ok ? 'OK' : 'DOWN',
-        ...(ok
-          ? { lastOkAt: now, okCount: { increment: 1 } }
-          : { lastErrorAt: now, errorCount: { increment: 1 }, lastError: 'ping failed' }),
-      },
-    });
+  private record(integration: string, ok: boolean): Promise<void> {
+    return this.recorder.record(integration, ok, ok ? undefined : 'ping failed');
   }
 }

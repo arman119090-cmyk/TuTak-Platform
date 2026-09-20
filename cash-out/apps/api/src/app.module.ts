@@ -18,6 +18,7 @@ import { FeesModule } from './modules/fees/fees.module';
 import { HealthModule } from './modules/health/health.module';
 import { HistoryModule } from './modules/history/history.module';
 import { IdramModule } from './modules/idram/idram.module';
+import { IntegrationHealthModule } from './modules/integration-health/integration-health.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { LimitsModule } from './modules/limits/limits.module';
 import { NotificationModule } from './modules/notifications/notification.module';
@@ -49,6 +50,7 @@ export class AppModule implements NestModule {
         PrismaModule,
         CryptoModule,
         AuditModule,
+        IntegrationHealthModule,
         NotificationModule,
         AuthModule,
         ParksModule,

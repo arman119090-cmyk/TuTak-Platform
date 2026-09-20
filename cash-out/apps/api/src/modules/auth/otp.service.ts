@@ -87,13 +87,17 @@ export class OtpService {
       select: { id: true },
     });
 
-    const delivered = await this.sms.sendOtp({ phone, code, locale });
-    if (!delivered) {
+    const sent = await this.sms.sendOtp({ phone, code, locale, reference: challenge.id });
+    if (!sent.accepted) {
       await this.prisma.otpChallenge.update({
         where: { id: challenge.id },
         data: { deliveryFailed: true },
       });
-      this.logger.warning('OTP delivery failed', { challengeId: challenge.id });
+      this.logger.warning('OTP delivery failed', {
+        challengeId: challenge.id,
+        error: sent.error.code,
+        retryable: sent.error.retryable,
+      });
     }
 
     return {

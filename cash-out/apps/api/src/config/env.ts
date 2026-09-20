@@ -151,12 +151,30 @@ export const envSchema = z
       .transform((value) => value === 'true'),
 
     /**
+     * SMS. `mock` logs the code locally and is refused in production, where it
+     * would mean nobody can sign in. `live` needs a provider adapter that
+     * extends SmsHttpGatewayBase; none is contracted yet, so `live` refuses
+     * to start until one is registered.
+     */
+    SMS_MODE: z.enum(['mock', 'live']).default('mock'),
+    SMS_PROVIDER: z.string().min(1).optional(),
+    SMS_BASE_URL: z.string().url().optional(),
+    SMS_API_KEY: z.string().optional(),
+    SMS_SENDER: z.string().optional(),
+    SMS_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(8000),
+    SMS_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+
+    /**
      * Push delivery. `mock` records notifications without sending anything and
      * is allowed in production — it protects no money — but the integrations
-     * tile shows it as MOCK and the process logs it at start-up. `live` has no
-     * adapter yet and refuses to start.
+     * tile shows it as MOCK and the process logs it at start-up. `live` with
+     * PUSH_PROVIDER=expo sends through Expo's push service (LIVE-UNVERIFIED:
+     * never exercised against a real device from this repository).
      */
     PUSH_MODE: z.enum(['mock', 'live']).default('mock'),
+    PUSH_PROVIDER: z.enum(['expo']).optional(),
+    EXPO_ACCESS_TOKEN: z.string().optional(),
+    PUSH_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(8000),
 
     /** How often an ON_THRESHOLD rule re-reads the balance. */
     AUTO_PAYOUT_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
@@ -189,8 +207,29 @@ export const envSchema = z
         message: 'ENCRYPTION_PREVIOUS_KEYS contains a duplicate key id',
       });
     }
+    if (env.SMS_MODE === 'live' && !env.SMS_PROVIDER) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SMS_PROVIDER'],
+        message: 'SMS_PROVIDER is required when SMS_MODE=live',
+      });
+    }
+    if (env.PUSH_MODE === 'live' && !env.PUSH_PROVIDER) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUSH_PROVIDER'],
+        message: 'PUSH_PROVIDER is required when PUSH_MODE=live',
+      });
+    }
     if (env.NODE_ENV !== 'production') return;
 
+    if (env.SMS_MODE === 'mock') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SMS_MODE'],
+        message: 'SMS_MODE=mock is not allowed in production — nobody could sign in',
+      });
+    }
     if (env.RATE_LIMIT_BACKEND !== 'redis') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

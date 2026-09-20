@@ -1,5 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { ENV, Env } from '../../config/env';
+import { AppLogger } from '../../common/logging/logger.service';
+import { IntegrationHealthRecorder } from '../integration-health/integration-health.recorder';
+import { ExpoPushAdapter } from './expo-push.adapter';
 import { NotificationMockAdapter } from './notification-mock.adapter';
 import { NotificationController } from './notification.controller';
 import { NotificationPort } from './notification.port';
@@ -17,15 +20,25 @@ import { NotificationService } from './notification.service';
     NotificationMockAdapter,
     {
       provide: NotificationPort,
-      inject: [ENV, NotificationMockAdapter],
-      useFactory: (env: Env, mock: NotificationMockAdapter) => {
-        if (env.PUSH_MODE === 'live') {
-          throw new Error(
-            'PUSH_MODE=live is set, but no live push adapter is implemented. ' +
-              'Implement NotificationPort for the chosen push service and register it here.',
+      inject: [ENV, NotificationMockAdapter, AppLogger, IntegrationHealthRecorder],
+      useFactory: (
+        env: Env,
+        mock: NotificationMockAdapter,
+        logger: AppLogger,
+        health: IntegrationHealthRecorder,
+      ) => {
+        if (env.PUSH_MODE !== 'live') return mock;
+        if (env.PUSH_PROVIDER === 'expo') {
+          return new ExpoPushAdapter(
+            { accessToken: env.EXPO_ACCESS_TOKEN, timeoutMs: env.PUSH_TIMEOUT_MS },
+            logger,
+            health,
           );
         }
-        return mock;
+        throw new Error(
+          `PUSH_MODE=live with PUSH_PROVIDER=${env.PUSH_PROVIDER ?? '(unset)'}: no adapter. ` +
+            'Implement NotificationPort for the provider and register it here.',
+        );
       },
     },
     NotificationService,

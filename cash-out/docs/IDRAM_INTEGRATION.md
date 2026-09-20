@@ -63,6 +63,20 @@ Everything live. A live adapter needs, from iDram:
 | Limits: per payout, per wallet per day, fractional drams           | limit policies and the fee engine's payout increment                             |
 | A sandbox                                                          | the adapter cannot be verified against production money                          |
 
-`PROVIDER_MODE=live` throws at startup until such an adapter is registered in
-`idram.module.ts`. That is deliberate: a process that pretends to pay is worse
-than one that refuses to start.
+`PROVIDER_MODE=live` now builds `IdramLiveAdapter`
+(`apps/api/src/modules/idram/idram-live.adapter.ts`), the slot the real
+implementation fills. Until every entry in `IdramLiveAdapter.missing()` is
+implemented it refuses to serve at start-up, naming the unknowns:
+
+1. authentication scheme;
+2. wallet verification endpoint;
+3. payout endpoint and its idempotency semantics;
+4. transaction status endpoint;
+5. webhook envelope and signature scheme;
+6. reversal / return semantics;
+7. health / sandbox endpoint.
+
+That is deliberate: a process that pretends to pay is worse than one that
+refuses to start. The mock stays untouched for tests and local work. The
+per-integration contract (credentials, timeouts, retries, unknown state,
+reconciliation, monitoring) is in `LIVE_READINESS.md`.

@@ -94,6 +94,10 @@ is not `success` waits or goes to a person.
 
 ## What to confirm on the sandbox park, in order
 
+The full 14-step live verification checklist (authentication → reconciliation)
+is in `LIVE_READINESS.md`; the items below are the response-shape questions it
+depends on.
+
 1. **A replayed `X-Idempotency-Token` returns the original transaction** and
    does not create a second one. Post the same token twice; count transactions.
 2. **A replay does not re-evaluate `condition.balance_min`.** Post a debit that

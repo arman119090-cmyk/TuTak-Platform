@@ -11,6 +11,7 @@ import { Clock } from '../../common/clock';
 import { AppLogger } from '../../common/logging/logger.service';
 import { PrismaService, TransactionClient } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { PUSH_TOKEN_DEAD } from './expo-push.adapter';
 import { NotificationPort } from './notification.port';
 
 const TOPIC = 'notification';
@@ -205,6 +206,14 @@ export class NotificationService {
       payload: body.payload,
     });
     if (!result.delivered) {
+      if (result.reason === PUSH_TOKEN_DEAD) {
+        // The device is gone: forget the token and stop retrying this message.
+        await this.prisma.notificationPreference.updateMany({
+          where: { driverId: body.driverId },
+          data: { pushToken: null, pushPlatform: null, pushTokenAt: null },
+        });
+        return false;
+      }
       throw new Error(`push not delivered: ${result.reason}`);
     }
     return true;

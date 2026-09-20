@@ -103,7 +103,10 @@
     "totalBalance": "Total balance",
     "expiringSoon": "Expiring soon",
     "noWalletTitle": "No wallet yet",
-    "noWalletBody": "This account has no points wallet. Register with a phone number to start earning."
+    "noWalletBody": "This account has no points wallet. Register with a phone number to start earning.",
+    "ledgerFailed": "Your bonus history could not be loaded.",
+    "lotsFailed": "Expiring bonuses could not be loaded — this does not mean there are none.",
+    "staleNotice": "Connection lost. Showing the last known balance — it may have changed."
   },
   "history": {
     "detailTitle": "Operation",
@@ -437,7 +440,9 @@
     "offerings": "Products & services",
     "mapUnavailable": "The map is unavailable right now. Partners are listed below.",
     "goodValue": "good value",
-    "showOnMap": "Show on map"
+    "showOnMap": "Show on map",
+    "partnersUnavailable": "Partners could not be loaded. Stations are shown below.",
+    "stationsUnavailable": "Charging stations could not be loaded. Partners are shown below."
   },
   "partnerCategory": {
     "grocery": "Groceries",
@@ -477,7 +482,14 @@
     "tillCodeAccessible": "Code for the cashier: {{digits}}",
     "createNew": "Create new purchase",
     "goHome": "Go home",
-    "cashbackHere": "{{percent}}% back here"
+    "cashbackHere": "{{percent}}% back here",
+    "balanceLoading": "Checking how many points you have…",
+    "balanceUnavailable": "Balance unavailable — we could not check how many points you can spend.",
+    "invalidAmount": "Enter an amount greater than zero.",
+    "invalidBonus": "Enter the bonus as a number, up to four decimals.",
+    "bonusOverGross": "Bonus cannot exceed the purchase amount.",
+    "bonusOverLimit": "This partner lets bonus cover at most {{percent}}% of the bill — {{max}} points here.",
+    "bonusOverBalance": "You only have {{amount}} points."
   },
   "psp": {
     "readyToPay": "Pay for this purchase inside TuTak.",

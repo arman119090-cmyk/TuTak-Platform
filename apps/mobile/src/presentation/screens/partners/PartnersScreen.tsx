@@ -281,8 +281,24 @@ export function PartnersScreen() {
     }
   };
 
-  const isLoading = (showPartners && partners.isLoading) || (showStations && stations.isLoading);
-  const isError = (showPartners && partners.isError) || (showStations && stations.isError);
+  /*
+   * Two sources, judged separately (U10).
+   *
+   * Partners and charging stations come from different services. When one
+   * of them fails, the other's rows are still true and still useful — a
+   * driver who cannot see stations can still see the café next to them.
+   * So the list is only "loading" while nothing has arrived, only "failed"
+   * when every source asked has failed, and a source that failed on its
+   * own is reported above the rows the other one delivered.
+   */
+  const sources = [
+    ...(showPartners ? [partners] : []),
+    ...(showStations ? [stations] : []),
+  ];
+  const isLoading = sources.some((q) => q.isPending) && !sources.some((q) => q.data);
+  const isError = sources.length > 0 && sources.every((q) => q.isError && !q.data);
+  const partnersFailed = showPartners && partners.isError && !partners.data && !isError;
+  const stationsFailed = showStations && stations.isError && !stations.data && !isError;
   const hasFilter = Boolean(search) || filter.kind !== 'all';
 
   return (
@@ -461,6 +477,18 @@ export function PartnersScreen() {
           onAction={filter.kind === 'stations' ? () => navigation.navigate('EvHistory') : undefined}
         />
 
+        {partnersFailed ? (
+          <SourceWarning
+            message={t('partners.partnersUnavailable', 'Partners could not be loaded. Stations are shown below.')}
+            onRetry={() => void partners.refetch()}
+          />
+        ) : null}
+        {stationsFailed ? (
+          <SourceWarning
+            message={t('partners.stationsUnavailable', 'Charging stations could not be loaded. Partners are shown below.')}
+            onRetry={() => void stations.refetch()}
+          />
+        ) : null}
         {isLoading ? (
           <>
             <Skeleton height={84} style={{ marginBottom: space[3] }} />
@@ -845,3 +873,35 @@ const styles = StyleSheet.create({
   connector: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
 });
+
+/**
+ * One source did not answer; the other did. Said above the list, with a
+ * retry for that source alone, so the rows that did arrive stay in place.
+ */
+function SourceWarning({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useTranslation();
+  const { color, space, text, radius } = useTheme();
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: space[3],
+        padding: space[3],
+        marginBottom: space[3],
+        borderRadius: radius.md,
+        backgroundColor: color.pendingSurface,
+      }}
+    >
+      <Text style={[text.bodySm, { color: color.pendingText, flex: 1 }]}>{message}</Text>
+      <Text
+        accessibilityRole="button"
+        onPress={onRetry}
+        style={[text.bodySm, { color: color.pendingText, fontWeight: '600' }]}
+      >
+        {t('common.retry')}
+      </Text>
+    </View>
+  );
+}

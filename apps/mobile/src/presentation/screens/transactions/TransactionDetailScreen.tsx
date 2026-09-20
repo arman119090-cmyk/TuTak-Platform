@@ -244,6 +244,26 @@ function RefundsSection({
                   {t('history.bonusRestored', { amount: formatPoints(refund.bonusRestored), defaultValue: '+{{amount}} bonus back' })}
                 </Text>
               ) : null}
+              {Number(refund.prepaidRestored ?? '0') > 0 ? (
+                <Text style={styles.label}>
+                  {t('history.prepaidRestored', { amount: formatAmd(refund.prepaidRestored) })}
+                </Text>
+              ) : null}
+              {/*
+                The cash slice is the business's to hand back, and TuTak
+                only knows what the business has said (§26). Until it says
+                so, the refund is not complete for the customer — and the
+                wording never gets ahead of the fact.
+              */}
+              {refund.externalRefundStatus === 'PENDING_PARTNER' ? (
+                <Text style={styles.warning}>
+                  {t('history.externalRefundPending', { amount: formatAmd(refund.externalRefundDue) })}
+                </Text>
+              ) : refund.externalRefundStatus === 'CONFIRMED' ? (
+                <Text style={styles.label}>
+                  {t('history.externalRefundConfirmed', { amount: formatAmd(refund.externalRefundDue) })}
+                </Text>
+              ) : null}
             </View>
           </View>
         ))}

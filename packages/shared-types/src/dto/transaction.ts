@@ -61,6 +61,21 @@ export interface PurchaseIntentRefundDto {
   createdAt: string;
 }
 
+/** A refund whose cash slice the business still has to hand back — the till's list. */
+export interface PendingExternalRefundDto {
+  id: string;
+  purchaseIntentId: string;
+  confirmationCode: string | null;
+  purchaseGross: string;
+  amount: string;
+  bonusRestored: string;
+  prepaidRestored: string;
+  externalRefundDue: string;
+  externalRefundStatus: 'PENDING_PARTNER';
+  reason: string;
+  createdAt: string;
+}
+
 export interface PaginatedResultDto<T> {
   items: T[];
   nextCursor: string | null;

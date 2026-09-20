@@ -45,6 +45,7 @@ function intentFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
     grossAmount: '15000',
     bonusAmountRequested: '1000',
     ordinaryPaymentRemainder: '14000',
+    prepaidAmountApplied: '0',
     refundedAmount: '0',
     paymentRoute: PaymentRoute.DIRECT_PARTNER,
     quantity: null,
@@ -117,6 +118,19 @@ afterEach(() => {
 });
 
 describe('the cashier queue', () => {
+  it('says "collect 0" in words when TuTak funds the whole purchase, and never "paid"', async () => {
+    api.list.mockResolvedValue([
+      intentFixture({ bonusAmountRequested: '1000', prepaidAmountApplied: '14000', ordinaryPaymentRemainder: '0' }),
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Collect 0 ֏ — paid through TuTak after you confirm')).toBeTruthy();
+    expect(screen.getByText('0 ֏')).toBeTruthy();
+    expect(screen.getByText(/14[\s\u00a0\u202f]?000/)).toBeTruthy();
+    expect(screen.queryByText(/^Paid$/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy();
+  });
+
   it('shows a till purchase with Confirm, as it always did', async () => {
     api.list.mockResolvedValue([intentFixture()]);
     renderPage();

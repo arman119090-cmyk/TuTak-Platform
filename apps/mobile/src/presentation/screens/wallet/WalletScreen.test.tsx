@@ -17,6 +17,10 @@ jest.mock('../../../data/api/walletApi', () => ({
     (error as { response?: { status?: number } } | undefined)?.response?.status === 404,
 }));
 
+jest.mock('../../../data/api/balanceApi', () => ({ balanceApi: { getMyBalance: jest.fn() } }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { balanceApi } = require('../../../data/api/balanceApi');
+
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useNavigation: () => ({
@@ -58,6 +62,7 @@ describe('WalletScreen', () => {
     (walletApi.getMyWallet as jest.Mock).mockResolvedValue(walletFixture);
     (walletApi.getMyLedger as jest.Mock).mockResolvedValue({ items: [], nextCursor: null });
     (walletApi.getMyLots as jest.Mock).mockResolvedValue([]);
+    (balanceApi.getMyBalance as jest.Mock).mockResolvedValue({ state: 'UNAVAILABLE' });
   });
 
   afterEach(() => {
@@ -110,5 +115,33 @@ describe('WalletScreen', () => {
     (walletApi.getMyWallet as jest.Mock).mockRejectedValue({ response: { status: 404 } });
     renderScreen();
     expect(await screen.findByText(/wallet\.noWalletTitle/)).toBeTruthy();
+  });
+
+  /** Money next to points, never inside them (brief §27). */
+  describe('the TuTak balance', () => {
+    it('shows money as its own line, with what is held for open purchases', async () => {
+      (balanceApi.getMyBalance as jest.Mock).mockResolvedValue({
+        state: 'AVAILABLE',
+        balance: { available: '25000.0000', reserved: '45000.0000', book: '70000.0000', balance: '25000.0000', currency: 'AMD', purchasesEnabled: true, topUpsEnabled: false },
+      });
+      renderScreen();
+      expect(await screen.findByText('wallet.moneyAvailable')).toBeTruthy();
+      expect(screen.getByText(/25\D?000/)).toBeTruthy();
+      expect(screen.getByText('wallet.moneyReserved')).toBeTruthy();
+      expect(screen.getByText(/45\D?000/)).toBeTruthy();
+    });
+
+    it('says the balance is not available in words when the deployment has it off', async () => {
+      renderScreen();
+      expect(await screen.findByText('wallet.moneyUnavailable')).toBeTruthy();
+      expect(screen.queryByText('wallet.moneyAvailable')).toBeNull();
+    });
+
+    it('says the balance could not be loaded, with a retry, and never a zero', async () => {
+      (balanceApi.getMyBalance as jest.Mock).mockRejectedValue(new Error('network down'));
+      renderScreen();
+      expect(await screen.findByText('wallet.moneyLoadFailed')).toBeTruthy();
+      expect(screen.queryByText(/^0 ֏$/)).toBeNull();
+    });
   });
 });

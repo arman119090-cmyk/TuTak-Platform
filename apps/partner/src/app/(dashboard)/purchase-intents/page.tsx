@@ -263,8 +263,18 @@ function IntentRow({
         {num(intent.grossAmount)} ֏
       </Td>
       <Td align="right" className="tabular">
-        {Number(intent.bonusAmountRequested) > 0 ? (
-          <span className="text-reserved-text">−{num(intent.bonusAmountRequested)}</span>
+        {Number(intent.bonusAmountRequested) > 0 || Number(intent.prepaidAmountApplied) > 0 ? (
+          <div className="flex flex-col items-end">
+            {Number(intent.bonusAmountRequested) > 0 ? (
+              <span className="text-reserved-text">−{num(intent.bonusAmountRequested)}</span>
+            ) : null}
+            {/* The customer's own stored money — TuTak's to settle, not the till's to take. */}
+            {Number(intent.prepaidAmountApplied) > 0 ? (
+              <span className="text-reserved-text" title="Paid from the customer's TuTak balance">
+                −{num(intent.prepaidAmountApplied)} <span className="text-[11px] text-faint">balance</span>
+              </span>
+            ) : null}
+          </div>
         ) : (
           <span className="text-faint">—</span>
         )}
@@ -285,6 +295,16 @@ function IntentRow({
       */}
       <Td align="right" className="tabular text-[16px] font-semibold text-ink">
         {num(intent.ordinaryPaymentRemainder)} ֏
+        {/*
+          A zero is said in words (§19, §28). Nothing to take from the
+          customer is not "paid": TuTak covers it only once this row is
+          confirmed, and the wording must not get ahead of that.
+        */}
+        {Number(intent.ordinaryPaymentRemainder) === 0 && !viaProvider ? (
+          <div className="text-[11px] font-normal text-faint">
+            Collect 0 ֏ — paid through TuTak after you confirm
+          </div>
+        ) : null}
       </Td>
       <Td>
         <Countdown expiresAt={intent.expiresAt} />
@@ -559,7 +579,7 @@ export default function PurchaseIntentsPage() {
                   <Th>Code</Th>
                   <Th>ID</Th>
                   <Th align="right">Purchase</Th>
-                  <Th align="right">Bonus requested</Th>
+                  <Th align="right">Bonus / balance</Th>
                   <Th align="right">To collect</Th>
                   <Th>How</Th>
                   <Th>Expires in</Th>

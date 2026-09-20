@@ -242,6 +242,34 @@ export class PurchaseIntentsController {
    * of fact rather than a financial decision — the decision was the refund
    * itself. Declared before `:id/refunds` so the literal segment wins.
    */
+  /**
+   * The cash the business still has to hand back, across its refunds — what
+   * a cashier works through. Declared before `:id` like the other literal
+   * routes.
+   */
+  @Get('refunds/pending-external')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async pendingExternalRefunds(@CurrentUser() staff: RequestUser, @Query('partnerId') partnerId: string) {
+    assertPartnerScope(staff, partnerId);
+    const rows = await this.purchaseIntentRefunds.listPendingExternal(
+      partnerId,
+      branchFilterFor(staff, partnerId),
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      purchaseIntentId: row.purchaseIntentId,
+      confirmationCode: row.purchaseIntent.confirmationCode,
+      purchaseGross: row.purchaseIntent.grossAmount.toFixed(4),
+      amount: row.amount.toFixed(4),
+      bonusRestored: row.bonusRestored.toFixed(4),
+      prepaidRestored: row.prepaidRestored.toFixed(4),
+      externalRefundDue: row.externalRefundDue.toFixed(4),
+      externalRefundStatus: row.externalRefundStatus,
+      reason: row.reason,
+      createdAt: row.createdAt,
+    }));
+  }
+
   @Post('refunds/:refundId/confirm-external')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
   async confirmExternalRefund(

@@ -237,6 +237,8 @@ export default function RefundsPage() {
         }
       />
 
+      {partnerId ? <CashToHandBack partnerId={partnerId} /> : null}
+
       <h2 className="mb-3 text-[15px] font-semibold text-ink">
         {canDecide ? 'Waiting for your decision' : 'Waiting for a decision'}
       </h2>
@@ -529,5 +531,89 @@ function PendingRow({
         )}
       </Td>
     </Tr>
+  );
+}
+
+/**
+ * The till's own to-do list (§26): refunds whose cash or card slice the
+ * business still has to hand back. TuTak moved the bonus and balance
+ * slices itself; this one it only records, on the business's word, and
+ * the customer is not told the refund is complete until that word is
+ * given.
+ */
+function CashToHandBack({ partnerId }: { partnerId: string }) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ['pending-external-refunds', partnerId],
+    queryFn: () => purchaseIntentApi.pendingExternalRefunds(partnerId),
+    refetchInterval: 30_000,
+  });
+  const [failure, setFailure] = useState<{ id: string; failure: ApiFailure } | null>(null);
+  const confirm = useMutation({
+    mutationFn: (id: string) => purchaseIntentApi.confirmExternalRefund(id),
+    onSuccess: () => {
+      setFailure(null);
+      void queryClient.invalidateQueries({ queryKey: ['pending-external-refunds', partnerId] });
+    },
+    onError: (error, id) => setFailure({ id, failure: describeApiFailure(error) }),
+  });
+  const state = dataStateOf(query);
+  const rows = query.data ?? [];
+  if (state === 'loading') return null;
+  if (state === 'error') {
+    return (
+      <div className="mb-6">
+        <LoadError
+          title="Cash still to hand back could not be loaded"
+          onRetry={() => void query.refetch()}
+          busy={query.isFetching}
+        />
+      </div>
+    );
+  }
+  if (rows.length === 0) return null;
+  return (
+    <section className="mb-8">
+      <h2 className="mb-3 text-[15px] font-semibold text-ink">Cash to hand back</h2>
+      <p className="mb-3 text-[13px] text-faint">
+        TuTak has already returned the bonus and balance parts of these refunds. The part the customer paid at
+        your till is yours to hand back — confirm here once you have.
+      </p>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Sale</Th>
+            <Th align="right">Refund</Th>
+            <Th align="right">Hand back in cash</Th>
+            <Th>Reason</Th>
+            <Th align="right">Action</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <Tr key={row.id}>
+              <Td className="font-mono text-[13px]">{row.confirmationCode ?? row.purchaseIntentId.slice(-8).toUpperCase()}</Td>
+              <Td align="right" className="tabular text-faint">
+                {Number(row.amount).toLocaleString('en-US')} ֏
+              </Td>
+              <Td align="right" className="tabular text-[16px] font-semibold text-ink">
+                {Number(row.externalRefundDue).toLocaleString('en-US')} ֏
+              </Td>
+              <Td className="text-[13px] text-faint">{row.reason}</Td>
+              <Td align="right">
+                <div className="flex flex-col items-end gap-1">
+                  <Button size="sm" loading={confirm.isPending && confirm.variables === row.id} onClick={() => confirm.mutate(row.id)}>
+                    Confirm cash returned
+                  </Button>
+                  {failure?.id === row.id ? (
+                    <span className="text-[12px] text-danger-text">{failure.failure.message}</span>
+                  ) : null}
+                </div>
+              </Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </section>
   );
 }

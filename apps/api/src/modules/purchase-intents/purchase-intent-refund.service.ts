@@ -1190,6 +1190,29 @@ export class PurchaseIntentRefundService {
       }));
   }
 
+  /**
+   * Every refund of this partner's sales whose cash slice the business has
+   * not yet said it handed back — the till's own to-do list (§26). Branch
+   * scoped by the caller's filter, like the purchase queue.
+   */
+  listPendingExternal(partnerId: string, branchIds: string[] | null) {
+    return this.prisma.purchaseIntentRefund.findMany({
+      where: {
+        externalRefundStatus: ExternalRefundStatus.PENDING_PARTNER,
+        purchaseIntent: {
+          partnerId,
+          ...(branchIds ? { partnerBranchId: { in: branchIds } } : {}),
+        },
+      },
+      include: {
+        purchaseIntent: {
+          select: { id: true, partnerId: true, partnerBranchId: true, confirmationCode: true, grossAmount: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   listForIntent(purchaseIntentId: string) {
     return this.prisma.purchaseIntentRefund.findMany({
       where: { purchaseIntentId },

@@ -45,6 +45,7 @@ const intentFixture = (overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
   grossAmount: '5000',
   bonusAmountRequested: '500',
   ordinaryPaymentRemainder: '4500',
+  prepaidAmountApplied: '0',
   // The purchase-intent work this screen sits inside: the till code (#36),
   // how much is already refunded (#38) and who refused it (#41).
   refundedAmount: '0',

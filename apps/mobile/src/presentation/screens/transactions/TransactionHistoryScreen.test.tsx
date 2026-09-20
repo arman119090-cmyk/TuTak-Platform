@@ -92,11 +92,11 @@ describe('TransactionHistoryScreen', () => {
     const { getByText } = renderScreen();
     await screen.findByText(/show earlier operations/i);
     fireEvent.press(getByText(/show earlier operations/i));
-    await waitFor(() => expect(transactionsApi.myHistory).toHaveBeenCalledWith('2'));
+    await waitFor(() => expect(transactionsApi.myHistory).toHaveBeenCalledWith('2'), { timeout: 5000 });
     await screen.findByText(/show earlier operations/i);
     fireEvent.press(getByText(/show earlier operations/i));
-    await waitFor(() => expect(transactionsApi.myHistory).toHaveBeenCalledWith('4'));
-    expect(await screen.findByText(/that's everything/i)).toBeTruthy();
+    await waitFor(() => expect(transactionsApi.myHistory).toHaveBeenCalledWith('4'), { timeout: 5000 });
+    expect(await screen.findByText(/that's everything/i, {}, { timeout: 5000 })).toBeTruthy();
 
     // Five rows, each exactly once.
     expect(screen.getAllByText('Coffee Corner')).toHaveLength(5);
@@ -112,13 +112,16 @@ describe('TransactionHistoryScreen', () => {
     await screen.findByText(/show earlier operations/i);
     fireEvent.press(getByText(/show earlier operations/i));
 
-    expect(await screen.findByText(/next page could not be loaded/i)).toBeTruthy();
+    expect(await screen.findByText(/next page could not be loaded/i, {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getAllByText('Coffee Corner')).toHaveLength(2);
     expect(screen.queryByText(/wallet\.noTransactions/)).toBeNull();
 
     fireEvent.press(getByText(/common\.retry/));
-    await waitFor(() => expect(transactionsApi.myHistory).toHaveBeenCalledTimes(3));
-    await waitFor(() => expect(screen.getAllByText('Coffee Corner')).toHaveLength(3));
+    // A slow CI runner rendered the third page after the default one-second
+    // wait had expired, with the third request already made — the behaviour
+    // was right, the budget was not.
+    await waitFor(() => expect(transactionsApi.myHistory).toHaveBeenCalledTimes(3), { timeout: 5000 });
+    await waitFor(() => expect(screen.getAllByText('Coffee Corner')).toHaveLength(3), { timeout: 5000 });
     expect(screen.queryByText(/next page could not be loaded/i)).toBeNull();
   });
 

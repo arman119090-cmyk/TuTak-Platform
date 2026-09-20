@@ -31,7 +31,7 @@
 | --- | --- |
 | Ветка | `claude/jako-design` (та же, PR [#61](https://github.com/arman119090-cmyk/TuTak-Platform/pull/61) → `claude/dark-theme`) |
 | Base SHA | `d61b9ce` (предыдущее состояние ветки: JakoHero + мастер) |
-| HEAD SHA | `3ee52af` |
+| HEAD SHA | `f681b2c` (три коммита: `3ee52af` сцена, `77aaf81` отчёт, `f681b2c` слова над птицей) |
 | Цепочка слияния | PR #60 → `claude/dark-theme` → PR #61. Ничего не мержилось |
 
 ## Что сделано
@@ -164,8 +164,8 @@ OFL. `demo/` перегенерирован.
 | `jest` (apps/mobile) | 73 suites, 639 tests, 0 failed |
 | `scripts/build-demo-app.sh` | exit 0, diff только ожидаемый |
 | Web-экспорт | 5 сборок, `pageerror` в консоли — 0 на всех 48 + 22 снимках |
-| CI на HEAD | запущен пушем 3ee52af; итог будет дописан |
-| APK | сборка запускается после пуша; итог будет дописан |
+| CI на HEAD | run 904 на `f681b2c`: success (все jobs) |
+| APK | run 67 → релиз `apk-preview-67`, 130 557 259 байт, SHA-256 `30b03721…52cd61c`, API production |
 
 ## UNVERIFIED
 

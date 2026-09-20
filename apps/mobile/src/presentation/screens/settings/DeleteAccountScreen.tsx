@@ -88,7 +88,9 @@ export function DeleteAccountScreen({ navigation }: Props) {
             <View
               style={[
                 styles.warnIcon,
-                { backgroundColor: color.dangerSurface, borderRadius: radius.md },
+                // Round, like every other status mark in the app now; the
+                // square tile was the one left of its kind.
+                { backgroundColor: color.dangerSurface, borderRadius: radius.full },
               ]}
             >
               <Ionicons name="warning-outline" size={20} color={color.dangerText} />

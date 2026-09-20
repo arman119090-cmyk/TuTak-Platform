@@ -5,3 +5,4 @@ export * from './payout-method';
 export * from './withdrawal';
 export * from './admin';
 export * from './security';
+export * from './auto-payout';

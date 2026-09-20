@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import type { PayoutMethodDto, WithdrawalDto } from '@cashout/contracts';
+import type { AutoPayoutStateDto, PayoutMethodDto, WithdrawalDto } from '@cashout/contracts';
 import { endpoints } from '../../src/api/endpoints';
 import { useAuth } from '../../src/auth/auth-context';
 import { useBalance } from '../../src/hooks/useBalance';
@@ -39,15 +39,18 @@ export default function HomeScreen() {
 
   const [recent, setRecent] = useState<WithdrawalDto[]>([]);
   const [methods, setMethods] = useState<PayoutMethodDto[]>([]);
+  const [autoPayout, setAutoPayout] = useState<AutoPayoutStateDto['rule']>(null);
 
   const load = useCallback(async () => {
     try {
-      const [history, payoutMethods] = await Promise.all([
+      const [history, payoutMethods, auto] = await Promise.all([
         endpoints.withdrawals(api),
         endpoints.payoutMethods(api),
+        endpoints.autoPayout(api).catch(() => null),
       ]);
       setRecent(history.items.slice(0, 3));
       setMethods(payoutMethods.items);
+      setAutoPayout(auto?.rule ?? null);
     } catch {
       // The balance is the screen's job; history failing is not worth an error
       // state over the top of it.
@@ -141,15 +144,25 @@ export default function HomeScreen() {
 
       <BalanceCard balance={balance} loading={loading} />
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.push('/(tabs)/balance')}
-        style={{ marginTop: theme.spacing.sm, alignSelf: 'flex-end' }}
+      <View
+        style={[styles.parkRow, { marginTop: theme.spacing.sm, justifyContent: 'space-between' }]}
       >
-        <Text variant="label" tone="brand">
-          {t('homeHeader.viewBalance')} ›
-        </Text>
-      </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/auto-payout')}>
+          <StatusPill
+            tone={autoPayout && autoPayout.enabled && !autoPayout.paused ? 'success' : 'neutral'}
+            label={
+              autoPayout && autoPayout.enabled && !autoPayout.paused
+                ? t('homeHeader.autoPayoutOn')
+                : t('homeHeader.autoPayoutOff')
+            }
+          />
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/balance')}>
+          <Text variant="label" tone="brand">
+            {t('homeHeader.viewBalance')} ›
+          </Text>
+        </Pressable>
+      </View>
 
       {live ? (
         <Card tone="brand" style={{ marginTop: theme.spacing.base }}>

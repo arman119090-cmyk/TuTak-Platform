@@ -26,6 +26,7 @@ import { DriversService } from '../src/modules/drivers/drivers.service';
 import { BalanceService } from '../src/modules/drivers/balance.service';
 import { MembershipService } from '../src/modules/parks/membership.service';
 import { SecurityService } from '../src/modules/security/security.service';
+import { AutoPayoutService } from '../src/modules/auto-payout/auto-payout.service';
 import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
 /**
@@ -88,6 +89,7 @@ export interface Harness {
   memberships: MembershipService;
   parksAdmin: ParksAdminService;
   security: SecurityService;
+  autoPayout: AutoPayoutService;
   close(): Promise<void>;
 }
 
@@ -136,6 +138,7 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     memberships: app.get(MembershipService),
     parksAdmin: app.get(ParksAdminService),
     security: app.get(SecurityService),
+    autoPayout: app.get(AutoPayoutService),
     async close() {
       await app.close();
     },
@@ -155,6 +158,7 @@ const TABLES = [
   'quotes',
   'balance_snapshots',
   'payout_methods',
+  'auto_payout_rules',
   'withdrawal_authorizations',
   'driver_security',
   'sessions',

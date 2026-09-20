@@ -17,3 +17,4 @@ export * from './BalanceCard';
 export * from './IdramCard';
 export * from './PinPad';
 export * from './Toggle';
+export * from './SegmentedControl';

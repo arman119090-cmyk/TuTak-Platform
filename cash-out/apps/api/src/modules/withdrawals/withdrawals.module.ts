@@ -38,6 +38,12 @@ import { WithdrawalsService } from './withdrawals.service';
     WithdrawalWorker,
     ProviderWebhookService,
   ],
-  exports: [WithdrawalsService, WithdrawalOrchestrator, WithdrawalStateService, WithdrawalWorker],
+  exports: [
+    WithdrawalsService,
+    QuoteService,
+    WithdrawalOrchestrator,
+    WithdrawalStateService,
+    WithdrawalWorker,
+  ],
 })
 export class WithdrawalsModule {}

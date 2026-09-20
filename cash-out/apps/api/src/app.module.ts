@@ -10,6 +10,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AutoPayoutModule } from './modules/auto-payout/auto-payout.module';
 import { DriverAuthGuard } from './modules/auth/auth.guard';
 import { DriversModule } from './modules/drivers/drivers.module';
 import { FeesModule } from './modules/fees/fees.module';
@@ -52,6 +53,7 @@ export class AppModule implements NestModule {
         IdramModule,
         SecurityModule,
         WithdrawalsModule,
+        AutoPayoutModule,
         LedgerModule,
         FeesModule,
         LimitsModule,

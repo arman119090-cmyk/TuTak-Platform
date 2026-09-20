@@ -148,6 +148,58 @@ model Driver {
   @@map("drivers")
 }
 
+// ------------------------------------------------------------ auto payout
+
+enum AutoPayoutCadence {
+  /** Pay out whenever the available balance reaches the threshold. */
+  ON_THRESHOLD
+  /** Once a day at `runHour`, if the balance is at least the threshold. */
+  DAILY
+  /** Once a week on `runWeekday` at `runHour`, if the balance is at least the threshold. */
+  WEEKLY
+}
+
+/**
+ * The driver's automatic payout rule. One per driver, scoped to the park it
+ * was enabled for; it creates ordinary withdrawals through the ordinary
+ * pipeline, and pauses itself after repeated failures rather than retrying
+ * into a wall. Enabling it requires a PIN/biometric authorization — that is
+ * the driver's standing consent, and it is recorded on the row.
+ */
+model AutoPayoutRule {
+  id                  String            @id @default(uuid()) @db.Uuid
+  driverId            String            @unique @db.Uuid
+  parkId              String            @db.Uuid
+  payoutMethodId      String            @db.Uuid
+  enabled             Boolean           @default(true)
+  cadence             AutoPayoutCadence @default(ON_THRESHOLD)
+  currency            String            @default("AMD")
+  thresholdMinor      BigInt
+  /// Null means "everything available".
+  maxPayoutMinor      BigInt?
+  /// Local hour (0–23) for DAILY/WEEKLY; null for ON_THRESHOLD.
+  runHour             Int?
+  /// 0 = Sunday … 6 = Saturday, for WEEKLY.
+  runWeekday          Int?
+  timezone            String            @default("Asia/Yerevan")
+  nextCheckAt         DateTime
+  lastCheckedAt       DateTime?
+  lastRunAt           DateTime?
+  lastWithdrawalId    String?           @db.Uuid
+  consecutiveFailures Int               @default(0)
+  lastFailureCode     String?
+  lastFailureAt       DateTime?
+  pausedAt            DateTime?
+  pausedReason        String?
+  /// PIN or BIOMETRIC: how the driver consented when enabling.
+  authorizationMethod String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([enabled, pausedAt, nextCheckAt])
+  @@map("auto_payout_rules")
+}
+
 // ---------------------------------------------------------------- security
 
 /**
@@ -583,6 +635,10 @@ model Withdrawal {
   platformFeeMinor BigInt
   providerFeeMinor BigInt
   netMinor         BigInt
+
+  /// DRIVER (confirmed in the app) or AUTO_PAYOUT (created by a rule).
+  origin                    String          @default("DRIVER")
+  autoPayoutRuleId          String?         @db.Uuid
 
   /// A copy of the identifiers as they were at request time. If a driver is
   /// later moved to another park, this withdrawal still says where the money

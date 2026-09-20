@@ -80,6 +80,8 @@ export const withdrawalSchema = z.object({
   id: z.string().uuid(),
   reference: z.string(),
   status: driverVisibleStatusSchema,
+  /** DRIVER: confirmed in the app. AUTO_PAYOUT: created by the driver's rule. */
+  origin: z.enum(['DRIVER', 'AUTO_PAYOUT']),
   /** Full internal state — returned to admins, omitted for drivers. */
   state: withdrawalStateSchema.optional(),
   gross: moneySchema,

@@ -2,6 +2,8 @@ import type {
   AuthorizationDto,
   AuthorizeDto,
   AuthTokens,
+  AutoPayoutRuleDto,
+  AutoPayoutStateDto,
   ChangePinDto,
   BalanceDto,
   ConfirmWithdrawalDto,
@@ -13,6 +15,7 @@ import type {
   QuoteDto,
   RequestOtpResponse,
   SecurityStatusDto,
+  UpsertAutoPayoutDto,
   SessionDto,
   WithdrawalDto,
   WithdrawalListDto,
@@ -111,6 +114,14 @@ export const endpoints = {
 
   disableBiometric: (api: ApiClient) =>
     api.request<void>('/v1/security/biometric/disable', { method: 'POST' }),
+
+  autoPayout: (api: ApiClient) => api.request<AutoPayoutStateDto>('/v1/auto-payout'),
+
+  upsertAutoPayout: (api: ApiClient, body: UpsertAutoPayoutDto) =>
+    api.request<AutoPayoutRuleDto>('/v1/auto-payout', { method: 'PUT', body }),
+
+  disableAutoPayout: (api: ApiClient) =>
+    api.request<void>('/v1/auto-payout/disable', { method: 'POST' }),
 
   /** A single-use authorization for a money operation. */
   authorize: (api: ApiClient, body: AuthorizeDto) =>

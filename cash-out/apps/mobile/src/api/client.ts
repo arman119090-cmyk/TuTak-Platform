@@ -45,7 +45,7 @@ export interface TokenStore {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Skip the bearer token, for sign-in endpoints. */
   anonymous?: boolean;

@@ -111,6 +111,11 @@ export const envSchema = z
       .default('true')
       .transform((value) => value === 'true'),
 
+    /** How often an ON_THRESHOLD rule re-reads the balance. */
+    AUTO_PAYOUT_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
+    /** Consecutive failed evaluations before a rule pauses itself. */
+    AUTO_PAYOUT_MAX_FAILURES: z.coerce.number().int().min(1).max(20).default(3),
+
     ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
     ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
   })

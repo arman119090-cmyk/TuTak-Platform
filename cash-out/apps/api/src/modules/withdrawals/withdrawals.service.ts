@@ -63,6 +63,32 @@ export class WithdrawalsService {
    * kicked afterwards, so a slow Yandex cannot hold a database transaction open.
    */
   async confirm(driverId: string, dto: ConfirmWithdrawalDto): Promise<WithdrawalDto> {
+    return this.confirmWithOrigin(driverId, dto, { kind: 'DRIVER' });
+  }
+
+  /**
+   * The automatic payout rule's entry point. Same checks, same transaction,
+   * same pipeline; the only differences are the actor recorded on the row and
+   * the absence of a per-withdrawal authorization — the driver's consent was
+   * spent when the rule was enabled, and the rule id names it.
+   */
+  async confirmAutomatic(
+    driverId: string,
+    dto: Omit<ConfirmWithdrawalDto, 'authorizationToken'>,
+    ruleId: string,
+  ): Promise<WithdrawalDto> {
+    return this.confirmWithOrigin(
+      driverId,
+      { ...dto, authorizationToken: '' },
+      { kind: 'AUTO_PAYOUT', ruleId },
+    );
+  }
+
+  private async confirmWithOrigin(
+    driverId: string,
+    dto: ConfirmWithdrawalDto,
+    origin: WithdrawalOrigin,
+  ): Promise<WithdrawalDto> {
     const requestHash = hashRequest(dto);
 
     const existing = await this.prisma.withdrawal.findUnique({
@@ -73,7 +99,7 @@ export class WithdrawalsService {
     }
 
     const withdrawal = await withSerializationRetry(
-      () => this.createWithdrawal(driverId, dto, requestHash),
+      () => this.createWithdrawal(driverId, dto, requestHash, origin),
       { onRetry: (attempt) => this.logger.info('Retrying withdrawal creation', { attempt }) },
     );
 
@@ -166,6 +192,8 @@ export class WithdrawalsService {
             platformFeeMinor: quote.platformFeeMinor,
             providerFeeMinor: quote.providerFeeMinor,
             netMinor: quote.netMinor,
+            origin: origin.kind,
+            autoPayoutRuleId: origin.kind === 'AUTO_PAYOUT' ? origin.ruleId : null,
             parkId: park.id,
             yandexParkId: park.yandexParkId,
             yandexContractorProfileId: membership.externalProfileId,
@@ -311,6 +339,7 @@ export class WithdrawalsService {
       id: withdrawal.id,
       reference: withdrawal.reference,
       status: toDriverStatus(withdrawal.state),
+      origin: withdrawal.origin === 'AUTO_PAYOUT' ? 'AUTO_PAYOUT' : 'DRIVER',
       ...(includeInternalState ? { state: withdrawal.state } : {}),
       gross: money(withdrawal.grossMinor),
       platformFee: money(withdrawal.platformFeeMinor),

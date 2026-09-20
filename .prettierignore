@@ -1,0 +1,2 @@
+# Cash Out has its own prettier config and CI; the root formatter must not touch it.
+cash-out/

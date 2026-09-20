@@ -34,3 +34,7 @@ docs
 apps/mobile
 tools
 *.log
+
+# Cash Out is a separate product that only temporarily lives in this tree.
+# No TuTak image may contain it.
+cash-out

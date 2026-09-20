@@ -1,0 +1,52 @@
+# Cash Out lives in cash-out/ only until it moves to its own repository, and it
+# must never become part of TuTak. This workflow is the tripwire:
+#
+#   * a pull request into main that adds or changes anything under cash-out/
+#     (or Cash Out's own workflow) fails, so the merge button goes red;
+#   * a push to main that leaves a cash-out/ directory in the tree fails, so an
+#     accidental merge is at least loud.
+#
+# Deleting cash-out/ from main is allowed — that is the intended end state.
+name: Cash Out isolation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  guard:
+    name: cash-out/ must not enter main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse a pull request that brings Cash Out into main
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Added or modified only: removing cash-out/ from main is the goal, not a violation.
+          offenders="$(git diff --name-only --diff-filter=AMCR "$BASE" "$HEAD" -- 'cash-out/**' '.github/workflows/cash-out-ci.yml' || true)"
+          if [ -n "$offenders" ]; then
+            echo "::error::This pull request would merge Cash Out into TuTak's main. Cash Out is a separate product (see CLAUDE.md)."
+            echo "$offenders" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "No Cash Out files in this pull request."
+
+      - name: Alarm if main contains Cash Out
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          if [ -d cash-out ]; then
+            echo "::error::cash-out/ is present on main. Cash Out must not be merged into TuTak; revert the merge."
+            exit 1
+          fi
+          echo "main is free of cash-out/."

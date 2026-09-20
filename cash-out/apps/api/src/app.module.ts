@@ -15,6 +15,7 @@ import { DriverAuthGuard } from './modules/auth/auth.guard';
 import { DriversModule } from './modules/drivers/drivers.module';
 import { FeesModule } from './modules/fees/fees.module';
 import { HealthModule } from './modules/health/health.module';
+import { HistoryModule } from './modules/history/history.module';
 import { IdramModule } from './modules/idram/idram.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { LimitsModule } from './modules/limits/limits.module';
@@ -54,6 +55,7 @@ export class AppModule implements NestModule {
         SecurityModule,
         WithdrawalsModule,
         AutoPayoutModule,
+        HistoryModule,
         LedgerModule,
         FeesModule,
         LimitsModule,

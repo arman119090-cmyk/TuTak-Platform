@@ -11,6 +11,7 @@ import {
   isWithdrawalState,
   TERMINAL_STATES,
   toDriverStatus,
+  toUserStatus,
   WITHDRAWAL_STATES,
   WithdrawalState,
 } from '../src/withdrawal-state';
@@ -215,3 +216,36 @@ function reaches(from: WithdrawalState, to: WithdrawalState): boolean {
   }
   return false;
 }
+
+describe('user statuses', () => {
+  it('maps every internal state to one of the four words', () => {
+    for (const state of WITHDRAWAL_STATES) {
+      expect(['COMPLETED', 'PROCESSING', 'CANCELLED', 'REJECTED']).toContain(toUserStatus(state));
+    }
+  });
+
+  it('calls money that reached the driver COMPLETED and money that never left REJECTED', () => {
+    expect(toUserStatus('COMPLETED')).toBe('COMPLETED');
+    expect(toUserStatus('PAYOUT_CONFIRMED')).toBe('COMPLETED');
+    expect(toUserStatus('REJECTED')).toBe('REJECTED');
+    expect(toUserStatus('FAILED')).toBe('REJECTED');
+  });
+
+  it('calls a debit that is being or has been put back CANCELLED', () => {
+    for (const state of ['PAYOUT_FAILED', 'PAYOUT_RETURNED', 'COMPENSATING', 'REVERSED'] as const) {
+      expect(toUserStatus(state)).toBe('CANCELLED');
+    }
+  });
+
+  it('calls everything in flight, including human review, PROCESSING', () => {
+    for (const state of [
+      'CREATED',
+      'RESERVING',
+      'RESERVE_PENDING',
+      'PAYOUT_SUBMITTED',
+      'MANUAL_REVIEW',
+    ] as const) {
+      expect(toUserStatus(state)).toBe('PROCESSING');
+    }
+  });
+});

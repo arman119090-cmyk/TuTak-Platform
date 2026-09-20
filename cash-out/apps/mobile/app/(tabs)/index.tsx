@@ -1,7 +1,12 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import type { AutoPayoutStateDto, PayoutMethodDto, WithdrawalDto } from '@cashout/contracts';
+import type {
+  AutoPayoutStateDto,
+  HistoryEntryDto,
+  PayoutMethodDto,
+  WithdrawalDto,
+} from '@cashout/contracts';
 import { endpoints } from '../../src/api/endpoints';
 import { useAuth } from '../../src/auth/auth-context';
 import { useBalance } from '../../src/hooks/useBalance';
@@ -15,9 +20,9 @@ import {
   EmptyState,
   ErrorState,
   Screen,
+  OperationRow,
   StatusPill,
   Text,
-  WithdrawalRow,
 } from '../../src/ui';
 
 /**
@@ -38,17 +43,20 @@ export default function HomeScreen() {
   const { balance, loading, error, refresh, refreshFresh } = useBalance({ immediate: false });
 
   const [recent, setRecent] = useState<WithdrawalDto[]>([]);
+  const [operations, setOperations] = useState<HistoryEntryDto[]>([]);
   const [methods, setMethods] = useState<PayoutMethodDto[]>([]);
   const [autoPayout, setAutoPayout] = useState<AutoPayoutStateDto['rule']>(null);
 
   const load = useCallback(async () => {
     try {
-      const [history, payoutMethods, auto] = await Promise.all([
+      const [history, payoutMethods, auto, page] = await Promise.all([
         endpoints.withdrawals(api),
         endpoints.payoutMethods(api),
         endpoints.autoPayout(api).catch(() => null),
+        endpoints.history(api, {}).catch(() => ({ items: [], nextCursor: null })),
       ]);
       setRecent(history.items.slice(0, 3));
+      setOperations(page.items.slice(0, 3));
       setMethods(payoutMethods.items);
       setAutoPayout(auto?.rule ?? null);
     } catch {
@@ -183,22 +191,20 @@ export default function HomeScreen() {
       ) : null}
 
       <Card padded={false} style={{ marginTop: theme.spacing.base }}>
-        {recent.length === 0 ? (
+        {operations.length === 0 ? (
           <EmptyState title={t('home.emptyHistory')} glyph="💸" />
         ) : (
-          recent.map((withdrawal) => (
-            <WithdrawalRow
-              key={withdrawal.id}
-              withdrawal={withdrawal}
-              onPress={() =>
-                router.push({ pathname: '/withdrawal/[id]', params: { id: withdrawal.id } })
-              }
+          operations.map((entry) => (
+            <OperationRow
+              key={entry.id}
+              entry={entry}
+              onPress={() => router.push({ pathname: '/history/[id]', params: { id: entry.id } })}
             />
           ))
         )}
       </Card>
 
-      {recent.length > 0 ? (
+      {operations.length > 0 ? (
         <Button
           label={t('home.historyLink')}
           variant="ghost"

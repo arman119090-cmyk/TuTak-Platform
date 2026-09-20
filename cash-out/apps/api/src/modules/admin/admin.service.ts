@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { WithdrawalState } from '@prisma/client';
 import {
+  AdjustDriverBalanceDto,
   AdminWithdrawalFilter,
   DashboardMetricsDto,
   ResolveManualReviewDto,
@@ -485,6 +487,69 @@ export class AdminService {
       reason,
       before: { verificationStatus: driver.verificationStatus },
     });
+  }
+
+  /**
+   * An operator's correction of what Cash Out owes a driver: a fee waived, a
+   * dispute settled. It is a balanced journal entry against SUSPENSE — the
+   * account reconciliation watches — with the reason in its metadata, and it
+   * appears in the driver's history as ADMIN_ADJUSTMENT. It does not touch the
+   * park balance inside Yandex, and says so in the audit record.
+   */
+  async adjustDriverBalance(driverId: string, adminId: string, dto: AdjustDriverBalanceDto) {
+    const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
+    if (!driver) throw AppError.notFound('Driver');
+    const amount = Money.fromMinor(dto.amount.minor, dto.amount.currency as CurrencyCode);
+    if (!amount.isPositive) {
+      throw new AppError('VALIDATION_FAILED', 'The adjustment must be a positive amount');
+    }
+    // Not a retried business event: each operator action is its own entry.
+    const idempotencyKey = `ADJUSTMENT:${driverId}:${randomUUID()}`;
+
+    const entryId = await this.prisma.inSerializableTransaction(async (tx) => {
+      const posted = await this.ledger.post(tx, {
+        type: 'ADJUSTMENT',
+        idempotencyKey,
+        description: `Operator adjustment for driver ${driverId}: ${dto.reason}`,
+        metadata: { reason: dto.reason, adminId, direction: dto.direction },
+        createdByAdminId: adminId,
+        postings:
+          dto.direction === 'CREDIT'
+            ? [
+                { accountType: 'SUSPENSE', accountKey: 'GLOBAL', direction: 'DEBIT', amount },
+                {
+                  accountType: 'DRIVER_PAYABLE',
+                  accountKey: driverId,
+                  direction: 'CREDIT',
+                  amount,
+                },
+              ]
+            : [
+                { accountType: 'DRIVER_PAYABLE', accountKey: driverId, direction: 'DEBIT', amount },
+                { accountType: 'SUSPENSE', accountKey: 'GLOBAL', direction: 'CREDIT', amount },
+              ],
+      });
+      await this.audit.record(
+        {
+          action: 'admin.adjustment',
+          subjectType: 'driver',
+          subjectId: driverId,
+          actorType: 'ADMIN',
+          actorId: adminId,
+          reason: dto.reason,
+          after: {
+            journalEntryId: posted,
+            direction: dto.direction,
+            amount: amount.minor.toString(),
+            currency: amount.currency,
+            yandexBalanceTouched: false,
+          },
+        },
+        tx,
+      );
+      return posted;
+    });
+    return { journalEntryId: entryId };
   }
 
   async auditLog(query: { limit: number; cursor?: string; subjectId?: string }) {

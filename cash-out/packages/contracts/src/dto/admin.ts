@@ -201,3 +201,11 @@ export const updateMembershipSchema = z.object({
   reason: z.string().min(3).max(300),
 });
 export type UpdateMembershipDto = z.infer<typeof updateMembershipSchema>;
+
+/** An operator correcting what Cash Out owes a driver. Always with a reason. */
+export const adjustDriverBalanceSchema = z.object({
+  direction: z.enum(['CREDIT', 'DEBIT']),
+  amount: moneySchema,
+  reason: z.string().min(5).max(500),
+});
+export type AdjustDriverBalanceDto = z.infer<typeof adjustDriverBalanceSchema>;

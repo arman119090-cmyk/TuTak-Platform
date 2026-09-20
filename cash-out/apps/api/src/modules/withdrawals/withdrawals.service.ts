@@ -1,7 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, Withdrawal } from '@prisma/client';
-import { ConfirmWithdrawalDto, WithdrawalDto, toDriverStatus } from '@cashout/contracts';
+import {
+  ConfirmWithdrawalDto,
+  WithdrawalDto,
+  toDriverStatus,
+  toUserStatus,
+} from '@cashout/contracts';
 import { Money } from '@cashout/money';
 import type { CurrencyCode } from '@cashout/money';
 import { ENV, Env } from '../../config/env';
@@ -339,6 +344,7 @@ export class WithdrawalsService {
       id: withdrawal.id,
       reference: withdrawal.reference,
       status: toDriverStatus(withdrawal.state),
+      userStatus: toUserStatus(withdrawal.state),
       origin: withdrawal.origin === 'AUTO_PAYOUT' ? 'AUTO_PAYOUT' : 'DRIVER',
       ...(includeInternalState ? { state: withdrawal.state } : {}),
       gross: money(withdrawal.grossMinor),

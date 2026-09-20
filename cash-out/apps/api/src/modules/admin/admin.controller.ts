@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  adjustDriverBalanceSchema,
   adminWithdrawalFilterSchema,
   createParkSchema,
   importRosterSchema,
@@ -21,6 +22,7 @@ import {
   setParkCredentialSchema,
   updateMembershipSchema,
   updateParkSchema,
+  type AdjustDriverBalanceDto,
   type AdminRole,
   type AdminWithdrawalFilter,
   type CreateParkDto,
@@ -281,6 +283,17 @@ export class AdminController {
     @Body(zodBody(blockSchema)) dto: { blocked: boolean; reason: string },
   ) {
     await this.admin.setDriverBlocked(id, dto.blocked, admin!.id, dto.reason);
+  }
+
+  /** A balanced ADJUSTMENT entry against SUSPENSE; shows in the driver's history. */
+  @Post('drivers/:id/adjust')
+  @RequirePermission('ledger:adjust')
+  async adjust(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(adjustDriverBalanceSchema)) dto: AdjustDriverBalanceDto,
+  ) {
+    return this.admin.adjustDriverBalance(id, admin!.id, dto);
   }
 
   // ---------------------------------------------------------- reconciliation

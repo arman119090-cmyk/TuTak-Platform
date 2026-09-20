@@ -48,6 +48,7 @@ describe('wire contracts', () => {
     const base = {
       quoteId: '11111111-1111-4111-8111-111111111111',
       idempotencyKey: 'a'.repeat(32),
+      authorizationToken: 'b'.repeat(32),
     };
     expect(confirmWithdrawalSchema.safeParse({ ...base, signature: 'abc' }).success).toBe(true);
     expect(confirmWithdrawalSchema.safeParse(base).success).toBe(false);

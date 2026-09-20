@@ -261,3 +261,44 @@ export function toDriverStatus(state: WithdrawalState): DriverVisibleStatus {
 export function blocksNewWithdrawal(state: WithdrawalState): boolean {
   return !isTerminal(state);
 }
+
+/**
+ * The four words the specification puts in front of the driver in history:
+ * the money arrived, it is on its way, it came back, or it never left.
+ */
+export const USER_STATUSES = ['COMPLETED', 'PROCESSING', 'CANCELLED', 'REJECTED'] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+
+export function toUserStatus(state: WithdrawalState): UserStatus {
+  switch (state) {
+    case 'PAYOUT_CONFIRMED':
+    case 'COMPLETED':
+      return 'COMPLETED';
+    case 'REJECTED':
+    case 'FAILED':
+      // Nothing moved: refused by limits, risk, an operator, or the fleet.
+      return 'REJECTED';
+    case 'PAYOUT_FAILED':
+    case 'PAYOUT_RETURNED':
+    case 'COMPENSATING':
+    case 'REVERSED':
+      // The debit is being (or has been) put back: the operation was cancelled.
+      return 'CANCELLED';
+    case 'CREATED':
+    case 'RISK_CHECK':
+    case 'RISK_REVIEW':
+    case 'RESERVING':
+    case 'RESERVE_UNCERTAIN':
+    case 'RESERVE_PENDING':
+    case 'RESERVED':
+    case 'PAYOUT_SUBMITTING':
+    case 'PAYOUT_UNCERTAIN':
+    case 'PAYOUT_SUBMITTED':
+    case 'MANUAL_REVIEW':
+      return 'PROCESSING';
+    default: {
+      const exhaustive: never = state;
+      throw new Error(`toUserStatus: unhandled state ${String(exhaustive)}`);
+    }
+  }
+}

@@ -6,3 +6,4 @@ export * from './withdrawal';
 export * from './admin';
 export * from './security';
 export * from './auto-payout';
+export * from './history';

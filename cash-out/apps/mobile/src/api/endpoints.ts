@@ -9,6 +9,8 @@ import type {
   ConfirmWithdrawalDto,
   CreateQuoteDto,
   DriverProfileDto,
+  HistoryEntryDetailDto,
+  HistoryPageDto,
   LinkIdramAccountDto,
   MembershipDto,
   PayoutMethodDto,
@@ -92,6 +94,18 @@ export const endpoints = {
     api.request<WithdrawalListDto>(
       `/v1/withdrawals?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     ),
+
+  history: (
+    api: ApiClient,
+    filter: { from?: string; to?: string; type?: string; status?: string; cursor?: string },
+  ) => {
+    const query = new URLSearchParams({ limit: '20' });
+    for (const [key, value] of Object.entries(filter)) if (value) query.set(key, value);
+    return api.request<HistoryPageDto>(`/v1/history?${query.toString()}`);
+  },
+
+  historyDetail: (api: ApiClient, id: string) =>
+    api.request<HistoryEntryDetailDto>(`/v1/history/${encodeURIComponent(id)}`),
 
   timeline: (api: ApiClient, id: string) =>
     api.request<{ items: WithdrawalTimelineEntryDto[] }>(`/v1/withdrawals/${id}/timeline`),

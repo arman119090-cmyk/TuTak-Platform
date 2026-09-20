@@ -90,7 +90,47 @@ current state is recorded and ignored rather than forced through.
 A bad signature returns 403, not 400: it is not a malformed message from the
 provider, it is a message from someone we cannot identify.
 
+## Confirming a payout: PIN and biometrics
+
+Every payout — and the consent for an automatic rule — consumes a single-use
+**authorization** issued by `POST /v1/security/authorize`. The authorization is
+bound to the driver, the device, the purpose and (for a withdrawal) the quote
+it will confirm; it lives for a few minutes; and it is spent inside the same
+transaction that creates the withdrawal, so a replay cannot create a second
+one. The withdrawal records which method authorized it.
+
+**PIN.** Six digits, refused if trivially sequential or repeated, stored as a
+scrypt hash, never logged. Five wrong attempts lock the PIN for a period that
+grows with each further lockout; the lock is server-side, so a reinstalled app
+does not reset it. Changing the PIN requires the current one and queues a
+security notification.
+
+**Biometrics**, honestly described. Cash Out stores no biometric data. At
+enrolment — which requires the PIN — the server issues a random device secret
+and stores only its hash against that device; the app places the secret in the
+platform keystore with `requireAuthentication`, so the OS demands Face ID,
+Touch ID or the Android biometric prompt before releasing it. Authorizing
+means reading that secret and sending it; the server verifies the hash and
+that the device is the enrolled one. The server never trusts a bare "the face
+matched" from the client.
+
+Limitation, stated plainly: this proves possession of a device-bound secret
+released after an OS biometric check. It is not a hardware-attested signature
+over a server challenge, which would need a native key-pair module the current
+Expo stack does not ship. Until then, a rooted device that can read the
+keystore can authorize without a face. This is listed below as not done.
+
+## Park credentials
+
+Each taxi park's Fleet API key is written once through the admin panel, stored
+AES-256-GCM encrypted with a key id, and never returned by any endpoint — the
+panel shows the last four characters and when the key last answered. Balance
+reads, debits and roster syncs for a park use that park's key; only when a park
+has none does the process-wide key apply, and the panel says so.
+
 ## Not done yet
+
+- **Biometric authorization is not hardware-attested** (see above).
 
 - **Secret rotation is supported but not automated.** The ciphertext envelope
   carries a key id, so a rotation can read old rows; the re-encryption job that

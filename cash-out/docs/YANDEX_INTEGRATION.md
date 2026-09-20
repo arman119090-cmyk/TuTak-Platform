@@ -109,6 +109,21 @@ is not `success` waits or goes to a person.
    contractor, blocked contractor, and the response to a rate-limit breach.
 8. **Rate limits**, per park and per client.
 
+## Per-park credentials and the roster
+
+Every call is made with the credential of the park the driver is working in:
+`ParkIntegrationCredential` holds one encrypted `X-API-Key` and `X-Client-ID`
+per park, resolved by `YandexCredentialsService`; the process-wide
+`YANDEX_CLIENT_ID` / `YANDEX_API_KEY` are only a fallback for a park without
+one, and the admin panel flags that.
+
+The roster (`DriverParkMembership`) is keyed by phone and carries the park's
+contractor profile id. It is filled by an operator's paste or by
+`POST /v1/admin/parks/:id/roster/sync`, which lists the park's driver profiles
+through the Fleet API. **The sync is LIVE-UNVERIFIED**: the profile-listing
+endpoint and its response fields are inferred like the rest of the adapter,
+and against the mock it imports the mock's profiles.
+
 ## What the park owner must provide
 
 | What                                                                              | Why                                                                   |

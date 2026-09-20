@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useWithdrawalStatus } from '../../src/hooks/useWithdrawalStatus';
+import { failureVariant } from '../../src/withdraw/failure-variant';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
 import { Button, Card, Screen, Text } from '../../src/ui';
@@ -19,16 +20,8 @@ export default function FailureScreen() {
   const { t, money } = useI18n();
   const { withdrawal } = useWithdrawalStatus(id);
 
-  const underReview = withdrawal?.status === 'UNDER_REVIEW';
-  // The history vocabulary decides the words: a cancelled payout kept the
-  // money, a rejected one was refused by the rail or the park.
-  const variant: 'review' | 'cancelled' | 'rejected' | 'failed' = underReview
-    ? 'review'
-    : withdrawal?.userStatus === 'CANCELLED'
-      ? 'cancelled'
-      : withdrawal?.userStatus === 'REJECTED'
-        ? 'rejected'
-        : 'failed';
+  const variant = failureVariant(withdrawal);
+  const underReview = variant === 'review';
   const title =
     variant === 'review'
       ? t('withdraw.underReviewTitle')

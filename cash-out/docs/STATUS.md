@@ -3,76 +3,77 @@
 What actually works, what is a mock, and what cannot be built here at all.
 Written to be read before anyone demos this to anybody.
 
+**Nothing below has been verified against a live external system.** Yandex,
+iDram, SMS and push all run against mocks in every test and in every local run.
+"Works" in the first table means "works against the mock, and the mock behaves
+like the documented or assumed contract".
+
 ## Works, and is tested
 
-| Area                     | Notes                                                                                                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Money arithmetic         | Integer minor units on `bigint`, explicit rounding, exact-rational fees. No float touches an amount. 59 tests.                                                 |
-| Withdrawal state machine | 18 states, legal transitions only, uncertainty as a first-class state. Invariants asserted, including "never reaches FAILED once the driver has been debited". |
-| Double-entry ledger      | Append-only, balanced at commit by a deferred database trigger, `UPDATE`/`DELETE` rejected by triggers.                                                        |
-| Quoting                  | Priced from a fresh balance, HMAC-signed, single-use, two-minute TTL, re-validated at confirmation.                                                            |
-| Withdrawal orchestration | Reserve → pay out → settle, with probes for uncertain outcomes, compensation on failure, leases, backoff and SLA escalation.                                   |
-| Idempotency              | Client key bound to a request hash; stable Yandex and provider keys reused by every retry.                                                                     |
-| Concurrency              | Serialisable transactions, advisory lock per driver, optimistic version guard per state change, partial unique indexes.                                        |
-| Limits and risk          | Amount, daily, weekly, monthly, velocity; explainable risk signals with a manual-review threshold.                                                             |
-| Driver auth              | OTP with three rate-limit dimensions, device binding, rotating refresh tokens with family revocation.                                                          |
-| Driver↔Yandex linking    | Phone plus licence digits, one account per contractor profile, ambiguity escalated rather than guessed.                                                        |
-| Admin                    | Password + mandatory TOTP, fail-closed RBAC, manual-review resolution with mandatory reasons and evidence.                                                     |
-| Reconciliation           | Ledger, Yandex and provider runs; mismatches surfaced as a queue.                                                                                              |
-| Webhooks                 | Signature over the raw body, freshness window, deduplication, state-aware application.                                                                         |
-| Mobile app               | All the screens in the brief, hy/ru/en, light theme, WCAG-AA contrast asserted in tests.                                                                       |
-| Admin panel              | Dashboard, withdrawals, attention queue, drivers, reconciliation, fees, limits, integrations, audit.                                                           |
+| Area                          | Notes                                                                                                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Money arithmetic              | Integer minor units on `bigint`, explicit rounding, exact-rational fees. No float touches an amount.                                                                                     |
+| Withdrawal state machine      | 19 states, legal transitions only, uncertainty as a first-class state; "never FAILED once debited" asserted.                                                                             |
+| Double-entry ledger           | Append-only, balanced at commit by a deferred trigger; `UPDATE`/`DELETE` rejected; operator adjustments are balanced entries against SUSPENSE.                                           |
+| Taxi parks and rosters        | Many parks, each with its own encrypted Fleet credential; phone-keyed rosters imported from a paste or synced from the Fleet API; eligibility per membership; park suspension.           |
+| Park resolution and switching | On sign-in the phone is resolved against every roster: one park is auto-selected, several are offered, none or ineligible is refused. Switching invalidates the old park's balance.      |
+| Balance                       | Read from the active park through the park's own credential; cached with a TTL, re-read fresh before every payout; stale-balance is a user-visible state, not a guess.                   |
+| iDram destination             | Link, replace and unlink a wallet (verified with the rail, stored encrypted, shown masked); payouts go to it through the same pipeline. **Mock rail.**                                   |
+| Payout authorization          | Six-digit PIN (scrypt, lockout with growing delay) or a biometric-released device secret; every payout consumes a single-use authorization bound to its quote, inside the transaction.   |
+| Automatic payouts             | A rule per driver — on threshold, daily or weekly — consented with the PIN, evaluated by a worker, executed as an ordinary withdrawal with slot-keyed idempotency; pauses after 3 fails. |
+| History                       | One read model over withdrawals and journal entries: withdrawals, refunds and adjustments with COMPLETED / PROCESSING / CANCELLED / REJECTED, filters, cursor paging, per-entry details. |
+| Driver ID changes             | The driver asks, the Fleet API is consulted, an operator decides; approval swaps the roster row and invalidates the balance; refused while a payout is in flight.                        |
+| Notifications                 | Outbox-backed, enqueued in the same transaction as the change, four preference categories applied at delivery, retried with backoff. **Mock push.**                                      |
+| Quoting, limits, risk         | Fresh-balance quotes, HMAC-signed, single-use, two-minute TTL; amount, daily, weekly, monthly, velocity limits; explainable risk with a review threshold.                                |
+| Idempotency and concurrency   | Client key bound to a request hash; serialisable transactions, advisory lock per driver, version guard per state change, partial unique indexes.                                         |
+| Driver auth                   | OTP with three rate-limit dimensions, device binding, rotating refresh tokens with family revocation.                                                                                    |
+| Admin                         | Password + mandatory TOTP, fail-closed RBAC; parks, rosters, credentials, Driver ID requests, auto-payout rules, driver detail with memberships and adjustments, integrations, audit.    |
+| Reconciliation, webhooks      | Ledger, Yandex and provider runs; signature over the raw body, freshness window, deduplication.                                                                                          |
+| Mobile app                    | Every screen in the ТЗ, hy/ru/en with compile-time completeness, light and dark themes persisted, the specified palette and radii, WCAG-AA contrast asserted in tests.                   |
+| CI                            | `.github/workflows/cash-out-ci.yml`: clean PostgreSQL, every migration, typecheck, lint, format, all tests, admin build, Expo config. See the final report for the actual run result.    |
 
-**269 tests pass**: 138 in the shared packages (money 59, contracts 47,
-design tokens 16, i18n 16) and 131 in the API, of which 96 are integration tests
-against a real PostgreSQL (16 of them for the Fleet API v3 flow) and 35 are unit
-tests of the cryptography, TOTP and the v3 adapter's response interpretation.
-
-Three real bugs came out of writing those tests: ledger sums arrived from
-Postgres as strings and went through an IEEE double; the OTP cooldown compared
-an injected clock against a database timestamp and could silently stop working;
-and the rate limiter read wall-clock time while everything else read the clock.
+Test counts are in the final report (`docs/REPORT_MASTER_2026-09-20.md`) with
+the commit they were measured on.
 
 ## Still a mock
 
-| Component            | What exists                                                                             | What is missing                                                                                                                                                                                                                        |
-| -------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Yandex Fleet**     | A live HTTP adapter and an in-memory mock.                                              | The live adapter has never spoken to a real park. Endpoint paths and headers are corroborated across two open-source clients; response field names are inferred; error codes and rate limits are unknown. See `YANDEX_INTEGRATION.md`. |
-| **Payment provider** | A port, a mock, and webhook verification using the same scheme a live adapter must use. | **No live adapter at all.** None can be written without choosing a bank or PSP. `PROVIDER_MODE=live` throws at startup rather than pretending.                                                                                         |
-| **SMS gateway**      | A console gateway that logs the code locally.                                           | No real provider. A production deployment without one is a deployment nobody can sign in to.                                                                                                                                           |
-| **Card entry**       | The screen and the token flow.                                                          | The provider's SDK sheet, which is where card data is actually collected. The app says so plainly instead of showing a card form.                                                                                                      |
-| **Notifications**    | Nothing.                                                                                | Push notification on payout completion; the app polls instead.                                                                                                                                                                         |
-| **Legal documents**  | Placeholder screens that say they are placeholders.                                     | Terms, privacy notice, data-retention policy — counsel's work, not a developer's.                                                                                                                                                      |
+| Component           | What exists                                                                            | What is missing                                                                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Yandex Fleet**    | A live v3 HTTP adapter (per-park credentials), a roster sync, and an in-memory mock.   | The live adapter has never spoken to a real park. Endpoint paths and headers are corroborated across open-source clients; response field names are inferred; error codes and rate limits are unknown. See `YANDEX_INTEGRATION.md`. |
+| **iDram**           | A port, a mock with every answer a rail can give, account management, the mobile flow. | **No live adapter at all**; there is no API documentation or merchant contract to build one from. `PROVIDER_MODE=live` throws at startup. See `IDRAM_INTEGRATION.md`.                                                              |
+| **SMS gateway**     | A console gateway that logs the code locally.                                          | No real provider. A production deployment without one is a deployment nobody can sign in to.                                                                                                                                       |
+| **Push**            | A port, a mock that records what it would send, preferences, a push-token endpoint.    | No Expo/FCM/APNs adapter. `PUSH_MODE=live` throws; `PUSH_MODE=mock` is allowed in production with a startup warning, because preferences and the outbox are real even if nothing is delivered.                                     |
+| **Biometrics**      | OS-prompt-gated device secret in the platform keystore, verified server-side by hash.  | Not a hardware-attested signature over a server challenge. See `SECURITY.md`.                                                                                                                                                      |
+| **Legal documents** | Placeholder screens that say they are placeholders.                                    | Terms, privacy notice, data-retention policy — counsel's work.                                                                                                                                                                     |
 
 Nothing in this list is presented in the UI as working. The integration tiles in
-the admin panel read `MOCK`, not `OK`, and the API logs a warning at startup.
+the admin panel read `MOCK`, not `OK`; the app's notification settings say push
+is in test mode; the API logs a warning at startup.
 
 ## Cannot be built here
 
-| Blocker                                | Why                                                                                                                                                        |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A licensed payment partner             | Moving money to a stranger's card is a regulated activity. This needs a contract, and in most jurisdictions a licence or a licensed partner who holds one. |
-| Yandex's permission                    | Yandex runs its own instant-payout product. Whether an independent service may use the Fleet API this way, in this market, is a commercial question.       |
-| Park credentials                       | The API key belongs to the park, not to us. So does the decision to let a third party debit its drivers.                                                   |
-| AML/KYC                                | Who verifies the driver's identity, what is screened, what is reported and to whom — a compliance design, with a partner.                                  |
-| The payout currency's real constraints | Whether the chosen rail can move fractional drams at all is a question for the provider; the fee engine already handles a coarser increment.               |
+| Blocker               | Why                                                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| iDram merchant access | Credentials, API documentation, a sandbox and a contract. Moving money to a wallet is iDram's regulated activity; Cash Out is its client. |
+| Yandex's permission   | Yandex runs its own instant-payout product. Whether an independent service may use the Fleet API this way is a commercial question.       |
+| Park credentials      | Each park's `X-Client-ID` / `X-API-Key` belong to the park, and so does the decision to let a third party debit its drivers.              |
+| An SMS provider       | A contract and credentials.                                                                                                               |
+| A push provider       | Expo push / FCM / APNs credentials for the app's bundle ids.                                                                              |
+| AML/KYC               | Who verifies identity, what is screened, what is reported — a compliance design, with a partner.                                          |
+| Real-device testing   | Biometrics, secure storage, the keyboard and the tab bar in Armenian, dark mode on OLED — none of it can be exercised on a CI runner.     |
 
 ## Known gaps in what is built
 
 - The rate limiter is in-memory and correct for **one** API instance. The
   interface is there for a Redis implementation; the implementation is not.
 - Key rotation is supported by the ciphertext format but there is no
-  re-encryption job, so rotating `ENCRYPTION_KEY` today would orphan existing
-  provider tokens and TOTP secrets.
-- No push notifications, so the app polls a withdrawal until it settles.
-- When a POST dies before we receive a transaction id, recovery relies on the
-  v3 idempotent replay; the description search against the transaction list is
-  kept only as evidence, never as proof of absence.
-- No load testing. The design is straightforwardly horizontal apart from the
-  rate limiter, but that is an argument, not a measurement.
-- The admin panel has no device binding for operators, unlike the driver app.
-- **There are no unit tests in the mobile app or the admin panel.** Both are
-  typechecked and the admin panel builds in CI, and the logic worth testing —
-  money, fees, the state machine, the contrast guarantees — lives in the shared
-  packages and is tested there. Component tests for the withdrawal flow are
-  still owed.
+  re-encryption job.
+- The mobile and admin test suites cover pure logic (routing on the park
+  resolution, language and theme resolution, the failure vocabulary, Armenian
+  layout budgets, roster parsing, operator formatting). No component renders in
+  a test; screens are typechecked and, for the admin, built.
+- No load testing.
+- The admin panel has no device binding for operators.
+- The auto-payout worker and the notification sweeper run inside the API
+  process on a cron; with more than one instance each rule is protected by the
+  withdrawal pipeline's own idempotency, not by a distributed lock.

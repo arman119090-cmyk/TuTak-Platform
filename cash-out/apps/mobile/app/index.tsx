@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../src/auth/auth-context';
+import { routeForProfile } from '../src/navigation/route-for';
 import { useTheme } from '../src/theme/theme';
 import { Text } from '../src/ui';
 
@@ -18,31 +19,8 @@ export default function SplashScreen() {
   const { status, profile } = useAuth();
 
   useEffect(() => {
-    if (status === 'loading') return;
-    if (status === 'signedOut') {
-      router.replace('/onboarding');
-      return;
-    }
-    if (!profile) {
-      router.replace('/onboarding');
-      return;
-    }
-    // The server decided where this phone stands; the app only routes on it.
-    if (profile.verificationStatus === 'BLOCKED') {
-      router.replace('/park/denied');
-      return;
-    }
-    switch (profile.resolution) {
-      case 'CHOOSE':
-        router.replace('/park/select');
-        return;
-      case 'NONE':
-        router.replace(profile.membershipCount === 0 ? '/park/not-found' : '/park/denied');
-        return;
-      case 'ACTIVE':
-      default:
-        router.replace('/(tabs)');
-    }
+    const route = routeForProfile(status, profile);
+    if (route) router.replace(route);
   }, [status, profile, router]);
 
   return (

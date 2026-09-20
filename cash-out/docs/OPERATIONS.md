@@ -44,6 +44,45 @@ first; the whole point of the evidence field is that somebody did.
   state implies, which is what a crash between a posting and a state change
   looks like.
 
+## Taxi parks and rosters
+
+A driver can withdraw only if their phone is in a park's roster, the row is
+`ACTIVE` and `ELIGIBLE`, and the park is not suspended. Everything on the
+**Taxi parks** page is about keeping that true.
+
+- **Adding a park**: name, code, the Yandex park id, currency. Then store its
+  Fleet API credential and press _Verify_ — a park whose key has never answered
+  is a park whose drivers will see "balance unavailable".
+- **Roster**: paste `phone, profile id, first, last` lines and import, or sync
+  from the Fleet API. Imports update by phone and never remove anyone; to close
+  access, set the membership to `INELIGIBLE` or `REMOVED` with a reason. The
+  driver is told their access changed.
+- **Suspending a park** stops every withdrawal for its drivers at once, with a
+  reason they can read. Use it when the park's key is revoked or the park asks.
+
+## Driver ID requests
+
+A driver who says "my Yandex profile is a different one" files a request. The
+API asks the Fleet API whether that profile exists in the park and belongs to
+that phone; the verdict sits next to _Approve_ and _Reject_. Approving swaps
+the profile on the roster row and throws away the cached balance. It is refused
+while a payout is in flight — decide it again once the payout has settled.
+
+## Automatic payouts
+
+The **Automatic payouts** page lists every rule: driver, park, cadence,
+threshold, destination, next check, and why it paused. A rule pauses itself
+after three consecutive failures, or when its destination or park stops being
+usable, and says so to the driver. Operators do not edit rules — the rule is
+the driver's consent — but blocking the driver stops it, audited.
+
+## Notifications
+
+Notifications are outbox rows delivered by a sweeper every ten seconds. A row
+that fails delivery five times is marked processed with its last error. With
+`PUSH_MODE=mock` nothing is delivered and the integrations tile says `MOCK`;
+that is the state of every deployment until a push provider is contracted.
+
 ## Changing fees or limits
 
 Publishing a new schedule closes the one in force and opens a new one. Quotes

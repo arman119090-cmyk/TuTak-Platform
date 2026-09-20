@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { adminFetch, AdminApiError, currentAdmin } from '@/lib/api';
 import { formatDateTime, relativeAge } from '@/lib/format';
+import { parseRoster } from '@/lib/roster';
 
 interface ParkDetail {
   id: string;
@@ -47,28 +48,6 @@ interface MembershipRow {
 }
 
 export const dynamic = 'force-dynamic';
-
-/**
- * Parses the roster textarea: one driver per line, `phone, profileId[, first[, last]]`.
- * Commas, semicolons and tabs all separate; a header line is skipped.
- */
-function parseRoster(text: string) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !/^phone/i.test(line))
-    .map((line) => {
-      const [phone = '', externalProfileId = '', firstName, lastName] = line
-        .split(/[,;\t]/)
-        .map((cell) => cell.trim());
-      return {
-        phone,
-        externalProfileId,
-        ...(firstName ? { firstName } : {}),
-        ...(lastName ? { lastName } : {}),
-      };
-    });
-}
 
 export default async function ParkDetailPage({
   params,

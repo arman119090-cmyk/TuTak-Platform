@@ -2,8 +2,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { darkTheme, lightTheme, type Theme, type ThemeName } from '@cashout/design-tokens';
+import { parseThemePreference, resolveThemeName, type ThemePreference } from './resolve';
 
-export type ThemePreference = 'light' | 'dark' | 'system';
+export { resolveThemeName, type ThemePreference } from './resolve';
 
 const STORAGE_KEY = 'cashout.theme';
 
@@ -32,11 +33,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     void AsyncStorage.getItem(STORAGE_KEY)
-      .then((stored) => {
-        if (stored === 'light' || stored === 'dark' || stored === 'system') {
-          setPreferenceState(stored);
-        }
-      })
+      .then((stored) => setPreferenceState(parseThemePreference(stored)))
       .catch(() => undefined);
   }, []);
 
@@ -45,8 +42,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     void AsyncStorage.setItem(STORAGE_KEY, next).catch(() => undefined);
   }, []);
 
-  const name: ThemeName =
-    preference === 'system' ? (scheme === 'dark' ? 'dark' : 'light') : preference;
+  const name: ThemeName = resolveThemeName(preference, scheme);
 
   const value = useMemo<ThemeValue>(
     () => ({ theme: name === 'dark' ? darkTheme : lightTheme, preference, setPreference }),
@@ -63,13 +59,4 @@ export function useTheme(): Theme {
 export function useThemePreference(): Pick<ThemeValue, 'preference' | 'setPreference'> {
   const { preference, setPreference } = useContext(ThemeContext);
   return { preference, setPreference };
-}
-
-/** Pure: what the persisted preference resolves to for a given system scheme. */
-export function resolveThemeName(
-  preference: ThemePreference,
-  systemScheme: 'light' | 'dark' | null | undefined,
-): ThemeName {
-  if (preference === 'system') return systemScheme === 'dark' ? 'dark' : 'light';
-  return preference;
 }

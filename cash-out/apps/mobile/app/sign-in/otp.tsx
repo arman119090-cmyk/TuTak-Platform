@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { endpoints } from '../../src/api/endpoints';
 import { useAuth } from '../../src/auth/auth-context';
 import { useErrorMessage } from '../../src/hooks/useErrorMessage';
+import { routeAfterSignIn } from '../../src/navigation/route-for';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
 import { Button, OtpField, Screen, Text } from '../../src/ui';
@@ -52,12 +53,7 @@ export default function OtpScreen() {
         deviceId,
       });
       const profile = await signIn(tokens);
-      // One park: it is chosen for the driver, and shown, rather than skipped.
-      if (profile?.resolution === 'ACTIVE' && profile.membershipCount === 1) {
-        router.replace('/park/auto');
-      } else {
-        router.replace('/');
-      }
+      router.replace(routeAfterSignIn(profile));
     } catch (caught) {
       setError(describeError(caught));
       setCode('');

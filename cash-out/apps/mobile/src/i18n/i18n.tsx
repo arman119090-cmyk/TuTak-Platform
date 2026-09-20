@@ -3,14 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocales } from 'expo-localization';
 import {
   createTranslator,
-  DEFAULT_LOCALE,
   formatAmountOnly,
   formatMoney,
-  isLocale,
   type Locale,
   type MoneyLike,
   type TranslationKey,
 } from '@cashout/i18n';
+import { pickLocale } from './detect';
 
 const STORAGE_KEY = 'cashout.locale';
 
@@ -34,9 +33,9 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() => detectLocale());
 
   useEffect(() => {
-    void AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (isLocale(stored)) setLocaleState(stored);
-    });
+    void AsyncStorage.getItem(STORAGE_KEY)
+      .then((stored) => setLocaleState(pickLocale(stored, deviceLanguageCodes())))
+      .catch(() => undefined);
   }, []);
 
   const setLocale = useCallback((next: Locale) => {
@@ -61,10 +60,14 @@ export function useI18n(): I18nValue {
   return value;
 }
 
-function detectLocale(): Locale {
-  for (const entry of getLocales()) {
-    const code = entry.languageCode ?? '';
-    if (isLocale(code)) return code;
+function deviceLanguageCodes(): string[] {
+  try {
+    return getLocales().map((entry) => entry.languageCode ?? '');
+  } catch {
+    return [];
   }
-  return DEFAULT_LOCALE;
+}
+
+function detectLocale(): Locale {
+  return pickLocale(null, deviceLanguageCodes());
 }

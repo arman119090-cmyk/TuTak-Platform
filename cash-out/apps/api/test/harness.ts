@@ -32,6 +32,7 @@ import { DriverIdService } from '../src/modules/driver-id/driver-id.service';
 import { NotificationMockAdapter } from '../src/modules/notifications/notification-mock.adapter';
 import { NotificationService } from '../src/modules/notifications/notification.service';
 import { KeyRotationService } from '../src/common/crypto/key-rotation.service';
+import { MetricsService } from '../src/modules/observability/metrics.service';
 import { CryptoService } from '../src/common/crypto/crypto.service';
 import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
@@ -108,6 +109,7 @@ export interface Harness {
   notifications: NotificationService;
   push: NotificationMockAdapter;
   keyRotation: KeyRotationService;
+  metrics: MetricsService;
   crypto: CryptoService;
   close(): Promise<void>;
 }
@@ -163,6 +165,7 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     notifications: app.get(NotificationService),
     push: app.get(NotificationMockAdapter),
     keyRotation: app.get(KeyRotationService),
+    metrics: app.get(MetricsService),
     crypto: app.get(CryptoService),
     async close() {
       await app.close();

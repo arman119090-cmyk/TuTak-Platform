@@ -2,6 +2,10 @@
 
 ## Daily
 
+0. Look at **alerts** first: `GET /v1/admin/alerts`, or the pager. A CRITICAL
+   alert (`ledger_imbalance`, stuck money, an integration down, Redis down)
+   comes before every item below. See `MONITORING.md`.
+
 1. Open the dashboard. The first tile is **stuck**: withdrawals that have
    debited a driver and stopped moving. It should be zero.
 2. Open **Needs attention**. Everything there is a decision someone has to make.

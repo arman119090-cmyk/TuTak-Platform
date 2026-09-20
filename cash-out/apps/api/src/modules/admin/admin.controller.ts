@@ -37,6 +37,7 @@ import {
 import { ZodValidationPipe, zodBody } from '../../common/zod.pipe';
 import { Public } from '../auth/auth.guard';
 import { KeyRotationService } from '../../common/crypto/key-rotation.service';
+import { MetricsService } from '../observability/metrics.service';
 import { AutoPayoutService } from '../auto-payout/auto-payout.service';
 import { DriverIdService } from '../driver-id/driver-id.service';
 import { ParksAdminService } from '../parks/parks-admin.service';
@@ -106,6 +107,7 @@ export class AdminController {
     private readonly driverIds: DriverIdService,
     private readonly autoPayouts: AutoPayoutService,
     private readonly keyRotation: KeyRotationService,
+    private readonly metrics: MetricsService,
   ) {}
 
   @Get('me')
@@ -493,6 +495,14 @@ export class AdminController {
   }
 
   // ------------------------------------------------------------ integrations
+
+  /** The alert conditions as last evaluated (every minute), and on demand. */
+  @Get('alerts')
+  @RequirePermission('integrations:read')
+  async alerts(@Query('refresh') refresh?: string) {
+    if (refresh === 'true') await this.metrics.evaluate();
+    return this.metrics.alerts;
+  }
 
   @Get('integrations')
   @RequirePermission('integrations:read')

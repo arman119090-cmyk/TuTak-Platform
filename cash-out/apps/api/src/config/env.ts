@@ -181,6 +181,12 @@ export const envSchema = z
     /** Consecutive failed evaluations before a rule pauses itself. */
     AUTO_PAYOUT_MAX_FAILURES: z.coerce.number().int().min(1).max(20).default(3),
 
+    /**
+     * Bearer token the Prometheus scraper presents to GET /metrics. Unset:
+     * the endpoint is open locally and absent (404) in production.
+     */
+    METRICS_TOKEN: z.string().min(16).optional(),
+
     ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
     ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
   })

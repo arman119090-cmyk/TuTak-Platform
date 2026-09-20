@@ -22,6 +22,7 @@ import { IntegrationHealthModule } from './modules/integration-health/integratio
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { LimitsModule } from './modules/limits/limits.module';
 import { NotificationModule } from './modules/notifications/notification.module';
+import { ObservabilityModule } from './modules/observability/observability.module';
 import { PaymentProviderModule } from './modules/payment-provider/payment-provider.module';
 import { ParksModule } from './modules/parks/parks.module';
 import { PayoutMethodsModule } from './modules/payout-methods/payout-methods.module';
@@ -70,6 +71,7 @@ export class AppModule implements NestModule {
         ReconciliationModule,
         AdminModule,
         HealthModule,
+        ObservabilityModule,
       ],
       providers: [
         // Authentication is on by default; `@Public()` is the exception.

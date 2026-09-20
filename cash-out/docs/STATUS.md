@@ -64,10 +64,8 @@ is in test mode; the API logs a warning at startup.
 
 ## Known gaps in what is built
 
-- The rate limiter is in-memory and correct for **one** API instance. The
-  interface is there for a Redis implementation; the implementation is not.
-- Key rotation is supported by the ciphertext format but there is no
-  re-encryption job.
+- The Redis rate limiter and the key-rotation job are tested against a local
+  Redis and PostgreSQL, not yet exercised on a production-sized table.
 - The mobile and admin test suites cover pure logic (routing on the park
   resolution, language and theme resolution, the failure vocabulary, Armenian
   layout budgets, roster parsing, operator formatting). No component renders in

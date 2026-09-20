@@ -35,7 +35,7 @@ export default tseslint.config(
   },
   {
     // The seeder and operational scripts talk to a terminal; that is their job.
-    files: ['apps/api/prisma/seed.ts', 'scripts/**/*.{js,mjs,ts}'],
+    files: ['apps/api/prisma/seed.ts', 'apps/api/src/cli/**/*.ts', 'scripts/**/*.{js,mjs,ts}'],
     rules: { 'no-console': 'off' },
   },
   {

@@ -7,6 +7,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentProviderPort } from '../payment-provider/payment-provider.port';
 import { YandexFleetPort } from '../yandex/yandex.port';
 import { NotificationPort } from '../notifications/notification.port';
+import { RateLimiter } from '../../common/rate-limit.service';
+import { RedisRateLimiter } from '../../common/rate-limit/redis-rate-limiter';
 
 /**
  * Integration health, recorded rather than inferred.
@@ -24,6 +26,7 @@ export class IntegrationHealthService {
     private readonly yandex: YandexFleetPort,
     private readonly provider: PaymentProviderPort,
     private readonly push: NotificationPort,
+    private readonly limiter: RateLimiter,
     private readonly clock: Clock,
   ) {}
 
@@ -40,6 +43,9 @@ export class IntegrationHealthService {
       yandexParkId ? await this.safe(() => this.yandex.ping(yandexParkId)) : false,
     );
     await this.record('idram', await this.safe(() => this.provider.ping()));
+    if (this.limiter instanceof RedisRateLimiter) {
+      await this.record('redis', await this.limiter.ping());
+    }
   }
 
   async snapshot() {
@@ -50,6 +56,14 @@ export class IntegrationHealthService {
       this.describe('yandex-fleet', byName.get('yandex-fleet'), this.env.YANDEX_MODE),
       this.describe('idram', byName.get('idram'), this.env.PROVIDER_MODE),
       this.describe('push', byName.get('push'), this.push.mode),
+      // The rate limiter's store: `memory` is a mode, not a fake, but it is
+      // shown the same way so an operator sees at once that only one API
+      // instance is being limited.
+      this.describe(
+        'redis',
+        byName.get('redis'),
+        this.env.RATE_LIMIT_BACKEND === 'redis' ? 'live' : 'mock',
+      ),
     ];
   }
 

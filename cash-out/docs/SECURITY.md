@@ -41,6 +41,15 @@ refused rather than allowed. Roles map to a fixed permission set in
 do anything". The panel hides links the operator lacks, but that is a courtesy —
 the server enforces it regardless.
 
+## Key rotation and rate limiting
+
+Column encryption uses a key ring: the active key writes, any retired key in
+`ENCRYPTION_PREVIOUS_KEYS` still reads, and a re-encryption job walks every
+encrypted column in batches — idempotent, resumable, dry-run first, audited,
+never logging plaintext. Rate limits live in Redis in production (atomic
+increment with TTL, shared by every instance) and fail closed during a Redis
+outage. Both procedures are in `OPERATIONS.md`.
+
 ## Data
 
 - **At rest**: provider tokens and TOTP secrets are AES-256-GCM encrypted with a
@@ -132,14 +141,8 @@ has none does the process-wide key apply, and the panel says so.
 
 - **Biometric authorization is not hardware-attested** (see above).
 
-- **Secret rotation is supported but not automated.** The ciphertext envelope
-  carries a key id, so a rotation can read old rows; the re-encryption job that
-  would walk the table is not written.
 - **No WAF, no bot protection** in front of the OTP endpoint beyond the
   application's own limits.
-- **The in-memory rate limiter is correct for one instance only.** Running more
-  than one API process requires the Redis-backed implementation of the same
-  interface; the interface exists, the implementation does not.
 - **No penetration test** has been performed.
 - **No formal threat model document**, though the controls above were chosen
   against the obvious ones: a stolen phone, a modified client, a compromised

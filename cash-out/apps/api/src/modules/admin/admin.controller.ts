@@ -36,6 +36,7 @@ import {
 } from '@cashout/contracts';
 import { ZodValidationPipe, zodBody } from '../../common/zod.pipe';
 import { Public } from '../auth/auth.guard';
+import { KeyRotationService } from '../../common/crypto/key-rotation.service';
 import { AutoPayoutService } from '../auto-payout/auto-payout.service';
 import { DriverIdService } from '../driver-id/driver-id.service';
 import { ParksAdminService } from '../parks/parks-admin.service';
@@ -60,6 +61,10 @@ const driverQuerySchema = paginationSchema.extend({ search: z.string().max(120).
 const auditQuerySchema = paginationSchema.extend({ subjectId: z.string().uuid().optional() });
 const blockSchema = z.object({ blocked: z.boolean(), reason: z.string().min(5).max(500) });
 const resolveMismatchSchema = z.object({ note: z.string().min(5).max(1000) });
+const keyRotationSchema = z.object({
+  dryRun: z.boolean().default(true),
+  batchSize: z.number().int().min(10).max(2000).optional(),
+});
 const autoPayoutRuleQuerySchema = paginationSchema.extend({
   status: z.enum(['active', 'paused', 'disabled']).optional(),
 });
@@ -100,6 +105,7 @@ export class AdminController {
     private readonly parks: ParksAdminService,
     private readonly driverIds: DriverIdService,
     private readonly autoPayouts: AutoPayoutService,
+    private readonly keyRotation: KeyRotationService,
   ) {}
 
   @Get('me')
@@ -358,6 +364,34 @@ export class AdminController {
     @Body(zodBody(adjustDriverBalanceSchema)) dto: AdjustDriverBalanceDto,
   ) {
     return this.admin.adjustDriverBalance(id, admin!.id, dto);
+  }
+
+  // ------------------------------------------------------- key rotation
+
+  @Get('security/key-rotations')
+  @RequirePermission('admins:write')
+  async keyRotations() {
+    return { activeKeyId: this.keyRotation.activeKeyId, runs: await this.keyRotation.runs() };
+  }
+
+  @Get('security/key-inventory')
+  @RequirePermission('admins:write')
+  async keyInventory() {
+    return this.keyRotation.inventory();
+  }
+
+  /** Re-encrypts under the active key; `dryRun: true` only counts and verifies. */
+  @Post('security/key-rotation')
+  @RequirePermission('admins:write')
+  async rotateKeys(
+    @CurrentAdmin() admin: AdminRequest['admin'],
+    @Body(zodBody(keyRotationSchema)) dto: { dryRun: boolean; batchSize?: number },
+  ) {
+    return this.keyRotation.run({
+      dryRun: dto.dryRun,
+      batchSize: dto.batchSize,
+      startedByAdminId: admin!.id,
+    });
   }
 
   // ---------------------------------------------------------- reconciliation

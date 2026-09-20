@@ -31,6 +31,8 @@ import { HistoryService } from '../src/modules/history/history.service';
 import { DriverIdService } from '../src/modules/driver-id/driver-id.service';
 import { NotificationMockAdapter } from '../src/modules/notifications/notification-mock.adapter';
 import { NotificationService } from '../src/modules/notifications/notification.service';
+import { KeyRotationService } from '../src/common/crypto/key-rotation.service';
+import { CryptoService } from '../src/common/crypto/crypto.service';
 import { ParksAdminService } from '../src/modules/parks/parks-admin.service';
 
 /**
@@ -65,7 +67,14 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
     ORCHESTRATOR_AUTO_ADVANCE: 'false',
     ...(overrides as Record<string, string>),
   } as NodeJS.ProcessEnv);
-  return { ...base, ...overrides };
+  // Overrides are strings as the process would see them; values the schema
+  // transforms (booleans, the key ring) must come from the parsed result.
+  return {
+    ...base,
+    ...overrides,
+    ORCHESTRATOR_AUTO_ADVANCE: base.ORCHESTRATOR_AUTO_ADVANCE,
+    ENCRYPTION_PREVIOUS_KEYS: base.ENCRYPTION_PREVIOUS_KEYS,
+  };
 }
 
 export interface Harness {
@@ -98,6 +107,8 @@ export interface Harness {
   driverIds: DriverIdService;
   notifications: NotificationService;
   push: NotificationMockAdapter;
+  keyRotation: KeyRotationService;
+  crypto: CryptoService;
   close(): Promise<void>;
 }
 
@@ -151,6 +162,8 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     driverIds: app.get(DriverIdService),
     notifications: app.get(NotificationService),
     push: app.get(NotificationMockAdapter),
+    keyRotation: app.get(KeyRotationService),
+    crypto: app.get(CryptoService),
     async close() {
       await app.close();
     },
@@ -187,6 +200,7 @@ const TABLES = [
   'otp_challenges',
   'audit_logs',
   'outbox_messages',
+  'encryption_key_rotations',
   'idempotency_records',
   'fee_schedules',
   'limit_policies',

@@ -27,6 +27,32 @@ export const envSchema = z
     ENCRYPTION_KEY: hexKey(32),
     /** Key id written next to every ciphertext, so keys can be rotated. */
     ENCRYPTION_KEY_ID: z.string().min(1).default('k1'),
+    /**
+     * Keys retired by a rotation, still needed to *read* rows not yet
+     * re-encrypted: `id:hex,id:hex`. Never used to encrypt. Remove an entry
+     * only after the rotation job reports zero rows under that id.
+     */
+    ENCRYPTION_PREVIOUS_KEYS: z
+      .string()
+      .default('')
+      .transform((raw) =>
+        raw
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+          .map((entry) => {
+            const [id, hex] = entry.split(':');
+            return { id: id ?? '', hex: hex ?? '' };
+          }),
+      )
+      .pipe(
+        z.array(
+          z.object({
+            id: z.string().min(1),
+            hex: hexKey(32),
+          }),
+        ),
+      ),
     /** HMAC pepper for deterministic fingerprints (card dedupe, licence digits). */
     FINGERPRINT_KEY: hexKey(32),
     /** HMAC key for quote signatures. */
@@ -48,6 +74,19 @@ export const envSchema = z
     /** Per phone number, per rolling hour. The gateway costs real money. */
     OTP_MAX_PER_PHONE_PER_HOUR: z.coerce.number().int().min(1).max(50).default(5),
     OTP_MAX_PER_IP_PER_HOUR: z.coerce.number().int().min(1).max(500).default(30),
+
+    /**
+     * Where rate-limit counters live. `memory` is correct for exactly one API
+     * process and is refused in production; `redis` is shared by every
+     * instance. During a Redis outage `deny` refuses the limited endpoints
+     * (OTP, PIN, admin sign-in) with a short Retry-After; `allow` lets them
+     * through unlimited. Deny is the safe default: those endpoints are
+     * precisely the ones an attacker wants unlimited.
+     */
+    RATE_LIMIT_BACKEND: z.enum(['memory', 'redis']).default('memory'),
+    REDIS_URL: z.string().url().optional(),
+    REDIS_KEY_PREFIX: z.string().min(1).default('cashout:rl:'),
+    RATE_LIMIT_REDIS_OUTAGE: z.enum(['deny', 'allow']).default('deny'),
 
     /**
      * `mock` runs the whole product against in-memory fakes. It is the default
@@ -128,7 +167,38 @@ export const envSchema = z
     ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
   })
   .superRefine((env, ctx) => {
+    if (env.RATE_LIMIT_BACKEND === 'redis' && !env.REDIS_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['REDIS_URL'],
+        message: 'REDIS_URL is required when RATE_LIMIT_BACKEND=redis',
+      });
+    }
+    const previousIds = env.ENCRYPTION_PREVIOUS_KEYS.map((key) => key.id);
+    if (previousIds.includes(env.ENCRYPTION_KEY_ID)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ENCRYPTION_PREVIOUS_KEYS'],
+        message: 'ENCRYPTION_PREVIOUS_KEYS must not contain the active ENCRYPTION_KEY_ID',
+      });
+    }
+    if (new Set(previousIds).size !== previousIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ENCRYPTION_PREVIOUS_KEYS'],
+        message: 'ENCRYPTION_PREVIOUS_KEYS contains a duplicate key id',
+      });
+    }
     if (env.NODE_ENV !== 'production') return;
+
+    if (env.RATE_LIMIT_BACKEND !== 'redis') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['RATE_LIMIT_BACKEND'],
+        message:
+          'RATE_LIMIT_BACKEND=memory is not allowed in production — it limits one process only',
+      });
+    }
 
     if (env.YANDEX_MODE === 'mock') {
       ctx.addIssue({

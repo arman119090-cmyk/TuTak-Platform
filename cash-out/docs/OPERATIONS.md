@@ -107,12 +107,47 @@ Every change demands a written reason and lands in the audit log.
 
 ## Key rotation
 
-`ENCRYPTION_KEY_ID` is written beside every ciphertext. To rotate: deploy with
-the new key and a new id, then re-encrypt existing rows. **The re-encryption job
-is not written yet** — until it is, rotating the encryption key makes existing
-provider tokens and TOTP secrets unreadable.
+`ENCRYPTION_KEY_ID` is written beside every ciphertext, and the process holds a
+**key ring**: the active key (`ENCRYPTION_KEY` / `ENCRYPTION_KEY_ID`) plus any
+retired keys in `ENCRYPTION_PREVIOUS_KEYS` (`id:hex,id:hex`). Reads work with
+any ring key; writes always use the active one.
+
+To rotate:
+
+1. Generate the new key (`openssl rand -hex 32`) and a new id.
+2. Deploy with the new key as `ENCRYPTION_KEY` / `ENCRYPTION_KEY_ID` and the old
+   pair appended to `ENCRYPTION_PREVIOUS_KEYS`. Nothing breaks: old rows are
+   still readable, new writes use the new key.
+3. `pnpm --filter @cashout/api rotate-keys -- --dry-run` — counts rows per key
+   id per column and proves every row decrypts. Writes nothing.
+4. `pnpm --filter @cashout/api rotate-keys` — re-encrypts in batches, in id
+   order. Idempotent (rows already under the active key are skipped),
+   resumable (a crash loses nothing; rerun), concurrency-safe (a row a request
+   rewrote meanwhile is skipped, not clobbered), and it never stops on one bad
+   row: the run ends `COMPLETED_WITH_FAILURES` with the counts. Each run is a
+   row in `encryption_key_rotations` and an audit entry. The admin API offers
+   the same as `POST /v1/admin/security/key-rotation` (`admins:write`).
+5. `pnpm --filter @cashout/api rotate-keys -- --inventory` — confirm zero rows
+   under the old id in every column.
+6. Only then remove the old pair from `ENCRYPTION_PREVIOUS_KEYS` and deploy.
+
+Columns covered: `ParkIntegrationCredential.apiKeyEnc`,
+`PayoutMethod.providerTokenEnc` (iDram wallets and card tokens),
+`AdminUser.mfaSecretEnc`. A test fails if a new `*Enc` column is added to the
+schema without being added to the job.
 
 `QUOTE_SIGNING_KEY` can be rotated freely: quotes live for two minutes.
 
 `FINGERPRINT_KEY` cannot be rotated without recomputing every fingerprint, which
 would break cross-driver instrument matching until it completes.
+
+## Rate limiting across instances
+
+`RATE_LIMIT_BACKEND=redis` with `REDIS_URL` is mandatory in production; the
+process refuses to start with `memory`. Counters are fixed windows keyed by
+dimension (`otp:phone:…`, `otp:ip:…`, `authorize:driver:…`, `admin-login:…`),
+incremented atomically in Redis with the window's TTL. If Redis is unreachable,
+`RATE_LIMIT_REDIS_OUTAGE=deny` (default) refuses OTP requests, PIN/biometric
+authorizations and admin sign-ins with a short Retry-After until it is back;
+`allow` lets them through unlimited. The `redis` tile on the Integrations page
+shows the store's health.

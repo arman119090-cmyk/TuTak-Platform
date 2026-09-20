@@ -32,54 +32,71 @@ import { ENV, Env } from '../../config/env';
  */
 @Injectable()
 export class CryptoService {
-  private readonly encryptionKey: Buffer;
+  /** Every key the process may *decrypt* with, by id. Only the active one encrypts. */
+  private readonly keyRing: ReadonlyMap<string, Buffer>;
+  readonly activeKeyId: string;
   private readonly fingerprintKey: Buffer;
   private readonly quoteKey: Buffer;
 
   constructor(@Inject(ENV) private readonly env: Env) {
-    this.encryptionKey = Buffer.from(env.ENCRYPTION_KEY, 'hex');
+    const ring = new Map<string, Buffer>();
+    ring.set(env.ENCRYPTION_KEY_ID, Buffer.from(env.ENCRYPTION_KEY, 'hex'));
+    for (const previous of env.ENCRYPTION_PREVIOUS_KEYS) {
+      ring.set(previous.id, Buffer.from(previous.hex, 'hex'));
+    }
+    this.keyRing = ring;
+    this.activeKeyId = env.ENCRYPTION_KEY_ID;
     this.fingerprintKey = Buffer.from(env.FINGERPRINT_KEY, 'hex');
     this.quoteKey = Buffer.from(env.QUOTE_SIGNING_KEY, 'hex');
   }
 
   // ------------------------------------------------------------- encryption
 
-  /** Returns `v1:<keyId>:<iv>:<tag>:<ciphertext>`, all base64url. */
+  /** Returns `v1:<keyId>:<iv>:<tag>:<ciphertext>`, all base64url, under the active key. */
   encrypt(plaintext: string): string {
     const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.encryptionKey, iv);
+    const cipher = createCipheriv('aes-256-gcm', this.keyRing.get(this.activeKeyId)!, iv);
     const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     const tag = cipher.getAuthTag();
     return [
       'v1',
-      this.env.ENCRYPTION_KEY_ID,
+      this.activeKeyId,
       iv.toString('base64url'),
       tag.toString('base64url'),
       ciphertext.toString('base64url'),
     ].join(':');
   }
 
+  /** Decrypts with whichever ring key the envelope names; a retired key still reads. */
   decrypt(envelope: string): string {
-    const parts = envelope.split(':');
-    if (parts.length !== 5 || parts[0] !== 'v1') {
-      throw new Error('CryptoService.decrypt: unrecognised ciphertext envelope');
-    }
-    const [, keyId, ivB64, tagB64, dataB64] = parts as [string, string, string, string, string];
-    if (keyId !== this.env.ENCRYPTION_KEY_ID) {
+    const { keyId, iv, tag, data } = parseEnvelope(envelope);
+    const key = this.keyRing.get(keyId);
+    if (!key) {
       throw new Error(
-        `CryptoService.decrypt: ciphertext was written with key "${keyId}" but the process holds "${this.env.ENCRYPTION_KEY_ID}"`,
+        `CryptoService.decrypt: ciphertext was written with key "${keyId}", which this process does not hold (active "${this.activeKeyId}", previous: ${[...this.keyRing.keys()].filter((id) => id !== this.activeKeyId).join(', ') || 'none'})`,
       );
     }
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      this.encryptionKey,
-      Buffer.from(ivB64, 'base64url'),
-    );
-    decipher.setAuthTag(Buffer.from(tagB64, 'base64url'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(dataB64, 'base64url')),
-      decipher.final(),
-    ]).toString('utf8');
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+  }
+
+  /** Which key an envelope was written under, without decrypting it. */
+  keyIdOf(envelope: string): string {
+    return parseEnvelope(envelope).keyId;
+  }
+
+  /** True when the envelope is already under the active key: nothing to rotate. */
+  isCurrent(envelope: string): boolean {
+    return this.keyIdOf(envelope) === this.activeKeyId;
+  }
+
+  /**
+   * Re-wraps a ciphertext under the active key. The plaintext exists only on
+   * the stack of this call; it is never returned, logged or stored.
+   */
+  reencrypt(envelope: string): string {
+    return this.encrypt(this.decrypt(envelope));
   }
 
   // --------------------------------------------------------------- hashing
@@ -153,6 +170,27 @@ export class CryptoService {
     }
     return `${prefix}-${body.slice(0, 5)}-${body.slice(5)}`;
   }
+}
+
+export interface CiphertextEnvelope {
+  readonly keyId: string;
+  readonly iv: Buffer;
+  readonly tag: Buffer;
+  readonly data: Buffer;
+}
+
+export function parseEnvelope(envelope: string): CiphertextEnvelope {
+  const parts = envelope.split(':');
+  if (parts.length !== 5 || parts[0] !== 'v1') {
+    throw new Error('CryptoService: unrecognised ciphertext envelope');
+  }
+  const [, keyId, ivB64, tagB64, dataB64] = parts as [string, string, string, string, string];
+  return {
+    keyId,
+    iv: Buffer.from(ivB64, 'base64url'),
+    tag: Buffer.from(tagB64, 'base64url'),
+    data: Buffer.from(dataB64, 'base64url'),
+  };
 }
 
 /**

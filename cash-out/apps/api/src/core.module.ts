@@ -1,7 +1,8 @@
 import { DynamicModule, Global, Module } from '@nestjs/common';
 import { Clock, SystemClock } from './common/clock';
 import { AppLogger } from './common/logging/logger.service';
-import { InMemoryRateLimiter, RateLimiter } from './common/rate-limit.service';
+import { RateLimiter } from './common/rate-limit.service';
+import { RATE_LIMIT_REDIS, rateLimiterProviders } from './common/rate-limit/rate-limiter.provider';
 import { ENV, Env } from './config/env';
 
 /**
@@ -23,9 +24,9 @@ export class CoreModule {
         { provide: ENV, useValue: env },
         AppLogger,
         { provide: Clock, useClass: SystemClock },
-        { provide: RateLimiter, useClass: InMemoryRateLimiter },
+        ...rateLimiterProviders(env),
       ],
-      exports: [ENV, AppLogger, Clock, RateLimiter],
+      exports: [ENV, AppLogger, Clock, RateLimiter, RATE_LIMIT_REDIS],
     };
   }
 }

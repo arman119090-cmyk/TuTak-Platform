@@ -43,14 +43,14 @@ model User {
 }
 
 model Device {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @db.Uuid
-  deviceId   String
-  name       String?
-  platform   String?
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  deviceId    String
+  name        String?
+  platform    String?
   firstSeenAt DateTime @default(now())
-  lastSeenAt DateTime @default(now())
-  blocked    Boolean  @default(false)
+  lastSeenAt  DateTime @default(now())
+  blocked     Boolean  @default(false)
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessions Session[]
@@ -85,19 +85,19 @@ model Session {
 }
 
 model OtpChallenge {
-  id          String    @id @default(uuid()) @db.Uuid
-  phone       String
+  id             String    @id @default(uuid()) @db.Uuid
+  phone          String
   /// scrypt hash of the code. The plaintext code exists only in the SMS.
-  codeHash    String
-  deviceId    String
-  attempts    Int       @default(0)
-  maxAttempts Int       @default(5)
-  createdAt   DateTime  @default(now())
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  ip          String?
+  codeHash       String
+  deviceId       String
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(5)
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  ip             String?
   /// Set when the code was never actually sent (gateway down) so support can tell.
-  deliveryFailed Boolean @default(false)
+  deliveryFailed Boolean   @default(false)
 
   @@index([phone, createdAt])
   @@index([expiresAt])
@@ -114,29 +114,29 @@ enum DriverVerificationStatus {
 }
 
 model Driver {
-  id                        String                   @id @default(uuid()) @db.Uuid
-  userId                    String                   @unique @db.Uuid
+  id                 String                   @id @default(uuid()) @db.Uuid
+  userId             String                   @unique @db.Uuid
   /**
    * The membership the driver is currently working through. Everything that
    * touches money — the balance, quotes, withdrawals — is scoped to it, and
    * switching it invalidates every cached balance of the previous park.
    */
-  activeMembershipId        String?                  @unique @db.Uuid
-  verificationStatus        DriverVerificationStatus @default(UNLINKED)
-  firstName                 String?
-  lastName                  String?
-  currency                  String?
+  activeMembershipId String?                  @unique @db.Uuid
+  verificationStatus DriverVerificationStatus @default(UNLINKED)
+  firstName          String?
+  lastName           String?
+  currency           String?
   /// Hash, not the digits: enough to re-check a claim, useless if leaked.
-  licenceLast4Hash          String?
-  verifiedAt                DateTime?
-  blockedAt                 DateTime?
-  blockReason               String?
-  riskTier                  String                   @default("STANDARD")
-  createdAt                 DateTime                 @default(now())
-  updatedAt                 DateTime                 @updatedAt
+  licenceLast4Hash   String?
+  verifiedAt         DateTime?
+  blockedAt          DateTime?
+  blockReason        String?
+  riskTier           String                   @default("STANDARD")
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
-  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activeMembership DriverParkMembership? @relation("ActiveMembership", fields: [activeMembershipId], references: [id])
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeMembership DriverParkMembership?  @relation("ActiveMembership", fields: [activeMembershipId], references: [id])
   memberships      DriverParkMembership[]
   payoutMethods    PayoutMethod[]
   withdrawals      Withdrawal[]
@@ -156,15 +156,15 @@ model Driver {
  * provider it is recorded and never used.
  */
 model NotificationPreference {
-  driverId       String   @id @db.Uuid
-  payoutStatus   Boolean  @default(true)
-  autoPayout     Boolean  @default(true)
-  securityAlerts Boolean  @default(true)
-  parkChanges    Boolean  @default(true)
+  driverId       String    @id @db.Uuid
+  payoutStatus   Boolean   @default(true)
+  autoPayout     Boolean   @default(true)
+  securityAlerts Boolean   @default(true)
+  parkChanges    Boolean   @default(true)
   pushToken      String?
   pushPlatform   String?
   pushTokenAt    DateTime?
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime  @updatedAt
 
   @@map("notification_preferences")
 }
@@ -172,11 +172,17 @@ model NotificationPreference {
 // ------------------------------------------------------------ auto payout
 
 enum AutoPayoutCadence {
-  /** Pay out whenever the available balance reaches the threshold. */
+  /**
+   * Pay out whenever the available balance reaches the threshold.
+   */
   ON_THRESHOLD
-  /** Once a day at `runHour`, if the balance is at least the threshold. */
+  /**
+   * Once a day at `runHour`, if the balance is at least the threshold.
+   */
   DAILY
-  /** Once a week on `runWeekday` at `runHour`, if the balance is at least the threshold. */
+  /**
+   * Once a week on `runWeekday` at `runHour`, if the balance is at least the threshold.
+   */
   WEEKLY
 }
 
@@ -225,7 +231,6 @@ model AutoPayoutRule {
 
 /**
  * The driver's PIN and biometric enrolment.
- *
  * The PIN is stored as a scrypt hash only. Biometrics are never stored at all:
  * the phone's own keystore holds a random device secret that the OS releases
  * after a successful biometric check, and this row holds only that secret's
@@ -291,22 +296,22 @@ enum ParkStatus {
 
 /// A taxi park (a Yandex fleet) that Cash Out serves.
 model Park {
-  id            String     @id @default(uuid()) @db.Uuid
+  id               String     @id @default(uuid()) @db.Uuid
   /// Short operator-facing code, e.g. "erevan-north".
-  code          String     @unique
-  name          String
+  code             String     @unique
+  name             String
   /// The park's id inside Yandex Fleet — what every Fleet API call carries.
-  yandexParkId  String     @unique
-  currency      String     @default("AMD")
-  status        ParkStatus @default(ACTIVE)
+  yandexParkId     String     @unique
+  currency         String     @default("AMD")
+  status           ParkStatus @default(ACTIVE)
   /// Shown to drivers when the park is suspended, in their own language via a key.
-  suspendedReason String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  createdByAdminId String? @db.Uuid
+  suspendedReason  String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  createdByAdminId String?    @db.Uuid
 
-  credential  ParkIntegrationCredential?
-  memberships DriverParkMembership[]
+  credential    ParkIntegrationCredential?
+  memberships   DriverParkMembership[]
   rosterImports RosterImport[]
 
   @@index([status])
@@ -319,18 +324,18 @@ model Park {
  * set and when it was last verified.
  */
 model ParkIntegrationCredential {
-  id             String    @id @default(uuid()) @db.Uuid
-  parkId         String    @unique @db.Uuid
-  provider       String    @default("YANDEX_FLEET")
-  clientId       String
-  apiKeyEnc      String
+  id               String    @id @default(uuid()) @db.Uuid
+  parkId           String    @unique @db.Uuid
+  provider         String    @default("YANDEX_FLEET")
+  clientId         String
+  apiKeyEnc        String
   /// Last four characters of the key, so an operator can tell two keys apart.
-  apiKeyHint     String
-  lastVerifiedAt DateTime?
-  lastError      String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  updatedByAdminId String? @db.Uuid
+  apiKeyHint       String
+  lastVerifiedAt   DateTime?
+  lastError        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  updatedByAdminId String?   @db.Uuid
 
   park Park @relation(fields: [parkId], references: [id], onDelete: Cascade)
 
@@ -357,7 +362,6 @@ enum MembershipSource {
 
 /**
  * The roster: who works in which park, under which Yandex profile.
- *
  * A row exists before the driver ever installs the app — it is what the phone
  * number is looked up against after the OTP. `driverId` is attached the first
  * time that phone signs in. A driver may hold rows in several parks; exactly
@@ -381,9 +385,9 @@ model DriverParkMembership {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
-  park    Park     @relation(fields: [parkId], references: [id], onDelete: Cascade)
-  driver  Driver?  @relation(fields: [driverId], references: [id])
-  activeFor Driver? @relation("ActiveMembership")
+  park             Park                    @relation(fields: [parkId], references: [id], onDelete: Cascade)
+  driver           Driver?                 @relation(fields: [driverId], references: [id])
+  activeFor        Driver?                 @relation("ActiveMembership")
   idChangeRequests DriverIdChangeRequest[]
 
   /// One Cash Out membership per Yandex profile: two phones cannot drain one balance.
@@ -397,14 +401,14 @@ model DriverParkMembership {
 
 /// Every change of a driver's active park, for the read model and support.
 model ParkSwitch {
-  id             String   @id @default(uuid()) @db.Uuid
-  driverId       String   @db.Uuid
-  fromParkId     String?  @db.Uuid
-  toParkId       String   @db.Uuid
+  id         String   @id @default(uuid()) @db.Uuid
+  driverId   String   @db.Uuid
+  fromParkId String?  @db.Uuid
+  toParkId   String   @db.Uuid
   /// AUTO (single membership), DRIVER (chose it), ADMIN.
-  actorType      String
-  actorId        String?
-  at             DateTime @default(now())
+  actorType  String
+  actorId    String?
+  at         DateTime @default(now())
 
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
@@ -414,16 +418,16 @@ model ParkSwitch {
 
 /// A roster import batch: who uploaded what, and what happened to each row.
 model RosterImport {
-  id            String   @id @default(uuid()) @db.Uuid
-  parkId        String   @db.Uuid
-  source        MembershipSource
-  totalRows     Int
-  createdCount  Int
-  updatedCount  Int
-  skippedCount  Int
-  errors        Json?
-  createdAt     DateTime @default(now())
-  createdByAdminId String? @db.Uuid
+  id               String           @id @default(uuid()) @db.Uuid
+  parkId           String           @db.Uuid
+  source           MembershipSource
+  totalRows        Int
+  createdCount     Int
+  updatedCount     Int
+  skippedCount     Int
+  errors           Json?
+  createdAt        DateTime         @default(now())
+  createdByAdminId String?          @db.Uuid
 
   park Park @relation(fields: [parkId], references: [id], onDelete: Cascade)
 
@@ -469,13 +473,13 @@ model DriverIdChangeRequest {
 }
 
 model BalanceSnapshot {
-  id          String   @id @default(uuid()) @db.Uuid
-  driverId    String   @db.Uuid
+  id              String   @id @default(uuid()) @db.Uuid
+  driverId        String   @db.Uuid
   /// The park the figure belongs to. A snapshot is never shown for another park.
-  parkId      String   @db.Uuid
-  balanceMinor BigInt
-  currency    String
-  fetchedAt   DateTime @default(now())
+  parkId          String   @db.Uuid
+  balanceMinor    BigInt
+  currency        String
+  fetchedAt       DateTime @default(now())
   /// Which Yandex account id the figure came from, for reconciliation.
   yandexAccountId String?
 
@@ -536,51 +540,51 @@ model PayoutMethod {
 // ----------------------------------------------------------- pricing/limits
 
 model FeeSchedule {
-  id                       String   @id @default(uuid()) @db.Uuid
+  id                      String    @id @default(uuid()) @db.Uuid
   /// null = the default schedule, applied to any park without its own.
-  parkId                   String?
-  currency                 String
-  platformRateNumerator    BigInt
-  platformRateDenominator  BigInt
-  platformFixedMinor       BigInt
-  platformMinMinor         BigInt?
-  platformMaxMinor         BigInt?
-  platformRounding         String   @default("HALF_UP")
-  providerRateNumerator    BigInt
-  providerRateDenominator  BigInt
-  providerFixedMinor       BigInt
-  providerMinMinor         BigInt?
-  providerMaxMinor         BigInt?
-  providerRounding         String   @default("HALF_UP")
-  payoutIncrementMinor     BigInt   @default(1)
-  effectiveFrom            DateTime @default(now())
-  effectiveTo              DateTime?
-  createdAt                DateTime @default(now())
-  createdByAdminId         String?  @db.Uuid
+  parkId                  String?
+  currency                String
+  platformRateNumerator   BigInt
+  platformRateDenominator BigInt
+  platformFixedMinor      BigInt
+  platformMinMinor        BigInt?
+  platformMaxMinor        BigInt?
+  platformRounding        String    @default("HALF_UP")
+  providerRateNumerator   BigInt
+  providerRateDenominator BigInt
+  providerFixedMinor      BigInt
+  providerMinMinor        BigInt?
+  providerMaxMinor        BigInt?
+  providerRounding        String    @default("HALF_UP")
+  payoutIncrementMinor    BigInt    @default(1)
+  effectiveFrom           DateTime  @default(now())
+  effectiveTo             DateTime?
+  createdAt               DateTime  @default(now())
+  createdByAdminId        String?   @db.Uuid
 
   @@index([parkId, currency, effectiveFrom])
   @@map("fee_schedules")
 }
 
 model LimitPolicy {
-  id                    String    @id @default(uuid()) @db.Uuid
-  parkId                String?
-  currency              String
-  minWithdrawalMinor    BigInt
-  maxWithdrawalMinor    BigInt
-  dailyAmountMinor      BigInt
-  dailyCountMax         Int
-  weeklyAmountMinor     BigInt
-  monthlyAmountMinor    BigInt
+  id                     String    @id @default(uuid()) @db.Uuid
+  parkId                 String?
+  currency               String
+  minWithdrawalMinor     BigInt
+  maxWithdrawalMinor     BigInt
+  dailyAmountMinor       BigInt
+  dailyCountMax          Int
+  weeklyAmountMinor      BigInt
+  monthlyAmountMinor     BigInt
   /// Velocity: at most `velocityMaxCount` withdrawals per rolling window.
-  velocityWindowSeconds Int       @default(3600)
-  velocityMaxCount      Int       @default(3)
+  velocityWindowSeconds  Int       @default(3600)
+  velocityMaxCount       Int       @default(3)
   /// Above this, a withdrawal goes to manual review instead of straight through.
   manualReviewAboveMinor BigInt?
-  effectiveFrom         DateTime  @default(now())
-  effectiveTo           DateTime?
-  createdAt             DateTime  @default(now())
-  createdByAdminId      String?   @db.Uuid
+  effectiveFrom          DateTime  @default(now())
+  effectiveTo            DateTime?
+  createdAt              DateTime  @default(now())
+  createdByAdminId       String?   @db.Uuid
 
   @@index([parkId, currency, effectiveFrom])
   @@map("limit_policies")
@@ -589,23 +593,23 @@ model LimitPolicy {
 // --------------------------------------------------------------- quoting
 
 model Quote {
-  id                  String    @id @default(uuid()) @db.Uuid
-  driverId            String    @db.Uuid
-  payoutMethodId      String    @db.Uuid
-  currency            String
-  grossMinor          BigInt
-  platformFeeMinor    BigInt
-  providerFeeMinor    BigInt
-  netMinor            BigInt
-  balanceAtQuoteMinor BigInt
-  feeScheduleId       String    @db.Uuid
+  id                     String    @id @default(uuid()) @db.Uuid
+  driverId               String    @db.Uuid
+  payoutMethodId         String    @db.Uuid
+  currency               String
+  grossMinor             BigInt
+  platformFeeMinor       BigInt
+  providerFeeMinor       BigInt
+  netMinor               BigInt
+  balanceAtQuoteMinor    BigInt
+  feeScheduleId          String    @db.Uuid
   /// HMAC over the quote's fields. The confirm call must present it unchanged,
   /// so a client cannot invent its own fee.
-  signature           String
-  createdAt           DateTime  @default(now())
-  expiresAt           DateTime
-  consumedAt          DateTime?
-  consumedByWithdrawalId String? @db.Uuid
+  signature              String
+  createdAt              DateTime  @default(now())
+  expiresAt              DateTime
+  consumedAt             DateTime?
+  consumedByWithdrawalId String?   @db.Uuid
 
   driver       Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
   payoutMethod PayoutMethod @relation(fields: [payoutMethodId], references: [id])
@@ -640,16 +644,16 @@ enum WithdrawalState {
 }
 
 model Withdrawal {
-  id        String          @id @default(uuid()) @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
   /// Short human reference shown to the driver and quoted to support.
-  reference String          @unique
-  driverId  String          @db.Uuid
-  payoutMethodId String     @db.Uuid
-  quoteId   String?         @db.Uuid
-  state     WithdrawalState @default(CREATED)
+  reference      String          @unique
+  driverId       String          @db.Uuid
+  payoutMethodId String          @db.Uuid
+  quoteId        String?         @db.Uuid
+  state          WithdrawalState @default(CREATED)
   /// Optimistic-concurrency guard: every state change bumps it, and every state
   /// change is conditional on the value it read.
-  version   Int             @default(0)
+  version        Int             @default(0)
 
   currency         String
   grossMinor       BigInt
@@ -658,8 +662,8 @@ model Withdrawal {
   netMinor         BigInt
 
   /// DRIVER (confirmed in the app) or AUTO_PAYOUT (created by a rule).
-  origin                    String          @default("DRIVER")
-  autoPayoutRuleId          String?         @db.Uuid
+  origin           String  @default("DRIVER")
+  autoPayoutRuleId String? @db.Uuid
 
   /// A copy of the identifiers as they were at request time. If a driver is
   /// later moved to another park, this withdrawal still says where the money
@@ -669,13 +673,13 @@ model Withdrawal {
   yandexParkId              String
   yandexContractorProfileId String
 
-  yandexBalanceBeforeMinor BigInt?
-  yandexBalanceAfterMinor  BigInt?
-  yandexTransactionId      String?
+  yandexBalanceBeforeMinor    BigInt?
+  yandexBalanceAfterMinor     BigInt?
+  yandexTransactionId         String?
   /// The id of the compensating credit, once Yandex has given us one.
   yandexReversalTransactionId String?
   /// The token sent to Yandex. Stable across retries — that is the point.
-  yandexIdempotencyToken   String  @unique
+  yandexIdempotencyToken      String  @unique
 
   providerTransactionId  String?
   providerIdempotencyKey String  @unique
@@ -685,28 +689,28 @@ model Withdrawal {
   idempotencyKey String
   requestHash    String
 
-  failureCode       String?
-  failureMessage    String?
+  failureCode        String?
+  failureMessage     String?
   manualReviewReason String?
-  riskScore         Int?
+  riskScore          Int?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  reservedAt  DateTime?
-  submittedAt DateTime?
-  confirmedAt DateTime?
-  completedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  reservedAt    DateTime?
+  submittedAt   DateTime?
+  confirmedAt   DateTime?
+  completedAt   DateTime?
   /// When automated handling should give up and escalate.
-  slaDeadline DateTime?
+  slaDeadline   DateTime?
   /// Set while a worker owns this withdrawal, to stop two workers driving it.
-  leaseUntil  DateTime?
-  leaseOwner  String?
-  attempts    Int       @default(0)
+  leaseUntil    DateTime?
+  leaseOwner    String?
+  attempts      Int       @default(0)
   nextAttemptAt DateTime?
 
-  driver       Driver            @relation(fields: [driverId], references: [id])
-  payoutMethod PayoutMethod      @relation(fields: [payoutMethodId], references: [id])
-  events       WithdrawalEvent[]
+  driver         Driver            @relation(fields: [driverId], references: [id])
+  payoutMethod   PayoutMethod      @relation(fields: [payoutMethodId], references: [id])
+  events         WithdrawalEvent[]
   journalEntries JournalEntry[]
   providerEvents ProviderEvent[]
 
@@ -795,15 +799,15 @@ enum JournalEntryType {
 }
 
 model JournalEntry {
-  id             String           @id @default(uuid()) @db.Uuid
-  type           JournalEntryType
+  id               String           @id @default(uuid()) @db.Uuid
+  type             JournalEntryType
   /// Posting the same business event twice is a no-op, not a double entry.
-  idempotencyKey String           @unique
-  withdrawalId   String?          @db.Uuid
-  description    String
-  metadata       Json?
-  createdAt      DateTime         @default(now())
-  createdByAdminId String?        @db.Uuid
+  idempotencyKey   String           @unique
+  withdrawalId     String?          @db.Uuid
+  description      String
+  metadata         Json?
+  createdAt        DateTime         @default(now())
+  createdByAdminId String?          @db.Uuid
 
   withdrawal Withdrawal?     @relation(fields: [withdrawalId], references: [id])
   postings   LedgerPosting[]
@@ -834,18 +838,18 @@ model LedgerPosting {
 // --------------------------------------------------------- provider events
 
 model ProviderEvent {
-  id            String    @id @default(uuid()) @db.Uuid
-  provider      String
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
   /// The provider's own event id. Unique, so a webhook delivered twice is
   /// stored once and processed once.
-  externalId    String
-  type          String
-  withdrawalId  String?   @db.Uuid
-  signatureOk   Boolean
-  payloadHash   String
-  payload       Json
-  receivedAt    DateTime  @default(now())
-  processedAt   DateTime?
+  externalId      String
+  type            String
+  withdrawalId    String?   @db.Uuid
+  signatureOk     Boolean
+  payloadHash     String
+  payload         Json
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
   processingError String?
 
   withdrawal Withdrawal? @relation(fields: [withdrawalId], references: [id])
@@ -897,16 +901,16 @@ model ReconciliationRun {
 }
 
 model ReconciliationMismatch {
-  id           String    @id @default(uuid()) @db.Uuid
-  runId        String    @db.Uuid
-  withdrawalId String?   @db.Uuid
-  kind         String
-  expected     String?
-  actual       String?
-  detail       Json?
-  resolvedAt   DateTime?
+  id             String    @id @default(uuid()) @db.Uuid
+  runId          String    @db.Uuid
+  withdrawalId   String?   @db.Uuid
+  kind           String
+  expected       String?
+  actual         String?
+  detail         Json?
+  resolvedAt     DateTime?
   resolutionNote String?
-  createdAt    DateTime  @default(now())
+  createdAt      DateTime  @default(now())
 
   run ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
@@ -945,14 +949,14 @@ model AdminUser {
 }
 
 model AdminSession {
-  id           String    @id @default(uuid()) @db.Uuid
-  adminUserId  String    @db.Uuid
-  tokenHash    String    @unique
-  createdAt    DateTime  @default(now())
-  expiresAt    DateTime
-  revokedAt    DateTime?
-  ip           String?
-  userAgent    String?
+  id          String    @id @default(uuid()) @db.Uuid
+  adminUserId String    @db.Uuid
+  tokenHash   String    @unique
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  ip          String?
+  userAgent   String?
 
   adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
 
@@ -984,18 +988,36 @@ model AuditLog {
 
 // ------------------------------------------------------- integration health
 
+/// One record per re-encryption run, so a rotation is auditable and a crashed
+/// run can be resumed: the next run skips every row already under the active key.
+model EncryptionKeyRotation {
+  id               String    @id @default(uuid()) @db.Uuid
+  activeKeyId      String
+  dryRun           Boolean
+  status           String    @default("RUNNING")
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  startedByAdminId String?   @db.Uuid
+  /// Per target: scanned, reencrypted, skipped, failed.
+  counts           Json?
+  lastError        String?
+
+  @@index([startedAt])
+  @@map("encryption_key_rotations")
+}
+
 model IntegrationHealth {
-  id          String   @id @default(uuid()) @db.Uuid
-  integration String   @unique
-  status      String   @default("UNKNOWN")
+  id          String    @id @default(uuid()) @db.Uuid
+  integration String    @unique
+  status      String    @default("UNKNOWN")
   lastOkAt    DateTime?
   lastErrorAt DateTime?
   lastError   String?
   /// Rolling counters the admin panel renders as a health tile.
-  windowStart DateTime @default(now())
-  okCount     Int      @default(0)
-  errorCount  Int      @default(0)
-  updatedAt   DateTime @updatedAt
+  windowStart DateTime  @default(now())
+  okCount     Int       @default(0)
+  errorCount  Int       @default(0)
+  updatedAt   DateTime  @updatedAt
 
   @@map("integration_health")
 }

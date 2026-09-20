@@ -31,7 +31,7 @@ import {
  */
 @Injectable()
 export class PaymentProviderMockAdapter extends PaymentProviderPort {
-  readonly name = 'mock-psp';
+  readonly name: string = 'mock-psp';
 
   private readonly payouts = new Map<string, MockPayout>();
   private readonly instruments = new Map<string, RegisteredInstrument>();

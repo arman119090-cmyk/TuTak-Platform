@@ -78,10 +78,16 @@ export const envSchema = z
     /** Minimum gap between calls for one park. Yandex throttles per park. */
     YANDEX_MIN_INTERVAL_MS: z.coerce.number().int().min(0).max(5000).default(500),
 
+    /**
+     * The payout rail. `mock` is the in-memory iDram fake (rejected in
+     * production); `live` has no adapter yet and refuses to start, because
+     * there is no iDram payout API contract in this repository to build one on.
+     */
     PROVIDER_MODE: z.enum(['mock', 'live']).default('mock'),
-    PROVIDER_NAME: z.string().default('mock-psp'),
-    PROVIDER_BASE_URL: z.string().url().optional(),
-    PROVIDER_API_KEY: z.string().optional(),
+    PROVIDER_NAME: z.string().default('idram-mock'),
+    IDRAM_BASE_URL: z.string().url().optional(),
+    IDRAM_MERCHANT_ID: z.string().optional(),
+    IDRAM_API_KEY: z.string().optional(),
     PROVIDER_WEBHOOK_SECRET: z.string().min(32).optional(),
     PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
     /** How old a webhook may be before it is treated as a replay. */
@@ -138,8 +144,9 @@ export const envSchema = z
     }
     if (env.PROVIDER_MODE === 'live') {
       for (const key of [
-        'PROVIDER_BASE_URL',
-        'PROVIDER_API_KEY',
+        'IDRAM_BASE_URL',
+        'IDRAM_MERCHANT_ID',
+        'IDRAM_API_KEY',
         'PROVIDER_WEBHOOK_SECRET',
       ] as const) {
         if (!env[key]) {

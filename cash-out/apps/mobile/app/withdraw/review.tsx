@@ -8,7 +8,7 @@ import { newIdempotencyKey } from '../../src/auth/session';
 import { useErrorMessage } from '../../src/hooks/useErrorMessage';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
-import { AmountRow, Button, Card, Screen, Sheet, Text } from '../../src/ui';
+import { AmountRow, Button, Card, ListRow, Screen, Sheet, Text } from '../../src/ui';
 
 /**
  * The screen the brief is really about: the driver sees the amount, both fees,
@@ -28,7 +28,7 @@ export default function ReviewScreen() {
   const theme = useTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{ quote: string }>();
-  const { api } = useAuth();
+  const { api, profile } = useAuth();
   const { t, money } = useI18n();
   const describeError = useErrorMessage();
 
@@ -41,6 +41,20 @@ export default function ReviewScreen() {
   }, [params.quote]);
 
   const [idempotencyKey] = useState(newIdempotencyKey);
+  const [destination, setDestination] = useState<string>('—');
+
+  useEffect(() => {
+    void endpoints
+      .idramAccount(api)
+      .then((result) =>
+        setDestination(
+          result.account
+            ? `iDram ${result.account.maskedIdentifier}${result.account.holderName ? ` · ${result.account.holderName}` : ''}`
+            : '—',
+        ),
+      )
+      .catch(() => setDestination('—'));
+  }, [api]);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +126,16 @@ export default function ReviewScreen() {
             }}
           />
           <AmountRow label={t('withdraw.rowNet')} amount={quote.net} emphasis />
+        </Card>
+
+        <Card padded={false} style={{ marginTop: theme.spacing.base }}>
+          <ListRow label={t('balance.park')} value={profile?.activePark?.name ?? '—'} first />
+          <ListRow label={t('idram.recipient')} value={destination} />
+          <ListRow
+            label={t('withdraw.operationType')}
+            value={t('withdraw.operationWithdrawal')}
+            last
+          />
         </Card>
 
         <Text

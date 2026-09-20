@@ -9,7 +9,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { RateLimiter } from '../src/common/rate-limit.service';
 import { ConsoleSmsGateway } from '../src/modules/auth/sms-gateway.port';
 import { YandexMockAdapter } from '../src/modules/yandex/yandex-mock.adapter';
-import { PaymentProviderMockAdapter } from '../src/modules/payment-provider/payment-provider-mock.adapter';
+import { IdramMockAdapter } from '../src/modules/idram/idram-mock.adapter';
+import { IdramService } from '../src/modules/idram/idram.service';
 import { WithdrawalOrchestrator } from '../src/modules/withdrawals/withdrawal.orchestrator';
 import { WithdrawalsService } from '../src/modules/withdrawals/withdrawals.service';
 import { WithdrawalWorker } from '../src/modules/withdrawals/withdrawal.worker';
@@ -66,7 +67,8 @@ export interface Harness {
   prisma: PrismaService;
   clock: FixedClock;
   yandex: YandexMockAdapter;
-  provider: PaymentProviderMockAdapter;
+  provider: IdramMockAdapter;
+  idram: IdramService;
   sms: ConsoleSmsGateway;
   rateLimiter: RateLimiter;
   orchestrator: WithdrawalOrchestrator;
@@ -112,7 +114,8 @@ export async function createHarness(envOverrides: Partial<Env> = {}): Promise<Ha
     prisma,
     clock,
     yandex: app.get(YandexMockAdapter),
-    provider: app.get(PaymentProviderMockAdapter),
+    provider: app.get(IdramMockAdapter),
+    idram: app.get(IdramService),
     sms: app.get(ConsoleSmsGateway),
     rateLimiter: app.get(RateLimiter),
     orchestrator: app.get(WithdrawalOrchestrator),

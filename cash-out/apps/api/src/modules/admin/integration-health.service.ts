@@ -37,7 +37,7 @@ export class IntegrationHealthService {
       'yandex-fleet',
       yandexParkId ? await this.safe(() => this.yandex.ping(yandexParkId)) : false,
     );
-    await this.record('payment-provider', await this.safe(() => this.provider.ping()));
+    await this.record('idram', await this.safe(() => this.provider.ping()));
   }
 
   async snapshot() {
@@ -46,7 +46,7 @@ export class IntegrationHealthService {
 
     return [
       this.describe('yandex-fleet', byName.get('yandex-fleet'), this.env.YANDEX_MODE),
-      this.describe('payment-provider', byName.get('payment-provider'), this.env.PROVIDER_MODE),
+      this.describe('idram', byName.get('idram'), this.env.PROVIDER_MODE),
     ];
   }
 

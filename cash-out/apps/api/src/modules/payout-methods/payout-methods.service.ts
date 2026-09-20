@@ -5,13 +5,18 @@ import { AppError } from '../../common/app-error';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { Clock } from '../../common/clock';
 import { AuditService } from '../audit/audit.service';
-import { PaymentProviderPort } from '../payment-provider/payment-provider.port';
+import { IdramProviderPort } from '../idram/idram.port';
+import {
+  PaymentProviderPort,
+  RegisteredInstrument,
+} from '../payment-provider/payment-provider.port';
 
 @Injectable()
 export class PayoutMethodsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly provider: PaymentProviderPort,
+    private readonly idram: IdramProviderPort,
     private readonly crypto: CryptoService,
     private readonly clock: Clock,
     private readonly audit: AuditService,
@@ -35,18 +40,11 @@ export class PayoutMethodsService {
    * which can be turned back into an instrument.
    */
   async add(driverId: string, dto: AddPayoutMethodDto): Promise<PayoutMethodDto> {
-    const singleUseToken =
-      dto.kind === 'CARD' ? dto.providerToken : `bank:${dto.accountIdentifier}`;
-
-    const registered = await this.provider.registerInstrument({
-      singleUseToken,
-      driverReference: driverId,
-      currency: dto.currency,
-    });
+    const registered = await this.register(driverId, dto);
 
     if (registered.status === 'REJECTED') {
       throw new AppError(
-        'PAYOUT_METHOD_NOT_VERIFIED',
+        dto.kind === 'IDRAM' ? 'IDRAM_ACCOUNT_REJECTED' : 'PAYOUT_METHOD_NOT_VERIFIED',
         registered.rejectionReason ?? 'The provider rejected this payout method',
       );
     }
@@ -85,7 +83,9 @@ export class PayoutMethodsService {
           fingerprint,
           maskedIdentifier: registered.maskedIdentifier,
           displayName: registered.displayName,
+          holderName: registered.holderName ?? null,
           isDefault: shouldDefault,
+          verifiedAt: registered.status === 'ACTIVE' ? this.clock.now() : null,
         },
       });
     });
@@ -99,6 +99,59 @@ export class PayoutMethodsService {
     });
 
     return toDto(created);
+  }
+
+  /**
+   * Turns the driver's input into a stored instrument, by kind. A card comes
+   * as the provider's single-use token; a bank account as an identifier the
+   * provider validates; an iDram account is looked up with the wallet
+   * provider, which also tells us the holder's name.
+   */
+  private async register(
+    driverId: string,
+    dto: AddPayoutMethodDto,
+  ): Promise<RegisteredInstrument & { holderName?: string | null }> {
+    if (dto.kind === 'IDRAM') {
+      let verification;
+      try {
+        verification = await this.idram.verifyAccount({
+          accountId: dto.accountId,
+          holderName: dto.holderName,
+          driverReference: driverId,
+        });
+      } catch {
+        throw new AppError('IDRAM_UNAVAILABLE', 'iDram is not responding');
+      }
+      if (verification.status === 'UNKNOWN') {
+        throw new AppError('IDRAM_UNAVAILABLE', 'iDram is not responding');
+      }
+      if (verification.status === 'REJECTED') {
+        return {
+          token: '',
+          maskedIdentifier: verification.maskedIdentifier,
+          displayName: 'iDram',
+          instrumentFingerprint: '',
+          status: 'REJECTED',
+          rejectionReason: verification.reason,
+        };
+      }
+      return {
+        token: verification.instrumentToken,
+        maskedIdentifier: verification.maskedIdentifier,
+        displayName: 'iDram',
+        holderName: verification.holderName,
+        instrumentFingerprint: verification.fingerprint,
+        status: verification.status === 'VERIFIED' ? 'ACTIVE' : 'PENDING_VERIFICATION',
+      };
+    }
+
+    const singleUseToken =
+      dto.kind === 'CARD' ? dto.providerToken : `bank:${dto.accountIdentifier}`;
+    return this.provider.registerInstrument({
+      singleUseToken,
+      driverReference: driverId,
+      currency: dto.currency,
+    });
   }
 
   async makeDefault(driverId: string, payoutMethodId: string): Promise<void> {
@@ -176,14 +229,16 @@ export class PayoutMethodsService {
   }
 }
 
-function toDto(method: {
+export function toPayoutMethodDto(method: {
   id: string;
   kind: string;
   status: string;
   currency: string;
   maskedIdentifier: string;
   displayName: string | null;
+  holderName: string | null;
   isDefault: boolean;
+  verifiedAt: Date | null;
   createdAt: Date;
 }): PayoutMethodDto {
   return {
@@ -193,7 +248,11 @@ function toDto(method: {
     currency: method.currency as PayoutMethodDto['currency'],
     maskedIdentifier: method.maskedIdentifier,
     displayName: method.displayName,
+    holderName: method.holderName,
     isDefault: method.isDefault,
+    verifiedAt: method.verifiedAt?.toISOString() ?? null,
     createdAt: method.createdAt.toISOString(),
   };
 }
+
+const toDto = toPayoutMethodDto;

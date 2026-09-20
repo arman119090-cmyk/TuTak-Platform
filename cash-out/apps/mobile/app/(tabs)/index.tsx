@@ -106,7 +106,7 @@ export default function HomeScreen() {
         <Button
           label={t('home.withdrawCta')}
           onPress={() => {
-            if (!hasMethod) router.push('/withdraw/method');
+            if (!hasMethod) router.push('/idram/account');
             else if (stale) void refreshFresh();
             else router.push('/withdraw/amount');
           }}

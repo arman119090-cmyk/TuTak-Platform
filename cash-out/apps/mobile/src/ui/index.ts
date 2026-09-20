@@ -14,3 +14,4 @@ export * from './AmountField';
 export * from './StatusPill';
 export * from './TaxiParkCard';
 export * from './BalanceCard';
+export * from './IdramCard';

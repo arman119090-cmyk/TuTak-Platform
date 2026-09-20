@@ -85,7 +85,11 @@ describe('the withdrawal flow', () => {
         'GLOBAL',
         'AMD',
       );
-      const pspSettlement = await harness.ledger.balanceOf('PSP_SETTLEMENT', 'mock-psp', 'AMD');
+      const pspSettlement = await harness.ledger.balanceOf(
+        'PSP_SETTLEMENT',
+        harness.provider.name,
+        'AMD',
+      );
 
       expect(parkReceivable.minor).toBe(1_000_000n);
       expect(driverPayable.minor).toBe(0n); // fully discharged

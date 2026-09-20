@@ -4,6 +4,7 @@ import type {
   ConfirmWithdrawalDto,
   CreateQuoteDto,
   DriverProfileDto,
+  LinkIdramAccountDto,
   MembershipDto,
   PayoutMethodDto,
   QuoteDto,
@@ -57,6 +58,14 @@ export const endpoints = {
       method: 'POST',
       body: { kind: 'CARD', providerToken, currency, setAsDefault: true },
     }),
+
+  idramAccount: (api: ApiClient) =>
+    api.request<{ account: PayoutMethodDto | null }>('/v1/idram/account'),
+
+  linkIdram: (api: ApiClient, body: LinkIdramAccountDto) =>
+    api.request<PayoutMethodDto>('/v1/idram/account', { method: 'POST', body }),
+
+  unlinkIdram: (api: ApiClient) => api.request<void>('/v1/idram/account', { method: 'DELETE' }),
 
   removePayoutMethod: (api: ApiClient, id: string) =>
     api.request<void>(`/v1/payout-methods/${id}`, { method: 'DELETE' }),

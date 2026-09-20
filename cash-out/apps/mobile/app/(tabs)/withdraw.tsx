@@ -43,7 +43,7 @@ export default function WithdrawTabScreen() {
       footer={
         <Button
           label={t('home.withdrawCta')}
-          onPress={() => router.push(method ? '/withdraw/amount' : '/withdraw/method')}
+          onPress={() => router.push(method ? '/withdraw/amount' : '/idram/account')}
           disabled={!ready && !!method}
           loading={loading && balance === null}
           caption={
@@ -70,9 +70,9 @@ export default function WithdrawTabScreen() {
       <Card padded={false} style={{ marginTop: theme.spacing.base }}>
         <ListRow label={t('balance.park')} value={profile?.activePark?.name ?? '—'} first />
         <ListRow
-          label={t('withdraw.methodTitle')}
+          label={t('idram.title')}
           value={method ? `${method.displayName ?? ''} ${method.maskedIdentifier}`.trim() : '—'}
-          onPress={() => router.push('/withdraw/method')}
+          onPress={() => router.push('/idram/account')}
           last
         />
       </Card>

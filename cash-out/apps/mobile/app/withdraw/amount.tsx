@@ -52,7 +52,7 @@ export default function WithdrawAmountScreen() {
         all,
         ...(all ? {} : { amount: { minor: requestedMinor.toString(), currency } }),
       } as never);
-      router.push({ pathname: '/withdraw/review', params: { quote: JSON.stringify(quote) } });
+      router.push({ pathname: '/withdraw/idram', params: { quote: JSON.stringify(quote) } });
     } catch (caught) {
       setError(describeError(caught));
     } finally {
@@ -60,7 +60,10 @@ export default function WithdrawAmountScreen() {
     }
   };
 
+  /** The iDram account is the destination; any other default is a fallback. */
   const defaultMethodId = async (): Promise<string | undefined> => {
+    const idram = await endpoints.idramAccount(api).catch(() => ({ account: null }));
+    if (idram.account?.status === 'ACTIVE') return idram.account.id;
     const result = await endpoints.payoutMethods(api);
     return (result.items.find((item) => item.isDefault) ?? result.items[0])?.id;
   };

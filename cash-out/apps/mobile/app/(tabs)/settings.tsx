@@ -57,12 +57,12 @@ export default function ProfileScreen() {
 
       <Card padded={false} style={{ marginBottom: theme.spacing.base }}>
         <ListRow
-          label={t('payoutMethod.title')}
+          label={t('idram.title')}
           value={
-            methods.find((method) => method.isDefault)?.maskedIdentifier ??
-            String(methods.length || '')
+            methods.find((method) => method.kind === 'IDRAM' && method.isDefault)
+              ?.maskedIdentifier ?? t('idram.none')
           }
-          onPress={() => router.push('/withdraw/method')}
+          onPress={() => router.push('/idram/account')}
           first
         />
         <ListRow

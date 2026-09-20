@@ -356,6 +356,8 @@ model BalanceSnapshot {
 enum PayoutMethodKind {
   CARD
   BANK_ACCOUNT
+  /// An iDram wallet, addressed by its account id. The Armenian default.
+  IDRAM
 }
 
 enum PayoutMethodStatus {
@@ -379,9 +381,12 @@ model PayoutMethod {
   fingerprint      String
   maskedIdentifier String
   displayName      String?
+  /// The account holder's name as the provider reports it, for the confirmation screen.
+  holderName       String?
   isDefault        Boolean            @default(false)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+  verifiedAt       DateTime?
   disabledAt       DateTime?
   rejectedReason   String?
 

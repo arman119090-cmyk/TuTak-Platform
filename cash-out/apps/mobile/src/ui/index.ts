@@ -13,3 +13,4 @@ export * from './BalanceHero';
 export * from './AmountField';
 export * from './StatusPill';
 export * from './TaxiParkCard';
+export * from './BalanceCard';

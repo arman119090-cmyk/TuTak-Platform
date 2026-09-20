@@ -6,9 +6,10 @@ import { useTheme } from '../../src/theme/theme';
 import { Text } from '../../src/ui';
 
 /**
- * Three tabs, no more. Balance, history, profile — everything else is reached
- * from inside those. A taxi driver does not need a navigation structure; they
- * need the Withdraw button.
+ * Five tabs, the ones the specification names: Home, Balance, Withdraw,
+ * History, Settings. Profile, the taxi park and security are reached from
+ * Settings. Labels are never truncated — Armenian labels are long, and the bar
+ * grows a line rather than showing "Կարգավոր…".
  */
 export default function TabsLayout() {
   const theme = useTheme();
@@ -23,38 +24,53 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
-          height: 64,
-          paddingTop: 6,
+          height: 72,
+          paddingTop: 8,
         },
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarAllowFontScaling: false,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: t('home.balanceLabel'),
-          tabBarIcon: ({ color }) => <TabGlyph glyph="₽" color={color} />,
+          title: t('tabs.home'),
+          tabBarIcon: ({ color }) => <Glyph glyph="⌂" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="balance"
+        options={{
+          title: t('tabs.balance'),
+          tabBarIcon: ({ color }) => <Glyph glyph="֏" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="withdraw"
+        options={{
+          title: t('tabs.withdraw'),
+          tabBarIcon: ({ color }) => <Glyph glyph="↗" color={color} />,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
-          title: t('history.title'),
-          tabBarIcon: ({ color }) => <TabGlyph glyph="≡" color={color} />,
+          title: t('tabs.history'),
+          tabBarIcon: ({ color }) => <Glyph glyph="≡" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="settings"
         options={{
-          title: t('profile.title'),
-          tabBarIcon: ({ color }) => <TabGlyph glyph="☺" color={color} />,
+          title: t('tabs.settings'),
+          tabBarIcon: ({ color }) => <Glyph glyph="⚙" color={color} />,
         }}
       />
     </Tabs>
   );
 }
 
-function TabGlyph({ glyph, color }: { glyph: string; color: ColorValue }) {
+function Glyph({ glyph, color }: { glyph: string; color: ColorValue }) {
   return (
     <Text variant="title" style={{ color, lineHeight: 24 }}>
       {glyph}

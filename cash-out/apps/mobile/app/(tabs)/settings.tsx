@@ -37,7 +37,7 @@ export default function ProfileScreen() {
   return (
     <Screen>
       <View style={{ paddingTop: theme.spacing.xl, paddingBottom: theme.spacing.base }}>
-        <Text variant="titleLarge">{t('profile.title')}</Text>
+        <Text variant="titleLarge">{t('tabs.settings')}</Text>
         <Text variant="body" tone="secondary" style={{ marginTop: theme.spacing.xs }}>
           {[profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || profile?.phone}
         </Text>

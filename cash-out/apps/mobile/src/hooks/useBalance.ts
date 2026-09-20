@@ -7,10 +7,19 @@ export interface BalanceState {
   balance: BalanceDto | null;
   loading: boolean;
   error: unknown;
+  /** The display read: the server may answer from a short-lived cache. */
   refresh: () => Promise<void>;
+  /** A read straight from the fleet. What every withdraw screen calls first. */
+  refreshFresh: () => Promise<BalanceDto | null>;
 }
 
-export function useBalance(): BalanceState {
+/**
+ * The balance on the phone is a copy for display. The server's answer carries
+ * `fresh`, and nothing money-related runs on this side while it is false: the
+ * withdraw button is disabled, and the amount screen asks for a fresh read
+ * before it lets the driver type.
+ */
+export function useBalance(options: { immediate?: boolean } = {}): BalanceState {
   const { api } = useAuth();
   const [balance, setBalance] = useState<BalanceDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,9 +37,25 @@ export function useBalance(): BalanceState {
     }
   }, [api]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const refreshFresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await endpoints.freshBalance(api);
+      setBalance(next);
+      setError(null);
+      return next;
+    } catch (caught) {
+      setError(caught);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
 
-  return { balance, loading, error, refresh };
+  useEffect(() => {
+    if (options.immediate === false) return;
+    void refresh();
+  }, [refresh, options.immediate]);
+
+  return { balance, loading, error, refresh, refreshFresh };
 }

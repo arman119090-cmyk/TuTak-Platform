@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { endpoints } from '../../src/api/endpoints';
@@ -7,7 +7,7 @@ import { useBalance } from '../../src/hooks/useBalance';
 import { useErrorMessage } from '../../src/hooks/useErrorMessage';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
-import { AmountField, Button, Screen, Text } from '../../src/ui';
+import { AmountField, Button, ErrorState, Screen, Text } from '../../src/ui';
 
 /** AMD has two decimal places; drivers type whole drams. */
 const MINOR_PER_MAJOR = 100n;
@@ -18,7 +18,13 @@ export default function WithdrawAmountScreen() {
   const { api } = useAuth();
   const { t, money } = useI18n();
   const describeError = useErrorMessage();
-  const { balance } = useBalance();
+  const { balance, error: balanceError, refreshFresh } = useBalance({ immediate: false });
+
+  // Fresh from the fleet, never the cache: the amount the driver types is
+  // validated against the figure the server will actually use.
+  useEffect(() => {
+    void refreshFresh();
+  }, [refreshFresh]);
 
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,8 +39,9 @@ export default function WithdrawAmountScreen() {
     return [5_000, 10_000, 20_000, 50_000].filter((preset) => preset <= major);
   }, [withdrawableMinor]);
 
+  const fresh = balance !== null && balance.fresh;
   const tooMuch = requestedMinor > withdrawableMinor;
-  const canContinue = requestedMinor > 0n && !tooMuch;
+  const canContinue = fresh && requestedMinor > 0n && !tooMuch;
 
   const goToReview = async (all: boolean) => {
     setBusy(true);
@@ -58,6 +65,19 @@ export default function WithdrawAmountScreen() {
     return (result.items.find((item) => item.isDefault) ?? result.items[0])?.id;
   };
 
+  if (balanceError && !balance) {
+    return (
+      <Screen>
+        <ErrorState
+          title={t('balance.unavailableTitle')}
+          body={describeError(balanceError)}
+          retryLabel={t('balance.refresh')}
+          onRetry={() => void refreshFresh()}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen
       footer={
@@ -65,12 +85,18 @@ export default function WithdrawAmountScreen() {
           label={t('common.continue')}
           onPress={() => void goToReview(false)}
           disabled={!canContinue}
-          loading={busy}
+          loading={busy || !balance}
+          caption={balance && !balance.fresh ? t('balance.withdrawDisabledStale') : undefined}
         />
       }
     >
       <View style={{ paddingTop: theme.spacing.xl }}>
         <Text variant="titleLarge">{t('withdraw.amountTitle')}</Text>
+        {!balance ? (
+          <Text variant="body" tone="secondary" style={{ marginTop: theme.spacing.xs }}>
+            {t('balance.checking')}
+          </Text>
+        ) : null}
         {balance ? (
           <Text variant="body" tone="secondary" style={{ marginTop: theme.spacing.xs }}>
             {t('withdraw.aboveBalance', { amount: money(balance.withdrawable) })}

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { PayoutMethodDto, WithdrawalDto } from '@cashout/contracts';
 import { endpoints } from '../../src/api/endpoints';
@@ -9,12 +9,13 @@ import { useErrorMessage } from '../../src/hooks/useErrorMessage';
 import { useI18n } from '../../src/i18n/i18n';
 import { useTheme } from '../../src/theme/theme';
 import {
-  BalanceHero,
+  BalanceCard,
   Button,
   Card,
   EmptyState,
   ErrorState,
   Screen,
+  StatusPill,
   Text,
   WithdrawalRow,
 } from '../../src/ui';
@@ -22,17 +23,19 @@ import {
 /**
  * Home.
  *
- * The brief asks for the shortest possible path: open, see the balance, tap
- * Withdraw. So the screen is a balance, a button, and the last few payouts —
- * and nothing else competes with the button.
+ * Who you are, where you work, what you have, one button. The header shows
+ * the driver's name, Driver ID and park because a driver in two parks must
+ * never wonder which balance they are looking at; the balance card says how
+ * fresh the figure is; the button is disabled — with the reason — whenever the
+ * server would refuse the withdrawal anyway.
  */
 export default function HomeScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { api } = useAuth();
+  const { api, profile, refreshProfile } = useAuth();
   const { t } = useI18n();
   const describeError = useErrorMessage();
-  const { balance, loading, error, refresh } = useBalance();
+  const { balance, loading, error, refresh, refreshFresh } = useBalance({ immediate: false });
 
   const [recent, setRecent] = useState<WithdrawalDto[]>([]);
   const [methods, setMethods] = useState<PayoutMethodDto[]>([]);
@@ -53,23 +56,40 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      void refreshProfile();
       void refresh();
       void load();
-    }, [refresh, load]),
+    }, [refreshProfile, refresh, load]),
   );
 
   const live = recent.find((item) => item.status === 'PROCESSING' || item.status === 'PENDING');
+  const hasMethod = methods.some((method) => method.status === 'ACTIVE');
+  const stale = balance !== null && !balance.fresh;
   const canWithdraw =
-    balance !== null && BigInt(balance.withdrawable.minor) > 0n && methods.length > 0 && !live;
+    balance !== null &&
+    balance.fresh &&
+    BigInt(balance.withdrawable.minor) > 0n &&
+    hasMethod &&
+    !live;
+
+  const caption = live
+    ? t('withdraw.inProgressAlready')
+    : !hasMethod
+      ? t('withdraw.noMethods')
+      : stale
+        ? t('balance.withdrawDisabledStale')
+        : undefined;
+
+  const name = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || profile?.phone;
 
   if (error && !balance) {
     return (
       <Screen>
         <ErrorState
-          title={t('common.error')}
+          title={t('balance.unavailableTitle')}
           body={describeError(error)}
           retryLabel={t('common.retry')}
-          onRetry={() => void refresh()}
+          onRetry={() => void refreshFresh()}
         />
       </Screen>
     );
@@ -78,39 +98,61 @@ export default function HomeScreen() {
   return (
     <Screen
       onRefresh={() => {
-        void refresh();
+        void refreshFresh();
         void load();
       }}
       refreshing={loading && balance !== null}
       footer={
         <Button
           label={t('home.withdrawCta')}
-          onPress={() =>
-            router.push(methods.length === 0 ? '/withdraw/method' : '/withdraw/amount')
-          }
-          disabled={!canWithdraw && methods.length > 0}
-          caption={
-            live
-              ? t('withdraw.inProgressAlready')
-              : methods.length === 0
-                ? t('withdraw.noMethods')
-                : undefined
-          }
+          onPress={() => {
+            if (!hasMethod) router.push('/withdraw/method');
+            else if (stale) void refreshFresh();
+            else router.push('/withdraw/amount');
+          }}
+          disabled={!canWithdraw && hasMethod && !stale}
+          caption={caption}
         />
       }
     >
-      <View style={{ paddingTop: theme.spacing.xxl, paddingBottom: theme.spacing.xl }}>
-        <BalanceHero
-          balance={balance?.withdrawable ?? null}
-          reserved={balance?.reservedByPendingWithdrawals ?? null}
-          loading={loading}
-          stale={balance ? !balance.fresh : false}
-          updatedAt={balance?.asOf}
-        />
+      <View style={[styles.header, { paddingTop: theme.spacing.xl }]}>
+        <View style={{ flex: 1 }}>
+          <Text variant="titleLarge">{t('homeHeader.greeting', { name: name ?? '' })}</Text>
+          <Text variant="caption" tone="secondary" style={{ marginTop: theme.spacing.xxs }}>
+            {t('homeHeader.driverId', { id: profile?.driverId ?? '—' })}
+          </Text>
+        </View>
       </View>
 
+      <Pressable
+        accessibilityRole="button"
+        onPress={() =>
+          (profile?.membershipCount ?? 0) > 1 ? router.push('/park/select') : undefined
+        }
+        style={[styles.parkRow, { marginTop: theme.spacing.md, marginBottom: theme.spacing.base }]}
+      >
+        <StatusPill tone="brand" label={profile?.activePark?.name ?? '—'} />
+        {(profile?.membershipCount ?? 0) > 1 ? (
+          <Text variant="caption" tone="brand" style={{ marginLeft: theme.spacing.sm }}>
+            {t('park.changePark')} ›
+          </Text>
+        ) : null}
+      </Pressable>
+
+      <BalanceCard balance={balance} loading={loading} />
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push('/(tabs)/balance')}
+        style={{ marginTop: theme.spacing.sm, alignSelf: 'flex-end' }}
+      >
+        <Text variant="label" tone="brand">
+          {t('homeHeader.viewBalance')} ›
+        </Text>
+      </Pressable>
+
       {live ? (
-        <Card tone="brand" style={{ marginBottom: theme.spacing.base }}>
+        <Card tone="brand" style={{ marginTop: theme.spacing.base }}>
           <Text variant="label" tone="brand">
             {t('withdraw.processingTitle')}
           </Text>
@@ -127,7 +169,7 @@ export default function HomeScreen() {
         </Card>
       ) : null}
 
-      <Card padded={false}>
+      <Card padded={false} style={{ marginTop: theme.spacing.base }}>
         {recent.length === 0 ? (
           <EmptyState title={t('home.emptyHistory')} glyph="💸" />
         ) : (
@@ -154,3 +196,8 @@ export default function HomeScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'flex-start' },
+  parkRow: { flexDirection: 'row', alignItems: 'center' },
+});

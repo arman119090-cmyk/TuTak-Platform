@@ -12,6 +12,7 @@ import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { localPhoneDigits } from '../../../domain/phone';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
@@ -78,7 +79,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             label={t('auth.phoneNumber')}
             prefix="+374"
             value={phone}
-            onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
+            onChangeText={(v) => setPhone(localPhoneDigits(v))}
             keyboardType="number-pad"
             placeholder="00 000 000"
             maxLength={8}

@@ -27,18 +27,20 @@ const FEET_OVER_EDGE = 14;
 export type JakoSceneSize = 'hero' | 'compact';
 
 /**
- * Stage heights in points, above the sheet, before the top inset is added.
- * `hero` is the auth and partner screens; `compact` a screen whose own
- * content must stay above the fold — the lock screen's keypad, a status.
- * A short phone (`useCompactLayout`) gets the smaller value of each pair;
- * the keyboard never changes either (see `JakoHero.tsx` for why).
+ * Height of the zone Jako stands in, in points, below the words and above
+ * the sheet. `hero` is the auth and partner screens; `compact` a screen
+ * whose own content must stay above the fold — the lock screen's keypad,
+ * a status. A short phone (`useCompactLayout`) gets the smaller value of
+ * each pair; the keyboard never changes either (see `JakoHero.tsx`).
+ *
+ * The words above the zone take whatever height their language needs, so
+ * the stage as a whole is as tall as the text plus this. Nothing here is
+ * measured: it is ordinary flex layout, decided once per render.
  */
-const STAGE: Record<JakoSceneSize, { regular: number; compact: number }> = {
-  hero: { regular: 340, compact: 284 },
-  compact: { regular: 250, compact: 214 },
+const ZONE: Record<JakoSceneSize, { regular: number; compact: number }> = {
+  hero: { regular: 216, compact: 176 },
+  compact: { regular: 136, compact: 112 },
 };
-/** Jako's height as a share of the stage. */
-const FIGURE_SHARE: Record<JakoSceneSize, number> = { hero: 0.74, compact: 0.74 };
 
 interface Props {
   state: JakoState;
@@ -112,11 +114,16 @@ export function JakoScene({
   // title two points smaller so «Восстановление» stays one word.
   const narrow = useWindowDimensions().width < 380;
 
-  const stageHeight = (compact ? STAGE[size].compact : STAGE[size].regular) + insets.top;
-  const figure = Math.round((compact ? STAGE[size].compact : STAGE[size].regular) * FIGURE_SHARE[size]);
+  const zone = compact ? ZONE[size].compact : ZONE[size].regular;
+  // Exactly as tall as the zone plus the feet's reach over the sheet's edge:
+  // the top of his frame is the top of the zone, so he never rises into the
+  // words. The words are never on him; that is the whole layout.
+  const figure = zone + (SHEET_RADIUS - FEET_OVER_EDGE);
   const canGoBack = navigation?.canGoBack() ?? false;
   const dark = mode === 'dark';
-  const ink = premium.brand.primary;
+  // The handwriting: the deep brand green on the light ground, the light
+  // one on ink. The mid green disappeared into the bokeh.
+  const ink = dark ? premium.brand.light : premium.brand.dark;
   const bubbleFill = dark ? 'rgba(52, 199, 89, 0.16)' : 'rgba(31, 122, 76, 0.10)';
   const buttonFill = dark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.86)';
   // A faint halo the colour of the ground, so a long title or subtitle
@@ -129,7 +136,7 @@ export function JakoScene({
 
   const stage = (
     <View
-      style={[styles.stage, { height: stageHeight, paddingTop: insets.top }]}
+      style={[styles.stage, { paddingTop: insets.top }]}
       pointerEvents="box-none"
       testID={testID ?? `scene-${state}`}
     >
@@ -166,32 +173,38 @@ export function JakoScene({
         ) : null}
       </View>
 
-      {/* Jako first, so the words are drawn over his wing rather than under it. */}
-      <View
-        pointerEvents="none"
-        style={[styles.figure, { width: figure, height: figure, right: -Math.round(figure * 0.05), bottom: SHEET_RADIUS - FEET_OVER_EDGE }]}
-        accessible={false}
-        importantForAccessibility="no-hide-descendants"
-        accessibilityElementsHidden
-      >
-        <Image source={jakoAsset(state)} style={styles.figureImage} contentFit="contain" transition={0} accessibilityIgnoresInvertColors />
-      </View>
-
-      <View style={[styles.words, narrow ? styles.wordsNarrow : null, { paddingHorizontal: layout.screenPaddingX, marginTop: space[3] }]} pointerEvents="box-none">
+      <View style={[styles.words, { paddingHorizontal: layout.screenPaddingX, marginTop: space[3] }]} pointerEvents="box-none">
         <Text accessibilityRole="header" style={[size === 'hero' ? text.titleLg : text.title, styles.title, narrow && size === 'hero' ? styles.titleNarrow : null, { color: color.textPrimary }, legible]}>
           {title}
         </Text>
         {subtitle ? (
           <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[2] }, legible]}>{subtitle}</Text>
         ) : null}
+      </View>
+
+      {/* Jako's zone: he stands at the right, the note sits in the free
+          ground to his left. Neither is under the other. */}
+      <View style={[styles.zone, { height: zone, marginTop: space[3] }]} pointerEvents="none">
+        <View
+          style={[styles.figure, { width: figure, height: figure, right: -Math.round(figure * 0.05), bottom: -(SHEET_RADIUS - FEET_OVER_EDGE) }]}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          accessibilityElementsHidden
+        >
+          <Image source={jakoAsset(state)} style={styles.figureImage} contentFit="contain" transition={0} accessibilityIgnoresInvertColors />
+        </View>
         {note ? (
-          <View style={[styles.noteWrap, { marginTop: space[3] }]}>
-            <Handwritten size={size === 'hero' ? 26 : 22} color={ink} testID="scene-note">
-              {note}
-            </Handwritten>
-            <Svg width={72} height={10} viewBox="0 0 72 10" style={styles.underline}>
-              <Path d="M2 7 C 18 2, 40 2, 70 6" stroke={ink} strokeWidth={2} strokeLinecap="round" fill="none" />
-            </Svg>
+          // Clear of the whole frame, wings included: on a narrow phone the
+          // note wraps to two lines rather than touch a feather.
+          <View style={[styles.noteZone, { left: layout.screenPaddingX, right: Math.round(figure * 0.96) }]}>
+            <View style={styles.noteWrap}>
+              <Handwritten size={size === 'hero' ? 26 : 22} color={ink} testID="scene-note">
+                {note}
+              </Handwritten>
+              <Svg width={72} height={10} viewBox="0 0 72 10" style={styles.underline}>
+                <Path d="M2 7 C 18 2, 40 2, 70 6" stroke={ink} strokeWidth={2} strokeLinecap="round" fill="none" />
+              </Svg>
+            </View>
           </View>
         ) : null}
       </View>
@@ -204,11 +217,11 @@ export function JakoScene({
             { top: insets.top + space[2] + 4, right: layout.screenPaddingX, backgroundColor: bubbleFill, paddingHorizontal: space[3], paddingVertical: space[1] },
           ]}
         >
-          <Handwritten size={16} color={dark ? premium.brand.light : premium.brand.dark} style={styles.bubbleText} testID="scene-bubble">
+          <Handwritten size={16} color={ink} style={styles.bubbleText} testID="scene-bubble">
             {bubble}
           </Handwritten>
           <Svg width={22} height={22} viewBox="0 0 22 22" style={styles.sparkle}>
-            <Path d="M4 4 L9 11 M13 3 L15 9 M2 12 L8 14" stroke={ink} strokeWidth={2} strokeLinecap="round" />
+            <Path d="M4 4 L9 11 M13 3 L15 9 M2 12 L8 14" stroke={premium.brand.primary} strokeWidth={2} strokeLinecap="round" />
           </Svg>
         </View>
       ) : null}
@@ -283,12 +296,13 @@ const styles = StyleSheet.create({
   logo: { position: 'absolute', left: 0, right: 0, top: 8, height: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   mark: { width: 26, height: 26 },
   wordmark: { fontWeight: '800', letterSpacing: -0.4 },
-  words: { maxWidth: '66%', zIndex: 1 },
-  // A 360pt phone: the gutters take a larger share of the width, so the
-  // words get a larger share too — «Восстановление» must stay one word.
-  wordsNarrow: { maxWidth: '72%' },
+  // Room on the right for the bubble's tail to breathe; the title wraps by
+  // word inside it and is never under the bird, which sits lower.
+  words: { paddingRight: '8%' },
   title: { fontWeight: '800' },
   titleNarrow: { fontSize: 26, lineHeight: 32 },
+  zone: { overflow: 'visible' },
+  noteZone: { position: 'absolute', top: 0, bottom: 0, justifyContent: 'center' },
   noteWrap: { alignSelf: 'flex-start', transform: [{ rotate: '-4deg' }], paddingRight: 8 },
   underline: { marginTop: -2, marginLeft: 6 },
   figure: { position: 'absolute' },

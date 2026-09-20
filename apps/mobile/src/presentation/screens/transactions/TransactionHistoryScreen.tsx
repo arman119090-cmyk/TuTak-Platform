@@ -69,16 +69,11 @@ export function TransactionHistoryScreen() {
       ) : (
         groups.map(([day, items]) => (
           <View key={day} style={{ marginBottom: space[5] }}>
-            <Text
-              style={[
-                text.overline,
-                { color: color.textTertiary, marginBottom: space[2], textTransform: 'uppercase' },
-              ]}
-            >
+            <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2], marginLeft: space[1] }]}>
               {day}
             </Text>
-            <Surface padded={false}>
-              <View style={{ paddingHorizontal: space[5] }}>
+            <Surface tone="subtle" padded={false}>
+              <View style={{ paddingHorizontal: space[4] }}>
                 {items.map((tx, i) => {
                   const tone = transactionTone(tx.type);
                   return (
@@ -107,11 +102,7 @@ export function TransactionHistoryScreen() {
                           <View
                             style={[
                               styles.icon,
-                              {
-                                backgroundColor:
-                                  tone === 'positive' ? color.availableSurface : color.surfaceSunken,
-                                borderRadius: radius.md,
-                              },
+                              { backgroundColor: color.surface, borderRadius: radius.md },
                             ]}
                           >
                             <Ionicons

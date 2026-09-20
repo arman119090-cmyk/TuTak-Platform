@@ -215,11 +215,16 @@ export const premiumBonusStateColors = {
  */
 export const premiumRadius = {
   none: 0,
-  sm: 8,
-  md: 14,
-  lg: 20,
-  xl: 24,
-  '2xl': 32,
+  /** Icon tiles, chips, tags. */
+  sm: 10,
+  /** Controls: buttons, inputs, search. */
+  md: 12,
+  /** Cards, grouped lists, the spotlight card. */
+  lg: 16,
+  /** The hero only — one per screen. */
+  xl: 20,
+  /** Reserved for a full-bleed sheet; never a card, never a control. */
+  '2xl': 24,
   full: 9999,
 } as const;
 
@@ -233,11 +238,23 @@ export const premiumRadius = {
  * since that is what keeps long text readable.
  */
 export const premiumTextWeights = {
-  balance: { fontWeight: '700' as const, letterSpacing: -1 },
-  balanceSm: { fontWeight: '700' as const, letterSpacing: -0.6 },
-  titleLg: { fontWeight: '700' as const, letterSpacing: -0.5 },
-  title: { fontWeight: '700' as const, letterSpacing: -0.4 },
-  headline: { fontWeight: '600' as const, letterSpacing: -0.2 },
+  // Semibold, not bold, on the light ground: 700 was chosen for white-on-
+  // black, where light text optically thins. On white the same weight
+  // reads heavy and the tracking that came with it (-1 / -0.5) crushes
+  // Armenian, whose glyphs sit wider than Latin. Tracking is kept gentle
+  // enough to read as set type in all three languages.
+  //
+  // Sizes, where they differ from `textStyles`, are the phone's: the shared
+  // scale was cut for dashboards on a 27" display, and a 26 pt page title on
+  // a 390 pt phone read as a poster. 24 for the page title, 20 for a screen
+  // title in a row, and the hero balance at 44 rather than 56 — the number
+  // should dominate the card, not the screen, and 56 wrapped a six-digit
+  // balance on a compact phone.
+  balance: { fontSize: 44, lineHeight: 50, fontWeight: '600' as const, letterSpacing: -0.8 },
+  balanceSm: { fontSize: 32, lineHeight: 38, fontWeight: '600' as const, letterSpacing: -0.5 },
+  titleLg: { fontSize: 24, lineHeight: 30, fontWeight: '600' as const, letterSpacing: -0.3 },
+  title: { fontSize: 20, lineHeight: 26, fontWeight: '600' as const, letterSpacing: -0.2 },
+  headline: { fontWeight: '600' as const, letterSpacing: -0.1 },
 } as const;
 
 /**

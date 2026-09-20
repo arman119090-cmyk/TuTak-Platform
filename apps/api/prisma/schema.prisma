@@ -1225,8 +1225,72 @@ model Partner {
   coverAsset               MediaAsset?               @relation("PartnerCoverAsset", fields: [coverAssetId], references: [id])
   mediaAssets              MediaAsset[]              @relation("MediaAssetSubjectPartner")
   partnerContributionRules PartnerContributionRule[]
+  promos                   PartnerPromo[]
 
   @@map("partners")
+}
+
+/// Where a tap on a Home "Partner Spotlight" card lands. Deliberately not a
+/// free URL: a curated placement points into the product, never out of it.
+enum PartnerPromoDestination {
+  /// The partner's own page in the app.
+  PARTNER
+  /// The Partners map, so a chain with many branches lands on "nearest".
+  PARTNERS_MAP
+}
+
+/// One curated placement in the Home "Partner Spotlight" strip.
+///
+/// This is a featured-partner list, not an advertising platform: a platform
+/// administrator writes each card by hand, chooses its artwork, and decides
+/// when it runs. A partner cannot create one from their own panel — an
+/// owner-account compromise must not be able to put anything on every
+/// customer's Home screen (the same reasoning as `MediaAssetStatus`).
+///
+/// Live = `active` AND the partner trades (`isActive`, `status = ACTIVE`)
+/// AND `startAt <= now` (or null) AND `endAt > now` (or null). An expired or
+/// inactive placement is never served, whatever `active` says — see
+/// `PromosService.featured`.
+model PartnerPromo {
+  id              String                  @id @default(uuid())
+  partnerId       String
+  /// The card's words, per interface language:
+  /// `{ hy?: { title, subtitle?, benefitLabel }, ru?: {...}, en?: {...} }`.
+  /// A locale counts as filled when it has a title and a benefit label.
+  /// The app asks for its own language; the API falls back
+  /// requested → ru → first filled locale (`promo-translations.ts`), and a
+  /// card with no filled locale at all is never served — an Armenian
+  /// interface must not show Russian copy just because that is what the
+  /// administrator typed first, and an empty translation must never render
+  /// as an empty card.
+  translations    Json                    @default("{}")
+  /// A `PROMO_ARTWORK` asset, or null while the administrator has not yet
+  /// uploaded one — the card then renders the partner's cover/logo fallback.
+  artworkAssetId  String?
+  destination     PartnerPromoDestination @default(PARTNER)
+  /// A paid placement carries a small "Promo" mark on the card. Off for an
+  /// editorial pick the platform simply wants to show.
+  sponsored       Boolean                 @default(false)
+  active          Boolean                 @default(false)
+  /// Higher first. Ties break on `createdAt` desc.
+  priority        Int                     @default(0)
+  startAt         DateTime?
+  endAt           DateTime?
+  /// Counted by the app only when the card was actually on screen — see
+  /// `PartnerSpotlight`'s viewability rule — not when the API returned it.
+  /// Plain counters, no per-person rows: nothing here identifies anyone.
+  impressionCount Int                     @default(0)
+  openCount       Int                     @default(0)
+  createdByUserId String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  partner      Partner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  artworkAsset MediaAsset? @relation("PartnerPromoArtwork", fields: [artworkAssetId], references: [id])
+
+  @@index([active, priority])
+  @@index([partnerId])
+  @@map("partner_promos")
 }
 
 /// Spec §3. What a partner can accept payment/data through. Deliberately
@@ -3689,6 +3753,10 @@ enum AuditAction {
   EV_SESSION_STOPPED
   PARTNER_CREATED
   PARTNER_UPDATED
+  /// Home "Partner Spotlight" placements — written by a platform
+  /// administrator only, so every change is somebody's decision on record.
+  PARTNER_PROMO_CREATED
+  PARTNER_PROMO_UPDATED
   ADMIN_ROLE_CHANGED
   FRAUD_FLAGGED
   ACCOUNT_LOCKED
@@ -3846,6 +3914,11 @@ enum MediaAssetKind {
   USER_AVATAR
   PARTNER_LOGO
   PARTNER_COVER
+  /// Artwork for one Home "Partner Spotlight" placement (`PartnerPromo`).
+  /// Uploaded only by a platform administrator and published on upload:
+  /// the two-party rule for logos exists because a partner uploads them;
+  /// nobody but an administrator can reach this kind at all.
+  PROMO_ARTWORK
 }
 
 enum MediaAssetStatus {
@@ -3927,6 +4000,7 @@ model MediaAsset {
   avatarOfUsers   User[]           @relation("UserAvatarAsset")
   logoOfPartners  Partner[]        @relation("PartnerLogoAsset")
   coverOfPartners Partner[]        @relation("PartnerCoverAsset")
+  artworkOfPromos PartnerPromo[]   @relation("PartnerPromoArtwork")
   brandedIntents  PurchaseIntent[] @relation("PurchaseIntentBrandLogo")
   brandedTxns     Transaction[]    @relation("TransactionBrandLogo")
 

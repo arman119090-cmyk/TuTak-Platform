@@ -53,7 +53,7 @@ on:
         required: true
         default: production-apk
         type: choice
-        options: [production-apk, preview, staging, diagnostic, development]
+        options: [production-apk, preview, staging-render, diagnostic, development]
       builder:
         description: 'local = build here on the GitHub runner, spends no EAS build credit. cloud = build on EAS, spends one credit and also leaves a download link on expo.dev.'
         required: true

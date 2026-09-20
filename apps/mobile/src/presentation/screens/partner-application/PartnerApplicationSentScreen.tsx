@@ -44,7 +44,7 @@ export function PartnerApplicationSentScreen({ navigation, route }: Props) {
         {t('partnerApplication.sentBody', { name: displayName })}
       </Text>
 
-      <Surface>
+      <Surface tone="subtle">
         <Row label={t('becomePartner.displayName')} value={displayName} />
         <Row label={t('becomePartner.category')} value={t(`partnerCategory.${category}`)} divided />
         <Row

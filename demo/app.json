@@ -5,12 +5,12 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "scheme": "tutakdemo",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0A0F"
+      "backgroundColor": "#F8F9FB"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -39,7 +39,16 @@
         "expo-camera",
         {
           "cameraPermission": "TuTak needs camera access to scan QR codes for payments.",
-          "recordAudioAndroid": false
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TuTak needs access to your photos to set a profile picture.",
+          "cameraPermission": "TuTak needs camera access to scan QR codes for payments.",
+          "microphonePermission": false
         }
       ]
     ],

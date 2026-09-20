@@ -239,7 +239,7 @@ export default function EarningsPage() {
         {collected.length === 0 ? (
           <EmptyState
             title="No collections yet"
-            message="Transfers you send TuTak to settle a balance in their favor will be listed here."
+            message="Transfers you send TuTak to settle a balance in their favour will be listed here."
           />
         ) : (
           <Table>

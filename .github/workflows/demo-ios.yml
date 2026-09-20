@@ -1,0 +1,140 @@
+# Builds the demonstration app for the iOS Simulator on EAS's Mac farm.
+#
+# This is the one iOS build this repository can make before an Apple
+# Developer account exists: a simulator build is not signed, so it needs no
+# certificate, no provisioning profile and no registered iPhone. What it
+# proves is that the iOS side of the app compiles at all — CocoaPods
+# resolution, every native module (camera, location, secure store, SVG,
+# WebView, the Android-only focus-trace module being correctly skipped),
+# the Info.plist the config plugins write. Until this is green, "iOS" is a
+# plan; after it, it is a signing problem.
+#
+# What it does not prove: anything on a real iPhone. The `.app` runs only in
+# Xcode's Simulator on a Mac. The step summary says how to install it there.
+#
+# Same source as demo-apk.yml — `demo/` with its mock adapter, no server,
+# any credentials accepted — and the same token. Needs only EXPO_TOKEN.
+name: Build demo iOS (simulator)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: demo-ios-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: EAS build (demo iOS simulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Refuse early if the token is missing
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Settings → Secrets and variables → Actions → New repository secret. Create the token at expo.dev → Account settings → Access tokens."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: The demo app matches the app it was generated from
+        # A stale demo/ would put a build of yesterday's app under today's
+        # commit. Same check ci.yml runs — and it runs BEFORE npm install,
+        # because `npm install` rewrites demo/package-lock.json (peer
+        # resolution differs between npm versions) and a check placed after
+        # it fails on that rewrite rather than on the generated sources. The
+        # first run of this workflow failed exactly that way.
+        run: |
+          scripts/build-demo-app.sh
+          if ! git diff --quiet -- demo; then
+            echo "::error::demo/ is out of date. Run scripts/build-demo-app.sh and commit the result."
+            git diff --stat -- demo
+            exit 1
+          fi
+
+      # `demo/` is a self-contained npm project on purpose (see
+      # scripts/build-demo-app.sh): no workspace, no pnpm, nothing the EAS
+      # builder has to understand about the monorepo. Same install as
+      # demo-apk.yml.
+      - name: Install the demo app
+        working-directory: demo
+        run: npm install --no-audit --no-fund
+
+      - name: Link the EAS project
+        working-directory: demo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli@latest init --non-interactive --force || true
+
+      - name: Build for the iOS Simulator on EAS
+        id: build
+        working-directory: demo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -o pipefail
+          npx eas-cli@latest build \
+            --platform ios --profile ios-simulator \
+            --non-interactive --wait --json > build.json 2> build.err || {
+              echo "::error::EAS refused or failed the build:"
+              tail -60 build.err
+              exit 1
+            }
+          URL=$(node -e "const b=require('./build.json');const r=Array.isArray(b)?b[0]:b;process.stdout.write(r.artifacts?.buildUrl||r.artifacts?.applicationArchiveUrl||'')")
+          ID=$(node -e "const b=require('./build.json');const r=Array.isArray(b)?b[0]:b;process.stdout.write(r.id||'')")
+          STATUS=$(node -e "const b=require('./build.json');const r=Array.isArray(b)?b[0]:b;process.stdout.write(r.status||'')")
+          echo "APP_URL: $URL"
+          echo "BUILD_ID: $ID"
+          echo "STATUS: $STATUS"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the simulator app
+        if: steps.build.outputs.url != ''
+        env:
+          URL: ${{ steps.build.outputs.url }}
+        run: |
+          curl -fsSL "$URL" -o tutak-demo-ios-simulator.tar.gz
+          ls -la tutak-demo-ios-simulator.tar.gz
+          sha256sum tutak-demo-ios-simulator.tar.gz | tee tutak-demo-ios-simulator.sha256
+          tar -tzf tutak-demo-ios-simulator.tar.gz | head -5
+
+      - uses: actions/upload-artifact@v4
+        if: steps.build.outputs.url != ''
+        with:
+          name: tutak-demo-ios-simulator
+          path: |
+            tutak-demo-ios-simulator.tar.gz
+            tutak-demo-ios-simulator.sha256
+          retention-days: 30
+
+      - name: Where to get it
+        if: always()
+        run: |
+          {
+            echo "## The demo app for the iOS Simulator"
+            echo ""
+            echo "**Commit:** ${{ github.sha }}"
+            echo ""
+            echo "**EAS status:** ${{ steps.build.outputs.status || 'no build record' }}"
+            if [ -n "${{ steps.build.outputs.url }}" ]; then
+              echo ""
+              echo "**From EAS:** ${{ steps.build.outputs.url }}"
+              echo ""
+              echo "**On this page:** scroll to **Artifacts** → **tutak-demo-ios-simulator** (a tar.gz with the \`.app\` and its SHA-256)."
+              echo ""
+              echo "On a Mac with Xcode: \`tar -xzf tutak-demo-ios-simulator.tar.gz && xcrun simctl boot 'iPhone 15' ; xcrun simctl install booted *.app && xcrun simctl launch booted am.tutak.demo\`."
+            else
+              echo ""
+              echo "No artifact was produced — the build step above says why."
+            fi
+            echo ""
+            echo "This does not install on an iPhone. A phone build needs the Apple Developer account and \`eas credentials --platform ios\` once — see docs/IOS_RELEASE_PREP_2026-09-19.md."
+          } >> "$GITHUB_STEP_SUMMARY"

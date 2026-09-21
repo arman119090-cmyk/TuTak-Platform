@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   ChevronDown, Heart, Menu, Phone, Scale, Search, ShoppingBag, User, X, Truck, Sparkles,
 } from 'lucide-react';
-import { brand, isDemoMode } from '@/config/brand';
+import { brand, brandName, isDemoMode } from '@/config/brand';
 import type { Dictionary, Locale } from '@/lib/i18n';
 import { LOCALES, localizePath } from '@/lib/i18n';
 import type { CategoryTree } from '@/lib/catalog/queries';
@@ -131,7 +131,7 @@ export const Header = ({
 
         {/* min-w-0 + truncate: a long brand name must give way to the burger
             and the cart icons on a narrow phone, not push them off-screen. */}
-        <Link href={`/${locale}`} className="flex min-w-0 shrink items-center gap-2" aria-label={brand.name}>
+        <Link href={`/${locale}`} className="flex min-w-0 shrink items-center gap-2" aria-label={brandName(locale)}>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
             {brand.monogram}
           </span>
@@ -139,7 +139,7 @@ export const Header = ({
             {/* Under 360px the monogram carries the brand on its own — a
                 wordmark truncated to one letter reads as a broken layout. */}
             <span className="hidden truncate font-display text-[13px] uppercase tracking-[0.02em] min-[360px]:block xs:text-[17px] xs:tracking-[0.1em] sm:text-xl sm:tracking-[0.12em]">
-              {brand.name}
+              {brandName(locale)}
             </span>
             <span className="mt-0.5 hidden text-[10px] uppercase tracking-[0.18em] text-muted sm:block">
               {dict.locale.switch === 'Язык' ? 'мебель и двери' : 'furniture & doors'}
@@ -299,7 +299,7 @@ export const Header = ({
           <div className="absolute inset-0 bg-ink/40" onClick={() => setMenuOpen(false)} />
           <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-sm flex-col bg-surface">
             <div className="flex h-16 items-center justify-between border-b border-line px-4">
-              <span className="font-display text-lg tracking-[0.14em]">{brand.name}</span>
+              <span className="font-display text-lg uppercase tracking-[0.1em]">{brandName(locale)}</span>
               <button type="button" onClick={() => setMenuOpen(false)} aria-label={dict.common.close} className="flex h-11 w-11 items-center justify-center">
                 <X width={22} height={22} />
               </button>

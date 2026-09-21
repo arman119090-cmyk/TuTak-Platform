@@ -1,4 +1,4 @@
-import { brand, siteUrl } from '@/config/brand';
+import { brand, brandName, siteUrl } from '@/config/brand';
 import type { Locale } from './i18n';
 import { htmlLang } from './i18n';
 
@@ -72,7 +72,11 @@ export const productJsonLd = ({
 export const organizationJsonLd = (locale: Locale): Record<string, unknown> => ({
   '@context': 'https://schema.org',
   '@type': 'FurnitureStore',
-  name: brand.name,
+  name: brandName(locale),
+  // The other spellings of the same shop, so search engines connect them.
+  alternateName: [...new Set(Object.values(brand.names))].filter(
+    (value) => value !== brandName(locale),
+  ),
   description: brand.tagline[locale],
   url: siteUrl,
   telephone: brand.contacts.phones.map((phone) => phone.dial),

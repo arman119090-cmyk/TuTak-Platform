@@ -166,10 +166,21 @@ apps/shop/
 
 ```bash
 NEXT_PUBLIC_BRAND_NAME="Hoviki Mebel"
+NEXT_PUBLIC_BRAND_NAME_HY="Հովիկի Մեբել"
+NEXT_PUBLIC_BRAND_NAME_RU="Ховики Мебель"
+NEXT_PUBLIC_BRAND_NAME_EN="Hoviki Mebel"
 NEXT_PUBLIC_BRAND_MONOGRAM="H"
 NEXT_PUBLIC_BRAND_PHONE="091200009"
 NEXT_PUBLIC_BRAND_PHONE_SECONDARY="095200003"
 ```
+
+Название магазина — такая же переводимая строка, как и всё остальное: в
+армянской версии сайта в шапке, подвале, `<title>`, Open Graph и JSON-LD стоит
+`Հովիկի Մեբել`, в русской — `Ховики Мебель`, в английской — `Hoviki Mebel`.
+Если название везде должно быть одним латинским словом, оставьте
+`NEXT_PUBLIC_BRAND_NAME_HY/RU/EN` пустыми — тогда во всех языках подставится
+`NEXT_PUBLIC_BRAND_NAME`. Написания на других языках попадают в JSON-LD как
+`alternateName`, чтобы поиск связывал их с одной организацией.
 
 Телефон можно писать как угодно — `091200009`, `+37491200009` или
 `+374 91 200009`: приложение само приведёт его к виду `+374 91 200009` для

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { Viewport } from 'next';
 import { notFound } from 'next/navigation';
 import '../globals.css';
-import { brand, siteUrl } from '@/config/brand';
+import { brand, brandName, siteUrl } from '@/config/brand';
 import { getDictionary, htmlLang, isLocale, LOCALES, type Locale } from '@/lib/i18n';
 import { getCategoryTree } from '@/lib/catalog/queries';
 import { getSession } from '@/lib/auth/session';
@@ -30,8 +30,8 @@ export const generateMetadata = async ({
   return {
     metadataBase: new URL(siteUrl),
     title: {
-      default: `${brand.name} — ${brand.tagline[current]}`,
-      template: `%s — ${brand.name}`,
+      default: `${brandName(current)} — ${brand.tagline[current]}`,
+      template: `%s — ${brandName(current)}`,
     },
     description: brand.tagline[current],
     alternates: {
@@ -40,8 +40,8 @@ export const generateMetadata = async ({
     },
     openGraph: {
       type: 'website',
-      siteName: brand.name,
-      title: `${brand.name} — ${brand.tagline[current]}`,
+      siteName: brandName(current),
+      title: `${brandName(current)} — ${brand.tagline[current]}`,
       description: brand.tagline[current],
       locale: htmlLang(current),
       url: `${siteUrl}/${current}`,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { brand, parsePhone, primaryPhone, siteUrl } from '@/config/brand';
+import { brand, brandName, parsePhone, primaryPhone, siteUrl } from '@/config/brand';
 
 /**
  * The brand is configuration, so these tests pin the contract the rest of the
@@ -37,6 +37,29 @@ describe('brand configuration', () => {
   it('leaves an unrecognisable number visible instead of mangling it', () => {
     const odd = parsePhone('123');
     expect(odd.display).toBe('123');
+  });
+
+  it('gives the name in each of the three languages', () => {
+    for (const locale of ['hy', 'ru', 'en'] as const) {
+      expect(brandName(locale).trim().length).toBeGreaterThan(0);
+    }
+    expect(brandName('hy')).toBe(brand.names.hy);
+    expect(brandName('ru')).toBe(brand.names.ru);
+    expect(brandName('en')).toBe(brand.names.en);
+  });
+
+  // Only the shipped defaults are script-checked: an owner is free to override
+  // the variables with one Latin wordmark for all three languages.
+  it('writes the default Armenian and Russian names in their own scripts', () => {
+    if (!process.env.NEXT_PUBLIC_BRAND_NAME_HY) {
+      expect(brandName('hy')).toMatch(/\p{Script=Armenian}/u);
+    }
+    if (!process.env.NEXT_PUBLIC_BRAND_NAME_RU) {
+      expect(brandName('ru')).toMatch(/\p{Script=Cyrillic}/u);
+    }
+    if (!process.env.NEXT_PUBLIC_BRAND_NAME_EN) {
+      expect(brandName('en')).toMatch(/^[\p{Script=Latin}\s.'-]+$/u);
+    }
   });
 
   it('drops the trailing slash from the site URL so canonicals do not double it', () => {

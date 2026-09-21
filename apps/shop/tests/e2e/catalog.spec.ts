@@ -146,4 +146,18 @@ test.describe('catalogue', () => {
     await page.waitForURL(/\/en\/catalog\/sofas/);
     await expect(page.getByRole('heading', { name: 'Sofas' })).toBeVisible();
   });
+
+  test('the shop name is written in the language of the page', async ({ page }) => {
+    const names = { hy: 'Հովիկի Մեբել', ru: 'Ховики Мебель', en: 'Hoviki Mebel' };
+    for (const [locale, name] of Object.entries(names)) {
+      await page.goto(`/${locale}`);
+      await settle(page);
+      // The wordmark is upper-cased by CSS, so match the accessible name of
+      // the logo link instead of the rendered glyphs.
+      await expect(page.getByRole('link', { name, exact: true }).first()).toBeVisible();
+      for (const other of Object.values(names).filter((value) => value !== name)) {
+        await expect(page.getByText(other, { exact: true })).toHaveCount(0);
+      }
+    }
+  });
 });

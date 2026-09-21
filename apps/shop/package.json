@@ -10,7 +10,7 @@
     "dev": "next dev --port ${PORT:-3100}",
     "build": "prisma generate && next build",
     "start": "next start --port ${PORT:-3100}",
-    "lint": "next lint --dir src",
+    "lint": "eslint src tests",
     "format": "prettier --write \"{src,prisma,tests}/**/*.{ts,tsx,css,json,md}\"",
     "format:check": "prettier --check \"{src,prisma,tests}/**/*.{ts,tsx,css,json,md}\"",
     "typecheck": "tsc --noEmit",

@@ -53,9 +53,26 @@ const phones = [
   .filter((value) => value.trim().length > 0)
   .map(parsePhone);
 
+const baseName = env('NEXT_PUBLIC_BRAND_NAME', 'Hoviki Mebel');
+
+/**
+ * The shop name per language.
+ *
+ * An Armenian shop often writes its name in Armenian letters for local
+ * customers and in Latin for everyone else, so the name is a translation like
+ * any other string. Leave a locale's variable empty and it falls back to the
+ * base name, which keeps a single Latin wordmark everywhere.
+ */
+const localizedNames = {
+  hy: env('NEXT_PUBLIC_BRAND_NAME_HY', 'Հովիկի Մեբել') || baseName,
+  ru: env('NEXT_PUBLIC_BRAND_NAME_RU', 'Ховики Мебель') || baseName,
+  en: env('NEXT_PUBLIC_BRAND_NAME_EN', 'Hoviki Mebel') || baseName,
+} as const;
+
 export const brand = {
-  name: env('NEXT_PUBLIC_BRAND_NAME', 'Hoviki Mebel'),
-  legalName: env('NEXT_PUBLIC_BRAND_LEGAL_NAME', 'Hoviki Mebel'),
+  name: baseName,
+  names: localizedNames,
+  legalName: env('NEXT_PUBLIC_BRAND_LEGAL_NAME', baseName),
   domain: env('NEXT_PUBLIC_SITE_URL', 'http://localhost:3100'),
   /// Short brand mark used by the logo lockup and the generated artwork.
   monogram: env('NEXT_PUBLIC_BRAND_MONOGRAM', 'H'),
@@ -79,6 +96,9 @@ export const brand = {
   /// Showroom opening hours, shown in the footer and on the contacts page.
   hours: { weekdays: '10:00 — 20:00', weekend: '11:00 — 18:00' },
 } as const;
+
+/** The shop name as written in the given language. */
+export const brandName = (locale: 'hy' | 'ru' | 'en'): string => brand.names[locale];
 
 /** The number used wherever a single phone has to be shown. */
 export const primaryPhone: Phone = brand.contacts.phones[0] ?? {

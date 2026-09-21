@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Mail, MapPin, Phone, Send, MessageCircle } from 'lucide-react';
-import { brand } from '@/config/brand';
+import { brand, brandName } from '@/config/brand';
 import { CONTENT_PAGES } from '@/data/content-pages';
 import type { Dictionary, Locale } from '@/lib/i18n';
 import { fill } from '@/lib/i18n';
@@ -28,7 +28,7 @@ export const Footer = ({
             <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
               {brand.monogram}
             </span>
-            <span className="font-display text-xl uppercase tracking-[0.12em]">{brand.name}</span>
+            <span className="font-display text-xl uppercase tracking-[0.12em]">{brandName(locale)}</span>
           </Link>
           <p className="mt-4 max-w-sm text-sm text-muted">{brand.tagline[locale]}</p>
           <div className="mt-5 space-y-2.5 text-sm">
@@ -137,7 +137,7 @@ export const Footer = ({
       <div className="border-t border-line">
         <div className="container-page flex flex-col gap-3 py-5 text-[12px] text-muted md:flex-row md:items-center md:justify-between">
           <p>
-            © {new Date().getFullYear()} {brand.legalName}. {dict.footer.rights}.
+            © {new Date().getFullYear()} {brandName(locale)}. {dict.footer.rights}.
           </p>
           <p className="max-w-2xl md:text-right">{dict.footer.demoNotice}</p>
         </div>

@@ -84,8 +84,10 @@ test.describe('admin panel', () => {
     await russianBlock.getByLabel(/^Название/).fill(`E2E диван ${suffix}`);
 
     await page.getByRole('button', { name: 'Сохранить' }).click();
-    await expect(page.getByText('Сохранено')).toBeVisible({ timeout: 20_000 });
-    await page.waitForURL(/\/admin\/products\/[a-z0-9]+/);
+    // A successful create redirects to the edit route, which remounts the
+    // editor and clears the "Сохранено" message — so the redirect, not the
+    // message, is what proves the product was created.
+    await page.waitForURL(/\/admin\/products\/[a-z0-9]+/, { timeout: 20_000 });
     // The redirect re-mounts the editor with server data; wait for it to settle
     // before typing, otherwise the edit lands on the old form instance.
     await page.waitForLoadState('networkidle');

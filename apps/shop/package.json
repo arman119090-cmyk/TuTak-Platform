@@ -20,6 +20,7 @@
     "prisma:reset": "prisma migrate reset --force",
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
+    "seed:if-empty": "tsx scripts/seed-if-empty.ts",
     "setup": "tsx scripts/setup.ts",
     "test": "vitest run",
     "test:watch": "vitest",

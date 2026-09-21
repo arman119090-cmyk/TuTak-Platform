@@ -73,7 +73,13 @@ export const brand = {
   name: baseName,
   names: localizedNames,
   legalName: env('NEXT_PUBLIC_BRAND_LEGAL_NAME', baseName),
-  domain: env('NEXT_PUBLIC_SITE_URL', 'http://localhost:3100'),
+  /**
+   * Public address of the deployment. `SITE_URL` is read at runtime, so a
+   * hosting provider that only learns the address after the first deploy can
+   * set it without rebuilding the image; it is only ever read on the server
+   * (metadata, robots.txt, sitemap, JSON-LD), never in the browser bundle.
+   */
+  domain: env('SITE_URL', env('NEXT_PUBLIC_SITE_URL', 'http://localhost:3100')),
   /// Short brand mark used by the logo lockup and the generated artwork.
   monogram: env('NEXT_PUBLIC_BRAND_MONOGRAM', 'H'),
   tagline: {

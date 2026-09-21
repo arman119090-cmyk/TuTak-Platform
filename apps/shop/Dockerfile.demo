@@ -38,6 +38,7 @@ RUN mkdir -p "$PGDATA" && chown postgres:postgres "$PGDATA" \
   && su postgres -c "initdb -D $PGDATA -U demo --auth=trust" \
   && su postgres -c "pg_ctl -D $PGDATA -o '-c listen_addresses=127.0.0.1' -w start" \
   && su postgres -c "createdb -U demo furniture_shop" \
+  && npx prisma generate \
   && npx prisma migrate deploy \
   && npx tsx prisma/seed.ts \
   && npm run build \

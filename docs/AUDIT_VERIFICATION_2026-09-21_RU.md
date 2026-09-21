@@ -2,7 +2,7 @@
 
 Дата: 21 сентября 2026. Ветка `claude/audit-verification-20260921`.
 База: `aec987b417de9cded5449486963624146b452d6c` (голова `claude/hybrid-payments-20260920`, PR #64).
-Итоговый SHA: заполняется в разделе 2 после последнего коммита.
+PR: #65 (`claude/audit-verification-20260921` → `claude/hybrid-payments-20260920`). Последний коммит с кодом — `fbaf56a`.
 
 ---
 
@@ -48,7 +48,7 @@ prepaid top-up, live EV не включались; Idram-платежи не п�
 | Почему не `main` | 13 из 18 находок аудита относятся к коду гибридной модели (#64): PSP capture, POS checkout, prepaid refund split, funding breakdown, app lock. На `main` этого кода нет. D02, D03, D05, D13, D16 присутствуют и на `main`; их исправление доедет до production вместе с #64 |
 | Ветка | `claude/audit-verification-20260921` (от `aec987b`, история линейная, без force push) |
 | Коммиты | `657a5ef` API: D01–D04, D09, D12 · `df07dd0` API: D10, D11, D17, D18 · `fcf1e48` API: D05, D06 · `c268804` mobile/admin: D06–D08, D13–D16 · `fbaf56a` demo + alert specs |
-| Итоговый SHA | см. последнюю строку `git log` ветки; PR открыт на базу `claude/hybrid-payments-20260920` |
+| Итоговый SHA | голова PR #65 (`https://github.com/arman119090-cmyk/TuTak-Platform/pull/65`); последний коммит с кодом — `fbaf56a`, далее только `docs/` |
 | Объём | 54 файла вне `demo/`, +2567 / −335 строк; 1 миграция |
 
 Ancestry: `aec987b` — предок HEAD; `origin/main 369eda1` — предок `aec987b`.
@@ -162,7 +162,7 @@ Ancestry: `aec987b` — предок HEAD; `origin/main 369eda1` — предо�
 | API `pnpm typecheck` (build + spec) | 0 ошибок |
 | API eslint | 0 ошибок (после правки `require-await` в новом spec) |
 | API unit (`--selectProjects unit`) | 58 suites, 747/747 |
-| API integration, полный прогон (`--selectProjects integration`, serial) | см. раздел 5.1 |
+| API integration, полный прогон (`--selectProjects integration`, serial, локальный PostgreSQL 16) | 125 suites, 1594/1594 |
 | `audit-2109-allocation` до исправления / после | 7 из 8 красных / 8 из 8 зелёных |
 | `audit-2109-purchase-atomicity` | 2/2 |
 | `audit-2109-psp-unresolved` | 2/2 |
@@ -178,7 +178,10 @@ Ancestry: `aec987b` — предок HEAD; `origin/main 369eda1` — предо�
 
 ### 5.1 Полный integration-прогон
 
-Заполнено после завершения прогона — см. конец файла, раздел 11.
+125 suites, 1594 теста, 0 падений, на коде `fbaf56a` (последний коммит с кодом; далее только `docs/`).
+Для сравнения: на базе `aec987b` было 1494 + новые в этой ветке (allocation 8, atomicity 2, psp-unresolved 2, checkout +7) и
+существующие suites, затронутые классификацией проводок, — все зелёные без правок ожиданий, кроме двух alert-spec
+(точная форма `AlertDelivery` дополнена полем `retryable`).
 
 ---
 
@@ -239,8 +242,8 @@ Ancestry: `aec987b` — предок HEAD; `origin/main 369eda1` — предо�
 4. Миграция `20260921100000` на production — не применялась (только локально + shadow drift).
    Expand-only (ADD COLUMN DEFAULT + UPDATE), но rollback-rehearsal не проводился.
 5. Доставка alert живому получателю (D05) — канал не настроен у владельца.
-6. CI GitHub Actions на итоговом SHA — статус фиксируется в PR после открытия; на момент написания
-   раздела результата нет (см. раздел 11).
+6. CI GitHub Actions на итоговом SHA — на момент записи прогон на `d3ed01a` (run 35597499881) шёл; результат
+   фиксируется комментарием в PR #65, здесь не переписывается, чтобы не плодить коммиты отчёта.
 7. Backup/PITR с непустыми финансовыми таблицами, proxy depth, Sentry runtime SHA, S3, MapTiler,
    APK, rollback — не проверялись в этом задании.
 8. Скриншоты новых экранов (lock «хранилище недоступно», UNRESOLVED, stale notice, LoadFailed)
@@ -311,4 +314,7 @@ Gates watch (PR #60): без изменений — `ALERT_TELEGRAM_CHAT_ID` н�
 
 ## 11. Дополнение после полного прогона
 
-(заполняется ниже)
+- Полный integration-прогон: 125 suites, 1594/1594, exit 0 (раздел 5.1).
+- Все локальные проверки из раздела 5 выполнены на коде `fbaf56a`.
+- CI на PR #65 — см. PR (комментарий с результатом после завершения прогона).
+- Ветка запушена без force push; PR #65 открыт на базу `claude/hybrid-payments-20260920`, не на `main`; merge — только по отдельному поручению.

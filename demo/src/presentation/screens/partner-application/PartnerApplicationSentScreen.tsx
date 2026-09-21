@@ -2,12 +2,12 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { formatRate } from './CashbackRateField';
 import type { RootStackParamList } from '../../../app/navigation/types';
+import { JakoScene } from '../../components/JakoScene';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PartnerApplicationSent'>;
 
@@ -30,20 +30,18 @@ export function PartnerApplicationSentScreen({ navigation, route }: Props) {
   const { displayName, category, rateBps, taxId } = route.params;
 
   return (
-    <Screen title={t('partnerApplication.title')}>
-      <Text
-        style={[
-          text.titleLg,
-          { color: color.textPrimary, marginTop: space[6], marginBottom: space[3] },
-        ]}
-      >
-        {t('partnerApplication.sentTitle')}
-      </Text>
-
-      <Text style={[text.body, { color: color.textSecondary, marginBottom: space[7] }]}>
+    <JakoScene
+      state="partner-submitted"
+      title={t('partnerApplication.sentTitle')}
+      note={t('scene.note.partnerSubmitted')}
+      bubble={t('scene.bubble')}
+    >
+      {/* The body goes on the sheet, not the stage: it names the shop and
+          runs to three lines in Armenian, which is more than fits beside
+          Jako without running over his clipboard. */}
+      <Text style={[text.body, { color: color.textSecondary, marginBottom: space[6] }]}>
         {t('partnerApplication.sentBody', { name: displayName })}
       </Text>
-
       <Surface tone="subtle">
         <Row label={t('becomePartner.displayName')} value={displayName} />
         <Row label={t('becomePartner.category')} value={t(`partnerCategory.${category}`)} divided />
@@ -79,7 +77,7 @@ export function PartnerApplicationSentScreen({ navigation, route }: Props) {
           onPress={() => navigation.navigate('Main')}
         />
       </View>
-    </Screen>
+    </JakoScene>
   );
 }
 

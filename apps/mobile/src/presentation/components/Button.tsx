@@ -56,7 +56,7 @@ export function Button({
   // sets `overflow: 'hidden'`, so a fixed box kept its size while the label
   // grew and the characters were simply cut off. A button whose text reads
   // "Log i" is not a smaller button, it is a broken one.
-  const minHeight = size === 'lg' ? 52 : size === 'md' ? 44 : 36;
+  const minHeight = size === 'lg' ? 56 : size === 'md' ? 44 : 36;
 
   const surface: Record<Variant, string> = {
     primary: pressed ? color.primaryPressed : color.primary,
@@ -95,9 +95,12 @@ export function Button({
     </>
   );
 
+  // A pill for the one large action on a screen; the smaller sizes keep the
+  // control radius so a row of them still lines up with the fields.
+  const shapeRadius = size === 'lg' ? radius.full : radius.md;
   const shape: ViewStyle = {
     minHeight,
-    borderRadius: radius.md,
+    borderRadius: shapeRadius,
     paddingHorizontal: space[5],
     // So a label that has grown has somewhere to grow into rather than
     // pressing against the edge of the box.
@@ -105,7 +108,7 @@ export function Button({
   };
 
   return (
-    <Animated.View style={[{ transform: [{ scale }], borderRadius: radius.md }, fullWidth && styles.full]}>
+    <Animated.View style={[{ transform: [{ scale }], borderRadius: shapeRadius }, fullWidth && styles.full]}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}

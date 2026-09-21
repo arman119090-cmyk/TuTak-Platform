@@ -1,9 +1,4 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
-import { BackButton } from '../../components/BackButton';
-import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -12,6 +7,8 @@ import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { JakoScene } from '../../components/JakoScene';
+import { DataSafeNote } from '../../components/DataSafeNote';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
@@ -24,8 +21,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
  */
 export function ForgotPasswordScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { color, space, text, layout } = useTheme();
-  const compact = useCompactLayout();
+  const { color } = useTheme();
 
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -49,31 +45,13 @@ export function ForgotPasswordScreen({ navigation }: Props) {
   const canSubmit = phone.length === 8 && !loading;
 
   return (
-    <SafeAreaView
-      style={[styles.flex, { backgroundColor: color.background }]}
-      edges={['top', 'bottom']}
+    <JakoScene
+      state="reset-password"
+      title={t('auth.forgotPasswordTitle')}
+      subtitle={t('auth.forgotPasswordSubtitle')}
+      note={t('scene.note.reset')}
+      bubble={t('scene.bubble')}
     >
-        <KeyboardAwareScroll
-          contentContainerStyle={[
-            styles.content,
-            { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
-          ]}
-        >
-          {/* Every navigator here sets headerShown: false, so this is the
-              only way off the screen besides Android's hardware button. */}
-          <BackButton />
-          <Text style={[text.titleLg, { color: color.textPrimary }]}>
-            {t('auth.forgotPasswordTitle')}
-          </Text>
-          <Text
-            style={[
-              text.bodySm,
-              { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] },
-            ]}
-          >
-            {t('auth.forgotPasswordSubtitle')}
-          </Text>
-
           <TextField
             label={t('auth.phoneNumber')}
             prefix="+374"
@@ -92,12 +70,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             disabled={!canSubmit}
             icon={<JakoWingMark size={16} color={color.textInverse} />}
           />
-        </KeyboardAwareScroll>
-    </SafeAreaView>
+          <DataSafeNote />
+    </JakoScene>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: { flexGrow: 1, paddingBottom: 40 },
-});

@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
-import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
@@ -15,6 +14,7 @@ import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import { walletApi } from '../../../data/api/walletApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
+import { JakoScene } from '../../components/JakoScene';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeleteAccount'>;
 
@@ -77,13 +77,20 @@ export function DeleteAccountScreen({ navigation }: Props) {
   };
 
   return (
-      <Screen title={t('settings.deleteAccount')}>
+    <JakoScene
+      state="confirm"
+      size="compact"
+      title={t('settings.deleteAccount')}
+      note={t('scene.note.confirm')}
+    >
         <View>
           <View style={styles.heading}>
             <View
               style={[
                 styles.warnIcon,
-                { backgroundColor: color.dangerSurface, borderRadius: radius.md },
+                // Round, like every other status mark in the app now; the
+                // square tile was the one left of its kind.
+                { backgroundColor: color.dangerSurface, borderRadius: radius.full },
               ]}
             >
               <Ionicons name="warning-outline" size={20} color={color.dangerText} />
@@ -140,7 +147,7 @@ export function DeleteAccountScreen({ navigation }: Props) {
             icon={<JakoWingMark size={16} color={color.textBrand} />}
           />
         </View>
-      </Screen>
+    </JakoScene>
   );
 }
 

@@ -26,3 +26,15 @@ jest.mock('expo-image', () => {
   const { Image } = require('react-native');
   return { __esModule: true, Image };
 });
+
+/**
+ * `expo-font` reaches a native loader that does not exist under Jest. The
+ * handwriting face is decorative (see `Handwritten.tsx`), so the tests run
+ * as if it had loaded: what they assert is that the note is rendered with
+ * the right words, which is the same in either font.
+ */
+jest.mock('expo-font', () => ({
+  useFonts: () => [true, null],
+  isLoaded: () => true,
+  loadAsync: async () => undefined,
+}));

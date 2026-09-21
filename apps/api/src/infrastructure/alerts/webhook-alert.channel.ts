@@ -60,14 +60,14 @@ export class WebhookAlertChannel implements AlertChannel {
       if (!response.ok) {
         const detail = `webhook answered ${response.status} ${response.statusText}`.trim();
         this.logger.error(`Alert '${alert.key}' was not accepted by the webhook: ${detail}`);
-        return { delivered: false, detail };
+        return { delivered: false, detail, retryable: true };
       }
       return { delivered: true, detail: `webhook answered ${response.status}` };
     } catch (err) {
       // Deliberately swallowed — see the note on AlertChannel — but reported.
       const detail = `webhook unreachable: ${err instanceof Error ? err.message : String(err)}`;
       this.logger.error(`Alert '${alert.key}' could not be delivered: ${detail}`);
-      return { delivered: false, detail };
+      return { delivered: false, detail, retryable: true };
     }
   }
 }

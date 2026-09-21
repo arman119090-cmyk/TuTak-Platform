@@ -71,7 +71,7 @@ export class TelegramAlertChannel implements AlertChannel {
           `telegram answered ${response.status}${description ? ` (${description})` : ''}`,
         );
         this.logger.error(`Alert '${alert.key}' was not accepted by Telegram: ${detail}`);
-        return { delivered: false, detail };
+        return { delivered: false, detail, retryable: true };
       }
       return { delivered: true, detail: `telegram answered ${response.status}` };
     } catch (err) {
@@ -79,7 +79,7 @@ export class TelegramAlertChannel implements AlertChannel {
         `telegram unreachable: ${err instanceof Error ? err.message : String(err)}`,
       );
       this.logger.error(`Alert '${alert.key}' could not be delivered: ${detail}`);
-      return { delivered: false, detail };
+      return { delivered: false, detail, retryable: true };
     }
   }
 

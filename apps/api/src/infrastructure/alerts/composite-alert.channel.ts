@@ -28,6 +28,7 @@ export class CompositeAlertChannel implements AlertChannel {
             channel: channel.name,
             delivered: false,
             detail: `channel threw: ${err instanceof Error ? err.message : String(err)}`,
+            retryable: true,
           };
         }
       }),
@@ -48,6 +49,9 @@ export class CompositeAlertChannel implements AlertChannel {
     return {
       delivered,
       detail: results.map((r) => `${r.channel}: ${r.detail}`).join('; '),
+      // Worth retrying when nobody was told and at least one receiver
+      // failed in a way a retry could fix.
+      ...(delivered ? {} : { retryable: results.some((r) => r.retryable === true) }),
     };
   }
 }

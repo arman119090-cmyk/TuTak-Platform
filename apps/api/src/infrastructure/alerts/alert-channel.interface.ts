@@ -41,6 +41,14 @@ export interface AlertDelivery {
   delivered: boolean;
   /** Human-readable: the status code, the transport error, or what happened instead. */
   detail: string;
+  /**
+   * The receiver *could* have accepted this and did not — a transport
+   * error, a timeout, a non-2xx. A retry may succeed, so `AlertsService`
+   * shortens the suppression window instead of letting a failed send
+   * silence the key for the full one (audit 21.09.2026, D05). Left unset
+   * by a channel that cannot deliver by design (the console).
+   */
+  retryable?: boolean;
 }
 
 export interface AlertChannel {

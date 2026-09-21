@@ -46,6 +46,15 @@ export type CustomerPaymentProgress =
   | { state: 'SUCCEEDED'; attemptId: string }
   /** The provider said, authoritatively, that no money moved. */
   | { state: 'FAILED'; attemptId: string }
+  /**
+   * The platform stopped waiting and nothing authoritative has said whether
+   * the money moved (audit 21.09.2026, D06). Not `WAITING_PROVIDER`: nobody
+   * is waiting for the provider's page any more, and telling the customer
+   * so is what keeps them from paying at the till on top. Not
+   * `REQUIRES_RECONCILIATION` either: no person has been asked yet; the
+   * ageing sweep escalates it there.
+   */
+  | { state: 'UNRESOLVED'; attemptId: string }
   /** Nobody can say yet. A human is looking. */
   | { state: 'REQUIRES_RECONCILIATION'; attemptId: string };
 
@@ -500,6 +509,9 @@ export class PspPaymentService {
     });
     if (queued > 0) return { state: 'PROCESSING', attemptId: attempt.id };
 
+    if (attempt.status === PspAttemptStatus.EXPIRED) {
+      return { state: 'UNRESOLVED', attemptId: attempt.id };
+    }
     return { state: 'WAITING_PROVIDER', attemptId: attempt.id };
   }
 

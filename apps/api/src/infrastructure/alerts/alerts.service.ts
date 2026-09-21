@@ -16,6 +16,21 @@ import { REDIS_CLIENT } from '../redis/redis-client.token';
 const SUPPRESS_WINDOW_SECONDS = 15 * 60;
 
 /**
+ * The window after a send that *failed* (audit 21.09.2026, D05).
+ *
+ * The suppression key used to be claimed before the send and kept for the
+ * full fifteen minutes whatever the receiver answered, so a webhook that was
+ * down for one second silenced that key for a quarter of an hour — a failed
+ * alert counted as a delivered one. Now a failed send shortens the window
+ * to this, doubling on every consecutive failure up to the full window, so
+ * a receiver that is back a minute later hears about the problem a minute
+ * later, and one that is down for good is retried at the ordinary cadence
+ * rather than once. Bounded backoff is the storm protection; the key is
+ * never released outright.
+ */
+const RETRY_WINDOW_SECONDS = 60;
+
+/**
  * The one place code asks for a human to be told something.
  *
  * Two properties matter more than the transport:
@@ -68,7 +83,9 @@ export class AlertsService {
         };
       }
 
-      return this.outcome(await this.channel.send(alert));
+      const delivery = await this.channel.send(alert);
+      await this.settleWindow(alert.key, delivery);
+      return this.outcome(delivery);
     } catch (err) {
       // Redis being down must not take the alert with it: send anyway and
       // accept the possibility of repeats. An operator complaining about
@@ -84,6 +101,38 @@ export class AlertsService {
         detail: `channel threw: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`,
       }));
       return this.outcome(delivery);
+    }
+  }
+
+  /**
+   * After a send: a delivered alert keeps the full window and clears the
+   * failure streak; a retryable failure shortens the window to the bounded
+   * backoff. Best-effort — Redis failing here only means the full window
+   * stands, which is the old behaviour, not a new failure.
+   */
+  private async settleWindow(key: string, delivery: AlertDelivery): Promise<void> {
+    const sentKey = `alert:sent:${key}`;
+    const failuresKey = `alert:failures:${key}`;
+    try {
+      if (delivery.delivered) {
+        await this.redis.del(failuresKey);
+        return;
+      }
+      if (!delivery.retryable) return;
+      const failures = await this.redis.incr(failuresKey);
+      // Twice the full window: a receiver that is down for good keeps its
+      // streak (and the long window) instead of cycling back to a minute.
+      await this.redis.expire(failuresKey, SUPPRESS_WINDOW_SECONDS * 2);
+      const window = Math.min(RETRY_WINDOW_SECONDS * 2 ** Math.max(0, failures - 1), SUPPRESS_WINDOW_SECONDS);
+      // XX: only shorten a window this fire owns; never create one.
+      await this.redis.set(sentKey, Date.now().toString(), 'EX', window, 'XX');
+      this.logger.warn(
+        `Alert '${key}' was not delivered (${delivery.detail}); retry allowed in ${window}s (failure ${failures})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Could not record the delivery outcome for '${key}': ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

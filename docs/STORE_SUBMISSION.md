@@ -36,11 +36,11 @@ Both stores check these, and Google checks the deletion page specifically.
 
 | Page | In this repository | Status |
 | --- | --- | --- |
-| Privacy policy | `public/privacy.html` | **Written, needs the operator's details and a legal review** |
-| Account deletion | `public/account-deletion.html` | Written |
+| Privacy policy | `apps/api/public/legal/privacy.html` | **Written, needs the operator's details and a legal review** |
+| Account deletion | `apps/api/public/legal/account-deletion.html` | Written |
 | Support contact | — | An email address is enough; it must be monitored |
 
-`public/privacy.html` describes what the software genuinely does, and every
+`apps/api/public/legal/privacy.html` describes what the software genuinely does, and every
 retention period in it is read from `apps/api/src/config/configuration.ts`
 rather than invented. What it cannot do is be legally sufficient on its own:
 replace `[OPERATOR]`, `[ADDRESS]` and `[CONTACT EMAIL]`, and have a lawyer

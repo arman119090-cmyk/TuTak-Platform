@@ -9,12 +9,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { DemoOnly } from '../../components/DemoOnly';
 import { JakoWingMark } from '../../components/V2NavIcon';
-import { parseBranchQrToken, parsePartnerPayQr } from '../../utils/partnerPayQr';
+import { parseBranchQrToken, parsePartnerPayQr, parseCheckoutToken } from '../../utils/partnerPayQr';
 import { partnerBranchQrApi } from '../../../data/api/partnerBranchQrApi';
+import { partnerCheckoutApi } from '../../../data/api/partnerCheckoutApi';
 
 /**
  * NEXT_CLAUDE_TASK.md requirement 1: scanning a partner's payment code opens
@@ -47,6 +47,33 @@ export function ScanQrScreen() {
     // all — only the server can say what it names, and an unresolvable
     // token (revoked, unknown, or a since-closed branch) is a scan
     // failure, never a fallback to the plain form below.
+    // A till-opened purchase: the gross is the till's, the token is all the
+    // code carries, and only the server can say what it names. An expired
+    // or claimed token is a scan failure, never a fallback to the form.
+    const checkoutToken = parseCheckoutToken(data);
+    if (checkoutToken) {
+      setScanned(true);
+      partnerCheckoutApi
+        .resolve(checkoutToken)
+        .then((resolved) => {
+          navigation.replace('CreatePurchaseIntent', {
+            partnerId: resolved.partnerId,
+            partnerBranchId: resolved.partnerBranchId ?? undefined,
+            partnerName: resolved.partnerDisplayName,
+            checkout: {
+              token: checkoutToken,
+              checkoutId: resolved.checkoutId,
+              grossAmount: resolved.grossAmount,
+            },
+          });
+        })
+        .catch(() => {
+          setScanned(false);
+          setInvalid(true);
+        });
+      return;
+    }
+
     const branchToken = parseBranchQrToken(data);
     if (branchToken) {
       setScanned(true);
@@ -87,7 +114,7 @@ export function ScanQrScreen() {
   if (!permission.granted) {
     return (
       <Screen title={t('qr.scanQr')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <View
             style={[
               styles.permIcon,
@@ -114,7 +141,7 @@ export function ScanQrScreen() {
             fullWidth={false}
             icon={<JakoWingMark size={16} color={color.textInverse} />}
           />
-        </Surface>
+        </View>
       </Screen>
     );
   }
@@ -122,7 +149,7 @@ export function ScanQrScreen() {
   if (invalid) {
     return (
       <Screen title={t('qr.scanQr')}>
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
+        <View style={{ alignItems: 'center', paddingVertical: space[8] }}>
           <Ionicons name="alert-circle-outline" size={32} color={color.dangerText} />
           <Text
             style={[
@@ -132,7 +159,7 @@ export function ScanQrScreen() {
           >
             {t('qr.invalidCode')}
           </Text>
-        </Surface>
+        </View>
         <View style={{ marginTop: space[5] }}>
           <Button
             label={t('common.retry')}

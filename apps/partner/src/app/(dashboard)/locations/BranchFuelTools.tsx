@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BranchFuelType, BranchStaffRole } from '@tutak/shared-types';
 import { Badge, Button, Field, Input, Select } from '@tutak/design/web';
 import { partnerApi } from '@/lib/api/partnerApi';
+import { branchRoleLabel } from '@/lib/labels';
 
 const FUEL_LABELS: Record<BranchFuelType, string> = {
   [BranchFuelType.PETROL]: 'Petrol',
@@ -182,7 +183,7 @@ export function BranchFuelTools({
                     {a.employeeDisplayCode}
                   </span>
                   <div className="flex items-center gap-2">
-                    <Badge tone="neutral">{a.role.toLowerCase()}</Badge>
+                    <Badge tone="neutral">{branchRoleLabel(a.role)}</Badge>
                     <Button
                       size="sm"
                       variant="tertiary"

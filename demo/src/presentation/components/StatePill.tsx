@@ -15,9 +15,7 @@ const LABEL_KEY: Record<BonusState, string> = {
  * dot rather than a saturated chip — the colour still identifies the state
  * instantly, but at a weight that lets the amount beside it stay dominant.
  *
- * On the dark theme the tint is a 12%-alpha wash, which needs a hairline of
- * the same hue to hold its shape; without it the pill dissolves into the
- * card behind it and only the dot survives.
+ * No edge: on white the tinted surface holds its own shape.
  */
 export function StatePill({ state, label }: { state: BonusState; label?: string }) {
   const { bonusState, space, radius, text } = useTheme();
@@ -30,8 +28,6 @@ export function StatePill({ state, label }: { state: BonusState; label?: string 
         styles.pill,
         {
           backgroundColor: tone.surface,
-          borderColor: tone.border,
-          borderWidth: StyleSheet.hairlineWidth,
           borderRadius: radius.full,
           paddingHorizontal: space[2],
           paddingVertical: space[1],

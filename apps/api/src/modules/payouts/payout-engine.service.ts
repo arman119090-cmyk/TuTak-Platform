@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   Currency,
   LedgerAccountType,
+  PartnerSettlementStatus,
   PayoutStatus,
   PostingDirection,
   Prisma,
@@ -79,14 +80,57 @@ export class PayoutEngineService {
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
-  /** What the platform currently owes this partner, as a positive figure. */
+  /**
+   * What the platform currently owes this partner *and has not already
+   * promised through a settlement*, as a positive figure.
+   *
+   * The ledger balance alone is not the answer (audit 21.09.2026, D02): a
+   * settlement that is drafted, approved or in flight has claimed its
+   * postings but posts nothing until PAID, so the balance still shows the
+   * money while every dram of it is spoken for. A legacy payout against
+   * that balance would pay the same entitlement twice. The reserved sum is
+   * subtracted here and, under the row lock, in `requestPayout`.
+   */
   async availableBalance(partnerId: string, currency: Currency = Currency.AMD): Promise<Decimal> {
     const account = await this.prisma.ledgerAccount.findFirst({
       where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId, currency },
     });
     if (!account) return new Decimal(0);
+    const reserved = await this.reservedBySettlements(this.prisma, partnerId, currency);
     // Credit-normal: a payable of 9,750 is stored as -9,750.
-    return account.balance.negated();
+    return account.balance.negated().minus(reserved);
+  }
+
+  /**
+   * The net of every settlement that has claimed postings and not yet
+   * posted its payment: everything except PAID (posted) and CANCELLED
+   * (claims released). `REQUIRES_RECONCILIATION` counts — the money may
+   * already have left, and a legacy payout on top would be the second
+   * payment the reconciliation exists to prevent.
+   */
+  private async reservedBySettlements(
+    db: Prisma.TransactionClient | PrismaService,
+    partnerId: string,
+    currency: Currency,
+  ): Promise<Decimal> {
+    const open = await db.partnerSettlement.findMany({
+      where: {
+        partnerId,
+        currency,
+        status: {
+          in: [
+            PartnerSettlementStatus.DRAFT,
+            PartnerSettlementStatus.READY,
+            PartnerSettlementStatus.APPROVED,
+            PartnerSettlementStatus.PAYMENT_PENDING,
+            PartnerSettlementStatus.FAILED,
+            PartnerSettlementStatus.REQUIRES_RECONCILIATION,
+          ],
+        },
+      },
+      select: { netPayableAmount: true },
+    });
+    return open.reduce((sum, row) => sum.plus(row.netPayableAmount), new Decimal(0));
   }
 
   async requestPayout(params: RequestPayoutParams): Promise<PayoutResult> {
@@ -162,11 +206,18 @@ export class PayoutEngineService {
         SELECT balance FROM "ledger_accounts" WHERE id = ${payableAccount.id} FOR UPDATE
       `;
 
-        // Credit-normal: a payable of 9,750 is stored as -9,750.
-        const available = new Decimal(locked[0]?.balance ?? 0).negated();
+        // Credit-normal: a payable of 9,750 is stored as -9,750. Less what
+        // open settlements have already claimed — read inside the lock, so
+        // a draft created concurrently is either seen here or blocked on
+        // the same row when it reads `unsettled()` under its own tx.
+        const reserved = await this.reservedBySettlements(tx, partnerId, currency);
+        const available = new Decimal(locked[0]?.balance ?? 0).negated().minus(reserved);
         if (available.lessThan(amount)) {
           throw new ConflictException(
-            `Payout of ${amount.toString()} exceeds the ${available.toString()} available to this partner`,
+            `Payout of ${amount.toString()} exceeds the ${Decimal.max(available, 0).toString()} available to this partner` +
+              (reserved.greaterThan(0)
+                ? ` (${reserved.toString()} is already claimed by an open settlement)`
+                : ''),
           );
         }
 

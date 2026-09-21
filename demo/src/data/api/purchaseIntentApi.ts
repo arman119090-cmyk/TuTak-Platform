@@ -1,4 +1,10 @@
-import type { CreatePurchaseIntentRequestDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type {
+  CreatePurchaseIntentRequestDto,
+  FundingQuoteDto,
+  PurchaseIntentDto,
+  PurchaseIntentRefundDto,
+  QuotePurchaseIntentRequestDto,
+} from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export const purchaseIntentApi = {
@@ -7,8 +13,26 @@ export const purchaseIntentApi = {
     return data.data;
   },
 
+  /**
+   * The server's breakdown before a purchase exists — what bonus and
+   * balance cover and what is still due at the till. The app shows these
+   * figures; it never does the arithmetic itself once they arrive.
+   */
+  async quote(dto: QuotePurchaseIntentRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<FundingQuoteDto>>('/purchase-intents/quote', dto);
+    return data.data;
+  },
+
   async get(id: string) {
     const { data } = await httpClient.get<ApiEnvelope<PurchaseIntentDto>>(`/purchase-intents/${id}`);
+    return data.data;
+  },
+
+  /** Every refund recorded against one of the customer's own purchases. */
+  async refunds(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PurchaseIntentRefundDto[]>>(
+      `/purchase-intents/${id}/refunds`,
+    );
     return data.data;
   },
 

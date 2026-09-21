@@ -31,6 +31,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { PartnersModule } from './modules/partners/partners.module';
+import { PartnerCheckoutModule } from './modules/partner-checkout/partner-checkout.module';
 import { PurchaseIntentsModule } from './modules/purchase-intents/purchase-intents.module';
 import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
 import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
@@ -39,6 +40,7 @@ import { CustomerBalanceModule } from './modules/customer-balance/customer-balan
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { PromosModule } from './modules/promos/promos.module';
 import { SecurityModule } from './modules/security/security.module';
 import { PartnerSettlementsModule } from './modules/partner-settlements/partner-settlements.module';
 import { PspModule } from './modules/psp/psp.module';
@@ -50,6 +52,7 @@ import { SettlementModule } from './modules/settlement/settlement.module';
 import { PayoutsModule } from './modules/payouts/payouts.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { HealthModule } from './modules/health/health.module';
+import { LegalModule } from './modules/legal/legal.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { SweepsModule } from './modules/sweeps/sweeps.module';
 
@@ -98,6 +101,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     TransactionsModule,
     PartnersModule,
     PurchaseIntentsModule,
+    PartnerCheckoutModule,
     QrPaymentsModule,
     EvChargingModule,
     RoamingCpoModule,
@@ -105,6 +109,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     AdminModule,
     NotificationsModule,
     AnalyticsModule,
+    PromosModule,
     SecurityModule,
     LedgerModule,
     ...(cardPaymentsEnabled ? [PaymentsModule] : []),
@@ -120,6 +125,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     // queue by accident.
     SweepsModule,
     HealthModule,
+    LegalModule,
     MetricsModule,
   ],
   providers: [

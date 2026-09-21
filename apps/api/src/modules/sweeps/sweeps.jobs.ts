@@ -1,5 +1,7 @@
 import type { AccountDeletionService } from '../users/account-deletion.service';
 import type { BonusEngineService } from '../wallet/bonus-engine.service';
+import type { CustomerBalanceService } from '../customer-balance/customer-balance.service';
+import type { PartnerCheckoutService } from '../partner-checkout/partner-checkout.service';
 import type { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import type { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import type { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation.service';
@@ -56,6 +58,8 @@ export interface SweepDependencies {
   partnerSettlement: PartnerSettlementCheckService;
   pspAgeing: PspAttemptAgeingService;
   pspCallbacks: PspCallbackWorkerService;
+  customerBalance: CustomerBalanceService;
+  partnerCheckouts: PartnerCheckoutService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -282,6 +286,22 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 60 * 60_000,
     lockTtlMs: 5 * 60_000,
     run: ({ pspAgeing }) => pspAgeing.escalateStaleAttempts(),
+  },
+  {
+    name: 'partner-checkout.expire',
+    why: 'A till-opened checkout nobody scanned must stop being claimable: a dynamic QR left on a screen is otherwise an open invitation to claim a sale that already happened some other way. Only OPEN rows are touched; a claimed one is a purchase with its own expiry.',
+    repeat: { every: 60_000 },
+    maxSilenceMs: 15 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ partnerCheckouts }) => partnerCheckouts.expireStale(),
+  },
+  {
+    name: 'balance.escalate-stale-topups',
+    why: 'A customer top-up the provider never answered is money a customer may have paid that nobody has credited, and it will not resolve itself. After thirty minutes it becomes UNRESOLVED — a state, not an outcome — and is alerted on every hour until the provider answers or an operator reads its statement. Nothing here ever credits or declines: time makes it louder, never decides it.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ customerBalance }) => customerBalance.escalateStaleTopUps(),
   },
   {
     name: 'reconciliation.nightly',

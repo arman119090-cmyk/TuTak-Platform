@@ -15,6 +15,7 @@ import {
   Th,
   Tr,
 } from '@tutak/design/web';
+import { LoadFailed } from '@/components/LoadFailed';
 import { financeApi, type ReconciliationFinding } from '@/lib/api/financeApi';
 
 /** Yesterday, in UTC — the day a nightly run would normally cover. */
@@ -29,10 +30,11 @@ export default function ReconciliationPage() {
   const [day, setDay] = useState(defaultDay);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: runs } = useQuery({
+  const runsQuery = useQuery({
     queryKey: ['reconciliation-runs'],
     queryFn: financeApi.reconciliationRuns,
   });
+  const runs = runsQuery.data;
 
   const run = useMutation({
     mutationFn: () => financeApi.runReconciliation(new Date(`${day}T00:00:00Z`).toISOString()),
@@ -80,7 +82,13 @@ export default function ReconciliationPage() {
       </Surface>
 
       <div className="mt-6">
-        {history.length === 0 ? (
+        {runsQuery.isError ? (
+          // An error is not "no runs" (audit D13): the nightly job may well
+          // have found drift, and this page is where somebody would learn.
+          <LoadFailed what="the reconciliation runs" onRetry={() => void runsQuery.refetch()} />
+        ) : runsQuery.isPending ? (
+          <p className="text-[14px] text-muted">Loading…</p>
+        ) : history.length === 0 ? (
           <EmptyState
             title="No runs yet"
             message="The nightly job runs at 03:00 UTC, or trigger one above."

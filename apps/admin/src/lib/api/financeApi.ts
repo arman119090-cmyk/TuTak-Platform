@@ -2,7 +2,7 @@ import {
   ReconciliationOutcome,
   type PartnerSettlementDto,
   type PartnerStatementDto,
-  type UnsettledPositionDto,
+  type UnsettledBreakdownDto,
 } from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
 
@@ -376,7 +376,7 @@ export const settlementAdminApi = {
     return data.data;
   },
 
-  async unsettled(partnerId: string): Promise<UnsettledPositionDto> {
+  async unsettled(partnerId: string): Promise<UnsettledBreakdownDto> {
     const { data } = await httpClient.get(`/admin/partner-settlements/unsettled/${partnerId}`);
     return data.data;
   },

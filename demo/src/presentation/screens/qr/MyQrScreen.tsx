@@ -175,7 +175,7 @@ export function MyQrScreen() {
 
       {/* Balance restated here so the user knows what they can spend without
           leaving the payment screen. */}
-      <Surface style={{ marginTop: space[4] }}>
+      <View style={{ marginTop: space[5] }}>
         <View style={styles.balanceRow}>
           <View>
             <Text style={[text.caption, { color: color.textSecondary }]}>
@@ -187,7 +187,7 @@ export function MyQrScreen() {
           </View>
           <View style={[styles.dot, { backgroundColor: color.availableFill }]} />
         </View>
-      </Surface>
+      </View>
     </Screen>
   );
 }

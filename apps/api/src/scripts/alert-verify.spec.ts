@@ -45,7 +45,7 @@ describe('alert:verify', () => {
     const result = await runAlertVerify(alertsThatReport(accepted), console_);
 
     expect(result.sent).toBe(false);
-    expect(result.reason).toMatch(/ALERT_WEBHOOK_URL is not set/);
+    expect(result.reason).toMatch(/No alert channel is set/);
   });
 
   it('says to check Redis when the alert was suppressed', async () => {
@@ -70,7 +70,7 @@ describe('alert:verify', () => {
       webhook,
     );
     expect(rejected.sent).toBe(false);
-    expect(rejected.reason).toMatch(/did not accept/);
+    expect(rejected.reason).toMatch(/no receiver accepted/);
     expect(rejected.reason).toMatch(/500/);
 
     const unreachable = await runAlertVerify(

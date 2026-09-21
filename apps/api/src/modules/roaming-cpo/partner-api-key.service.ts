@@ -62,8 +62,17 @@ export class PartnerApiKeyService {
     });
   }
 
-  /** Verifies a raw `x-api-key` header value and returns the owning partner id, or null. */
-  async verify(rawApiKey: string): Promise<{ partnerId: string; apiKeyId: string } | null> {
+  /**
+   * Verifies a raw `x-api-key` header value and returns the owning partner
+   * id, the key id and the integration the key was issued for (or null when
+   * it was issued partner-wide), or null when the key is unknown or revoked.
+   * Which integration a key belongs to is what a route uses to scope the key
+   * (audit 21.09.2026, D17): a key is a credential for one integration, not
+   * a partner-wide skeleton key.
+   */
+  async verify(
+    rawApiKey: string,
+  ): Promise<{ partnerId: string; apiKeyId: string; integrationId: string | null } | null> {
     const separator = rawApiKey.indexOf('.');
     if (separator <= 0) return null;
     const keyId = rawApiKey.slice(0, separator);
@@ -84,7 +93,7 @@ export class PartnerApiKeyService {
       .update({ where: { id: row.id }, data: { lastUsedAt: new Date() } })
       .catch(() => undefined);
 
-    return { partnerId: row.partnerId, apiKeyId: row.id };
+    return { partnerId: row.partnerId, apiKeyId: row.id, integrationId: row.integrationId };
   }
 
   static hash(secret: string): string {

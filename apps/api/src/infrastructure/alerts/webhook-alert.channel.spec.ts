@@ -61,6 +61,6 @@ describe('WebhookAlertChannel', () => {
 
     // Never rejects: an alert fires from code that is already handling a
     // problem, and a throw here would lose both the finding and the alert.
-    expect(result).toEqual({ delivered: false, detail: 'webhook unreachable: fetch failed' });
+    expect(result).toEqual({ delivered: false, detail: 'webhook unreachable: fetch failed', retryable: true });
   });
 });

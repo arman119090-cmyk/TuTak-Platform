@@ -1,0 +1,85 @@
+# Daily volume backup of the production Postgres, and proof that it exists.
+#
+# Railway's dashboard can schedule volume backups, but nothing outside the
+# dashboard can see whether that schedule is on or whether last night's backup
+# happened. This workflow makes a backup itself through Railway's public
+# GraphQL API, waits for the backup workflow to complete, lists the backups,
+# and fails — and pages — unless the newest one is younger than 26 hours.
+# All of that is scripts/railway-backup.sh, whose calls are checked against
+# the published schema (railwayapp/cli src/gql/schema.json) and proven by
+# scripts/railway-backup.test.sh against a mock API (runs in CI).
+#
+# This is the second line next to PITR, not a replacement: PITR restores to
+# a moment, into a new service; a volume backup restores a whole volume in
+# place. docs/DISASTER_RECOVERY_RUNBOOK_RU.md says what each protects against.
+#
+# Secrets (one token is enough; the project token is the least privilege):
+#   RAILWAY_PROJECT_TOKEN  Railway → project → Settings → Tokens, scoped to the
+#                          production environment (preferred).
+#   RAILWAY_API_TOKEN      account/workspace token (Railway → Account → Tokens).
+#   ALERT_WEBHOOK_URL      optional; same webhook as the API's alerts.
+#   ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID
+#                          optional; same Telegram chat as the API's alerts.
+#                          Paging goes through scripts/page-human.sh.
+# Variables (optional):
+#   RAILWAY_VOLUME_ID, RAILWAY_ENVIRONMENT_ID  default to production's.
+#   BACKUP_ENSURE_SCHEDULE  e.g. "DAILY,WEEKLY": if the volume has NO schedule
+#                          at all, set this one. Never overwrites an existing
+#                          schedule. Empty (default) = do not touch schedules.
+#
+# `workflow_dispatch` runs the same steps by hand — that is the first proof.
+# GitHub only runs schedules from the default branch.
+name: Backup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'   # 02:17 UTC daily (06:17 Yerevan)
+  workflow_dispatch:
+    inputs:
+      create:
+        description: 'Create a new backup (false = only verify the newest one)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      ALERT_TELEGRAM_BOT_TOKEN: ${{ secrets.ALERT_TELEGRAM_BOT_TOKEN }}
+      ALERT_TELEGRAM_CHAT_ID: ${{ secrets.ALERT_TELEGRAM_CHAT_ID }}
+      VOLUME_ID: ${{ vars.RAILWAY_VOLUME_ID || '75413fb2-7af3-40f5-a534-0d1f48b5217e' }}
+      ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID || 'aebe04da-ba8f-44b5-9a7f-3d4d43284966' }}
+      ENSURE_SCHEDULE: ${{ vars.BACKUP_ENSURE_SCHEDULE }}
+      CREATE: ${{ github.event_name == 'schedule' && 'true' || inputs.create }}
+      WAIT_SECONDS: '600'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Backup and verify
+        id: backup
+        run: bash scripts/railway-backup.sh
+
+      - name: Page a human
+        if: always() && steps.backup.outcome != 'success'
+        env:
+          PROBLEM: ${{ steps.backup.outputs.problem || 'the backup job failed before it could say why — see the run log' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "::error::$PROBLEM"
+          payload=$(jq -cn --arg b "$PROBLEM" --arg r "$RUN_URL" '{text: ("🔴 *TuTak production: backup problem* — production\n" + $b + "\n• run: " + $r), severity: "critical", title: "TuTak production: backup problem", body: $b, key: "backup.volume", environment: "production", context: {run: $r}, firedAt: (now|todate)}')
+          printf '%s' "$payload" | bash scripts/page-human.sh || true
+          exit 1

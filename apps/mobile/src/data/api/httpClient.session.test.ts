@@ -4,6 +4,7 @@ import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 import { Role } from '@tutak/shared-types';
 import { httpClient } from './httpClient';
 import { useAuthStore } from '../stores/authStore';
+import { useAppLockStore } from '../stores/appLockStore';
 
 jest.mock('../storage/secureStorage', () => ({
   getItem: jest.fn(async () => null),
@@ -271,5 +272,27 @@ describe('mobile httpClient — session lifetime across refresh', () => {
     const replay = adapter.mock.calls[1]![0] as AxiosRequestConfig;
     expect(replay.headers?.Authorization).toBe('Bearer a2-access');
     expect(useAuthStore.getState().accessToken).toBe('a2-access');
+  });
+});
+
+describe('app lock network gate', () => {
+  afterEach(() => useAppLockStore.setState({ status: 'unlocked' }));
+
+  it('refuses private requests while locked, before transport, but lets the session end', async () => {
+    const adapter = jest.fn(async (config) => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config }));
+    httpClient.defaults.adapter = adapter;
+    useAppLockStore.setState({ status: 'locked' });
+    await expect(httpClient.get('/wallet/me')).rejects.toMatchObject({ code: 'ERR_CANCELED' });
+    expect(adapter).not.toHaveBeenCalled();
+    await httpClient.post('/auth/logout');
+    expect(adapter).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets everything through while choosing a code (the sign-in that just happened may still be finishing)', async () => {
+    const adapter = jest.fn(async (config) => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config }));
+    httpClient.defaults.adapter = adapter;
+    useAppLockStore.setState({ status: 'setup' });
+    await httpClient.get('/users/me');
+    expect(adapter).toHaveBeenCalledTimes(1);
   });
 });

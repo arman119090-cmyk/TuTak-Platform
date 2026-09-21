@@ -6,10 +6,12 @@ import { MainTabNavigator } from './MainTabNavigator';
 import { ScanQrScreen } from '../../presentation/screens/qr/ScanQrScreen';
 import { NotificationsScreen } from '../../presentation/screens/notifications/NotificationsScreen';
 import { TransactionHistoryScreen } from '../../presentation/screens/transactions/TransactionHistoryScreen';
+import { TransactionDetailScreen } from '../../presentation/screens/transactions/TransactionDetailScreen';
 import { ReferralScreen } from '../../presentation/screens/referral/ReferralScreen';
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { ChangePinScreen } from '../../presentation/screens/appLock/ChangePinScreen';
 import { EditProfileScreen } from '../../presentation/screens/settings/EditProfileScreen';
 import { BecomePartnerScreen } from '../../presentation/screens/partner-application/BecomePartnerScreen';
 import { PartnerApplicationSentScreen } from '../../presentation/screens/partner-application/PartnerApplicationSentScreen';
@@ -64,6 +66,11 @@ export function RootNavigator() {
         options={{ title: t('wallet.history'), headerShown: false }}
       />
       <Stack.Screen
+        name="TransactionDetail"
+        component={TransactionDetailScreen}
+        options={{ title: t('history.detailTitle'), headerShown: false }}
+      />
+      <Stack.Screen
         name="Referral"
         component={ReferralScreen}
         options={{ title: t('referral.inviteFriends'), headerShown: false }}
@@ -101,6 +108,11 @@ export function RootNavigator() {
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ title: t('settings.changePassword'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChangePin"
+        component={ChangePinScreen}
+        options={{ title: t('appLock.changeCode'), headerShown: false }}
       />
       <Stack.Screen
         name="VerifyPhone"

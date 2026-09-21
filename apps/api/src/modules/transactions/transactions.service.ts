@@ -254,17 +254,39 @@ export class TransactionsService {
       },
       take: query.limit,
       ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
-      orderBy: { createdAt: 'desc' },
+      // The id is the tie-break, and it is not optional. A cursor page is
+      // "everything after this row in this order"; with `createdAt` alone,
+      // two rows written in the same millisecond (a purchase and its bonus
+      // accrual, a batch import) have no order between them, so the page
+      // boundary could fall on either side of the cursor row's twin and the
+      // next page would repeat it or skip it. `transaction-history-paging`
+      // proves the property with five rows on one timestamp.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
 
     // One batched resolution for the whole page rather than two queries per
     // row — see `MediaViewService.brandsFor`.
     const brands = await this.media.brandsFor(items);
 
+    // Which rows are purchases, so the customer can open the purchase
+    // itself. One query for the page; a purchase points at its transaction
+    // through `sourceTransactionId`, never the other way round.
+    const intents = items.length
+      ? await this.prisma.purchaseIntent.findMany({
+          where: { sourceTransactionId: { in: items.map((item) => item.id) } },
+          select: { id: true, sourceTransactionId: true },
+        })
+      : [];
+    const intentByTransaction = new Map(intents.map((i) => [i.sourceTransactionId, i.id]));
+
     return {
       items: items.map((item) => {
         const { brandDisplayName: _name, brandLogoAssetId: _asset, ...row } = item;
-        return { ...row, partnerBrand: brands.get(item) ?? null };
+        return {
+          ...row,
+          partnerBrand: brands.get(item) ?? null,
+          purchaseIntentId: intentByTransaction.get(item.id) ?? null,
+        };
       }),
       nextCursor: items.length === query.limit ? (items.at(-1)?.id ?? null) : null,
     };

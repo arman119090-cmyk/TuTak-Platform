@@ -82,7 +82,7 @@ export function Screen({
           <View
             style={[
               styles.header,
-              { paddingHorizontal: layout.screenPaddingX, paddingTop: space[4], paddingBottom: space[5] },
+              { paddingHorizontal: layout.screenPaddingX, paddingTop: space[3], paddingBottom: space[5] },
             ]}
           >
             {canGoBack ? (
@@ -93,21 +93,23 @@ export function Screen({
                 hitSlop={16}
                 accessibilityRole="button"
                 accessibilityLabel="Back"
-                style={{ marginRight: space[3], marginTop: space[1] }}
+                style={({ pressed }) => ({ marginRight: space[2], marginTop: 2, marginLeft: -space[2], width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: pressed ? color.backgroundSubtle : 'transparent' })}
               >
                 <Ionicons name="chevron-back" size={26} color={color.textPrimary} />
               </Pressable>
             ) : null}
 
             <View style={styles.flex}>
-              <Text style={[text.titleLg, { color: color.textPrimary }]}>{title}</Text>
+              <Text style={[text.titleLg, { color: color.textPrimary }]} numberOfLines={2}>{title}</Text>
               {subtitle ? (
                 <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[1] }]}>
                   {subtitle}
                 </Text>
               ) : null}
             </View>
-            {headerAccessory}
+            {headerAccessory ? (
+              <View style={{ marginLeft: space[3], flexShrink: 0, alignSelf: 'center' }}>{headerAccessory}</View>
+            ) : null}
           </View>
         ) : null}
 

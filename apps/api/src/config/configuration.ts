@@ -128,6 +128,9 @@ export interface AppConfig {
   alerts: {
     /** Where an operator gets told that money is at risk. Empty = the log only. */
     webhookUrl: string;
+    /** Telegram Bot API transport; both must be set for it to exist. Never logged. */
+    telegramBotToken: string;
+    telegramChatId: string;
   };
   payouts: {
     /** Whether confirming a payout requires someone other than its requester. */
@@ -143,6 +146,19 @@ export interface AppConfig {
      * being scrubbed. Access ends immediately either way.
      */
     graceDays: number;
+  };
+  legalPages: {
+    /** Serve /legal/privacy and /legal/account-deletion. Off until a lawyer signed the texts. */
+    enabled: boolean;
+  };
+  otpIpLimits: {
+    /**
+     * Ceilings per source address per hour on OTP issuance and verification
+     * (`OtpIpRateLimitService`). Raised, not lowered, for a launch event where
+     * a whole venue shares one address; never disabled.
+     */
+    issuancePerHour: number;
+    verificationPerHour: number;
   };
   /**
    * How long non-financial records are kept. Nothing financial appears here
@@ -253,6 +269,32 @@ export interface AppConfig {
      */
     customerPrepaidTopUpEnabled: boolean;
     /**
+     * Whether a customer may pay part of an ordinary purchase from their
+     * stored balance (`CUSTOMER_PREPAID_BALANCE`) — the hybrid funding model
+     * of 20.09.2026: `gross = bonus + prepaid + external`.
+     *
+     * Separate from `customerPrepaidTopUpEnabled` on purpose. Funding a
+     * balance and spending one are two different legal and operational
+     * questions: a deployment may allow spending money customers already
+     * hold while no longer accepting new deposits, and the reverse (taking
+     * deposits nobody can spend) is exactly the state this platform must
+     * never be in. Off by default; off in production until the owner turns
+     * it on explicitly. When off, `POST /purchase-intents` refuses any
+     * `prepaidAmountApplied > 0`, the quote reports the balance as
+     * unavailable rather than as zero, and nothing in this module ever
+     * debits a customer's money. Reading a balance stays open.
+     */
+    customerPrepaidPurchaseEnabled: boolean;
+    /**
+     * Whether a partner's till (POS) may open a purchase on the customer's
+     * behalf through the machine-to-machine checkout API
+     * (`PartnerCheckoutService`), to be claimed by the customer scanning a
+     * dynamic QR. Off by default: a POS purchase carries a partner-originated
+     * amount, and that is only acceptable once the partner's API key, branch
+     * scope and replay protection have been exercised on a real integration.
+     */
+    partnerPosPurchasesEnabled: boolean;
+    /**
      * Whether a purchase collected through the provider may be refunded
      * through this platform at all.
      *
@@ -291,6 +333,24 @@ export interface AppConfig {
    * purchase stays blocked and the money's fate stays unknown. Time escalates;
    * only the provider or two people reading its statement resolve.
    */
+  /**
+   * Ageing for customer top-ups, with the same philosophy as `psp` below:
+   * time makes an unanswered top-up louder (UNRESOLVED, then an alert every
+   * `topUpEscalateEveryMs`), and never decides it. Only the provider's
+   * answer or an operator reading the provider's statement does.
+   */
+  customerBalance: {
+    topUpStaleAfterMs: number;
+    topUpEscalateEveryMs: number;
+  };
+  /**
+   * A till-opened checkout waits for a scan, not for a cashier, so it may
+   * live longer than a purchase intent's three minutes — but not for ever:
+   * a dynamic QR left on a screen must stop being claimable.
+   */
+  partnerCheckout: {
+    ttlSeconds: number;
+  };
   psp: {
     /** Used for any provider with no entry of its own. */
     defaultStaleAfterMs: number;
@@ -470,6 +530,13 @@ function oneOf(
   return preferredValue ?? fallbackValue ?? defaultValue;
 }
 
+/** A whole number above zero from the environment, else `fallback`. */
+export function positiveIntEnv(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
@@ -534,6 +601,23 @@ const buildConfig = (): AppConfig => ({
     // Access ends the moment they press the button — this window is about
     // the data, not the account.
     graceDays: parseInt(process.env.ACCOUNT_DELETION_GRACE_DAYS ?? '30', 10),
+  },
+  legalPages: {
+    enabled: process.env.LEGAL_PAGES_ENABLED === 'true',
+  },
+  otpIpLimits: {
+    // Defaults sit above what carrier-grade NAT puts behind one address in an
+    // hour and far below what a credential attack needs (see the service).
+    // The first day of a pilot at one venue on one wifi is the case the
+    // defaults were not tuned for: a hundred sign-ups behind one address
+    // would spend the issuance budget in the first hour. Overridable without
+    // a deploy; `positiveIntEnv` ignores anything that is not a whole number
+    // above zero, so a typo restores the default rather than disabling the
+    // ceiling.
+    // ...and never above ten times the default: an override is for a
+    // venue, not for switching the ceiling off. Anything larger is clamped.
+    issuancePerHour: Math.min(positiveIntEnv(process.env.OTP_IP_ISSUANCE_PER_HOUR, 60), 600),
+    verificationPerHour: Math.min(positiveIntEnv(process.env.OTP_IP_VERIFICATION_PER_HOUR, 120), 1200),
   },
   retention: {
     // Ninety days of read notifications is enough for a customer to scroll
@@ -654,6 +738,10 @@ const buildConfig = (): AppConfig => ({
     // JSON POST. Unset in development; production boots without it but warns
     // — see AlertsModule for why it does not refuse.
     webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+    // A Telegram group with a bot in it: ten minutes of setup on a phone,
+    // for an operator who has no Slack. Both halves or nothing.
+    telegramBotToken: (process.env.ALERT_TELEGRAM_BOT_TOKEN ?? '').trim(),
+    telegramChatId: (process.env.ALERT_TELEGRAM_CHAT_ID ?? '').trim(),
   },
   metrics: {
     // No default. An unset token disables the endpoint rather than opening
@@ -695,6 +783,23 @@ const buildConfig = (): AppConfig => ({
     // not merely refused when off — the controller carrying it is not
     // registered at all, so there is no top-up surface to find.
     customerPrepaidTopUpEnabled: process.env.CUSTOMER_PREPAID_TOPUP_ENABLED === 'true',
+    // Spending a stored balance on a purchase. Off until the owner says
+    // otherwise; independent of top-ups — see the interface docblock.
+    customerPrepaidPurchaseEnabled: process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED === 'true',
+    // A partner's till opening purchases through the M2M checkout API.
+    partnerPosPurchasesEnabled: process.env.PARTNER_POS_PURCHASES_ENABLED === 'true',
+  },
+  partnerCheckout: {
+    // Ten minutes: the queue at a till moves faster than that, and a
+    // receipt nobody scanned in ten minutes is a receipt nobody will scan.
+    ttlSeconds: positiveIntFromEnv('PARTNER_CHECKOUT_TTL_SECONDS', 600),
+  },
+  customerBalance: {
+    // The same thirty minutes / one hour the provider-payment ageing uses,
+    // for the same reason: a customer who paid and sees nothing is the one
+    // waiting, and half an hour is already a long time to wait.
+    topUpStaleAfterMs: positiveIntFromEnv('CUSTOMER_PREPAID_TOPUP_STALE_AFTER_MS', 30 * 60_000),
+    topUpEscalateEveryMs: positiveIntFromEnv('CUSTOMER_PREPAID_TOPUP_ESCALATE_EVERY_MS', 60 * 60_000),
   },
   psp: {
     // Thirty minutes and an hour: the same figures the code used as

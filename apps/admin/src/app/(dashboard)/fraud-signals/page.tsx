@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
+import { LoadFailed } from '@/components/LoadFailed';
 import { securityApi } from '@/lib/api/auditApi';
 
 const SEVERITY_TONE = {
@@ -12,7 +13,7 @@ const SEVERITY_TONE = {
 
 export default function FraudSignalsPage() {
   const queryClient = useQueryClient();
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ['fraud-signals'],
     queryFn: securityApi.listOpenFraudSignals,
   });
@@ -26,7 +27,9 @@ export default function FraudSignalsPage() {
         description="Open signals raised by the rule-based detector, newest first."
       />
 
-      {signals.length === 0 ? (
+      {isError ? (
+        <LoadFailed what="the fraud signals" onRetry={() => void refetch()} />
+      ) : signals.length === 0 ? (
         <EmptyState
           title="Nothing to review"
           message="No open fraud signals. New ones appear here automatically."

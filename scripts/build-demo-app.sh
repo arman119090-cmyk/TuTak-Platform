@@ -156,12 +156,15 @@ fs.writeFileSync(
         version: '0.1.0',
         orientation: 'portrait',
         icon: './assets/icon.png',
-        userInterfaceStyle: 'dark',
+        // Light-only, like the product (apps/mobile/app.config.js): the demo
+        // exists to show TuTak, and a dark splash the real app never shows
+        // is the first thing a reviewer would see and ask about.
+        userInterfaceStyle: 'light',
         scheme: 'tutakdemo',
         splash: {
           image: './assets/splash-icon.png',
           resizeMode: 'contain',
-          backgroundColor: '#0A0A0F',
+          backgroundColor: '#F8F9FB',
         },
         assetBundlePatterns: ['**/*'],
         ios: { supportsTablet: false, bundleIdentifier: 'am.tutak.demo' },
@@ -175,11 +178,28 @@ fs.writeFileSync(
         },
         web: { bundler: 'metro', output: 'single', favicon: './assets/icon.png' },
         plugins: [
+          // Same as apps/mobile/app.config.js: the app lock's biometric half.
+          ['expo-local-authentication', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
+          ['expo-secure-store', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
           [
             'expo-camera',
             {
               cameraPermission: 'TuTak needs camera access to scan QR codes for payments.',
               recordAudioAndroid: false,
+              // And no microphone string on iOS for the same reason: the plugin
+              // writes one by default because the camera can record video.
+              microphonePermission: false,
+            },
+          ],
+          // Same as apps/mobile/app.config.js: the picker plugin is applied by
+          // Expo either way, and unconfigured it adds RECORD_AUDIO on Android
+          // and a microphone string on iOS that nothing here uses.
+          [
+            'expo-image-picker',
+            {
+              photosPermission: 'TuTak needs access to your photos to set a profile picture.',
+              cameraPermission: 'TuTak needs camera access to scan QR codes for payments.',
+              microphonePermission: false,
             },
           ],
         ],
@@ -235,6 +255,11 @@ JS
 #
 # There is no `production` profile here on purpose. Nothing about this app
 # should ever be submitted to a store: it accepts any credentials by design.
+# `ios-simulator` is the one iOS build that needs no Apple Developer account:
+# EAS compiles the native project on its Mac farm and hands back a `.app`
+# for the iOS Simulator. It proves the iOS side builds at all — CocoaPods,
+# every native module, the Info.plist — without a certificate, a
+# provisioning profile or an iPhone. It does not install on a phone.
 cat > "$OUT/eas.json" <<'JSON'
 {
   "cli": { "version": ">= 12.0.0", "appVersionSource": "remote" },
@@ -242,6 +267,10 @@ cat > "$OUT/eas.json" <<'JSON'
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" }
+    },
+    "ios-simulator": {
+      "distribution": "internal",
+      "ios": { "simulator": true }
     }
   }
 }

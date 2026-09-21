@@ -1,5 +1,4 @@
 import { useContext } from 'react';
-import { Platform } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { layout } from '@tutak/design';
 
@@ -12,8 +11,7 @@ import { layout } from '@tutak/design';
  * This is `MainTabNavigator`'s own height expression, and it has to stay that
  * way — read `tabBarStyle.height` there and this next to it:
  *
- *     height: Platform.OS === 'android' ? layout.tabBarHeight + insets.bottom
- *                                       : layout.tabBarHeight
+ *     height: layout.tabBarHeight + insets.bottom
  *
  * Screens were reserving the bare `layout.tabBarHeight` instead. Expo enforces
  * edge-to-edge on Android from SDK 54, so the app draws behind the system
@@ -36,6 +34,8 @@ import { layout } from '@tutak/design';
  */
 export function useTabBarSpace(): number {
   const insets = useContext(SafeAreaInsetsContext);
-  const bottom = Platform.OS === 'android' ? (insets?.bottom ?? 0) : 0;
+  // Both platforms: an iPhone's home indicator is an inset like any other,
+  // and the bar grows by it just as it grows by an Android navigation row.
+  const bottom = insets?.bottom ?? 0;
   return layout.tabBarHeight + bottom;
 }

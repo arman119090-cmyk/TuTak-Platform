@@ -4,28 +4,33 @@ import { getItem, setItem } from '../storage/secureStorage';
 const THEME_MODE_KEY = 'tutak.themeMode';
 
 /**
- * `'dark'` remains a valid *stored* value only so `hydrate` below can
- * recognise and migrate it — see `TUTAK_V2_CLAUDE_READ_FIRST.md` /
- * `TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` §6: "the v2 customer release is
- * light-only... neither a fresh nor an existing customer [may] silently
- * land in the legacy dark shell... do not ship a partial second dark v2
- * theme." Nothing in the app is allowed to *set* `mode` to `'dark'` any
- * more (the Settings appearance toggle that used to offer it was removed in
- * the same change that added this migration) — `ThemeMode` keeps the wider
- * union purely so `isThemeMode`/the migration path stay honestly typed
- * against data written by an older build.
+ * What the person asked for in Settings → Appearance. `'system'` follows
+ * the phone's own light/dark setting; the other two pin it. Which concrete
+ * theme that resolves to is decided in `ThemeProvider`, which is the one
+ * place that also reads the phone's scheme.
+ *
+ * History: the v2 release shipped light-only and this store existed purely
+ * to migrate an older install's persisted `'dark'` back to `'light'`
+ * (`TUTAK_V2_CLAUDE_READ_FIRST.md`). On 20.09.2026 the owner asked for a
+ * user-switchable dark theme, which supersedes that brief; the dark theme
+ * a stored `'dark'` now selects is the new green-on-ink
+ * `tutakMobileDarkTheme`, not the legacy shell the migration was guarding
+ * against, so an old `'dark'` value is simply honoured.
  */
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+export const DEFAULT_THEME_MODE: ThemeMode = 'system';
 
 function isThemeMode(value: string | null): value is ThemeMode {
-  return value === 'light' || value === 'dark';
+  return value === 'system' || value === 'light' || value === 'dark';
 }
 
 interface ThemeState {
-  /** Always `'light'` after `hydrate` resolves — see the module docblock. */
   mode: ThemeMode;
   isHydrated: boolean;
   hydrate: () => Promise<void>;
+  /** Applies at once and persists; a failed write keeps the choice for this run. */
+  setMode: (mode: ThemeMode) => Promise<void>;
 }
 
 /**
@@ -33,34 +38,33 @@ interface ThemeState {
  * default on any failure rather than block the app, and set `isHydrated`
  * unconditionally so nothing ever waits on this forever.
  *
- * Unlike the auth tokens, a stored theme preference is not sensitive, but it
- * reuses `secureStorage` anyway rather than adding a new storage dependency —
- * `apps/mobile/package.json` has no AsyncStorage today, and one more key in
- * the store the app already persists to is simpler than a second mechanism.
+ * A theme preference is not sensitive, but it reuses `secureStorage` rather
+ * than adding a second storage dependency — `apps/mobile/package.json` has
+ * no AsyncStorage, and one more key in the store the app already persists
+ * to is simpler than a second mechanism.
  */
 export const useThemeStore = create<ThemeState>((set) => ({
-  mode: 'light',
+  mode: DEFAULT_THEME_MODE,
   isHydrated: false,
 
   hydrate: async () => {
     try {
       const stored = await getItem(THEME_MODE_KEY);
-      // A pre-v2 install may have `'dark'` (the old default) or an explicit
-      // `'light'` written by the old toggle — either way v2 renders light.
-      // A `'dark'` value is actively rewritten back to storage so a later
-      // read (or a future per-user analytics query of this key) does not
-      // keep reporting a preference the app no longer honours.
-      if (isThemeMode(stored) && stored === 'dark') {
-        try {
-          await setItem(THEME_MODE_KEY, 'light');
-        } catch {
-          // Non-fatal — this run still renders light regardless; see the
-          // `setMode` failure note this replaced for why a write can fail.
-        }
-      }
-      set({ mode: 'light', isHydrated: true });
+      set({ mode: isThemeMode(stored) ? stored : DEFAULT_THEME_MODE, isHydrated: true });
     } catch {
-      set({ mode: 'light', isHydrated: true });
+      set({ mode: DEFAULT_THEME_MODE, isHydrated: true });
+    }
+  },
+
+  setMode: async (mode) => {
+    // The screen re-themes on this frame; the write is for next launch.
+    set({ mode });
+    try {
+      await setItem(THEME_MODE_KEY, mode);
+    } catch {
+      // Non-fatal: the choice holds until the app is closed. Storage on a
+      // phone fails for reasons (full disk, a keystore hiccup) that are not
+      // worth an error dialog over a theme switch.
     }
   },
 }));

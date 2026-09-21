@@ -13,6 +13,9 @@ import {
 } from '@tutak/design/web';
 import { financeApi } from '@/lib/api/financeApi';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
+import { payoutStatusLabel } from '@/lib/labels';
+import { dataStateOf } from '@/lib/queryState';
+import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,7 +40,7 @@ export default function EarningsPage() {
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
 
-  const { data: balance } = useQuery({
+  const balanceQuery = useQuery({
     queryKey: ['partner-balance', partnerId],
     queryFn: () => financeApi.balance(partnerId!),
     enabled: !!partnerId,
@@ -46,7 +49,7 @@ export default function EarningsPage() {
   // only the live QR flow, since `CARD_PAYMENTS_ENABLED` stays off in
   // production — kept for the partners who do have real card activity,
   // rather than removed outright.
-  const { data: settlements } = useQuery({
+  const settlementsQuery = useQuery({
     queryKey: ['partner-settlements', partnerId],
     queryFn: () => financeApi.settlements(partnerId!),
     enabled: !!partnerId,
@@ -54,36 +57,53 @@ export default function EarningsPage() {
   // The real source for a QR-only partner: confirmed PurchaseIntents,
   // grouped by day, straight from the ledger postings that built the
   // balance above.
-  const { data: activity } = useQuery({
+  const activityQuery = useQuery({
     queryKey: ['partner-activity', partnerId],
     queryFn: () => financeApi.dailyActivity(partnerId!),
     enabled: !!partnerId,
   });
-  const { data: payouts } = useQuery({
+  const payoutsQuery = useQuery({
     queryKey: ['partner-payouts', partnerId],
     queryFn: () => financeApi.payouts(partnerId!),
     enabled: !!partnerId,
   });
-  const { data: collections } = useQuery({
+  const collectionsQuery = useQuery({
     queryKey: ['partner-collections', partnerId],
     queryFn: () => financeApi.collections(partnerId!),
     enabled: !!partnerId,
   });
 
-  const days = settlements ?? [];
-  const activityDays = activity ?? [];
-  const transfers = payouts ?? [];
-  const collected = collections ?? [];
+  const balance = balanceQuery.data;
+  const balanceState = dataStateOf(balanceQuery);
+  const settlementsState = dataStateOf(settlementsQuery);
+  const activityState = dataStateOf(activityQuery);
+  const payoutsState = dataStateOf(payoutsQuery);
+  const collectionsState = dataStateOf(collectionsQuery);
+
+  const days = settlementsQuery.data ?? [];
+  const activityDays = activityQuery.data ?? [];
+  const transfers = payoutsQuery.data ?? [];
+  const collected = collectionsQuery.data ?? [];
 
   // Lifetime figures combine both pipelines, so a partner who moved between
   // them (or ran both at once) sees one true total rather than two partial
-  // ones with no obvious relationship to each other.
+  // ones with no obvious relationship to each other. They are only a number
+  // once both halves have answered: a sum over a list that never arrived is
+  // not zero, it is unknown (U01).
+  const lifetimeKnown = settlementsQuery.data !== undefined && activityQuery.data !== undefined;
   const lifetimeGross =
     days.reduce((acc, s) => acc + Number(s.grossAmount), 0) +
     activityDays.reduce((acc, d) => acc + Number(d.grossAmount), 0);
   const lifetimeCommission =
     days.reduce((acc, s) => acc + Number(s.commissionAmount), 0) +
     activityDays.reduce((acc, d) => acc + Number(d.commissionOwedAmount), 0);
+  const lifetimeHint = lifetimeKnown
+    ? undefined
+    : settlementsState === 'error' || activityState === 'error'
+      ? 'Could not load'
+      : 'Loading…';
+  const balanceHint =
+    balanceState === 'error' ? 'Could not load' : balanceState === 'loading' ? 'Loading…' : undefined;
 
   if (!partnerId) {
     return (
@@ -105,14 +125,49 @@ export default function EarningsPage() {
         <StatTile
           label="Available to pay out"
           value={balance ? `${money(balance.availableBalance)} AMD` : '—'}
+          hint={balanceHint}
         />
-        <StatTile label="Gross, lifetime" value={`${money(String(lifetimeGross))} AMD`} />
-        <StatTile label="Commission, lifetime" value={`${money(String(lifetimeCommission))} AMD`} />
+        <StatTile
+          label="Gross, lifetime"
+          value={lifetimeKnown ? `${money(String(lifetimeGross))} AMD` : '—'}
+          hint={lifetimeHint}
+        />
+        <StatTile
+          label="Commission, lifetime"
+          value={lifetimeKnown ? `${money(String(lifetimeCommission))} AMD` : '—'}
+          hint={lifetimeHint}
+        />
       </div>
+      {balanceState === 'error' ? (
+        <div className="mt-4">
+          <LoadError
+            title="Your balance could not be loaded"
+            onRetry={() => void balanceQuery.refetch()}
+            busy={balanceQuery.isFetching}
+          />
+        </div>
+      ) : balanceState === 'stale' ? (
+        <div className="mt-4">
+          <StaleNotice
+            asOf={balanceQuery.dataUpdatedAt}
+            what="your balance"
+            onRetry={() => void balanceQuery.refetch()}
+            busy={balanceQuery.isFetching}
+          />
+        </div>
+      ) : null}
 
       <h2 className="mt-8 text-[15px] font-semibold text-ink">QR purchase activity</h2>
       <div className="mt-3">
-        {activityDays.length === 0 ? (
+        {activityState === 'loading' ? (
+          <LoadingNotice label="Loading purchase activity…" />
+        ) : activityState === 'error' ? (
+          <LoadError
+            title="Purchase activity could not be loaded"
+            onRetry={() => void activityQuery.refetch()}
+            busy={activityQuery.isFetching}
+          />
+        ) : activityDays.length === 0 ? (
           <EmptyState
             title="No purchases yet"
             message="Confirmed QR purchases appear here the day they are confirmed."
@@ -199,7 +254,15 @@ export default function EarningsPage() {
 
       <h2 className="mt-8 text-[15px] font-semibold text-ink">Payouts</h2>
       <div className="mt-3">
-        {transfers.length === 0 ? (
+        {payoutsState === 'loading' ? (
+          <LoadingNotice label="Loading payouts…" />
+        ) : payoutsState === 'error' ? (
+          <LoadError
+            title="Payouts could not be loaded"
+            onRetry={() => void payoutsQuery.refetch()}
+            busy={payoutsQuery.isFetching}
+          />
+        ) : transfers.length === 0 ? (
           <EmptyState
             title="No payouts yet"
             message="Transfers to your bank account will be listed here."
@@ -221,7 +284,7 @@ export default function EarningsPage() {
                     {money(p.amount)}
                   </Td>
                   <Td>
-                    <Badge tone={STATUS_TONE[p.status] ?? 'neutral'}>{p.status.toLowerCase()}</Badge>
+                    <Badge tone={STATUS_TONE[p.status] ?? 'neutral'}>{payoutStatusLabel(p.status)}</Badge>
                   </Td>
                   <Td className="tabular text-[12px] text-muted">
                     {p.bankReference ?? p.failureReason ?? '—'}
@@ -236,10 +299,18 @@ export default function EarningsPage() {
 
       <h2 className="mt-8 text-[15px] font-semibold text-ink">Collections</h2>
       <div className="mt-3">
-        {collected.length === 0 ? (
+        {collectionsState === 'loading' ? (
+          <LoadingNotice label="Loading collections…" />
+        ) : collectionsState === 'error' ? (
+          <LoadError
+            title="Collections could not be loaded"
+            onRetry={() => void collectionsQuery.refetch()}
+            busy={collectionsQuery.isFetching}
+          />
+        ) : collected.length === 0 ? (
           <EmptyState
             title="No collections yet"
-            message="Transfers you send TuTak to settle a balance in their favor will be listed here."
+            message="Transfers you send TuTak to settle a balance in their favour will be listed here."
           />
         ) : (
           <Table>

@@ -31,18 +31,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# One layer: the database only exists while this command runs, so initdb, the
+# One step: the database only exists while this runs, so initdb, the
 # migrations, the seed and `next build` (which prerenders pages from the
-# catalogue) all have to happen together.
-RUN mkdir -p "$PGDATA" && chown postgres:postgres "$PGDATA" \
-  && su postgres -c "initdb -D $PGDATA -U demo --auth=trust" \
-  && su postgres -c "pg_ctl -D $PGDATA -o '-c listen_addresses=127.0.0.1' -w start" \
-  && su postgres -c "createdb -U demo furniture_shop" \
-  && npx prisma generate \
-  && npx prisma migrate deploy \
-  && npx tsx prisma/seed.ts \
-  && npm run build \
-  && su postgres -c "pg_ctl -D $PGDATA -m fast -w stop"
+# catalogue) all have to happen together. The script stops the database
+# whatever happens — otherwise a failure leaves it running and the build hangs.
+RUN sh scripts/demo-image-build.sh
 
 FROM node:22-bookworm-slim AS runtime
 ENV DEBIAN_FRONTEND=noninteractive

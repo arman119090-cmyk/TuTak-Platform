@@ -543,8 +543,35 @@ describe('Hybrid funding: prepaid + bonus + external (integration)', () => {
       });
       expect((await ledger.replayBalance(reserved.id)).toFixed(4)).toBe(reserved.balance.toFixed(4));
       expect(await prisma.purchaseIntent.count()).toBe(1);
-      // The loser's source transaction is closed, not left dangling.
-      expect(await prisma.transaction.count({ where: { status: 'FAILED' } })).toBe(1);
+      const survivor = await prisma.purchaseIntent.findFirstOrThrow({
+        select: { sourceTransactionId: true },
+      });
+
+      /*
+       * The loser leaves nothing dangling — but *where* it loses is the race
+       * itself, and both places are correct:
+       *
+       *  - early: its pre-flight `funding.components` check already sees the
+       *    winner's committed hold and throws before `transactionsService
+       *    .create` ever runs, so no source transaction exists at all;
+       *  - late: both pass pre-flight, the loser's hold fails inside the
+       *    atomic block, and the catch marks its source transaction FAILED.
+       *
+       * Asserting one FAILED row asserted the late path, which is a coin
+       * toss: CI drew the early path on 2026-09-21 and reported it as a
+       * failure although every safety assertion above had passed. Verified
+       * by forcing the early path locally — one transaction row, zero
+       * FAILED, one intent.
+       *
+       * What must hold either way is that no row is left mid-flight: the
+       * only in-flight transaction is the survivor's own.
+       */
+      const strays = await prisma.transaction.findMany({
+        where: { id: { not: survivor.sourceTransactionId! } },
+        select: { status: true },
+      });
+      expect(strays.length).toBeLessThanOrEqual(1);
+      expect(strays.map((t) => t.status)).toEqual(strays.map(() => 'FAILED'));
     });
 
     it.each([

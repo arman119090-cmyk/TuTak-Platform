@@ -1,4 +1,9 @@
-import type { EvSessionDto, NearbyPartnerDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type {
+  EvSessionDto,
+  NearbyPartnerDto,
+  PurchaseIntentDto,
+  TransactionDto,
+} from '@tutak/shared-types';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -33,6 +38,9 @@ export type RootStackParamList = {
   ScanQr: undefined;
   Notifications: undefined;
   TransactionHistory: undefined;
+  /** The row is passed through so the screen renders instantly; the purchase
+      behind it (route, refunds) is loaded from the server. */
+  TransactionDetail: { transaction: TransactionDto };
   Referral: undefined;
   EvHistory: undefined;
   /** The session is passed through so the screen renders instantly on start;
@@ -55,7 +63,18 @@ export type RootStackParamList = {
   /** Spec §7: the customer has picked a partner (a map card's "Pay" action)
       and now enters the gross amount and, optionally, how much bonus to
       apply — the intent itself does not exist yet. */
-  CreatePurchaseIntent: { partnerId: string; partnerBranchId?: string; partnerName?: string };
+  CreatePurchaseIntent: {
+    partnerId: string;
+    partnerBranchId?: string;
+    partnerName?: string;
+    /**
+     * Present when the purchase was opened by the partner's till (a scanned
+     * `tutak://checkout/<token>`): the gross is the till's and is not
+     * editable; the customer only chooses how to fund it, and submitting
+     * claims the checkout instead of creating a purchase from scratch.
+     */
+    checkout?: { token: string; checkoutId: string; grossAmount: string };
+  };
   /** Opened by tapping a partner's pin on the map (`PartnersScreen`). The
       record travels through nav params rather than a fresh fetch — it came
       from `/partners/nearby` moments earlier in this same session, and this

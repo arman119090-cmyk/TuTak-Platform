@@ -70,6 +70,37 @@ export enum CustomerPaymentState {
   SUCCEEDED = 'SUCCEEDED',
   /** The provider said, authoritatively, that no money moved. */
   FAILED = 'FAILED',
+  /**
+   * The platform stopped waiting for the provider and nothing authoritative
+   * has said whether the money moved. Not a decline: the customer must not
+   * pay another way. A person will be asked if it stays unresolved.
+   */
+  UNRESOLVED = 'UNRESOLVED',
   /** Nobody can say yet. A human is looking. */
   REQUIRES_RECONCILIATION = 'REQUIRES_RECONCILIATION',
+}
+
+/**
+ * Why the customer may not start a provider payment right now.
+ *
+ * Computed by the server from the same checks `beginAttempt` enforces, so
+ * the app never has to guess — and never has to blame "the cashier has not
+ * agreed" for a purchase that expired, a provider that is switched off, or
+ * an earlier attempt that may already hold the money. `null` on the status
+ * means the server would accept a begin call at this moment; it re-checks
+ * on the call itself, so this is a preview, not a promise.
+ */
+export enum CustomerPaymentBlockReason {
+  /** Paid at the till; the provider is not involved. */
+  NOT_ROUTED = 'NOT_ROUTED',
+  /** Provider payments are switched off on this deployment. */
+  PROVIDER_DISABLED = 'PROVIDER_DISABLED',
+  /** The purchase is no longer waiting: confirmed, refused, expired or cancelled. */
+  PURCHASE_NOT_OPEN = 'PURCHASE_NOT_OPEN',
+  /** Bonus covers the whole amount; there is no real money to collect. */
+  NOTHING_TO_COLLECT = 'NOTHING_TO_COLLECT',
+  /** Staff have not agreed the amount yet. */
+  AWAITING_MERCHANT_APPROVAL = 'AWAITING_MERCHANT_APPROVAL',
+  /** An earlier attempt may hold the money; a second one is refused. */
+  UNRESOLVED_ATTEMPT = 'UNRESOLVED_ATTEMPT',
 }

@@ -34,12 +34,17 @@ describe('Customer prepaid balance, disabled (integration)', () => {
   let balance: CustomerBalanceService;
 
   const savedFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+  const savedPurchaseFlag = process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED;
 
   beforeAll(async () => {
     // Explicitly cleared rather than merely left alone: the assertion is
     // about the default, and a test that passes only because the runner
     // happened not to set a variable proves nothing about production.
     delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+    // Since 20.09.2026 the read route also exists when purchases may spend
+    // the balance. Production has that off too, and this suite is about
+    // production.
+    delete process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED;
     harness = await createHttpTestHarness();
     prisma = harness.prisma;
     balance = harness.app.get(CustomerBalanceService);
@@ -48,6 +53,8 @@ describe('Customer prepaid balance, disabled (integration)', () => {
   afterAll(async () => {
     if (savedFlag === undefined) delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
     else process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = savedFlag;
+    if (savedPurchaseFlag === undefined) delete process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED;
+    else process.env.CUSTOMER_PREPAID_PURCHASE_ENABLED = savedPurchaseFlag;
     await harness.close();
   });
 
@@ -84,7 +91,11 @@ describe('Customer prepaid balance, disabled (integration)', () => {
       expect(response.status).toBe(404);
     });
 
-    it('has no balance route to read', async () => {
+    it('answers 404 on the balance read, as if there were no route', async () => {
+      // Since 20.09.2026 the read controller is registered unconditionally
+      // and refuses per request (see its docblock); from outside, the
+      // answer is the same 404 it always was. This harness runs with no
+      // auth guard, so the check must come before the handler needs a user.
       const response = await fetch(url('/balance/me'));
       expect(response.status).toBe(404);
     });

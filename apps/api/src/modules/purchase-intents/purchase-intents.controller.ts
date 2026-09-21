@@ -10,8 +10,10 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { FindPurchaseIntentByCodeDto } from './dto/find-by-code.dto';
+import { QuotePurchaseIntentDto } from './dto/quote-purchase-intent.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+import { PurchaseFundingService } from './purchase-funding.service';
 import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
@@ -24,7 +26,20 @@ export class PurchaseIntentsController {
     private readonly purchaseIntents: PurchaseIntentsService,
     private readonly purchaseIntentRefunds: PurchaseIntentRefundService,
     private readonly refundRequests: PurchaseIntentRefundRequestService,
+    private readonly funding: PurchaseFundingService,
   ) {}
+
+  /**
+   * The server's breakdown of a purchase before it exists — what bonus and
+   * stored money cover and what is still due at the till. Declared before
+   * `@Get(':id')`/`@Post(':id/...')` for the same routing reason
+   * `findByCode` gives. Any authenticated customer, for themselves; the
+   * quote reads their own balances and nobody else's.
+   */
+  @Post('quote')
+  quote(@CurrentUser() customer: RequestUser, @Body() dto: QuotePurchaseIntentDto) {
+    return this.funding.quote({ ...dto, customerId: customer.id });
+  }
 
   /** Spec §7 steps 1-8. Any authenticated customer, for themselves. */
   @Post()
@@ -218,6 +233,57 @@ export class PurchaseIntentsController {
       actorId: staff.id,
       idempotencyKey: dto.idempotencyKey,
     });
+  }
+
+  /**
+   * A member of staff states that the cash/card part of a refund was handed
+   * back to the customer (§26). Any staff tier scoped to the partner and the
+   * branch: handing cash back is till work, and the record is a statement
+   * of fact rather than a financial decision — the decision was the refund
+   * itself. Declared before `:id/refunds` so the literal segment wins.
+   */
+  /**
+   * The cash the business still has to hand back, across its refunds — what
+   * a cashier works through. Declared before `:id` like the other literal
+   * routes.
+   */
+  @Get('refunds/pending-external')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async pendingExternalRefunds(@CurrentUser() staff: RequestUser, @Query('partnerId') partnerId: string) {
+    assertPartnerScope(staff, partnerId);
+    const rows = await this.purchaseIntentRefunds.listPendingExternal(
+      partnerId,
+      branchFilterFor(staff, partnerId),
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      purchaseIntentId: row.purchaseIntentId,
+      confirmationCode: row.purchaseIntent.confirmationCode,
+      purchaseGross: row.purchaseIntent.grossAmount.toFixed(4),
+      amount: row.amount.toFixed(4),
+      bonusRestored: row.bonusRestored.toFixed(4),
+      prepaidRestored: row.prepaidRestored.toFixed(4),
+      externalRefundDue: row.externalRefundDue.toFixed(4),
+      externalRefundStatus: row.externalRefundStatus,
+      reason: row.reason,
+      createdAt: row.createdAt,
+    }));
+  }
+
+  @Post('refunds/:refundId/confirm-external')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async confirmExternalRefund(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('refundId') refundId: string,
+  ) {
+    const refund = await this.purchaseIntentRefunds.findRefundOrThrow(refundId);
+    assertPartnerScope(staff, refund.purchaseIntent.partnerId);
+    assertResourceBranchScope(
+      staff,
+      refund.purchaseIntent.partnerId,
+      refund.purchaseIntent.partnerBranchId,
+    );
+    return this.purchaseIntentRefunds.confirmExternalRefund(refundId, staff.id);
   }
 
   @Get(':id/refunds')

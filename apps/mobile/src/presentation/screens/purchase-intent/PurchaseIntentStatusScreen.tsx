@@ -18,6 +18,7 @@ import { PartnerMark } from '../../components/PartnerMark';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
+import { invalidateMoney } from '../../../data/query/invalidateMoney';
 import { formatAmd, formatPoints } from '../../utils/format';
 import { JakoScene } from '../../components/JakoScene';
 
@@ -69,8 +70,7 @@ export function PurchaseIntentStatusScreen() {
     // The purchase, if confirmed, already moved real money and bonus — the
     // wallet and transaction history must reflect it the moment this screen
     // is left, not on the next unrelated refetch.
-    queryClient.invalidateQueries({ queryKey: ['wallet'] });
-    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    invalidateMoney(queryClient);
     navigation.goBack();
   };
 
@@ -87,7 +87,7 @@ export function PurchaseIntentStatusScreen() {
       queryClient.setQueryData(['purchase-intent', route.params.intent.id], updated);
       // The bonus this intent reserved is available again the moment the
       // server says CANCELLED — the balance must not keep showing it held.
-      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      invalidateMoney(queryClient);
     } catch (error) {
       // 400 is the server saying the purchase left AWAITING_CONFIRMATION
       // first — the cashier got there, or the window ran out. That is not a
@@ -126,18 +126,9 @@ export function PurchaseIntentStatusScreen() {
             {formatAmd(intent.grossAmount)}
           </Text>
 
-          {Number(intent.bonusAmountRequested) > 0 ? (
-            <View style={{ width: '100%', marginTop: space[8] }}>
-              <View style={styles.row}>
-                <Text style={[text.bodySm, { color: color.textSecondary }]}>
-                  {t('qr.applyBonus')}
-                </Text>
-                <Text style={[text.headline, { color: color.reservedText }]}>
-                  −{formatPoints(intent.bonusAmountRequested)}
-                </Text>
-              </View>
-            </View>
-          ) : null}
+          <View style={{ width: '100%', marginTop: space[8] }}>
+            <FundingLines intent={intent} settled />
+          </View>
 
           <View style={{ width: '100%', marginTop: space[8] }}>
             <Button
@@ -306,11 +297,9 @@ export function PurchaseIntentStatusScreen() {
           <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: space[3] }]}>
             {formatAmd(intent.grossAmount)}
           </Text>
-          {Number(intent.bonusAmountRequested) > 0 ? (
-            <Text style={[text.bodySm, { color: color.reservedText, marginTop: space[2] }]}>
-              −{formatPoints(intent.bonusAmountRequested)} {t('qr.applyBonus').toLowerCase()}
-            </Text>
-          ) : null}
+          <View style={{ alignSelf: 'stretch', marginTop: space[4] }}>
+            <FundingLines intent={intent} settled={false} />
+          </View>
           {readyToPay ? (
             <View style={{ marginTop: space[5], alignSelf: 'stretch' }}>
               <Button
@@ -458,3 +447,43 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   timer: {},
 });
+
+/**
+ * The three funding components, each on its own line, and the figure that
+ * matters at the till — the server's `ordinaryPaymentRemainder`, never a
+ * subtraction done here (§27–28). A zero is said in words: "nothing to pay
+ * at the till", and never "paid" before the cashier has confirmed.
+ */
+function FundingLines({ intent, settled }: { intent: PurchaseIntentDto; settled: boolean }) {
+  const { t } = useTranslation();
+  const { color, space, text } = useTheme();
+  const bonus = Number(intent.bonusAmountRequested) > 0;
+  const prepaid = Number(intent.prepaidAmountApplied ?? '0') > 0;
+  const remainder = Number(intent.ordinaryPaymentRemainder);
+  const viaProvider = intent.paymentRoute === PaymentRoute.TUTAK_PSP;
+  const row = (label: string, value: string, tone: string) => (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: space[2] }}>
+      <Text style={[text.bodySm, { color: color.textSecondary }]}>{label}</Text>
+      <Text style={[text.bodySm, { color: tone }]}>{value}</Text>
+    </View>
+  );
+  return (
+    <View>
+      {bonus ? row(t('qr.applyBonus'), `−${formatPoints(intent.bonusAmountRequested)}`, color.reservedText) : null}
+      {prepaid
+        ? row(t('purchaseIntent.fromBalance'), `−${formatAmd(intent.prepaidAmountApplied)}`, color.reservedText)
+        : null}
+      {remainder > 0
+        ? row(
+            t(viaProvider ? 'purchaseIntent.inTutak' : 'purchaseIntent.atTill'),
+            formatAmd(intent.ordinaryPaymentRemainder),
+            color.textPrimary,
+          )
+        : (
+            <Text style={[text.caption, { color: color.textSecondary, marginTop: space[2] }]}>
+              {t(settled ? 'purchaseIntent.paidViaTutak' : 'purchaseIntent.nothingAtTill')}
+            </Text>
+          )}
+    </View>
+  );
+}

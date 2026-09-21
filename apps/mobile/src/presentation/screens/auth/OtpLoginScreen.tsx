@@ -14,6 +14,7 @@ import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { JakoScene } from '../../components/JakoScene';
 import { DataSafeNote } from '../../components/DataSafeNote';
+import { localPhoneDigits } from '../../../domain/phone';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpLogin'>;
 
@@ -98,7 +99,7 @@ export function OtpLoginScreen({ navigation }: Props) {
               traceId="phone"
               prefix="+374"
               value={phone}
-              onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
+              onChangeText={(v) => setPhone(localPhoneDigits(v))}
               keyboardType="number-pad"
               placeholder="00 000 000"
               maxLength={8}

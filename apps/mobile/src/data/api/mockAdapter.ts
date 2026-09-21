@@ -272,6 +272,19 @@ function handle(
     // ── Wallet ──────────────────────────────────────────────────────────
     case 'GET /wallet/me':
       return envelope(state.wallet);
+    // The stored money balance, separate from points (hybrid funding,
+    // 20.09.2026). The demo shows a funded balance so every checkout state
+    // is reachable; top-ups stay off, as in every real deployment today.
+    case 'GET /balance/me':
+      return envelope({
+        available: state.prepaidAvailable,
+        reserved: '0.0000',
+        book: state.prepaidAvailable,
+        balance: state.prepaidAvailable,
+        currency: 'AMD',
+        purchasesEnabled: true,
+        topUpsEnabled: false,
+      });
     case 'GET /wallet/me/ledger':
       return envelope(paged(state.ledger));
     case 'GET /wallet/me/lots':
@@ -456,15 +469,59 @@ function handle(
     }
 
     // ── Purchase intents ───────────────────────────────────────────────
+    // The server's breakdown, mirrored: the same three components, the
+    // same ceilings, so the demo checkout renders exactly what a real one
+    // would (brief §2).
+    case 'POST /purchase-intents/quote': {
+      const dto = body<{
+        partnerId: string;
+        grossAmount: string;
+        bonusAmountRequested?: string;
+        prepaidAmountApplied?: string;
+      }>(config);
+      const gross = Number(dto.grossAmount);
+      const bonus = Number(dto.bonusAmountRequested ?? '0');
+      const prepaid = Number(dto.prepaidAmountApplied ?? '0');
+      const availableBonus = Number(state.wallet.availableBonus);
+      const availablePrepaid = Number(state.prepaidAvailable);
+      const maxBonus = Math.floor(gross * 0.5 * 10_000) / 10_000;
+      const problems: { code: string; message: string }[] = [];
+      if (bonus + prepaid > gross) problems.push({ code: 'COMPONENTS_EXCEED_GROSS', message: 'over' });
+      if (bonus > maxBonus) problems.push({ code: 'BONUS_EXCEEDS_PARTNER_MAX', message: 'max' });
+      if (bonus > availableBonus) problems.push({ code: 'BONUS_EXCEEDS_AVAILABLE', message: 'bonus' });
+      if (prepaid > availablePrepaid) problems.push({ code: 'PREPAID_EXCEEDS_AVAILABLE', message: 'prepaid' });
+      return envelope({
+        grossAmount: gross.toFixed(4),
+        bonusApplied: bonus.toFixed(4),
+        prepaidAmountApplied: prepaid.toFixed(4),
+        externalAmountDue: Math.max(0, gross - bonus - prepaid).toFixed(4),
+        paymentRoute: PaymentRoute.DIRECT_PARTNER,
+        availableBonus: availableBonus.toFixed(4),
+        maxBonusAllowed: maxBonus.toFixed(4),
+        prepaid: {
+          state: 'AVAILABLE',
+          availablePrepaidBalance: availablePrepaid.toFixed(4),
+          reservedPrepaid: '0.0000',
+        },
+        canProceed: problems.length === 0,
+        problems,
+      });
+    }
+
     case 'POST /purchase-intents': {
       const dto = body<{
         partnerId: string;
         partnerBranchId?: string;
         grossAmount: string;
         bonusAmountRequested?: string;
+        prepaidAmountApplied?: string;
       }>(config);
       const partner = state.partners.find((p) => p.partnerId === dto.partnerId);
       const bonusAmountRequested = dto.bonusAmountRequested ?? '0';
+      const prepaidAmountApplied = dto.prepaidAmountApplied ?? '0';
+      // The hold, mirrored: what the purchase takes from the balance leaves
+      // "available" while it is open, exactly as the ledger does it.
+      state.prepaidAvailable = (Number(state.prepaidAvailable) - Number(prepaidAmountApplied)).toFixed(4);
       const intent: PurchaseIntentDto = {
         id: `pi-${Date.now()}`,
         customerId: MOCK_USER.id,
@@ -474,8 +531,9 @@ function handle(
         confirmationCode: '0042',
         grossAmount: dto.grossAmount,
         bonusAmountRequested,
+        prepaidAmountApplied,
         ordinaryPaymentRemainder: String(
-          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
+          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested) - Number(prepaidAmountApplied)),
         ),
         refundedAmount: '0',
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
@@ -620,6 +678,7 @@ function handle(
         partnerBranchId: null,
         grossAmount: '5000',
         bonusAmountRequested: '0',
+        prepaidAmountApplied: '0',
         ordinaryPaymentRemainder: '5000',
         refundedAmount: '0',
         confirmationCode: '0042',
@@ -643,6 +702,13 @@ function handle(
     return envelope(cancelled);
   }
 
+  // The refunds behind a purchase (U05). The demo records none: a refund is
+  // a partner's decision, and the demo has no partner to make one.
+  const listPurchaseRefunds = /^\/purchase-intents\/([^/]+)\/refunds$/.exec(path);
+  if (method === 'GET' && listPurchaseRefunds) {
+    return envelope([]);
+  }
+
   const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
   if (method === 'GET' && getPurchaseIntent) {
     const id = getPurchaseIntent[1]!;
@@ -664,6 +730,7 @@ function handle(
       confirmationCode: '0042',
       grossAmount: '5000',
       bonusAmountRequested: '0',
+      prepaidAmountApplied: '0',
       ordinaryPaymentRemainder: '5000',
       refundedAmount: '0',
       negotiatedRateBps: 500,
@@ -762,6 +829,42 @@ function handle(
   // resolve against, so a scan always "resolves" to the first demo partner —
   // enough to exercise the screen transition without a second in-memory
   // branch model just for the offline preview.
+  // A till-opened purchase (POS checkout). The demo has one standing
+  // checkout so the scan → claim path is reachable offline; its gross is
+  // the till's and the claim reuses the ordinary purchase handler above.
+  const resolveCheckout = /^\/partner-checkouts\/resolve\/([^/]+)$/.exec(path);
+  if (method === 'GET' && resolveCheckout) {
+    const partner = state.partners[0];
+    return envelope({
+      checkoutId: 'demo-checkout',
+      status: 'OPEN',
+      partnerId: partner?.partnerId ?? 'demo-partner',
+      partnerBranchId: 'demo-branch',
+      partnerDisplayName: partner?.name ?? 'Demo Partner',
+      branchName: 'Main branch',
+      grossAmount: '50000.0000',
+      quantity: null,
+      quantityUnit: null,
+      unitPrice: null,
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      purchaseIntentId: null,
+    });
+  }
+  const claimCheckout = /^\/partner-checkouts\/claim\/([^/]+)$/.exec(path);
+  if (method === 'POST' && claimCheckout) {
+    const partner = state.partners[0];
+    const funding = body<{ bonusAmountRequested?: string; prepaidAmountApplied?: string }>(config);
+    return handle('POST', '/purchase-intents', {
+      ...config,
+      data: JSON.stringify({
+        partnerId: partner?.partnerId ?? 'demo-partner',
+        partnerBranchId: 'demo-branch',
+        grossAmount: '50000',
+        ...funding,
+      }),
+    });
+  }
+
   const resolveBranchQr = /^\/partner-branch-qr\/resolve\/([^/]+)$/.exec(path);
   if (method === 'GET' && resolveBranchQr) {
     const partner = state.partners[0];

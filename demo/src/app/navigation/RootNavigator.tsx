@@ -6,6 +6,7 @@ import { MainTabNavigator } from './MainTabNavigator';
 import { ScanQrScreen } from '../../presentation/screens/qr/ScanQrScreen';
 import { NotificationsScreen } from '../../presentation/screens/notifications/NotificationsScreen';
 import { TransactionHistoryScreen } from '../../presentation/screens/transactions/TransactionHistoryScreen';
+import { TransactionDetailScreen } from '../../presentation/screens/transactions/TransactionDetailScreen';
 import { ReferralScreen } from '../../presentation/screens/referral/ReferralScreen';
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
@@ -63,6 +64,11 @@ export function RootNavigator() {
         name="TransactionHistory"
         component={TransactionHistoryScreen}
         options={{ title: t('wallet.history'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="TransactionDetail"
+        component={TransactionDetailScreen}
+        options={{ title: t('history.detailTitle'), headerShown: false }}
       />
       <Stack.Screen
         name="Referral"

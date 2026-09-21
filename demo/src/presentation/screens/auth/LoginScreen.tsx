@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
+import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -12,14 +15,14 @@ import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
-import { JakoScene } from '../../components/JakoScene';
-import { DataSafeNote } from '../../components/DataSafeNote';
+import { localPhoneDigits } from '../../../domain/phone';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { color, space, text } = useTheme();
+  const { color, space, text, layout } = useTheme();
+  const compact = useCompactLayout();
   const { deviceId, setSession } = useAuthStore();
 
   const [phone, setPhone] = useState('');
@@ -90,19 +93,38 @@ export function LoginScreen({ navigation }: Props) {
   const canSubmit = phone.length >= 8 && password.length >= 8 && !loading;
 
   return (
-    <JakoScene
-      state="login"
-      title={t('auth.welcomeBack')}
-      subtitle={t('auth.tagline')}
-      note={t('scene.note.login')}
-      bubble={t('scene.bubble')}
+    <SafeAreaView
+      style={[styles.flex, { backgroundColor: color.background }]}
+      edges={['top', 'bottom']}
     >
+        <KeyboardAwareScroll
+          contentContainerStyle={[
+            styles.content,
+            { paddingHorizontal: layout.screenPaddingX, paddingTop: compact ? space[6] : space[10] },
+          ]}
+        >
+          {/* The logo appears once, at the top, as the mark — not decoration. */}
+          <Image
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('../../../../assets/logo-mark.png')}
+            style={styles.mark}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
+
+          <Text style={[text.titleLg, { color: color.textPrimary, marginTop: space[7] }]}>
+            {t('auth.welcomeBack')}
+          </Text>
+          <Text style={[text.body, { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[6] : space[8] }]}>
+            {t('auth.loginSubtitle')}
+          </Text>
+
           <TextField
             label={t('auth.phoneNumber')}
             traceId="phone"
             prefix="+374"
             value={phone}
-            onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
+            onChangeText={(v) => setPhone(localPhoneDigits(v))}
             keyboardType="number-pad"
             placeholder="00 000 000"
             maxLength={8}
@@ -134,7 +156,6 @@ export function LoginScreen({ navigation }: Props) {
               disabled={!canSubmit}
               icon={<JakoWingMark size={16} color={color.textInverse} />}
             />
-            <DataSafeNote />
           </View>
 
           <View style={{ marginTop: space[3] }}>
@@ -180,10 +201,14 @@ export function LoginScreen({ navigation }: Props) {
               <Text style={[text.label, { color: color.primary }]}>{t('auth.register')}</Text>
             </Pressable>
           </View>
-    </JakoScene>
+        </KeyboardAwareScroll>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  content: { flexGrow: 1, paddingBottom: 40 },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  mark: { width: 56, height: 56 },
 });

@@ -89,6 +89,8 @@ export function mockTokens() {
  * something being looked at rather than used.
  */
 export interface MockState {
+  /** The stored money balance (hybrid funding). Money, not points — kept apart from `wallet`. */
+  prepaidAvailable: string;
   wallet: {
     id: string;
     userId: string;
@@ -194,6 +196,7 @@ function ledgerEntry(
 export function freshMockState(): MockState {
   return {
     user: { ...MOCK_USER },
+    prepaidAvailable: '25000.0000',
     wallet: {
       id: WALLET_ID,
       userId: MOCK_USER.id,
@@ -328,6 +331,7 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '120',
+        purchaseIntentId: null,
         description: 'Кафе «Ջազվե»',
         metadata: null,
         createdAt: minutesAgo(20),
@@ -344,6 +348,7 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '302.5',
+        purchaseIntentId: null,
         description: 'Супермаркет «Երևան Սիթի»',
         metadata: null,
         createdAt: daysAgo(2),
@@ -360,6 +365,7 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '95.4',
+        purchaseIntentId: null,
         description: 'Зарядка · Республики',
         metadata: null,
         createdAt: daysAgo(5),
@@ -376,6 +382,7 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '150',
         bonusEarnedAmount: '225',
+        purchaseIntentId: null,
         description: 'Кафе «Ջազվե»',
         metadata: null,
         createdAt: daysAgo(9),
@@ -392,6 +399,7 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '0',
+        purchaseIntentId: null,
         description: 'Возврат · Երևան Սիթի',
         metadata: null,
         createdAt: daysAgo(14),

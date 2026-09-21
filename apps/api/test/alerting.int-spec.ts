@@ -198,6 +198,8 @@ describe('Alerting (integration)', () => {
           purchaseIntents: undefined as never,
           partnerSettlement: undefined as never,
           pspAgeing: undefined as never,
+          customerBalance: undefined as never,
+          partnerCheckouts: undefined as never,
           pspCallbacks: undefined as never,
           refunds: undefined as never,
         },

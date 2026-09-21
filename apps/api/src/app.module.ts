@@ -31,6 +31,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { PartnersModule } from './modules/partners/partners.module';
+import { PartnerCheckoutModule } from './modules/partner-checkout/partner-checkout.module';
 import { PurchaseIntentsModule } from './modules/purchase-intents/purchase-intents.module';
 import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
 import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
@@ -100,6 +101,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     TransactionsModule,
     PartnersModule,
     PurchaseIntentsModule,
+    PartnerCheckoutModule,
     QrPaymentsModule,
     EvChargingModule,
     RoamingCpoModule,

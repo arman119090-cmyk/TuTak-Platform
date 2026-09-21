@@ -24,6 +24,9 @@ jest.mock('../biometrics/biometricDevice', () => ({
 const mockMemory = new Map<string, string>();
 jest.mock('../storage/secureStorage', () => ({
   getItem: jest.fn(async (key: string) => mockMemory.get(key) ?? null),
+  readItem: jest.fn(async (key: string) =>
+    mockMemory.has(key) ? { kind: 'value', value: mockMemory.get(key) } : { kind: 'absent' },
+  ),
   setItem: jest.fn(async (key: string, value: string) => {
     mockMemory.set(key, value);
   }),
@@ -50,9 +53,17 @@ async function signIn(user: AuthenticatedUserDto) {
   await settle();
 }
 
+const memoryRead = async (key: string) =>
+  mockMemory.has(key) ? { kind: 'value' as const, value: mockMemory.get(key)! } : { kind: 'absent' as const };
+
 beforeEach(async () => {
   mockMemory.clear();
   jest.clearAllMocks();
+  // A test that scripts a keystore failure must not leak it into the next.
+  mockedStorage.readItem.mockImplementation(memoryRead);
+  mockedStorage.setItem.mockImplementation(async (key: string, value: string) => {
+    mockMemory.set(key, value);
+  });
   mockedDevice.availableBiometrics.mockResolvedValue('face');
   mockedDevice.readBiometricOwner.mockResolvedValue(null);
   mockedDevice.createBiometricProof.mockResolvedValue(undefined);
@@ -60,7 +71,117 @@ beforeEach(async () => {
   mockedDevice.removeBiometricProof.mockResolvedValue(undefined);
   await useAuthStore.getState().clear();
   await settle();
-  useAppLockStore.setState({ status: 'idle', busy: false, biometricsEnabled: false, biometricKind: null, attemptsLeft: MAX_ATTEMPTS });
+  useAppLockStore.setState({ status: 'idle', storage: 'ok', busy: false, biometricsEnabled: false, biometricKind: null, attemptsLeft: MAX_ATTEMPTS });
+});
+
+/**
+ * Audit of 21.09.2026, D07/D08: the lock fails closed when the keystore
+ * does not answer. The auditor's counter-examples, in order: a read error
+ * used to land on `setup` and accept a new code with the session intact; a
+ * write error on the attempt counter used to leave the count in memory so
+ * a restart handed back five tries.
+ */
+describe('appLockStore: fail closed on keystore errors (audit D07/D08)', () => {
+  it('a keystore read error at cold start locks the app with no keypad — never setup, never a new code', async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    useAppLockStore.setState({ status: 'idle' });
+    mockedStorage.readItem.mockImplementation(async (key: string) =>
+      key === 'tutak.appLock.pin.v1'
+        ? { kind: 'unavailable', error: new Error('OS read failed') }
+        : mockMemory.has(key)
+          ? { kind: 'value', value: mockMemory.get(key)! }
+          : { kind: 'absent' },
+    );
+    await lock().hydrate();
+    expect(lock().status).toBe('locked');
+    expect(lock().storage).toBe('unavailable');
+    expect(useAuthStore.getState().user).not.toBeNull();
+    // The auditor's second step: replace the code without the old proof.
+    expect(await lock().createPin('9876')).toBe(false);
+    expect(lock().status).toBe('locked');
+    expect(mockMemory.get('tutak.appLock.pin.v1')).not.toContain('9876');
+    expect(await lock().unlockWithPin('1234')).toBe('unavailable');
+    expect(await lock().unlockWithBiometrics('x')).toBe(false);
+    expect(lock().status).toBe('locked');
+  });
+
+  it('a corrupt code record under this account is damage, not a first visit', async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    mockMemory.set('tutak.appLock.pin.v1', 'not json');
+    useAppLockStore.setState({ status: 'idle' });
+    await lock().hydrate();
+    expect(lock().status).toBe('locked');
+    expect(lock().storage).toBe('invalid');
+    expect(await lock().createPin('0000')).toBe(false);
+  });
+
+  it('a missing attempt counter is zero used; a garbage one is refused', async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    mockMemory.delete('tutak.appLock.attempts.v1');
+    useAppLockStore.setState({ status: 'idle' });
+    await lock().hydrate();
+    expect(lock()).toMatchObject({ status: 'locked', storage: 'ok', attemptsLeft: MAX_ATTEMPTS });
+    mockMemory.set('tutak.appLock.attempts.v1', 'NaN');
+    useAppLockStore.setState({ status: 'idle' });
+    await lock().hydrate();
+    expect(lock()).toMatchObject({ status: 'locked', storage: 'invalid' });
+  });
+
+  it('a wrong code is counted on disk before it is judged, so a restart cannot restore the limit', async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    lock().lock();
+    for (let i = 1; i <= 4; i += 1) expect(await lock().unlockWithPin('0000')).toBe('wrong');
+    expect(lock().attemptsLeft).toBe(1);
+    expect(mockMemory.get('tutak.appLock.attempts.v1')).toBe('4');
+    // Cold start: the count comes back from storage.
+    useAppLockStore.setState({ status: 'idle', attemptsLeft: MAX_ATTEMPTS });
+    await lock().hydrate();
+    expect(lock().attemptsLeft).toBe(1);
+  });
+
+  it("an attempt whose count cannot be written is refused, not judged — the auditor's write-failure case", async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    lock().lock();
+    mockedStorage.setItem.mockImplementation(async (key: string, value: string) => {
+      if (key === 'tutak.appLock.attempts.v1') throw new Error('OS write failed');
+      mockMemory.set(key, value);
+    });
+    for (let i = 0; i < 4; i += 1) expect(await lock().unlockWithPin('0000')).toBe('unavailable');
+    // Nothing was counted, because nothing was judged: the limit is intact
+    // in memory and on disk agrees.
+    expect(lock().attemptsLeft).toBe(MAX_ATTEMPTS);
+    expect(mockMemory.get('tutak.appLock.attempts.v1')).toBe('0');
+    // Even the right code cannot get in while attempts cannot be recorded.
+    expect(await lock().unlockWithPin('1234')).toBe('unavailable');
+    expect(lock().status).toBe('locked');
+    // Restart: still five, and still locked — which is the truth, since
+    // no attempt was ever made.
+    useAppLockStore.setState({ status: 'idle' });
+    await lock().hydrate();
+    expect(lock().attemptsLeft).toBe(MAX_ATTEMPTS);
+    expect(useAuthStore.getState().user).not.toBeNull();
+  });
+
+  it('a failed reset after the right code keeps the stricter count', async () => {
+    await signIn(userA);
+    await lock().createPin('1234');
+    lock().lock();
+    expect(await lock().unlockWithPin('0000')).toBe('wrong');
+    mockedStorage.setItem.mockImplementation(async (key: string, value: string) => {
+      if (key === 'tutak.appLock.attempts.v1' && value === '0') throw new Error('OS write failed');
+      mockMemory.set(key, value);
+    });
+    expect(await lock().unlockWithPin('1234')).toBe('ok');
+    expect(lock().status).toBe('unlocked');
+    // The count that includes the attempt just made stays: 2 used, 3 left.
+    expect(lock().attemptsLeft).toBe(MAX_ATTEMPTS - 2);
+    expect(mockMemory.get('tutak.appLock.attempts.v1')).toBe('2');
+  });
 });
 
 describe('appLockStore', () => {

@@ -184,3 +184,77 @@ describe('PartnersScreen — the way into the charging history', () => {
     expect(screen.queryByText('ev.history')).toBeNull();
   });
 });
+
+/**
+ * U10 — the two sources fail on their own. A charging outage must not hide
+ * the café that loaded fine, and vice versa.
+ */
+describe('PartnersScreen — one source down', () => {
+  const partner = {
+    id: 'branch-1',
+    partnerId: 'partner-1',
+    name: 'Coffee Corner',
+    branchName: 'Coffee Corner Kentron',
+    category: 'cafe',
+    address: '5 Abovyan St',
+    city: 'Yerevan',
+    latitude: 40.18,
+    longitude: 44.51,
+    cashbackPercent: 5,
+    distanceKm: 0.4,
+    highCashback: false,
+    isActive: true,
+    logo: null,
+  };
+  const station = {
+    id: 'station-1',
+    partnerId: 'partner-2',
+    name: 'TuTak Kentron',
+    address: '1 Mashtots Ave',
+    city: 'Yerevan',
+    latitude: 40.18,
+    longitude: 44.51,
+    ocpiLocationId: null,
+    provider: 'INTERNAL',
+    externalStationId: null,
+    standardRetailRatePerKwh: null,
+    distanceKm: 1.2,
+    connectors: [],
+  };
+
+  beforeEach(() => {
+    (evApi.activeSession as jest.Mock).mockResolvedValue(null);
+  });
+
+  it('still lists partners when the stations request fails, and says stations are missing', async () => {
+    (partnersApi.nearby as jest.Mock).mockResolvedValue([partner]);
+    (evApi.nearbyStations as jest.Mock).mockRejectedValue(new Error('cpo down'));
+    const { findByText, queryByText } = renderScreen();
+    expect(await findByText('Coffee Corner')).toBeTruthy();
+    expect(await findByText(/charging stations could not be loaded/i)).toBeTruthy();
+    expect(queryByText('partners.loadFailed')).toBeNull();
+  });
+
+  it('still lists stations when the partners request fails, and says partners are missing', async () => {
+    (partnersApi.nearby as jest.Mock).mockRejectedValue(new Error('api down'));
+    (evApi.nearbyStations as jest.Mock).mockResolvedValue([station]);
+    const { findByText, queryByText } = renderScreen();
+    expect(await findByText('TuTak Kentron')).toBeTruthy();
+    expect(await findByText(/partners could not be loaded/i)).toBeTruthy();
+    expect(queryByText('partners.loadFailed')).toBeNull();
+  });
+
+  it('retries only the source that failed', async () => {
+    (partnersApi.nearby as jest.Mock).mockResolvedValue([partner]);
+    (evApi.nearbyStations as jest.Mock).mockRejectedValue(new Error('cpo down'));
+    const { findByText, getAllByText } = renderScreen();
+    await findByText(/charging stations could not be loaded/i);
+    const partnerCalls = (partnersApi.nearby as jest.Mock).mock.calls.length;
+    const stationCalls = (evApi.nearbyStations as jest.Mock).mock.calls.length;
+    fireEvent.press(getAllByText('common.retry')[0]!);
+    await waitFor(() =>
+      expect((evApi.nearbyStations as jest.Mock).mock.calls.length).toBeGreaterThan(stationCalls),
+    );
+    expect((partnersApi.nearby as jest.Mock).mock.calls.length).toBe(partnerCalls);
+  });
+});

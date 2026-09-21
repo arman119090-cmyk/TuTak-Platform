@@ -1,5 +1,6 @@
 import type {
   ApprovePurchaseIntentRequestDto,
+  PendingExternalRefundDto,
   PurchaseIntentDto,
   PurchaseIntentStatus,
   RejectPurchaseIntentRequestDto,
@@ -42,6 +43,23 @@ export const purchaseIntentApi = {
     const { data } = await httpClient.post<ApiEnvelope<PurchaseIntentDto>>(
       `/purchase-intents/${id}/approve-for-payment`,
       dto,
+    );
+    return data.data;
+  },
+
+  /** Refunds whose cash slice the business still has to hand back (§26). */
+  async pendingExternalRefunds(partnerId: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PendingExternalRefundDto[]>>(
+      '/purchase-intents/refunds/pending-external',
+      { params: { partnerId } },
+    );
+    return data.data;
+  },
+
+  /** The business states the cash was handed back. Idempotent on the server. */
+  async confirmExternalRefund(refundId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<{ id: string; externalRefundStatus: string }>>(
+      `/purchase-intents/refunds/${refundId}/confirm-external`,
     );
     return data.data;
   },

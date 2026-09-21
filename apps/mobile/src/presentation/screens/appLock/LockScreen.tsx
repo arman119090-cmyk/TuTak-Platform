@@ -27,7 +27,7 @@ import { JakoScene } from '../../components/JakoScene';
 export function LockScreen() {
   const { t } = useTranslation();
   const { color, space, text } = useTheme();
-  const { busy, biometricsEnabled, biometricKind, attemptsLeft, unlockWithPin, unlockWithBiometrics } =
+  const { busy, storage, biometricsEnabled, biometricKind, attemptsLeft, unlockWithPin, unlockWithBiometrics, hydrate } =
     useAppLockStore();
   const biometricLabel = useBiometricLabel(biometricKind);
   const [pin, setPin] = useState('');
@@ -38,10 +38,12 @@ export function LockScreen() {
   const prompted = useRef(false);
 
   const tryBiometrics = useCallback(() => {
-    if (!biometricsEnabled || busy) return;
+    // No prompt when there is no code to unlock against (audit D07/D08):
+    // the store refuses too, but the OS sheet must not appear at all.
+    if (!biometricsEnabled || busy || storage !== 'ok') return;
     setError(null);
     void unlockWithBiometrics(t('appLock.biometricPrompt'));
-  }, [biometricsEnabled, busy, unlockWithBiometrics, t]);
+  }, [biometricsEnabled, busy, storage, unlockWithBiometrics, t]);
 
   // Once per lock, and only while the app is actually in front: a prompt
   // raised from the background is dismissed by the OS before anyone sees it.
@@ -67,6 +69,11 @@ export function LockScreen() {
       if (result === 'ok') return;
       if (result === 'wrong') {
         setError(t('appLock.wrongCode', { count: useAppLockStore.getState().attemptsLeft }));
+        return;
+      }
+      if (result === 'unavailable') {
+        setPin('');
+        setError(t('appLock.attemptNotRecorded'));
         return;
       }
       if (result === 'signed-out') {
@@ -106,6 +113,47 @@ export function LockScreen() {
       },
     ]);
   };
+
+  // The keystore did not answer, or what it holds for this account is
+  // damaged (audit D07/D08). No keypad and no biometric prompt: there is
+  // nothing to check a code against, and offering a new one here would be
+  // the bypass the audit found. The person signs in again by SMS.
+  if (storage !== 'ok') {
+    return (
+      <SafeAreaView style={[styles.screen, { backgroundColor: color.background }]}>
+        <View style={[styles.top, { paddingHorizontal: space[5], paddingTop: space[8] }]}>
+          <JakoWingMark size={36} color={color.primary} />
+          <Text accessibilityRole="header" style={[text.title, { color: color.textPrimary, marginTop: space[5] }]}>
+            {t('appLock.storageUnavailableTitle')}
+          </Text>
+          <Text
+            accessibilityRole="alert"
+            style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], textAlign: 'center' }]}
+          >
+            {t('appLock.storageUnavailableBody')}
+          </Text>
+        </View>
+        <View style={{ paddingBottom: space[6], paddingHorizontal: space[5], gap: space[3] }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void hydrate()}
+            disabled={busy || leaving}
+            style={{ alignSelf: 'center', paddingVertical: space[2] }}
+          >
+            <Text style={[text.bodySm, { color: color.textSecondary }]}>{t('appLock.storageUnavailableRetry')}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={forgot}
+            disabled={leaving}
+            style={{ alignSelf: 'center', paddingVertical: space[2] }}
+          >
+            <Text style={[text.headline, { color: color.primary }]}>{t('appLock.storageUnavailableSignOut')}</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <JakoScene

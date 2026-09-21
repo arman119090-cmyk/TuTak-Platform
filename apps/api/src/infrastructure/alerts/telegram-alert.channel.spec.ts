@@ -99,7 +99,7 @@ describe('TelegramAlertChannel — adversarial', () => {
   it('a 2xx whose body is not JSON is not delivered', async () => {
     respond(200, null, true);
     const delivery = await new TelegramAlertChannel(token, '1', 'production').send(alert);
-    expect(delivery).toEqual({ delivered: false, detail: 'telegram answered 200' });
+    expect(delivery).toEqual({ delivered: false, detail: 'telegram answered 200', retryable: true });
   });
 
   it('a 2xx with ok:true but a wrong shape is still delivered only on ok:true', async () => {

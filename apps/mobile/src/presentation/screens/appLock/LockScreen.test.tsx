@@ -12,10 +12,12 @@ jest.mock('../../../data/api/authApi', () => ({ authApi: { logout: jest.fn(async
 jest.mock('../../../data/stores/appLockStore', () => {
   const state = {
     status: 'locked',
+    storage: 'ok',
     busy: false,
     biometricsEnabled: false,
     biometricKind: null,
     attemptsLeft: 5,
+    hydrate: jest.fn(),
     unlockWithPin: jest.fn(),
     unlockWithBiometrics: jest.fn(),
     createPin: jest.fn(),
@@ -33,7 +35,7 @@ const type = (digits: string) => {
 beforeEach(() => {
   jest.clearAllMocks();
   AppState.currentState = 'active';
-  useAppLockStore.setState({ status: 'locked', busy: false, biometricsEnabled: false, biometricKind: null, attemptsLeft: 5 });
+  useAppLockStore.setState({ status: 'locked', storage: 'ok', busy: false, biometricsEnabled: false, biometricKind: null, attemptsLeft: 5 });
 });
 
 describe('LockScreen', () => {
@@ -69,6 +71,17 @@ describe('LockScreen', () => {
     render(<LockScreen />);
     type('0000');
     await waitFor(() => expect(alert).toHaveBeenCalledWith('appLock.tooManyTitle', 'appLock.tooManyBody'));
+  });
+
+  it('shows no keypad and no biometric prompt when the keystore did not answer (audit D07/D08)', async () => {
+    useAppLockStore.setState({ storage: 'unavailable', attemptsLeft: 0, biometricsEnabled: true, biometricKind: 'face' });
+    render(<LockScreen />);
+    expect(screen.queryByTestId('pin-key-1')).toBeNull();
+    expect(screen.getByText('appLock.storageUnavailableTitle')).toBeTruthy();
+    expect(store().unlockWithBiometrics).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('appLock.storageUnavailableRetry'));
+    expect(store().hydrate).toHaveBeenCalledTimes(1);
+    expect(store().createPin).not.toHaveBeenCalled();
   });
 });
 

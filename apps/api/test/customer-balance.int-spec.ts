@@ -214,4 +214,107 @@ describe('Customer prepaid balance (integration)', () => {
       expect(await prisma.ledgerTransaction.count({ where: { kind: 'balance.topup.completed' } })).toBe(0);
     });
   });
+
+  /**
+   * Owner's brief §17 (20.09.2026): a timeout is not a decline. A top-up the
+   * provider has not answered becomes UNRESOLVED — a state, not an outcome —
+   * gets louder on a schedule, and is closed only by the provider's own
+   * answer. Time never credits and never declines.
+   */
+  describe('an unanswered top-up', () => {
+    const pendingSince = async (userId: string, minutesAgo: number) => {
+      const providerReference = `PROVIDER-${randomUUID()}`;
+      initiated(providerReference);
+      const result = await balance.initiateTopUp(userId, '5000');
+      await prisma.balanceTopUp.update({
+        where: { id: result.topUpId },
+        data: { createdAt: new Date(Date.now() - minutesAgo * 60_000) },
+      });
+      return { topUpId: result.topUpId, providerReference };
+    };
+
+    it('becomes UNRESOLVED after the stale window and raises one alert; a fresh one is left alone', async () => {
+      const { user } = await createCustomer(prisma);
+      const stale = await pendingSince(user.id, 45);
+      const fresh = await pendingSince(user.id, 5);
+      harness.alerts.clear();
+
+      const first = await balance.escalateStaleTopUps();
+      expect(first).toEqual({ marked: 1, escalated: 1 });
+
+      const staleRow = await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: stale.topUpId } });
+      expect(staleRow.status).toBe('UNRESOLVED');
+      expect(staleRow.unresolvedAt).not.toBeNull();
+      expect(staleRow.escalationCount).toBe(1);
+      // Not DECLINED, not FAILED, no ledger movement: nobody decided anything.
+      expect(staleRow.ledgerTransactionId).toBeNull();
+      expect(await balance.getBalance(user.id)).toEqual({ balance: '0.0000', currency: 'AMD' });
+      const freshRow = await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: fresh.topUpId } });
+      expect(freshRow.status).toBe('PENDING');
+
+      const alerts = harness.alerts.sent.filter((a) => a.key.startsWith('balance.topup.unresolved:'));
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]!.body).toContain(stale.topUpId);
+      // The provider reference, never a phone number or a secret.
+      expect(alerts[0]!.body).toContain(stale.providerReference);
+      expect(alerts[0]!.body).not.toContain(user.phone);
+
+      // Within the escalation window a second sweep stays quiet.
+      const second = await balance.escalateStaleTopUps();
+      expect(second).toEqual({ marked: 0, escalated: 0 });
+      expect(harness.alerts.sent.filter((a) => a.key.startsWith('balance.topup.unresolved:'))).toHaveLength(1);
+    });
+
+    it('is credited exactly once when the provider finally answers COMPLETED', async () => {
+      const { user } = await createCustomer(prisma);
+      const { topUpId, providerReference } = await pendingSince(user.id, 45);
+      await balance.escalateStaleTopUps();
+      expect((await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: topUpId } })).status).toBe('UNRESOLVED');
+
+      webhookCompletes(providerReference);
+      await Promise.all([
+        balance.confirmTopUpWebhook({ reference: providerReference }, {}),
+        balance.confirmTopUpWebhook({ reference: providerReference }, {}),
+      ]);
+
+      const row = await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: topUpId } });
+      expect(row.status).toBe('COMPLETED');
+      expect(row.resolvedAt).not.toBeNull();
+      expect(await balance.getBalance(user.id)).toEqual({ balance: '5000.0000', currency: 'AMD' });
+      expect(await prisma.ledgerTransaction.count({ where: { kind: 'balance.topup.completed' } })).toBe(1);
+      // Resolved rows are never escalated again.
+      expect(await balance.escalateStaleTopUps()).toEqual({ marked: 0, escalated: 0 });
+    });
+
+    it('is declined — not credited — when the provider finally answers DECLINED', async () => {
+      const { user } = await createCustomer(prisma);
+      const { topUpId, providerReference } = await pendingSince(user.id, 45);
+      await balance.escalateStaleTopUps();
+      jest
+        .spyOn(adapter, 'verifyTopUpWebhook')
+        .mockResolvedValue({ providerReference, outcome: 'DECLINED', declineReason: 'card_refused' });
+
+      await balance.confirmTopUpWebhook({ reference: providerReference }, {});
+
+      const row = await prisma.balanceTopUp.findUniqueOrThrow({ where: { id: topUpId } });
+      expect(row.status).toBe('DECLINED');
+      expect(row.declineReason).toBe('card_refused');
+      expect(await balance.getBalance(user.id)).toEqual({ balance: '0.0000', currency: 'AMD' });
+    });
+
+    it('reports UNRESOLVED as itself to the customer, and only to that customer', async () => {
+      const { user } = await createCustomer(prisma);
+      const { user: stranger } = await createCustomer(prisma);
+      const { topUpId } = await pendingSince(user.id, 45);
+      await balance.escalateStaleTopUps();
+
+      expect(await balance.getTopUpStatus(user.id, topUpId)).toMatchObject({
+        topUpId,
+        status: 'UNRESOLVED',
+        amount: '5000.0000',
+        resolvedAt: null,
+      });
+      await expect(balance.getTopUpStatus(stranger.id, topUpId)).rejects.toThrow(/not found/i);
+    });
+  });
 });

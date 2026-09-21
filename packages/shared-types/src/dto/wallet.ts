@@ -73,3 +73,21 @@ export interface BonusLotDto {
   expiresAt: string;
   createdAt: string;
 }
+
+/**
+ * A customer's stored money — `GET /balance/me`. Separate from the points
+ * wallet on every screen: money and bonus are two balances, never one
+ * number. `book = available + reserved`. The two flags say what this
+ * deployment lets the customer do with it; a client shows "not available"
+ * for a capability that is off, never a zero.
+ */
+export interface CustomerBalanceDto {
+  available: string;
+  reserved: string;
+  book: string;
+  /** Same as `available`; the shape older clients read. */
+  balance: string;
+  currency: string;
+  purchasesEnabled: boolean;
+  topUpsEnabled: boolean;
+}

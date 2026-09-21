@@ -160,6 +160,19 @@ test.describe('catalogue', () => {
     await expect(page.getByRole('heading', { name: 'Sofas' })).toBeVisible();
   });
 
+  test('the organisation data carries the name of the current language', async ({ page }) => {
+    await page.goto('/hy');
+    const payloads = await page.locator('script[type="application/ld+json"]').allTextContents();
+    const organisation = payloads
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .find((data) => data['@type'] === 'FurnitureStore');
+    expect(organisation?.name).toBe('Հովիկի Մեբել');
+    expect(organisation?.alternateName).toEqual(
+      expect.arrayContaining(['Ховики Мебель', 'Hoviki Mebel']),
+    );
+    expect(organisation?.telephone).toEqual(['+37491200009', '+37495200003']);
+  });
+
   test('the shop name is written in the language of the page', async ({ page }) => {
     const names = { hy: 'Հովիկի Մեբել', ru: 'Ховики Мебель', en: 'Hoviki Mebel' };
     for (const [locale, name] of Object.entries(names)) {

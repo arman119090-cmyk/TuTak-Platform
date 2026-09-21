@@ -11,6 +11,7 @@ import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { ToastViewport } from '@/components/layout/toast-viewport';
 import { FloatingContact } from '@/components/layout/floating-contact';
+import { JsonLd, organizationJsonLd } from '@/lib/seo';
 
 export const generateStaticParams = () => LOCALES.map((locale) => ({ locale }));
 
@@ -66,6 +67,8 @@ const LocaleLayout = async ({
   return (
     <html lang={htmlLang(locale)}>
       <body>
+        {/* The shop itself, named in the language of the page, on every page. */}
+        <JsonLd data={organizationJsonLd(locale)} />
         <StoreProvider isAuthenticated={Boolean(session)}>
           <a
             href="#main"

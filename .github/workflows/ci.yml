@@ -116,8 +116,20 @@ jobs:
         run: pnpm audit --audit-level moderate
 
       # Unit tests need no database, so a failure here is unambiguous.
+      # Coverage is reported, not enforced: the summary lands in the log and
+      # the lcov file in an artifact, so the number is known before a
+      # threshold is chosen (audit of 2026-09-20, item M9).
       - name: Unit tests
-        run: pnpm --filter @tutak/api test:unit
+        run: pnpm --filter @tutak/api test:unit --coverage --coverageReporters=text-summary --coverageReporters=lcov
+
+      - name: Upload API unit coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-api-unit
+          path: apps/api/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14
 
       # globalSetup creates tutak_test, applies the full migration history,
       # and runs VALIDATE CONSTRAINT on bonus_ledger_delta_matches_direction.
@@ -213,7 +225,16 @@ jobs:
           MIGRATED_DATABASE_URL: postgresql://tutak:tutak_ci_password@localhost:5432/tutak?schema=public
 
       - name: Mobile tests
-        run: pnpm --filter @tutak/mobile test
+        run: pnpm --filter @tutak/mobile test --coverage --coverageReporters=text-summary --coverageReporters=lcov
+
+      - name: Upload mobile coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-mobile
+          path: apps/mobile/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14
 
       # `demo/` is a generated copy of the mobile app with the workspace
       # taken out, so that somebody can download the repository as a ZIP and

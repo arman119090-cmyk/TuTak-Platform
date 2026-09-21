@@ -57,7 +57,7 @@ COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src ./src
 COPY --from=build /app/tsconfig.json ./tsconfig.json
-COPY --from=build --chown=postgres:postgres /pgdata /pgdata
+COPY --from=build --chown=postgres:postgres --chmod=700 /pgdata /pgdata
 COPY scripts/demo-entrypoint.sh /usr/local/bin/demo-entrypoint.sh
 RUN chmod +x /usr/local/bin/demo-entrypoint.sh
 EXPOSE 10000

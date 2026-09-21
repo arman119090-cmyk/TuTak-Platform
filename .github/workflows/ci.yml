@@ -355,6 +355,38 @@ jobs:
       # location instead of leaving silence. `--forceExit` is deliberately
       # absent — see the 2026-08-30 hardening note in git history for the
       # open handle it used to paper over and why removing it was the fix.
+      # This shard's database is destroyed with the container, so paying for
+      # crash durability buys nothing and occasionally costs the whole job.
+      # On 2026-09-21 shard 3 was killed by the 15-minute step timeout while
+      # tests were still executing: a single checkpoint on that runner took
+      # 38 seconds and fsynced 46,026 files. The same shard, on the same
+      # commit, finished in 5m22s on a healthy runner minutes earlier, and
+      # the same shard had timed out once before on 3ff6b41. Slow disk sync
+      # is the variable, so it is the one removed here.
+      #
+      # All three settings are reloadable (`fsync` and `full_page_writes` are
+      # sighup, `synchronous_commit` is per-session), so no restart is needed;
+      # the poll below is because a reload is asynchronous. The timeout stays
+      # at 15 minutes so a genuine hang is still caught rather than waited on.
+      - name: Drop durability in the throwaway test database
+        env:
+          PGPASSWORD: tutak_ci_password
+        run: |
+          psql -h localhost -U tutak -d tutak -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = off;" \
+            -c "ALTER SYSTEM SET synchronous_commit = off;" \
+            -c "ALTER SYSTEM SET full_page_writes = off;" \
+            -c "SELECT pg_reload_conf();"
+          for _ in $(seq 1 20); do
+            if [ "$(psql -h localhost -U tutak -d tutak -tAc 'SHOW fsync')" = "off" ]; then
+              break
+            fi
+            sleep 0.5
+          done
+          psql -h localhost -U tutak -d tutak -tAc \
+            "SELECT name || '=' || setting FROM pg_settings
+             WHERE name IN ('fsync','synchronous_commit','full_page_writes');"
+
       - name: Integration tests
         timeout-minutes: 15
         run: pnpm --filter @tutak/api test:int:shard

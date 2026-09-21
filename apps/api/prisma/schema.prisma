@@ -1091,6 +1091,12 @@ model PurchaseIntentRefund {
   externalRefundStatus            ExternalRefundStatus @default(NOT_REQUIRED)
   externalRefundConfirmedAt       DateTime?
   externalRefundConfirmedByUserId String?
+  /// Which `splitRefundAcrossComponents` policy computed the three slices.
+  /// 1: independent per-component watermarks (could go negative on the
+  /// external slice — audit 21.09.2026, D09). 2: cumulative allocator, each
+  /// component from the previous one's remainder. Rows written before the
+  /// column existed are stamped 1 by the migration.
+  roundingPolicyVersion           Int                  @default(2)
   reason                          String
   /// The reversing ledger transaction for the pool-contribution leg.
   /// Postings are immutable, so a refund is a new transaction pointing back

@@ -12,6 +12,7 @@ import {
   Currency,
   LedgerAccountType,
   PartnerSettlementStatus,
+  PaymentRoute,
   PurchaseIntentStatus,
   PostingDirection,
   Prisma,
@@ -24,6 +25,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LedgerService } from '../ledger/ledger.service';
 import {
+  ALLOCATION_LEDGER_KINDS,
   SETTLEABLE_LEDGER_KINDS,
   SETTLEMENT_PAID_KIND,
   unrecognisedKinds,
@@ -104,8 +106,10 @@ export interface PartnerPosition extends UnsettledBreakdown {
 export interface PartnerFundingBreakdown {
   /** Gross of every confirmed sale. */
   salesGross: Decimal;
-  /** What the partner took directly at the till or through the provider — never TuTak's money. */
+  /** What the partner took at their own till (cash / their own card terminal) — never TuTak's money. `DIRECT_PARTNER` only. */
   receivedDirectly: Decimal;
+  /** What the provider collected for TuTak on `TUTAK_PSP` sales — TuTak's to settle, never in the till (audit D12). */
+  receivedViaProvider: Decimal;
   /** Paid from customers' stored balances: TuTak owes this to the partner (`partner.prepaid_funding`, net of refunds). */
   fundedByPrepaid: Decimal;
   /** Paid in bonus: TuTak compensates it (`partner.bonus_redemption_compensation`, net of refunds). */
@@ -198,11 +202,7 @@ export class PartnerSettlementService {
     }
 
     const postings = await db.ledgerPosting.findMany({
-      where: {
-        accountId: account.id,
-        settlementEntry: null,
-        ...(opts.until ? { transaction: { postedAt: { lte: opts.until } } } : {}),
-      },
+      where: { accountId: account.id, settlementEntry: null },
       select: {
         id: true,
         amount: true,
@@ -217,7 +217,17 @@ export class PartnerSettlementService {
     let deductions = new Decimal(0);
 
     for (const posting of postings) {
-      if (!SETTLEABLE_LEDGER_KINDS.has(posting.transaction.kind)) continue;
+      const kind = posting.transaction.kind;
+      // Economic postings are claimed up to the period end. Allocations —
+      // a legacy payout, a collection — are claimed whenever they exist:
+      // they are money that already moved against this residual, and a
+      // period boundary must not leave them out of the settlement that
+      // pays the entries they settled (audit D02/D03).
+      if (SETTLEABLE_LEDGER_KINDS.has(kind)) {
+        if (opts.until && posting.transaction.postedAt > opts.until) continue;
+      } else if (!ALLOCATION_LEDGER_KINDS.has(kind)) {
+        continue;
+      }
       entries.push({
         ledgerPostingId: posting.id,
         amount: posting.amount,
@@ -257,78 +267,96 @@ export class PartnerSettlementService {
    * (`partner-position.int-spec.ts` pins it).
    */
   async position(partnerId: string): Promise<PartnerPosition> {
-    const [breakdown, account, settlements, funding] = await Promise.all([
-      this.unsettled(partnerId),
-      this.prisma.ledgerAccount.findFirst({
-        where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
-        select: { balance: true },
-      }),
-      this.prisma.partnerSettlement.findMany({
-        where: { partnerId },
-        select: { status: true, netPayableAmount: true },
-      }),
-      this.fundingBreakdown(partnerId),
-    ]);
+    // One snapshot (audit D04): the four reads run sequentially inside a
+    // REPEATABLE READ transaction, so a draft created or cancelled between
+    // them cannot show the same 50 000 as both "not yet settled" and "in a
+    // settlement". Sequential rather than `Promise.all` because an
+    // interactive transaction is one connection.
+    return this.prisma.$transaction(
+      async (tx) => {
+        const breakdown = await this.unsettled(partnerId, { tx });
+        const account = await tx.ledgerAccount.findFirst({
+          where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+          select: { balance: true },
+        });
+        const settlements = await tx.partnerSettlement.findMany({
+          where: { partnerId },
+          select: { status: true, netPayableAmount: true },
+        });
+        const funding = await this.fundingBreakdown(partnerId, tx);
 
-    const sum = (statuses: PartnerSettlementStatus[]) =>
-      settlements
-        .filter((row) => statuses.includes(row.status))
-        .reduce((total, row) => total.plus(row.netPayableAmount), new Decimal(0));
+        const sum = (statuses: PartnerSettlementStatus[]) =>
+          settlements
+            .filter((row) => statuses.includes(row.status))
+            .reduce((total, row) => total.plus(row.netPayableAmount), new Decimal(0));
 
-    return {
-      ...breakdown,
-      ledgerBalance: account ? account.balance.negated() : new Decimal(0),
-      inOpenSettlements: sum([
-        PartnerSettlementStatus.DRAFT,
-        PartnerSettlementStatus.READY,
-        PartnerSettlementStatus.APPROVED,
-        PartnerSettlementStatus.PAYMENT_PENDING,
-        PartnerSettlementStatus.FAILED,
-      ]),
-      underReview: sum([PartnerSettlementStatus.REQUIRES_RECONCILIATION]),
-      paidTotal: sum([PartnerSettlementStatus.PAID]),
-      asOf: new Date(),
-      funding,
-    };
+        return {
+          ...breakdown,
+          ledgerBalance: account ? account.balance.negated() : new Decimal(0),
+          inOpenSettlements: sum([
+            PartnerSettlementStatus.DRAFT,
+            PartnerSettlementStatus.READY,
+            PartnerSettlementStatus.APPROVED,
+            PartnerSettlementStatus.PAYMENT_PENDING,
+            PartnerSettlementStatus.FAILED,
+          ]),
+          underReview: sum([PartnerSettlementStatus.REQUIRES_RECONCILIATION]),
+          paidTotal: sum([PartnerSettlementStatus.PAID]),
+          asOf: new Date(),
+          funding,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
-  private async fundingBreakdown(partnerId: string): Promise<PartnerFundingBreakdown> {
+  private async fundingBreakdown(partnerId: string, tx: Tx): Promise<PartnerFundingBreakdown> {
     const zero = new Decimal(0);
-    const [sales, byKind, account] = await Promise.all([
-      this.prisma.purchaseIntent.aggregate({
-        where: { partnerId, status: PurchaseIntentStatus.CONFIRMED },
-        _sum: {
-          grossAmount: true,
-          ordinaryPaymentRemainder: true,
-          prepaidAmountApplied: true,
-          bonusAmountRequested: true,
-          refundedAmount: true,
-        },
-      }),
-      this.prisma.ledgerPosting.findMany({
-        where: {
-          account: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
-          transaction: {
-            kind: {
-              in: [
-                'partner.contribution',
-                'partner.contribution_refund',
-                'partner.bonus_redemption_compensation',
-                'partner.bonus_redemption_compensation_refund',
-                'partner.prepaid_funding',
-                'partner.prepaid_funding_refund',
-                'partner.collection.confirmed',
-              ],
-            },
+    // Sequential on `tx`: one connection, one snapshot (see `position`).
+    const sales = await tx.purchaseIntent.aggregate({
+      where: { partnerId, status: PurchaseIntentStatus.CONFIRMED },
+      _sum: {
+        grossAmount: true,
+        prepaidAmountApplied: true,
+        bonusAmountRequested: true,
+        refundedAmount: true,
+      },
+    });
+    // The remainder by route (audit D12): at the till it is the partner's
+    // own money; through the provider it is TuTak's, collected on the
+    // partner's behalf and settled through the payable. Summing both as
+    // "received directly" made provider money look like cash in the till.
+    const remainderByRoute = await tx.purchaseIntent.groupBy({
+      by: ['paymentRoute'],
+      where: { partnerId, status: PurchaseIntentStatus.CONFIRMED },
+      _sum: { ordinaryPaymentRemainder: true },
+    });
+    const byKind = await tx.ledgerPosting.findMany({
+      where: {
+        account: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+        transaction: {
+          kind: {
+            in: [
+              'partner.contribution',
+              'partner.contribution_refund',
+              'partner.bonus_redemption_compensation',
+              'partner.bonus_redemption_compensation_refund',
+              'partner.prepaid_funding',
+              'partner.prepaid_funding_refund',
+              'partner.collection.recorded',
+              'partner.collection.confirmed',
+            ],
           },
         },
-        select: { amount: true, direction: true, transaction: { select: { kind: true } } },
-      }),
-      this.prisma.ledgerAccount.findFirst({
-        where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
-        select: { balance: true },
-      }),
-    ]);
+      },
+      select: { amount: true, direction: true, transaction: { select: { kind: true } } },
+    });
+    const account = await tx.ledgerAccount.findFirst({
+      where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+      select: { balance: true },
+    });
+    const remainderFor = (route: PaymentRoute) =>
+      remainderByRoute.find((row) => row.paymentRoute === route)?._sum.ordinaryPaymentRemainder ?? zero;
 
     // Credits positive, debits negative — so a kind and its refund net out.
     const signed = new Map<string, Decimal>();
@@ -343,7 +371,8 @@ export class PartnerSettlementService {
     const raw = account?.balance ?? zero;
     return {
       salesGross: sales._sum.grossAmount ?? zero,
-      receivedDirectly: sales._sum.ordinaryPaymentRemainder ?? zero,
+      receivedDirectly: remainderFor(PaymentRoute.DIRECT_PARTNER),
+      receivedViaProvider: remainderFor(PaymentRoute.TUTAK_PSP),
       fundedByPrepaid: net('partner.prepaid_funding', 'partner.prepaid_funding_refund'),
       fundedByBonus: net('partner.bonus_redemption_compensation', 'partner.bonus_redemption_compensation_refund'),
       // Contribution is a debit; shown as the positive amount the partner contributes.
@@ -351,7 +380,11 @@ export class PartnerSettlementService {
       refundedGross: sales._sum.refundedAmount ?? zero,
       owedToTuTak: raw.greaterThan(0) ? raw : zero,
       // A confirmed collection credits the payable (the partner's debt shrinks).
-      collectionsConfirmed: signed.get('partner.collection.confirmed') ?? zero,
+      // A single-step collection (dual control off) is confirmed the moment
+      // it is recorded, under its own kind.
+      collectionsConfirmed: (signed.get('partner.collection.confirmed') ?? zero).plus(
+        signed.get('partner.collection.recorded') ?? zero,
+      ),
     };
   }
 

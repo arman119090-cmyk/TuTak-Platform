@@ -131,12 +131,16 @@ export interface UnsettledPositionDto extends UnsettledBreakdownDto {
 
 /**
  * All-time, confirmed sales, net of refunds. `receivedDirectly` is the
- * partner's own money (till or provider) and never TuTak's; `fundedByPrepaid`
- * and `fundedByBonus` are what TuTak owes for; `contribution` reduces it.
+ * partner's own money taken at their till and never TuTak's;
+ * `receivedViaProvider` is what the provider collected for TuTak on
+ * `TUTAK_PSP` sales — TuTak's to settle, never in the till (audit D12);
+ * `fundedByPrepaid` and `fundedByBonus` are what TuTak owes for;
+ * `contribution` reduces it.
  */
 export interface PartnerFundingBreakdownDto {
   salesGross: string;
   receivedDirectly: string;
+  receivedViaProvider: string;
   fundedByPrepaid: string;
   fundedByBonus: string;
   contribution: string;

@@ -242,8 +242,16 @@ export default function SettlementsPage() {
             <StatTile
               label="Received at your till"
               value={money(position.funding.receivedDirectly)}
-              hint="Cash and card. Yours already — not part of what TuTak owes"
+              hint="Cash and your own card terminal. Yours already — not part of what TuTak owes"
             />
+            {Number(position.funding.receivedViaProvider) > 0 ? (
+              <StatTile
+                label="Collected by the payment provider"
+                value={money(position.funding.receivedViaProvider)}
+                tone="available"
+                hint="Paid inside TuTak. Not in your till — TuTak settles it to you"
+              />
+            ) : null}
             <StatTile
               label="Paid from TuTak balances"
               value={money(position.funding.fundedByPrepaid)}

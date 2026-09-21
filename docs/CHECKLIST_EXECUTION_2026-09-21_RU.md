@@ -103,7 +103,21 @@
 
 ## 7. Кандидат-APK (пункт 31)
 
-Заполняется по результату run 35602999208 (см. дополнение ниже).
+| Что | Значение |
+| --- | --- |
+| Workflow run | 35602999208 (`Build Android APK`, workflow_dispatch, ветка `claude/rc-20260921`) |
+| Коммит | `dfd5a5ade3b4cfbea6c065a5c590fb84b1b06359` |
+| Профиль / builder | `production-apk` (имя «TuTak», без пометок, sideload) / local (без EAS-кредита) |
+| API | `https://tutak-api-production.up.railway.app/v1` (`DEMO_MODE` off) |
+| Релиз | https://github.com/arman119090-cmyk/TuTak-Platform/releases/tag/apk-production-apk-68 — файл `tutak.apk` |
+| Размер | 130 615 259 байт |
+| SHA-256 | `c47c564da3e61dfed317638539d539c4fe928c133899129c0a09d921082ef51d` |
+| Подпись | EAS-managed keystore проекта (та же, что у всех предыдущих сборок); отдельного upload key владельца нет — пункт 31 остаётся 🟡 по подписи |
+| Artifact | `tutak-android-production-apk` (10641621695, zip 62 105 798 байт, хранится 30 дней) |
+
+Это сборка кандидата, не релиз с `main`: `main` = `369eda1`, RC не влит. Она нужна для
+пункта 32 (device review) — на ней есть всё из #60, #61, #63, #64, #65, включая новые экраны
+аудита. Проверка MapTiler-ключа в workflow прошла (шаг «Ask the tile provider…»).
 
 ## 8. Вопросы владельцу
 
@@ -116,3 +130,6 @@
    если подтвердите (нужен, чтобы п. 6 работал).
 
 ## Дополнение
+
+- 13:18Z: APK собран, см. раздел 7. Пункт 31 — кандидат выдан; статус 🟡 (подпись EAS-keystore, SHA не `main`).
+- Итог по заданию: полностью закрыты 2, 9 (локально), 10, 14, 16; продвинуты 3, 4, 5 (RC + PR #67), 15, 27, 31, 37; остальное — владелец.

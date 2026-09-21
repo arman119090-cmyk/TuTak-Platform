@@ -31,6 +31,11 @@ export SEED_ADMIN_PASSWORD="…"       # roles and permissions must exist first
 ./node_modules/.bin/prisma migrate deploy
 node dist/scripts/seed-baseline.js
 
+# The harness drives the legacy PaymentEngineService directly, and that module
+# is only wired in behind CARD_PAYMENTS_ENABLED (see app.module.ts) — without
+# the flag the run stops at "Nest could not find PaymentEngineService".
+export CARD_PAYMENTS_ENABLED=true
+
 LOAD_CONCURRENCY=32 LOAD_SECONDS=15 LOAD_CUSTOMERS=50 node dist/scripts/load-test.js
 
 # LOAD_PARTNERS spreads the purchase phase across that many merchants. One

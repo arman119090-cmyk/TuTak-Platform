@@ -75,8 +75,13 @@ green "  ✓ archive readable, $TABLES tables with data"
 
 # The tables that would hurt most to lose, checked by name so a dump taken
 # against the wrong database is caught here rather than during a restore.
+# One listing, read to the end: `pg_restore --list | grep -q` under
+# `pipefail` fails whenever grep finds its match before pg_restore has
+# finished writing (SIGPIPE on the producer), which reported a good dump as
+# "not a TuTak database" in the rehearsal of 21.09.2026.
+LISTING="$(pg_restore --list "$FILE")"
 for table in ledger_postings ledger_transactions payments wallets bonus_lots; do
-  pg_restore --list "$FILE" | grep -q "TABLE DATA public $table " \
+  grep -q "TABLE DATA public $table " <<<"$LISTING" \
     || die "Missing $table — this dump is not a TuTak database."
 done
 green "  ✓ every money-bearing table is present"

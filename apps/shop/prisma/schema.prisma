@@ -1,0 +1,571 @@
+// ORNATA demo furniture store — data model.
+//
+// Money rule: every monetary column is an integer number of MINOR UNITS of the
+// order's currency (AMD has exponent 0, so 1 minor unit = 1 dram). No floats
+// are used for money anywhere in this schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Locale {
+  hy
+  ru
+  en
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum StockStatus {
+  IN_STOCK
+  ON_ORDER
+  OUT_OF_STOCK
+}
+
+enum OptionKind {
+  COLOR
+  MATERIAL
+  SIZE
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  PAID
+  IN_PRODUCTION
+  READY
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CARD
+  CASH
+  CASH_ON_DELIVERY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DeliveryMethod {
+  DELIVERY
+  PICKUP
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum RequestType {
+  KITCHEN
+  MEASUREMENT
+  DOOR
+  CALLBACK
+  CUSTOM_SIZE
+  PRICE_REQUEST
+  CONSULTATION
+}
+
+enum RequestStatus {
+  NEW
+  IN_PROGRESS
+  DONE
+  REJECTED
+}
+
+enum BannerPosition {
+  HOME_HERO
+  HOME_STRIP
+  CATEGORY
+}
+
+// ---------------------------------------------------------------- catalog ---
+
+model Category {
+  id           String                @id @default(cuid())
+  slug         String                @unique
+  parentId     String?
+  parent       Category?             @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]            @relation("CategoryTree")
+  /// Canonical icon/art key used by the generated artwork and the mega menu.
+  artKey       String
+  /// Extra filter keys shown only for this category (e.g. doors -> openingSide).
+  filterKeys   String[]              @default([])
+  sort         Int                   @default(0)
+  isActive     Boolean               @default(true)
+  showInMenu   Boolean               @default(true)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  translations CategoryTranslation[]
+  products     Product[]
+
+  @@index([parentId, sort])
+}
+
+model CategoryTranslation {
+  id              String   @id @default(cuid())
+  categoryId      String
+  category        Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  locale          Locale
+  name            String
+  description     String?
+  metaTitle       String?
+  metaDescription String?
+
+  @@unique([categoryId, locale])
+}
+
+model Brand {
+  id           String             @id @default(cuid())
+  slug         String             @unique
+  name         String
+  country      String             @default("AM")
+  foundedYear  Int?
+  isPremium    Boolean            @default(false)
+  createdAt    DateTime           @default(now())
+  translations BrandTranslation[]
+  collections  Collection[]
+  products     Product[]
+}
+
+model BrandTranslation {
+  id          String @id @default(cuid())
+  brandId     String
+  brand       Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  locale      Locale
+  tagline     String
+  description String
+
+  @@unique([brandId, locale])
+}
+
+model Collection {
+  id           String                  @id @default(cuid())
+  slug         String                  @unique
+  name         String
+  brandId      String?
+  brand        Brand?                  @relation(fields: [brandId], references: [id])
+  isActive     Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  translations CollectionTranslation[]
+  products     Product[]
+}
+
+model CollectionTranslation {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  locale       Locale
+  name         String
+  description  String?
+
+  @@unique([collectionId, locale])
+}
+
+model Product {
+  id           String      @id @default(cuid())
+  sku          String      @unique
+  slug         String      @unique
+  categoryId   String
+  category     Category    @relation(fields: [categoryId], references: [id])
+  brandId      String
+  brand        Brand       @relation(fields: [brandId], references: [id])
+  collectionId String?
+  collection   Collection? @relation(fields: [collectionId], references: [id])
+
+  currency      String @default("AMD")
+  /// Current selling price, minor units.
+  priceMinor    Int
+  /// Pre-discount price, minor units. Null when the product is not discounted.
+  oldPriceMinor Int?
+  discountPct   Int    @default(0)
+
+  stockStatus    StockStatus @default(IN_STOCK)
+  stockQty       Int         @default(0)
+  productionDays Int         @default(0)
+
+  widthMm        Int?
+  heightMm       Int?
+  depthMm        Int?
+  weightGram     Int?
+  country        String @default("AM")
+  warrantyMonths Int    @default(24)
+
+  styleKey     String
+  purposeKey   String
+  roomKey      String
+  colorKeys    String[] @default([])
+  materialKeys String[] @default([])
+
+  /// Category-specific specification map with canonical keys and values;
+  /// the UI resolves both sides through the localized attribute dictionary.
+  specs Json @default("{}")
+
+  ratingAvg   Decimal @default(0) @db.Decimal(3, 2)
+  reviewCount Int     @default(0)
+  salesCount  Int     @default(0)
+
+  isNew      Boolean @default(false)
+  isHit      Boolean @default(false)
+  isPremium  Boolean @default(false)
+  isFeatured Boolean @default(false)
+  smallSpace Boolean @default(false)
+  isActive   Boolean @default(true)
+
+  /// Lowercased haystack (name/sku/brand/material/colour/keywords, all locales)
+  /// used by the catalogue search and the autocomplete index.
+  searchText String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  translations   ProductTranslation[]
+  images         ProductImage[]
+  options        ProductOption[]
+  reviews        Review[]
+  favorites      Favorite[]
+  recentlyViewed RecentlyViewed[]
+  orderItems     OrderItem[]
+  requests       Request[]
+
+  @@index([categoryId, priceMinor])
+  @@index([categoryId, isActive])
+  @@index([brandId])
+  @@index([collectionId])
+  @@index([isFeatured])
+  @@index([createdAt])
+}
+
+model ProductTranslation {
+  id               String  @id @default(cuid())
+  productId        String
+  product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locale           Locale
+  name             String
+  shortDescription String
+  description      String
+  metaTitle        String?
+  metaDescription  String?
+
+  @@unique([productId, locale])
+  @@index([locale])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Path or absolute URL. Demo artwork is served by /media/... routes so the
+  /// demo never depends on third-party image hosts staying alive.
+  url       String
+  alt       String  @default("")
+  sort      Int     @default(0)
+  isPrimary Boolean @default(false)
+
+  @@index([productId, sort])
+}
+
+model ProductOption {
+  id              String     @id @default(cuid())
+  productId       String
+  product         Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  kind            OptionKind
+  /// Canonical key resolved through the localized attribute dictionary.
+  valueKey        String
+  /// Free-form label used when the value is not part of the dictionary (sizes).
+  label           String?
+  priceDeltaMinor Int        @default(0)
+  stockQty        Int        @default(0)
+  isDefault       Boolean    @default(false)
+  sort            Int        @default(0)
+
+  @@unique([productId, kind, valueKey])
+  @@index([productId, kind])
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  authorName  String
+  rating      Int
+  title       String?
+  body        String
+  locale      Locale   @default(ru)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([productId, createdAt])
+}
+
+// ------------------------------------------------------------- customers ---
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  role         UserRole @default(CUSTOMER)
+  firstName    String
+  lastName     String?
+  locale       Locale   @default(ru)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  addresses      Address[]
+  orders         Order[]
+  favorites      Favorite[]
+  recentlyViewed RecentlyViewed[]
+  reviews        Review[]
+  orderEvents    OrderEvent[]
+}
+
+model Address {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  region    String
+  city      String
+  street    String
+  building  String
+  apartment String?
+  entrance  String?
+  floor     Int?
+  hasLift   Boolean @default(true)
+  comment   String?
+  isDefault Boolean @default(false)
+
+  @@index([userId])
+}
+
+model Favorite {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, productId])
+}
+
+model RecentlyViewed {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime @default(now())
+
+  @@id([userId, productId])
+  @@index([userId, viewedAt])
+}
+
+// ---------------------------------------------------------------- orders ---
+
+model PromoCode {
+  id               String       @id @default(cuid())
+  code             String       @unique
+  discountType     DiscountType
+  /// Percent (1..90) or fixed amount in minor units, depending on discountType.
+  value            Int
+  minSubtotalMinor Int?
+  maxDiscountMinor Int?
+  freeDelivery     Boolean      @default(false)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  usageLimit       Int?
+  usedCount        Int          @default(0)
+  isActive         Boolean      @default(true)
+  description      String       @default("")
+  createdAt        DateTime     @default(now())
+
+  orders Order[]
+}
+
+model Order {
+  id     String      @id @default(cuid())
+  number String      @unique
+  userId String?
+  user   User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status OrderStatus @default(NEW)
+  locale Locale      @default(ru)
+
+  customerName  String
+  customerPhone String
+  customerEmail String
+
+  deliveryMethod DeliveryMethod @default(DELIVERY)
+  region         String?
+  city           String?
+  street         String?
+  building       String?
+  apartment      String?
+  entrance       String?
+  floor          Int?
+  hasLift        Boolean        @default(true)
+  pickupPoint    String?
+  deliverySlot   String?
+  comment        String?
+
+  liftService        Boolean @default(false)
+  assemblyService    Boolean @default(false)
+  doorInstallService Boolean @default(false)
+
+  currency           String @default("AMD")
+  subtotalMinor      Int
+  discountMinor      Int    @default(0)
+  promoDiscountMinor Int    @default(0)
+  deliveryMinor      Int    @default(0)
+  servicesMinor      Int    @default(0)
+  totalMinor         Int
+
+  promoCodeId   String?
+  promoCode     PromoCode? @relation(fields: [promoCodeId], references: [id])
+  promoCodeText String?
+
+  paymentMethod PaymentMethod @default(CARD)
+  paymentStatus PaymentStatus @default(PENDING)
+  paidAt        DateTime?
+  paymentRef    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items  OrderItem[]
+  events OrderEvent[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku             String
+  nameSnapshot    String
+  imageUrl        String   @default("")
+  slugSnapshot    String   @default("")
+  unitPriceMinor  Int
+  quantity        Int
+  lineTotalMinor  Int
+  /// Chosen options / door configuration, frozen at checkout time.
+  optionsSnapshot Json     @default("{}")
+
+  @@index([orderId])
+}
+
+model OrderEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  comment   String?
+  createdAt DateTime    @default(now())
+  actorId   String?
+  actor     User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+}
+
+// -------------------------------------------------------------- requests ---
+
+model Request {
+  id        String        @id @default(cuid())
+  type      RequestType
+  status    RequestStatus @default(NEW)
+  name      String
+  phone     String
+  email     String?
+  locale    Locale        @default(ru)
+  comment   String?
+  productId String?
+  product   Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Type-specific answers (kitchen length/shape/budget, door configuration…).
+  payload   Json          @default("{}")
+  adminNote String?
+  createdAt DateTime      @default(now())
+  handledAt DateTime?
+
+  @@index([type, status])
+  @@index([createdAt])
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  locale    Locale   @default(ru)
+  createdAt DateTime @default(now())
+}
+
+// -------------------------------------------------------------- content ----
+
+model Banner {
+  id        String         @id @default(cuid())
+  key       String         @unique
+  position  BannerPosition @default(HOME_HERO)
+  artKey    String         @default("hero")
+  href      String         @default("/catalog")
+  sort      Int            @default(0)
+  isActive  Boolean        @default(true)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  translations BannerTranslation[]
+}
+
+model BannerTranslation {
+  id       String @id @default(cuid())
+  bannerId String
+  banner   Banner @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+  locale   Locale
+  title    String
+  subtitle String
+  ctaLabel String
+  eyebrow  String @default("")
+
+  @@unique([bannerId, locale])
+}
+
+/// Door configurator catalogue. Prices are deltas in minor units and are the
+/// only source of truth — the browser never decides a configured door's price.
+model DoorConfigOption {
+  id         String  @id @default(cuid())
+  groupKey   String
+  optionKey  String
+  priceMinor Int     @default(0)
+  sort       Int     @default(0)
+  isActive   Boolean @default(true)
+  /// { hy, ru, en } label map.
+  labels     Json    @default("{}")
+
+  @@unique([groupKey, optionKey])
+  @@index([groupKey, sort])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,59 @@
+{
+  "name": "@furniture/shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ORNATA — demo furniture e-commerce storefront and admin panel (Next.js + Prisma + PostgreSQL).",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "next dev --port ${PORT:-3100}",
+    "build": "prisma generate && next build",
+    "start": "next start --port ${PORT:-3100}",
+    "lint": "next lint --dir src",
+    "format": "prettier --write \"{src,prisma,tests}/**/*.{ts,tsx,css,json,md}\"",
+    "format:check": "prettier --check \"{src,prisma,tests}/**/*.{ts,tsx,css,json,md}\"",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:reset": "prisma migrate reset --force",
+    "prisma:studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts",
+    "setup": "tsx scripts/setup.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "verify": "npm run typecheck && npm run test && npm run build"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "argon2": "^0.45.1",
+    "clsx": "^2.1.1",
+    "jose": "^6.1.0",
+    "lucide-react": "^0.548.0",
+    "next": "16.3.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "@playwright/test": "1.56.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.5",
+    "prettier": "^3.3.3",
+    "prisma": "6.19.3",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.20.3",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4"
+  }
+}

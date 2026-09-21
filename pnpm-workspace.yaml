@@ -1,5 +1,8 @@
 packages:
   - "apps/*"
+  # apps/shop is a self-contained demo storefront with its own npm lockfile
+  # (same standalone pattern as demo/); it is not part of the pnpm workspace.
+  - "!apps/shop"
   - "packages/*"
 allowBuilds:
   '@prisma/client': true

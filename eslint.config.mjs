@@ -37,6 +37,12 @@ export default tseslint.config(
       // a rule this config has never heard of. Two configs disagreeing about
       // one file is not a finding, and the original is already covered.
       'demo/**',
+      // `apps/shop/` is a self-contained Next.js demo store with its own flat
+      // config (eslint-config-next) and its own lockfile. Linting it here would
+      // apply the platform's Node config to React source, which is the same
+      // mismatch as with `demo/` above. It runs `npm run lint` in its own
+      // directory.
+      'apps/shop/**',
     ],
   },
   {

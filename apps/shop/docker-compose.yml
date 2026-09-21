@@ -1,0 +1,40 @@
+# Local PostgreSQL for the ORNATA demo.
+#
+#   docker compose up -d      # start the database
+#   npm run setup             # migrate + seed
+#   npm run dev               # http://localhost:3100
+#
+# The `app` profile additionally runs the store itself in a container:
+#   docker compose --profile app up --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ornata-postgres
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop
+      POSTGRES_DB: furniture_shop
+    ports: ['5432:5432']
+    volumes: ['ornata-pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shop -d furniture_shop']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    profiles: ['app']
+    build: .
+    container_name: ornata-app
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://shop:shop@postgres:5432/furniture_shop?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:-demo-only-secret-change-me-before-any-real-deployment}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3100}
+      NEXT_PUBLIC_DEMO_MODE: '1'
+      PORT: '3100'
+    ports: ['3100:3100']
+
+volumes:
+  ornata-pgdata:

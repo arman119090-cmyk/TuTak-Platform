@@ -24,7 +24,7 @@ const fail = (message: string): never => {
   process.exit(1);
 };
 
-console.log('\nORNATA demo — setup\n');
+console.log('\nDemo furniture store — setup\n');
 
 if (!existsSync(envPath)) {
   if (!existsSync(examplePath)) fail('.env.example is missing — cannot create .env.');

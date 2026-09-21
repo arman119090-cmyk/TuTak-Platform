@@ -7,4 +7,4 @@ export const writeCookie = (name: string, value: string, maxAge = YEAR_SECONDS):
   document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${maxAge};samesite=lax`;
 };
 
-export const LOCALE_COOKIE = 'ornata_locale';
+export const LOCALE_COOKIE = 'shop_locale';

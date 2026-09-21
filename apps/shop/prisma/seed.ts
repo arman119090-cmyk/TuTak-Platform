@@ -1,4 +1,5 @@
 import { PrismaClient, type Prisma, type Locale, type OrderStatus } from '@prisma/client';
+import { brand } from '../src/config/brand';
 import { TAXONOMY, type CategoryNode } from '../src/data/taxonomy';
 import { hashPassword } from '../src/lib/auth/password';
 import { createRng } from '../src/lib/utils';
@@ -60,7 +61,7 @@ const seedCategories = async (): Promise<Map<string, string>> => {
             locale,
             name: node.names[locale],
             description: node.intro?.[locale] ?? null,
-            metaTitle: `${node.names[locale]} — ORNATA`,
+            metaTitle: `${node.names[locale]} — ${brand.name}`,
             metaDescription: node.intro?.[locale] ?? node.names[locale],
           })),
         },
@@ -452,7 +453,7 @@ const seedRequests = async (products: { id: string; rootSlug: string }[]): Promi
 
 const main = async (): Promise<void> => {
   const started = Date.now();
-  console.log('\nORNATA demo seed\n');
+  console.log(`\n${brand.name} demo seed\n`);
 
   log('clearing previous demo data…');
   await reset();
@@ -501,7 +502,7 @@ const main = async (): Promise<void> => {
       passwordHash: adminHash,
       role: 'ADMIN',
       firstName: 'Администратор',
-      lastName: 'ORNATA',
+      lastName: brand.name,
       locale: 'ru',
     },
   });

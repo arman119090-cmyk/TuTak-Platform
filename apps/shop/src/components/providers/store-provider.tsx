@@ -67,12 +67,13 @@ type StoreValue = {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
+/** Brand-neutral on purpose: renaming the shop must not empty its carts. */
 const KEYS = {
-  cart: 'ornata.cart.v1',
-  promo: 'ornata.promo.v1',
-  favorites: 'ornata.favorites.v1',
-  compare: 'ornata.compare.v1',
-  recent: 'ornata.recent.v1',
+  cart: 'shop.cart.v1',
+  promo: 'shop.promo.v1',
+  favorites: 'shop.favorites.v1',
+  compare: 'shop.compare.v1',
+  recent: 'shop.recent.v1',
 } as const;
 
 const read = <T,>(key: string, fallback: T): T => {

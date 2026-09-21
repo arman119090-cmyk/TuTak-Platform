@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import '../globals.css';
+import { brand } from '@/config/brand';
 import { requireAdmin } from '@/lib/auth/guards';
 import { AdminNav } from '@/components/admin/admin-nav';
 
 export const metadata: Metadata = {
-  title: 'Админ-панель — ORNATA',
+  title: `Админ-панель — ${brand.name}`,
   robots: { index: false, follow: false },
 };
 

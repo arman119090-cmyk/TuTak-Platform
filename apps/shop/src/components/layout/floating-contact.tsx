@@ -35,13 +35,22 @@ export const FloatingContact = ({ locale, dict }: { locale: Locale; dict: Dictio
             >
               <Send width={18} height={18} /> Telegram
             </a>
+            {brand.contacts.phones.map((phone) => (
+              <a
+                key={phone.dial}
+                href={`tel:${phone.dial}`}
+                className="flex h-11 items-center gap-2 rounded-full bg-surface px-4 text-[13px] font-medium shadow-[var(--shadow-card)]"
+              >
+                <Phone width={18} height={18} /> {phone.display}
+              </a>
+            ))}
             <button
               type="button"
               onClick={() => {
                 setCallback(true);
                 setOpen(false);
               }}
-              className="flex h-11 items-center gap-2 rounded-full bg-surface px-4 text-[13px] font-medium shadow-[var(--shadow-card)]"
+              className="flex h-11 items-center gap-2 rounded-full bg-ink px-4 text-[13px] font-medium text-white shadow-[var(--shadow-card)]"
             >
               <Phone width={18} height={18} /> {dict.nav.callback}
             </button>

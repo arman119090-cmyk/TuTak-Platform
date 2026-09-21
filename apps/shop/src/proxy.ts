@@ -30,7 +30,7 @@ export const proxy = (request: NextRequest): NextResponse => {
   const first = segments[0];
   if (first && (LOCALES as readonly string[]).includes(first)) return NextResponse.next();
 
-  const cookieLocale = request.cookies.get('ornata_locale')?.value;
+  const cookieLocale = request.cookies.get('shop_locale')?.value;
   const locale =
     cookieLocale && (LOCALES as readonly string[]).includes(cookieLocale)
       ? cookieLocale
@@ -40,7 +40,7 @@ export const proxy = (request: NextRequest): NextResponse => {
   url.pathname = `/${locale}${pathname === '/' ? '' : pathname}`;
   url.search = search;
   const response = NextResponse.redirect(url);
-  response.cookies.set('ornata_locale', locale, { path: '/', maxAge: 60 * 60 * 24 * 365 });
+  response.cookies.set('shop_locale', locale, { path: '/', maxAge: 60 * 60 * 24 * 365 });
   return response;
 };
 

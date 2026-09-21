@@ -1,7 +1,8 @@
 import { cookies } from 'next/headers';
 import { SignJWT, jwtVerify } from 'jose';
 
-export const SESSION_COOKIE = 'ornata_session';
+/** Deliberately brand-neutral: a rename must not invalidate sessions. */
+export const SESSION_COOKIE = 'shop_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 
 export type SessionPayload = {

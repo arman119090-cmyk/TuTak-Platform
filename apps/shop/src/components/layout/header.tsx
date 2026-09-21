@@ -85,9 +85,19 @@ export const Header = ({
             ) : null}
           </div>
           <div className="flex items-center gap-4">
-            <a href={`tel:${brand.contacts.phone.replace(/\s/g, '')}`} className="inline-flex items-center gap-1.5 hover:text-ink">
-              <Phone width={14} height={14} /> {brand.contacts.phone}
-            </a>
+            <span className="inline-flex items-center gap-1.5">
+              <Phone width={14} height={14} />
+              {brand.contacts.phones.map((phone, index) => (
+                <a
+                  key={phone.dial}
+                  href={`tel:${phone.dial}`}
+                  className={cn('hover:text-ink', index > 0 && 'hidden xl:inline')}
+                >
+                  {index > 0 ? <span className="mr-1.5 text-line-strong">·</span> : null}
+                  {phone.display}
+                </a>
+              ))}
+            </span>
             <div className="flex items-center gap-1">
               {LOCALES.map((item) => (
                 <button
@@ -112,19 +122,25 @@ export const Header = ({
       <div className="container-page flex h-16 items-center gap-3 lg:h-[72px] lg:gap-8">
         <button
           type="button"
-          className="-ml-2 flex h-11 w-11 items-center justify-center lg:hidden"
+          className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center lg:hidden"
           onClick={() => setMenuOpen(true)}
           aria-label={dict.nav.menu}
         >
           <Menu width={22} height={22} />
         </button>
 
-        <Link href={`/${locale}`} className="flex items-center gap-2" aria-label={brand.name}>
-          <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
+        {/* min-w-0 + truncate: a long brand name must give way to the burger
+            and the cart icons on a narrow phone, not push them off-screen. */}
+        <Link href={`/${locale}`} className="flex min-w-0 shrink items-center gap-2" aria-label={brand.name}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
             {brand.monogram}
           </span>
-          <span className="flex flex-col leading-none">
-            <span className="font-display text-xl tracking-[0.14em]">{brand.name}</span>
+          <span className="flex min-w-0 flex-col leading-none">
+            {/* Under 360px the monogram carries the brand on its own — a
+                wordmark truncated to one letter reads as a broken layout. */}
+            <span className="hidden truncate font-display text-[13px] uppercase tracking-[0.02em] min-[360px]:block xs:text-[17px] xs:tracking-[0.1em] sm:text-xl sm:tracking-[0.12em]">
+              {brand.name}
+            </span>
             <span className="mt-0.5 hidden text-[10px] uppercase tracking-[0.18em] text-muted sm:block">
               {dict.locale.switch === 'Язык' ? 'мебель и двери' : 'furniture & doors'}
             </span>
@@ -135,7 +151,7 @@ export const Header = ({
           <SearchBox locale={locale} dict={dict} />
         </div>
 
-        <div className="ml-auto flex items-center gap-0.5 lg:gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 lg:gap-1">
           <button
             type="button"
             className="flex h-11 w-11 items-center justify-center lg:hidden"
@@ -170,7 +186,7 @@ export const Header = ({
           </Link>
           <Link
             href={session ? `/${locale}/account` : `/${locale}/login`}
-            className="flex h-11 items-center gap-2 rounded-[var(--radius-sm)] px-2 hover:bg-surface-2"
+            className="hidden h-11 items-center gap-2 rounded-[var(--radius-sm)] px-2 hover:bg-surface-2 min-[400px]:flex"
             aria-label={session ? dict.nav.account : dict.nav.login}
           >
             <User width={20} height={20} />
@@ -308,6 +324,15 @@ export const Header = ({
                 </details>
               ))}
               <div className="mt-3 space-y-1 px-3">
+                {/* The account icon steps aside on the narrowest phones, so the
+                    drawer must always offer a way in. */}
+                <Link
+                  href={session ? `/${locale}/account` : `/${locale}/login`}
+                  className="flex items-center gap-2.5 py-2.5 text-[15px]"
+                >
+                  <User width={17} height={17} />
+                  {session ? dict.nav.account : dict.nav.login}
+                </Link>
                 <Link href={`/${locale}/kitchens`} className="block py-2.5 text-[15px]">{dict.home.kitchensCta}</Link>
                 <Link href={`/${locale}/catalog?discounted=1`} className="block py-2.5 text-[15px] text-sale">{dict.nav.sale}</Link>
                 <Link href={`/${locale}/compare`} className="block py-2.5 text-[15px]">{dict.nav.compare} ({compare.length})</Link>
@@ -331,9 +356,17 @@ export const Header = ({
                   </button>
                 ))}
               </div>
-              <a href={`tel:${brand.contacts.phone.replace(/\s/g, '')}`} className="flex h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-surface-2 text-sm">
-                <Phone width={16} height={16} /> {brand.contacts.phone}
-              </a>
+              <div className="flex flex-col gap-2">
+                {brand.contacts.phones.map((phone) => (
+                  <a
+                    key={phone.dial}
+                    href={`tel:${phone.dial}`}
+                    className="flex h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-surface-2 text-sm"
+                  >
+                    <Phone width={16} height={16} /> {phone.display}
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
         </div>

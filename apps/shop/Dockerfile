@@ -1,4 +1,4 @@
-# Production image for the ORNATA demo store.
+# Production image for the demo furniture store.
 # Multi-stage: dependencies, build, then a slim runtime that seeds on first run.
 FROM node:22-alpine AS deps
 WORKDIR /app

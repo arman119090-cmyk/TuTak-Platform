@@ -28,13 +28,19 @@ export const Footer = ({
             <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
               {brand.monogram}
             </span>
-            <span className="font-display text-xl tracking-[0.14em]">{brand.name}</span>
+            <span className="font-display text-xl uppercase tracking-[0.12em]">{brand.name}</span>
           </Link>
           <p className="mt-4 max-w-sm text-sm text-muted">{brand.tagline[locale]}</p>
           <div className="mt-5 space-y-2.5 text-sm">
-            <a href={`tel:${brand.contacts.phone.replace(/\s/g, '')}`} className="flex items-center gap-2.5 hover:text-accent">
-              <Phone width={16} height={16} className="text-muted" /> {brand.contacts.phone}
-            </a>
+            {brand.contacts.phones.map((phone) => (
+              <a
+                key={phone.dial}
+                href={`tel:${phone.dial}`}
+                className="flex items-center gap-2.5 hover:text-accent"
+              >
+                <Phone width={16} height={16} className="text-muted" /> {phone.display}
+              </a>
+            ))}
             <a href={`mailto:${brand.contacts.email}`} className="flex items-center gap-2.5 hover:text-accent">
               <Mail width={16} height={16} className="text-muted" /> {brand.contacts.email}
             </a>

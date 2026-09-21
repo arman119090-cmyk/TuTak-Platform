@@ -77,13 +77,16 @@ const ContentPageView = async ({
 
         {slug === 'contacts' ? (
           <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            <a
-              href={`tel:${brand.contacts.phone.replace(/\s/g, '')}`}
-              className="rounded-[var(--radius-md)] border border-line bg-surface p-5 hover:border-ink"
-            >
-              <span className="eyebrow">{dict.forms.phone}</span>
-              <span className="mt-2 block text-[18px]">{brand.contacts.phone}</span>
-            </a>
+            {brand.contacts.phones.map((phone) => (
+              <a
+                key={phone.dial}
+                href={`tel:${phone.dial}`}
+                className="rounded-[var(--radius-md)] border border-line bg-surface p-5 hover:border-ink"
+              >
+                <span className="eyebrow">{dict.forms.phone}</span>
+                <span className="mt-2 block text-[18px]">{phone.display}</span>
+              </a>
+            ))}
             <a
               href={`mailto:${brand.contacts.email}`}
               className="rounded-[var(--radius-md)] border border-line bg-surface p-5 hover:border-ink"

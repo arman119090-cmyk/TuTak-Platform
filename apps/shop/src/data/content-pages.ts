@@ -253,9 +253,9 @@ export const CONTENT_PAGES: ContentPage[] = [
       s(
         { hy: 'Կապ', ru: 'Связь', en: 'Get in touch' },
         {
-          hy: 'Հեռախոս և WhatsApp՝ +374 10 000 000։ Էլ. փոստ՝ hello@ornata.demo։ Այս կոնտակտները ցուցադրական են։',
-          ru: 'Телефон и WhatsApp: +374 10 000 000. Почта: hello@ornata.demo. Контакты демонстрационные.',
-          en: 'Phone and WhatsApp: +374 10 000 000. E-mail: hello@ornata.demo. These contacts are fictional.',
+          hy: 'Զանգահարեք ներքևում նշված համարներից որևէ մեկով, գրեք WhatsApp-ով կամ Telegram-ով, կամ պատվիրեք հետադարձ զանգ՝ կզանգենք 15 րոպեի ընթացքում։',
+          ru: 'Звоните на любой из номеров ниже, пишите в WhatsApp или Telegram, либо закажите обратный звонок — перезвоним в течение 15 минут.',
+          en: 'Call either of the numbers below, message us on WhatsApp or Telegram, or request a call back — we ring within 15 minutes.',
         },
       ),
     ],

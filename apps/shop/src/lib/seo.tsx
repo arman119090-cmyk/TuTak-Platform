@@ -75,7 +75,7 @@ export const organizationJsonLd = (locale: Locale): Record<string, unknown> => (
   name: brand.name,
   description: brand.tagline[locale],
   url: siteUrl,
-  telephone: brand.contacts.phone,
+  telephone: brand.contacts.phones.map((phone) => phone.dial),
   email: brand.contacts.email,
   address: {
     '@type': 'PostalAddress',

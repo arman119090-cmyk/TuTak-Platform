@@ -23,9 +23,25 @@ describe('pinCode', () => {
   });
 
   it('stores a salted hash, never the digits', async () => {
+    // The salt is pinned here, and only here. A record is 96 characters of
+    // random-looking hex, so a given four-digit run turns up in one by luck
+    // about once in six hundred records — measured, not guessed. On
+    // 2026-09-21 CI drew a hash containing `1234` and failed a commit that
+    // touched nothing but documentation. A fixed salt makes the substring
+    // check a statement about the record's shape rather than about the draw;
+    // that the salt is random in real use is the next test's job.
+    jest
+      .mocked(Crypto.getRandomBytes)
+      .mockReturnValueOnce(Uint8Array.from({ length: 16 }, (_, i) => i + 1));
+
     const record = await createPinRecord('1234');
     const raw = serializePinRecord(record);
+    expect(record.salt).toBe('0102030405060708090a0b0c0d0e0f10');
     expect(raw).not.toContain('1234');
+    // Luck cannot hide a leak in a field either: these four keys are the
+    // whole record, so a fifth one carrying the code would fail here even if
+    // the hash happened to swallow the digits.
+    expect(Object.keys(record).sort()).toEqual(['hash', 'rounds', 'salt', 'v']);
     expect(record.salt).toHaveLength(32);
     expect(record.hash).toHaveLength(64);
     expect(record.hash).not.toBe(createHash('sha256').update('1234').digest('hex'));

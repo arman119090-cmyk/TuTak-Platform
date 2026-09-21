@@ -120,24 +120,21 @@ export function LockScreen() {
   // the bypass the audit found. The person signs in again by SMS.
   if (storage !== 'ok') {
     return (
-      <SafeAreaView style={[styles.screen, { backgroundColor: color.background }]}>
-        <View style={[styles.top, { paddingHorizontal: space[5], paddingTop: space[8] }]}>
-          <JakoWingMark size={36} color={color.primary} />
-          <Text accessibilityRole="header" style={[text.title, { color: color.textPrimary, marginTop: space[5] }]}>
-            {t('appLock.storageUnavailableTitle')}
-          </Text>
-          <Text
-            accessibilityRole="alert"
-            style={[text.bodySm, { color: color.textSecondary, marginTop: space[2], textAlign: 'center' }]}
-          >
-            {t('appLock.storageUnavailableBody')}
-          </Text>
-        </View>
-        <View style={{ paddingBottom: space[6], paddingHorizontal: space[5], gap: space[3] }}>
+      <JakoScene
+        state="password"
+        size="compact"
+        scroll={false}
+        title={t('appLock.storageUnavailableTitle')}
+        subtitle={t('appLock.storageUnavailableBody')}
+        sheetStyle={styles.sheet}
+      >
+        <View style={styles.top} />
+        <View style={{ paddingBottom: space[6], gap: space[3] }}>
           <Pressable
             accessibilityRole="button"
             onPress={() => void hydrate()}
             disabled={busy || leaving}
+            hitSlop={8}
             style={{ alignSelf: 'center', paddingVertical: space[2] }}
           >
             <Text style={[text.bodySm, { color: color.textSecondary }]}>{t('appLock.storageUnavailableRetry')}</Text>
@@ -146,12 +143,13 @@ export function LockScreen() {
             accessibilityRole="button"
             onPress={forgot}
             disabled={leaving}
+            hitSlop={8}
             style={{ alignSelf: 'center', paddingVertical: space[2] }}
           >
             <Text style={[text.headline, { color: color.primary }]}>{t('appLock.storageUnavailableSignOut')}</Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </JakoScene>
     );
   }
 

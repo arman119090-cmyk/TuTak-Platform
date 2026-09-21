@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { useAuthStore } from './stores/authStore';
+import { useAppLockStore } from './stores/appLockStore';
 
 /**
  * `mutations.retry: 0` is the library default and is stated here anyway.
@@ -45,4 +46,10 @@ useAuthStore.subscribe((state) => {
     lastSessionEpoch = state.sessionEpoch;
     queryClient.clear();
   }
+});
+
+// Locking cancels whatever was loading; unlocking remounts the navigator,
+// which refetches what its screens need.
+useAppLockStore.subscribe((state, previous) => {
+  if (state.status === 'locked' && previous.status !== 'locked') void queryClient.cancelQueries();
 });

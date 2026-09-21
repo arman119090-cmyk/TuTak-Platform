@@ -60,8 +60,8 @@ export function Button({
 
   const surface: Record<Variant, string> = {
     primary: pressed ? color.primaryPressed : color.primary,
-    secondary: pressed ? palette.neutral[200] : palette.neutral[100],
-    tertiary: pressed ? palette.neutral[100] : 'transparent',
+    secondary: pressed ? color.fillSubtlePressed : color.fillSubtle,
+    tertiary: pressed ? color.fillSubtle : 'transparent',
     destructive: pressed ? palette.danger[100] : color.dangerSurface,
   };
   const foreground: Record<Variant, string> = {

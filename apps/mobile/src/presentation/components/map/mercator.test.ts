@@ -3,10 +3,12 @@ import {
   panBy,
   project,
   screenPosition,
+  tileScale,
   tilesForViewport,
   TILE_SIZE,
   unproject,
   worldSize,
+  zoomAround,
 } from './mercator';
 
 /**
@@ -129,6 +131,130 @@ describe('tilesForViewport', () => {
       height: 640,
     });
     expect(tiles.every((t) => t.y >= 0)).toBe(true);
+  });
+});
+
+describe('tilesForViewport between levels', () => {
+  const viewport = { centre: YEREVAN, width: 360, height: 240, overscan: 0 };
+
+  it('draws a whole level at the natural tile size', () => {
+    for (const tile of tilesForViewport({ ...viewport, zoom: 13 })) {
+      expect(tile.size).toBe(TILE_SIZE);
+      expect(tile.z).toBe(13);
+    }
+  });
+
+  it('scales the nearest level to a fractional zoom', () => {
+    // 13.4 is nearer 13, drawn larger; 13.6 is nearer 14, drawn smaller.
+    const below = tilesForViewport({ ...viewport, zoom: 13.4 });
+    const above = tilesForViewport({ ...viewport, zoom: 13.6 });
+    expect(below[0].z).toBe(13);
+    expect(below[0].size).toBeCloseTo(TILE_SIZE * 2 ** 0.4, 6);
+    expect(above[0].z).toBe(14);
+    expect(above[0].size).toBeCloseTo(TILE_SIZE * 2 ** -0.4, 6);
+  });
+
+  it('still covers every corner of the screen mid-pinch', () => {
+    for (const zoom of [12.3, 13.5, 13.9, 15.75]) {
+      const tiles = tilesForViewport({ ...viewport, zoom });
+      for (const [x, y] of [
+        [0, 0],
+        [viewport.width - 1, 0],
+        [0, viewport.height - 1],
+        [viewport.width - 1, viewport.height - 1],
+      ] as const) {
+        const covering = tiles.find(
+          (t) => x >= t.left && x < t.left + t.size && y >= t.top && y < t.top + t.size,
+        );
+        expect(covering).toBeDefined();
+      }
+    }
+  });
+
+  it('keeps the tiles seamless — each one ends where the next begins', () => {
+    const tiles = tilesForViewport({ ...viewport, zoom: 13.4 });
+    const row = tiles.filter((t) => t.y === tiles[0].y).sort((a, b) => a.left - b.left);
+    for (let i = 1; i < row.length; i += 1) {
+      expect(row[i].left).toBeCloseTo(row[i - 1].left + row[i - 1].size, 6);
+    }
+  });
+
+  it('keeps the centre under the centre of the screen at any zoom', () => {
+    // The tile that holds the centre must be positioned so that the centre's
+    // pixel within it lands exactly at the viewport's middle.
+    for (const zoom of [13, 13.4, 13.6]) {
+      const { z, scale } = tileScale(zoom);
+      const centreWorld = project(YEREVAN, z);
+      const tile = tilesForViewport({ ...viewport, zoom }).find(
+        (t) =>
+          t.x === Math.floor(centreWorld.x / TILE_SIZE) && t.y === Math.floor(centreWorld.y / TILE_SIZE),
+      );
+      expect(tile).toBeDefined();
+      const within = { x: centreWorld.x - tile!.x * TILE_SIZE, y: centreWorld.y - tile!.y * TILE_SIZE };
+      expect(tile!.left + within.x * scale).toBeCloseTo(viewport.width / 2, 6);
+      expect(tile!.top + within.y * scale).toBeCloseTo(viewport.height / 2, 6);
+    }
+  });
+});
+
+describe('zoomAround', () => {
+  const viewport = { width: 360, height: 240 };
+
+  it('zooming about the centre keeps the centre', () => {
+    const out = zoomAround({
+      ...viewport,
+      centre: YEREVAN,
+      zoom: 13,
+      toZoom: 14,
+      focal: { x: 180, y: 120 },
+    });
+    expect(out.zoom).toBe(14);
+    expect(out.centre.lat).toBeCloseTo(YEREVAN.lat, 9);
+    expect(out.centre.lng).toBeCloseTo(YEREVAN.lng, 9);
+  });
+
+  it('keeps the place under the fingers under the fingers', () => {
+    // Whatever was at (300, 40) before the pinch is still at (300, 40) after
+    // it. This is the whole reason the function exists.
+    const focal = { x: 300, y: 40 };
+    const before = { centre: YEREVAN, zoom: 13 };
+    const under = unproject(
+      {
+        x: project(before.centre, before.zoom).x + (focal.x - viewport.width / 2),
+        y: project(before.centre, before.zoom).y + (focal.y - viewport.height / 2),
+      },
+      before.zoom,
+    );
+    for (const toZoom of [13.5, 14, 15.25, 12]) {
+      const after = zoomAround({ ...viewport, ...before, toZoom, focal });
+      const at = screenPosition({ ...viewport, point: under, centre: after.centre, zoom: after.zoom });
+      expect(at.x).toBeCloseTo(focal.x, 6);
+      expect(at.y).toBeCloseTo(focal.y, 6);
+    }
+  });
+
+  it('stops at the limits instead of drifting past them', () => {
+    const focal = { x: 300, y: 40 };
+    const pinned = zoomAround({
+      ...viewport,
+      centre: YEREVAN,
+      zoom: 18,
+      toZoom: 19.5,
+      focal,
+      maxZoom: 18,
+    });
+    expect(pinned.zoom).toBe(18);
+    expect(pinned.centre).toEqual(YEREVAN);
+    const floor = zoomAround({ ...viewport, centre: YEREVAN, zoom: 5, toZoom: 1, focal, minZoom: 3 });
+    expect(floor.zoom).toBe(3);
+  });
+
+  it('is undone by zooming back about the same point', () => {
+    const focal = { x: 50, y: 200 };
+    const there = zoomAround({ ...viewport, centre: YEREVAN, zoom: 13, toZoom: 15.3, focal });
+    const back = zoomAround({ ...viewport, ...there, toZoom: 13, focal });
+    expect(back.centre.lat).toBeCloseTo(YEREVAN.lat, 9);
+    expect(back.centre.lng).toBeCloseTo(YEREVAN.lng, 9);
   });
 });
 

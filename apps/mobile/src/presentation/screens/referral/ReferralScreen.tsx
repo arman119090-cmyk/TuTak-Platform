@@ -40,7 +40,7 @@ import { formatDate, formatPoints } from '../../utils/format';
  */
 export function ReferralScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, glow, palette } = useTheme();
+  const { color, space, text, radius, glow } = useTheme();
 
   const { data: code } = useQuery({ queryKey: ['referral-code'], queryFn: referralApi.getMyCode });
   const {
@@ -137,7 +137,7 @@ export function ReferralScreen() {
             gap: space[4],
             borderTopWidth: StyleSheet.hairlineWidth,
             borderBottomWidth: StyleSheet.hairlineWidth,
-            borderColor: palette.neutral[100],
+            borderColor: color.divider,
           },
         ]}
       >

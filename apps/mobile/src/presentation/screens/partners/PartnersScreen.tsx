@@ -93,6 +93,7 @@ export function PartnersScreen() {
   );
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mapBusy, setMapBusy] = useState(false);
   const listRef = useRef<ScrollView>(null);
   const cardOffsets = useRef<Record<string, number>>({});
 
@@ -289,6 +290,13 @@ export function PartnersScreen() {
       <ScrollView
         ref={listRef}
         keyboardShouldPersistTaps="handled"
+        /*
+         * Off while a finger is on the map. On Android the list takes any
+         * vertical drag for itself before the map's responder can claim it,
+         * which left the map pannable sideways only — and a two-finger pinch
+         * was read as a scroll. The map says when a touch begins and ends.
+         */
+        scrollEnabled={!mapBusy}
         // `Screen scroll={false}`, so this list owns its own bottom room —
         // 64 points of it, which is less than the tab bar is tall.
         contentContainerStyle={{ paddingBottom: tabBarSpace }}
@@ -312,6 +320,7 @@ export function PartnersScreen() {
           onSelect={selectFromMap}
           height={260}
           unavailableLabel={t('partners.mapUnavailable')}
+          onInteractionChange={setMapBusy}
         />
 
         {/*

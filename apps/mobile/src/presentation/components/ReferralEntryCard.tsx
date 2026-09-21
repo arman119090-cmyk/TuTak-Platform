@@ -21,7 +21,7 @@ import { referralApi } from '../../data/api/referralApi';
  */
 export function ReferralEntryCard({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation();
-  const { color, space, text, radius, palette } = useTheme();
+  const { color, space, text, radius } = useTheme();
 
   const { data: invites } = useQuery({
     queryKey: ['referral-invites'],
@@ -51,7 +51,7 @@ export function ReferralEntryCard({ onPress }: { onPress: () => void }) {
             </Text>
           </View>
 
-          <Ionicons name="chevron-forward" size={18} color={palette.neutral[400]} />
+          <Ionicons name="chevron-forward" size={18} color={color.textTertiary} />
         </View>
       </Surface>
     </Pressable>

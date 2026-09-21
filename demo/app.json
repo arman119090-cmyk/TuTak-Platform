@@ -36,6 +36,18 @@
     },
     "plugins": [
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "TuTak uses Face ID to unlock the app."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "TuTak uses Face ID to unlock the app."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "TuTak needs camera access to scan QR codes for payments.",

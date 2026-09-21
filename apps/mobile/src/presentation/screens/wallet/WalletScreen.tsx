@@ -28,7 +28,7 @@ import { bonusStateFor, ledgerAmountFor } from '../../utils/transactionPresentat
  */
 export function WalletScreen() {
   const { t } = useTranslation();
-  const { color, space, text, palette } = useTheme();
+  const { color, space, text } = useTheme();
 
   const {
     data: wallet,
@@ -109,7 +109,7 @@ export function WalletScreen() {
               {
                 marginTop: space[5],
                 paddingTop: space[4],
-                borderTopColor: palette.neutral[100],
+                borderTopColor: color.divider,
                 gap: space[4],
               },
             ]}

@@ -85,7 +85,7 @@ export function TextField({
   onPressIn,
   ...rest
 }: Props) {
-  const { color, space, radius, text, palette, premium } = useTheme();
+  const { color, space, radius, text, premium } = useTheme();
   const [focused, setFocused] = useState(false);
   /*
    * Whether focus changes re-render this field at all — the second
@@ -183,7 +183,7 @@ export function TextField({
   // screen that does not scroll.
   const ensureVisible = useEnsureVisibleOnFocus();
 
-  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : palette.neutral[200];
+  const borderColor = error ? color.dangerFill : focused ? color.borderFocus : color.border;
 
   return (
     <View

@@ -16,7 +16,9 @@ import { UserAvatar } from '../../components/UserAvatar';
 import { AvatarControl } from '../../components/AvatarControl';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { BuildInfo } from '../../components/BuildInfo';
+import { AppLockSettings } from '../../components/AppLockSettings';
 import { useAuthStore } from '../../../data/stores/authStore';
+import { useThemeStore, type ThemeMode } from '../../../data/stores/themeStore';
 import { authApi } from '../../../data/api/authApi';
 import { usersApi } from '../../../data/api/usersApi';
 import type { RootStackParamList } from '../../../app/navigation/types';
@@ -27,13 +29,22 @@ const LOCALE_LABELS: Record<string, string> = {
   en: 'English',
 };
 
+/** In the order a person expects: the phone's own setting first, then the two overrides. */
+const THEME_MODES: ReadonlyArray<{ mode: ThemeMode; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }> = [
+  { mode: 'system', label: 'settings.appearanceSystem', icon: 'phone-portrait-outline' },
+  { mode: 'light', label: 'settings.appearanceLight', icon: 'sunny-outline' },
+  { mode: 'dark', label: 'settings.appearanceDark', icon: 'moon-outline' },
+];
+
 export function SettingsScreen() {
   const { t, i18n } = useTranslation();
   // Hidden until the server publishes the pages — see app.config.js.
   const legalBaseUrl =
     typeof Constants.expoConfig?.extra?.legalBaseUrl === 'string' ? Constants.expoConfig.extra.legalBaseUrl : '';
-  const { color, space, text, palette } = useTheme();
+  const { color, space, text } = useTheme();
   const { user, deviceId, clear, patchUser } = useAuthStore();
+  const themeMode = useThemeStore((s) => s.mode);
+  const setThemeMode = useThemeStore((s) => s.setMode);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const personalization = useMutation({
@@ -159,6 +170,27 @@ export function SettingsScreen() {
         last
       />
 
+      {/*
+        Light, dark, or whatever the phone is set to. The same row shape as
+        the language list below: one tick, no switch — three choices are a
+        list, not a toggle. Re-themes on this frame; see `ThemeProvider`.
+      */}
+      <SectionHeader title={t('settings.appearance')} />
+      {THEME_MODES.map(({ mode, label, icon }, i) => (
+        <ListRow
+          key={mode}
+          title={t(label)}
+          leading={<SettingIcon name={icon} />}
+          onPress={() => {
+            void setThemeMode(mode);
+          }}
+          trailing={
+            themeMode === mode ? <Ionicons name="checkmark" size={20} color={color.primary} /> : undefined
+          }
+          last={i === THEME_MODES.length - 1}
+        />
+      ))}
+
       <SectionHeader title={t('settings.language')} />
       {SUPPORTED_LOCALES.map((locale, i) => {
         const active = i18n.language === locale;
@@ -196,7 +228,7 @@ export function SettingsScreen() {
           value={user?.personalizedRecommendationsEnabled ?? false}
           onValueChange={(next) => personalization.mutate(next)}
           disabled={personalization.isPending}
-          trackColor={{ true: color.primary, false: palette.neutral[300] }}
+          trackColor={{ true: color.primary, false: color.borderStrong }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -207,7 +239,7 @@ export function SettingsScreen() {
         <ListRow
           title={t('settings.privacyPolicy')}
           leading={<SettingIcon name="document-text-outline" />}
-          trailing={<Ionicons name="open-outline" size={18} color={palette.neutral[300]} />}
+          trailing={<Ionicons name="open-outline" size={18} color={color.borderStrong} />}
           onPress={() => {
             void Linking.openURL(`${legalBaseUrl}/privacy`);
           }}
@@ -229,6 +261,10 @@ export function SettingsScreen() {
           onPress={() => navigation.navigate('VerifyPhone')}
         />
       ) : null}
+      {/* The app lock: change the four-digit code, and the biometric switch
+          when the phone offers one. Mandatory for every account, so there is
+          no "turn the lock off" row here. */}
+      <AppLockSettings />
       <ListRow
         title={t('settings.changePassword')}
         leading={<SettingIcon name="lock-closed-outline" />}
@@ -263,8 +299,8 @@ export function SettingsScreen() {
 
 /** The row's "this opens something" mark, in the lightest neutral. */
 function Chevron() {
-  const { palette } = useTheme();
-  return <Ionicons name="chevron-forward" size={18} color={palette.neutral[300]} />;
+  const { color } = useTheme();
+  return <Ionicons name="chevron-forward" size={18} color={color.borderStrong} />;
 }
 
 /**

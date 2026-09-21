@@ -2,13 +2,11 @@ import * as storage from '../storage/secureStorage';
 import { useThemeStore } from './themeStore';
 
 /**
- * `TUTAK_V2_CLAUDE_READ_FIRST.md`: "Migrate the default/persisted theme
- * behaviour so neither a fresh nor an existing customer silently lands in
- * the legacy dark shell; do not build an unapproved partial dark v2
- * variant." This is the regression test for that migration: a pre-v2
- * install may have `'dark'` (the old default) or nothing at all persisted
- * under the theme key, and both must resolve to `'light'` after hydration —
- * never a stale `'dark'` re-read on a later run.
+ * Settings → Appearance persists one of three choices and the app must
+ * come back the same way it was left. Failure modes that matter: nothing
+ * stored (a fresh install follows the phone), a value from an older build
+ * (honoured, not migrated away), and storage that refuses to read or write
+ * (the app still opens, in the default or the chosen theme respectively).
  */
 jest.mock('../storage/secureStorage', () => ({
   getItem: jest.fn(),
@@ -21,48 +19,50 @@ describe('themeStore', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedStorage.setItem.mockResolvedValue();
-    useThemeStore.setState({ mode: 'light', isHydrated: false });
+    useThemeStore.setState({ mode: 'system', isHydrated: false });
   });
 
-  it('defaults to light before hydration resolves, not the legacy dark default', () => {
-    expect(useThemeStore.getState().mode).toBe('light');
+  it('follows the device before hydration resolves', () => {
+    expect(useThemeStore.getState().mode).toBe('system');
   });
 
-  it('a fresh install with nothing persisted hydrates to light', async () => {
+  it('a fresh install with nothing persisted follows the device', async () => {
     mockedStorage.getItem.mockResolvedValue(null);
     await useThemeStore.getState().hydrate();
-    expect(useThemeStore.getState().mode).toBe('light');
+    expect(useThemeStore.getState().mode).toBe('system');
     expect(useThemeStore.getState().isHydrated).toBe(true);
   });
 
-  it('an existing install with the legacy persisted "dark" value is migrated to light', async () => {
-    mockedStorage.getItem.mockResolvedValue('dark');
+  it.each(['light', 'dark', 'system'] as const)('comes back as the persisted %s choice', async (mode) => {
+    mockedStorage.getItem.mockResolvedValue(mode);
     await useThemeStore.getState().hydrate();
-    expect(useThemeStore.getState().mode).toBe('light');
-    // The migration is durable, not just in-memory for this run — the
-    // stale 'dark' value is actively rewritten so a later read of the same
-    // key does not keep reporting a preference the app no longer honours.
-    expect(mockedStorage.setItem).toHaveBeenCalledWith('tutak.themeMode', 'light');
-  });
-
-  it('an existing install with an already-explicit "light" value stays light without rewriting storage', async () => {
-    mockedStorage.getItem.mockResolvedValue('light');
-    await useThemeStore.getState().hydrate();
-    expect(useThemeStore.getState().mode).toBe('light');
+    expect(useThemeStore.getState().mode).toBe(mode);
+    // Reading is not writing: hydration never touches storage.
     expect(mockedStorage.setItem).not.toHaveBeenCalled();
   });
 
-  it('degrades to light, not a crash, if reading storage fails', async () => {
+  it('ignores a value it does not understand rather than crashing', async () => {
+    mockedStorage.getItem.mockResolvedValue('sepia');
+    await useThemeStore.getState().hydrate();
+    expect(useThemeStore.getState().mode).toBe('system');
+  });
+
+  it('degrades to the default, not a crash, if reading storage fails', async () => {
     mockedStorage.getItem.mockRejectedValue(new Error('storage unavailable'));
     await useThemeStore.getState().hydrate();
-    expect(useThemeStore.getState().mode).toBe('light');
+    expect(useThemeStore.getState().mode).toBe('system');
     expect(useThemeStore.getState().isHydrated).toBe(true);
   });
 
-  it('does not expose a way to opt back into dark mode', () => {
-    // The v2 store has no `setMode` — the old Settings appearance toggle
-    // that could set 'dark' was removed in the same change as this
-    // migration (see SettingsScreen.tsx / ThemeProvider.tsx docblocks).
-    expect((useThemeStore.getState() as unknown as Record<string, unknown>).setMode).toBeUndefined();
+  it('setMode applies at once and persists under the theme key', async () => {
+    await useThemeStore.getState().setMode('dark');
+    expect(useThemeStore.getState().mode).toBe('dark');
+    expect(mockedStorage.setItem).toHaveBeenCalledWith('tutak.themeMode', 'dark');
+  });
+
+  it('keeps the choice for this run even when the write fails', async () => {
+    mockedStorage.setItem.mockRejectedValue(new Error('disk full'));
+    await expect(useThemeStore.getState().setMode('light')).resolves.toBeUndefined();
+    expect(useThemeStore.getState().mode).toBe('light');
   });
 });

@@ -29,7 +29,7 @@ export function HomeHeader({
    */
   onProfile: () => void;
 }) {
-  const { color, space, radius, text, palette } = useTheme();
+  const { color, space, radius, text } = useTheme();
   const { t } = useTranslation();
 
   return (
@@ -69,7 +69,7 @@ export function HomeHeader({
         hitSlop={8}
         style={({ pressed }) => [
           styles.bell,
-          { backgroundColor: pressed ? palette.neutral[200] : palette.neutral[100], borderRadius: radius.full },
+          { backgroundColor: pressed ? color.fillSubtlePressed : color.fillSubtle, borderRadius: radius.full },
         ]}
       >
         <Ionicons name="notifications-outline" size={22} color={color.textPrimary} />

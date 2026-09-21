@@ -15,15 +15,15 @@ import { registerPushToken } from '../data/push/registerPushToken';
  * prompt should follow a sign-in, and re-registering the same token on every
  * navigation is a request that achieves nothing.
  */
-export function usePushRegistration(): void {
+export function usePushRegistration(enabled = true): void {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const registeredFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!userId || registeredFor.current === userId) return;
+    if (!enabled || !userId || registeredFor.current === userId) return;
     registeredFor.current = userId;
     // Not awaited, and it never rejects — nothing in the app should wait on
     // a notification service.
     void registerPushToken();
-  }, [userId]);
+  }, [userId, enabled]);
 }

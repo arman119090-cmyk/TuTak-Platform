@@ -49,6 +49,7 @@ export type RootStackParamList = {
    */
   PartnerApplicationSent: { displayName: string; category: string; rateBps: number; taxId?: string };
   ChangePassword: undefined;
+  ChangePin: undefined;
   VerifyPhone: undefined;
   DeleteAccount: undefined;
   /** Spec §7: the customer has picked a partner (a map card's "Pay" action)

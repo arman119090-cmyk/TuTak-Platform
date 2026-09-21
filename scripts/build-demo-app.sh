@@ -178,6 +178,9 @@ fs.writeFileSync(
         },
         web: { bundler: 'metro', output: 'single', favicon: './assets/icon.png' },
         plugins: [
+          // Same as apps/mobile/app.config.js: the app lock's biometric half.
+          ['expo-local-authentication', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
+          ['expo-secure-store', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
           [
             'expo-camera',
             {

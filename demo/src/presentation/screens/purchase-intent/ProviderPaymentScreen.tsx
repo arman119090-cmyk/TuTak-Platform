@@ -109,7 +109,7 @@ export function ProviderPaymentScreen() {
 
   const [handoff, setHandoff] = useState<ProviderHandoffDto | null>(null);
   const [beginFailure, setBeginFailure] = useState<
-    { kind: 'unknown' } | { kind: 'refused'; detail: string | null } | null
+    { kind: 'unknown'; reason: 'unreachable' | 'server' } | { kind: 'refused'; detail: string | null } | null
   >(null);
 
   const statusQuery = useQuery({
@@ -123,11 +123,16 @@ export function ProviderPaymentScreen() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 5000;
-      return data.state === CustomerPaymentState.NOT_STARTED ||
+      if (
+        data.state === CustomerPaymentState.NOT_STARTED ||
         data.state === CustomerPaymentState.WAITING_PROVIDER ||
         data.state === CustomerPaymentState.PROCESSING
-        ? 3000
-        : false;
+      ) {
+        return 3000;
+      }
+      // Unresolved: a late callback or the sweep may still settle it. Slower,
+      // because nobody is at the provider's page any more.
+      return data.state === CustomerPaymentState.UNRESOLVED ? 10_000 : false;
     },
   });
 
@@ -135,17 +140,26 @@ export function ProviderPaymentScreen() {
     mutationFn: () => pspApi.begin(intentId),
     onMutate: () => setBeginFailure(null),
     onSuccess: (result) => setHandoff(result.handoff),
-    onError: (error) => {
+    onError: async (error) => {
+      /*
+       * Only an answer the server *meant* is a refusal (audit D14). A 502
+       * from a proxy, a 503 while the API restarts, a 504 — those arrive
+       * with a status code and say nothing about whether the bill was
+       * opened; the request may have been processed and only the answer
+       * lost. They are "unknown", like no answer at all, and the screen
+       * must not promise "the payment did not start".
+       */
       const failure = classifyNetworkFailure(error, isOffline);
+      const answered = failure.status !== undefined && failure.status < 500 && failure.status !== 408 && failure.status !== 429;
+      // The server knows and this screen does not: a lost answer may have
+      // opened a bill, a refusal has a reason. Re-read *before* showing
+      // anything, so the text and the state on screen agree.
+      await statusQuery.refetch();
       setBeginFailure(
-        failure.status === undefined
-          ? { kind: 'unknown' }
-          : { kind: 'refused', detail: describeApiError(error) },
+        answered
+          ? { kind: 'refused', detail: describeApiError(error) }
+          : { kind: 'unknown', reason: failure.status === undefined ? 'unreachable' : 'server' },
       );
-      // Whatever happened, the server knows and this screen does not: a
-      // lost answer may have opened a bill, a refusal has a reason. Re-read
-      // before showing anything.
-      void statusQuery.refetch();
     },
   });
 
@@ -154,6 +168,7 @@ export function ProviderPaymentScreen() {
   const settled =
     state === CustomerPaymentState.SUCCEEDED ||
     state === CustomerPaymentState.FAILED ||
+    state === CustomerPaymentState.UNRESOLVED ||
     state === CustomerPaymentState.REQUIRES_RECONCILIATION;
 
   const done = () => {
@@ -250,7 +265,9 @@ export function ProviderPaymentScreen() {
 
           {beginFailure?.kind === 'unknown' ? (
             <Text style={styles.warning} accessibilityRole="alert">
-              {t('psp.beginUnknown', 'We could not reach TuTak, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms.')}
+              {beginFailure.reason === 'server'
+                ? t('psp.beginUnknownServer', 'TuTak answered with an error, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms.')
+                : t('psp.beginUnknown', 'We could not reach TuTak, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms.')}
             </Text>
           ) : null}
           {beginFailure?.kind === 'refused' ? (
@@ -305,6 +322,23 @@ export function ProviderPaymentScreen() {
                 />
               ) : null}
               <Button label={t('common.done', 'Done')} variant="secondary" onPress={done} />
+            </>
+          ) : null}
+
+          {state === CustomerPaymentState.UNRESOLVED ? (
+            <>
+              <ActivityIndicator color={color.primary} />
+              <Text style={styles.message} accessibilityRole="alert">
+                {t('psp.unresolved', 'The provider did not answer in time. We are checking whether your payment went through.')}
+              </Text>
+              {/*
+                Not a decline and not "still waiting for you" (audit D06):
+                nobody is at the provider's page any more, and the money may
+                or may not have moved. No pay button, no cash — the purchase
+                stays locked to this attempt until it is resolved.
+              */}
+              <Text style={styles.hint}>{t('psp.unresolvedHint', 'Do not pay another way for this purchase. If the money moved, it will be confirmed; if it did not, staff will release the purchase.')}</Text>
+              <Button label={t('common.close', 'Close')} variant="secondary" onPress={done} />
             </>
           ) : null}
 

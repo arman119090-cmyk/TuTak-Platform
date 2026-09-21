@@ -26,26 +26,26 @@ class FakeRedis {
     return entry;
   }
 
-  async set(key: string, value: string, _ex: 'EX', seconds: number, mode: 'NX' | 'XX'): Promise<'OK' | null> {
+  set(key: string, value: string, _ex: 'EX', seconds: number, mode: 'NX' | 'XX'): Promise<'OK' | null> {
     const exists = this.live(key) !== undefined;
-    if (mode === 'NX' && exists) return null;
-    if (mode === 'XX' && !exists) return null;
+    if (mode === 'NX' && exists) return Promise.resolve(null);
+    if (mode === 'XX' && !exists) return Promise.resolve(null);
     this.store.set(key, { value, expiresAt: this.now + seconds * 1000 });
-    return 'OK';
+    return Promise.resolve('OK');
   }
-  async del(key: string): Promise<number> {
-    return this.store.delete(key) ? 1 : 0;
+  del(key: string): Promise<number> {
+    return Promise.resolve(this.store.delete(key) ? 1 : 0);
   }
-  async incr(key: string): Promise<number> {
+  incr(key: string): Promise<number> {
     const next = Number(this.live(key)?.value ?? '0') + 1;
     this.store.set(key, { value: String(next), expiresAt: this.live(key)?.expiresAt ?? Number.MAX_SAFE_INTEGER });
-    return next;
+    return Promise.resolve(next);
   }
-  async expire(key: string, seconds: number): Promise<number> {
+  expire(key: string, seconds: number): Promise<number> {
     const entry = this.live(key);
-    if (!entry) return 0;
+    if (!entry) return Promise.resolve(0);
     entry.expiresAt = this.now + seconds * 1000;
-    return 1;
+    return Promise.resolve(1);
   }
   ttl(key: string): number {
     const entry = this.live(key);
@@ -60,9 +60,9 @@ class ScriptedChannel implements AlertChannel {
   readonly name = 'scripted';
   sends = 0;
   constructor(private readonly script: AlertDelivery[]) {}
-  async send(): Promise<AlertDelivery> {
+  send(): Promise<AlertDelivery> {
     this.sends += 1;
-    return this.script[Math.min(this.sends - 1, this.script.length - 1)]!;
+    return Promise.resolve(this.script[Math.min(this.sends - 1, this.script.length - 1)]!);
   }
 }
 

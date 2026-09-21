@@ -560,6 +560,20 @@ export function PartnersScreen() {
           >
             {t('partners.approximateLocation')}
           </Text>
+        ) : centre.source === 'cached' ? (
+          // The same honesty for the OS's cache (audit D16): a position from
+          // a few minutes ago is shown as such, and tapping asks for a new
+          // fix rather than re-centring on the old one.
+          <Pressable onPress={centre.refresh} accessibilityRole="button" hitSlop={8}>
+            <Text
+              style={[
+                text.caption,
+                { color: color.textTertiary, textAlign: 'center', marginTop: space[4] },
+              ]}
+            >
+              {t('partners.lastKnownLocation')}
+            </Text>
+          </Pressable>
         ) : null}
       </ScrollView>
     </Screen>

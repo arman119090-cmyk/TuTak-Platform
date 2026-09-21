@@ -70,6 +70,12 @@ export enum CustomerPaymentState {
   SUCCEEDED = 'SUCCEEDED',
   /** The provider said, authoritatively, that no money moved. */
   FAILED = 'FAILED',
+  /**
+   * The platform stopped waiting for the provider and nothing authoritative
+   * has said whether the money moved. Not a decline: the customer must not
+   * pay another way. A person will be asked if it stays unresolved.
+   */
+  UNRESOLVED = 'UNRESOLVED',
   /** Nobody can say yet. A human is looking. */
   REQUIRES_RECONCILIATION = 'REQUIRES_RECONCILIATION',
 }

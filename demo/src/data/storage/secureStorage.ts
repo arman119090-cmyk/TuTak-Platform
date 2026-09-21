@@ -41,10 +41,32 @@ import * as SecureStore from 'expo-secure-store';
  * not lose the app.
  */
 export async function getItem(key: string): Promise<string | null> {
+  const read = await readItem(key);
+  return read.kind === 'value' ? read.value : null;
+}
+
+/**
+ * What a read of the keystore actually found — three answers, not two.
+ *
+ * `getItem` above folds "the OS could not read this" into "there is nothing
+ * here", which is the right default for a session token (the person signs
+ * in again) and the wrong one for anything that *guards* the session: the
+ * app lock read a code it could not decrypt as "no code yet" and offered to
+ * set a new one on top of a live session (audit 21.09.2026, D07). Security
+ * state reads through this, and treats `unavailable` as locked, never as
+ * absent.
+ */
+export type SecureRead =
+  | { kind: 'value'; value: string }
+  | { kind: 'absent' }
+  | { kind: 'unavailable'; error: unknown };
+
+export async function readItem(key: string): Promise<SecureRead> {
   try {
-    return await SecureStore.getItemAsync(key);
-  } catch {
-    return null;
+    const value = await SecureStore.getItemAsync(key);
+    return value === null ? { kind: 'absent' } : { kind: 'value', value };
+  } catch (error) {
+    return { kind: 'unavailable', error };
   }
 }
 

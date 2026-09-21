@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useAuthStore } from './authStore';
-import { deleteItem, getItem, setItem } from '../storage/secureStorage';
+import { deleteItem, readItem, setItem, type SecureRead } from '../storage/secureStorage';
 import {
   availableBiometrics,
   createBiometricProof,
@@ -46,7 +46,16 @@ import {
  * for one account can never unlock another.
  */
 export type LockStatus = 'idle' | 'setup' | 'locked' | 'unlocked';
-export type PinUnlockResult = 'ok' | 'wrong' | 'signed-out' | 'not-locked';
+export type PinUnlockResult = 'ok' | 'wrong' | 'signed-out' | 'not-locked' | 'unavailable';
+/**
+ * Whether the keystore answered for this account's lock (audit 21.09.2026,
+ * D07/D08). `unavailable`: a read threw — the code, its owner or the
+ * attempt counter could not be read. `invalid`: the account has a code
+ * here and it does not parse, or the counter is garbage. Both are `locked`
+ * with no keypad: the only way forward is a fresh SMS sign-in, never a new
+ * code on top of the live session.
+ */
+export type LockStorageState = 'ok' | 'unavailable' | 'invalid';
 
 export const MAX_ATTEMPTS = 5;
 
@@ -56,6 +65,7 @@ const ATTEMPTS_KEY = 'tutak.appLock.attempts.v1';
 
 interface AppLockState {
   status: LockStatus;
+  storage: LockStorageState;
   busy: boolean;
   /** What the device offers, or null when nothing strong is enrolled. */
   biometricKind: BiometricKind | null;
@@ -120,10 +130,11 @@ let record: PinRecord | null = null;
 
 const session = () => useAuthStore.getState();
 
-async function readAttempts(): Promise<number> {
-  const raw = await getItem(ATTEMPTS_KEY);
-  const n = raw ? Number.parseInt(raw, 10) : 0;
-  return Number.isFinite(n) && n >= 0 ? n : 0;
+/** The persisted attempt count: absent means none used; anything unparsable is refused, not zeroed. */
+function parseAttempts(read: SecureRead): number | 'invalid' {
+  if (read.kind !== 'value') return 0;
+  const n = Number.parseInt(read.value, 10);
+  return Number.isFinite(n) && n >= 0 && String(n) === read.value.trim() ? n : 'invalid';
 }
 
 async function wipeLocal(): Promise<void> {
@@ -133,6 +144,7 @@ async function wipeLocal(): Promise<void> {
 
 export const useAppLockStore = create<AppLockState>((set, get) => ({
   status: 'idle',
+  storage: 'ok',
   busy: false,
   biometricKind: null,
   biometricsEnabled: false,
@@ -142,29 +154,53 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
     const { user, sessionEpoch } = session();
     if (!user) {
       record = null;
-      set({ status: 'idle', biometricsEnabled: false, attemptsLeft: MAX_ATTEMPTS });
+      set({ status: 'idle', storage: 'ok', biometricsEnabled: false, attemptsLeft: MAX_ATTEMPTS });
       return;
     }
-    const [owner, rawPin, attempts, kind, bioOwner] = await Promise.all([
-      getItem(OWNER_KEY),
-      getItem(PIN_KEY),
-      readAttempts(),
+    const [owner, rawPin, attemptsRead, kind, bioOwner] = await Promise.all([
+      readItem(OWNER_KEY),
+      readItem(PIN_KEY),
+      readItem(ATTEMPTS_KEY),
       availableBiometrics().catch(() => null),
       readBiometricOwner().catch(() => null),
     ]);
     // Only a different session may discard this result; backgrounding during
     // hydration must not leave the default state in place.
     if (sessionEpoch !== session().sessionEpoch || user.id !== session().user?.id) return;
-    const parsed = owner === user.id ? parsePinRecord(rawPin) : null;
-    record = parsed;
-    if (!parsed) {
-      // No code for this account on this phone (first sign-in here, a wiped
-      // keystore, or a code that belonged to somebody else): choose one now.
-      set({ status: 'setup', biometricKind: kind, biometricsEnabled: false, attemptsLeft: MAX_ATTEMPTS });
+
+    // Fail closed (audit D07): a keystore that could not be read is not a
+    // keystore with nothing in it. The old code turned the throw into null,
+    // read null as "no code yet" and offered `setup` — a new code, and an
+    // unlock, on top of a live session with no proof of the old one.
+    const unavailable = [owner, rawPin, attemptsRead].some((read) => read.kind === 'unavailable');
+    if (unavailable) {
+      record = null;
+      set({ status: 'locked', storage: 'unavailable', biometricKind: kind, biometricsEnabled: false, attemptsLeft: 0 });
       return;
     }
+
+    const ownerId = owner.kind === 'value' ? owner.value : null;
+    if (ownerId !== user.id) {
+      // No code for this account on this phone (first sign-in here, or a
+      // code that belonged to somebody else): choose one now.
+      record = null;
+      set({ status: 'setup', storage: 'ok', biometricKind: kind, biometricsEnabled: false, attemptsLeft: MAX_ATTEMPTS });
+      return;
+    }
+
+    // This account has a code here. It must read and parse; a missing or
+    // corrupt record under a matching owner is damage, not a first visit.
+    const parsed = rawPin.kind === 'value' ? parsePinRecord(rawPin.value) : null;
+    const attempts = parseAttempts(attemptsRead);
+    if (!parsed || attempts === 'invalid') {
+      record = null;
+      set({ status: 'locked', storage: 'invalid', biometricKind: kind, biometricsEnabled: false, attemptsLeft: 0 });
+      return;
+    }
+    record = parsed;
     set({
       status: 'locked',
+      storage: 'ok',
       biometricKind: kind,
       biometricsEnabled: bioOwner === user.id,
       attemptsLeft: Math.max(0, MAX_ATTEMPTS - attempts),
@@ -174,6 +210,10 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
   createPin: async (pin) => {
     const { user, sessionEpoch } = session();
     if (!user || get().busy) return false;
+    // A code is chosen at setup, or replaced from inside an unlocked session
+    // after the old one was verified (`ChangePinScreen`). Never while locked
+    // — that would be a bypass, whatever the keystore did (audit D07).
+    if (get().status !== 'setup' && get().status !== 'unlocked') return false;
     const stamp = generation;
     set({ busy: true });
     try {
@@ -185,7 +225,7 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
         await setItem(ATTEMPTS_KEY, '0');
         if (stamp !== generation || sessionEpoch !== session().sessionEpoch) return false;
         record = next;
-        set({ status: 'unlocked', attemptsLeft: MAX_ATTEMPTS });
+        set({ status: 'unlocked', storage: 'ok', attemptsLeft: MAX_ATTEMPTS });
         return true;
       });
     } catch {
@@ -200,7 +240,7 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
 
   unlockWithBiometrics: async (prompt) => {
     const { user, sessionEpoch } = session();
-    if (!user || get().status !== 'locked' || !get().biometricsEnabled || get().busy) return false;
+    if (!user || get().status !== 'locked' || get().storage !== 'ok' || !get().biometricsEnabled || get().busy) return false;
     const stamp = generation;
     set({ busy: true });
     try {
@@ -265,22 +305,44 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
 async function checkPin(pin: string, unlock: boolean): Promise<PinUnlockResult> {
   const store = useAppLockStore;
   const { user, sessionEpoch } = session();
-  const { status, busy } = store.getState();
-  if (!user || busy || !record) return 'not-locked';
+  const { status, storage, busy, attemptsLeft } = store.getState();
+  if (!user || busy) return 'not-locked';
+  if (storage !== 'ok' || !record) return storage === 'ok' ? 'not-locked' : 'unavailable';
   if (unlock && status !== 'locked') return 'not-locked';
   const stamp = generation;
   store.setState({ busy: true });
   try {
+    /*
+     * The attempt is written down *before* it is judged (audit D08). The
+     * old order — judge, then persist — meant a keystore that refused the
+     * write left the count in memory only: four wrong codes, a restart,
+     * and five fresh tries. Now a code is not even compared until the
+     * count that includes it is on disk; if that write fails the attempt
+     * is refused outright, and a restart reads a count that is never lower
+     * than the truth.
+     */
+    const used = MAX_ATTEMPTS - attemptsLeft + 1;
+    try {
+      await serial(() => setItem(ATTEMPTS_KEY, String(used)));
+    } catch {
+      return 'unavailable';
+    }
     const ok = await pinMatches(pin, record);
     if (stamp !== generation || sessionEpoch !== session().sessionEpoch) return 'not-locked';
     if (ok) {
-      await serial(() => setItem(ATTEMPTS_KEY, '0')).catch(() => undefined);
-      store.setState({ attemptsLeft: MAX_ATTEMPTS, ...(unlock ? { status: 'unlocked' } : {}) });
+      // Best effort: a reset that fails leaves the stricter count on disk
+      // and in memory, which errs the right way.
+      const reset = await serial(() => setItem(ATTEMPTS_KEY, '0')).then(
+        () => true,
+        () => false,
+      );
+      store.setState({
+        attemptsLeft: reset ? MAX_ATTEMPTS : Math.max(0, MAX_ATTEMPTS - used),
+        ...(unlock ? { status: 'unlocked' } : {}),
+      });
       return 'ok';
     }
-    const used = MAX_ATTEMPTS - store.getState().attemptsLeft + 1;
     const left = Math.max(0, MAX_ATTEMPTS - used);
-    await serial(() => setItem(ATTEMPTS_KEY, String(used))).catch(() => undefined);
     store.setState({ attemptsLeft: left });
     if (left > 0) return 'wrong';
     // Out of attempts: the session ends here. The auth subscription below
@@ -301,7 +363,7 @@ useAuthStore.subscribe((state, previous) => {
     // a session that is over.
     generation += 1;
     record = null;
-    useAppLockStore.setState({ status: 'idle', biometricsEnabled: false, attemptsLeft: MAX_ATTEMPTS });
+    useAppLockStore.setState({ status: 'idle', storage: 'ok', biometricsEnabled: false, attemptsLeft: MAX_ATTEMPTS });
     void serial(wipeLocal).catch(() => undefined);
   }
   // A session appeared (a fresh sign-in, or the stored one at cold start).

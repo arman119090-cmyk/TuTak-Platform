@@ -130,6 +130,7 @@ export function TransactionDetailScreen() {
               purchase={purchase.data}
               loading={purchase.isPending}
               failed={purchase.isError}
+              staleSince={purchase.isError && purchase.data ? purchase.dataUpdatedAt : null}
               onRetry={() => void purchase.refetch()}
               styles={styles}
               Row={Row}
@@ -139,6 +140,7 @@ export function TransactionDetailScreen() {
               refunds={refunds.data}
               loading={refunds.isPending}
               failed={refunds.isError}
+              staleSince={refunds.isError && refunds.data ? refunds.dataUpdatedAt : null}
               onRetry={() => void refunds.refetch()}
               styles={styles}
             />
@@ -157,10 +159,40 @@ export function TransactionDetailScreen() {
   );
 }
 
+/**
+ * Kept data whose refresh failed is shown, but never as current (audit D15):
+ * the line names the time it was true and offers the retry. Without this a
+ * purchase refunded a minute ago read "refunded so far: 0" off the cache.
+ */
+function StaleNotice({
+  since,
+  onRetry,
+  styles,
+}: {
+  since: number | null;
+  onRetry: () => void;
+  styles: { warning: object };
+}) {
+  const { t } = useTranslation();
+  if (since === null) return null;
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.warning} accessibilityRole="alert">
+        {t('history.staleSince', {
+          time: formatDateTime(new Date(since).toISOString()),
+          defaultValue: 'Could not refresh. Showing what was known at {{time}}.',
+        })}
+      </Text>
+      <Button label={t('common.retry')} variant="secondary" size="sm" onPress={onRetry} />
+    </View>
+  );
+}
+
 function PurchaseSection({
   purchase,
   loading,
   failed,
+  staleSince,
   onRetry,
   styles,
   Row,
@@ -168,6 +200,7 @@ function PurchaseSection({
   purchase: PurchaseIntentDto | undefined;
   loading: boolean;
   failed: boolean;
+  staleSince: number | null;
   onRetry: () => void;
   styles: { warning: object; label: object };
   Row: React.ComponentType<{ label: string; value: string }>;
@@ -176,6 +209,7 @@ function PurchaseSection({
   if (purchase) {
     return (
       <>
+        <StaleNotice since={staleSince} onRetry={onRetry} styles={styles} />
         <Row
           label={t('history.route', 'How it was paid')}
           value={
@@ -215,22 +249,30 @@ function RefundsSection({
   refunds,
   loading,
   failed,
+  staleSince,
   onRetry,
   styles,
 }: {
   refunds: PurchaseIntentRefundDto[] | undefined;
   loading: boolean;
   failed: boolean;
+  staleSince: number | null;
   onRetry: () => void;
   styles: { warning: object; label: object; value: object; row: object };
 }) {
   const { t } = useTranslation();
   if (refunds) {
     if (refunds.length === 0) {
-      return <Text style={styles.label}>{t('history.noRefunds', 'No refunds on this purchase.')}</Text>;
+      return (
+        <>
+          <StaleNotice since={staleSince} onRetry={onRetry} styles={styles} />
+          <Text style={styles.label}>{t('history.noRefunds', 'No refunds on this purchase.')}</Text>
+        </>
+      );
     }
     return (
       <>
+        <StaleNotice since={staleSince} onRetry={onRetry} styles={styles} />
         {refunds.map((refund) => (
           <View key={refund.id} style={styles.row}>
             <View style={{ flexShrink: 1 }}>

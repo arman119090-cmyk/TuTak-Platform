@@ -46,6 +46,17 @@ export async function getItem(key: string): Promise<string | null> {
   return store ? store.getItem(key) : (memory.get(key) ?? null);
 }
 
+/** Same shape as the native adapter's `readItem`; a browser store never fails to answer. */
+export type SecureRead =
+  | { kind: 'value'; value: string }
+  | { kind: 'absent' }
+  | { kind: 'unavailable'; error: unknown };
+
+export async function readItem(key: string): Promise<SecureRead> {
+  const value = await getItem(key);
+  return value === null ? { kind: 'absent' } : { kind: 'value', value };
+}
+
 export async function setItem(key: string, value: string): Promise<void> {
   const store = webStore();
   if (store) store.setItem(key, value);

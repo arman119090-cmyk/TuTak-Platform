@@ -13,6 +13,7 @@ import {
   PartnerCheckoutStatus,
   PartnerIntegrationStatus,
   PartnerIntegrationType,
+  PaymentRoute,
   Prisma,
   PurchaseIntentStatus,
 } from '@prisma/client';
@@ -30,6 +31,24 @@ import { PartnerApiIdentity } from './partner-api-key.guard';
 
 /** The QR payload a till renders. Only the token travels. */
 export const checkoutQrPayload = (token: string) => `tutak://checkout/${token}`;
+
+/** What a key may do, resolved per request from its integration. */
+interface PosScope {
+  integrationId: string;
+  /** The integration's branch, when it has one: the only branch the key sells at. */
+  partnerBranchId: string | null;
+}
+
+/** Every semantic input of a create request — see `assertSameRequest`. */
+interface CheckoutFingerprint {
+  externalReference: string;
+  grossAmount: Decimal;
+  partnerBranchId: string | null;
+  quantity: Decimal | null;
+  quantityUnit: string | null;
+  unitPrice: Decimal | null;
+  occurredAt: Date | null;
+}
 
 function isUniqueViolation(error: unknown, field: string): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
@@ -81,49 +100,105 @@ export class PartnerCheckoutService {
   }
 
   /**
-   * The key is the partner's; the integration is the second lock. A partner
-   * whose POS integration is not ACTIVE cannot open checkouts even with a
-   * valid key — the key authenticates, the integration authorises.
+   * The key authenticates; the integration authorises — and the two are
+   * bound to each other (audit 21.09.2026, D17).
+   *
+   * Resolved on every request, never cached in the token: a key revoked, an
+   * integration suspended or a key re-pointed elsewhere loses access on the
+   * very next call. Three refusals, all deliberate:
+   *
+   *  - a key issued partner-wide (no integration) is not a POS credential;
+   *  - a key whose integration is not `POS` is somebody else's credential
+   *    (a roaming-CPO key must not open till sales);
+   *  - an integration that is not `ACTIVE` opens nothing, whatever its key.
+   *
+   * The scope it returns is the integration's own branch, when it has one:
+   * a till installed at one location opens sales at that location only.
    */
-  private async assertPosIntegration(partnerId: string): Promise<void> {
-    const active = await this.prisma.partnerIntegration.count({
-      where: { partnerId, type: PartnerIntegrationType.POS, status: PartnerIntegrationStatus.ACTIVE },
+  private async posScope(identity: PartnerApiIdentity): Promise<PosScope> {
+    const key = await this.prisma.partnerApiKey.findUnique({
+      where: { id: identity.apiKeyId },
+      select: {
+        partnerId: true,
+        revokedAt: true,
+        integration: { select: { id: true, type: true, status: true, partnerBranchId: true } },
+      },
     });
-    if (active === 0) {
+    if (!key || key.revokedAt || key.partnerId !== identity.partnerId) {
+      throw new ForbiddenException('This API key is not valid for this partner');
+    }
+    if (!key.integration) {
+      throw new ForbiddenException('This API key is not issued for a POS integration');
+    }
+    if (key.integration.type !== PartnerIntegrationType.POS) {
+      throw new ForbiddenException('This API key belongs to a different kind of integration');
+    }
+    if (key.integration.status !== PartnerIntegrationStatus.ACTIVE) {
       throw new ForbiddenException('This partner has no active POS integration');
     }
+    return { integrationId: key.integration.id, partnerBranchId: key.integration.partnerBranchId };
+  }
+
+  /**
+   * A checkout the key may act on: the key's own partner *and* the key's own
+   * integration. Another integration's checkout at the same partner is not
+   * found, for the same reason another partner's is not.
+   */
+  private async checkoutForKey(identity: PartnerApiIdentity, scope: PosScope, checkoutId: string) {
+    const checkout = await this.prisma.partnerCheckout.findFirst({
+      where: {
+        id: checkoutId,
+        partnerId: identity.partnerId,
+        apiKey: { integrationId: scope.integrationId },
+      },
+      include: { purchaseIntent: true },
+    });
+    if (!checkout) throw new NotFoundException('Checkout not found');
+    return checkout;
   }
 
   async create(identity: PartnerApiIdentity, dto: CreatePartnerCheckoutDto) {
     this.assertEnabled();
     const partner = await this.partnersService.findActiveOrThrow(identity.partnerId);
-    await this.assertPosIntegration(partner.id);
+    const scope = await this.posScope(identity);
+
+    // A till installed at one branch sells at that branch. Naming another
+    // is refused; naming none means the till's own.
+    if (scope.partnerBranchId && dto.partnerBranchId && dto.partnerBranchId !== scope.partnerBranchId) {
+      throw new ForbiddenException('This API key is scoped to a different branch');
+    }
+    const partnerBranchId = dto.partnerBranchId ?? scope.partnerBranchId ?? null;
+    const grossAmount = parsePositiveMoney(dto.grossAmount, 'grossAmount');
+    const lineItem = this.parseLineItem(dto, grossAmount);
+    const request: CheckoutFingerprint = {
+      externalReference: dto.externalReference,
+      grossAmount,
+      partnerBranchId,
+      quantity: lineItem.quantity,
+      quantityUnit: lineItem.quantityUnit ?? null,
+      unitPrice: lineItem.unitPrice,
+      occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : null,
+    };
 
     // Same shape of replay as everywhere else: a client that has a key gets
     // the row it already created back, and a different request under the
-    // same key is a conflict, never a second sale.
+    // same key is a conflict, never a second sale. "Different" is every
+    // semantic input — branch, line item, timestamp — not only the receipt
+    // and the gross (audit 21.09.2026, D11).
     if (dto.idempotencyKey) {
       const existing = await this.prisma.partnerCheckout.findUnique({
         where: { partnerId_idempotencyKey: { partnerId: partner.id, idempotencyKey: dto.idempotencyKey } },
       });
       if (existing) {
-        if (
-          existing.externalReference !== dto.externalReference ||
-          !existing.grossAmount.equals(parsePositiveMoney(dto.grossAmount, 'grossAmount'))
-        ) {
-          throw new ConflictException('This idempotency key was already used for a different checkout');
-        }
+        this.assertSameRequest(existing, request);
         return this.toPosView(existing);
       }
     }
 
-    const grossAmount = parsePositiveMoney(dto.grossAmount, 'grossAmount');
-    const lineItem = this.parseLineItem(dto, grossAmount);
-
     // The same branch rule the QR path applies at creation, applied where
     // the till is: a partner with locations names the location.
-    if (dto.partnerBranchId) {
-      const branch = await this.prisma.partnerBranch.findUnique({ where: { id: dto.partnerBranchId } });
+    if (partnerBranchId) {
+      const branch = await this.prisma.partnerBranch.findUnique({ where: { id: partnerBranchId } });
       if (!branch || branch.partnerId !== partner.id) {
         throw new BadRequestException('This branch does not belong to the given partner');
       }
@@ -142,7 +217,7 @@ export class PartnerCheckoutService {
       const checkout = await this.prisma.partnerCheckout.create({
         data: {
           partnerId: partner.id,
-          partnerBranchId: dto.partnerBranchId ?? null,
+          partnerBranchId,
           apiKeyId: identity.apiKeyId,
           externalReference: dto.externalReference,
           idempotencyKey: dto.idempotencyKey ?? null,
@@ -173,11 +248,16 @@ export class PartnerCheckoutService {
         );
       }
       if (isUniqueViolation(error, 'idempotencyKey')) {
-        // Two identical creates raced; the first one's row is the answer.
+        // Two creates raced under one key; the first one's row is the
+        // answer — if it is the same request. The same fingerprint check as
+        // above: a race is not a licence to replay a different sale.
         const existing = await this.prisma.partnerCheckout.findUnique({
           where: { partnerId_idempotencyKey: { partnerId: partner.id, idempotencyKey: dto.idempotencyKey! } },
         });
-        if (existing) return this.toPosView(existing);
+        if (existing) {
+          this.assertSameRequest(existing, request);
+          return this.toPosView(existing);
+        }
       }
       throw error;
     }
@@ -206,22 +286,51 @@ export class PartnerCheckoutService {
     };
   }
 
-  /** The till's own view — never another partner's, by key. */
+  /**
+   * The semantic fingerprint of a create request, compared field by field
+   * against the row an idempotency key already produced. Decimal fields are
+   * compared as numbers, not strings; the timestamp only when the request
+   * named one (a client that omits it gets "now" and would never replay
+   * equal).
+   */
+  private assertSameRequest(
+    existing: {
+      externalReference: string;
+      grossAmount: Decimal;
+      partnerBranchId: string | null;
+      quantity: Decimal | null;
+      quantityUnit: string | null;
+      unitPrice: Decimal | null;
+      occurredAt: Date;
+    },
+    request: CheckoutFingerprint,
+  ): void {
+    const sameDecimal = (a: Decimal | null, b: Decimal | null) =>
+      a === null || b === null ? a === b : a.equals(b);
+    const same =
+      existing.externalReference === request.externalReference &&
+      existing.grossAmount.equals(request.grossAmount) &&
+      existing.partnerBranchId === request.partnerBranchId &&
+      sameDecimal(existing.quantity, request.quantity) &&
+      (existing.quantityUnit ?? null) === request.quantityUnit &&
+      sameDecimal(existing.unitPrice, request.unitPrice) &&
+      (request.occurredAt === null || existing.occurredAt.getTime() === request.occurredAt.getTime());
+    if (!same) {
+      throw new ConflictException('This idempotency key was already used for a different checkout');
+    }
+  }
+
+  /** The till's own view — never another partner's, nor another integration's, by key. */
   async statusForPartner(identity: PartnerApiIdentity, checkoutId: string) {
-    const checkout = await this.prisma.partnerCheckout.findFirst({
-      where: { id: checkoutId, partnerId: identity.partnerId },
-      include: { purchaseIntent: true },
-    });
-    if (!checkout) throw new NotFoundException('Checkout not found');
+    const scope = await this.posScope(identity);
+    const checkout = await this.checkoutForKey(identity, scope, checkoutId);
     return this.toPosView(checkout, checkout.purchaseIntent);
   }
 
   /** A till withdraws a sale nobody has claimed. After a claim, the purchase's own paths apply. */
   async cancel(identity: PartnerApiIdentity, checkoutId: string) {
-    const checkout = await this.prisma.partnerCheckout.findFirst({
-      where: { id: checkoutId, partnerId: identity.partnerId },
-    });
-    if (!checkout) throw new NotFoundException('Checkout not found');
+    const scope = await this.posScope(identity);
+    const checkout = await this.checkoutForKey(identity, scope, checkoutId);
     if (checkout.status === PartnerCheckoutStatus.CANCELLED) return this.toPosView(checkout);
     if (checkout.status !== PartnerCheckoutStatus.OPEN) {
       throw new ConflictException(
@@ -243,10 +352,10 @@ export class PartnerCheckoutService {
    */
   async confirm(identity: PartnerApiIdentity, checkoutId: string) {
     this.assertEnabled();
-    const checkout = await this.prisma.partnerCheckout.findFirst({
-      where: { id: checkoutId, partnerId: identity.partnerId },
-    });
-    if (!checkout) throw new NotFoundException('Checkout not found');
+    // Re-checked here, not only at create: a key or integration switched
+    // off between the scan and the confirm loses the confirm (D17).
+    const scope = await this.posScope(identity);
+    const checkout = await this.checkoutForKey(identity, scope, checkoutId);
     if (checkout.status !== PartnerCheckoutStatus.CLAIMED || !checkout.purchaseIntentId) {
       throw new ConflictException('Nobody has claimed this checkout yet — there is nothing to confirm');
     }
@@ -306,7 +415,13 @@ export class PartnerCheckoutService {
     if (!checkout) throw new NotFoundException('This code is not valid');
     if (checkout.status === PartnerCheckoutStatus.CLAIMED && checkout.purchaseIntentId) {
       if (checkout.claimedByUserId === customerId) {
-        return this.purchaseIntents.findByIdOrThrow(checkout.purchaseIntentId); // idempotent
+        // A lost answer replays the same purchase — provided the customer
+        // is asking for the same thing. A different funding choice on a
+        // sale already opened is a conflict, not a silent return of the
+        // old choice (audit D11): cancel the purchase and scan again.
+        const intent = await this.purchaseIntents.findByIdOrThrow(checkout.purchaseIntentId);
+        this.assertSameFunding(intent, dto);
+        return intent;
       }
       throw new ConflictException('This checkout was already claimed by another customer');
     }
@@ -333,7 +448,17 @@ export class PartnerCheckoutService {
     }
 
     try {
-      const intent = await this.purchaseIntents.create(
+      /*
+       * The purchase and its binding to this checkout commit together
+       * (audit 21.09.2026, D10). The binding runs inside the purchase's own
+       * insert transaction, so there is no moment where a purchase exists
+       * and the checkout does not yet name it — the moment the old code's
+       * catch below would have reopened the checkout to a second customer
+       * while the first customer's purchase was already live. A binding
+       * that finds the checkout changed underneath it rolls the purchase
+       * back with it.
+       */
+      return await this.purchaseIntents.create(
         {
           partnerId: checkout.partnerId,
           partnerBranchId: checkout.partnerBranchId ?? undefined,
@@ -346,15 +471,13 @@ export class PartnerCheckoutService {
           paymentRoute: dto.paymentRoute,
         },
         customerId,
+        { bind: (tx, intentId) => this.bindCheckoutToPurchase(tx, checkout.id, customerId, intentId) },
       );
-      await this.prisma.partnerCheckout.update({
-        where: { id: checkout.id },
-        data: { purchaseIntentId: intent.id },
-      });
-      return intent;
     } catch (error) {
       // Hand the code back: the till's sale is still real, this customer
-      // just could not fund it this way.
+      // just could not fund it this way. Only a claim with no purchase is
+      // released — and since the binding commits with the purchase, "no
+      // purchase bound" now means "no purchase committed".
       await this.prisma.partnerCheckout
         .updateMany({
           where: { id: checkout.id, status: PartnerCheckoutStatus.CLAIMED, purchaseIntentId: null },
@@ -362,6 +485,51 @@ export class PartnerCheckoutService {
         })
         .catch((e) => this.logger.error(`Could not release checkout ${checkout.id} after a failed claim: ${e}`));
       throw error;
+    }
+  }
+
+  /**
+   * Ties the checkout to the purchase being inserted, in that insert's
+   * transaction. Conditional on the claim still being ours and unbound: if
+   * the till cancelled, the sweep expired it or a concurrent claim won, the
+   * update finds nothing and the throw rolls the purchase back.
+   */
+  private async bindCheckoutToPurchase(
+    tx: Prisma.TransactionClient,
+    checkoutId: string,
+    customerId: string,
+    intentId: string,
+  ): Promise<void> {
+    const bound = await tx.partnerCheckout.updateMany({
+      where: {
+        id: checkoutId,
+        status: PartnerCheckoutStatus.CLAIMED,
+        claimedByUserId: customerId,
+        purchaseIntentId: null,
+      },
+      data: { purchaseIntentId: intentId },
+    });
+    if (bound.count === 0) {
+      throw new ConflictException('This checkout changed while the purchase was being opened — scan again');
+    }
+  }
+
+  /** A replayed claim must ask for what the purchase already is. */
+  private assertSameFunding(
+    intent: { bonusAmountRequested: Decimal; prepaidAmountApplied: Decimal; paymentRoute: PaymentRoute },
+    dto: ClaimPartnerCheckoutDto,
+  ): void {
+    const wanted = (value: string | undefined) => (value === undefined ? null : parseMoney(value, 'amount'));
+    const bonus = wanted(dto.bonusAmountRequested);
+    const prepaid = wanted(dto.prepaidAmountApplied);
+    const same =
+      (bonus === null || bonus.equals(intent.bonusAmountRequested)) &&
+      (prepaid === null || prepaid.equals(intent.prepaidAmountApplied)) &&
+      (dto.paymentRoute === undefined || dto.paymentRoute === intent.paymentRoute);
+    if (!same) {
+      throw new ConflictException(
+        'This checkout is already your purchase with a different funding choice — cancel that purchase before choosing again',
+      );
     }
   }
 

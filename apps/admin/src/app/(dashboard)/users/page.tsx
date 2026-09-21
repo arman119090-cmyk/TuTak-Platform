@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Role } from '@tutak/shared-types';
 import { Badge, Button, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
+import { LoadFailed } from '@/components/LoadFailed';
 import { adminApi } from '@/lib/api/adminApi';
 
 const num = (v: string | number | undefined) =>
@@ -11,7 +12,7 @@ const num = (v: string | number | undefined) =>
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ['admin-users'], queryFn: () => adminApi.listUsers() });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['admin-users'], queryFn: () => adminApi.listUsers() });
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const run = async (id: string, fn: () => Promise<unknown>) => {
@@ -42,6 +43,8 @@ export default function UsersPage() {
             ))}
           </tbody>
         </Table>
+      ) : isError ? (
+        <LoadFailed what="the users" onRetry={() => void refetch()} />
       ) : users.length === 0 ? (
         <EmptyState title="No users yet" message="Accounts will appear here as people sign up." />
       ) : (

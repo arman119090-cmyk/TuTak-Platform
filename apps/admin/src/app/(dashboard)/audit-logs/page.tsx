@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Badge, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
+import { LoadFailed } from '@/components/LoadFailed';
 import { auditApi } from '@/lib/api/auditApi';
 
 /** Actions that move money or change access get a coloured marker. */
@@ -15,7 +16,7 @@ function toneFor(action: string): 'available' | 'pending' | 'danger' | 'neutral'
 }
 
 export default function AuditLogsPage() {
-  const { data } = useQuery({ queryKey: ['audit-logs'], queryFn: () => auditApi.list() });
+  const { data, isError, refetch } = useQuery({ queryKey: ['audit-logs'], queryFn: () => auditApi.list() });
   const items = data?.items ?? [];
 
   return (
@@ -25,7 +26,9 @@ export default function AuditLogsPage() {
         description="Immutable record of every security- and money-relevant action."
       />
 
-      {items.length === 0 ? (
+      {isError ? (
+        <LoadFailed what="the audit log" onRetry={() => void refetch()} />
+      ) : items.length === 0 ? (
         <EmptyState title="No entries yet" message="Actions are recorded here as they happen." />
       ) : (
         <Table>

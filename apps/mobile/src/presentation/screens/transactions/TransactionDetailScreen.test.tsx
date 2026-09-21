@@ -172,6 +172,29 @@ describe('TransactionDetailScreen', () => {
     expect(screen.queryByText(/at the till/i)).toBeNull();
   });
 
+  it('marks kept purchase and refund data as stale when a refresh fails, instead of passing it off as current (audit D15)', async () => {
+    (purchaseIntentApi.get as jest.Mock)
+      .mockResolvedValueOnce(purchase())
+      .mockRejectedValue(new Error('network down'));
+    (purchaseIntentApi.refunds as jest.Mock)
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('network down'));
+    renderScreen();
+    await screen.findByText(/at the till/i);
+    expect(screen.getByText(/no refunds on this purchase/i)).toBeTruthy();
+    expect(screen.queryByText(/could not refresh/i)).toBeNull();
+
+    await activeClient!.refetchQueries();
+
+    // Both sections keep what they had and say when it was true; "no
+    // refunds" is no longer presented as the current answer.
+    const notices = await screen.findAllByText(/could not refresh\. showing what was known at/i);
+    expect(notices).toHaveLength(2);
+    expect(screen.getByText(/no refunds on this purchase/i)).toBeTruthy();
+    expect(screen.getByText(/at the till/i)).toBeTruthy();
+    expect(screen.getAllByText('common.retry').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('asks the server nothing about a row that is not a purchase', async () => {
     mockTransaction = transaction({
       type: TransactionType.BONUS_ACCRUAL,

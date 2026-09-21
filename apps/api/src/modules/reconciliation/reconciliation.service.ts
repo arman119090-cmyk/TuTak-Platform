@@ -17,8 +17,8 @@ import { MONEY_SCALE } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import {
-  SETTLEABLE_LEDGER_KINDS,
-  TRANSFER_LEDGER_KINDS,
+  CLAIMABLE_LEDGER_KINDS,
+  SETTLED_LEDGER_KINDS,
 } from '../partner-settlements/settleable-kinds';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 
@@ -384,19 +384,21 @@ export class ReconciliationService {
           select: { netPayableAmount: true },
         }),
       ]);
-      // Only kinds the settlement engine would claim count as "not yet in a
-      // settlement"; transfer kinds (payouts, collections, paid settlements)
-      // are money already moving and sit outside the identity by design.
+      // Everything the settlement engine would claim — economic postings
+      // and the allocations (legacy payouts, collections) that net against
+      // them — counts as "not yet in a settlement". The settled counterpart
+      // (`partner.settlement.paid`) is never claimed and sits outside the
+      // identity by design: its credits are inside a PAID settlement.
       const unclaimedNet = signedSum(
-        unclaimed.filter((p) => SETTLEABLE_LEDGER_KINDS.has(p.transaction.kind)),
+        unclaimed.filter((p) => CLAIMABLE_LEDGER_KINDS.has(p.transaction.kind)),
         PostingDirection.CREDIT,
       );
       const transfers = signedSum(
-        unclaimed.filter((p) => TRANSFER_LEDGER_KINDS.has(p.transaction.kind)),
+        unclaimed.filter((p) => SETTLED_LEDGER_KINDS.has(p.transaction.kind)),
         PostingDirection.CREDIT,
       );
       const unknown = unclaimed.filter(
-        (p) => !SETTLEABLE_LEDGER_KINDS.has(p.transaction.kind) && !TRANSFER_LEDGER_KINDS.has(p.transaction.kind),
+        (p) => !CLAIMABLE_LEDGER_KINDS.has(p.transaction.kind) && !SETTLED_LEDGER_KINDS.has(p.transaction.kind),
       );
       if (unknown.length > 0) {
         // Not silently ignored (§32): a posting nobody classified is a

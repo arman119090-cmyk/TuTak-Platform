@@ -15,6 +15,7 @@ import {
   Th,
   Tr,
 } from '@tutak/design/web';
+import { LoadFailed } from '@/components/LoadFailed';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { PartnerBranchAudit } from './PartnerBranchAudit';
 
@@ -31,7 +32,7 @@ const EMPTY = {
 
 export default function PartnersPage() {
   const queryClient = useQueryClient();
-  const { data } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
+  const { data, isError, refetch } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
   const [form, setForm] = useState(EMPTY);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -152,7 +153,9 @@ export default function PartnersPage() {
         </Surface>
       ) : null}
 
-      {partners.length === 0 ? (
+      {isError ? (
+        <LoadFailed what="the partners" onRetry={() => void refetch()} />
+      ) : partners.length === 0 ? (
         <EmptyState
           title="No partners yet"
           message="Add your first partner business to start accepting TuTak payments."

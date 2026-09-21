@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -81,16 +82,57 @@ export function splitRefundAcrossComponents(params: {
   cumulativeBefore: Decimal;
   cumulativeAfter: Decimal;
 }): { bonus: Decimal; prepaid: Decimal; external: Decimal } {
-  const shareAt = (total: Decimal, cumulative: Decimal): Decimal =>
-    total.lessThanOrEqualTo(0)
-      ? new Decimal(0)
-      : roundIssued(total.times(cumulative).dividedBy(params.grossAmount));
-  const delta = (total: Decimal): Decimal =>
-    shareAt(total, params.cumulativeAfter).minus(shareAt(total, params.cumulativeBefore));
-  const bonus = delta(params.bonusAmountRequested);
-  const prepaid = delta(params.prepaidAmountApplied);
+  /*
+   * Rounding policy v2 (audit 21.09.2026, D09). Three cumulative watermarks
+   * at ledger scale, each defined from the one before so that rounding
+   * can never push a later component below zero:
+   *
+   *   Bc(t) = roundDown(t · B / G)          — the bonus watermark the
+   *                                            loyalty reversal uses, unchanged;
+   *   N(t)  = t − Bc(t)                      — the real money refunded so far;
+   *   Pc(t) = floor(N(t) · P / (G − B))      — the prepaid share of that money;
+   *   Ec(t) = N(t) − Pc(t)                   — what is left is the till's.
+   *
+   * v1 rounded the prepaid watermark independently, `roundDown(t·P/G)`, and
+   * took the external slice as whatever the current delta had left after
+   * the other two. With G=3, B=1, P=2 (no till money at all) three refunds
+   * of 1 produced external 0.0001, 0, −0.0001: a cash slice out of nothing,
+   * then a negative one the database rightly refuses. Defining each
+   * component from the previous one's remainder is what makes every delta
+   * non-negative, the sum exact, and the external slice identically zero
+   * whenever the purchase had no external money — at every step, not only
+   * at the end. `refund-split.spec.ts` proves the properties over the
+   * awkward amounts the auditor asked for.
+   *
+   * Why not clamp: `max(0, external)` would keep a −0.0001 from reaching
+   * the CHECK constraint by silently breaking conservation, which is the
+   * worse defect wearing the better face.
+   */
+  const gross = params.grossAmount;
+  const bonusTotal = params.bonusAmountRequested;
+  const prepaidTotal = params.prepaidAmountApplied;
+  const realMoneyTotal = gross.minus(bonusTotal);
+
+  const bonusAt = (cumulative: Decimal): Decimal =>
+    bonusTotal.lessThanOrEqualTo(0) ? new Decimal(0) : roundIssued(bonusTotal.times(cumulative).dividedBy(gross));
+  const prepaidAt = (cumulative: Decimal): Decimal => {
+    if (prepaidTotal.lessThanOrEqualTo(0) || realMoneyTotal.lessThanOrEqualTo(0)) return new Decimal(0);
+    const realMoneySoFar = cumulative.minus(bonusAt(cumulative));
+    return roundIssued(realMoneySoFar.times(prepaidTotal).dividedBy(realMoneyTotal));
+  };
+
+  const bonus = bonusAt(params.cumulativeAfter).minus(bonusAt(params.cumulativeBefore));
+  const prepaid = prepaidAt(params.cumulativeAfter).minus(prepaidAt(params.cumulativeBefore));
   return { bonus, prepaid, external: params.amount.minus(bonus).minus(prepaid) };
 }
+
+/**
+ * The version of `splitRefundAcrossComponents` a refund row was computed
+ * with. Stored on every refund so a later change of policy can be told
+ * apart from a rounding drift, and so a purchase partially refunded under
+ * one policy is never continued under another (see the migration).
+ */
+export const REFUND_ROUNDING_POLICY_VERSION = 2;
 
 /** Did this come from the (actorId, idempotencyKey) unique index? Same reasoning as RefundEngineService's own check. */
 function isKeyCollision(err: unknown): boolean {
@@ -330,6 +372,26 @@ export class PurchaseIntentRefundService {
     const cumulativeBefore = intent.refundedAmount;
     const cumulativeAfter = cumulativeBefore.plus(amount);
 
+    // Rounding policy is pinned per purchase (audit D09): a purchase whose
+    // earlier partial refunds were split under v1 cannot be continued under
+    // v2 without the two policies disagreeing by a quantum somewhere — and
+    // the difference only exists when stored money was involved. Such a
+    // purchase is refused here rather than silently reconciled by a clamp;
+    // nothing in production carries stored money yet, so this is a guard,
+    // not a path.
+    if (cumulativeBefore.greaterThan(0) && intent.prepaidAmountApplied.greaterThan(0)) {
+      const earlier = await tx.purchaseIntentRefund.findFirst({
+        where: { purchaseIntentId: intent.id, roundingPolicyVersion: { not: REFUND_ROUNDING_POLICY_VERSION } },
+        select: { id: true, roundingPolicyVersion: true },
+      });
+      if (earlier) {
+        throw new ConflictException(
+          `Purchase ${intent.id} was partially refunded under rounding policy v${earlier.roundingPolicyVersion}; ` +
+            `the remaining ${remaining.toString()} needs manual reconciliation, not an automatic refund`,
+        );
+      }
+    }
+
     await tx.purchaseIntent.update({
       where: { id: intent.id },
       data: { refundedAmount: cumulativeAfter },
@@ -401,6 +463,7 @@ export class PurchaseIntentRefundService {
         prepaidRestored: split.prepaid,
         externalRefundDue: split.external,
         externalRefundStatus,
+        roundingPolicyVersion: REFUND_ROUNDING_POLICY_VERSION,
         reason,
         ledgerTransactionId,
         actorId,

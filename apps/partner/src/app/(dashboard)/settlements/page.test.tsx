@@ -105,6 +105,7 @@ function positionFixture(overrides: Partial<UnsettledPositionDto> = {}): Unsettl
     funding: {
       salesGross: '120000.0000',
       receivedDirectly: '95000.0000',
+      receivedViaProvider: '0.0000',
       fundedByPrepaid: '20000.0000',
       fundedByBonus: '5000.0000',
       contribution: '6000.0000',

@@ -17,6 +17,7 @@ import {
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PurchaseIntent,
   PurchaseIntentStatus,
   TransactionType,
 } from '@prisma/client';
@@ -54,6 +55,12 @@ type Tx = Prisma.TransactionClient;
  * or the partner's own POS integration acting under its API key (brief §20,
  * 20.09.2026). Exactly one, never both — the database says the same.
  */
+/** See `PurchaseIntentsService.create`. */
+export interface CreatePurchaseIntentOptions {
+  /** Runs inside the insert's transaction, after it; a throw rolls the purchase back. */
+  bind?: (tx: Prisma.TransactionClient, intentId: string) => Promise<void>;
+}
+
 export type MerchantActor = { staffUserId: string } | { apiKeyId: string };
 
 const toMerchantActor = (actor: string | MerchantActor): MerchantActor =>
@@ -401,7 +408,17 @@ export class PurchaseIntentsService {
    * No financial ledger entry exists yet — spec §7 step 11 is explicit that
    * those wait for confirmation.
    */
-  async create(dto: CreatePurchaseIntentDto, customerId: string) {
+  /**
+   * Opens a purchase.
+   *
+   * `opts.bind` (audit 21.09.2026, D10) runs inside the same transaction as
+   * the insert, after it, and is what a caller that owns a durable identity
+   * — a POS checkout — uses to tie that identity to this purchase. Either
+   * both the purchase and the binding commit, or neither: there is no
+   * moment where a purchase exists without its checkout knowing, which is
+   * the moment a second customer could claim the same till sale.
+   */
+  async create(dto: CreatePurchaseIntentDto, customerId: string, opts: CreatePurchaseIntentOptions = {}) {
     const grossAmount = parsePositiveMoney(dto.grossAmount, 'grossAmount');
     const bonusAmountRequested = dto.bonusAmountRequested
       ? parseMoney(dto.bonusAmountRequested, 'bonusAmountRequested')
@@ -644,33 +661,50 @@ export class PurchaseIntentsService {
           sourceTransactionId: transaction.id,
           expiresAt,
         },
-        prepaidAmountApplied.greaterThan(0)
-          ? async (tx) => {
-              const hold = await this.customerBalance.holdForPurchase(
-                { userId: customerId, amount: prepaidAmountApplied, purchaseIntentId: intentId },
-                tx,
-              );
-              return { prepaidHoldTransactionId: hold.id };
-            }
-          : undefined,
-      );
-
-      await this.auditService.record({
-        actorUserId: customerId,
-        action: AuditAction.PURCHASE_INTENT_CREATED,
-        entityType: 'PurchaseIntent',
-        entityId: intent.id,
-        metadata: {
-          partnerId: partner.id,
-          grossAmount: grossAmount.toString(),
-          bonusAmountRequested: bonusAmountRequested.toString(),
-          prepaidAmountApplied: prepaidAmountApplied.toString(),
-          externalAmountDue: ordinaryPaymentRemainder.toString(),
-          paymentRoute,
-          contributionRuleVersion: rule?.version ?? null,
-          contributionRuleKind: rule?.kind ?? null,
+        {
+          fund: prepaidAmountApplied.greaterThan(0)
+            ? async (tx) => {
+                const hold = await this.customerBalance.holdForPurchase(
+                  { userId: customerId, amount: prepaidAmountApplied, purchaseIntentId: intentId },
+                  tx,
+                );
+                return { prepaidHoldTransactionId: hold.id };
+              }
+            : undefined,
+          /*
+           * The audit row and the caller's binding travel in the insert's
+           * own transaction (audit 21.09.2026, D18). They used to run after
+           * it, and an audit INSERT failing *after* the purchase had
+           * committed fell into the catch below — which released the bonus
+           * reservation and failed the source transaction of a purchase that
+           * was, in fact, live. Now a failure here rolls the purchase back
+           * with it, and the compensation below only ever runs when nothing
+           * was committed.
+           */
+          afterInsert: async (tx, created) => {
+            await this.auditService.record(
+              {
+                actorUserId: customerId,
+                action: AuditAction.PURCHASE_INTENT_CREATED,
+                entityType: 'PurchaseIntent',
+                entityId: created.id,
+                metadata: {
+                  partnerId: partner.id,
+                  grossAmount: grossAmount.toString(),
+                  bonusAmountRequested: bonusAmountRequested.toString(),
+                  prepaidAmountApplied: prepaidAmountApplied.toString(),
+                  externalAmountDue: ordinaryPaymentRemainder.toString(),
+                  paymentRoute,
+                  contributionRuleVersion: rule?.version ?? null,
+                  contributionRuleKind: rule?.kind ?? null,
+                },
+              },
+              tx,
+            );
+            if (opts.bind) await opts.bind(tx, created.id);
+          },
         },
-      });
+      );
 
       return intent;
     } catch (err) {
@@ -815,7 +849,11 @@ export class PurchaseIntentsService {
    */
   private async createWithConfirmationCode(
     data: Omit<Prisma.PurchaseIntentUncheckedCreateInput, 'confirmationCode'>,
-    fund?: (tx: Tx) => Promise<Partial<Prisma.PurchaseIntentUncheckedCreateInput>>,
+    hooks: {
+      fund?: (tx: Tx) => Promise<Partial<Prisma.PurchaseIntentUncheckedCreateInput>>;
+      /** Runs after the insert, in the same transaction; a throw rolls the purchase back. */
+      afterInsert?: (tx: Tx, created: PurchaseIntent) => Promise<void>;
+    } = {},
   ) {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       // `randomInt` and not `Math.random`: the code is not a secret, but it
@@ -825,12 +863,13 @@ export class PurchaseIntentsService {
       // own note on why this is Char(4).
       const confirmationCode = String(randomInt(0, 10_000)).padStart(4, '0');
       try {
-        if (!fund) {
-          return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
-        }
+        // Always a transaction, even without `fund`: the audit row and a
+        // caller's binding commit with the row or not at all (D18/D10).
         return await this.prisma.$transaction(async (tx) => {
-          const funded = await fund(tx);
-          return tx.purchaseIntent.create({ data: { ...data, ...funded, confirmationCode } });
+          const funded = hooks.fund ? await hooks.fund(tx) : {};
+          const created = await tx.purchaseIntent.create({ data: { ...data, ...funded, confirmationCode } });
+          if (hooks.afterInsert) await hooks.afterInsert(tx, created);
+          return created;
         });
       } catch (error) {
         // Two creates raced past the service check and the database arbitrated.

@@ -10,6 +10,8 @@ import { PartnerApiKeyService } from '../roaming-cpo/partner-api-key.service';
 export interface PartnerApiIdentity {
   partnerId: string;
   apiKeyId: string;
+  /** The integration the key was issued for; null for a partner-wide key, which the POS routes refuse. */
+  integrationId: string | null;
 }
 
 /**
@@ -33,7 +35,11 @@ export class PartnerApiKeyGuard implements CanActivate {
     const verified = await this.apiKeys.verify(rawApiKey);
     if (!verified) throw new UnauthorizedException('Invalid or revoked API key');
 
-    request.partnerApi = { partnerId: verified.partnerId, apiKeyId: verified.apiKeyId };
+    request.partnerApi = {
+      partnerId: verified.partnerId,
+      apiKeyId: verified.apiKeyId,
+      integrationId: verified.integrationId,
+    };
     return true;
   }
 }

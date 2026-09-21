@@ -150,7 +150,8 @@
     "prepaidRestored": "+{{amount}} back to your TuTak balance",
     "externalRefundPending": "{{amount}} still to be handed back by the business",
     "externalRefundConfirmed": "{{amount}} handed back by the business",
-    "prepaidApplied": "Paid from TuTak balance"
+    "prepaidApplied": "Paid from TuTak balance",
+    "staleSince": "Could not refresh. Showing what was known at {{time}}."
   },
   "bonus": {
     "earned": "Earned",
@@ -355,7 +356,12 @@
     "offerLater": "Not now",
     "biometricRow": "Unlock with {{method}}",
     "biometricExplain": "Instead of the code. The code still works and is required after too many failed scans.",
-    "biometricNotEnabled": "Not enabled. Confirm the biometric on your phone and try again."
+    "biometricNotEnabled": "Not enabled. Confirm the biometric on your phone and try again.",
+    "storageUnavailableTitle": "The code cannot be checked",
+    "storageUnavailableBody": "This phone's secure storage did not answer, so the saved code cannot be read. Sign in again by SMS and choose a new code. Your balance and history stay in your account.",
+    "storageUnavailableRetry": "Try again",
+    "storageUnavailableSignOut": "Sign in again",
+    "attemptNotRecorded": "The attempt could not be recorded. Try again."
   },
   "nav": {
     "home": "Home",
@@ -452,7 +458,8 @@
     "goodValue": "good value",
     "showOnMap": "Show on map",
     "partnersUnavailable": "Partners could not be loaded. Stations are shown below.",
-    "stationsUnavailable": "Charging stations could not be loaded. Partners are shown below."
+    "stationsUnavailable": "Charging stations could not be loaded. Partners are shown below.",
+    "lastKnownLocation": "Showing your last known position. Tap to find you again."
   },
   "partnerCategory": {
     "grocery": "Groceries",
@@ -544,7 +551,10 @@
     "purchaseClosed": "This purchase is closed and cannot be paid.",
     "unresolvedAttempt": "An earlier payment attempt is not resolved yet. A new one cannot start — that is what keeps you from paying twice.",
     "beginUnknown": "We could not reach TuTak, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms.",
-    "beginRefused": "TuTak did not start the payment. The state has been re-checked; the reason is shown above."
+    "beginRefused": "TuTak did not start the payment. The state has been re-checked; the reason is shown above.",
+    "unresolved": "The provider did not answer in time. We are checking whether your payment went through.",
+    "unresolvedHint": "Do not pay another way for this purchase. If the money moved, it will be confirmed; if it did not, staff will release the purchase.",
+    "beginUnknownServer": "TuTak answered with an error, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms."
   },
   "profile": {
     "sectionTitle": "Photo",

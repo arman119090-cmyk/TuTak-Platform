@@ -48,7 +48,9 @@ export const LoginForm = ({ locale, dict }: { locale: Locale; dict: Dictionary }
       return;
     }
     const data = (await response.json().catch(() => ({}))) as { error?: string };
-    setError(data.error === 'rate_limited' ? dict.auth.tooManyAttempts : dict.auth.invalidCredentials);
+    setError(
+      data.error === 'rate_limited' ? dict.auth.tooManyAttempts : dict.auth.invalidCredentials,
+    );
   };
 
   const requestOtp = async (event: React.FormEvent) => {
@@ -144,7 +146,11 @@ export const LoginForm = ({ locale, dict }: { locale: Locale; dict: Dictionary }
             />
           </Field>
           {otpSent ? (
-            <Field label={dict.auth.otpTitle} hint={isDemoMode ? dict.auth.otpDemoHint : undefined} required>
+            <Field
+              label={dict.auth.otpTitle}
+              hint={isDemoMode ? dict.auth.otpDemoHint : undefined}
+              required
+            >
               <Input
                 inputMode="numeric"
                 required

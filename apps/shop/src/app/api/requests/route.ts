@@ -17,7 +17,10 @@ export const POST = async (request: Request): Promise<Response> => {
   if (!parsed.success) {
     const errors = fieldErrors(parsed.error);
     return NextResponse.json(
-      { error: errors.phone === 'invalid_phone' ? 'invalid_phone' : 'invalid_request', fields: errors },
+      {
+        error: errors.phone === 'invalid_phone' ? 'invalid_phone' : 'invalid_request',
+        fields: errors,
+      },
       { status: 400 },
     );
   }

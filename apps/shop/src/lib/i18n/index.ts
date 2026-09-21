@@ -23,10 +23,7 @@ export type { Dictionary };
  * Templates live in the dictionaries, so translators keep control of word order
  * — "{qty} pcs in stock" and "Պահեստում՝ {qty} հատ" are both natural.
  */
-export const fill = (
-  template: string,
-  values: Record<string, string | number>,
-): string =>
+export const fill = (template: string, values: Record<string, string | number>): string =>
   template.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in values ? String(values[key]) : match,
   );

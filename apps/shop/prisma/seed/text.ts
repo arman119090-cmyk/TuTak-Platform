@@ -47,14 +47,34 @@ export const TYPE_NAMES: Record<string, LocalizedLabel> = {
   'single-beds': { hy: 'Միատեղանի մահճակալ', ru: 'Кровать односпальная', en: 'Single bed' },
   'double-beds': { hy: 'Երկտեղանի մահճակալ', ru: 'Кровать двуспальная', en: 'Double bed' },
   'king-size-beds': { hy: 'King size մահճակալ', ru: 'Кровать king size', en: 'King size bed' },
-  'storage-beds': { hy: 'Մահճակալ բարձրացվող մեխանիզմով', ru: 'Кровать с подъёмным механизмом', en: 'Storage bed' },
+  'storage-beds': {
+    hy: 'Մահճակալ բարձրացվող մեխանիզմով',
+    ru: 'Кровать с подъёмным механизмом',
+    en: 'Storage bed',
+  },
   'kids-beds': { hy: 'Մանկական մահճակալ', ru: 'Кровать детская', en: 'Kids bed' },
-  'pocket-spring-mattresses': { hy: 'Ներքնակ անկախ զսպանակներով', ru: 'Матрас на независимых пружинах', en: 'Pocket spring mattress' },
-  'springless-mattresses': { hy: 'Անզսպանակ ներքնակ', ru: 'Матрас беспружинный', en: 'Springless mattress' },
-  'orthopedic-mattresses': { hy: 'Օրթոպեդիկ ներքնակ', ru: 'Матрас ортопедический', en: 'Orthopedic mattress' },
+  'pocket-spring-mattresses': {
+    hy: 'Ներքնակ անկախ զսպանակներով',
+    ru: 'Матрас на независимых пружинах',
+    en: 'Pocket spring mattress',
+  },
+  'springless-mattresses': {
+    hy: 'Անզսպանակ ներքնակ',
+    ru: 'Матрас беспружинный',
+    en: 'Springless mattress',
+  },
+  'orthopedic-mattresses': {
+    hy: 'Օրթոպեդիկ ներքնակ',
+    ru: 'Матрас ортопедический',
+    en: 'Orthopedic mattress',
+  },
   'hinged-wardrobes': { hy: 'Բացվող պահարան', ru: 'Шкаф распашной', en: 'Hinged wardrobe' },
   'sliding-wardrobes': { hy: 'Կուպե պահարան', ru: 'Шкаф-купе', en: 'Sliding wardrobe' },
-  'walk-in-wardrobes': { hy: 'Գարդերոբային համակարգ', ru: 'Гардеробная система', en: 'Walk-in system' },
+  'walk-in-wardrobes': {
+    hy: 'Գարդերոբային համակարգ',
+    ru: 'Гардеробная система',
+    en: 'Walk-in system',
+  },
   dressers: { hy: 'Կոմոդ', ru: 'Комод', en: 'Dresser' },
   nightstands: { hy: 'Թումբ', ru: 'Тумба', en: 'Nightstand' },
   shelving: { hy: 'Դարակաշար', ru: 'Стеллаж', en: 'Shelving unit' },
@@ -348,9 +368,21 @@ export const KIND_CLOSING: Record<ProductKind, LocalizedLabel> = {
 
 /** Short card description, one line. */
 export const SHORT_TEMPLATES: LocalizedLabel[] = [
-  { hy: '{material}, {color}, {width} սմ լայնություն', ru: '{material}, {color}, ширина {width} см', en: '{material}, {color}, {width} cm wide' },
-  { hy: '{color} երանգ, {material}, երաշխիք {warranty} ամիս', ru: 'Цвет «{color}», {material}, гарантия {warranty} мес.', en: '{color}, {material}, {warranty} months warranty' },
-  { hy: '{width} × {depth} × {height} սմ, {material}', ru: '{width} × {depth} × {height} см, {material}', en: '{width} × {depth} × {height} cm, {material}' },
+  {
+    hy: '{material}, {color}, {width} սմ լայնություն',
+    ru: '{material}, {color}, ширина {width} см',
+    en: '{material}, {color}, {width} cm wide',
+  },
+  {
+    hy: '{color} երանգ, {material}, երաշխիք {warranty} ամիս',
+    ru: 'Цвет «{color}», {material}, гарантия {warranty} мес.',
+    en: '{color}, {material}, {warranty} months warranty',
+  },
+  {
+    hy: '{width} × {depth} × {height} սմ, {material}',
+    ru: '{width} × {depth} × {height} см, {material}',
+    en: '{width} × {depth} × {height} cm, {material}',
+  },
 ];
 
 /** Review bodies, picked per rating band. */
@@ -358,22 +390,46 @@ export const REVIEW_TEXTS: { rating: number; texts: LocalizedLabel[] }[] = [
   {
     rating: 5,
     texts: [
-      { hy: 'Առաքումը եղավ խոստացված օրը, հավաքողները մաքուր աշխատեցին։ Որակը գնին համապատասխանում է։', ru: 'Привезли в обещанный день, сборщики работали аккуратно и забрали упаковку. Качество соответствует цене.', en: 'Delivered on the promised day, the fitters worked cleanly and took the packaging away. Quality matches the price.' },
-      { hy: 'Գույնը նույնն է, ինչ կայքում։ Երկու ամիս օգտագործում ենք՝ ոչ մի բողոք։', ru: 'Цвет точно как на сайте. Пользуемся два месяца — никаких нареканий.', en: 'The colour is exactly as shown on the site. Two months in and no complaints.' },
-      { hy: 'Երկար ընտրում էինք, և սա միակն էր, որ տեղավորվեց խորշի մեջ։ Շատ գոհ ենք։', ru: 'Долго выбирали, и это единственная модель, которая встала в нишу миллиметр в миллиметр.', en: 'We looked for a long time and this is the only model that fitted the niche to the millimetre.' },
+      {
+        hy: 'Առաքումը եղավ խոստացված օրը, հավաքողները մաքուր աշխատեցին։ Որակը գնին համապատասխանում է։',
+        ru: 'Привезли в обещанный день, сборщики работали аккуратно и забрали упаковку. Качество соответствует цене.',
+        en: 'Delivered on the promised day, the fitters worked cleanly and took the packaging away. Quality matches the price.',
+      },
+      {
+        hy: 'Գույնը նույնն է, ինչ կայքում։ Երկու ամիս օգտագործում ենք՝ ոչ մի բողոք։',
+        ru: 'Цвет точно как на сайте. Пользуемся два месяца — никаких нареканий.',
+        en: 'The colour is exactly as shown on the site. Two months in and no complaints.',
+      },
+      {
+        hy: 'Երկար ընտրում էինք, և սա միակն էր, որ տեղավորվեց խորշի մեջ։ Շատ գոհ ենք։',
+        ru: 'Долго выбирали, и это единственная модель, которая встала в нишу миллиметр в миллиметр.',
+        en: 'We looked for a long time and this is the only model that fitted the niche to the millimetre.',
+      },
     ],
   },
   {
     rating: 4,
     texts: [
-      { hy: 'Ամեն ինչ լավ է, բայց առաքումը մեկ օր ուշացավ։ Ապրանքն ինքը՝ գերազանց։', ru: 'Всё хорошо, но доставку сдвинули на день. Сам товар отличный.', en: 'All good, though delivery slipped by a day. The product itself is excellent.' },
-      { hy: 'Որակը լավն է, հավաքումը մի փոքր ժամանակ խլեց։', ru: 'Качество хорошее, сборка заняла чуть больше времени, чем ожидали.', en: 'Good quality; assembly took a bit longer than we expected.' },
+      {
+        hy: 'Ամեն ինչ լավ է, բայց առաքումը մեկ օր ուշացավ։ Ապրանքն ինքը՝ գերազանց։',
+        ru: 'Всё хорошо, но доставку сдвинули на день. Сам товар отличный.',
+        en: 'All good, though delivery slipped by a day. The product itself is excellent.',
+      },
+      {
+        hy: 'Որակը լավն է, հավաքումը մի փոքր ժամանակ խլեց։',
+        ru: 'Качество хорошее, сборка заняла чуть больше времени, чем ожидали.',
+        en: 'Good quality; assembly took a bit longer than we expected.',
+      },
     ],
   },
   {
     rating: 3,
     texts: [
-      { hy: 'Գինը համապատասխանում է որակին, բայց երանգը մի փոքր ավելի մուգ է, քան լուսանկարում։', ru: 'Цена соответствует качеству, но оттенок чуть темнее, чем на фото.', en: 'Fair for the price, but the shade is a touch darker than in the photos.' },
+      {
+        hy: 'Գինը համապատասխանում է որակին, բայց երանգը մի փոքր ավելի մուգ է, քան լուսանկարում։',
+        ru: 'Цена соответствует качеству, но оттенок чуть темнее, чем на фото.',
+        en: 'Fair for the price, but the shade is a touch darker than in the photos.',
+      },
     ],
   },
 ];
@@ -381,11 +437,29 @@ export const REVIEW_TEXTS: { rating: number; texts: LocalizedLabel[] }[] = [
 export const REVIEW_TITLES: LocalizedLabel[] = [
   { hy: 'Գոհ եմ գնումից', ru: 'Покупкой довольна', en: 'Happy with the purchase' },
   { hy: 'Տեղավորվեց ճիշտ', ru: 'Встало идеально', en: 'Fitted perfectly' },
-  { hy: 'Լավ գին-որակ հարաբերակցություն', ru: 'Хорошее соотношение цены и качества', en: 'Good value for money' },
+  {
+    hy: 'Լավ գին-որակ հարաբերակցություն',
+    ru: 'Хорошее соотношение цены и качества',
+    en: 'Good value for money',
+  },
   { hy: 'Սպասածից լավն էր', ru: 'Лучше, чем ожидали', en: 'Better than expected' },
 ];
 
 export const REVIEW_AUTHORS = [
-  'Ани М.', 'Давид А.', 'Лусине Г.', 'Арам С.', 'Нарине К.', 'Гор П.', 'Мариам О.', 'Тигран В.',
-  'Седа Б.', 'Ваге Н.', 'Каринэ Д.', 'Армен Т.', 'Асмик Р.', 'Сурен Л.', 'Нонна Ш.', 'Грайр Е.',
+  'Ани М.',
+  'Давид А.',
+  'Лусине Г.',
+  'Арам С.',
+  'Нарине К.',
+  'Гор П.',
+  'Мариам О.',
+  'Тигран В.',
+  'Седа Б.',
+  'Ваге Н.',
+  'Каринэ Д.',
+  'Армен Т.',
+  'Асмик Р.',
+  'Сурен Л.',
+  'Нонна Ш.',
+  'Грайр Е.',
 ];

@@ -9,7 +9,10 @@ export const POST = async (request: Request): Promise<Response> => {
 
   const parsed = adminProductSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid_request', fields: fieldErrors(parsed.error) }, { status: 400 });
+    return NextResponse.json(
+      { error: 'invalid_request', fields: fieldErrors(parsed.error) },
+      { status: 400 },
+    );
   }
 
   try {

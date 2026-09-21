@@ -35,7 +35,10 @@ export const POST = async (request: Request): Promise<Response> => {
 
   const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid_request', fields: fieldErrors(parsed.error) }, { status: 400 });
+    return NextResponse.json(
+      { error: 'invalid_request', fields: fieldErrors(parsed.error) },
+      { status: 400 },
+    );
   }
   const input = parsed.data;
   const session = await apiSession();
@@ -61,7 +64,8 @@ export const POST = async (request: Request): Promise<Response> => {
 
   // Mocked authorisation. A real integration replaces this block with a call to
   // the acquirer and a webhook that flips paymentStatus.
-  const paymentDeclined = input.payment.method === 'CARD' && input.payment.demoOutcome === 'FAILURE';
+  const paymentDeclined =
+    input.payment.method === 'CARD' && input.payment.demoOutcome === 'FAILURE';
   if (paymentDeclined) {
     return NextResponse.json({ error: 'payment_declined' }, { status: 402 });
   }

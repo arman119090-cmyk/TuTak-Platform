@@ -4,13 +4,7 @@ import { prisma } from '../prisma';
 import type { Locale } from '../i18n';
 import { COLORS, MATERIALS, SPEC_LABELS, SPEC_VALUES, STYLES } from '@/data/attributes';
 import { PAGE_SIZE } from '@/config/site';
-import type {
-  CatalogFacets,
-  CatalogQuery,
-  CatalogResult,
-  FacetValue,
-  ProductCard,
-} from './types';
+import type { CatalogFacets, CatalogQuery, CatalogResult, FacetValue, ProductCard } from './types';
 
 const cardSelect = (locale: Locale) =>
   ({
@@ -224,10 +218,7 @@ const ORDER_BY: Record<string, Prisma.ProductOrderByWithRelationInput[]> = {
   discount: [{ discountPct: 'desc' }],
 };
 
-const buildFacets = async (
-  query: CatalogQuery,
-  locale: Locale,
-): Promise<CatalogFacets> => {
+const buildFacets = async (query: CatalogQuery, locale: Locale): Promise<CatalogFacets> => {
   // Facet counts ignore the facet filters themselves so a customer can always
   // see (and switch to) the other options inside the current category.
   const scopeWhere = await buildWhere({
@@ -246,7 +237,9 @@ const buildFacets = async (
       stockStatus: true,
       oldPriceMinor: true,
       specs: true,
-      category: { select: { slug: true, filterKeys: true, parent: { select: { filterKeys: true } } } },
+      category: {
+        select: { slug: true, filterKeys: true, parent: { select: { filterKeys: true } } },
+      },
     },
   });
 
@@ -261,10 +254,7 @@ const buildFacets = async (
   const brandNames = new Map<string, string>();
   for (const row of rows) brandNames.set(row.brand.slug, row.brand.name);
 
-  const toFacet = (
-    counts: Map<string, number>,
-    label: (key: string) => string,
-  ): FacetValue[] =>
+  const toFacet = (counts: Map<string, number>, label: (key: string) => string): FacetValue[] =>
     [...counts.entries()]
       .map(([key, count]) => ({ key, label: label(key), count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
@@ -276,11 +266,35 @@ const buildFacets = async (
   }
   // Numeric/free-form specs are not useful as checkbox facets.
   const ENUMERABLE = new Set([
-    'mechanism', 'filler', 'cornerSide', 'baseType', 'headboard', 'springType', 'rigidity',
-    'tableShape', 'facadeType', 'configuration', 'coating', 'openingType', 'openingSide',
-    'hardware', 'ageGroup', 'seats', 'doorsCount', 'drawersCount', 'shelvesCount', 'seatsCount',
-    'liftMechanism', 'linenBox', 'mirror', 'extendable', 'madeToMeasure', 'adjustableHeight',
-    'cableManagement', 'stackable', 'frameIncluded',
+    'mechanism',
+    'filler',
+    'cornerSide',
+    'baseType',
+    'headboard',
+    'springType',
+    'rigidity',
+    'tableShape',
+    'facadeType',
+    'configuration',
+    'coating',
+    'openingType',
+    'openingSide',
+    'hardware',
+    'ageGroup',
+    'seats',
+    'doorsCount',
+    'drawersCount',
+    'shelvesCount',
+    'seatsCount',
+    'liftMechanism',
+    'linenBox',
+    'mirror',
+    'extendable',
+    'madeToMeasure',
+    'adjustableHeight',
+    'cableManagement',
+    'stackable',
+    'frameIncluded',
   ]);
 
   const specFacets = [...specKeys]
@@ -314,9 +328,18 @@ const buildFacets = async (
       countBy(rows.map((row) => [row.brand.slug])),
       (key) => brandNames.get(key) ?? key,
     ),
-    colors: toFacet(countBy(rows.map((row) => row.colorKeys)), (key) => COLORS[key]?.label[locale] ?? key),
-    materials: toFacet(countBy(rows.map((row) => row.materialKeys)), (key) => MATERIALS[key]?.label[locale] ?? key),
-    styles: toFacet(countBy(rows.map((row) => [row.styleKey])), (key) => STYLES[key]?.[locale] ?? key),
+    colors: toFacet(
+      countBy(rows.map((row) => row.colorKeys)),
+      (key) => COLORS[key]?.label[locale] ?? key,
+    ),
+    materials: toFacet(
+      countBy(rows.map((row) => row.materialKeys)),
+      (key) => MATERIALS[key]?.label[locale] ?? key,
+    ),
+    styles: toFacet(
+      countBy(rows.map((row) => [row.styleKey])),
+      (key) => STYLES[key]?.[locale] ?? key,
+    ),
     specs: specFacets,
     priceMinMinor: prices.length ? Math.min(...prices) : 0,
     priceMaxMinor: prices.length ? Math.max(...prices) : 0,
@@ -397,7 +420,10 @@ export const getProduct = cache(async (slug: string, locale: Locale) => {
 
 export type ProductDetail = NonNullable<Awaited<ReturnType<typeof getProduct>>>;
 
-export const getProductCardsByIds = async (ids: string[], locale: Locale): Promise<ProductCard[]> => {
+export const getProductCardsByIds = async (
+  ids: string[],
+  locale: Locale,
+): Promise<ProductCard[]> => {
   if (ids.length === 0) return [];
   const rows = await prisma.product.findMany({
     where: { id: { in: ids }, isActive: true },
@@ -418,7 +444,10 @@ export const getSimilarProducts = async (
       isActive: true,
       categoryId: product.categoryId,
       id: { not: product.id },
-      priceMinor: { gte: Math.round(product.priceMinor * 0.5), lte: Math.round(product.priceMinor * 1.8) },
+      priceMinor: {
+        gte: Math.round(product.priceMinor * 0.5),
+        lte: Math.round(product.priceMinor * 1.8),
+      },
     },
     orderBy: [{ salesCount: 'desc' }],
     take,
@@ -462,31 +491,100 @@ export const getHomeSections = cache(
     const take = 8;
     const rootScope = async (slug: string) => ({ categoryId: { in: await categoryScope(slug) } });
 
-    const [kitchensWhere, doorsWhere] = await Promise.all([rootScope('kitchens'), rootScope('doors')]);
+    const [kitchensWhere, doorsWhere] = await Promise.all([
+      rootScope('kitchens'),
+      rootScope('doors'),
+    ]);
     const [bedroomWhere, livingWhere] = await Promise.all([
       Promise.resolve({ roomKey: 'bedroom' }),
       Promise.resolve({ roomKey: 'living' }),
     ]);
 
-    const [popular, fresh, discounts, kitchens, doors, bedroom, living, tablesChairs, smallSpace, premium, inStock] =
-      await Promise.all([
-        prisma.product.findMany({ where: { isActive: true, isHit: true }, orderBy: { salesCount: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, isNew: true }, orderBy: { createdAt: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, oldPriceMinor: { not: null } }, orderBy: { discountPct: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, ...kitchensWhere }, orderBy: { salesCount: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, ...doorsWhere }, orderBy: { salesCount: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, ...bedroomWhere }, orderBy: { ratingAvg: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, ...livingWhere }, orderBy: { ratingAvg: 'desc' }, take, select }),
-        prisma.product.findMany({
-          where: { isActive: true, category: { slug: { in: ['dining-tables', 'dining-chairs', 'kitchen-chairs', 'designer-chairs'] } } },
-          orderBy: { salesCount: 'desc' },
-          take,
-          select,
-        }),
-        prisma.product.findMany({ where: { isActive: true, smallSpace: true }, orderBy: { priceMinor: 'asc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, isPremium: true }, orderBy: { priceMinor: 'desc' }, take, select }),
-        prisma.product.findMany({ where: { isActive: true, stockStatus: 'IN_STOCK' }, orderBy: { salesCount: 'desc' }, take, select }),
-      ]);
+    const [
+      popular,
+      fresh,
+      discounts,
+      kitchens,
+      doors,
+      bedroom,
+      living,
+      tablesChairs,
+      smallSpace,
+      premium,
+      inStock,
+    ] = await Promise.all([
+      prisma.product.findMany({
+        where: { isActive: true, isHit: true },
+        orderBy: { salesCount: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, isNew: true },
+        orderBy: { createdAt: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, oldPriceMinor: { not: null } },
+        orderBy: { discountPct: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, ...kitchensWhere },
+        orderBy: { salesCount: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, ...doorsWhere },
+        orderBy: { salesCount: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, ...bedroomWhere },
+        orderBy: { ratingAvg: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, ...livingWhere },
+        orderBy: { ratingAvg: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: {
+          isActive: true,
+          category: {
+            slug: { in: ['dining-tables', 'dining-chairs', 'kitchen-chairs', 'designer-chairs'] },
+          },
+        },
+        orderBy: { salesCount: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, smallSpace: true },
+        orderBy: { priceMinor: 'asc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, isPremium: true },
+        orderBy: { priceMinor: 'desc' },
+        take,
+        select,
+      }),
+      prisma.product.findMany({
+        where: { isActive: true, stockStatus: 'IN_STOCK' },
+        orderBy: { salesCount: 'desc' },
+        take,
+        select,
+      }),
+    ]);
 
     return {
       popular: popular.map((row) => toProductCard(row, locale)),

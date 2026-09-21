@@ -45,14 +45,16 @@ const KitchensPage = async ({ params }: { params: Promise<{ locale: string }> })
           <h1 className="text-[32px] leading-tight md:text-[46px]">{dict.kitchen.calcTitle}</h1>
           <p className="mt-4 max-w-lg text-[15px] text-ink-soft">{dict.kitchen.calcSubtitle}</p>
           <ul className="mt-6 space-y-2 text-[14px] text-muted">
-            {[dict.advantages.measureText, dict.advantages.assemblyText, dict.advantages.warrantyText].map(
-              (item) => (
-                <li key={item} className="flex gap-2.5">
-                  <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                  {item}
-                </li>
-              ),
-            )}
+            {[
+              dict.advantages.measureText,
+              dict.advantages.assemblyText,
+              dict.advantages.warrantyText,
+            ].map((item) => (
+              <li key={item} className="flex gap-2.5">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                {item}
+              </li>
+            ))}
           </ul>
           <div className="mt-7">
             <MeasureCta locale={locale} dict={dict} />

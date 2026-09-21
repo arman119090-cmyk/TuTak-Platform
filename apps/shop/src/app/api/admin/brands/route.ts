@@ -5,7 +5,12 @@ import { requireAdminApi } from '@/lib/auth/admin-api';
 import { LOCALES } from '@/lib/i18n';
 
 const brandSchema = z.object({
-  slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9-]+$/),
   name: z.string().trim().min(2).max(80),
   country: z.string().trim().length(2).default('AM'),
   isPremium: z.boolean().default(false),
@@ -15,7 +20,12 @@ const brandSchema = z.object({
 
 const collectionSchema = z.object({
   kind: z.literal('collection'),
-  slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9-]+$/),
   name: z.string().trim().min(2).max(80),
   brandId: z.string().max(64).nullish(),
 });
@@ -35,7 +45,9 @@ export const POST = async (request: Request): Promise<Response> => {
         slug: asCollection.data.slug,
         name: asCollection.data.name,
         brandId: asCollection.data.brandId || null,
-        translations: { create: LOCALES.map((locale) => ({ locale, name: asCollection.data.name })) },
+        translations: {
+          create: LOCALES.map((locale) => ({ locale, name: asCollection.data.name })),
+        },
       },
       select: { id: true },
     });

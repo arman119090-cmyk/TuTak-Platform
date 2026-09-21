@@ -55,7 +55,9 @@ export const computeQuote = (
     const options: Record<string, string> = {};
     let optionsDelta = 0;
     for (const [kind, valueKey] of Object.entries(item.options ?? {})) {
-      const option = product.options.find((entry) => entry.kind === kind && entry.valueKey === valueKey);
+      const option = product.options.find(
+        (entry) => entry.kind === kind && entry.valueKey === valueKey,
+      );
       if (!option) {
         warnings.push(`unknown_option:${product.sku}:${kind}:${valueKey}`);
         continue;
@@ -69,7 +71,9 @@ export const computeQuote = (
     if (isDoor && item.doorConfig && Object.keys(item.doorConfig).length > 0) {
       const configured = computeDoorConfig(doorOptions, item.doorConfig);
       if (configured.unknownSelections.length > 0)
-        warnings.push(`unknown_door_option:${product.sku}:${configured.unknownSelections.join(',')}`);
+        warnings.push(
+          `unknown_door_option:${product.sku}:${configured.unknownSelections.join(',')}`,
+        );
       optionsDelta += configured.deltaMinor;
       doorConfig = Object.fromEntries(
         configured.selected.map((entry) => [entry.groupKey, entry.optionKey]),

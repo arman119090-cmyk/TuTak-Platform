@@ -9,7 +9,10 @@ const AdminPromos = async () => {
 
   return (
     <>
-      <AdminHeading title="Промокоды" subtitle="Скидки применяются на сервере при расчёте корзины" />
+      <AdminHeading
+        title="Промокоды"
+        subtitle="Скидки применяются на сервере при расчёте корзины"
+      />
       <PromoManager
         promos={promos.map((promo) => ({
           id: promo.id,

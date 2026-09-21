@@ -9,7 +9,17 @@ import { formatMoney } from '@/lib/money';
 import { DELIVERY_SLOTS, PICKUP_POINTS, REGIONS, SERVICES } from '@/config/site';
 import { isDemoMode } from '@/config/brand';
 import type { Quote } from '@/lib/pricing/types';
-import { Alert, Button, Checkbox, EmptyState, Field, Input, LinkButton, Select, Textarea } from '@/components/ui';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  EmptyState,
+  Field,
+  Input,
+  LinkButton,
+  Select,
+  Textarea,
+} from '@/components/ui';
 import { useStore } from '@/components/providers/store-provider';
 import { cn } from '@/lib/utils';
 
@@ -137,7 +147,18 @@ export const CheckoutWizard = ({
       }),
     });
     if (response.ok) setQuote((await response.json()) as Quote);
-  }, [cart, promoCode, locale, form.method, form.region, form.floor, form.hasLift, form.lift, form.assembly, form.doorInstall]);
+  }, [
+    cart,
+    promoCode,
+    locale,
+    form.method,
+    form.region,
+    form.floor,
+    form.hasLift,
+    form.lift,
+    form.assembly,
+    form.doorInstall,
+  ]);
 
   useEffect(() => {
     if (!ready) return;
@@ -291,12 +312,23 @@ export const CheckoutWizard = ({
               <h2 className="text-[20px]">{dict.checkout.stepContacts}</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label={dict.checkout.firstName} required error={errors.firstName}>
-                  <Input value={form.firstName} onChange={(event) => set('firstName', event.target.value)} />
+                  <Input
+                    value={form.firstName}
+                    onChange={(event) => set('firstName', event.target.value)}
+                  />
                 </Field>
                 <Field label={dict.checkout.lastName}>
-                  <Input value={form.lastName} onChange={(event) => set('lastName', event.target.value)} />
+                  <Input
+                    value={form.lastName}
+                    onChange={(event) => set('lastName', event.target.value)}
+                  />
                 </Field>
-                <Field label={dict.checkout.phone} required error={errors.phone} hint="+374 XX XXX XXX">
+                <Field
+                  label={dict.checkout.phone}
+                  required
+                  error={errors.phone}
+                  hint="+374 XX XXX XXX"
+                >
                   <Input
                     type="tel"
                     placeholder="+374 XX XXX XXX"
@@ -305,7 +337,11 @@ export const CheckoutWizard = ({
                   />
                 </Field>
                 <Field label={dict.checkout.email} required error={errors.email}>
-                  <Input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} />
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => set('email', event.target.value)}
+                  />
                 </Field>
               </div>
             </div>
@@ -322,10 +358,16 @@ export const CheckoutWizard = ({
                     onClick={() => set('method', method)}
                     className={cn(
                       'flex items-start gap-3 rounded-[var(--radius-sm)] border p-4 text-left transition-colors',
-                      form.method === method ? 'border-ink bg-surface-2' : 'border-line hover:border-ink',
+                      form.method === method
+                        ? 'border-ink bg-surface-2'
+                        : 'border-line hover:border-ink',
                     )}
                   >
-                    {method === 'DELIVERY' ? <Truck width={20} height={20} /> : <Store width={20} height={20} />}
+                    {method === 'DELIVERY' ? (
+                      <Truck width={20} height={20} />
+                    ) : (
+                      <Store width={20} height={20} />
+                    )}
                     <span>
                       <span className="block text-[14px] font-medium">
                         {method === 'DELIVERY' ? dict.checkout.courier : dict.checkout.pickup}
@@ -344,7 +386,10 @@ export const CheckoutWizard = ({
                 <>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label={dict.checkout.region} required>
-                      <Select value={form.region} onChange={(event) => set('region', event.target.value)}>
+                      <Select
+                        value={form.region}
+                        onChange={(event) => set('region', event.target.value)}
+                      >
                         {REGIONS.map((item) => (
                           <option key={item.key} value={item.key}>
                             {item.names[locale]} · {formatMoney(item.deliveryMinor)}
@@ -353,29 +398,46 @@ export const CheckoutWizard = ({
                       </Select>
                     </Field>
                     <Field label={dict.checkout.city} required error={errors.city}>
-                      <Select value={form.city} onChange={(event) => set('city', event.target.value)}>
-                        {(REGIONS.find((item) => item.key === form.region)?.cities ?? []).map((city) => (
-                          <option key={city.ru} value={city.ru}>
-                            {city[locale]}
-                          </option>
-                        ))}
+                      <Select
+                        value={form.city}
+                        onChange={(event) => set('city', event.target.value)}
+                      >
+                        {(REGIONS.find((item) => item.key === form.region)?.cities ?? []).map(
+                          (city) => (
+                            <option key={city.ru} value={city.ru}>
+                              {city[locale]}
+                            </option>
+                          ),
+                        )}
                       </Select>
                     </Field>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-[2fr_1fr_1fr]">
                     <Field label={dict.checkout.street} required error={errors.street}>
-                      <Input value={form.street} onChange={(event) => set('street', event.target.value)} />
+                      <Input
+                        value={form.street}
+                        onChange={(event) => set('street', event.target.value)}
+                      />
                     </Field>
                     <Field label={dict.checkout.building} required error={errors.building}>
-                      <Input value={form.building} onChange={(event) => set('building', event.target.value)} />
+                      <Input
+                        value={form.building}
+                        onChange={(event) => set('building', event.target.value)}
+                      />
                     </Field>
                     <Field label={dict.checkout.apartment}>
-                      <Input value={form.apartment} onChange={(event) => set('apartment', event.target.value)} />
+                      <Input
+                        value={form.apartment}
+                        onChange={(event) => set('apartment', event.target.value)}
+                      />
                     </Field>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-3">
                     <Field label={dict.checkout.entrance}>
-                      <Input value={form.entrance} onChange={(event) => set('entrance', event.target.value)} />
+                      <Input
+                        value={form.entrance}
+                        onChange={(event) => set('entrance', event.target.value)}
+                      />
                     </Field>
                     <Field label={dict.checkout.floor}>
                       <Input
@@ -395,7 +457,10 @@ export const CheckoutWizard = ({
                 </>
               ) : (
                 <Field label={dict.checkout.pickupPoint}>
-                  <Select value={form.pickupPoint} onChange={(event) => set('pickupPoint', event.target.value)}>
+                  <Select
+                    value={form.pickupPoint}
+                    onChange={(event) => set('pickupPoint', event.target.value)}
+                  >
                     {PICKUP_POINTS.map((point) => (
                       <option key={point.key} value={point.key}>
                         {point.names[locale]} · {point.hours}
@@ -427,10 +492,15 @@ export const CheckoutWizard = ({
                   </Alert>
                 </>
               ) : (
-                <Alert tone="info">{PICKUP_POINTS.find((point) => point.key === form.pickupPoint)?.names[locale]}</Alert>
+                <Alert tone="info">
+                  {PICKUP_POINTS.find((point) => point.key === form.pickupPoint)?.names[locale]}
+                </Alert>
               )}
               <Field label={dict.checkout.comment}>
-                <Textarea value={form.comment} onChange={(event) => set('comment', event.target.value)} />
+                <Textarea
+                  value={form.comment}
+                  onChange={(event) => set('comment', event.target.value)}
+                />
               </Field>
             </div>
           ) : null}
@@ -479,7 +549,9 @@ export const CheckoutWizard = ({
                     onClick={() => set('payment', option.key)}
                     className={cn(
                       'flex items-center gap-3 rounded-[var(--radius-sm)] border p-4 text-left transition-colors',
-                      form.payment === option.key ? 'border-ink bg-surface-2' : 'border-line hover:border-ink',
+                      form.payment === option.key
+                        ? 'border-ink bg-surface-2'
+                        : 'border-line hover:border-ink',
                     )}
                   >
                     <option.icon width={20} height={20} />
@@ -501,13 +573,24 @@ export const CheckoutWizard = ({
                       />
                     </Field>
                     <Field label={dict.checkout.cardHolder}>
-                      <Input value={form.cardHolder} onChange={(event) => set('cardHolder', event.target.value)} />
+                      <Input
+                        value={form.cardHolder}
+                        onChange={(event) => set('cardHolder', event.target.value)}
+                      />
                     </Field>
                     <Field label={dict.checkout.cardExpiry}>
-                      <Input placeholder="12/28" value={form.cardExpiry} onChange={(event) => set('cardExpiry', event.target.value)} />
+                      <Input
+                        placeholder="12/28"
+                        value={form.cardExpiry}
+                        onChange={(event) => set('cardExpiry', event.target.value)}
+                      />
                     </Field>
                     <Field label={dict.checkout.cardCvc}>
-                      <Input placeholder="123" value={form.cardCvc} onChange={(event) => set('cardCvc', event.target.value)} />
+                      <Input
+                        placeholder="123"
+                        value={form.cardCvc}
+                        onChange={(event) => set('cardCvc', event.target.value)}
+                      />
                     </Field>
                   </div>
                   {isDemoMode ? (
@@ -559,7 +642,9 @@ export const CheckoutWizard = ({
                     label: dict.checkout.stepAddress,
                     value:
                       form.method === 'PICKUP'
-                        ? PICKUP_POINTS.find((point) => point.key === form.pickupPoint)?.names[locale] ?? ''
+                        ? (PICKUP_POINTS.find((point) => point.key === form.pickupPoint)?.names[
+                            locale
+                          ] ?? '')
                         : `${region?.names[locale]}, ${form.city}, ${form.street} ${form.building}${form.apartment ? `, ${dict.checkout.apartment} ${form.apartment}` : ''}`,
                     step: 'address' as StepKey,
                   },
@@ -586,10 +671,17 @@ export const CheckoutWizard = ({
                     step: 'payment' as StepKey,
                   },
                 ].map((row) => (
-                  <div key={row.label} className="flex flex-wrap items-baseline gap-x-3 border-b border-line pb-3">
+                  <div
+                    key={row.label}
+                    className="flex flex-wrap items-baseline gap-x-3 border-b border-line pb-3"
+                  >
                     <dt className="min-w-[130px] text-muted">{row.label}</dt>
                     <dd className="flex-1">{row.value}</dd>
-                    <button type="button" onClick={() => setStep(row.step)} className="text-[13px] text-accent hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => setStep(row.step)}
+                      className="text-[13px] text-accent hover:underline"
+                    >
                       {dict.checkout.editStep}
                     </button>
                   </div>
@@ -598,12 +690,21 @@ export const CheckoutWizard = ({
 
               <ul className="space-y-2">
                 {(quote?.lines ?? []).map((line) => (
-                  <li key={`${line.productId}-${JSON.stringify(line.options)}`} className="flex items-center gap-3 text-[13px]">
+                  <li
+                    key={`${line.productId}-${JSON.stringify(line.options)}`}
+                    className="flex items-center gap-3 text-[13px]"
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={line.imageUrl} alt="" className="h-12 w-16 rounded-[var(--radius-xs)] bg-surface-2 object-cover" />
+                    <img
+                      src={line.imageUrl}
+                      alt=""
+                      className="h-12 w-16 rounded-[var(--radius-xs)] bg-surface-2 object-cover"
+                    />
                     <span className="flex-1">{line.name}</span>
                     <span className="text-muted tabular-nums">× {line.quantity}</span>
-                    <span className="font-medium tabular-nums">{formatMoney(line.lineTotalMinor)}</span>
+                    <span className="font-medium tabular-nums">
+                      {formatMoney(line.lineTotalMinor)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -655,7 +756,11 @@ export const CheckoutWizard = ({
             <div className="flex justify-between">
               <dt className="text-muted">{dict.cart.delivery}</dt>
               <dd className="tabular-nums">
-                {quote ? (quote.deliveryIsFree ? dict.cart.freeDelivery : formatMoney(quote.deliveryMinor)) : '—'}
+                {quote
+                  ? quote.deliveryIsFree
+                    ? dict.cart.freeDelivery
+                    : formatMoney(quote.deliveryMinor)
+                  : '—'}
               </dd>
             </div>
             {quote && quote.servicesMinor > 0 ? (

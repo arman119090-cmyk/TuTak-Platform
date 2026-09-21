@@ -39,7 +39,9 @@ const AdminProducts = async ({
         isActive: true,
         images: { take: 1, orderBy: { sort: 'asc' }, select: { url: true } },
         translations: { where: { locale: 'ru' }, select: { name: true } },
-        category: { select: { slug: true, translations: { where: { locale: 'ru' }, select: { name: true } } } },
+        category: {
+          select: { slug: true, translations: { where: { locale: 'ru' }, select: { name: true } } },
+        },
       },
     }),
     prisma.category.count(),
@@ -77,7 +79,10 @@ const AdminProducts = async ({
           <option value="">Все остатки</option>
           <option value="out">Нет в наличии</option>
         </select>
-        <button type="submit" className="h-10 rounded-[var(--radius-sm)] bg-surface-2 px-4 text-[13px]">
+        <button
+          type="submit"
+          className="h-10 rounded-[var(--radius-sm)] bg-surface-2 px-4 text-[13px]"
+        >
           Найти
         </button>
       </form>
@@ -129,7 +134,9 @@ const AdminProducts = async ({
                       ? 'Под заказ'
                       : 'Нет'}
                 </span>
-                {!product.isActive ? <span className="ml-2 text-[11px] text-sale">скрыт</span> : null}
+                {!product.isActive ? (
+                  <span className="ml-2 text-[11px] text-sale">скрыт</span>
+                ) : null}
               </td>
               <td className="px-4 py-2 text-right">
                 <AdminLink href={`/admin/products/${product.id}`}>Изменить</AdminLink>

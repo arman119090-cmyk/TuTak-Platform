@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart, Scale, Share2, ShieldCheck, Truck, Wrench, Ruler, MessageSquare } from 'lucide-react';
+import {
+  Heart,
+  Scale,
+  Share2,
+  ShieldCheck,
+  Truck,
+  Wrench,
+  Ruler,
+  MessageSquare,
+} from 'lucide-react';
 import type { Dictionary, Locale } from '@/lib/i18n';
 import { fill } from '@/lib/i18n';
 import { formatMoney } from '@/lib/money';
@@ -54,12 +63,14 @@ export const BuyBox = ({
   hidePurchase?: boolean;
 }) => {
   const router = useRouter();
-  const { addToCart, isFavorite, toggleFavorite, isCompared, toggleCompare, toast, pushRecent } = useStore();
+  const { addToCart, isFavorite, toggleFavorite, isCompared, toggleCompare, toast, pushRecent } =
+    useStore();
   const [quantity, setQuantity] = useState(1);
   const [dialog, setDialog] = useState<null | 'price' | 'consultation' | 'custom'>(null);
   const [selected, setSelected] = useState<Record<string, string>>(() => {
     const defaults: Record<string, string> = {};
-    for (const option of product.options) if (!defaults[option.kind]) defaults[option.kind] = option.valueKey;
+    for (const option of product.options)
+      if (!defaults[option.kind]) defaults[option.kind] = option.valueKey;
     return defaults;
   });
 
@@ -153,7 +164,9 @@ export const BuyBox = ({
           <OptionPicker
             options={product.options}
             selected={selected}
-            onSelect={(kind, valueKey) => setSelected((current) => ({ ...current, [kind]: valueKey }))}
+            onSelect={(kind, valueKey) =>
+              setSelected((current) => ({ ...current, [kind]: valueKey }))
+            }
             locale={locale}
             dict={dict}
           />
@@ -216,7 +229,8 @@ export const BuyBox = ({
             });
             if (result === 'limit') toast(dict.compare.limitReached, 'error');
             else if (result === 'category') toast(dict.compare.differentCategory, 'error');
-            else toast(result === 'added' ? dict.toast.addedToCompare : dict.compare.remove, 'info');
+            else
+              toast(result === 'added' ? dict.toast.addedToCompare : dict.compare.remove, 'info');
           }}
           className={cn(
             'inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border px-3',
@@ -240,15 +254,22 @@ export const BuyBox = ({
         <li className="flex gap-3">
           <Truck width={17} height={17} className="mt-0.5 shrink-0 text-accent" />
           <span>
-            {fill(dict.product.deliveryYerevan, { price: formatMoney(yerevan?.deliveryMinor ?? 5000) })}.{' '}
+            {fill(dict.product.deliveryYerevan, {
+              price: formatMoney(yerevan?.deliveryMinor ?? 5000),
+            })}
+            .{' '}
             <span className="text-muted">
-              {fill(dict.product.freeDeliveryFrom, { price: formatMoney(FREE_DELIVERY_THRESHOLD_MINOR) })}
+              {fill(dict.product.freeDeliveryFrom, {
+                price: formatMoney(FREE_DELIVERY_THRESHOLD_MINOR),
+              })}
             </span>
           </span>
         </li>
         <li className="flex gap-3">
           <Wrench width={17} height={17} className="mt-0.5 shrink-0 text-accent" />
-          <span>{fill(dict.product.assemblyFrom, { price: formatMoney(SERVICES.assembly.priceMinor) })}</span>
+          <span>
+            {fill(dict.product.assemblyFrom, { price: formatMoney(SERVICES.assembly.priceMinor) })}
+          </span>
         </li>
         <li className="flex gap-3">
           <ShieldCheck width={17} height={17} className="mt-0.5 shrink-0 text-accent" />
@@ -282,7 +303,13 @@ export const BuyBox = ({
 
       {dialog ? (
         <RequestDialog
-          type={dialog === 'price' ? 'PRICE_REQUEST' : dialog === 'custom' ? 'CUSTOM_SIZE' : 'CONSULTATION'}
+          type={
+            dialog === 'price'
+              ? 'PRICE_REQUEST'
+              : dialog === 'custom'
+                ? 'CUSTOM_SIZE'
+                : 'CONSULTATION'
+          }
           title={
             dialog === 'price'
               ? dict.forms.priceRequestTitle

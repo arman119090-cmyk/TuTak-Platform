@@ -90,7 +90,10 @@ export const AddressesManager = ({
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {addresses.map((address) => (
-            <li key={address.id} className="rounded-[var(--radius-md)] border border-line bg-surface p-4">
+            <li
+              key={address.id}
+              className="rounded-[var(--radius-md)] border border-line bg-surface p-4"
+            >
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-[15px] font-medium">
@@ -132,11 +135,18 @@ export const AddressesManager = ({
         <Modal title={dict.account.addAddress} onClose={() => setOpen(false)}>
           <form onSubmit={submit} className="space-y-4">
             <Field label={dict.account.addressLabel} required>
-              <Input required value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} />
+              <Input
+                required
+                value={form.label}
+                onChange={(event) => setForm({ ...form, label: event.target.value })}
+              />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={dict.checkout.region} required>
-                <Select value={form.region} onChange={(event) => setForm({ ...form, region: event.target.value })}>
+                <Select
+                  value={form.region}
+                  onChange={(event) => setForm({ ...form, region: event.target.value })}
+                >
                   {REGIONS.map((region) => (
                     <option key={region.key} value={region.key}>
                       {region.names[locale]}
@@ -145,18 +155,33 @@ export const AddressesManager = ({
                 </Select>
               </Field>
               <Field label={dict.checkout.city} required>
-                <Input required value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
+                <Input
+                  required
+                  value={form.city}
+                  onChange={(event) => setForm({ ...form, city: event.target.value })}
+                />
               </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-[2fr_1fr_1fr]">
               <Field label={dict.checkout.street} required>
-                <Input required value={form.street} onChange={(event) => setForm({ ...form, street: event.target.value })} />
+                <Input
+                  required
+                  value={form.street}
+                  onChange={(event) => setForm({ ...form, street: event.target.value })}
+                />
               </Field>
               <Field label={dict.checkout.building} required>
-                <Input required value={form.building} onChange={(event) => setForm({ ...form, building: event.target.value })} />
+                <Input
+                  required
+                  value={form.building}
+                  onChange={(event) => setForm({ ...form, building: event.target.value })}
+                />
               </Field>
               <Field label={dict.checkout.apartment}>
-                <Input value={form.apartment} onChange={(event) => setForm({ ...form, apartment: event.target.value })} />
+                <Input
+                  value={form.apartment}
+                  onChange={(event) => setForm({ ...form, apartment: event.target.value })}
+                />
               </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -164,7 +189,9 @@ export const AddressesManager = ({
                 <Input
                   inputMode="numeric"
                   value={form.floor}
-                  onChange={(event) => setForm({ ...form, floor: event.target.value.replace(/\D/g, '') })}
+                  onChange={(event) =>
+                    setForm({ ...form, floor: event.target.value.replace(/\D/g, '') })
+                  }
                 />
               </Field>
               <div className="flex items-end pb-1">

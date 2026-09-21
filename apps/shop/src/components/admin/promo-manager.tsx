@@ -93,7 +93,9 @@ export const PromoManager = ({ promos }: { promos: PromoView[] }) => {
               </td>
               <td className="px-4 py-2.5">
                 {promo.discountType === 'PERCENT' ? `${promo.value}%` : formatMoney(promo.value)}
-                {promo.freeDelivery ? <span className="block text-[12px] text-success">+ доставка бесплатно</span> : null}
+                {promo.freeDelivery ? (
+                  <span className="block text-[12px] text-success">+ доставка бесплатно</span>
+                ) : null}
               </td>
               <td className="px-4 py-2.5 text-muted">
                 {promo.minSubtotalMinor ? `от ${formatMoney(promo.minSubtotalMinor)}` : '—'}
@@ -147,28 +149,36 @@ export const PromoManager = ({ promos }: { promos: PromoView[] }) => {
                   required
                   inputMode="numeric"
                   value={form.value}
-                  onChange={(event) => setForm({ ...form, value: event.target.value.replace(/\D/g, '') })}
+                  onChange={(event) =>
+                    setForm({ ...form, value: event.target.value.replace(/\D/g, '') })
+                  }
                 />
               </Field>
               <Field label="Минимальная сумма, ֏">
                 <Input
                   inputMode="numeric"
                   value={form.minSubtotalMinor}
-                  onChange={(event) => setForm({ ...form, minSubtotalMinor: event.target.value.replace(/\D/g, '') })}
+                  onChange={(event) =>
+                    setForm({ ...form, minSubtotalMinor: event.target.value.replace(/\D/g, '') })
+                  }
                 />
               </Field>
               <Field label="Максимальная скидка, ֏">
                 <Input
                   inputMode="numeric"
                   value={form.maxDiscountMinor}
-                  onChange={(event) => setForm({ ...form, maxDiscountMinor: event.target.value.replace(/\D/g, '') })}
+                  onChange={(event) =>
+                    setForm({ ...form, maxDiscountMinor: event.target.value.replace(/\D/g, '') })
+                  }
                 />
               </Field>
               <Field label="Лимит использований">
                 <Input
                   inputMode="numeric"
                   value={form.usageLimit}
-                  onChange={(event) => setForm({ ...form, usageLimit: event.target.value.replace(/\D/g, '') })}
+                  onChange={(event) =>
+                    setForm({ ...form, usageLimit: event.target.value.replace(/\D/g, '') })
+                  }
                 />
               </Field>
             </div>
@@ -178,7 +188,10 @@ export const PromoManager = ({ promos }: { promos: PromoView[] }) => {
               onChange={(event) => setForm({ ...form, freeDelivery: event.target.checked })}
             />
             <Field label="Описание">
-              <Input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+              <Input
+                value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.target.value })}
+              />
             </Field>
             {error ? <p className="text-[13px] text-sale">{error}</p> : null}
             <Button type="submit" className="w-full">

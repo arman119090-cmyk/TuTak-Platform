@@ -28,7 +28,9 @@ export const Footer = ({
             <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
               {brand.monogram}
             </span>
-            <span className="font-display text-xl uppercase tracking-[0.12em]">{brandName(locale)}</span>
+            <span className="font-display text-xl uppercase tracking-[0.12em]">
+              {brandName(locale)}
+            </span>
           </Link>
           <p className="mt-4 max-w-sm text-sm text-muted">{brand.tagline[locale]}</p>
           <div className="mt-5 space-y-2.5 text-sm">
@@ -41,14 +43,20 @@ export const Footer = ({
                 <Phone width={16} height={16} className="text-muted" /> {phone.display}
               </a>
             ))}
-            <a href={`mailto:${brand.contacts.email}`} className="flex items-center gap-2.5 hover:text-accent">
+            <a
+              href={`mailto:${brand.contacts.email}`}
+              className="flex items-center gap-2.5 hover:text-accent"
+            >
               <Mail width={16} height={16} className="text-muted" /> {brand.contacts.email}
             </a>
             <p className="flex items-start gap-2.5 text-muted">
               <MapPin width={16} height={16} className="mt-0.5 shrink-0" /> {brand.address[locale]}
             </p>
             <p className="text-[13px] text-muted">
-              {fill(dict.footer.workHours, { weekdays: brand.hours.weekdays, weekend: brand.hours.weekend })}
+              {fill(dict.footer.workHours, {
+                weekdays: brand.hours.weekdays,
+                weekend: brand.hours.weekend,
+              })}
             </p>
           </div>
           <div className="mt-5 flex gap-2">
@@ -80,7 +88,10 @@ export const Footer = ({
           <ul className="space-y-2.5 text-sm">
             {tree.slice(0, 9).map((root) => (
               <li key={root.slug}>
-                <Link href={`/${locale}/catalog/${root.slug}`} className="text-ink-soft hover:text-accent">
+                <Link
+                  href={`/${locale}/catalog/${root.slug}`}
+                  className="text-ink-soft hover:text-accent"
+                >
                   {root.name}
                 </Link>
               </li>
@@ -100,7 +111,10 @@ export const Footer = ({
           <ul className="space-y-2.5 text-sm">
             {help.map((page) => (
               <li key={page.slug}>
-                <Link href={`/${locale}/pages/${page.slug}`} className="text-ink-soft hover:text-accent">
+                <Link
+                  href={`/${locale}/pages/${page.slug}`}
+                  className="text-ink-soft hover:text-accent"
+                >
                   {page.title[locale]}
                 </Link>
               </li>
@@ -112,7 +126,10 @@ export const Footer = ({
           <ul className="space-y-2.5 text-sm">
             {company.map((page) => (
               <li key={page.slug}>
-                <Link href={`/${locale}/pages/${page.slug}`} className="text-ink-soft hover:text-accent">
+                <Link
+                  href={`/${locale}/pages/${page.slug}`}
+                  className="text-ink-soft hover:text-accent"
+                >
                   {page.title[locale]}
                 </Link>
               </li>
@@ -126,7 +143,11 @@ export const Footer = ({
           <NewsletterForm locale={locale} dict={dict} />
           <div className="mt-7 flex flex-wrap gap-x-4 gap-y-2 text-[12px] text-muted">
             {legal.map((page) => (
-              <Link key={page.slug} href={`/${locale}/pages/${page.slug}`} className="hover:text-ink">
+              <Link
+                key={page.slug}
+                href={`/${locale}/pages/${page.slug}`}
+                className="hover:text-ink"
+              >
                 {page.title[locale]}
               </Link>
             ))}

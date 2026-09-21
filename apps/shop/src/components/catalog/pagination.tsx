@@ -42,7 +42,9 @@ export const Pagination = ({
       </Link>
       {visible.map((item, index) => (
         <span key={item} className="flex items-center gap-1.5">
-          {index > 0 && item - visible[index - 1]! > 1 ? <span className="px-1 text-muted">…</span> : null}
+          {index > 0 && item - visible[index - 1]! > 1 ? (
+            <span className="px-1 text-muted">…</span>
+          ) : null}
           <Link
             href={href(item)}
             aria-current={item === page}

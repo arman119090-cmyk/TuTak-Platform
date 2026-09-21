@@ -35,7 +35,10 @@ const OrderDetailPage = async ({
           {dict.account.order} {order.number}
         </h2>
         <OrderStatusBadge status={order.status} dict={dict} />
-        <Link href={`/${locale}/account/orders`} className="ml-auto text-[13px] text-accent hover:underline">
+        <Link
+          href={`/${locale}/account/orders`}
+          className="ml-auto text-[13px] text-accent hover:underline"
+        >
           ← {dict.account.orders}
         </Link>
       </div>
@@ -46,13 +49,21 @@ const OrderDetailPage = async ({
           {order.items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 p-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={item.imageUrl} alt="" className="h-16 w-24 rounded-[var(--radius-xs)] bg-surface-2 object-cover" />
+              <img
+                src={item.imageUrl}
+                alt=""
+                className="h-16 w-24 rounded-[var(--radius-xs)] bg-surface-2 object-cover"
+              />
               <div className="min-w-0 flex-1">
-                <Link href={`/${locale}/product/${item.slugSnapshot}`} className="text-[14px] hover:text-accent">
+                <Link
+                  href={`/${locale}/product/${item.slugSnapshot}`}
+                  className="text-[14px] hover:text-accent"
+                >
                   {item.nameSnapshot}
                 </Link>
                 <p className="text-[12px] text-muted">
-                  {dict.common.sku}: {item.sku} · {formatMoney(item.unitPriceMinor)} × {item.quantity}
+                  {dict.common.sku}: {item.sku} · {formatMoney(item.unitPriceMinor)} ×{' '}
+                  {item.quantity}
                 </p>
               </div>
               <span className="font-medium tabular-nums">{formatMoney(item.lineTotalMinor)}</span>
@@ -75,7 +86,9 @@ const OrderDetailPage = async ({
           <div className="flex justify-between">
             <dt className="text-muted">{dict.cart.delivery}</dt>
             <dd className="tabular-nums">
-              {order.deliveryMinor === 0 ? dict.cart.freeDelivery : formatMoney(order.deliveryMinor)}
+              {order.deliveryMinor === 0
+                ? dict.cart.freeDelivery
+                : formatMoney(order.deliveryMinor)}
             </dd>
           </div>
           {order.servicesMinor > 0 ? (
@@ -86,7 +99,9 @@ const OrderDetailPage = async ({
           ) : null}
           <div className="flex items-baseline justify-between border-t border-line pt-2">
             <dt className="font-medium">{dict.cart.total}</dt>
-            <dd className="text-[20px] font-semibold tabular-nums">{formatMoney(order.totalMinor)}</dd>
+            <dd className="text-[20px] font-semibold tabular-nums">
+              {formatMoney(order.totalMinor)}
+            </dd>
           </div>
         </dl>
       </section>
@@ -123,7 +138,9 @@ const OrderDetailPage = async ({
                 <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
                 <span>
                   <span className="block font-medium">{dict.orderStatus[event.status]}</span>
-                  <span className="block text-muted">{formatDateTime(event.createdAt, locale)}</span>
+                  <span className="block text-muted">
+                    {formatDateTime(event.createdAt, locale)}
+                  </span>
                   {event.comment ? <span className="block text-muted">{event.comment}</span> : null}
                 </span>
               </li>

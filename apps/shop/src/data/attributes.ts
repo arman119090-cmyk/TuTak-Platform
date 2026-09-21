@@ -17,59 +17,203 @@ export type ColorDefinition = {
 };
 
 export const COLORS: Record<string, ColorDefinition> = {
-  white: { hex: '#F6F5F2', shade: '#E2E0DA', family: 'neutral', label: { hy: 'Սպիտակ', ru: 'Белый', en: 'White' } },
-  ivory: { hex: '#EFE7DA', shade: '#DBCFBC', family: 'warm', label: { hy: 'Փղոսկր', ru: 'Слоновая кость', en: 'Ivory' } },
-  cream: { hex: '#E8DCC8', shade: '#D2C2A8', family: 'warm', label: { hy: 'Կրեմ', ru: 'Кремовый', en: 'Cream' } },
-  sand: { hex: '#D9C7AC', shade: '#BFA985', family: 'warm', label: { hy: 'Ավազագույն', ru: 'Песочный', en: 'Sand' } },
-  beige: { hex: '#CDBBA4', shade: '#B29B80', family: 'warm', label: { hy: 'Բեժ', ru: 'Бежевый', en: 'Beige' } },
-  lightGrey: { hex: '#CFD0CC', shade: '#B0B1AC', family: 'neutral', label: { hy: 'Բաց մոխրագույն', ru: 'Светло-серый', en: 'Light grey' } },
-  grey: { hex: '#9A9C98', shade: '#7D7F7B', family: 'neutral', label: { hy: 'Մոխրագույն', ru: 'Серый', en: 'Grey' } },
-  graphite: { hex: '#5B5E60', shade: '#45484A', family: 'cool', label: { hy: 'Գրաֆիտ', ru: 'Графитовый', en: 'Graphite' } },
-  anthracite: { hex: '#3C4043', shade: '#2B2E30', family: 'cool', label: { hy: 'Անտրացիտ', ru: 'Антрацит', en: 'Anthracite' } },
-  black: { hex: '#22242A', shade: '#131418', family: 'neutral', label: { hy: 'Սև', ru: 'Чёрный', en: 'Black' } },
-  brown: { hex: '#6B4B36', shade: '#523725', family: 'wood', label: { hy: 'Շագանակագույն', ru: 'Коричневый', en: 'Brown' } },
-  walnut: { hex: '#7A5230', shade: '#5C3C22', family: 'wood', label: { hy: 'Ընկուզենի', ru: 'Орех', en: 'Walnut' } },
-  oak: { hex: '#C9A57B', shade: '#A9855C', family: 'wood', label: { hy: 'Կաղնի', ru: 'Дуб', en: 'Oak' } },
-  ashWood: { hex: '#DCC6A5', shade: '#BFA783', family: 'wood', label: { hy: 'Հացենի', ru: 'Ясень', en: 'Ash' } },
-  wenge: { hex: '#4A3A31', shade: '#33261F', family: 'wood', label: { hy: 'Վենգե', ru: 'Венге', en: 'Wenge' } },
-  terracotta: { hex: '#B5674A', shade: '#8F4E36', family: 'accent', label: { hy: 'Տերակոտա', ru: 'Терракотовый', en: 'Terracotta' } },
-  mustard: { hex: '#C79A3C', shade: '#A17B28', family: 'accent', label: { hy: 'Մանանեխի', ru: 'Горчичный', en: 'Mustard' } },
-  olive: { hex: '#7C8156', shade: '#616640', family: 'accent', label: { hy: 'Ձիթապտղի', ru: 'Оливковый', en: 'Olive' } },
-  emerald: { hex: '#2F6B5A', shade: '#1F5244', family: 'accent', label: { hy: 'Զմրուխտ', ru: 'Изумрудный', en: 'Emerald' } },
-  navy: { hex: '#2C3E58', shade: '#1D2C42', family: 'cool', label: { hy: 'Մուգ կապույտ', ru: 'Тёмно-синий', en: 'Navy' } },
-  blue: { hex: '#5C7FA3', shade: '#456686', family: 'cool', label: { hy: 'Կապույտ', ru: 'Синий', en: 'Blue' } },
-  powder: { hex: '#D8B6B0', shade: '#BD958E', family: 'accent', label: { hy: 'Փոշոտ վարդագույն', ru: 'Пудровый', en: 'Powder pink' } },
+  white: {
+    hex: '#F6F5F2',
+    shade: '#E2E0DA',
+    family: 'neutral',
+    label: { hy: 'Սպիտակ', ru: 'Белый', en: 'White' },
+  },
+  ivory: {
+    hex: '#EFE7DA',
+    shade: '#DBCFBC',
+    family: 'warm',
+    label: { hy: 'Փղոսկր', ru: 'Слоновая кость', en: 'Ivory' },
+  },
+  cream: {
+    hex: '#E8DCC8',
+    shade: '#D2C2A8',
+    family: 'warm',
+    label: { hy: 'Կրեմ', ru: 'Кремовый', en: 'Cream' },
+  },
+  sand: {
+    hex: '#D9C7AC',
+    shade: '#BFA985',
+    family: 'warm',
+    label: { hy: 'Ավազագույն', ru: 'Песочный', en: 'Sand' },
+  },
+  beige: {
+    hex: '#CDBBA4',
+    shade: '#B29B80',
+    family: 'warm',
+    label: { hy: 'Բեժ', ru: 'Бежевый', en: 'Beige' },
+  },
+  lightGrey: {
+    hex: '#CFD0CC',
+    shade: '#B0B1AC',
+    family: 'neutral',
+    label: { hy: 'Բաց մոխրագույն', ru: 'Светло-серый', en: 'Light grey' },
+  },
+  grey: {
+    hex: '#9A9C98',
+    shade: '#7D7F7B',
+    family: 'neutral',
+    label: { hy: 'Մոխրագույն', ru: 'Серый', en: 'Grey' },
+  },
+  graphite: {
+    hex: '#5B5E60',
+    shade: '#45484A',
+    family: 'cool',
+    label: { hy: 'Գրաֆիտ', ru: 'Графитовый', en: 'Graphite' },
+  },
+  anthracite: {
+    hex: '#3C4043',
+    shade: '#2B2E30',
+    family: 'cool',
+    label: { hy: 'Անտրացիտ', ru: 'Антрацит', en: 'Anthracite' },
+  },
+  black: {
+    hex: '#22242A',
+    shade: '#131418',
+    family: 'neutral',
+    label: { hy: 'Սև', ru: 'Чёрный', en: 'Black' },
+  },
+  brown: {
+    hex: '#6B4B36',
+    shade: '#523725',
+    family: 'wood',
+    label: { hy: 'Շագանակագույն', ru: 'Коричневый', en: 'Brown' },
+  },
+  walnut: {
+    hex: '#7A5230',
+    shade: '#5C3C22',
+    family: 'wood',
+    label: { hy: 'Ընկուզենի', ru: 'Орех', en: 'Walnut' },
+  },
+  oak: {
+    hex: '#C9A57B',
+    shade: '#A9855C',
+    family: 'wood',
+    label: { hy: 'Կաղնի', ru: 'Дуб', en: 'Oak' },
+  },
+  ashWood: {
+    hex: '#DCC6A5',
+    shade: '#BFA783',
+    family: 'wood',
+    label: { hy: 'Հացենի', ru: 'Ясень', en: 'Ash' },
+  },
+  wenge: {
+    hex: '#4A3A31',
+    shade: '#33261F',
+    family: 'wood',
+    label: { hy: 'Վենգե', ru: 'Венге', en: 'Wenge' },
+  },
+  terracotta: {
+    hex: '#B5674A',
+    shade: '#8F4E36',
+    family: 'accent',
+    label: { hy: 'Տերակոտա', ru: 'Терракотовый', en: 'Terracotta' },
+  },
+  mustard: {
+    hex: '#C79A3C',
+    shade: '#A17B28',
+    family: 'accent',
+    label: { hy: 'Մանանեխի', ru: 'Горчичный', en: 'Mustard' },
+  },
+  olive: {
+    hex: '#7C8156',
+    shade: '#616640',
+    family: 'accent',
+    label: { hy: 'Ձիթապտղի', ru: 'Оливковый', en: 'Olive' },
+  },
+  emerald: {
+    hex: '#2F6B5A',
+    shade: '#1F5244',
+    family: 'accent',
+    label: { hy: 'Զմրուխտ', ru: 'Изумрудный', en: 'Emerald' },
+  },
+  navy: {
+    hex: '#2C3E58',
+    shade: '#1D2C42',
+    family: 'cool',
+    label: { hy: 'Մուգ կապույտ', ru: 'Тёмно-синий', en: 'Navy' },
+  },
+  blue: {
+    hex: '#5C7FA3',
+    shade: '#456686',
+    family: 'cool',
+    label: { hy: 'Կապույտ', ru: 'Синий', en: 'Blue' },
+  },
+  powder: {
+    hex: '#D8B6B0',
+    shade: '#BD958E',
+    family: 'accent',
+    label: { hy: 'Փոշոտ վարդագույն', ru: 'Пудровый', en: 'Powder pink' },
+  },
 };
 
-export type MaterialGroup = 'textile' | 'leather' | 'wood' | 'board' | 'stone' | 'metal' | 'glass' | 'other';
+export type MaterialGroup =
+  'textile' | 'leather' | 'wood' | 'board' | 'stone' | 'metal' | 'glass' | 'other';
 
 export const MATERIALS: Record<string, { group: MaterialGroup; label: LocalizedLabel }> = {
   chenille: { group: 'textile', label: { hy: 'Շենիլ', ru: 'Шенилл', en: 'Chenille' } },
   boucle: { group: 'textile', label: { hy: 'Բուկլե', ru: 'Букле', en: 'Bouclé' } },
   velour: { group: 'textile', label: { hy: 'Վելյուր', ru: 'Велюр', en: 'Velour' } },
-  rogozhka: { group: 'textile', label: { hy: 'Կոպտաթել գործվածք', ru: 'Рогожка', en: 'Basket-weave fabric' } },
+  rogozhka: {
+    group: 'textile',
+    label: { hy: 'Կոպտաթել գործվածք', ru: 'Рогожка', en: 'Basket-weave fabric' },
+  },
   linenFabric: { group: 'textile', label: { hy: 'Կտավատ', ru: 'Лён', en: 'Linen' } },
   microfiber: { group: 'textile', label: { hy: 'Միկրոֆիբր', ru: 'Микрофибра', en: 'Microfibre' } },
   ecoLeather: { group: 'leather', label: { hy: 'Էկո կաշի', ru: 'Экокожа', en: 'Eco leather' } },
-  genuineLeather: { group: 'leather', label: { hy: 'Բնական կաշի', ru: 'Натуральная кожа', en: 'Full-grain leather' } },
+  genuineLeather: {
+    group: 'leather',
+    label: { hy: 'Բնական կաշի', ru: 'Натуральная кожа', en: 'Full-grain leather' },
+  },
   oakSolid: { group: 'wood', label: { hy: 'Կաղնու զանգված', ru: 'Массив дуба', en: 'Solid oak' } },
-  beechSolid: { group: 'wood', label: { hy: 'Հաճարենու զանգված', ru: 'Массив бука', en: 'Solid beech' } },
-  pineSolid: { group: 'wood', label: { hy: 'Սոճու զանգված', ru: 'Массив сосны', en: 'Solid pine' } },
-  ashSolid: { group: 'wood', label: { hy: 'Հացենու զանգված', ru: 'Массив ясеня', en: 'Solid ash' } },
-  veneer: { group: 'wood', label: { hy: 'Բնական սպոն', ru: 'Натуральный шпон', en: 'Natural veneer' } },
+  beechSolid: {
+    group: 'wood',
+    label: { hy: 'Հաճարենու զանգված', ru: 'Массив бука', en: 'Solid beech' },
+  },
+  pineSolid: {
+    group: 'wood',
+    label: { hy: 'Սոճու զանգված', ru: 'Массив сосны', en: 'Solid pine' },
+  },
+  ashSolid: {
+    group: 'wood',
+    label: { hy: 'Հացենու զանգված', ru: 'Массив ясеня', en: 'Solid ash' },
+  },
+  veneer: {
+    group: 'wood',
+    label: { hy: 'Բնական սպոն', ru: 'Натуральный шпон', en: 'Natural veneer' },
+  },
   plywood: { group: 'wood', label: { hy: 'Ֆաներա', ru: 'Фанера', en: 'Plywood' } },
   mdf: { group: 'board', label: { hy: 'ՄԴՖ', ru: 'МДФ', en: 'MDF' } },
-  mdfPainted: { group: 'board', label: { hy: 'Ներկված ՄԴՖ', ru: 'МДФ в эмали', en: 'Lacquered MDF' } },
+  mdfPainted: {
+    group: 'board',
+    label: { hy: 'Ներկված ՄԴՖ', ru: 'МДФ в эмали', en: 'Lacquered MDF' },
+  },
   chipboard: { group: 'board', label: { hy: 'ԼԴՍՊ', ru: 'ЛДСП', en: 'Laminated chipboard' } },
   hpl: { group: 'board', label: { hy: 'HPL ծածկույթ', ru: 'HPL-пластик', en: 'HPL laminate' } },
   marble: { group: 'stone', label: { hy: 'Մարմար', ru: 'Мрамор', en: 'Marble' } },
-  quartz: { group: 'stone', label: { hy: 'Քվարցագլոմերատ', ru: 'Кварцевый агломерат', en: 'Quartz composite' } },
+  quartz: {
+    group: 'stone',
+    label: { hy: 'Քվարցագլոմերատ', ru: 'Кварцевый агломерат', en: 'Quartz composite' },
+  },
   ceramic: { group: 'stone', label: { hy: 'Կերամիկա', ru: 'Керамика', en: 'Ceramic' } },
   metal: { group: 'metal', label: { hy: 'Մետաղ', ru: 'Металл', en: 'Powder-coated metal' } },
-  steel: { group: 'metal', label: { hy: 'Չժանգոտվող պողպատ', ru: 'Нержавеющая сталь', en: 'Stainless steel' } },
-  glass: { group: 'glass', label: { hy: 'Կոփած ապակի', ru: 'Закалённое стекло', en: 'Tempered glass' } },
+  steel: {
+    group: 'metal',
+    label: { hy: 'Չժանգոտվող պողպատ', ru: 'Нержавеющая сталь', en: 'Stainless steel' },
+  },
+  glass: {
+    group: 'glass',
+    label: { hy: 'Կոփած ապակի', ru: 'Закалённое стекло', en: 'Tempered glass' },
+  },
   rattan: { group: 'other', label: { hy: 'Ռատան', ru: 'Ротанг', en: 'Rattan' } },
-  plastic: { group: 'other', label: { hy: 'Պոլիպրոպիլեն', ru: 'Полипропилен', en: 'Polypropylene' } },
+  plastic: {
+    group: 'other',
+    label: { hy: 'Պոլիպրոպիլեն', ru: 'Полипропилен', en: 'Polypropylene' },
+  },
 };
 
 export const STYLES: Record<string, LocalizedLabel> = {
@@ -105,7 +249,11 @@ export const PURPOSES: Record<string, LocalizedLabel> = {
 
 /** Labels for specification keys used in the `Product.specs` map. */
 export const SPEC_LABELS: Record<string, LocalizedLabel> = {
-  mechanism: { hy: 'Տրանսֆորմացիայի մեխանիզմ', ru: 'Механизм трансформации', en: 'Transformation mechanism' },
+  mechanism: {
+    hy: 'Տրանսֆորմացիայի մեխանիզմ',
+    ru: 'Механизм трансформации',
+    en: 'Transformation mechanism',
+  },
   sleepingArea: { hy: 'Քնելու տեղ', ru: 'Спальное место', en: 'Sleeping area' },
   fabricType: { hy: 'Գործվածքի տեսակ', ru: 'Тип ткани', en: 'Upholstery fabric' },
   filler: { hy: 'Լցոնիչ', ru: 'Наполнитель', en: 'Filling' },
@@ -119,7 +267,11 @@ export const SPEC_LABELS: Record<string, LocalizedLabel> = {
   headboard: { hy: 'Գլխամաս', ru: 'Изголовье', en: 'Headboard' },
   springType: { hy: 'Զսպանակային բլոկ', ru: 'Пружинный блок', en: 'Spring system' },
   rigidity: { hy: 'Կոշտություն', ru: 'Жёсткость', en: 'Firmness' },
-  maxLoadPerSleeper: { hy: 'Առավելագույն բեռ մեկ տեղի վրա', ru: 'Макс. нагрузка на спальное место', en: 'Max load per sleeper' },
+  maxLoadPerSleeper: {
+    hy: 'Առավելագույն բեռ մեկ տեղի վրա',
+    ru: 'Макс. нагрузка на спальное место',
+    en: 'Max load per sleeper',
+  },
   doorsCount: { hy: 'Դռների քանակ', ru: 'Количество дверей', en: 'Doors' },
   drawersCount: { hy: 'Դարակների քանակ', ru: 'Количество ящиков', en: 'Drawers' },
   shelvesCount: { hy: 'Դարակների քանակ', ru: 'Количество полок', en: 'Shelves' },
@@ -134,13 +286,29 @@ export const SPEC_LABELS: Record<string, LocalizedLabel> = {
   seatHeight: { hy: 'Նստատեղի բարձրություն', ru: 'Высота сиденья', en: 'Seat height' },
   armrests: { hy: 'Բազրիքներ', ru: 'Подлокотники', en: 'Armrests' },
   stackable: { hy: 'Շարվող', ru: 'Штабелируемый', en: 'Stackable' },
-  kitchenLength: { hy: 'Կոմպոզիցիայի երկարություն', ru: 'Длина композиции', en: 'Composition length' },
+  kitchenLength: {
+    hy: 'Կոմպոզիցիայի երկարություն',
+    ru: 'Длина композиции',
+    en: 'Composition length',
+  },
   facadeType: { hy: 'Ֆասադի տեսակ', ru: 'Тип фасада', en: 'Facade type' },
   bodyMaterial: { hy: 'Կորպուսի նյութ', ru: 'Материал корпуса', en: 'Carcass material' },
-  countertopMaterial: { hy: 'Սեղանասալի նյութ', ru: 'Материал столешницы', en: 'Countertop material' },
+  countertopMaterial: {
+    hy: 'Սեղանասալի նյութ',
+    ru: 'Материал столешницы',
+    en: 'Countertop material',
+  },
   configuration: { hy: 'Կոնֆիգուրացիա', ru: 'Конфигурация', en: 'Layout' },
-  madeToMeasure: { hy: 'Պատրաստում ըստ չափսի', ru: 'Изготовление под размер', en: 'Made to measure' },
-  builtInAppliances: { hy: 'Ներկառուցվող տեխնիկա', ru: 'Встраиваемая техника', en: 'Built-in appliances' },
+  madeToMeasure: {
+    hy: 'Պատրաստում ըստ չափսի',
+    ru: 'Изготовление под размер',
+    en: 'Made to measure',
+  },
+  builtInAppliances: {
+    hy: 'Ներկառուցվող տեխնիկա',
+    ru: 'Встраиваемая техника',
+    en: 'Built-in appliances',
+  },
   doorHeight: { hy: 'Դռան բարձրություն', ru: 'Высота полотна', en: 'Door height' },
   doorWidth: { hy: 'Դռան լայնություն', ru: 'Ширина полотна', en: 'Door width' },
   doorThickness: { hy: 'Դռան հաստություն', ru: 'Толщина полотна', en: 'Door thickness' },
@@ -148,15 +316,27 @@ export const SPEC_LABELS: Record<string, LocalizedLabel> = {
   openingType: { hy: 'Բացման տեսակ', ru: 'Тип открывания', en: 'Opening type' },
   openingSide: { hy: 'Բացման ուղղություն', ru: 'Сторона открывания', en: 'Opening side' },
   frameIncluded: { hy: 'Կոմպլեկտում` շրջանակ', ru: 'Коробка в комплекте', en: 'Frame included' },
-  casingIncluded: { hy: 'Կոմպլեկտում` նալիչնիկ', ru: 'Наличники в комплекте', en: 'Casing included' },
+  casingIncluded: {
+    hy: 'Կոմպլեկտում` նալիչնիկ',
+    ru: 'Наличники в комплекте',
+    en: 'Casing included',
+  },
   hardware: { hy: 'Ֆուռնիտուրա', ru: 'Фурнитура', en: 'Hardware' },
   installationPrice: { hy: 'Տեղադրման արժեք', ru: 'Стоимость установки', en: 'Installation price' },
   soundInsulation: { hy: 'Ձայնամեկուսացում', ru: 'Шумоизоляция', en: 'Sound insulation' },
   lockClass: { hy: 'Կողպեքի դաս', ru: 'Класс замка', en: 'Lock class' },
   ageGroup: { hy: 'Տարիքային խումբ', ru: 'Возрастная группа', en: 'Age group' },
-  adjustableHeight: { hy: 'Կարգավորվող բարձրություն', ru: 'Регулируемая высота', en: 'Height adjustable' },
+  adjustableHeight: {
+    hy: 'Կարգավորվող բարձրություն',
+    ru: 'Регулируемая высота',
+    en: 'Height adjustable',
+  },
   cableManagement: { hy: 'Մալուխների անցք', ru: 'Кабель-менеджмент', en: 'Cable management' },
-  assemblyRequired: { hy: 'Պահանջվում է հավաքում', ru: 'Требуется сборка', en: 'Assembly required' },
+  assemblyRequired: {
+    hy: 'Պահանջվում է հավաքում',
+    ru: 'Требуется сборка',
+    en: 'Assembly required',
+  },
 };
 
 /**
@@ -172,8 +352,16 @@ export const SPEC_VALUES: Record<string, LocalizedLabel> = {
   'mechanism.rollout': { hy: 'Դուրս քաշվող', ru: 'Выкатной', en: 'Roll-out' },
   'mechanism.none': { hy: 'Առանց մեխանիզմի', ru: 'Без механизма', en: 'Non-convertible' },
   'filler.hrFoam': { hy: 'HR փրփուր', ru: 'ППУ высокой упругости', en: 'High-resilience foam' },
-  'filler.springBonnell': { hy: 'Bonnell զսպանակներ', ru: 'Пружины Bonnell', en: 'Bonnell springs' },
-  'filler.pocketSpring': { hy: 'Անկախ զսպանակներ', ru: 'Независимые пружины', en: 'Pocket springs' },
+  'filler.springBonnell': {
+    hy: 'Bonnell զսպանակներ',
+    ru: 'Пружины Bonnell',
+    en: 'Bonnell springs',
+  },
+  'filler.pocketSpring': {
+    hy: 'Անկախ զսպանակներ',
+    ru: 'Независимые пружины',
+    en: 'Pocket springs',
+  },
   'filler.holofiber': { hy: 'Հոլոֆայբեր', ru: 'Холлофайбер', en: 'Hollow fibre' },
   'filler.latex': { hy: 'Բնական լատեքս', ru: 'Натуральный латекс', en: 'Natural latex' },
   'filler.memoryFoam': { hy: 'Memory foam', ru: 'Memory foam', en: 'Memory foam' },
@@ -186,7 +374,11 @@ export const SPEC_VALUES: Record<string, LocalizedLabel> = {
   'rigidity.soft': { hy: 'Փափուկ', ru: 'Мягкий', en: 'Soft' },
   'rigidity.medium': { hy: 'Միջին', ru: 'Средний', en: 'Medium' },
   'rigidity.firm': { hy: 'Կոշտ', ru: 'Жёсткий', en: 'Firm' },
-  'springType.pocket': { hy: 'Անկախ զսպանակային բլոկ', ru: 'Независимый пружинный блок', en: 'Pocket spring unit' },
+  'springType.pocket': {
+    hy: 'Անկախ զսպանակային բլոկ',
+    ru: 'Независимый пружинный блок',
+    en: 'Pocket spring unit',
+  },
   'springType.bonnell': { hy: 'Կախյալ զսպանակներ', ru: 'Зависимые пружины', en: 'Bonnell unit' },
   'springType.springless': { hy: 'Առանց զսպանակների', ru: 'Беспружинный', en: 'Springless' },
   'tableShape.rectangular': { hy: 'Ուղղանկյուն', ru: 'Прямоугольный', en: 'Rectangular' },
@@ -224,14 +416,17 @@ export const SPEC_VALUES: Record<string, LocalizedLabel> = {
   'hardware.basic': { hy: 'Ստանդարտ', ru: 'Стандартная', en: 'Standard' },
   'hardware.soft': { hy: 'Doerner-ով', ru: 'С доводчиками', en: 'Soft-close' },
   'hardware.premium': { hy: 'Պրեմիում', ru: 'Премиальная', en: 'Premium' },
-  'yes': { hy: 'Այո', ru: 'Есть', en: 'Yes' },
-  'no': { hy: 'Ոչ', ru: 'Нет', en: 'No' },
+  yes: { hy: 'Այո', ru: 'Есть', en: 'Yes' },
+  no: { hy: 'Ոչ', ru: 'Нет', en: 'No' },
 };
 
 export type AttributeLocale = keyof LocalizedLabel;
 
-export const labelOf = (dictionary: Record<string, LocalizedLabel>, key: string, locale: AttributeLocale): string =>
-  dictionary[key]?.[locale] ?? key;
+export const labelOf = (
+  dictionary: Record<string, LocalizedLabel>,
+  key: string,
+  locale: AttributeLocale,
+): string => dictionary[key]?.[locale] ?? key;
 
 export const colorLabel = (key: string, locale: AttributeLocale): string =>
   COLORS[key]?.label[locale] ?? key;

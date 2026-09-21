@@ -4,7 +4,17 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  ChevronDown, Heart, Menu, Phone, Scale, Search, ShoppingBag, User, X, Truck, Sparkles,
+  ChevronDown,
+  Heart,
+  Menu,
+  Phone,
+  Scale,
+  Search,
+  ShoppingBag,
+  User,
+  X,
+  Truck,
+  Sparkles,
 } from 'lucide-react';
 import { brand, brandName, isDemoMode } from '@/config/brand';
 import type { Dictionary, Locale } from '@/lib/i18n';
@@ -15,7 +25,15 @@ import { LOCALE_COOKIE, writeCookie } from '@/lib/client-cookies';
 import { useStore } from '@/components/providers/store-provider';
 import { SearchBox } from './search-box';
 
-const HIGHLIGHT_CATEGORIES = ['sofas', 'beds', 'wardrobes', 'kitchens', 'tables', 'chairs', 'doors'];
+const HIGHLIGHT_CATEGORIES = [
+  'sofas',
+  'beds',
+  'wardrobes',
+  'kitchens',
+  'tables',
+  'chairs',
+  'doors',
+];
 
 const CountBadge = ({ value }: { value: number }) =>
   value > 0 ? (
@@ -61,9 +79,9 @@ export const Header = ({
     router.push(localizePath(pathname, next));
   };
 
-  const highlights = HIGHLIGHT_CATEGORIES.map((slug) => tree.find((root) => root.slug === slug)).filter(
-    (root): root is CategoryTree[number] => Boolean(root),
-  );
+  const highlights = HIGHLIGHT_CATEGORIES.map((slug) =>
+    tree.find((root) => root.slug === slug),
+  ).filter((root): root is CategoryTree[number] => Boolean(root));
   const activeTree = tree.find((root) => root.slug === activeRoot) ?? tree[0];
 
   return (
@@ -131,7 +149,11 @@ export const Header = ({
 
         {/* min-w-0 + truncate: a long brand name must give way to the burger
             and the cart icons on a narrow phone, not push them off-screen. */}
-        <Link href={`/${locale}`} className="flex min-w-0 shrink items-center gap-2" aria-label={brandName(locale)}>
+        <Link
+          href={`/${locale}`}
+          className="flex min-w-0 shrink items-center gap-2"
+          aria-label={brandName(locale)}
+        >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-ink font-display text-lg text-white">
             {brand.monogram}
           </span>
@@ -199,7 +221,12 @@ export const Header = ({
 
       {mobileSearch ? (
         <div className="container-page pb-3 lg:hidden">
-          <SearchBox locale={locale} dict={dict} variant="mobile" onClose={() => setMobileSearch(false)} />
+          <SearchBox
+            locale={locale}
+            dict={dict}
+            variant="mobile"
+            onClose={() => setMobileSearch(false)}
+          />
         </div>
       ) : null}
 
@@ -218,7 +245,11 @@ export const Header = ({
           >
             <Menu width={16} height={16} />
             {dict.nav.catalog}
-            <ChevronDown width={14} height={14} className={cn('transition-transform', megaOpen && 'rotate-180')} />
+            <ChevronDown
+              width={14}
+              height={14}
+              className={cn('transition-transform', megaOpen && 'rotate-180')}
+            />
           </button>
           {highlights.map((root) => (
             <Link
@@ -258,11 +289,15 @@ export const Header = ({
                       onMouseEnter={() => setActiveRoot(root.slug)}
                       className={cn(
                         'flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2 text-[13px] transition-colors',
-                        activeRoot === root.slug ? 'bg-surface-2 font-medium' : 'hover:bg-surface-2',
+                        activeRoot === root.slug
+                          ? 'bg-surface-2 font-medium'
+                          : 'hover:bg-surface-2',
                       )}
                     >
                       {root.name}
-                      <span className="text-[11px] text-muted tabular-nums">{root.productCount}</span>
+                      <span className="text-[11px] text-muted tabular-nums">
+                        {root.productCount}
+                      </span>
                     </Link>
                   </li>
                 ))}
@@ -270,7 +305,10 @@ export const Header = ({
               <div>
                 <div className="mb-4 flex items-baseline justify-between">
                   <h3 className="text-xl">{activeTree?.name}</h3>
-                  <Link href={`/${locale}/catalog/${activeTree?.slug}`} className="text-[13px] text-accent hover:underline">
+                  <Link
+                    href={`/${locale}/catalog/${activeTree?.slug}`}
+                    className="text-[13px] text-accent hover:underline"
+                  >
                     {dict.common.showAll} →
                   </Link>
                 </div>
@@ -283,7 +321,9 @@ export const Header = ({
                       className="flex items-center justify-between rounded-[var(--radius-xs)] px-2 py-1.5 text-[13px] hover:bg-surface-2"
                     >
                       <span>{child.name}</span>
-                      <span className="text-[11px] text-muted tabular-nums">{child.productCount}</span>
+                      <span className="text-[11px] text-muted tabular-nums">
+                        {child.productCount}
+                      </span>
                     </Link>
                   ))}
                 </div>
@@ -299,8 +339,15 @@ export const Header = ({
           <div className="absolute inset-0 bg-ink/40" onClick={() => setMenuOpen(false)} />
           <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-sm flex-col bg-surface">
             <div className="flex h-16 items-center justify-between border-b border-line px-4">
-              <span className="font-display text-lg uppercase tracking-[0.1em]">{brandName(locale)}</span>
-              <button type="button" onClick={() => setMenuOpen(false)} aria-label={dict.common.close} className="flex h-11 w-11 items-center justify-center">
+              <span className="font-display text-lg uppercase tracking-[0.1em]">
+                {brandName(locale)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                aria-label={dict.common.close}
+                className="flex h-11 w-11 items-center justify-center"
+              >
                 <X width={22} height={22} />
               </button>
             </div>
@@ -312,11 +359,18 @@ export const Header = ({
                     <ChevronDown width={16} height={16} className="text-muted" />
                   </summary>
                   <div className="pb-2">
-                    <Link href={`/${locale}/catalog/${root.slug}`} className="block px-6 py-2.5 text-[14px] text-accent">
+                    <Link
+                      href={`/${locale}/catalog/${root.slug}`}
+                      className="block px-6 py-2.5 text-[14px] text-accent"
+                    >
                       {dict.common.showAll}
                     </Link>
                     {root.children.map((child) => (
-                      <Link key={child.slug} href={`/${locale}/catalog/${child.slug}`} className="block px-6 py-2.5 text-[14px] text-ink-soft">
+                      <Link
+                        key={child.slug}
+                        href={`/${locale}/catalog/${child.slug}`}
+                        className="block px-6 py-2.5 text-[14px] text-ink-soft"
+                      >
                         {child.name}
                       </Link>
                     ))}
@@ -333,11 +387,24 @@ export const Header = ({
                   <User width={17} height={17} />
                   {session ? dict.nav.account : dict.nav.login}
                 </Link>
-                <Link href={`/${locale}/kitchens`} className="block py-2.5 text-[15px]">{dict.home.kitchensCta}</Link>
-                <Link href={`/${locale}/catalog?discounted=1`} className="block py-2.5 text-[15px] text-sale">{dict.nav.sale}</Link>
-                <Link href={`/${locale}/compare`} className="block py-2.5 text-[15px]">{dict.nav.compare} ({compare.length})</Link>
-                <Link href={`/${locale}/pages/delivery`} className="block py-2.5 text-[15px]">{dict.product.delivery}</Link>
-                <Link href={`/${locale}/pages/contacts`} className="block py-2.5 text-[15px]">{dict.nav.contacts}</Link>
+                <Link href={`/${locale}/kitchens`} className="block py-2.5 text-[15px]">
+                  {dict.home.kitchensCta}
+                </Link>
+                <Link
+                  href={`/${locale}/catalog?discounted=1`}
+                  className="block py-2.5 text-[15px] text-sale"
+                >
+                  {dict.nav.sale}
+                </Link>
+                <Link href={`/${locale}/compare`} className="block py-2.5 text-[15px]">
+                  {dict.nav.compare} ({compare.length})
+                </Link>
+                <Link href={`/${locale}/pages/delivery`} className="block py-2.5 text-[15px]">
+                  {dict.product.delivery}
+                </Link>
+                <Link href={`/${locale}/pages/contacts`} className="block py-2.5 text-[15px]">
+                  {dict.nav.contacts}
+                </Link>
               </div>
             </div>
             <div className="border-t border-line p-4">

@@ -32,11 +32,7 @@ export const shift = (hex: string, amount: number): string => {
   const [r, g, b] = hexToRgb(hex);
   const target = amount > 0 ? 255 : 0;
   const ratio = Math.abs(amount);
-  return rgbToHex(
-    r + (target - r) * ratio,
-    g + (target - g) * ratio,
-    b + (target - b) * ratio,
-  );
+  return rgbToHex(r + (target - r) * ratio, g + (target - g) * ratio, b + (target - b) * ratio);
 };
 
 export const relativeLuminance = (hex: string): number => {

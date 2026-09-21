@@ -78,7 +78,9 @@ export const ProductCardView = ({
       {product.isNew ? <Badge tone="new">{dict.badges.new}</Badge> : null}
       {product.isHit ? <Badge tone="hit">{dict.badges.hit}</Badge> : null}
       {product.isPremium ? <Badge tone="premium">{dict.badges.premium}</Badge> : null}
-      {product.stockStatus === 'IN_STOCK' ? <Badge tone="stock">{dict.badges.inStock}</Badge> : null}
+      {product.stockStatus === 'IN_STOCK' ? (
+        <Badge tone="stock">{dict.badges.inStock}</Badge>
+      ) : null}
     </div>
   );
 
@@ -116,20 +118,30 @@ export const ProductCardView = ({
     </div>
   );
 
-  const swatches = product.colorKeys.slice(0, 5).map((key) => (
-    <span
-      key={key}
-      title={COLORS[key]?.label[locale] ?? key}
-      className="h-3.5 w-3.5 rounded-full border border-line"
-      style={{ background: COLORS[key]?.hex ?? '#ccc' }}
-    />
-  ));
+  const swatches = product.colorKeys
+    .slice(0, 5)
+    .map((key) => (
+      <span
+        key={key}
+        title={COLORS[key]?.label[locale] ?? key}
+        className="h-3.5 w-3.5 rounded-full border border-line"
+        style={{ background: COLORS[key]?.hex ?? '#ccc' }}
+      />
+    ));
 
   if (layout === 'list') {
     return (
       <>
-        <article className={cn('group relative flex gap-4 rounded-[var(--radius-md)] border border-line bg-surface p-3 sm:gap-6 sm:p-4', className)}>
-          <Link href={`/${locale}/product/${product.slug}`} className="relative block w-32 shrink-0 sm:w-56">
+        <article
+          className={cn(
+            'group relative flex gap-4 rounded-[var(--radius-md)] border border-line bg-surface p-3 sm:gap-6 sm:p-4',
+            className,
+          )}
+        >
+          <Link
+            href={`/${locale}/product/${product.slug}`}
+            className="relative block w-32 shrink-0 sm:w-56"
+          >
             {badges}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -141,7 +153,10 @@ export const ProductCardView = ({
           </Link>
           <div className="flex min-w-0 flex-1 flex-col">
             <p className="text-[12px] uppercase tracking-[0.1em] text-muted">{product.brandName}</p>
-            <Link href={`/${locale}/product/${product.slug}`} className="mt-1 line-clamp-2 text-[15px] hover:text-accent">
+            <Link
+              href={`/${locale}/product/${product.slug}`}
+              className="mt-1 line-clamp-2 text-[15px] hover:text-accent"
+            >
               {product.name}
             </Link>
             <p className="mt-1 line-clamp-1 text-[13px] text-muted">{product.shortDescription}</p>
@@ -173,7 +188,12 @@ export const ProductCardView = ({
           {actions}
         </article>
         {quickView ? (
-          <QuickView slug={product.slug} locale={locale} dict={dict} onClose={() => setQuickView(false)} />
+          <QuickView
+            slug={product.slug}
+            locale={locale}
+            dict={dict}
+            onClose={() => setQuickView(false)}
+          />
         ) : null}
       </>
     );
@@ -222,12 +242,23 @@ export const ProductCardView = ({
             {product.name}
           </Link>
           <div className="mt-1.5 flex items-center gap-2">
-            <Rating value={product.ratingAvg} count={product.reviewCount} size={12} showValue={false} />
-            <span className="text-[12px] text-muted tabular-nums">{product.ratingAvg.toFixed(1)}</span>
+            <Rating
+              value={product.ratingAvg}
+              count={product.reviewCount}
+              size={12}
+              showValue={false}
+            />
+            <span className="text-[12px] text-muted tabular-nums">
+              {product.ratingAvg.toFixed(1)}
+            </span>
           </div>
           {swatches.length > 1 ? <div className="mt-2 flex gap-1">{swatches}</div> : null}
           <div className="mt-auto pt-2.5">
-            <Price amountMinor={product.priceMinor} oldAmountMinor={product.oldPriceMinor} size="sm" />
+            <Price
+              amountMinor={product.priceMinor}
+              oldAmountMinor={product.oldPriceMinor}
+              size="sm"
+            />
             <div className="mt-1 flex items-center justify-between gap-2">
               <StockLine product={product} dict={dict} />
               <button
@@ -244,7 +275,12 @@ export const ProductCardView = ({
         </div>
       </article>
       {quickView ? (
-        <QuickView slug={product.slug} locale={locale} dict={dict} onClose={() => setQuickView(false)} />
+        <QuickView
+          slug={product.slug}
+          locale={locale}
+          dict={dict}
+          onClose={() => setQuickView(false)}
+        />
       ) : null}
     </>
   );

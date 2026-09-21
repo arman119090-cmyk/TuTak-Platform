@@ -113,7 +113,9 @@ test.describe('cart and checkout', () => {
 
   test('the server, not the browser, decides the price', async ({ request }) => {
     const suggest = await request.get('/api/search/suggest?q=диван&locale=ru');
-    const { products } = (await suggest.json()) as { products: { id: string; priceMinor: number }[] };
+    const { products } = (await suggest.json()) as {
+      products: { id: string; priceMinor: number }[];
+    };
     const product = products[0]!;
 
     // The quote endpoint is given a quantity only — there is no price field to
@@ -121,7 +123,10 @@ test.describe('cart and checkout', () => {
     const quote = await request.post('/api/cart/quote', {
       data: { items: [{ productId: product.id, quantity: 2 }], locale: 'ru' },
     });
-    const body = (await quote.json()) as { subtotalMinor: number; lines: { unitPriceMinor: number }[] };
+    const body = (await quote.json()) as {
+      subtotalMinor: number;
+      lines: { unitPriceMinor: number }[];
+    };
     expect(body.lines[0]!.unitPriceMinor).toBe(product.priceMinor);
     expect(body.subtotalMinor).toBe(product.priceMinor * 2);
 

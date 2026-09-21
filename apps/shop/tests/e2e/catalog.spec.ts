@@ -30,7 +30,10 @@ test.describe('catalogue', () => {
   test('filtering narrows the result count and survives a reload', async ({ page }) => {
     await page.goto('/ru/catalog/sofas');
     await settle(page);
-    const countText = await page.getByText(/Найдено/).first().innerText();
+    const countText = await page
+      .getByText(/Найдено/)
+      .first()
+      .innerText();
     const before = Number(countText.replace(/\D/g, ''));
 
     // The panel updates the URL and the server re-renders, so assert on the
@@ -40,14 +43,22 @@ test.describe('catalogue', () => {
     await expect(sidebar.getByLabel(/Только в наличии/)).toBeChecked();
     await page.waitForFunction(() => window.location.search.includes('inStock=1'));
 
-    const afterText = await page.getByText(/Найдено/).first().innerText();
+    const afterText = await page
+      .getByText(/Найдено/)
+      .first()
+      .innerText();
     const after = Number(afterText.replace(/\D/g, ''));
     expect(after).toBeLessThanOrEqual(before);
     expect(after).toBeGreaterThan(0);
 
     await page.reload();
     await settle(page);
-    await expect(page.locator('aside').first().getByLabel(/Только в наличии/)).toBeChecked();
+    await expect(
+      page
+        .locator('aside')
+        .first()
+        .getByLabel(/Только в наличии/),
+    ).toBeChecked();
   });
 
   test('sorting by price puts the cheapest product first', async ({ page }) => {
@@ -87,7 +98,9 @@ test.describe('catalogue', () => {
     await expect(page.getByRole('heading', { name: 'Характеристики' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Отзывы' })).toBeVisible();
     // Product and breadcrumb structured data for search engines.
-    const jsonLd = (await page.locator('script[type="application/ld+json"]').allInnerTexts()).join('');
+    const jsonLd = (await page.locator('script[type="application/ld+json"]').allInnerTexts()).join(
+      '',
+    );
     expect(jsonLd).toContain('"@type":"Product"');
     expect(jsonLd).toContain('"@type":"BreadcrumbList"');
   });

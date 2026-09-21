@@ -10,7 +10,14 @@ import { OrderStatusBadge } from '@/components/account/order-status-badge';
 export const dynamic = 'force-dynamic';
 
 const STATUSES = [
-  'NEW', 'CONFIRMED', 'PAID', 'IN_PRODUCTION', 'READY', 'SHIPPED', 'DELIVERED', 'CANCELLED',
+  'NEW',
+  'CONFIRMED',
+  'PAID',
+  'IN_PRODUCTION',
+  'READY',
+  'SHIPPED',
+  'DELIVERED',
+  'CANCELLED',
 ] as const;
 
 const AdminOrders = async ({
@@ -67,7 +74,8 @@ const AdminOrders = async ({
             href={`/admin/orders?status=${item}`}
             className={`h-9 rounded-full border px-3 text-[13px] leading-[34px] ${status === item ? 'border-ink bg-ink text-white' : 'border-line bg-surface'}`}
           >
-            {dict.orderStatus[item]} <span className="tabular-nums opacity-70">{countFor(item)}</span>
+            {dict.orderStatus[item]}{' '}
+            <span className="tabular-nums opacity-70">{countFor(item)}</span>
           </Link>
         ))}
       </div>
@@ -79,7 +87,10 @@ const AdminOrders = async ({
           placeholder="Номер, имя, телефон или e-mail"
           className="h-10 min-w-64 flex-1 rounded-[var(--radius-sm)] border border-line bg-surface px-3 text-[13px]"
         />
-        <button type="submit" className="h-10 rounded-[var(--radius-sm)] bg-surface-2 px-4 text-[13px]">
+        <button
+          type="submit"
+          className="h-10 rounded-[var(--radius-sm)] bg-surface-2 px-4 text-[13px]"
+        >
           Найти
         </button>
       </form>

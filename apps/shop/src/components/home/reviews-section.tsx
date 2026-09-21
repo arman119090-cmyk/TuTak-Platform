@@ -11,7 +11,12 @@ export const ReviewsSection = async ({ dict, locale }: { dict: Dictionary; local
     orderBy: { createdAt: 'desc' },
     take: 6,
     include: {
-      product: { include: { translations: { where: { locale } }, images: { take: 1, orderBy: { sort: 'asc' } } } },
+      product: {
+        include: {
+          translations: { where: { locale } },
+          images: { take: 1, orderBy: { sort: 'asc' } },
+        },
+      },
     },
   });
   if (reviews.length === 0) return null;

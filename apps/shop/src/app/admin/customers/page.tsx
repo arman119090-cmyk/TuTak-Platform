@@ -42,7 +42,10 @@ const AdminCustomers = async ({ searchParams }: { searchParams: Promise<{ q?: st
           placeholder="E-mail, имя или телефон"
           className="h-10 min-w-64 flex-1 rounded-[var(--radius-sm)] border border-line bg-surface px-3 text-[13px]"
         />
-        <button type="submit" className="h-10 rounded-[var(--radius-sm)] bg-surface-2 px-4 text-[13px]">
+        <button
+          type="submit"
+          className="h-10 rounded-[var(--radius-sm)] bg-surface-2 px-4 text-[13px]"
+        >
           Найти
         </button>
       </form>

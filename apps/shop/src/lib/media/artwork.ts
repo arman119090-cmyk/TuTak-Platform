@@ -36,9 +36,17 @@ const rect = (
   fill: string,
   rx = 0,
   extra = '',
-): string => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}"${extra ? ' ' + extra : ''}/>`;
+): string =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}"${extra ? ' ' + extra : ''}/>`;
 
-const ellipse = (cx: number, cy: number, rx: number, ry: number, fill: string, opacity = 1): string =>
+const ellipse = (
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  fill: string,
+  opacity = 1,
+): string =>
   `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" opacity="${opacity}"/>`;
 
 /** Soft contact shadow so furniture sits on the floor instead of floating. */
@@ -138,13 +146,27 @@ const upholstered = (
     contactShadow(600, 712, width * 0.56),
     cornerModule,
     // back panel
-    rect(left + armWidth - 8, armTop - 24, width - armWidth * 2 + 16, backHeight, p.shade, radius / 2),
+    rect(
+      left + armWidth - 8,
+      armTop - 24,
+      width - armWidth * 2 + 16,
+      backHeight,
+      p.shade,
+      radius / 2,
+    ),
     cushions,
     // arms
     rect(left, armTop, armWidth, baseY - armTop, p.shade, radius),
     rect(left + 8, armTop + 8, armWidth - 16, baseY - armTop - 16, p.body, radius * 0.8),
     rect(left + width - armWidth, armTop, armWidth, baseY - armTop, p.shade, radius),
-    rect(left + width - armWidth + 8, armTop + 8, armWidth - 16, baseY - armTop - 16, p.body, radius * 0.8),
+    rect(
+      left + width - armWidth + 8,
+      armTop + 8,
+      armWidth - 16,
+      baseY - armTop - 16,
+      p.body,
+      radius * 0.8,
+    ),
     // seat base
     rect(left, seatTop + 66, width, baseY - seatTop - 66, p.shade, 10),
     rect(left + 6, seatTop + 72, width - 12, 16, p.line, 4, 'opacity="0.25"'),
@@ -169,7 +191,12 @@ const upholstered = (
 /** Beds and mattresses. */
 const bedFamily = (
   ctx: Ctx,
-  opts: { width: number; headboard: 'upholstered' | 'wooden' | 'none'; mattressOnly?: boolean; kids?: boolean },
+  opts: {
+    width: number;
+    headboard: 'upholstered' | 'wooden' | 'none';
+    mattressOnly?: boolean;
+    kids?: boolean;
+  },
 ): string => {
   const { p } = ctx;
   const { width } = opts;
@@ -179,7 +206,15 @@ const bedFamily = (
   if (opts.mattressOnly) {
     return [
       contactShadow(600, 706, width * 0.52),
-      rect(left, baseY - 150, width, 150, shift(p.body, 0.55), 22, `stroke="${shift(p.shade, 0.25)}" stroke-width="3"`),
+      rect(
+        left,
+        baseY - 150,
+        width,
+        150,
+        shift(p.body, 0.55),
+        22,
+        `stroke="${shift(p.shade, 0.25)}" stroke-width="3"`,
+      ),
       rect(left, baseY - 150, width, 36, '#FFFFFF', 22, 'opacity="0.85"'),
       rect(left + 10, baseY - 108, width - 20, 8, p.shade, 4, 'opacity="0.3"'),
       rect(left + 10, baseY - 76, width - 20, 8, p.shade, 4, 'opacity="0.3"'),
@@ -200,7 +235,15 @@ const bedFamily = (
         ? [
             rect(left - 10, headTop, width + 20, baseY - 120 - headTop, p.shade, 12),
             rect(left + 4, headTop + 14, width - 8, baseY - 150 - headTop, p.body, 8),
-            rect(left + 30, headTop + 30, width - 60, baseY - 190 - headTop, p.highlight, 6, 'opacity="0.5"'),
+            rect(
+              left + 30,
+              headTop + 30,
+              width - 60,
+              baseY - 190 - headTop,
+              p.highlight,
+              6,
+              'opacity="0.5"',
+            ),
           ].join('')
         : [
             rect(left - 14, headTop, width + 28, baseY - 130 - headTop, p.shade, 26),
@@ -364,7 +407,14 @@ const tableFamily = (
     ? [
         ellipse(600, top + thickness / 2, opts.width / 2, thickness * 1.6, p.shade),
         ellipse(600, top + thickness / 2 - 6, opts.width / 2, thickness * 1.6, p.body),
-        ellipse(600, top + thickness / 2 - 10, opts.width / 2 - 40, thickness * 1.1, p.highlight, 0.5),
+        ellipse(
+          600,
+          top + thickness / 2 - 10,
+          opts.width / 2 - 40,
+          thickness * 1.1,
+          p.highlight,
+          0.5,
+        ),
       ].join('')
     : [
         rect(left, top, opts.width, thickness, p.body, 6),
@@ -404,7 +454,14 @@ const tableFamily = (
     ? [
         rect(left + 30, top + thickness, opts.width - 60, 62, p.shade, 4),
         rect(left + 40, top + thickness + 8, (opts.width - 100) / 2, 46, p.highlight, 3),
-        rect(left + 60 + (opts.width - 100) / 2, top + thickness + 8, (opts.width - 100) / 2, 46, p.highlight, 3),
+        rect(
+          left + 60 + (opts.width - 100) / 2,
+          top + thickness + 8,
+          (opts.width - 100) / 2,
+          46,
+          p.highlight,
+          3,
+        ),
       ].join('')
     : '';
 
@@ -414,7 +471,12 @@ const tableFamily = (
 /** Chairs, stools, office chairs. */
 const seatFamily = (
   ctx: Ctx,
-  opts: { seatHeight: number; backStyle: 'slats' | 'shell' | 'upholstered' | 'mesh'; swivel?: boolean; armrests?: boolean },
+  opts: {
+    seatHeight: number;
+    backStyle: 'slats' | 'shell' | 'upholstered' | 'mesh';
+    swivel?: boolean;
+    armrests?: boolean;
+  },
 ): string => {
   const { p } = ctx;
   const baseY = 700;
@@ -431,14 +493,44 @@ const seatFamily = (
       : opts.backStyle === 'mesh'
         ? [
             rect(left + 10, backTop, seatWidth - 20, seatY - backTop - 10, p.shade, 26),
-            rect(left + 22, backTop + 12, seatWidth - 44, seatY - backTop - 36, shift(p.body, 0.25), 20, 'opacity="0.75"'),
+            rect(
+              left + 22,
+              backTop + 12,
+              seatWidth - 44,
+              seatY - backTop - 36,
+              shift(p.body, 0.25),
+              20,
+              'opacity="0.75"',
+            ),
             Array.from({ length: 6 }, (_, i) =>
-              rect(left + 26, backTop + 20 + i * 22, seatWidth - 52, 4, p.line, 2, 'opacity="0.25"'),
+              rect(
+                left + 26,
+                backTop + 20 + i * 22,
+                seatWidth - 52,
+                4,
+                p.line,
+                2,
+                'opacity="0.25"',
+              ),
             ).join(''),
           ].join('')
         : [
-            rect(left + 6, backTop, seatWidth - 12, seatY - backTop - 6, p.shade, opts.backStyle === 'shell' ? 70 : 22),
-            rect(left + 16, backTop + 10, seatWidth - 32, seatY - backTop - 28, p.body, opts.backStyle === 'shell' ? 60 : 18),
+            rect(
+              left + 6,
+              backTop,
+              seatWidth - 12,
+              seatY - backTop - 6,
+              p.shade,
+              opts.backStyle === 'shell' ? 70 : 22,
+            ),
+            rect(
+              left + 16,
+              backTop + 10,
+              seatWidth - 32,
+              seatY - backTop - 28,
+              p.body,
+              opts.backStyle === 'shell' ? 60 : 18,
+            ),
           ].join('');
 
   const arms = opts.armrests
@@ -465,9 +557,7 @@ const seatFamily = (
         '#5A4632',
         opts.seatHeight > 300 ? 0 : 10,
       ) +
-      (opts.seatHeight > 300
-        ? rect(left + 20, baseY - 120, seatWidth - 40, 12, '#5A4632', 6)
-        : '');
+      (opts.seatHeight > 300 ? rect(left + 20, baseY - 120, seatWidth - 40, 12, '#5A4632', 6) : '');
 
   return [
     contactShadow(600, 706, 150),
@@ -517,12 +607,16 @@ const doorFamily = (
     parts.push(ellipse(left + 52, top + height / 2 + 40, 10, 10, '#C0A15F'));
   } else if (opts.style === 'sliding') {
     parts.push(rect(left - 60, top - 44, width + 120, 16, '#8C8C8C', 8));
-    parts.push(rect(left + 30, top + 40, width - 60, height - 100, p.highlight, 2, 'opacity="0.35"'));
+    parts.push(
+      rect(left + 30, top + 40, width - 60, height - 100, p.highlight, 2, 'opacity="0.35"'),
+    );
     parts.push(rect(left + width - 70, top + height / 2 - 40, 34, 80, p.line, 6, 'opacity="0.55"'));
   } else if (opts.style === 'hidden') {
     parts.push(rect(left + 18, top + 18, width - 36, height - 36, p.highlight, 1, 'opacity="0.3"'));
   } else {
-    parts.push(rect(left + 44, top + 60, width - 88, height - 150, p.highlight, 2, 'opacity="0.3"'));
+    parts.push(
+      rect(left + 44, top + 60, width - 88, height - 150, p.highlight, 2, 'opacity="0.3"'),
+    );
   }
 
   if (opts.style !== 'hidden' && opts.style !== 'sliding' && opts.style !== 'entrance') {
@@ -533,7 +627,15 @@ const doorFamily = (
 };
 
 /** Kitchen composition: wall cabinets, worktop, base units, optional island. */
-const kitchenFamily = (ctx: Ctx, opts: { island?: boolean; tall?: boolean; cabinetOnly?: 'upper' | 'lower' | null; countertopOnly?: boolean }): string => {
+const kitchenFamily = (
+  ctx: Ctx,
+  opts: {
+    island?: boolean;
+    tall?: boolean;
+    cabinetOnly?: 'upper' | 'lower' | null;
+    countertopOnly?: boolean;
+  },
+): string => {
   const { p } = ctx;
   const parts: string[] = [contactShadow(600, 730, 420)];
 
@@ -544,8 +646,10 @@ const kitchenFamily = (ctx: Ctx, opts: { island?: boolean; tall?: boolean; cabin
       rect(220, 500, 760, 12, p.highlight, 6, 'opacity="0.6"'),
       rect(220, 544, 760, 14, p.shade, 4),
       // material texture
-      Array.from({ length: 16 }, (_, i) =>
-        `<path d="M${250 + i * 45} 508 q 18 12 38 4" stroke="${p.shade}" stroke-width="3" fill="none" opacity="0.28"/>`,
+      Array.from(
+        { length: 16 },
+        (_, i) =>
+          `<path d="M${250 + i * 45} 508 q 18 12 38 4" stroke="${p.shade}" stroke-width="3" fill="none" opacity="0.28"/>`,
       ).join(''),
     ].join('');
   }
@@ -597,10 +701,7 @@ const kitchenFamily = (ctx: Ctx, opts: { island?: boolean; tall?: boolean; cabin
     parts.push(rect(430, 700, 70, 8, '#8C8C8C', 4));
     parts.push(rect(700, 700, 70, 8, '#8C8C8C', 4));
     // two bar stools tucked under the overhang
-    parts.push(
-      ellipse(420, 638, 46, 12, p.shade, 0.5),
-      ellipse(780, 638, 46, 12, p.shade, 0.5),
-    );
+    parts.push(ellipse(420, 638, 46, 12, p.shade, 0.5), ellipse(780, 638, 46, 12, p.shade, 0.5));
   }
   return parts.join('');
 };
@@ -658,9 +759,21 @@ const drawFurniture = (ctx: Ctx): string => {
     case 'armchair':
       return upholstered(ctx, { width: 320, seats: 1 });
     case 'armchair-lounge':
-      return upholstered(ctx, { width: 340, seats: 1, armStyle: 'low', backHeight: 250, legHeight: 90 });
+      return upholstered(ctx, {
+        width: 340,
+        seats: 1,
+        armStyle: 'low',
+        backHeight: 250,
+        legHeight: 90,
+      });
     case 'recliner':
-      return upholstered(ctx, { width: 360, seats: 1, armStyle: 'square', recliner: true, legHeight: 20 });
+      return upholstered(ctx, {
+        width: 360,
+        seats: 1,
+        armStyle: 'square',
+        recliner: true,
+        legHeight: 20,
+      });
     case 'bed':
       return bedFamily(ctx, { width: 760, headboard: 'upholstered' });
     case 'bed-single':
@@ -672,7 +785,14 @@ const drawFurniture = (ctx: Ctx): string => {
     case 'wardrobe':
       return caseFamily(ctx, { width: 620, height: 560, doors: 3, mirrorDoor: 1 });
     case 'wardrobe-sliding':
-      return caseFamily(ctx, { width: 700, height: 560, doors: 2, sliding: true, mirrorDoor: 1, legHeight: 12 });
+      return caseFamily(ctx, {
+        width: 700,
+        height: 560,
+        doors: 2,
+        sliding: true,
+        mirrorDoor: 1,
+        legHeight: 12,
+      });
     case 'wardrobe-open':
       return caseFamily(ctx, { width: 680, height: 560, openShelves: 4, legHeight: 12 });
     case 'dresser':
@@ -841,12 +961,14 @@ export const renderArtwork = ({ artKey, colorKey, variant, seed }: ArtworkParams
 };
 
 /** URL the catalogue stores for an image; the /media route renders it. */
-export const artworkUrl = (artKey: string, colorKey: string, variant: ArtVariant, seed: number): string =>
-  `/media/art/${artKey}--${colorKey}--${variant}--${seed}.svg`;
+export const artworkUrl = (
+  artKey: string,
+  colorKey: string,
+  variant: ArtVariant,
+  seed: number,
+): string => `/media/art/${artKey}--${colorKey}--${variant}--${seed}.svg`;
 
-export const parseArtworkUrl = (
-  slug: string,
-): ArtworkParams | null => {
+export const parseArtworkUrl = (slug: string): ArtworkParams | null => {
   const match = /^([a-z-]+)--([a-zA-Z]+)--([0-3])--(\d+)\.svg$/.exec(slug);
   if (!match) return null;
   return {

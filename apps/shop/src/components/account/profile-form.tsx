@@ -41,7 +41,10 @@ export const ProfileForm = ({
   };
 
   return (
-    <form onSubmit={submit} className="max-w-xl space-y-4 rounded-[var(--radius-md)] border border-line bg-surface p-5">
+    <form
+      onSubmit={submit}
+      className="max-w-xl space-y-4 rounded-[var(--radius-md)] border border-line bg-surface p-5"
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={dict.auth.firstName} required>
           <Input
@@ -51,14 +54,20 @@ export const ProfileForm = ({
           />
         </Field>
         <Field label={dict.auth.lastName}>
-          <Input value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
+          <Input
+            value={form.lastName}
+            onChange={(event) => setForm({ ...form, lastName: event.target.value })}
+          />
         </Field>
       </div>
       <Field label={dict.auth.email} hint={dict.common.demoBadge}>
         <Input value={form.email} disabled />
       </Field>
       <Field label={dict.auth.phone} hint="+374 XX XXX XXX">
-        <Input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+        <Input
+          value={form.phone}
+          onChange={(event) => setForm({ ...form, phone: event.target.value })}
+        />
       </Field>
       <Field label={dict.account.preferredLocale}>
         <Select
@@ -77,7 +86,9 @@ export const ProfileForm = ({
         {loading ? <Loader2 width={16} height={16} className="animate-spin" /> : null}
         {dict.account.saveProfile}
       </Button>
-      <p className="text-[12px] text-muted">{locale === 'ru' ? 'DEMO: e-mail изменить нельзя.' : 'DEMO: e-mail is fixed.'}</p>
+      <p className="text-[12px] text-muted">
+        {locale === 'ru' ? 'DEMO: e-mail изменить нельзя.' : 'DEMO: e-mail is fixed.'}
+      </p>
     </form>
   );
 };

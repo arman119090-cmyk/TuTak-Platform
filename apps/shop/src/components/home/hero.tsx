@@ -62,7 +62,11 @@ export const Hero = ({ slides, locale }: { slides: Slide[]; locale: Locale }) =>
               href={`/${locale}/catalog`}
               className="inline-flex h-13 min-h-[52px] items-center rounded-[var(--radius-sm)] border border-line-strong bg-surface px-7 text-[15px] hover:border-ink"
             >
-              {locale === 'hy' ? 'Ամբողջ կատալոգը' : locale === 'en' ? 'Full catalogue' : 'Весь каталог'}
+              {locale === 'hy'
+                ? 'Ամբողջ կատալոգը'
+                : locale === 'en'
+                  ? 'Full catalogue'
+                  : 'Весь каталог'}
             </Link>
           </div>
 

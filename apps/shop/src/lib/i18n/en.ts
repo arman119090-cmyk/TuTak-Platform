@@ -436,7 +436,12 @@ export const en: Dictionary = {
     DELIVERED: 'Delivered',
     CANCELLED: 'Cancelled',
   },
-  paymentStatus: { PENDING: 'Awaiting payment', PAID: 'Paid', FAILED: 'Declined', REFUNDED: 'Refunded' },
+  paymentStatus: {
+    PENDING: 'Awaiting payment',
+    PAID: 'Paid',
+    FAILED: 'Declined',
+    REFUNDED: 'Refunded',
+  },
   footer: {
     catalogTitle: 'Catalogue',
     companyTitle: 'Company',

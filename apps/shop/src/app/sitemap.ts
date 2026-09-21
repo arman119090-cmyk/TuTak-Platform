@@ -10,7 +10,10 @@ import { CONTENT_PAGES } from '@/data/content-pages';
  */
 const sitemap = async (): Promise<MetadataRoute.Sitemap> => {
   const [categories, products] = await Promise.all([
-    prisma.category.findMany({ where: { isActive: true }, select: { slug: true, updatedAt: true } }),
+    prisma.category.findMany({
+      where: { isActive: true },
+      select: { slug: true, updatedAt: true },
+    }),
     prisma.product.findMany({
       where: { isActive: true },
       select: { slug: true, updatedAt: true },
@@ -18,7 +21,11 @@ const sitemap = async (): Promise<MetadataRoute.Sitemap> => {
     }),
   ]);
 
-  const entry = (path: string, lastModified: Date, priority: number): MetadataRoute.Sitemap[number] => ({
+  const entry = (
+    path: string,
+    lastModified: Date,
+    priority: number,
+  ): MetadataRoute.Sitemap[number] => ({
     url: `${siteUrl}${path}`,
     lastModified,
     changeFrequency: 'weekly',

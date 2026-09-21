@@ -16,10 +16,21 @@ import { Alert, Button, Field, Input, Select, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/components/providers/store-provider';
 
-const FACADES: KitchenFacade[] = ['plasticHpl', 'frameMdf', 'matteLacquer', 'glossLacquer', 'veneer'];
+const FACADES: KitchenFacade[] = [
+  'plasticHpl',
+  'frameMdf',
+  'matteLacquer',
+  'glossLacquer',
+  'veneer',
+];
 const COLOR_KEYS = ['white', 'ivory', 'beige', 'olive', 'graphite', 'anthracite', 'oak', 'navy'];
 const STYLE_KEYS = ['modern', 'minimal', 'scandi', 'classic', 'neoclassic', 'loft'];
-const BUDGETS = ['до 1 000 000 ֏', '1 000 000 — 1 500 000 ֏', '1 500 000 — 2 500 000 ֏', 'от 2 500 000 ֏'];
+const BUDGETS = [
+  'до 1 000 000 ֏',
+  '1 000 000 — 1 500 000 ֏',
+  '1 500 000 — 2 500 000 ֏',
+  'от 2 500 000 ֏',
+];
 
 /** The "Рассчитать кухню" flow: seven answers, a live estimate and a lead. */
 export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dictionary }) => {
@@ -109,7 +120,11 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
   return (
     <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-5 rounded-[var(--radius-md)] border border-line bg-surface p-5 md:p-6">
-        <Field label={dict.kitchen.length} required hint={`${MIN_KITCHEN_LENGTH_M} — ${MAX_KITCHEN_LENGTH_M} м`}>
+        <Field
+          label={dict.kitchen.length}
+          required
+          hint={`${MIN_KITCHEN_LENGTH_M} — ${MAX_KITCHEN_LENGTH_M} м`}
+        >
           <div className="flex items-center gap-4">
             <input
               type="range"
@@ -124,14 +139,18 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
             <Input
               inputMode="decimal"
               value={form.length}
-              onChange={(event) => setForm({ ...form, length: event.target.value.replace(',', '.') })}
+              onChange={(event) =>
+                setForm({ ...form, length: event.target.value.replace(',', '.') })
+              }
               className="w-24 text-center"
             />
           </div>
         </Field>
 
         <div>
-          <span className="mb-2 block text-[13px] font-medium text-ink-soft">{dict.kitchen.shape} *</span>
+          <span className="mb-2 block text-[13px] font-medium text-ink-soft">
+            {dict.kitchen.shape} *
+          </span>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {shapes.map((shape) => (
               <button
@@ -140,7 +159,9 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
                 onClick={() => setForm({ ...form, shape: shape.key })}
                 className={cn(
                   'h-11 rounded-[var(--radius-sm)] border text-[13px] transition-colors',
-                  form.shape === shape.key ? 'border-ink bg-ink text-white' : 'border-line-strong hover:border-ink',
+                  form.shape === shape.key
+                    ? 'border-ink bg-ink text-white'
+                    : 'border-line-strong hover:border-ink',
                 )}
               >
                 {shape.label}
@@ -151,7 +172,10 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={dict.kitchen.style}>
-            <Select value={form.style} onChange={(event) => setForm({ ...form, style: event.target.value })}>
+            <Select
+              value={form.style}
+              onChange={(event) => setForm({ ...form, style: event.target.value })}
+            >
               {STYLE_KEYS.map((key) => (
                 <option key={key} value={key}>
                   {STYLES[key]?.[locale] ?? key}
@@ -162,7 +186,9 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
           <Field label={dict.kitchen.facade}>
             <Select
               value={form.facade}
-              onChange={(event) => setForm({ ...form, facade: event.target.value as KitchenFacade })}
+              onChange={(event) =>
+                setForm({ ...form, facade: event.target.value as KitchenFacade })
+              }
             >
               {FACADES.map((key) => (
                 <option key={key} value={key}>
@@ -174,7 +200,9 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
         </div>
 
         <div>
-          <span className="mb-2 block text-[13px] font-medium text-ink-soft">{dict.kitchen.color}</span>
+          <span className="mb-2 block text-[13px] font-medium text-ink-soft">
+            {dict.kitchen.color}
+          </span>
           <div className="flex flex-wrap gap-2">
             {COLOR_KEYS.map((key) => (
               <button
@@ -188,14 +216,20 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
                   form.color === key ? 'border-ink' : 'border-transparent hover:border-line-strong',
                 )}
               >
-                <span className="h-7 w-7 rounded-full border border-line" style={{ background: COLORS[key]?.hex }} />
+                <span
+                  className="h-7 w-7 rounded-full border border-line"
+                  style={{ background: COLORS[key]?.hex }}
+                />
               </button>
             ))}
           </div>
         </div>
 
         <Field label={dict.kitchen.budget}>
-          <Select value={form.budget} onChange={(event) => setForm({ ...form, budget: event.target.value })}>
+          <Select
+            value={form.budget}
+            onChange={(event) => setForm({ ...form, budget: event.target.value })}
+          >
             {BUDGETS.map((budget) => (
               <option key={budget} value={budget}>
                 {budget}
@@ -205,12 +239,20 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
         </Field>
 
         <Field label={dict.kitchen.comment}>
-          <Textarea value={form.comment} onChange={(event) => setForm({ ...form, comment: event.target.value })} />
+          <Textarea
+            value={form.comment}
+            onChange={(event) => setForm({ ...form, comment: event.target.value })}
+          />
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={dict.kitchen.name} required>
-            <Input required minLength={2} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <Input
+              required
+              minLength={2}
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
           </Field>
           <Field label={dict.kitchen.phone} required hint="+374 XX XXX XXX">
             <Input
@@ -236,9 +278,7 @@ export const KitchenCalculator = ({ locale, dict }: { locale: Locale; dict: Dict
           <p className="mt-4 text-[28px] font-semibold leading-tight tabular-nums">
             {formatMoney(estimate.fromMinor)}
           </p>
-          <p className="text-[13px] text-muted">
-            — {formatMoney(estimate.toMinor)}
-          </p>
+          <p className="text-[13px] text-muted">— {formatMoney(estimate.toMinor)}</p>
           <dl className="mt-4 space-y-1.5 border-t border-line pt-4 text-[13px]">
             <div className="flex justify-between">
               <dt className="text-muted">{dict.kitchen.length}</dt>

@@ -6,7 +6,11 @@ import { Loader2 } from 'lucide-react';
 import type { Dictionary, Locale } from '@/lib/i18n';
 import { Button, Price, Rating, Skeleton } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
-import { OptionPicker, QuantityStepper, type ProductOptionView } from '@/components/product/option-picker';
+import {
+  OptionPicker,
+  QuantityStepper,
+  type ProductOptionView,
+} from '@/components/product/option-picker';
 import { useStore } from '@/components/providers/store-provider';
 
 type QuickViewData = {
@@ -64,7 +68,9 @@ export const QuickView = ({
 
   const deltas = data
     ? Object.entries(selected).reduce((sum, [kind, valueKey]) => {
-        const option = data.options.find((item) => item.kind === kind && item.valueKey === valueKey);
+        const option = data.options.find(
+          (item) => item.kind === kind && item.valueKey === valueKey,
+        );
         return sum + (option?.priceDeltaMinor ?? 0);
       }, 0)
     : 0;
@@ -98,7 +104,12 @@ export const QuickView = ({
                   className={`overflow-hidden rounded-[var(--radius-xs)] border-2 ${index === active ? 'border-ink' : 'border-transparent'}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={image} alt="" className="h-14 w-20 bg-surface-2 object-cover" loading="lazy" />
+                  <img
+                    src={image}
+                    alt=""
+                    className="h-14 w-20 bg-surface-2 object-cover"
+                    loading="lazy"
+                  />
                 </button>
               ))}
             </div>
@@ -113,19 +124,29 @@ export const QuickView = ({
             </div>
             <p className="mt-3 text-sm text-muted">{data.shortDescription}</p>
             <div className="mt-4">
-              <Price amountMinor={data.priceMinor + deltas} oldAmountMinor={data.oldPriceMinor ? data.oldPriceMinor + deltas : null} size="lg" />
+              <Price
+                amountMinor={data.priceMinor + deltas}
+                oldAmountMinor={data.oldPriceMinor ? data.oldPriceMinor + deltas : null}
+                size="lg"
+              />
             </div>
             <div className="mt-5">
               <OptionPicker
                 options={data.options}
                 selected={selected}
-                onSelect={(kind, valueKey) => setSelected((current) => ({ ...current, [kind]: valueKey }))}
+                onSelect={(kind, valueKey) =>
+                  setSelected((current) => ({ ...current, [kind]: valueKey }))
+                }
                 locale={locale}
                 dict={dict}
               />
             </div>
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <QuantityStepper value={quantity} onChange={setQuantity} label={dict.common.quantity} />
+              <QuantityStepper
+                value={quantity}
+                onChange={setQuantity}
+                label={dict.common.quantity}
+              />
               <Button
                 size="lg"
                 className="flex-1"

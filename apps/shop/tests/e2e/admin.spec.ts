@@ -80,7 +80,10 @@ test.describe('admin panel', () => {
     await page.getByLabel(/^Цена, /).fill('123400');
 
     // Russian copy only: the editor must not demand all three languages.
-    const russianBlock = page.locator('div').filter({ has: page.getByText('ru', { exact: true }) }).last();
+    const russianBlock = page
+      .locator('div')
+      .filter({ has: page.getByText('ru', { exact: true }) })
+      .last();
     await russianBlock.getByLabel(/^Название/).fill(`E2E диван ${suffix}`);
 
     await page.getByRole('button', { name: 'Сохранить' }).click();
@@ -132,7 +135,9 @@ test.describe('admin panel', () => {
     expect(created.ok()).toBeTruthy();
 
     const suggest = await page.request.get('/api/search/suggest?q=стул&locale=ru');
-    const { products } = (await suggest.json()) as { products: { id: string; priceMinor: number }[] };
+    const { products } = (await suggest.json()) as {
+      products: { id: string; priceMinor: number }[];
+    };
     const quote = await page.request.post('/api/cart/quote', {
       data: { items: [{ productId: products[0]!.id, quantity: 1 }], promoCode: code, locale: 'ru' },
     });

@@ -68,7 +68,10 @@ test.describe('mobile storefront', () => {
     await settle(page);
     await page.getByRole('button', { name: /Фильтры/ }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('dialog').getByLabel(/Только в наличии/).click();
+    await page
+      .getByRole('dialog')
+      .getByLabel(/Только в наличии/)
+      .click();
     await page.waitForFunction(() => window.location.search.includes('inStock=1'));
     await expect(page.getByText(/Найдено/)).toBeVisible();
   });

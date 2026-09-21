@@ -14,8 +14,14 @@ const AdminTaxonomy = async () => {
         _count: { select: { products: true } },
       },
     }),
-    prisma.brand.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { products: true } } } }),
-    prisma.collection.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { products: true } } } }),
+    prisma.brand.findMany({
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { products: true } } },
+    }),
+    prisma.collection.findMany({
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { products: true } } },
+    }),
   ]);
 
   return (

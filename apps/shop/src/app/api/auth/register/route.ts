@@ -6,12 +6,19 @@ import { setSessionCookie, signSession } from '@/lib/auth/session';
 import { authAttemptsLimit, clientKey, rateLimit } from '@/lib/rate-limit';
 
 export const POST = async (request: Request): Promise<Response> => {
-  const limit = rateLimit(clientKey(request, 'register'), Math.max(5, Math.floor(authAttemptsLimit() / 2)), 600);
+  const limit = rateLimit(
+    clientKey(request, 'register'),
+    Math.max(5, Math.floor(authAttemptsLimit() / 2)),
+    600,
+  );
   if (!limit.allowed) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
 
   const parsed = registerSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid_request', fields: fieldErrors(parsed.error) }, { status: 400 });
+    return NextResponse.json(
+      { error: 'invalid_request', fields: fieldErrors(parsed.error) },
+      { status: 400 },
+    );
   }
 
   const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });

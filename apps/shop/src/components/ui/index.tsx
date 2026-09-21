@@ -1,5 +1,11 @@
 import Link from 'next/link';
-import type { AnchorHTMLAttributes, ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from 'react';
 import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMoney, type CurrencyCode } from '@/lib/money';
@@ -27,8 +33,11 @@ const BUTTON_SIZES: Record<ButtonSize, string> = {
   lg: 'h-13 px-7 text-[15px] min-h-[52px]',
 };
 
-export const buttonClass = (variant: ButtonVariant = 'primary', size: ButtonSize = 'md', extra?: string): string =>
-  cn(BUTTON_BASE, BUTTON_VARIANTS[variant], BUTTON_SIZES[size], extra);
+export const buttonClass = (
+  variant: ButtonVariant = 'primary',
+  size: ButtonSize = 'md',
+  extra?: string,
+): string => cn(BUTTON_BASE, BUTTON_VARIANTS[variant], BUTTON_SIZES[size], extra);
 
 export const Button = ({
   variant = 'primary',
@@ -45,9 +54,11 @@ export const LinkButton = ({
   className,
   href,
   ...props
-}: AnchorHTMLAttributes<HTMLAnchorElement> & { variant?: ButtonVariant; size?: ButtonSize; href: string }) => (
-  <Link href={href} className={buttonClass(variant, size, className)} {...props} />
-);
+}: AnchorHTMLAttributes<HTMLAnchorElement> & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  href: string;
+}) => <Link href={href} className={buttonClass(variant, size, className)} {...props} />;
 
 export const Badge = ({
   tone = 'neutral',
@@ -136,7 +147,9 @@ export const Rating = ({
         />
       ))}
     </span>
-    {showValue ? <span className="font-medium text-ink-soft tabular-nums">{value.toFixed(1)}</span> : null}
+    {showValue ? (
+      <span className="font-medium text-ink-soft tabular-nums">{value.toFixed(1)}</span>
+    ) : null}
     {typeof count === 'number' ? <span className="tabular-nums">({count})</span> : null}
   </span>
 );
@@ -155,8 +168,13 @@ export const Textarea = ({
   <textarea className={cn(FIELD_BASE, 'py-2.5 min-h-24 resize-y', className)} {...props} />
 );
 
-export const Select = ({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) => (
-  <select className={cn(FIELD_BASE, 'h-11 pr-8 appearance-none bg-no-repeat', className)}
+export const Select = ({
+  className,
+  children,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement>) => (
+  <select
+    className={cn(FIELD_BASE, 'h-11 pr-8 appearance-none bg-no-repeat', className)}
     style={{
       backgroundImage:
         "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%2378716a' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")",
@@ -211,7 +229,9 @@ export const Checkbox = ({
     />
     <span className="text-sm leading-snug">
       <span className="text-ink">{label}</span>
-      {description ? <span className="mt-0.5 block text-[12px] text-muted">{description}</span> : null}
+      {description ? (
+        <span className="mt-0.5 block text-[12px] text-muted">{description}</span>
+      ) : null}
     </span>
   </label>
 );
@@ -280,11 +300,7 @@ export const Skeleton = ({ className }: { className?: string }) => (
   <div className={cn('skeleton rounded-[var(--radius-sm)]', className)} />
 );
 
-export const Breadcrumbs = ({
-  items,
-}: {
-  items: { label: string; href?: string }[];
-}) => (
+export const Breadcrumbs = ({ items }: { items: { label: string; href?: string }[] }) => (
   <nav aria-label="breadcrumb" className="hide-scrollbar mb-5 overflow-x-auto">
     <ol className="flex items-center gap-2 whitespace-nowrap text-[13px] text-muted">
       {items.map((item, index) => (
@@ -294,9 +310,15 @@ export const Breadcrumbs = ({
               {item.label}
             </Link>
           ) : (
-            <span className={index === items.length - 1 ? 'text-ink-soft' : undefined}>{item.label}</span>
+            <span className={index === items.length - 1 ? 'text-ink-soft' : undefined}>
+              {item.label}
+            </span>
           )}
-          {index < items.length - 1 ? <span aria-hidden className="text-line-strong">/</span> : null}
+          {index < items.length - 1 ? (
+            <span aria-hidden className="text-line-strong">
+              /
+            </span>
+          ) : null}
         </li>
       ))}
     </ol>

@@ -21,7 +21,13 @@ export const CatalogGrid = ({
     return (
       <div className="flex flex-col gap-3">
         {products.map((product) => (
-          <ProductCardView key={product.id} product={product} locale={locale} dict={dict} layout="list" />
+          <ProductCardView
+            key={product.id}
+            product={product}
+            locale={locale}
+            dict={dict}
+            layout="list"
+          />
         ))}
       </div>
     );

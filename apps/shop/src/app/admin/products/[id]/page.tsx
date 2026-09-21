@@ -12,7 +12,11 @@ const AdminProductEdit = async ({ params }: { params: Promise<{ id: string }> })
   const [product, refs] = await Promise.all([
     prisma.product.findUnique({
       where: { id },
-      include: { translations: true, options: { orderBy: { sort: 'asc' } }, images: { orderBy: { sort: 'asc' } } },
+      include: {
+        translations: true,
+        options: { orderBy: { sort: 'asc' } },
+        images: { orderBy: { sort: 'asc' } },
+      },
     }),
     loadProductFormRefs(),
   ]);
@@ -24,7 +28,10 @@ const AdminProductEdit = async ({ params }: { params: Promise<{ id: string }> })
         title={product.translations.find((item) => item.locale === 'ru')?.name ?? product.sku}
         subtitle={`Артикул ${product.sku}`}
         action={
-          <Link href={`/ru/product/${product.slug}`} className="text-[13px] text-accent hover:underline">
+          <Link
+            href={`/ru/product/${product.slug}`}
+            className="text-[13px] text-accent hover:underline"
+          >
             Открыть в магазине →
           </Link>
         }

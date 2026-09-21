@@ -77,7 +77,11 @@ export const RequestsInbox = ({ requests }: { requests: RequestView[] }) => {
   };
 
   if (requests.length === 0) {
-    return <Panel><p className="p-5 text-[13px] text-muted">Заявок нет.</p></Panel>;
+    return (
+      <Panel>
+        <p className="p-5 text-[13px] text-muted">Заявок нет.</p>
+      </Panel>
+    );
   }
 
   return (

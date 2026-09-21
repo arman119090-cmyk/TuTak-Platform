@@ -102,7 +102,9 @@ export const CartView = ({ locale, dict }: { locale: Locale; dict: Dictionary })
     await refresh(code);
   };
 
-  const freeDeliveryGap = quote ? FREE_DELIVERY_THRESHOLD_MINOR - (quote.subtotalMinor - quote.promoDiscountMinor) : 0;
+  const freeDeliveryGap = quote
+    ? FREE_DELIVERY_THRESHOLD_MINOR - (quote.subtotalMinor - quote.promoDiscountMinor)
+    : 0;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
@@ -155,7 +157,15 @@ export const CartView = ({ locale, dict }: { locale: Locale; dict: Dictionary })
                     <p className="mt-1 flex flex-wrap gap-x-3 text-[12px] text-muted">
                       {Object.entries(line.options).map(([kind, value]) => (
                         <span key={kind}>
-                          {optionLabel({ kind: kind as 'COLOR', valueKey: value, label: null, priceDeltaMinor: 0 }, locale)}
+                          {optionLabel(
+                            {
+                              kind: kind as 'COLOR',
+                              valueKey: value,
+                              label: null,
+                              priceDeltaMinor: 0,
+                            },
+                            locale,
+                          )}
                         </span>
                       ))}
                     </p>
@@ -257,14 +267,18 @@ export const CartView = ({ locale, dict }: { locale: Locale; dict: Dictionary })
               <dt className="font-medium">{dict.cart.total}</dt>
               <dd className="text-[24px] font-semibold tabular-nums">
                 {quote ? formatMoney(quote.subtotalMinor - quote.promoDiscountMinor) : '—'}
-                {loading ? <Loader2 width={14} height={14} className="ml-2 inline animate-spin" /> : null}
+                {loading ? (
+                  <Loader2 width={14} height={14} className="ml-2 inline animate-spin" />
+                ) : null}
               </dd>
             </div>
           </dl>
 
           {freeDeliveryGap > 0 ? (
             <p className="mt-3 rounded-[var(--radius-sm)] bg-surface-2 px-3 py-2 text-[12px] text-muted">
-              {fill(dict.product.freeDeliveryFrom, { price: formatMoney(FREE_DELIVERY_THRESHOLD_MINOR) })}
+              {fill(dict.product.freeDeliveryFrom, {
+                price: formatMoney(FREE_DELIVERY_THRESHOLD_MINOR),
+              })}
             </p>
           ) : null}
 

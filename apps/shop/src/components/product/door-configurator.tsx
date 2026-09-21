@@ -42,7 +42,14 @@ export const DoorConfigurator = ({
   locale,
   dict,
 }: {
-  product: { id: string; sku: string; slug: string; name: string; image: string; priceMinor: number };
+  product: {
+    id: string;
+    sku: string;
+    slug: string;
+    name: string;
+    image: string;
+    priceMinor: number;
+  };
   options: DoorOptionDto[];
   locale: Locale;
   dict: Dictionary;
@@ -103,13 +110,17 @@ export const DoorConfigurator = ({
                     }
                     className={cn(
                       'inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-sm)] border px-3 py-1.5 text-left text-[13px] transition-colors',
-                      active ? 'border-ink bg-ink text-white' : 'border-line-strong hover:border-ink',
+                      active
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line-strong hover:border-ink',
                     )}
                   >
                     {active ? <Check width={14} height={14} /> : null}
                     <span>{option.labels[locale] ?? option.optionKey}</span>
                     <span className={cn('text-[11px]', active ? 'text-white/70' : 'text-muted')}>
-                      {option.priceMinor > 0 ? `+${formatMoney(option.priceMinor)}` : dict.door.included}
+                      {option.priceMinor > 0
+                        ? `+${formatMoney(option.priceMinor)}`
+                        : dict.door.included}
                     </span>
                   </button>
                 );

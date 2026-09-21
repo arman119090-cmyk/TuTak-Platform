@@ -16,7 +16,13 @@ export type CategoryRow = {
   isActive: boolean;
 };
 
-export type BrandRow = { id: string; slug: string; name: string; country: string; productCount: number };
+export type BrandRow = {
+  id: string;
+  slug: string;
+  name: string;
+  country: string;
+  productCount: number;
+};
 export type CollectionRow = { id: string; slug: string; name: string; productCount: number };
 
 /** Create/rename categories, brands and collections without leaving the panel. */
@@ -54,10 +60,19 @@ export const TaxonomyManager = ({
             slug: form.slug,
             parentId: form.parentId || null,
             artKey: form.artKey,
-            names: { ru: form.nameRu, hy: form.nameHy || form.nameRu, en: form.nameEn || form.nameRu },
+            names: {
+              ru: form.nameRu,
+              hy: form.nameHy || form.nameRu,
+              en: form.nameEn || form.nameRu,
+            },
           }
         : dialog === 'collection'
-          ? { kind: 'collection', slug: form.slug, name: form.nameRu, brandId: form.brandId || null }
+          ? {
+              kind: 'collection',
+              slug: form.slug,
+              name: form.nameRu,
+              brandId: form.brandId || null,
+            }
           : {
               slug: form.slug,
               name: form.nameRu,
@@ -167,7 +182,11 @@ export const TaxonomyManager = ({
       {dialog ? (
         <Modal
           title={
-            dialog === 'category' ? 'Новая категория' : dialog === 'brand' ? 'Новый бренд' : 'Новая коллекция'
+            dialog === 'category'
+              ? 'Новая категория'
+              : dialog === 'brand'
+                ? 'Новый бренд'
+                : 'Новая коллекция'
           }
           onClose={() => setDialog(null)}
         >
@@ -180,20 +199,33 @@ export const TaxonomyManager = ({
               />
             </Field>
             <Field label="Название (RU)" required>
-              <Input required value={form.nameRu} onChange={(event) => setForm({ ...form, nameRu: event.target.value })} />
+              <Input
+                required
+                value={form.nameRu}
+                onChange={(event) => setForm({ ...form, nameRu: event.target.value })}
+              />
             </Field>
             {dialog === 'category' ? (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Название (HY)">
-                    <Input value={form.nameHy} onChange={(event) => setForm({ ...form, nameHy: event.target.value })} />
+                    <Input
+                      value={form.nameHy}
+                      onChange={(event) => setForm({ ...form, nameHy: event.target.value })}
+                    />
                   </Field>
                   <Field label="Название (EN)">
-                    <Input value={form.nameEn} onChange={(event) => setForm({ ...form, nameEn: event.target.value })} />
+                    <Input
+                      value={form.nameEn}
+                      onChange={(event) => setForm({ ...form, nameEn: event.target.value })}
+                    />
                   </Field>
                 </div>
                 <Field label="Родительская категория">
-                  <Select value={form.parentId} onChange={(event) => setForm({ ...form, parentId: event.target.value })}>
+                  <Select
+                    value={form.parentId}
+                    onChange={(event) => setForm({ ...form, parentId: event.target.value })}
+                  >
                     <option value="">— корневая —</option>
                     {categories
                       .filter((category) => category.parentName === null)
@@ -205,7 +237,10 @@ export const TaxonomyManager = ({
                   </Select>
                 </Field>
                 <Field label="Ключ иллюстрации" hint="например sofa, bed, door, kitchen">
-                  <Input value={form.artKey} onChange={(event) => setForm({ ...form, artKey: event.target.value })} />
+                  <Input
+                    value={form.artKey}
+                    onChange={(event) => setForm({ ...form, artKey: event.target.value })}
+                  />
                 </Field>
               </>
             ) : null}
@@ -215,7 +250,9 @@ export const TaxonomyManager = ({
                   <Input
                     maxLength={2}
                     value={form.country}
-                    onChange={(event) => setForm({ ...form, country: event.target.value.toUpperCase() })}
+                    onChange={(event) =>
+                      setForm({ ...form, country: event.target.value.toUpperCase() })
+                    }
                   />
                 </Field>
                 <Checkbox
@@ -227,7 +264,10 @@ export const TaxonomyManager = ({
             ) : null}
             {dialog === 'collection' ? (
               <Field label="Бренд">
-                <Select value={form.brandId} onChange={(event) => setForm({ ...form, brandId: event.target.value })}>
+                <Select
+                  value={form.brandId}
+                  onChange={(event) => setForm({ ...form, brandId: event.target.value })}
+                >
                   <option value="">—</option>
                   {brands.map((brand) => (
                     <option key={brand.id} value={brand.id}>

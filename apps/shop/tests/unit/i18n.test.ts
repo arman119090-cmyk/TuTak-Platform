@@ -29,7 +29,10 @@ describe('dictionaries', () => {
       for (const key of leafKeys(dictionary)) {
         const value = key
           .split('.')
-          .reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], dictionary) as string;
+          .reduce<unknown>(
+            (node, part) => (node as Record<string, unknown>)[part],
+            dictionary,
+          ) as string;
         expect(value.trim().length).toBeGreaterThan(0);
         // A key leaking into the UI would look like "nav.catalog".
         expect(value).not.toMatch(/^[a-z]+\.[a-zA-Z.]+$/);

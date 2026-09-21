@@ -104,7 +104,10 @@ export const otpRequestSchema = z.object({ phone: phoneSchema });
 
 export const otpVerifySchema = z.object({
   phone: phoneSchema,
-  code: z.string().trim().regex(/^\d{6}$/),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/),
 });
 
 export const profileSchema = z.object({
@@ -144,10 +147,15 @@ export const requestSchema = z.object({
   comment: z.string().trim().max(1000).optional().default(''),
   productId: z.string().max(64).optional().nullable(),
   locale: localeSchema.default('ru'),
-  payload: z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()])).default({}),
+  payload: z
+    .record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()]))
+    .default({}),
 });
 
-export const newsletterSchema = z.object({ email: emailSchema, locale: localeSchema.default('ru') });
+export const newsletterSchema = z.object({
+  email: emailSchema,
+  locale: localeSchema.default('ru'),
+});
 
 export const reviewSchema = z.object({
   productId: z.string().min(1).max(64),
@@ -181,7 +189,9 @@ export const adminProductSchema = z.object({
   roomKey: z.string().trim().min(2).max(40),
   colorKeys: z.array(z.string().max(40)).max(12),
   materialKeys: z.array(z.string().max(40)).max(12),
-  specs: z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()])).default({}),
+  specs: z
+    .record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()]))
+    .default({}),
   isNew: z.boolean().default(false),
   isHit: z.boolean().default(false),
   isPremium: z.boolean().default(false),
@@ -198,7 +208,9 @@ export const adminProductSchema = z.object({
       }),
     )
     .min(1),
-  images: z.array(z.object({ url: z.string().min(1).max(500), alt: z.string().max(200).default('') })).default([]),
+  images: z
+    .array(z.object({ url: z.string().min(1).max(500), alt: z.string().max(200).default('') }))
+    .default([]),
   options: z
     .array(
       z.object({

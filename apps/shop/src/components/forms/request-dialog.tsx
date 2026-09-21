@@ -45,7 +45,12 @@ export const RequestDialog = ({
   const { toast } = useStore();
   const [state, setState] = useState<'idle' | 'loading' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<Record<string, string>>({ name: '', phone: '', email: '', comment: '' });
+  const [form, setForm] = useState<Record<string, string>>({
+    name: '',
+    phone: '',
+    email: '',
+    comment: '',
+  });
 
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -99,7 +104,12 @@ export const RequestDialog = ({
       ) : (
         <form onSubmit={submit} className="space-y-4">
           <Field label={dict.forms.name} required>
-            <Input required minLength={2} value={form.name} onChange={(event) => set('name', event.target.value)} />
+            <Input
+              required
+              minLength={2}
+              value={form.name}
+              onChange={(event) => set('name', event.target.value)}
+            />
           </Field>
           <Field label={dict.forms.phone} required hint="+374 XX XXX XXX">
             <Input
@@ -111,7 +121,11 @@ export const RequestDialog = ({
             />
           </Field>
           <Field label={dict.forms.email}>
-            <Input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} />
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(event) => set('email', event.target.value)}
+            />
           </Field>
           {(extraFields ?? []).map((field) => (
             <Field key={field.name} label={field.label}>
@@ -123,12 +137,17 @@ export const RequestDialog = ({
             </Field>
           ))}
           <Field label={dict.forms.comment}>
-            <Textarea value={form.comment} onChange={(event) => set('comment', event.target.value)} />
+            <Textarea
+              value={form.comment}
+              onChange={(event) => set('comment', event.target.value)}
+            />
           </Field>
           {error ? <p className="text-[13px] text-sale">{error}</p> : null}
           <p className="text-[12px] text-muted">{dict.forms.agree}</p>
           <Button type="submit" size="lg" className="w-full" disabled={state === 'loading'}>
-            {state === 'loading' ? <Loader2 width={16} height={16} className="animate-spin" /> : null}
+            {state === 'loading' ? (
+              <Loader2 width={16} height={16} className="animate-spin" />
+            ) : null}
             {state === 'loading' ? dict.forms.sending : dict.forms.submit}
           </Button>
         </form>
@@ -152,7 +171,9 @@ export const CallbackDialog = ({
     text={dict.forms.callbackText}
     locale={locale}
     dict={dict}
-    extraFields={[{ name: 'preferredTime', label: dict.forms.preferredTime, placeholder: '10:00 — 14:00' }]}
+    extraFields={[
+      { name: 'preferredTime', label: dict.forms.preferredTime, placeholder: '10:00 — 14:00' },
+    ]}
     onClose={onClose}
   />
 );

@@ -301,12 +301,14 @@ export const ru = {
     cardCvc: 'CVC',
     payDemoSuccess: 'Провести успешную оплату',
     payDemoFail: 'Смоделировать отказ банка',
-    paymentFailed: 'Банк отклонил операцию. Попробуйте другую карту или выберите оплату при доставке.',
+    paymentFailed:
+      'Банк отклонил операцию. Попробуйте другую карту или выберите оплату при доставке.',
     review: 'Проверьте заказ',
     placeOrder: 'Подтвердить заказ',
     processing: 'Оформляем заказ…',
     successTitle: 'Заказ {number} оформлен',
-    successText: 'Мы отправили подтверждение на {email}. Менеджер свяжется с вами для согласования доставки.',
+    successText:
+      'Мы отправили подтверждение на {email}. Менеджер свяжется с вами для согласования доставки.',
     successToAccount: 'Смотреть в личном кабинете',
     successToCatalog: 'Продолжить покупки',
     agreeOffer: 'Оформляя заказ, вы соглашаетесь с условиями публичной оферты',
@@ -435,7 +437,12 @@ export const ru = {
     DELIVERED: 'Доставлен',
     CANCELLED: 'Отменён',
   },
-  paymentStatus: { PENDING: 'Ожидает оплаты', PAID: 'Оплачен', FAILED: 'Отклонён', REFUNDED: 'Возвращён' },
+  paymentStatus: {
+    PENDING: 'Ожидает оплаты',
+    PAID: 'Оплачен',
+    FAILED: 'Отклонён',
+    REFUNDED: 'Возвращён',
+  },
   footer: {
     catalogTitle: 'Каталог',
     companyTitle: 'Компания',

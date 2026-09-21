@@ -44,7 +44,11 @@ export const Modal = ({
   } as const;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="absolute inset-0 bg-ink/45 backdrop-blur-[2px]" onClick={onClose} />
       <div
         className={cn(

@@ -63,7 +63,11 @@ export const ImportForm = () => {
       <Panel>
         <div className="space-y-4 p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Select value={format} onChange={(event) => setFormat(event.target.value as 'csv' | 'json')} className="w-40">
+            <Select
+              value={format}
+              onChange={(event) => setFormat(event.target.value as 'csv' | 'json')}
+              className="w-40"
+            >
               <option value="csv">CSV</option>
               <option value="json">JSON</option>
             </Select>
@@ -105,10 +109,18 @@ export const ImportForm = () => {
       {result ? (
         <Panel title={result.dryRun ? 'Результат проверки' : 'Результат импорта'}>
           <div className="flex flex-wrap gap-6 border-b border-line px-4 py-3 text-[13px]">
-            <span>Строк: <b className="tabular-nums">{result.total}</b></span>
-            <span className="text-success">Создано: <b className="tabular-nums">{result.created}</b></span>
-            <span className="text-info">Обновлено: <b className="tabular-nums">{result.updated}</b></span>
-            <span className="text-sale">Пропущено: <b className="tabular-nums">{result.skipped}</b></span>
+            <span>
+              Строк: <b className="tabular-nums">{result.total}</b>
+            </span>
+            <span className="text-success">
+              Создано: <b className="tabular-nums">{result.created}</b>
+            </span>
+            <span className="text-info">
+              Обновлено: <b className="tabular-nums">{result.updated}</b>
+            </span>
+            <span className="text-sale">
+              Пропущено: <b className="tabular-nums">{result.skipped}</b>
+            </span>
           </div>
           <Table head={['SKU', 'Статус', 'Причина']}>
             {result.results.map((row, index) => (

@@ -1,4 +1,12 @@
-import { COLORS, MATERIALS, PURPOSES, ROOMS, STYLES, specLabel, specValueLabel } from '@/data/attributes';
+import {
+  COLORS,
+  MATERIALS,
+  PURPOSES,
+  ROOMS,
+  STYLES,
+  specLabel,
+  specValueLabel,
+} from '@/data/attributes';
 import type { Dictionary, Locale } from '@/lib/i18n';
 import { formatDimensions } from '@/lib/utils';
 
@@ -66,7 +74,9 @@ export const SpecsTable = ({
   const main: Row[] = [
     { label: dict.common.sku, value: product.sku },
     { label: dict.product.brand, value: product.brandName },
-    ...(product.collectionName ? [{ label: dict.product.collection, value: product.collectionName }] : []),
+    ...(product.collectionName
+      ? [{ label: dict.product.collection, value: product.collectionName }]
+      : []),
     {
       label: dict.catalog.material,
       value: product.materialKeys.map((key) => MATERIALS[key]?.label[locale] ?? key).join(', '),
@@ -76,22 +86,58 @@ export const SpecsTable = ({
       value: product.colorKeys.map((key) => COLORS[key]?.label[locale] ?? key).join(', '),
     },
     { label: dict.catalog.style, value: STYLES[product.styleKey]?.[locale] ?? product.styleKey },
-    { label: ROOMS[product.roomKey] ? dict.catalog.title : dict.catalog.title, value: ROOMS[product.roomKey]?.[locale] ?? product.roomKey },
+    {
+      label: ROOMS[product.roomKey] ? dict.catalog.title : dict.catalog.title,
+      value: ROOMS[product.roomKey]?.[locale] ?? product.roomKey,
+    },
     { label: dict.product.country, value: countries[product.country] ?? product.country },
     { label: dict.common.warranty, value: `${product.warrantyMonths} ${dict.common.months}` },
     ...(product.productionDays > 0
       ? [{ label: dict.common.production, value: `${product.productionDays} ${dict.common.days}` }]
       : [{ label: dict.common.production, value: dict.common.readyToShip }]),
-    { label: PURPOSES[product.purposeKey] ? dict.catalog.title : dict.catalog.title, value: PURPOSES[product.purposeKey]?.[locale] ?? product.purposeKey },
+    {
+      label: PURPOSES[product.purposeKey] ? dict.catalog.title : dict.catalog.title,
+      value: PURPOSES[product.purposeKey]?.[locale] ?? product.purposeKey,
+    },
   ];
 
   const dimensions: Row[] = [
-    ...(product.widthMm ? [{ label: `${dict.catalog.width}`, value: `${Math.round(product.widthMm / 10)} см` }] : []),
-    ...(product.depthMm ? [{ label: locale === 'hy' ? 'Խորություն, սմ' : locale === 'en' ? 'Depth, cm' : 'Глубина, см', value: `${Math.round(product.depthMm / 10)}` }] : []),
-    ...(product.heightMm ? [{ label: locale === 'hy' ? 'Բարձրություն, սմ' : locale === 'en' ? 'Height, cm' : 'Высота, см', value: `${Math.round(product.heightMm / 10)}` }] : []),
-    ...(product.weightGram ? [{ label: locale === 'hy' ? 'Քաշ, կգ' : locale === 'en' ? 'Weight, kg' : 'Вес, кг', value: `${Math.round(product.weightGram / 1000)}` }] : []),
+    ...(product.widthMm
+      ? [{ label: `${dict.catalog.width}`, value: `${Math.round(product.widthMm / 10)} см` }]
+      : []),
+    ...(product.depthMm
+      ? [
+          {
+            label:
+              locale === 'hy' ? 'Խորություն, սմ' : locale === 'en' ? 'Depth, cm' : 'Глубина, см',
+            value: `${Math.round(product.depthMm / 10)}`,
+          },
+        ]
+      : []),
+    ...(product.heightMm
+      ? [
+          {
+            label:
+              locale === 'hy' ? 'Բարձրություն, սմ' : locale === 'en' ? 'Height, cm' : 'Высота, см',
+            value: `${Math.round(product.heightMm / 10)}`,
+          },
+        ]
+      : []),
+    ...(product.weightGram
+      ? [
+          {
+            label: locale === 'hy' ? 'Քաշ, կգ' : locale === 'en' ? 'Weight, kg' : 'Вес, кг',
+            value: `${Math.round(product.weightGram / 1000)}`,
+          },
+        ]
+      : []),
     {
-      label: locale === 'hy' ? 'Ընդհանուր չափսեր (Լ×Խ×Բ)' : locale === 'en' ? 'Overall (W×D×H)' : 'Габариты (Ш×Г×В)',
+      label:
+        locale === 'hy'
+          ? 'Ընդհանուր չափսեր (Լ×Խ×Բ)'
+          : locale === 'en'
+            ? 'Overall (W×D×H)'
+            : 'Габариты (Ш×Г×В)',
       value: `${formatDimensions(product.widthMm, product.depthMm, product.heightMm)} см`,
     },
   ];

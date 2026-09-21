@@ -20,7 +20,10 @@ export const PATCH = async (
   const parsed = adminOrderStatusSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
 
-  const order = await prisma.order.findUnique({ where: { id }, select: { id: true, status: true } });
+  const order = await prisma.order.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
   if (!order) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
   const { status, comment } = parsed.data;

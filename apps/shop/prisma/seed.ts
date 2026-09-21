@@ -48,7 +48,11 @@ const reset = async (): Promise<void> => {
 const seedCategories = async (): Promise<Map<string, string>> => {
   const ids = new Map<string, string>();
 
-  const createNode = async (node: CategoryNode, parentId: string | null, sort: number): Promise<void> => {
+  const createNode = async (
+    node: CategoryNode,
+    parentId: string | null,
+    sort: number,
+  ): Promise<void> => {
     const category = await prisma.category.create({
       data: {
         slug: node.slug,
@@ -129,9 +133,18 @@ const seedProducts = async (
   categories: Map<string, string>,
   brands: Map<string, string>,
   collections: Map<string, string>,
-): Promise<{ count: number; ids: { id: string; sku: string; categorySlug: string; priceMinor: number; rootSlug: string }[] }> => {
+): Promise<{
+  count: number;
+  ids: { id: string; sku: string; categorySlug: string; priceMinor: number; rootSlug: string }[];
+}> => {
   const generated = generateProducts();
-  const ids: { id: string; sku: string; categorySlug: string; priceMinor: number; rootSlug: string }[] = [];
+  const ids: {
+    id: string;
+    sku: string;
+    categorySlug: string;
+    priceMinor: number;
+    rootSlug: string;
+  }[] = [];
 
   for (const product of generated) {
     const categoryId = categories.get(product.categorySlug);
@@ -144,7 +157,9 @@ const seedProducts = async (
         slug: product.slug,
         categoryId,
         brandId,
-        collectionId: product.collectionSlug ? (collections.get(product.collectionSlug) ?? null) : null,
+        collectionId: product.collectionSlug
+          ? (collections.get(product.collectionSlug) ?? null)
+          : null,
         priceMinor: product.priceMinor,
         oldPriceMinor: product.oldPriceMinor,
         discountPct: product.discountPct,
@@ -178,7 +193,9 @@ const seedProducts = async (
             url: image.url,
             sort: image.sort,
             isPrimary: image.isPrimary,
-            alt: product.translations.find((translation) => translation.locale === 'ru')?.name ?? product.sku,
+            alt:
+              product.translations.find((translation) => translation.locale === 'ru')?.name ??
+              product.sku,
           })),
         },
         options: { create: product.options },
@@ -266,7 +283,15 @@ const ORDER_PLAN: { status: OrderStatus; daysAgo: number; paid: boolean; items: 
 
 /** Status history a real order would have accumulated by now. */
 const historyFor = (status: OrderStatus): OrderStatus[] => {
-  const flow: OrderStatus[] = ['NEW', 'CONFIRMED', 'PAID', 'IN_PRODUCTION', 'READY', 'SHIPPED', 'DELIVERED'];
+  const flow: OrderStatus[] = [
+    'NEW',
+    'CONFIRMED',
+    'PAID',
+    'IN_PRODUCTION',
+    'READY',
+    'SHIPPED',
+    'DELIVERED',
+  ];
   if (status === 'CANCELLED') return ['NEW', 'CANCELLED'];
   const index = flow.indexOf(status);
   return flow.slice(0, index + 1);
@@ -286,7 +311,10 @@ const seedOrders = async (
     const createdAt = new Date(Date.now() - plan.daysAgo * 86_400_000);
     counter += 1;
 
-    const chosen = Array.from({ length: plan.items }, () => products[Math.floor(rng() * products.length)]!);
+    const chosen = Array.from(
+      { length: plan.items },
+      () => products[Math.floor(rng() * products.length)]!,
+    );
     const items = chosen.map((product) => {
       const quantity = rng() > 0.8 ? 2 : 1;
       return {
@@ -353,7 +381,16 @@ const seedOrders = async (
   }
 
   // Order item names are snapshots: fill them from the current catalogue.
-  const orderItems = await prisma.orderItem.findMany({ include: { product: { include: { translations: { where: { locale: 'ru' } }, images: { take: 1, orderBy: { sort: 'asc' } } } } } });
+  const orderItems = await prisma.orderItem.findMany({
+    include: {
+      product: {
+        include: {
+          translations: { where: { locale: 'ru' } },
+          images: { take: 1, orderBy: { sort: 'asc' } },
+        },
+      },
+    },
+  });
   for (const item of orderItems) {
     await prisma.orderItem.update({
       where: { id: item.id },
@@ -378,7 +415,15 @@ const seedRequests = async (products: { id: string; rootSlug: string }[]): Promi
       email: 'ani.demo@example.am',
       locale: 'ru',
       comment: 'Нужна кухня в новостройке, есть проект от дизайнера.',
-      payload: { length: 4.2, shape: 'lShaped', style: 'modern', color: 'white', facade: 'matteLacquer', budget: '1 500 000 — 2 500 000 ֏', estimateMinor: 1_890_000 },
+      payload: {
+        length: 4.2,
+        shape: 'lShaped',
+        style: 'modern',
+        color: 'white',
+        facade: 'matteLacquer',
+        budget: '1 500 000 — 2 500 000 ֏',
+        estimateMinor: 1_890_000,
+      },
     },
     {
       type: 'KITCHEN',
@@ -387,7 +432,15 @@ const seedRequests = async (products: { id: string; rootSlug: string }[]): Promi
       phone: '+37477445566',
       locale: 'ru',
       comment: 'Хочу остров и встроенную технику.',
-      payload: { length: 5.6, shape: 'island', style: 'loft', color: 'graphite', facade: 'plasticHpl', budget: 'от 2 500 000 ֏', estimateMinor: 2_640_000 },
+      payload: {
+        length: 5.6,
+        shape: 'island',
+        style: 'loft',
+        color: 'graphite',
+        facade: 'plasticHpl',
+        budget: 'от 2 500 000 ֏',
+        estimateMinor: 2_640_000,
+      },
     },
     {
       type: 'MEASUREMENT',
@@ -406,7 +459,18 @@ const seedRequests = async (products: { id: string; rootSlug: string }[]): Promi
       locale: 'ru',
       productId: doorProduct?.id ?? null,
       comment: 'Нужны 4 двери с установкой.',
-      payload: { size: '800x2000', coating: 'ecoVeneer', color: 'oak', frame: 'telescopic', casing: 'bothSides', handle: 'design', lock: 'magnetic', opening: 'right', installation: 'withDemolition', quantity: 4 },
+      payload: {
+        size: '800x2000',
+        coating: 'ecoVeneer',
+        color: 'oak',
+        frame: 'telescopic',
+        casing: 'bothSides',
+        handle: 'design',
+        lock: 'magnetic',
+        opening: 'right',
+        installation: 'withDemolition',
+        quantity: 4,
+      },
     },
     {
       type: 'CALLBACK',
@@ -489,8 +553,27 @@ const main = async (): Promise<void> => {
       locale: 'ru',
       addresses: {
         create: [
-          { label: 'Дом', region: 'yerevan', city: 'Кентрон', street: 'пр. Маштоца', building: '42', apartment: '15', floor: 4, hasLift: true, isDefault: true },
-          { label: 'Работа', region: 'yerevan', city: 'Давташен', street: 'ул. Тиграна Петросяна', building: '11', apartment: '3', floor: 2, hasLift: false },
+          {
+            label: 'Дом',
+            region: 'yerevan',
+            city: 'Кентрон',
+            street: 'пр. Маштоца',
+            building: '42',
+            apartment: '15',
+            floor: 4,
+            hasLift: true,
+            isDefault: true,
+          },
+          {
+            label: 'Работа',
+            region: 'yerevan',
+            city: 'Давташен',
+            street: 'ул. Тиграна Петросяна',
+            building: '11',
+            apartment: '3',
+            floor: 2,
+            hasLift: false,
+          },
         ],
       },
     },
@@ -548,9 +631,10 @@ const main = async (): Promise<void> => {
         description: promo.description,
         isActive: true,
         startsAt: new Date(Date.now() - 30 * 86_400_000),
-        endsAt: 'expired' in promo && promo.expired
-          ? new Date(Date.now() - 86_400_000)
-          : new Date(Date.now() + 365 * 86_400_000),
+        endsAt:
+          'expired' in promo && promo.expired
+            ? new Date(Date.now() - 86_400_000)
+            : new Date(Date.now() + 365 * 86_400_000),
       },
     });
   }
@@ -586,8 +670,18 @@ const main = async (): Promise<void> => {
 
   log('orders…');
   const orderCount = await seedOrders(ids, [
-    { id: customer.id, name: 'Ани Демо', email: customer.email, phone: customer.phone ?? '+37411111111' },
-    { id: secondCustomer.id, name: 'Гор Демо', email: secondCustomer.email, phone: secondCustomer.phone ?? '+37433333333' },
+    {
+      id: customer.id,
+      name: 'Ани Демо',
+      email: customer.email,
+      phone: customer.phone ?? '+37411111111',
+    },
+    {
+      id: secondCustomer.id,
+      name: 'Гор Демо',
+      email: secondCustomer.email,
+      phone: secondCustomer.phone ?? '+37433333333',
+    },
   ]);
   log(`  ${orderCount} orders`);
 
@@ -611,7 +705,9 @@ const main = async (): Promise<void> => {
   });
 
   console.log(`\nDone in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-  console.log(`Products: ${count} · Categories: ${categories.size} · Orders: ${orderCount} · Reviews: ${reviewCount}`);
+  console.log(
+    `Products: ${count} · Categories: ${categories.size} · Orders: ${orderCount} · Reviews: ${reviewCount}`,
+  );
   console.log(`Customer: demo@furniture.local / ${customerPassword}`);
   console.log(`Admin:    admin@furniture.local / ${adminPassword}\n`);
 };

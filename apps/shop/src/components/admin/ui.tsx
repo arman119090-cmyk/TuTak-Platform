@@ -36,7 +36,11 @@ export const StatCard = ({
   <div
     className={cn(
       'rounded-[var(--radius-md)] border bg-surface p-4',
-      tone === 'success' ? 'border-[#C9E0D6]' : tone === 'warning' ? 'border-[#EBDCBB]' : 'border-line',
+      tone === 'success'
+        ? 'border-[#C9E0D6]'
+        : tone === 'warning'
+          ? 'border-[#EBDCBB]'
+          : 'border-line',
     )}
   >
     <p className="text-[12px] uppercase tracking-[0.08em] text-muted">{label}</p>

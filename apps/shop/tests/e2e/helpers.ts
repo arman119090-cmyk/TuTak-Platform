@@ -23,10 +23,16 @@ export const settle = async (page: Page): Promise<void> => {
 
 /** The visible form that contains the given button. */
 export const formWithButton = (page: Page, name: string): Locator =>
-  page.locator('form').filter({ has: page.getByRole('button', { name }) }).first();
+  page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name }) })
+    .first();
 
 /** Signs in through the real form, the way a person would. */
-export const signIn = async (page: Page, user: { email: string; password: string }): Promise<void> => {
+export const signIn = async (
+  page: Page,
+  user: { email: string; password: string },
+): Promise<void> => {
   await page.goto('/ru/login');
   await settle(page);
   const form = formWithButton(page, 'Войти');

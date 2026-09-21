@@ -206,12 +206,20 @@ export const LIFT_PER_FLOOR_MINOR = 1_000;
 export const PICKUP_POINTS = [
   {
     key: 'showroom-mashtots',
-    names: { hy: 'Շոուրում Մաշտոցի պող. 42', ru: 'Шоурум на пр. Маштоца 42', en: 'Mashtots Ave 42 showroom' },
+    names: {
+      hy: 'Շոուրում Մաշտոցի պող. 42',
+      ru: 'Шоурум на пр. Маштоца 42',
+      en: 'Mashtots Ave 42 showroom',
+    },
     hours: '10:00 — 20:00',
   },
   {
     key: 'showroom-bagratunyats',
-    names: { hy: 'Պահեստ-սրահ Բագրատունյաց 12', ru: 'Склад-салон на Багратуняц 12', en: 'Bagratunyats 12 warehouse' },
+    names: {
+      hy: 'Պահեստ-սրահ Բագրատունյաց 12',
+      ru: 'Склад-салон на Багратуняц 12',
+      en: 'Bagratunyats 12 warehouse',
+    },
     hours: '10:00 — 19:00',
   },
 ];

@@ -10,7 +10,10 @@ const AdminProductCreate = async () => {
 
   return (
     <>
-      <AdminHeading title="Новый товар" subtitle="Заполните карточку — изображения сгенерируются автоматически" />
+      <AdminHeading
+        title="Новый товар"
+        subtitle="Заполните карточку — изображения сгенерируются автоматически"
+      />
       <ProductForm
         categories={refs.categories}
         brands={refs.brands}

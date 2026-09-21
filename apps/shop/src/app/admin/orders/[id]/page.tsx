@@ -19,7 +19,10 @@ const AdminOrderDetail = async ({ params }: { params: Promise<{ id: string }> })
     where: { id },
     include: {
       items: true,
-      events: { orderBy: { createdAt: 'desc' }, include: { actor: { select: { firstName: true } } } },
+      events: {
+        orderBy: { createdAt: 'desc' },
+        include: { actor: { select: { firstName: true } } },
+      },
       user: { select: { id: true, email: true } },
     },
   });
@@ -90,15 +93,24 @@ const AdminOrderDetail = async ({ params }: { params: Promise<{ id: string }> })
           <Panel title="История статусов">
             <ol className="divide-y divide-line">
               {order.events.map((event) => (
-                <li key={event.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-[13px]">
+                <li
+                  key={event.id}
+                  className="flex items-start justify-between gap-3 px-4 py-2.5 text-[13px]"
+                >
                   <span>
                     <span className="font-medium">{dict.orderStatus[event.status]}</span>
-                    {event.comment ? <span className="block text-muted">{event.comment}</span> : null}
+                    {event.comment ? (
+                      <span className="block text-muted">{event.comment}</span>
+                    ) : null}
                     {event.actor ? (
-                      <span className="block text-[12px] text-muted">оператор: {event.actor.firstName}</span>
+                      <span className="block text-[12px] text-muted">
+                        оператор: {event.actor.firstName}
+                      </span>
                     ) : null}
                   </span>
-                  <span className="shrink-0 text-muted">{formatDateTime(event.createdAt, 'ru')}</span>
+                  <span className="shrink-0 text-muted">
+                    {formatDateTime(event.createdAt, 'ru')}
+                  </span>
                 </li>
               ))}
             </ol>
@@ -134,7 +146,10 @@ const AdminOrderDetail = async ({ params }: { params: Promise<{ id: string }> })
                 <div>
                   <dt className="text-muted">Аккаунт</dt>
                   <dd>
-                    <Link href={`/admin/customers?q=${order.user.email}`} className="text-accent hover:underline">
+                    <Link
+                      href={`/admin/customers?q=${order.user.email}`}
+                      className="text-accent hover:underline"
+                    >
                       {order.user.email}
                     </Link>
                   </dd>

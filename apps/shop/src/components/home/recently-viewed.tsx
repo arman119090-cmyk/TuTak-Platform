@@ -26,7 +26,10 @@ export const RecentlyViewed = ({
   const { recent, ready } = useStore();
   const [products, setProducts] = useState<ProductCard[]>([]);
 
-  const ids = recent.map((item) => item.productId).filter((id) => id !== excludeId).slice(0, 8);
+  const ids = recent
+    .map((item) => item.productId)
+    .filter((id) => id !== excludeId)
+    .slice(0, 8);
   const key = ids.join(',');
 
   useEffect(() => {

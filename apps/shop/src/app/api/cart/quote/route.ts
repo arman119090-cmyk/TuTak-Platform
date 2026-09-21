@@ -19,7 +19,10 @@ export const POST = async (request: Request): Promise<Response> => {
   const body = await request.json().catch(() => null);
   const parsed = quoteRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid_request', issues: parsed.error.issues }, { status: 400 });
+    return NextResponse.json(
+      { error: 'invalid_request', issues: parsed.error.issues },
+      { status: 400 },
+    );
   }
 
   const quote = await quoteCart(

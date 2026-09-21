@@ -65,7 +65,12 @@ const ProductPage = async ({ params }: { params: Promise<{ locale: string; slug:
     { label: dict.common.home, href: `/${locale}` },
     { label: dict.nav.catalog, href: `/${locale}/catalog` },
     ...(product.parentCategory
-      ? [{ label: product.parentCategory.name, href: `/${locale}/catalog/${product.parentCategory.slug}` }]
+      ? [
+          {
+            label: product.parentCategory.name,
+            href: `/${locale}/catalog/${product.parentCategory.slug}`,
+          },
+        ]
       : []),
     { label: product.categoryName, href: `/${locale}/catalog/${product.category.slug}` },
     { label: product.name, href: `/${locale}/product/${product.slug}` },
@@ -102,7 +107,9 @@ const ProductPage = async ({ params }: { params: Promise<{ locale: string; slug:
 
   return (
     <div className="container-page py-6 md:py-8">
-      <JsonLd data={breadcrumbJsonLd(crumbs.map((crumb) => ({ name: crumb.label, url: crumb.href })))} />
+      <JsonLd
+        data={breadcrumbJsonLd(crumbs.map((crumb) => ({ name: crumb.label, url: crumb.href })))}
+      />
       <JsonLd
         data={productJsonLd({
           name: product.name,
@@ -128,7 +135,9 @@ const ProductPage = async ({ params }: { params: Promise<{ locale: string; slug:
           badges={
             <>
               {product.discountPct > 0 ? <Badge tone="sale">−{product.discountPct}%</Badge> : null}
-              {product.stockStatus === 'IN_STOCK' ? <Badge tone="stock">{dict.badges.inStock}</Badge> : null}
+              {product.stockStatus === 'IN_STOCK' ? (
+                <Badge tone="stock">{dict.badges.inStock}</Badge>
+              ) : null}
             </>
           }
         />
@@ -161,7 +170,9 @@ const ProductPage = async ({ params }: { params: Promise<{ locale: string; slug:
       <section className="mt-12 grid gap-10 lg:grid-cols-[1fr_360px]">
         <div>
           <h2 className="mb-3 text-[22px]">{dict.product.description}</h2>
-          <p className="max-w-3xl text-[15px] leading-relaxed text-ink-soft">{product.description}</p>
+          <p className="max-w-3xl text-[15px] leading-relaxed text-ink-soft">
+            {product.description}
+          </p>
 
           <div className="mt-10">
             <SpecsTable

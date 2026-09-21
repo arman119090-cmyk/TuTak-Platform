@@ -3,7 +3,17 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  BarChart3, Boxes, FolderTree, Image as ImageIcon, Inbox, LogOut, Package, Percent, ShoppingCart, Upload, Users,
+  BarChart3,
+  Boxes,
+  FolderTree,
+  Image as ImageIcon,
+  Inbox,
+  LogOut,
+  Package,
+  Percent,
+  ShoppingCart,
+  Upload,
+  Users,
 } from 'lucide-react';
 import { brand } from '@/config/brand';
 import { cn } from '@/lib/utils';
@@ -64,7 +74,10 @@ export const AdminNav = ({ name }: { name: string }) => {
       <div className="mt-auto hidden border-t border-line p-3 lg:block">
         <p className="px-3 text-[12px] text-muted">{name}</p>
         <div className="mt-2 flex flex-col gap-1">
-          <Link href="/ru" className="flex h-10 items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-[13px] hover:bg-surface-2">
+          <Link
+            href="/ru"
+            className="flex h-10 items-center gap-2.5 rounded-[var(--radius-sm)] px-3 text-[13px] hover:bg-surface-2"
+          >
             <Boxes width={16} height={16} /> В магазин
           </Link>
           <button

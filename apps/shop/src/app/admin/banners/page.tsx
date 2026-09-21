@@ -24,7 +24,9 @@ const AdminBanners = async () => {
               className="aspect-[16/7] w-full rounded-t-[var(--radius-md)] bg-surface-2 object-cover"
             />
             <div className="p-4">
-              <p className="text-[12px] uppercase tracking-[0.08em] text-muted">{banner.position}</p>
+              <p className="text-[12px] uppercase tracking-[0.08em] text-muted">
+                {banner.position}
+              </p>
               <h3 className="mt-1 text-[16px] font-sans font-semibold">
                 {banner.translations[0]?.title ?? banner.key}
               </h3>

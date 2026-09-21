@@ -161,29 +161,28 @@ export const StoreProvider = ({
     write(KEYS.cart, next);
   }, []);
 
-  const addToCart = useCallback(
-    (line: CartLine) => {
-      setCart((current) => {
-        const index = current.findIndex((entry) => sameLine(entry, line));
-        const next =
-          index >= 0
-            ? current.map((entry, i) =>
-                i === index
-                  ? { ...entry, quantity: Math.min(20, entry.quantity + line.quantity) }
-                  : entry,
-              )
-            : [...current, line];
-        write(KEYS.cart, next);
-        return next;
-      });
-    },
-    [],
-  );
+  const addToCart = useCallback((line: CartLine) => {
+    setCart((current) => {
+      const index = current.findIndex((entry) => sameLine(entry, line));
+      const next =
+        index >= 0
+          ? current.map((entry, i) =>
+              i === index
+                ? { ...entry, quantity: Math.min(20, entry.quantity + line.quantity) }
+                : entry,
+            )
+          : [...current, line];
+      write(KEYS.cart, next);
+      return next;
+    });
+  }, []);
 
   const setQuantity = useCallback((index: number, quantity: number) => {
     setCart((current) => {
       const next = current
-        .map((entry, i) => (i === index ? { ...entry, quantity: Math.max(0, Math.min(20, quantity)) } : entry))
+        .map((entry, i) =>
+          i === index ? { ...entry, quantity: Math.max(0, Math.min(20, quantity)) } : entry,
+        )
         .filter((entry) => entry.quantity > 0);
       write(KEYS.cart, next);
       return next;
@@ -319,9 +318,25 @@ export const StoreProvider = ({
       dismissToast,
     }),
     [
-      ready, cart, addToCart, setQuantity, setLineOptions, removeFromCart, clearCart, promoCode,
-      setPromoCode, favorites, toggleFavorite, compare, toggleCompare, clearCompare, recent,
-      pushRecent, toasts, toast, dismissToast,
+      ready,
+      cart,
+      addToCart,
+      setQuantity,
+      setLineOptions,
+      removeFromCart,
+      clearCart,
+      promoCode,
+      setPromoCode,
+      favorites,
+      toggleFavorite,
+      compare,
+      toggleCompare,
+      clearCompare,
+      recent,
+      pushRecent,
+      toasts,
+      toast,
+      dismissToast,
     ],
   );
 

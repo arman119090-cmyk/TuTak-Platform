@@ -5,7 +5,11 @@ import { getDictionary, isLocale } from '@/lib/i18n';
 import { getSession } from '@/lib/auth/session';
 import { LoginForm } from '@/components/auth/login-form';
 
-export const generateMetadata = async ({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> => {
+export const generateMetadata = async ({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> => {
   const { locale } = await params;
   const dict = getDictionary(isLocale(locale) ? locale : 'ru');
   return { title: dict.auth.loginTitle, robots: { index: false, follow: false } };

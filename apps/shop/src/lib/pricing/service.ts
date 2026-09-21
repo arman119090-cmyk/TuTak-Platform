@@ -50,7 +50,9 @@ export const loadPromo = async (code: string | null | undefined): Promise<Priced
 };
 
 export const loadDoorOptions = async (): Promise<DoorOptionRow[]> => {
-  const rows = await prisma.doorConfigOption.findMany({ orderBy: [{ groupKey: 'asc' }, { sort: 'asc' }] });
+  const rows = await prisma.doorConfigOption.findMany({
+    orderBy: [{ groupKey: 'asc' }, { sort: 'asc' }],
+  });
   return rows.map((row) => ({
     groupKey: row.groupKey,
     optionKey: row.optionKey,

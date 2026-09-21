@@ -14,7 +14,8 @@ export type ProductOptionView = {
 
 export const optionLabel = (option: ProductOptionView, locale: Locale): string => {
   if (option.kind === 'COLOR') return COLORS[option.valueKey]?.label[locale] ?? option.valueKey;
-  if (option.kind === 'MATERIAL') return MATERIALS[option.valueKey]?.label[locale] ?? option.valueKey;
+  if (option.kind === 'MATERIAL')
+    return MATERIALS[option.valueKey]?.label[locale] ?? option.valueKey;
   return option.label ?? option.valueKey;
 };
 
@@ -92,12 +93,16 @@ export const OptionPicker = ({
                     onClick={() => onSelect(group.kind, option.valueKey)}
                     className={cn(
                       'inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 text-[13px] transition-colors',
-                      isActive ? 'border-ink bg-ink text-white' : 'border-line-strong hover:border-ink',
+                      isActive
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line-strong hover:border-ink',
                     )}
                   >
                     {label}
                     {option.priceDeltaMinor > 0 ? (
-                      <span className={cn('text-[11px]', isActive ? 'text-white/70' : 'text-muted')}>
+                      <span
+                        className={cn('text-[11px]', isActive ? 'text-white/70' : 'text-muted')}
+                      >
                         +{formatMoney(option.priceDeltaMinor)}
                       </span>
                     ) : null}
@@ -123,7 +128,11 @@ export const QuantityStepper = ({
   max?: number;
   label: string;
 }) => (
-  <div className="inline-flex h-12 items-center rounded-[var(--radius-sm)] border border-line-strong" role="group" aria-label={label}>
+  <div
+    className="inline-flex h-12 items-center rounded-[var(--radius-sm)] border border-line-strong"
+    role="group"
+    aria-label={label}
+  >
     <button
       type="button"
       className="flex h-full w-11 items-center justify-center text-lg disabled:opacity-40"

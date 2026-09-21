@@ -55,7 +55,8 @@ export const computeServices = (
     const units = lines
       .filter((line) => !line.isDoor)
       .reduce((sum, line) => sum + line.quantity, 0);
-    if (units > 0) breakdown.push({ key: 'assembly', priceMinor: SERVICES.assembly.priceMinor * units });
+    if (units > 0)
+      breakdown.push({ key: 'assembly', priceMinor: SERVICES.assembly.priceMinor * units });
   }
 
   if (services.doorInstall) {

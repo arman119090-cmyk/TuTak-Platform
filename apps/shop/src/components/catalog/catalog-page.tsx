@@ -66,16 +66,23 @@ export const CatalogPageView = async ({
     ...(category ? [{ label: category.name, href: basePath }] : []),
   ];
 
-  const subcategories = category?.children ?? tree?.map((root) => ({
-    slug: root.slug,
-    name: root.name,
-    artKey: root.artKey,
-    productCount: root.productCount,
-  })) ?? [];
+  const subcategories =
+    category?.children ??
+    tree?.map((root) => ({
+      slug: root.slug,
+      name: root.name,
+      artKey: root.artKey,
+      productCount: root.productCount,
+    })) ??
+    [];
 
   return (
     <div className="container-page py-6 md:py-8">
-      <JsonLd data={breadcrumbJsonLd(crumbs.map((crumb) => ({ name: crumb.label, url: crumb.href ?? '/' })))} />
+      <JsonLd
+        data={breadcrumbJsonLd(
+          crumbs.map((crumb) => ({ name: crumb.label, url: crumb.href ?? '/' })),
+        )}
+      />
       <Breadcrumbs items={crumbs} />
 
       <header className="mb-6">
@@ -118,7 +125,12 @@ export const CatalogPageView = async ({
         </aside>
 
         <div>
-          <CatalogToolbar total={result.total} basePath={basePath} facets={result.facets} dict={dict} />
+          <CatalogToolbar
+            total={result.total}
+            basePath={basePath}
+            facets={result.facets}
+            dict={dict}
+          />
 
           {result.items.length === 0 ? (
             <EmptyState
@@ -134,7 +146,12 @@ export const CatalogPageView = async ({
           ) : (
             <>
               <CatalogGrid products={result.items} locale={locale} dict={dict} />
-              <Pagination page={result.page} pageCount={result.pageCount} basePath={basePath} dict={dict} />
+              <Pagination
+                page={result.page}
+                pageCount={result.pageCount}
+                basePath={basePath}
+                dict={dict}
+              />
             </>
           )}
         </div>

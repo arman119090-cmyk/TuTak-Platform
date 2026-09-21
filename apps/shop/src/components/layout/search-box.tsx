@@ -9,9 +9,18 @@ import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import type { ProductCard } from '@/lib/catalog/types';
 
-type Suggestions = { products: ProductCard[]; categories: { slug: string; name: string; count: number }[] };
+type Suggestions = {
+  products: ProductCard[];
+  categories: { slug: string; name: string; count: number }[];
+};
 
-const POPULAR_QUERIES = ['диван угловой', 'кровать 160', 'шкаф-купе', 'стол обеденный', 'двери межкомнатные'];
+const POPULAR_QUERIES = [
+  'диван угловой',
+  'кровать 160',
+  'шкаф-купе',
+  'стол обеденный',
+  'двери межкомнатные',
+];
 
 /**
  * Catalogue search with autocomplete.

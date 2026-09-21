@@ -61,7 +61,10 @@ const ContentPageView = async ({
             <section key={section.heading[locale]}>
               <h2 className="text-[22px]">{section.heading[locale]}</h2>
               {section.body.map((paragraph) => (
-                <p key={paragraph[locale]} className="mt-3 text-[15px] leading-relaxed text-ink-soft">
+                <p
+                  key={paragraph[locale]}
+                  className="mt-3 text-[15px] leading-relaxed text-ink-soft"
+                >
                   {paragraph[locale]}
                 </p>
               ))}

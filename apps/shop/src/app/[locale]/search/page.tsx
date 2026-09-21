@@ -34,7 +34,9 @@ const SearchPage = async ({
   return (
     <div>
       <div className="container-page pt-6">
-        <Breadcrumbs items={[{ label: dict.common.home, href: `/${locale}` }, { label: dict.search.title }]} />
+        <Breadcrumbs
+          items={[{ label: dict.common.home, href: `/${locale}` }, { label: dict.search.title }]}
+        />
       </div>
       <CatalogPageView
         locale={locale}

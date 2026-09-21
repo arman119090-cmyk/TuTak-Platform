@@ -37,18 +37,26 @@ export const PromoBlock = ({
       )}
     >
       <div className={cn('flex flex-col justify-center p-7 md:p-12', reverse && 'md:order-2')}>
-        {eyebrow ? (
-          <p className={cn('eyebrow mb-3', dark && 'text-white/60')}>{eyebrow}</p>
-        ) : null}
+        {eyebrow ? <p className={cn('eyebrow mb-3', dark && 'text-white/60')}>{eyebrow}</p> : null}
         <h2 className="text-[28px] leading-tight md:text-[40px]">{title}</h2>
-        <p className={cn('mt-4 max-w-md text-sm md:text-[15px]', dark ? 'text-white/75' : 'text-ink-soft')}>
+        <p
+          className={cn(
+            'mt-4 max-w-md text-sm md:text-[15px]',
+            dark ? 'text-white/75' : 'text-ink-soft',
+          )}
+        >
           {text}
         </p>
         {bullets?.length ? (
           <ul className={cn('mt-5 space-y-2 text-[13px]', dark ? 'text-white/75' : 'text-muted')}>
             {bullets.map((bullet) => (
               <li key={bullet} className="flex gap-2.5">
-                <span className={cn('mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full', dark ? 'bg-white/50' : 'bg-accent')} />
+                <span
+                  className={cn(
+                    'mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full',
+                    dark ? 'bg-white/50' : 'bg-accent',
+                  )}
+                />
                 {bullet}
               </li>
             ))}
@@ -69,7 +77,9 @@ export const PromoBlock = ({
               href={secondary.href}
               className={cn(
                 'inline-flex h-12 items-center rounded-[var(--radius-sm)] border px-6 text-sm',
-                dark ? 'border-white/30 hover:border-white' : 'border-line-strong bg-surface hover:border-ink',
+                dark
+                  ? 'border-white/30 hover:border-white'
+                  : 'border-line-strong bg-surface hover:border-ink',
               )}
             >
               {secondary.label}

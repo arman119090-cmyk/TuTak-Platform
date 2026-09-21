@@ -40,7 +40,10 @@ test.describe('kitchen calculator', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
 
     await page.getByRole('dialog').getByLabel(/^Имя/).fill('Playwright');
-    await page.getByRole('dialog').getByLabel(/^Телефон/).fill('+37493444555');
+    await page
+      .getByRole('dialog')
+      .getByLabel(/^Телефон/)
+      .fill('+37493444555');
     await page.getByRole('dialog').getByRole('button', { name: 'Отправить' }).click();
     await expect(page.getByText('Спасибо')).toBeVisible();
   });
@@ -91,7 +94,9 @@ test.describe('door configurator', () => {
 
   test('the server refuses a door option that does not exist', async ({ request }) => {
     const suggest = await request.get('/api/search/suggest?q=дверь межкомнатная&locale=ru');
-    const { products } = (await suggest.json()) as { products: { id: string; priceMinor: number }[] };
+    const { products } = (await suggest.json()) as {
+      products: { id: string; priceMinor: number }[];
+    };
     const door = products[0]!;
 
     const quote = await request.post('/api/cart/quote', {
@@ -106,7 +111,10 @@ test.describe('door configurator', () => {
         locale: 'ru',
       },
     });
-    const body = (await quote.json()) as { warnings: string[]; lines: { unitPriceMinor: number }[] };
+    const body = (await quote.json()) as {
+      warnings: string[];
+      lines: { unitPriceMinor: number }[];
+    };
     expect(body.warnings.some((warning) => warning.includes('unknown_door_option'))).toBe(true);
     // The bogus finish contributes nothing to the price.
     expect(body.lines[0]!.unitPriceMinor).toBe(door.priceMinor + 8_000 + 6_000);

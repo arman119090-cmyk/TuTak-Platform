@@ -69,7 +69,11 @@ export const ReviewsBlock = ({
       <div className="mb-6 grid gap-6 rounded-[var(--radius-md)] border border-line bg-surface p-5 sm:grid-cols-[200px_1fr] sm:items-center">
         <div className="text-center sm:text-left">
           <p className="font-display text-[44px] leading-none">{ratingAvg.toFixed(1)}</p>
-          <Rating value={ratingAvg} showValue={false} className="mt-2 justify-center sm:justify-start" />
+          <Rating
+            value={ratingAvg}
+            showValue={false}
+            className="mt-2 justify-center sm:justify-start"
+          />
           <p className="mt-1 text-[13px] text-muted">
             {reviews.length} {dict.product.reviewsCount}
           </p>
@@ -99,10 +103,15 @@ export const ReviewsBlock = ({
       ) : (
         <ul className="space-y-4">
           {reviews.map((review) => (
-            <li key={review.id} className="rounded-[var(--radius-md)] border border-line bg-surface p-4">
+            <li
+              key={review.id}
+              className="rounded-[var(--radius-md)] border border-line bg-surface p-4"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[14px] font-medium">{review.authorName}</span>
-                <span className="text-[12px] text-muted">{formatDate(review.createdAt, locale)}</span>
+                <span className="text-[12px] text-muted">
+                  {formatDate(review.createdAt, locale)}
+                </span>
               </div>
               <Rating value={review.rating} showValue={false} size={13} className="mt-1.5" />
               {review.title ? <p className="mt-2 text-[14px] font-medium">{review.title}</p> : null}
@@ -115,13 +124,20 @@ export const ReviewsBlock = ({
       {open ? (
         <Modal title={dict.product.writeReview} onClose={() => setOpen(false)}>
           {!isAuthenticated ? (
-            <Alert tone="info">{dict.auth.loginTitle} — {dict.account.title}</Alert>
+            <Alert tone="info">
+              {dict.auth.loginTitle} — {dict.account.title}
+            </Alert>
           ) : null}
           <form onSubmit={submit} className="mt-4 space-y-4">
             <Field label={dict.catalog.rating} required>
               <div className="flex gap-1">
                 {[1, 2, 3, 4, 5].map((value) => (
-                  <button key={value} type="button" onClick={() => setRating(value)} aria-label={`${value}`}>
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRating(value)}
+                    aria-label={`${value}`}
+                  >
                     <Star
                       width={28}
                       height={28}
@@ -132,7 +148,11 @@ export const ReviewsBlock = ({
               </div>
             </Field>
             <Field label={dict.forms.name}>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} />
+              <Input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                maxLength={120}
+              />
             </Field>
             <Field label={dict.forms.comment} required>
               <Textarea

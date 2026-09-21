@@ -49,7 +49,11 @@ describe('computeQuote', () => {
 
   it('adds option price deltas to the unit price', () => {
     const quote = computeQuote(
-      { items: [{ productId: 'p1', quantity: 2, options: { COLOR: 'emerald', MATERIAL: 'velour' } }] },
+      {
+        items: [
+          { productId: 'p1', quantity: 2, options: { COLOR: 'emerald', MATERIAL: 'velour' } },
+        ],
+      },
       [product()],
       null,
     );

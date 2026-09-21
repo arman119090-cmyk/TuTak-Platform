@@ -48,7 +48,10 @@ const AccountPage = async ({ params }: { params: Promise<{ locale: string }> }) 
       <section>
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-[22px]">{dict.account.orders}</h2>
-          <Link href={`/${locale}/account/orders`} className="text-[13px] text-accent hover:underline">
+          <Link
+            href={`/${locale}/account/orders`}
+            className="text-[13px] text-accent hover:underline"
+          >
             {dict.common.showAll}
           </Link>
         </div>
@@ -65,7 +68,9 @@ const AccountPage = async ({ params }: { params: Promise<{ locale: string }> }) 
                   <span className="font-medium">{order.number}</span>
                   <span className="text-muted">{formatDate(order.createdAt, locale)}</span>
                   <OrderStatusBadge status={order.status} dict={dict} />
-                  <span className="ml-auto font-semibold tabular-nums">{formatMoney(order.totalMinor)}</span>
+                  <span className="ml-auto font-semibold tabular-nums">
+                    {formatMoney(order.totalMinor)}
+                  </span>
                 </Link>
               </li>
             ))}

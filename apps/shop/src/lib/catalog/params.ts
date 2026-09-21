@@ -64,7 +64,8 @@ export const buildCatalogHref = (
 ): string => {
   const next = new URLSearchParams(params.toString());
   for (const [key, value] of Object.entries(changes)) {
-    if (value === null || (Array.isArray(value) && value.length === 0) || value === '') next.delete(key);
+    if (value === null || (Array.isArray(value) && value.length === 0) || value === '')
+      next.delete(key);
     else next.set(key, Array.isArray(value) ? value.join(',') : value);
   }
   // Any filter change resets pagination — page 3 of a different result set is
@@ -79,9 +80,14 @@ export const countActiveFilters = (params: URLSearchParams): number => {
   for (const [key, value] of params.entries()) {
     if (['sort', 'page', 'view', 'q'].includes(key)) continue;
     if (!value) continue;
-    count += key.startsWith('spec.') || key === 'brand' || key === 'color' || key === 'material' || key === 'style'
-      ? value.split(',').filter(Boolean).length
-      : 1;
+    count +=
+      key.startsWith('spec.') ||
+      key === 'brand' ||
+      key === 'color' ||
+      key === 'material' ||
+      key === 'style'
+        ? value.split(',').filter(Boolean).length
+        : 1;
   }
   return count;
 };

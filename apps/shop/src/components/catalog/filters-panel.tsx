@@ -43,7 +43,11 @@ const Group = ({
           {title}
           {count ? <span className="ml-1.5 text-[12px] text-accent">{count}</span> : null}
         </span>
-        <ChevronDown width={16} height={16} className={cn('text-muted transition-transform', open && 'rotate-180')} />
+        <ChevronDown
+          width={16}
+          height={16}
+          className={cn('text-muted transition-transform', open && 'rotate-180')}
+        />
       </button>
       {open ? <div className="mt-3">{children}</div> : null}
     </div>
@@ -106,7 +110,9 @@ export const FiltersPanel = ({ facets, basePath, dict, onApplied }: Props) => {
   const toggle = (key: string, value: string) => {
     const current = (params.get(key) ?? '').split(',').filter(Boolean);
     apply({
-      [key]: current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+      [key]: current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value],
     });
   };
 
@@ -205,7 +211,9 @@ export const FiltersPanel = ({ facets, basePath, dict, onApplied }: Props) => {
                 onClick={() => toggle('color', facet.key)}
                 className={cn(
                   'flex h-9 w-9 items-center justify-center rounded-full border-2',
-                  selected.color.includes(facet.key) ? 'border-ink' : 'border-transparent hover:border-line-strong',
+                  selected.color.includes(facet.key)
+                    ? 'border-ink'
+                    : 'border-transparent hover:border-line-strong',
                 )}
               >
                 <span

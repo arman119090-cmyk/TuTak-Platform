@@ -39,7 +39,13 @@ export type ProductFormValue = {
   smallSpace: boolean;
   isActive: boolean;
   translations: { locale: Locale; name: string; shortDescription: string; description: string }[];
-  options: { kind: 'COLOR' | 'MATERIAL' | 'SIZE'; valueKey: string; label: string | null; priceDeltaMinor: number; isDefault: boolean }[];
+  options: {
+    kind: 'COLOR' | 'MATERIAL' | 'SIZE';
+    valueKey: string;
+    label: string | null;
+    priceDeltaMinor: number;
+    isDefault: boolean;
+  }[];
 };
 
 /**
@@ -69,7 +75,11 @@ export const ProductForm = ({
   const set = <K extends keyof ProductFormValue>(key: K, val: ProductFormValue[K]) =>
     setForm((current) => ({ ...current, [key]: val }));
 
-  const setTranslation = (locale: Locale, key: 'name' | 'shortDescription' | 'description', val: string) =>
+  const setTranslation = (
+    locale: Locale,
+    key: 'name' | 'shortDescription' | 'description',
+    val: string,
+  ) =>
     setForm((current) => ({
       ...current,
       translations: current.translations.map((translation) =>
@@ -101,9 +111,14 @@ export const ProductForm = ({
 
     // Only languages that were actually filled in are submitted: a shop should
     // not be blocked from publishing because the Armenian copy is not ready.
-    const translations = form.translations.filter((translation) => translation.name.trim().length >= 3);
+    const translations = form.translations.filter(
+      (translation) => translation.name.trim().length >= 3,
+    );
     if (translations.length === 0) {
-      setMessage({ tone: 'error', text: 'Укажите название хотя бы на одном языке (минимум 3 символа)' });
+      setMessage({
+        tone: 'error',
+        text: 'Укажите название хотя бы на одном языке (минимум 3 символа)',
+      });
       setSaving(false);
       return;
     }
@@ -154,7 +169,9 @@ export const ProductForm = ({
 
   return (
     <form onSubmit={submit} className="space-y-6">
-      {message ? <Alert tone={message.tone === 'success' ? 'success' : 'error'}>{message.text}</Alert> : null}
+      {message ? (
+        <Alert tone={message.tone === 'success' ? 'success' : 'error'}>{message.text}</Alert>
+      ) : null}
 
       <section className="rounded-[var(--radius-md)] border border-line bg-surface p-5">
         <h2 className="mb-4 text-[15px] font-sans font-semibold">Основное</h2>
@@ -163,10 +180,17 @@ export const ProductForm = ({
             <Input required value={form.sku} onChange={(event) => set('sku', event.target.value)} />
           </Field>
           <Field label="URL (slug)" required>
-            <Input required value={form.slug} onChange={(event) => set('slug', event.target.value)} />
+            <Input
+              required
+              value={form.slug}
+              onChange={(event) => set('slug', event.target.value)}
+            />
           </Field>
           <Field label="Категория" required>
-            <Select value={form.categoryId} onChange={(event) => set('categoryId', event.target.value)}>
+            <Select
+              value={form.categoryId}
+              onChange={(event) => set('categoryId', event.target.value)}
+            >
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
@@ -197,7 +221,11 @@ export const ProductForm = ({
             </Select>
           </Field>
           <Field label="Страна (ISO-2)">
-            <Input maxLength={2} value={form.country} onChange={(event) => set('country', event.target.value.toUpperCase())} />
+            <Input
+              maxLength={2}
+              value={form.country}
+              onChange={(event) => set('country', event.target.value.toUpperCase())}
+            />
           </Field>
         </div>
       </section>
@@ -210,7 +238,9 @@ export const ProductForm = ({
               required
               inputMode="numeric"
               value={String(form.priceMinor)}
-              onChange={(event) => set('priceMinor', Number(event.target.value.replace(/\D/g, '')) || 0)}
+              onChange={(event) =>
+                set('priceMinor', Number(event.target.value.replace(/\D/g, '')) || 0)
+              }
             />
           </Field>
           <Field label="Старая цена, ֏" hint="Пусто — без скидки">
@@ -226,7 +256,9 @@ export const ProductForm = ({
           <Field label="Наличие">
             <Select
               value={form.stockStatus}
-              onChange={(event) => set('stockStatus', event.target.value as ProductFormValue['stockStatus'])}
+              onChange={(event) =>
+                set('stockStatus', event.target.value as ProductFormValue['stockStatus'])
+              }
             >
               <option value="IN_STOCK">В наличии</option>
               <option value="ON_ORDER">Под заказ</option>
@@ -237,21 +269,27 @@ export const ProductForm = ({
             <Input
               inputMode="numeric"
               value={String(form.stockQty)}
-              onChange={(event) => set('stockQty', Number(event.target.value.replace(/\D/g, '')) || 0)}
+              onChange={(event) =>
+                set('stockQty', Number(event.target.value.replace(/\D/g, '')) || 0)
+              }
             />
           </Field>
           <Field label="Срок изготовления, дней">
             <Input
               inputMode="numeric"
               value={String(form.productionDays)}
-              onChange={(event) => set('productionDays', Number(event.target.value.replace(/\D/g, '')) || 0)}
+              onChange={(event) =>
+                set('productionDays', Number(event.target.value.replace(/\D/g, '')) || 0)
+              }
             />
           </Field>
           <Field label="Гарантия, мес.">
             <Input
               inputMode="numeric"
               value={String(form.warrantyMonths)}
-              onChange={(event) => set('warrantyMonths', Number(event.target.value.replace(/\D/g, '')) || 0)}
+              onChange={(event) =>
+                set('warrantyMonths', Number(event.target.value.replace(/\D/g, '')) || 0)
+              }
             />
           </Field>
         </div>
@@ -304,7 +342,10 @@ export const ProductForm = ({
             </Select>
           </Field>
           <Field label="Назначение">
-            <Select value={form.purposeKey} onChange={(event) => set('purposeKey', event.target.value)}>
+            <Select
+              value={form.purposeKey}
+              onChange={(event) => set('purposeKey', event.target.value)}
+            >
               {Object.entries(PURPOSES).map(([key, label]) => (
                 <option key={key} value={key}>
                   {label.ru}
@@ -328,7 +369,10 @@ export const ProductForm = ({
                   form.colorKeys.includes(key) ? 'border-ink bg-surface-2' : 'border-line',
                 )}
               >
-                <span className="h-4 w-4 rounded-full border border-line" style={{ background: color.hex }} />
+                <span
+                  className="h-4 w-4 rounded-full border border-line"
+                  style={{ background: color.hex }}
+                />
                 {color.label.ru}
               </button>
             ))}
@@ -395,7 +439,9 @@ export const ProductForm = ({
             const translation = form.translations.find((item) => item.locale === locale);
             return (
               <div key={locale} className="rounded-[var(--radius-sm)] border border-line p-4">
-                <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted">{locale}</p>
+                <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted">
+                  {locale}
+                </p>
                 <div className="space-y-3">
                   <Field label="Название" required={locale === 'ru'}>
                     <Input
@@ -406,13 +452,17 @@ export const ProductForm = ({
                   <Field label="Короткое описание">
                     <Input
                       value={translation?.shortDescription ?? ''}
-                      onChange={(event) => setTranslation(locale, 'shortDescription', event.target.value)}
+                      onChange={(event) =>
+                        setTranslation(locale, 'shortDescription', event.target.value)
+                      }
                     />
                   </Field>
                   <Field label="Описание">
                     <Textarea
                       value={translation?.description ?? ''}
-                      onChange={(event) => setTranslation(locale, 'description', event.target.value)}
+                      onChange={(event) =>
+                        setTranslation(locale, 'description', event.target.value)
+                      }
                     />
                   </Field>
                 </div>
@@ -424,7 +474,11 @@ export const ProductForm = ({
 
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-line bg-bg py-4">
         <Button type="submit" size="lg" disabled={saving}>
-          {saving ? <Loader2 width={16} height={16} className="animate-spin" /> : <Save width={16} height={16} />}
+          {saving ? (
+            <Loader2 width={16} height={16} className="animate-spin" />
+          ) : (
+            <Save width={16} height={16} />
+          )}
           Сохранить
         </Button>
         {form.id ? (

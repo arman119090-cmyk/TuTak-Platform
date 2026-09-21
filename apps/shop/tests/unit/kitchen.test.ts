@@ -26,10 +26,12 @@ describe('estimateKitchen', () => {
     const tiny = estimateKitchen({ lengthM: 0.1, shape: 'straight', facade: 'veneer' });
     const huge = estimateKitchen({ lengthM: 900, shape: 'straight', facade: 'veneer' });
     expect(tiny.fromMinor).toBe(
-      estimateKitchen({ lengthM: MIN_KITCHEN_LENGTH_M, shape: 'straight', facade: 'veneer' }).fromMinor,
+      estimateKitchen({ lengthM: MIN_KITCHEN_LENGTH_M, shape: 'straight', facade: 'veneer' })
+        .fromMinor,
     );
     expect(huge.fromMinor).toBe(
-      estimateKitchen({ lengthM: MAX_KITCHEN_LENGTH_M, shape: 'straight', facade: 'veneer' }).fromMinor,
+      estimateKitchen({ lengthM: MAX_KITCHEN_LENGTH_M, shape: 'straight', facade: 'veneer' })
+        .fromMinor,
     );
   });
 

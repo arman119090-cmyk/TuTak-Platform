@@ -382,7 +382,8 @@ export const hy: Dictionary = {
   compare: {
     title: 'Համեմատում',
     empty: 'Համեմատելու բան չկա',
-    emptyText: 'Ավելացրեք նույն կատեգորիայի 2–4 ապրանք՝ տարբերությունների աղյուսակը տեսնելու համար։',
+    emptyText:
+      'Ավելացրեք նույն կատեգորիայի 2–4 ապրանք՝ տարբերությունների աղյուսակը տեսնելու համար։',
     onlyDifferences: 'Միայն տարբերությունները',
     clearAll: 'Մաքրել ցանկը',
     limitReached: 'Կարելի է համեմատել մինչև 4 ապրանք',
@@ -436,7 +437,12 @@ export const hy: Dictionary = {
     DELIVERED: 'Առաքված',
     CANCELLED: 'Չեղարկված',
   },
-  paymentStatus: { PENDING: 'Սպասում է վճարման', PAID: 'Վճարված', FAILED: 'Մերժված', REFUNDED: 'Վերադարձված' },
+  paymentStatus: {
+    PENDING: 'Սպասում է վճարման',
+    PAID: 'Վճարված',
+    FAILED: 'Մերժված',
+    REFUNDED: 'Վերադարձված',
+  },
   footer: {
     catalogTitle: 'Կատալոգ',
     companyTitle: 'Ընկերություն',

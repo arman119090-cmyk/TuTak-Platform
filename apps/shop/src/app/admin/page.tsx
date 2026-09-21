@@ -40,7 +40,12 @@ const AdminDashboard = async () => {
     prisma.product.findMany({
       where: { stockStatus: 'OUT_OF_STOCK', isActive: true },
       take: 8,
-      select: { id: true, sku: true, slug: true, translations: { where: { locale: 'ru' }, select: { name: true } } },
+      select: {
+        id: true,
+        sku: true,
+        slug: true,
+        translations: { where: { locale: 'ru' }, select: { name: true } },
+      },
     }),
     prisma.order.findMany({
       orderBy: { createdAt: 'desc' },
@@ -128,7 +133,9 @@ const AdminDashboard = async () => {
                     </AdminLink>
                   </td>
                   <td className="px-4 py-2.5 tabular-nums">{product.salesCount}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{formatMoney(product.priceMinor)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">
+                    {formatMoney(product.priceMinor)}
+                  </td>
                 </tr>
               ))}
             </Table>
@@ -136,12 +143,20 @@ const AdminDashboard = async () => {
 
           <Panel title={`Нет в наличии (${outOfStock.length})`}>
             {outOfStock.length === 0 ? (
-              <p className="px-4 py-4 text-[13px] text-muted">Все товары в наличии или под заказ.</p>
+              <p className="px-4 py-4 text-[13px] text-muted">
+                Все товары в наличии или под заказ.
+              </p>
             ) : (
               <ul className="divide-y divide-line">
                 {outOfStock.map((product) => (
-                  <li key={product.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]">
-                    <Link href={`/admin/products/${product.id}`} className="truncate hover:text-accent">
+                  <li
+                    key={product.id}
+                    className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]"
+                  >
+                    <Link
+                      href={`/admin/products/${product.id}`}
+                      className="truncate hover:text-accent"
+                    >
                       {product.translations[0]?.name ?? product.sku}
                     </Link>
                     <span className="shrink-0 text-muted">{product.sku}</span>

@@ -37,7 +37,10 @@ const OrdersPage = async ({ params }: { params: Promise<{ locale: string }> }) =
       {orders.map((order) => (
         <li key={order.id} className="rounded-[var(--radius-md)] border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Link href={`/${locale}/account/orders/${order.number}`} className="text-[15px] font-medium hover:text-accent">
+            <Link
+              href={`/${locale}/account/orders/${order.number}`}
+              className="text-[15px] font-medium hover:text-accent"
+            >
               {order.number}
             </Link>
             <span className="text-[13px] text-muted">{formatDate(order.createdAt, locale)}</span>
@@ -48,7 +51,11 @@ const OrdersPage = async ({ params }: { params: Promise<{ locale: string }> }) =
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {order.items.map((item) => (
-              <Link key={item.id} href={`/${locale}/product/${item.slugSnapshot}`} title={item.nameSnapshot}>
+              <Link
+                key={item.id}
+                href={`/${locale}/product/${item.slugSnapshot}`}
+                title={item.nameSnapshot}
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.imageUrl}

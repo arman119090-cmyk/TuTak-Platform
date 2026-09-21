@@ -107,7 +107,11 @@ export const upsertProduct = async (
           sort: index,
           isPrimary: index === 0,
         }))
-      : imagesFor(category.artKey, input.colorKeys[0] ?? 'beige', input.sku.length + input.priceMinor);
+      : imagesFor(
+          category.artKey,
+          input.colorKeys[0] ?? 'beige',
+          input.sku.length + input.priceMinor,
+        );
 
   const options = input.options.map((option, index) => ({
     kind: option.kind,

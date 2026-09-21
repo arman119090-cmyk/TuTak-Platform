@@ -20,10 +20,10 @@ export type ContentPage = {
   sections: ContentSection[];
 };
 
-const s = (
-  heading: LocalizedLabel,
-  ...body: LocalizedLabel[]
-): ContentSection => ({ heading, body });
+const s = (heading: LocalizedLabel, ...body: LocalizedLabel[]): ContentSection => ({
+  heading,
+  body,
+});
 
 export const CONTENT_PAGES: ContentPage[] = [
   {
@@ -271,7 +271,11 @@ export const CONTENT_PAGES: ContentPage[] = [
     },
     sections: [
       s(
-        { hy: 'Որքա՞ն է տևում պատրաստումը', ru: 'Сколько ждать изготовления', en: 'How long is production' },
+        {
+          hy: 'Որքա՞ն է տևում պատրաստումը',
+          ru: 'Сколько ждать изготовления',
+          en: 'How long is production',
+        },
         {
           hy: 'Պահեստի ապրանքները՝ 2–3 օր։ Պատվերով՝ 7–45 օր՝ նշված է ապրանքի էջում։',
           ru: 'Товары со склада — 2–3 дня. Под заказ — от 7 до 45 дней, срок указан в карточке товара.',
@@ -279,7 +283,11 @@ export const CONTENT_PAGES: ContentPage[] = [
         },
       ),
       s(
-        { hy: 'Կարո՞ղ եմ փոխել չափսերը', ru: 'Можно ли изменить размеры', en: 'Can dimensions be changed' },
+        {
+          hy: 'Կարո՞ղ եմ փոխել չափսերը',
+          ru: 'Можно ли изменить размеры',
+          en: 'Can dimensions be changed',
+        },
         {
           hy: 'Այո, պահարանների, խոհանոցների և դռների համար։ Ուղարկեք հայտ «Անհատական չափսեր» ձևով։',
           ru: 'Да, для шкафов, кухонь и дверей. Отправьте заявку через форму «Индивидуальные размеры».',
@@ -299,7 +307,11 @@ export const CONTENT_PAGES: ContentPage[] = [
   {
     slug: 'privacy',
     group: 'legal',
-    title: { hy: 'Գաղտնիության քաղաքականություն', ru: 'Политика конфиденциальности', en: 'Privacy policy' },
+    title: {
+      hy: 'Գաղտնիության քաղաքականություն',
+      ru: 'Политика конфиденциальности',
+      en: 'Privacy policy',
+    },
     intro: {
       hy: 'Ինչ տվյալներ ենք հավաքում և ինչու։',
       ru: 'Какие данные мы собираем и зачем.',

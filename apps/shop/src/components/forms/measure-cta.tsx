@@ -23,7 +23,9 @@ export const MeasureCta = ({
         <Ruler width={17} height={17} />
         {dict.kitchen.measureCta}
       </Button>
-      {open ? <MeasurementDialog locale={locale} dict={dict} onClose={() => setOpen(false)} /> : null}
+      {open ? (
+        <MeasurementDialog locale={locale} dict={dict} onClose={() => setOpen(false)} />
+      ) : null}
     </>
   );
 };

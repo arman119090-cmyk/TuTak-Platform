@@ -48,7 +48,9 @@ export const NewsletterForm = ({ locale, dict }: { locale: Locale; dict: Diction
         {state === 'loading' ? <Loader2 width={16} height={16} className="animate-spin" /> : null}
         {dict.home.newsletterCta}
       </Button>
-      {state === 'error' ? <span className="text-[12px] text-sale">{dict.forms.errorText}</span> : null}
+      {state === 'error' ? (
+        <span className="text-[12px] text-sale">{dict.forms.errorText}</span>
+      ) : null}
     </form>
   );
 };

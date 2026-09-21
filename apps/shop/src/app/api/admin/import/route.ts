@@ -58,7 +58,11 @@ export const POST = async (request: Request): Promise<Response> => {
     const row = importRowSchema.safeParse(raw);
     if (!row.success) {
       const sku = (raw as { sku?: string })?.sku ?? '—';
-      results.push({ sku, status: 'skipped', reason: row.error.issues[0]?.message ?? 'invalid_row' });
+      results.push({
+        sku,
+        status: 'skipped',
+        reason: row.error.issues[0]?.message ?? 'invalid_row',
+      });
       continue;
     }
 
@@ -69,7 +73,9 @@ export const POST = async (request: Request): Promise<Response> => {
       results.push({
         sku: data.sku,
         status: 'skipped',
-        reason: !categoryId ? `category_not_found:${data.categorySlug}` : `brand_not_found:${data.brandSlug}`,
+        reason: !categoryId
+          ? `category_not_found:${data.categorySlug}`
+          : `brand_not_found:${data.brandSlug}`,
       });
       continue;
     }
@@ -79,9 +85,18 @@ export const POST = async (request: Request): Promise<Response> => {
       continue;
     }
 
-    const existing = await prisma.product.findUnique({ where: { sku: data.sku }, select: { id: true } });
-    const colorKeys = (data.colorKeys ?? 'beige').split(/[,;|]/).map((key) => key.trim()).filter(Boolean);
-    const materialKeys = (data.materialKeys ?? 'mdf').split(/[,;|]/).map((key) => key.trim()).filter(Boolean);
+    const existing = await prisma.product.findUnique({
+      where: { sku: data.sku },
+      select: { id: true },
+    });
+    const colorKeys = (data.colorKeys ?? 'beige')
+      .split(/[,;|]/)
+      .map((key) => key.trim())
+      .filter(Boolean);
+    const materialKeys = (data.materialKeys ?? 'mdf')
+      .split(/[,;|]/)
+      .map((key) => key.trim())
+      .filter(Boolean);
 
     await upsertProduct(
       {

@@ -4,10 +4,22 @@ import type { CategoryTree } from '@/lib/catalog/queries';
 import type { Dictionary, Locale } from '@/lib/i18n';
 
 const TONES: Record<string, string> = {
-  sofas: 'emerald', armchairs: 'mustard', beds: 'beige', mattresses: 'white',
-  wardrobes: 'oak', dressers: 'walnut', nightstands: 'ashWood', shelving: 'anthracite',
-  tables: 'oak', chairs: 'navy', kitchens: 'olive', hallway: 'grey',
-  kids: 'powder', office: 'graphite', 'living-room': 'graphite', doors: 'white',
+  sofas: 'emerald',
+  armchairs: 'mustard',
+  beds: 'beige',
+  mattresses: 'white',
+  wardrobes: 'oak',
+  dressers: 'walnut',
+  nightstands: 'ashWood',
+  shelving: 'anthracite',
+  tables: 'oak',
+  chairs: 'navy',
+  kitchens: 'olive',
+  hallway: 'grey',
+  kids: 'powder',
+  office: 'graphite',
+  'living-room': 'graphite',
+  doors: 'white',
 };
 
 /** The 16 top-level categories, each with its own generated key visual. */
@@ -41,7 +53,9 @@ export const CategoryGrid = ({
           />
           <div className="flex items-baseline justify-between gap-2 px-3.5 py-3">
             <span className="text-[14px] leading-tight group-hover:text-accent">{root.name}</span>
-            <span className="shrink-0 text-[12px] text-muted tabular-nums">{root.productCount}</span>
+            <span className="shrink-0 text-[12px] text-muted tabular-nums">
+              {root.productCount}
+            </span>
           </div>
         </Link>
       ))}

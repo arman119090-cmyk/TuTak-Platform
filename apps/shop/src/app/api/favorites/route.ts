@@ -27,7 +27,10 @@ export const POST = async (request: Request): Promise<Response> => {
 
   const { productId, action } = parsed.data;
   if (action === 'add') {
-    const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true },
+    });
     if (!product) return NextResponse.json({ error: 'not_found' }, { status: 404 });
     await prisma.favorite.upsert({
       where: { userId_productId: { userId: session.sub, productId } },

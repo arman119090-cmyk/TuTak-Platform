@@ -4,7 +4,7 @@ import { DEFAULT_LOCALE, LOCALES, negotiateLocale } from './lib/i18n';
 const PUBLIC_FILE = /\.(.*)$/;
 
 /**
-* Locale routing.
+ * Locale routing.
  *
  * Every storefront URL carries its language (/ru/catalog/sofas), which keeps
  * pages cacheable and gives search engines three real, indexable versions of

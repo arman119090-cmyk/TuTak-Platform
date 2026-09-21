@@ -80,12 +80,7 @@ export type QuoteLine = {
 };
 
 export type PromoRejection =
-  | 'NOT_FOUND'
-  | 'INACTIVE'
-  | 'NOT_STARTED'
-  | 'EXPIRED'
-  | 'USAGE_LIMIT'
-  | 'MIN_SUBTOTAL';
+  'NOT_FOUND' | 'INACTIVE' | 'NOT_STARTED' | 'EXPIRED' | 'USAGE_LIMIT' | 'MIN_SUBTOTAL';
 
 export type Quote = {
   currency: CurrencyCode;

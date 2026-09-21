@@ -55,12 +55,19 @@ const SuccessPage = async ({
               <li key={item.id} className="flex items-center gap-3">
                 {item.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.imageUrl} alt="" className="h-14 w-20 rounded-[var(--radius-xs)] bg-surface-2 object-cover" />
+                  <img
+                    src={item.imageUrl}
+                    alt=""
+                    className="h-14 w-20 rounded-[var(--radius-xs)] bg-surface-2 object-cover"
+                  />
                 ) : (
                   <Package width={20} height={20} />
                 )}
                 <span className="flex-1 text-[14px]">
-                  <Link href={`/${locale}/product/${item.slugSnapshot}`} className="hover:text-accent">
+                  <Link
+                    href={`/${locale}/product/${item.slugSnapshot}`}
+                    className="hover:text-accent"
+                  >
                     {item.nameSnapshot}
                   </Link>
                   <span className="block text-[12px] text-muted">
@@ -75,7 +82,9 @@ const SuccessPage = async ({
             <div className="flex justify-between">
               <dt className="text-muted">{dict.cart.delivery}</dt>
               <dd className="tabular-nums">
-                {order.deliveryMinor === 0 ? dict.cart.freeDelivery : formatMoney(order.deliveryMinor)}
+                {order.deliveryMinor === 0
+                  ? dict.cart.freeDelivery
+                  : formatMoney(order.deliveryMinor)}
               </dd>
             </div>
             {order.servicesMinor > 0 ? (
@@ -86,7 +95,9 @@ const SuccessPage = async ({
             ) : null}
             <div className="flex items-baseline justify-between pt-2">
               <dt className="font-medium">{dict.cart.total}</dt>
-              <dd className="text-[22px] font-semibold tabular-nums">{formatMoney(order.totalMinor)}</dd>
+              <dd className="text-[22px] font-semibold tabular-nums">
+                {formatMoney(order.totalMinor)}
+              </dd>
             </div>
             <div className="flex justify-between pt-1 text-[13px] text-muted">
               <dt>{dict.checkout.paymentMethod}</dt>

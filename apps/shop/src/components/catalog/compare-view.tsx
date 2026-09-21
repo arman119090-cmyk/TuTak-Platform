@@ -22,7 +22,10 @@ type Row = { label: string; values: string[] };
 export const CompareView = ({ locale, dict }: { locale: Locale; dict: Dictionary }) => {
   const { compare, ready, toggleCompare, clearCompare, addToCart, toast } = useStore();
   const [onlyDiff, setOnlyDiff] = useState(false);
-  const products = useProductsByIds(compare.map((item) => item.productId), locale);
+  const products = useProductsByIds(
+    compare.map((item) => item.productId),
+    locale,
+  );
 
   if (ready && compare.length === 0) {
     return (
@@ -39,7 +42,10 @@ export const CompareView = ({ locale, dict }: { locale: Locale; dict: Dictionary
   const specKeys = [...new Set(products.flatMap((product) => Object.keys(product.specs)))];
 
   const rows: Row[] = [
-    { label: dict.common.price, values: products.map((product) => formatMoney(product.priceMinor)) },
+    {
+      label: dict.common.price,
+      values: products.map((product) => formatMoney(product.priceMinor)),
+    },
     { label: dict.catalog.brand, values: products.map((product) => product.brandName) },
     { label: dict.catalog.rating, values: products.map((product) => product.ratingAvg.toFixed(1)) },
     {
@@ -93,7 +99,11 @@ export const CompareView = ({ locale, dict }: { locale: Locale; dict: Dictionary
           checked={onlyDiff}
           onChange={(event) => setOnlyDiff(event.target.checked)}
         />
-        <button type="button" onClick={clearCompare} className="text-[13px] text-muted hover:text-sale">
+        <button
+          type="button"
+          onClick={clearCompare}
+          className="text-[13px] text-muted hover:text-sale"
+        >
           {dict.compare.clearAll}
         </button>
       </div>
@@ -129,7 +139,12 @@ export const CompareView = ({ locale, dict }: { locale: Locale; dict: Dictionary
                       />
                       <span className="mt-2 block line-clamp-2 text-[13px]">{product.name}</span>
                     </Link>
-                    <Rating value={product.ratingAvg} showValue={false} size={12} className="mt-1" />
+                    <Rating
+                      value={product.ratingAvg}
+                      showValue={false}
+                      size={12}
+                      className="mt-1"
+                    />
                     <p className="mt-1.5 text-[15px] font-semibold tabular-nums">
                       {formatMoney(product.priceMinor)}
                     </p>

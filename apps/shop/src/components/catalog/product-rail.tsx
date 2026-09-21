@@ -47,7 +47,10 @@ export const ProductRail = ({
 
       <div className="hide-scrollbar -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 md:mx-0 md:grid md:grid-cols-3 md:gap-6 md:overflow-visix md:px-0 lg:grid-cols-4">
         {products.slice(0, 8).map((product) => (
-          <div key={product.id} className="w-[66vw] shrink-0 snap-start xs:w-[58vw] sm:w-[44vw] md:w-auto">
+          <div
+            key={product.id}
+            className="w-[66vw] shrink-0 snap-start xs:w-[58vw] sm:w-[44vw] md:w-auto"
+          >
             <ProductCardView product={product} locale={locale} dict={dict} />
           </div>
         ))}

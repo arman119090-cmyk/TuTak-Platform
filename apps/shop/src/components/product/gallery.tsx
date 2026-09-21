@@ -66,7 +66,9 @@ export const Gallery = ({
           }}
           onMouseLeave={() => setZoom(null)}
         >
-          {badges ? <div className="absolute left-4 top-4 z-10 flex flex-col gap-1.5">{badges}</div> : null}
+          {badges ? (
+            <div className="absolute left-4 top-4 z-10 flex flex-col gap-1.5">{badges}</div>
+          ) : null}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={current}
@@ -107,11 +109,16 @@ export const Gallery = ({
             </>
           ) : null}
         </div>
-        <p className="mt-2 hidden text-center text-[12px] text-muted lg:block">{dict.product.zoomHint}</p>
+        <p className="mt-2 hidden text-center text-[12px] text-muted lg:block">
+          {dict.product.zoomHint}
+        </p>
       </div>
 
       {lightbox ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/90 p-4" onClick={() => setLightbox(false)}>
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/90 p-4"
+          onClick={() => setLightbox(false)}
+        >
           <button
             type="button"
             aria-label={dict.common.close}

@@ -5,15 +5,30 @@ import { requireAdminApi } from '@/lib/auth/admin-api';
 import { LOCALES } from '@/lib/i18n';
 
 const createSchema = z.object({
-  slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9-]+$/),
   parentId: z.string().max(64).nullish(),
   artKey: z.string().trim().min(2).max(40),
-  names: z.object({ hy: z.string().min(1).max(120), ru: z.string().min(1).max(120), en: z.string().min(1).max(120) }),
+  names: z.object({
+    hy: z.string().min(1).max(120),
+    ru: z.string().min(1).max(120),
+    en: z.string().min(1).max(120),
+  }),
 });
 
 const updateSchema = z.object({
   id: z.string().min(1),
-  names: z.object({ hy: z.string().min(1).max(120), ru: z.string().min(1).max(120), en: z.string().min(1).max(120) }).optional(),
+  names: z
+    .object({
+      hy: z.string().min(1).max(120),
+      ru: z.string().min(1).max(120),
+      en: z.string().min(1).max(120),
+    })
+    .optional(),
   isActive: z.boolean().optional(),
   sort: z.number().int().min(0).max(999).optional(),
 });

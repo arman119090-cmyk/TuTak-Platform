@@ -21,7 +21,9 @@ const CartPage = async ({ params }: { params: Promise<{ locale: string }> }) => 
 
   return (
     <div className="container-page py-6 md:py-8">
-      <Breadcrumbs items={[{ label: dict.common.home, href: `/${locale}` }, { label: dict.cart.title }]} />
+      <Breadcrumbs
+        items={[{ label: dict.common.home, href: `/${locale}` }, { label: dict.cart.title }]}
+      />
       <h1 className="mb-6 text-[30px] md:text-[40px]">{dict.cart.title}</h1>
       <CartView locale={locale} dict={dict} />
     </div>

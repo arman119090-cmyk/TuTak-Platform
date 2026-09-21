@@ -25,7 +25,9 @@ const AdminRequests = async ({ searchParams }: { searchParams: Promise<{ type?: 
     where: active === 'ALL' ? undefined : { type: active },
     orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     take: 100,
-    include: { product: { select: { translations: { where: { locale: 'ru' }, select: { name: true } } } } },
+    include: {
+      product: { select: { translations: { where: { locale: 'ru' }, select: { name: true } } } },
+    },
   });
 
   return (

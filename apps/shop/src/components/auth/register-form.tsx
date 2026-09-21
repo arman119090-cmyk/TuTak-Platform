@@ -48,17 +48,34 @@ export const RegisterForm = ({ locale, dict }: { locale: Locale; dict: Dictionar
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={dict.auth.firstName} required>
-            <Input required minLength={2} value={form.firstName} onChange={(event) => set('firstName', event.target.value)} />
+            <Input
+              required
+              minLength={2}
+              value={form.firstName}
+              onChange={(event) => set('firstName', event.target.value)}
+            />
           </Field>
           <Field label={dict.auth.lastName}>
-            <Input value={form.lastName} onChange={(event) => set('lastName', event.target.value)} />
+            <Input
+              value={form.lastName}
+              onChange={(event) => set('lastName', event.target.value)}
+            />
           </Field>
         </div>
         <Field label={dict.auth.email} required>
-          <Input type="email" required value={form.email} onChange={(event) => set('email', event.target.value)} />
+          <Input
+            type="email"
+            required
+            value={form.email}
+            onChange={(event) => set('email', event.target.value)}
+          />
         </Field>
         <Field label={dict.auth.phone} hint="+374 XX XXX XXX">
-          <Input type="tel" value={form.phone} onChange={(event) => set('phone', event.target.value)} />
+          <Input
+            type="tel"
+            value={form.phone}
+            onChange={(event) => set('phone', event.target.value)}
+          />
         </Field>
         <Field label={dict.auth.password} required hint="min. 8">
           <Input

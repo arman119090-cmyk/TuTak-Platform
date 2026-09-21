@@ -18,7 +18,9 @@ const AccountLayout = async ({
 
   return (
     <div className="container-page py-6 md:py-8">
-      <Breadcrumbs items={[{ label: dict.common.home, href: `/${locale}` }, { label: dict.account.title }]} />
+      <Breadcrumbs
+        items={[{ label: dict.common.home, href: `/${locale}` }, { label: dict.account.title }]}
+      />
       <h1 className="mb-6 text-[30px] md:text-[38px]">
         {fill(dict.account.hello, { name: session.name })}
       </h1>

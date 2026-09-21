@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Expand, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Portal } from '@/components/ui/portal';
 import type { Dictionary } from '@/lib/i18n';
 
 /**
@@ -115,20 +116,26 @@ export const Gallery = ({
       </div>
 
       {lightbox ? (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/90 p-4"
-          onClick={() => setLightbox(false)}
-        >
-          <button
-            type="button"
-            aria-label={dict.common.close}
-            className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white"
+        <Portal>
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/90 p-4"
+            onClick={() => setLightbox(false)}
           >
-            <X width={22} height={22} />
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={current} alt={alt} className="max-h-[88vh] w-auto rounded-[var(--radius-md)]" />
-        </div>
+            <button
+              type="button"
+              aria-label={dict.common.close}
+              className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white"
+            >
+              <X width={22} height={22} />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={current}
+              alt={alt}
+              className="max-h-[88vh] w-auto rounded-[var(--radius-md)]"
+            />
+          </div>
+        </Portal>
       ) : null}
     </div>
   );

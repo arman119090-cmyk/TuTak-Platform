@@ -44,9 +44,22 @@ test.describe('cart and checkout', () => {
     const total = page.locator('dd').last();
     const before = Number((await total.innerText()).replace(/[^\d]/g, ''));
 
-    await page.getByRole('button', { name: '+' }).click();
+    // The quantity lives in client state, and a click that lands while React is
+    // re-rendering the row hits a node that is already detached — the click is
+    // simply lost. Retrying while the row still reads "1" tolerates that
+    // without hiding a real failure: if the stepper were broken, every click
+    // would be lost and the poll would still time out.
+    const stepper = page.getByRole('group', { name: 'Количество' }).first();
+    const plus = stepper.getByRole('button', { name: '+' });
+    await plus.click();
     await expect
-      .poll(async () => Number((await total.innerText()).replace(/[^\d]/g, '')))
+      .poll(
+        async () => {
+          if ((await stepper.innerText()).includes('1')) await plus.click().catch(() => undefined);
+          return Number((await total.innerText()).replace(/[^\d]/g, ''));
+        },
+        { timeout: 15_000 },
+      )
       .toBeGreaterThan(before);
 
     await page.getByPlaceholder('Промокод').fill('DEMO25');

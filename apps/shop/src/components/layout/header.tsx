@@ -23,6 +23,7 @@ import type { CategoryTree } from '@/lib/catalog/queries';
 import { cn } from '@/lib/utils';
 import { LOCALE_COOKIE, writeCookie } from '@/lib/client-cookies';
 import { useStore } from '@/components/providers/store-provider';
+import { Portal } from '@/components/ui/portal';
 import { SearchBox } from './search-box';
 
 const HIGHLIGHT_CATEGORIES = [
@@ -333,110 +334,112 @@ export const Header = ({
         ) : null}
       </nav>
 
-      {/* mobile drawer */}
+      {/* mobile drawer — portalled, see Portal for why */}
       {menuOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-ink/40" onClick={() => setMenuOpen(false)} />
-          <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-sm flex-col bg-surface">
-            <div className="flex h-16 items-center justify-between border-b border-line px-4">
-              <span className="font-display text-lg uppercase tracking-[0.1em]">
-                {brandName(locale)}
-              </span>
-              <button
-                type="button"
-                onClick={() => setMenuOpen(false)}
-                aria-label={dict.common.close}
-                className="flex h-11 w-11 items-center justify-center"
-              >
-                <X width={22} height={22} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 py-3">
-              {tree.map((root) => (
-                <details key={root.slug} className="border-b border-line/70">
-                  <summary className="flex cursor-pointer items-center justify-between px-3 py-3.5 text-[15px]">
-                    {root.name}
-                    <ChevronDown width={16} height={16} className="text-muted" />
-                  </summary>
-                  <div className="pb-2">
-                    <Link
-                      href={`/${locale}/catalog/${root.slug}`}
-                      className="block px-6 py-2.5 text-[14px] text-accent"
-                    >
-                      {dict.common.showAll}
-                    </Link>
-                    {root.children.map((child) => (
+        <Portal>
+          <div className="fixed inset-0 z-50 lg:hidden">
+            <div className="absolute inset-0 bg-ink/40" onClick={() => setMenuOpen(false)} />
+            <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-sm flex-col bg-surface">
+              <div className="flex h-16 items-center justify-between border-b border-line px-4">
+                <span className="font-display text-lg uppercase tracking-[0.1em]">
+                  {brandName(locale)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(false)}
+                  aria-label={dict.common.close}
+                  className="flex h-11 w-11 items-center justify-center"
+                >
+                  <X width={22} height={22} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-2 py-3">
+                {tree.map((root) => (
+                  <details key={root.slug} className="border-b border-line/70">
+                    <summary className="flex cursor-pointer items-center justify-between px-3 py-3.5 text-[15px]">
+                      {root.name}
+                      <ChevronDown width={16} height={16} className="text-muted" />
+                    </summary>
+                    <div className="pb-2">
                       <Link
-                        key={child.slug}
-                        href={`/${locale}/catalog/${child.slug}`}
-                        className="block px-6 py-2.5 text-[14px] text-ink-soft"
+                        href={`/${locale}/catalog/${root.slug}`}
+                        className="block px-6 py-2.5 text-[14px] text-accent"
                       >
-                        {child.name}
+                        {dict.common.showAll}
                       </Link>
-                    ))}
-                  </div>
-                </details>
-              ))}
-              <div className="mt-3 space-y-1 px-3">
-                {/* The account icon steps aside on the narrowest phones, so the
+                      {root.children.map((child) => (
+                        <Link
+                          key={child.slug}
+                          href={`/${locale}/catalog/${child.slug}`}
+                          className="block px-6 py-2.5 text-[14px] text-ink-soft"
+                        >
+                          {child.name}
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+                <div className="mt-3 space-y-1 px-3">
+                  {/* The account icon steps aside on the narrowest phones, so the
                     drawer must always offer a way in. */}
-                <Link
-                  href={session ? `/${locale}/account` : `/${locale}/login`}
-                  className="flex items-center gap-2.5 py-2.5 text-[15px]"
-                >
-                  <User width={17} height={17} />
-                  {session ? dict.nav.account : dict.nav.login}
-                </Link>
-                <Link href={`/${locale}/kitchens`} className="block py-2.5 text-[15px]">
-                  {dict.home.kitchensCta}
-                </Link>
-                <Link
-                  href={`/${locale}/catalog?discounted=1`}
-                  className="block py-2.5 text-[15px] text-sale"
-                >
-                  {dict.nav.sale}
-                </Link>
-                <Link href={`/${locale}/compare`} className="block py-2.5 text-[15px]">
-                  {dict.nav.compare} ({compare.length})
-                </Link>
-                <Link href={`/${locale}/pages/delivery`} className="block py-2.5 text-[15px]">
-                  {dict.product.delivery}
-                </Link>
-                <Link href={`/${locale}/pages/contacts`} className="block py-2.5 text-[15px]">
-                  {dict.nav.contacts}
-                </Link>
-              </div>
-            </div>
-            <div className="border-t border-line p-4">
-              <div className="mb-3 flex items-center gap-2">
-                {LOCALES.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => switchLocale(item)}
-                    className={cn(
-                      'h-9 flex-1 rounded-[var(--radius-sm)] border text-[13px] uppercase',
-                      item === locale ? 'border-ink bg-ink text-white' : 'border-line',
-                    )}
+                  <Link
+                    href={session ? `/${locale}/account` : `/${locale}/login`}
+                    className="flex items-center gap-2.5 py-2.5 text-[15px]"
                   >
-                    {item}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-col gap-2">
-                {brand.contacts.phones.map((phone) => (
-                  <a
-                    key={phone.dial}
-                    href={`tel:${phone.dial}`}
-                    className="flex h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-surface-2 text-sm"
+                    <User width={17} height={17} />
+                    {session ? dict.nav.account : dict.nav.login}
+                  </Link>
+                  <Link href={`/${locale}/kitchens`} className="block py-2.5 text-[15px]">
+                    {dict.home.kitchensCta}
+                  </Link>
+                  <Link
+                    href={`/${locale}/catalog?discounted=1`}
+                    className="block py-2.5 text-[15px] text-sale"
                   >
-                    <Phone width={16} height={16} /> {phone.display}
-                  </a>
-                ))}
+                    {dict.nav.sale}
+                  </Link>
+                  <Link href={`/${locale}/compare`} className="block py-2.5 text-[15px]">
+                    {dict.nav.compare} ({compare.length})
+                  </Link>
+                  <Link href={`/${locale}/pages/delivery`} className="block py-2.5 text-[15px]">
+                    {dict.product.delivery}
+                  </Link>
+                  <Link href={`/${locale}/pages/contacts`} className="block py-2.5 text-[15px]">
+                    {dict.nav.contacts}
+                  </Link>
+                </div>
+              </div>
+              <div className="border-t border-line p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  {LOCALES.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => switchLocale(item)}
+                      className={cn(
+                        'h-9 flex-1 rounded-[var(--radius-sm)] border text-[13px] uppercase',
+                        item === locale ? 'border-ink bg-ink text-white' : 'border-line',
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {brand.contacts.phones.map((phone) => (
+                    <a
+                      key={phone.dial}
+                      href={`tel:${phone.dial}`}
+                      className="flex h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-surface-2 text-sm"
+                    >
+                      <Phone width={16} height={16} /> {phone.display}
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </Portal>
       ) : null}
     </header>
   );

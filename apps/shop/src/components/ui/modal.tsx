@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Portal } from './portal';
 
 /**
  * Dialog used by quick view, the request forms and the filter drawer.
@@ -44,35 +45,37 @@ export const Modal = ({
   } as const;
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="absolute inset-0 bg-ink/45 backdrop-blur-[2px]" onClick={onClose} />
+    <Portal>
       <div
-        className={cn(
-          'fade-in relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-lg)] bg-surface shadow-[var(--shadow-pop)] sm:rounded-[var(--radius-lg)]',
-          sizes[size],
-        )}
+        className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center"
+        role="dialog"
+        aria-modal="true"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-          <div>
-            {title ? <h2 className="text-xl">{title}</h2> : null}
-            {subtitle ? <p className="mt-1 text-[13px] text-muted">{subtitle}</p> : null}
+        <div className="absolute inset-0 bg-ink/45 backdrop-blur-[2px]" onClick={onClose} />
+        <div
+          className={cn(
+            'fade-in relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-lg)] bg-surface shadow-[var(--shadow-pop)] sm:rounded-[var(--radius-lg)]',
+            sizes[size],
+          )}
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+            <div>
+              {title ? <h2 className="text-xl">{title}</h2> : null}
+              {subtitle ? <p className="mt-1 text-[13px] text-muted">{subtitle}</p> : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-surface-2"
+            >
+              <X width={20} height={20} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-surface-2"
-          >
-            <X width={20} height={20} />
-          </button>
+          <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
+          {footer ? <div className="border-t border-line px-5 py-4">{footer}</div> : null}
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
-        {footer ? <div className="border-t border-line px-5 py-4">{footer}</div> : null}
       </div>
-    </div>
+    </Portal>
   );
 };

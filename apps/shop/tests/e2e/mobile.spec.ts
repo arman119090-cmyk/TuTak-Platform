@@ -23,6 +23,47 @@ test.describe('mobile storefront', () => {
     await expect(page.getByRole('heading', { name: 'Двуспальные кровати' })).toBeVisible();
   });
 
+  test('the drawer covers the screen instead of hanging under the header', async ({ page }) => {
+    // Regression: the sticky header uses backdrop-blur, which makes it the
+    // containing block for `position: fixed`. The drawer was therefore sized to
+    // the header and its language buttons and phone numbers spilled over the
+    // page. It is portalled out of the header now, so it must be full height
+    // and it must cover what is behind it.
+    await page.goto('/ru/catalog/beds');
+    await settle(page);
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error('the mobile project must have a viewport');
+
+    await page.getByRole('button', { name: 'Меню' }).click();
+    // The overlay must live directly under <body>: inside the header it would
+    // be measured against the header instead of the screen.
+    const overlay = page.locator('body > div.fixed.inset-0');
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+    const panel = overlay.locator('> div').last();
+    const box = await panel.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(viewport.height - 1);
+    expect(box!.y).toBeLessThanOrEqual(1);
+
+    // The language switcher sits at the bottom of the drawer, over the panel —
+    // not floating above the catalogue.
+    const ru = page.locator('body > div.fixed.inset-0').getByRole('button', {
+      name: 'ru',
+      exact: true,
+    });
+    const ruBox = await ru.boundingBox();
+    expect(ruBox).not.toBeNull();
+    expect(ruBox!.y).toBeGreaterThan(viewport.height / 2);
+
+    // What is behind must not be reachable through the drawer: whatever is
+    // under a point in the middle of the screen has to belong to the overlay.
+    const onTop = await page.evaluate(() => {
+      const element = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+      return Boolean(element?.closest('body > div.fixed.inset-0'));
+    });
+    expect(onTop).toBe(true);
+  });
+
   test('the mobile search leads to results', async ({ page }) => {
     await page.goto('/ru');
     await settle(page);

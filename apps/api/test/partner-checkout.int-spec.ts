@@ -58,14 +58,19 @@ describe('Partner checkouts — POS seam (integration)', () => {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  /** A partner with an ACTIVE POS integration and one M2M key. */
-  const posPartner = async () => {
+  /** A partner with an ACTIVE POS integration and one M2M key issued for it. */
+  const posPartner = async (branchId?: string) => {
     const partner = await createPartner(prisma, { bonusAccrualRateBps: 500, maxBonusPaymentPercent: 50 });
-    await prisma.partnerIntegration.create({
-      data: { partnerId: partner.id, type: PartnerIntegrationType.POS, status: PartnerIntegrationStatus.ACTIVE },
+    const integration = await prisma.partnerIntegration.create({
+      data: {
+        partnerId: partner.id,
+        type: PartnerIntegrationType.POS,
+        status: PartnerIntegrationStatus.ACTIVE,
+        partnerBranchId: branchId ?? null,
+      },
     });
-    const key = await apiKeys.issue({ partnerId: partner.id, label: 'till-1' });
-    return { partner, apiKey: key.apiKey, apiKeyId: key.id };
+    const key = await apiKeys.issue({ partnerId: partner.id, integrationId: integration.id, label: 'till-1' });
+    return { partner, integration, apiKey: key.apiKey, apiKeyId: key.id };
   };
 
   const tokenFor = (user: User) =>
@@ -142,6 +147,99 @@ describe('Partner checkouts — POS seam (integration)', () => {
       const res = await pos(key.apiKey, 'POST', '', { externalReference: 'RCPT-3', grossAmount: '1000' });
       expect(res.status).toBe(403);
       expect(await prisma.partnerCheckout.count()).toBe(0);
+    });
+
+    // ── Audit 21.09.2026, D17: a key is a credential for one integration ──
+
+    it('D17: a partner-wide key, a roaming-CPO key and a key on a suspended integration open nothing', async () => {
+      const { partner, integration, apiKey } = await posPartner();
+      const partnerWide = await apiKeys.issue({ partnerId: partner.id, label: 'no integration' });
+      expect((await pos(partnerWide.apiKey, 'POST', '', { externalReference: 'R-A', grossAmount: '1000' })).status).toBe(403);
+
+      const roaming = await prisma.partnerIntegration.create({
+        data: { partnerId: partner.id, type: PartnerIntegrationType.API, status: PartnerIntegrationStatus.ACTIVE },
+      });
+      const roamingKey = await apiKeys.issue({ partnerId: partner.id, integrationId: roaming.id });
+      expect((await pos(roamingKey.apiKey, 'POST', '', { externalReference: 'R-B', grossAmount: '1000' })).status).toBe(403);
+
+      const created = await pos(apiKey, 'POST', '', { externalReference: 'R-C', grossAmount: '1000' });
+      expect(created.status).toBe(201);
+      // Suspending the integration takes effect on the very next request —
+      // status, cancel and confirm included, not only create.
+      await prisma.partnerIntegration.update({ where: { id: integration.id }, data: { status: PartnerIntegrationStatus.SUSPENDED } });
+      expect((await pos(apiKey, 'POST', '', { externalReference: 'R-D', grossAmount: '1000' })).status).toBe(403);
+      expect((await pos(apiKey, 'GET', `/${created.data.checkoutId}`)).status).toBe(403);
+      expect((await pos(apiKey, 'POST', `/${created.data.checkoutId}/confirm`)).status).toBe(403);
+      expect(await prisma.partnerCheckout.count()).toBe(1);
+    });
+
+    it('D17: a key scoped to a branch sells at that branch only, and defaults to it', async () => {
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500, maxBonusPaymentPercent: 50 });
+      const branch = (name: string) =>
+        prisma.partnerBranch.create({ data: { partnerId: partner.id, name, address: name, city: 'Yerevan', latitude: 40.18, longitude: 44.51, isActive: true } });
+      const north = await branch('North');
+      const south = await branch('South');
+      const integration = await prisma.partnerIntegration.create({
+        data: { partnerId: partner.id, type: PartnerIntegrationType.POS, status: PartnerIntegrationStatus.ACTIVE, partnerBranchId: north.id },
+      });
+      const key = await apiKeys.issue({ partnerId: partner.id, integrationId: integration.id });
+
+      const elsewhere = await pos(key.apiKey, 'POST', '', { externalReference: 'R-N1', grossAmount: '1000', partnerBranchId: south.id });
+      expect(elsewhere.status).toBe(403);
+      const defaulted = await pos(key.apiKey, 'POST', '', { externalReference: 'R-N2', grossAmount: '1000' });
+      expect(defaulted.status).toBe(201);
+      const row = await prisma.partnerCheckout.findUniqueOrThrow({ where: { id: String(defaulted.data.checkoutId) } });
+      expect(row.partnerBranchId).toBe(north.id);
+      const explicit = await pos(key.apiKey, 'POST', '', { externalReference: 'R-N3', grossAmount: '1000', partnerBranchId: north.id });
+      expect(explicit.status).toBe(201);
+    });
+
+    it('D17: two integrations at one partner do not see each other\'s checkouts', async () => {
+      const a = await posPartner();
+      const secondIntegration = await prisma.partnerIntegration.create({
+        data: { partnerId: a.partner.id, type: PartnerIntegrationType.POS, status: PartnerIntegrationStatus.ACTIVE },
+      });
+      const b = await apiKeys.issue({ partnerId: a.partner.id, integrationId: secondIntegration.id });
+      const created = await pos(a.apiKey, 'POST', '', { externalReference: 'R-X', grossAmount: '1000' });
+      const id = String(created.data.checkoutId);
+      expect((await pos(b.apiKey, 'GET', `/${id}`)).status).toBe(404);
+      expect((await pos(b.apiKey, 'POST', `/${id}/cancel`)).status).toBe(404);
+      expect((await pos(b.apiKey, 'POST', `/${id}/confirm`)).status).toBe(404);
+      expect((await pos(a.apiKey, 'GET', `/${id}`)).status).toBe(200);
+    });
+
+    // ── Audit 21.09.2026, D11: the idempotency fingerprint is every semantic input ──
+
+    it('D11: the same key with a changed branch, line item or timestamp is a conflict, never a silent replay', async () => {
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500, maxBonusPaymentPercent: 50 });
+      const branch = (name: string) =>
+        prisma.partnerBranch.create({ data: { partnerId: partner.id, name, address: name, city: 'Yerevan', latitude: 40.18, longitude: 44.51, isActive: true } });
+      const east = await branch('East');
+      const west = await branch('West');
+      const integration = await prisma.partnerIntegration.create({
+        data: { partnerId: partner.id, type: PartnerIntegrationType.POS, status: PartnerIntegrationStatus.ACTIVE },
+      });
+      const key = await apiKeys.issue({ partnerId: partner.id, integrationId: integration.id });
+      const base = {
+        externalReference: 'RCPT-D11',
+        grossAmount: '15000',
+        partnerBranchId: east.id,
+        quantity: '50',
+        quantityUnit: 'LITER',
+        unitPrice: '300',
+        occurredAt: '2026-09-21T10:00:00.000Z',
+        idempotencyKey: 'same-key',
+      };
+      const first = await pos(key.apiKey, 'POST', '', base);
+      expect(first.status).toBe(201);
+      const replay = await pos(key.apiKey, 'POST', '', base);
+      expect(replay.status).toBe(201);
+      expect(replay.data.checkoutId).toBe(first.data.checkoutId);
+
+      expect((await pos(key.apiKey, 'POST', '', { ...base, partnerBranchId: west.id })).status).toBe(409);
+      expect((await pos(key.apiKey, 'POST', '', { ...base, quantity: '30', unitPrice: '500' })).status).toBe(409);
+      expect((await pos(key.apiKey, 'POST', '', { ...base, occurredAt: '2026-09-21T11:00:00.000Z' })).status).toBe(409);
+      expect(await prisma.partnerCheckout.count()).toBe(1);
     });
 
     it('never opens the same receipt twice: external reference is unique per partner, and an idempotency key replays', async () => {
@@ -279,6 +377,76 @@ describe('Partner checkouts — POS seam (integration)', () => {
       const retry = await customerApi(owner, 'POST', `/claim/${created.data.token}`, {});
       expect(retry.status).toBe(201);
       expect(retry.data.id).toBe(winner.data.id);
+      expect(await prisma.purchaseIntent.count()).toBe(1);
+    });
+
+    // ── Audit 21.09.2026, D10: the purchase and its binding commit together ──
+
+    it('D10: a failure after the purchase is inserted but before the checkout names it rolls the purchase back — nobody else can claim a sale that has a live purchase', async () => {
+      const { apiKey } = await posPartner();
+      const [alice, bob] = await Promise.all([customer('5000', '0'), customer('0', '0')]);
+      const created = await pos(apiKey, 'POST', '', { externalReference: 'RCPT-D10', grossAmount: '10000' });
+
+      // The binding runs inside the insert's transaction; making it fail is
+      // the auditor's "injected link error after purchase commit" — except
+      // that the purchase now cannot commit without it.
+      const spy = jest
+        .spyOn(checkouts as unknown as { bindCheckoutToPurchase: () => Promise<void> }, 'bindCheckoutToPurchase')
+        .mockRejectedValueOnce(new Error('injected link error'));
+      const failed = await customerApi(alice, 'POST', `/claim/${created.data.token}`, { bonusAmountRequested: '5000' });
+      spy.mockRestore();
+      expect(failed.status).toBeGreaterThanOrEqual(500);
+
+      // Nothing half-open: no purchase, no bonus held, the code handed back.
+      expect(await prisma.purchaseIntent.count()).toBe(0);
+      const wallet = await prisma.wallet.findFirstOrThrow({ where: { userId: alice.id } });
+      expect(wallet.reservedBonus.toFixed(4)).toBe('0.0000');
+      const row = await prisma.partnerCheckout.findUniqueOrThrow({ where: { id: String(created.data.checkoutId) } });
+      expect(row.status).toBe(PartnerCheckoutStatus.OPEN);
+      expect(row.purchaseIntentId).toBeNull();
+
+      // The sale is still real and exactly one customer gets it.
+      const bobs = await customerApi(bob, 'POST', `/claim/${created.data.token}`, {});
+      expect(bobs.status).toBe(201);
+      expect((await customerApi(alice, 'POST', `/claim/${created.data.token}`, {})).status).toBe(409);
+      expect(await prisma.purchaseIntent.count()).toBe(1);
+      const bound = await prisma.partnerCheckout.findUniqueOrThrow({ where: { id: String(created.data.checkoutId) } });
+      expect(bound.purchaseIntentId).toBe(String(bobs.data.id));
+    });
+
+    it('D10: the till cancelling in the window between claim and insert rolls the purchase back', async () => {
+      const { apiKey } = await posPartner();
+      const alice = await customer('0', '0');
+      const created = await pos(apiKey, 'POST', '', { externalReference: 'RCPT-D10b', grossAmount: '10000' });
+      // Between the claim flip and the insert, the checkout is expired
+      // underneath the customer (the sweep's own transition).
+      const realCreate = purchaseIntents.create.bind(purchaseIntents);
+      const spy = jest.spyOn(purchaseIntents, 'create').mockImplementation(async (dto, customerId, opts) => {
+        await prisma.partnerCheckout.update({
+          where: { id: String(created.data.checkoutId) },
+          data: { status: PartnerCheckoutStatus.EXPIRED, claimedByUserId: null, claimedAt: null },
+        });
+        return realCreate(dto, customerId, opts);
+      });
+      const res = await customerApi(alice, 'POST', `/claim/${created.data.token}`, {});
+      spy.mockRestore();
+      expect(res.status).toBe(409);
+      expect(await prisma.purchaseIntent.count()).toBe(0);
+    });
+
+    it('D11: a replayed claim with a different funding choice is a conflict; the same choice is the same purchase', async () => {
+      const { apiKey } = await posPartner();
+      const user = await customer('5000', '20000');
+      const created = await pos(apiKey, 'POST', '', { externalReference: 'RCPT-D11c', grossAmount: '50000' });
+      const first = await customerApi(user, 'POST', `/claim/${created.data.token}`, { bonusAmountRequested: '5000', prepaidAmountApplied: '20000' });
+      expect(first.status).toBe(201);
+      const same = await customerApi(user, 'POST', `/claim/${created.data.token}`, { bonusAmountRequested: '5000', prepaidAmountApplied: '20000' });
+      expect(same.status).toBe(201);
+      expect(same.data.id).toBe(first.data.id);
+      const bare = await customerApi(user, 'POST', `/claim/${created.data.token}`, {});
+      expect(bare.status).toBe(201); // asks for nothing in particular: the purchase as it is
+      const different = await customerApi(user, 'POST', `/claim/${created.data.token}`, { bonusAmountRequested: '0', prepaidAmountApplied: '0' });
+      expect(different.status).toBe(409);
       expect(await prisma.purchaseIntent.count()).toBe(1);
     });
 

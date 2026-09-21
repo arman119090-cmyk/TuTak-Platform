@@ -1,0 +1,70 @@
+# Self-contained demo image: the shop AND a PostgreSQL with the demo data
+# already in it, in one container.
+#
+# This exists for showing the demo to someone on free hosting, where a separate
+# managed database is not available. The database is built and seeded here, at
+# image build time, and the finished data directory is copied into the runtime
+# image — so the container starts with 282 products and needs no external
+# service, no DATABASE_URL and no seeding on boot.
+#
+# The trade-off is deliberate: the data lives inside the container, so whenever
+# the instance restarts (free hosting stops an idle service), the shop returns
+# to exactly the seeded state and anything a visitor ordered is gone. For a
+# real deployment use ./Dockerfile, which talks to a real database.
+
+FROM node:22-bookworm-slim AS build
+ENV DEBIAN_FRONTEND=noninteractive
+# Debian keeps the server binaries off PATH under a versioned directory, so
+# whatever version apt installs gets linked into /usr/local/bin.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql postgresql-client openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && for binary in /usr/lib/postgresql/*/bin/*; do ln -sf "$binary" /usr/local/bin/; done
+# AUTH_SECRET here is build-time only, so prerendering never trips the "no
+# secret" guard; it is not repeated in the runtime stage, where the real one
+# comes from the hosting provider.
+ENV PGDATA=/pgdata \
+    DATABASE_URL=postgresql://demo@127.0.0.1:5432/furniture_shop?schema=public \
+    NEXT_TELEMETRY_DISABLED=1 \
+    AUTH_SECRET=build-stage-placeholder-not-used-at-runtime
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+# One layer: the database only exists while this command runs, so initdb, the
+# migrations, the seed and `next build` (which prerenders pages from the
+# catalogue) all have to happen together.
+RUN mkdir -p "$PGDATA" && chown postgres:postgres "$PGDATA" \
+  && su postgres -c "initdb -D $PGDATA -U demo --auth=trust" \
+  && su postgres -c "pg_ctl -D $PGDATA -o '-c listen_addresses=127.0.0.1' -w start" \
+  && su postgres -c "createdb -U demo furniture_shop" \
+  && npx prisma migrate deploy \
+  && npx tsx prisma/seed.ts \
+  && npm run build \
+  && su postgres -c "pg_ctl -D $PGDATA -m fast -w stop"
+
+FROM node:22-bookworm-slim AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && for binary in /usr/lib/postgresql/*/bin/*; do ln -sf "$binary" /usr/local/bin/; done
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PGDATA=/pgdata \
+    DATABASE_URL=postgresql://demo@127.0.0.1:5432/furniture_shop?schema=public \
+    PORT=10000
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/.next ./.next
+COPY --from=build /app/public ./public
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/next.config.ts ./next.config.ts
+COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/src ./src
+COPY --from=build /app/tsconfig.json ./tsconfig.json
+COPY --from=build --chown=postgres:postgres /pgdata /pgdata
+COPY scripts/demo-entrypoint.sh /usr/local/bin/demo-entrypoint.sh
+RUN chmod +x /usr/local/bin/demo-entrypoint.sh
+EXPOSE 10000
+CMD ["/usr/local/bin/demo-entrypoint.sh"]

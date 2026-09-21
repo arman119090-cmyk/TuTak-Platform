@@ -167,3 +167,56 @@ Merge не выполнялся. В Railway по-прежнему застейд
 
 **NOT READY — Telegram chat id + подтверждение тестового alert, device
 review.**
+
+---
+
+## 21.09.2026, 21:00Z — Telegram: переменные поставлены, код не задеплоен
+
+По поручению владельца в `tutak-api` (project **TuTak**, environment
+**production**) установлены две переменные:
+
+| Переменная | Было | Стало |
+| --- | --- | --- |
+| `ALERT_TELEGRAM_BOT_TOKEN` | стояла с 19.09 | перезаписана новым значением |
+| `ALERT_TELEGRAM_CHAT_ID` | отсутствовала | **SET** |
+
+Значения здесь не приводятся. Токен передан владельцем в переписке и записан
+только в Railway — ни в один файл, коммит, PR или лог он не попадал.
+
+Поставлено с `skipDeploys=true`: **редеплоя не было**. Это означает, что
+работающий контейнер по-прежнему видит старое окружение — новые значения
+применятся при следующем деплое. Других переменных не трогал.
+
+### Почему alert:verify не запускался
+
+Задеплоен коммит `369eda1` (deployment `f94d56eb`, SUCCESS, 19.09 07:30Z,
+ветка `main`) — та же голова, что и до правки, то есть редеплой действительно
+не случился.
+
+В коде этой головы **канала Telegram нет**. `apps/api/src/infrastructure/alerts/`
+на `origin/main` содержит только `console-alert.channel.ts` и
+`webhook-alert.channel.ts`; `alerts.module.ts` выбирает между ними по наличию
+`ALERT_WEBHOOK_URL` и переменные `ALERT_TELEGRAM_*` не читает вовсе.
+Единственное упоминание Telegram на `main` — комментарий в
+`alert-verify.ts:9`. `TelegramAlertChannel` появляется только в RC-цепочке
+(PR #67 / `claude/rc-20260921`).
+
+Поэтому запускать `alert:verify` против production бессмысленно: он не может
+сертифицировать канал, которого в задеплоенном коде нет. Подменять Telegram
+через `ALERT_WEBHOOK_URL` и делать временные обходы владелец запретил, и я
+этого не делал.
+
+### Статус gates после правки
+
+| # | Gate | Статус |
+|---|---|---|
+| GitHub ruleset / default branch | CLOSED |
+| Railway Wait for CI ×3 | CLOSED |
+| PITR + restore | CLOSED |
+| Viva SMS | CLOSED |
+| Human alerts | **OPEN** — обе переменные стоят, но код Telegram не задеплоен; нужен деплой RC, затем `alert:verify` и подтверждение получения человеком |
+| Device review | OPEN — результатов нет |
+
+PR #67 не merge-ил, production branch не менял, редеплой не делал.
+
+**TELEGRAM VARIABLES CONFIGURED — WAITING FOR RC DEPLOYMENT.**

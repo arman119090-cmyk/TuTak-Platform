@@ -16,6 +16,7 @@ import {
   Th,
   Tr,
 } from '@tutak/design/web';
+import { LoadFailed } from '@/components/LoadFailed';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { roamingCpoApi } from '@/lib/api/roamingCpoApi';
 
@@ -34,7 +35,11 @@ export default function RoamingCpoStationsPage() {
   const [draftRate, setDraftRate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const { data: stations } = useQuery({
+  const {
+    data: stations,
+    isError: stationsFailed,
+    refetch: refetchStations,
+  } = useQuery({
     queryKey: ['roaming-cpo-stations', partnerId],
     queryFn: () => roamingCpoApi.listStations(partnerId),
     enabled: !!partnerId,
@@ -76,7 +81,9 @@ export default function RoamingCpoStationsPage() {
         </Field>
       </Surface>
 
-      {!partnerId ? null : (stations ?? []).length === 0 ? (
+      {!partnerId ? null : stationsFailed ? (
+        <LoadFailed what="the stations" onRetry={() => void refetchStations()} />
+      ) : (stations ?? []).length === 0 ? (
         <EmptyState
           title="No roaming-CPO stations for this partner"
           message="Stations appear here once the partner syncs them via POST /roaming-cpo/stations/sync."

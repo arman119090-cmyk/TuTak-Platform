@@ -280,6 +280,57 @@ describe('ProviderPaymentScreen', () => {
     expect(pspApi.begin).toHaveBeenCalledTimes(1);
   });
 
+  it('a 502 after begin is "unknown", never "did not start" (audit D14)', async () => {
+    // The proxy answered, the API may well have opened the bill: the
+    // re-read finds an attempt waiting, and the text must not promise
+    // that nothing happened.
+    (pspApi.status as jest.Mock)
+      .mockResolvedValueOnce(statusOf(CustomerPaymentState.NOT_STARTED))
+      .mockResolvedValue(statusOf(CustomerPaymentState.WAITING_PROVIDER, { attemptId: 'attempt-1' }));
+    (pspApi.begin as jest.Mock).mockRejectedValue(refusal('Bad Gateway', 502));
+    const { getByText } = renderScreen();
+    await screen.findByText(/pay for this purchase/i);
+    fireEvent.press(getByText(/^pay$/i));
+
+    expect(await screen.findByText(/answered with an error/i)).toBeTruthy();
+    expect(screen.queryByText(/did not start the payment/i)).toBeNull();
+    expect(screen.getByText(/waiting for the provider/i)).toBeTruthy();
+    expect(screen.queryByText(/^pay$/i)).toBeNull();
+  });
+
+  it('a 503 and a 504 are unknown too; a 409 is still a refusal', async () => {
+    for (const status of [503, 504]) {
+      (pspApi.status as jest.Mock).mockReset().mockResolvedValue(statusOf(CustomerPaymentState.NOT_STARTED));
+      (pspApi.begin as jest.Mock).mockReset().mockRejectedValue(refusal('unavailable', status));
+      const view = renderScreen();
+      await screen.findByText(/pay for this purchase/i);
+      fireEvent.press(view.getByText(/^pay$/i));
+      expect(await screen.findByText(/answered with an error/i)).toBeTruthy();
+      expect(screen.queryByText(/did not start the payment/i)).toBeNull();
+      view.unmount();
+      activeClient?.clear();
+    }
+    (pspApi.status as jest.Mock).mockReset().mockResolvedValue(statusOf(CustomerPaymentState.NOT_STARTED));
+    (pspApi.begin as jest.Mock).mockReset().mockRejectedValue(refusal('Somebody at the business has to agree the amount first', 409));
+    const view = renderScreen();
+    await screen.findByText(/pay for this purchase/i);
+    fireEvent.press(view.getByText(/^pay$/i));
+    expect(await screen.findByText(/did not start the payment/i)).toBeTruthy();
+  });
+
+  it('an unresolved attempt is neither "waiting for you" nor a decline, and offers no way to pay again (audit D06)', async () => {
+    (pspApi.status as jest.Mock).mockResolvedValue(
+      statusOf(CustomerPaymentState.UNRESOLVED, { attemptId: 'attempt-9' }),
+    );
+    renderScreen();
+    expect(await screen.findByText(/did not answer in time/i)).toBeTruthy();
+    expect(screen.getByText(/do not pay another way/i)).toBeTruthy();
+    expect(screen.queryByText(/waiting for the provider/i)).toBeNull();
+    expect(screen.queryByText(/declined/i)).toBeNull();
+    expect(screen.queryByText(/^pay$/i)).toBeNull();
+    expect(screen.queryByText(/try paying again/i)).toBeNull();
+  });
+
   it('says the provider has not answered yet while waiting', async () => {
     (pspApi.status as jest.Mock).mockResolvedValue(
       statusOf(CustomerPaymentState.WAITING_PROVIDER),

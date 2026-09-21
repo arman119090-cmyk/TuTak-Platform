@@ -33,7 +33,7 @@ describe('useApproximateLocation', () => {
     mockRequest.mockReturnValue(new Promise(() => undefined)); // never settles
     const { result } = renderHook(() => useApproximateLocation());
 
-    expect(result.current).toEqual({ ...DEFAULT_CENTRE, isFallback: true });
+    expect(result.current).toMatchObject({ ...DEFAULT_CENTRE, isFallback: true, source: 'city', isStale: false });
   });
 
   it('moves to the real position once the person allows it', async () => {
@@ -43,7 +43,7 @@ describe('useApproximateLocation', () => {
     const { result } = renderHook(() => useApproximateLocation());
 
     await waitFor(() => expect(result.current.isFallback).toBe(false));
-    expect(result.current).toEqual({ lat: 40.2, lng: 44.6, isFallback: false });
+    expect(result.current).toMatchObject({ lat: 40.2, lng: 44.6, isFallback: false, source: 'fresh', isStale: false });
   });
 
   it('shows the cached position immediately, then the fresh one', async () => {
@@ -58,11 +58,61 @@ describe('useApproximateLocation', () => {
     // few hundred metres, which for "partners within 25km" is the same answer.
     await waitFor(() => expect(result.current.lat).toBe(40.15));
     expect(result.current.isFallback).toBe(false);
+    expect(result.current.source).toBe('cached');
+    // The cache is bounded (audit D16): only a recent, reasonably accurate
+    // last-known fix counts as one at all.
+    expect(mockLastKnown).toHaveBeenCalledWith({ maxAge: 5 * 60_000, requiredAccuracy: 500 });
 
     await act(async () => {
       resolveFresh({ coords: { latitude: 40.21, longitude: 44.61 } });
     });
     await waitFor(() => expect(result.current.lat).toBe(40.21));
+    expect(result.current.source).toBe('fresh');
+    expect(result.current.isStale).toBe(false);
+  });
+
+  it('marks a cached position stale when the fresh fix times out, and recentre asks again', async () => {
+    jest.useFakeTimers();
+    try {
+      mockRequest.mockResolvedValue({ granted: true });
+      mockLastKnown.mockResolvedValue({ coords: { latitude: 40.15, longitude: 44.5 }, timestamp: 1_700_000_000_000 });
+      mockCurrent.mockReturnValue(new Promise(() => undefined)); // never answers
+
+      const { result } = renderHook(() => useApproximateLocation());
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(result.current).toMatchObject({ lat: 40.15, source: 'cached', isStale: false, fixedAt: 1_700_000_000_000 });
+
+      await act(async () => {
+        jest.advanceTimersByTime(8001);
+      });
+      // Eight seconds and no fix: the cache is what is showing, and the
+      // screen is told so instead of being left to call it "you are here".
+      expect(result.current.isStale).toBe(true);
+      expect(result.current.isFallback).toBe(false);
+
+      mockCurrent.mockResolvedValue({ coords: { latitude: 40.3, longitude: 44.7 }, timestamp: 1_700_000_100_000 });
+      await act(async () => {
+        result.current.refresh();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockCurrent).toHaveBeenCalledTimes(2);
+      expect(result.current).toMatchObject({ lat: 40.3, source: 'fresh', isStale: false });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('recentre without permission asks nothing and moves nothing', async () => {
+    mockRequest.mockResolvedValue({ granted: false });
+    const { result } = renderHook(() => useApproximateLocation());
+    await waitFor(() => expect(mockRequest).toHaveBeenCalled());
+    act(() => result.current.refresh());
+    expect(mockCurrent).not.toHaveBeenCalled();
+    expect(result.current.isFallback).toBe(true);
   });
 
   it('stays on the city centre when the person declines', async () => {
@@ -71,7 +121,7 @@ describe('useApproximateLocation', () => {
     const { result } = renderHook(() => useApproximateLocation());
 
     await waitFor(() => expect(mockRequest).toHaveBeenCalled());
-    expect(result.current).toEqual({ ...DEFAULT_CENTRE, isFallback: true });
+    expect(result.current).toMatchObject({ ...DEFAULT_CENTRE, isFallback: true, source: 'city' });
     // No second prompt, and no attempt to read a position it was refused.
     expect(mockCurrent).not.toHaveBeenCalled();
     expect(mockLastKnown).not.toHaveBeenCalled();
@@ -85,7 +135,7 @@ describe('useApproximateLocation', () => {
     const { result } = renderHook(() => useApproximateLocation());
 
     await waitFor(() => expect(mockRequest).toHaveBeenCalled());
-    expect(result.current).toEqual({ ...DEFAULT_CENTRE, isFallback: true });
+    expect(result.current).toMatchObject({ ...DEFAULT_CENTRE, isFallback: true, source: 'city' });
   });
 
   it('does not update a screen that has already been left', async () => {

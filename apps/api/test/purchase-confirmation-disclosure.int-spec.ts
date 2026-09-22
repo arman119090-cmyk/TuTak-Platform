@@ -1,4 +1,4 @@
-import { PrismaClient, PurchaseConfirmationSource, PurchaseIntentStatus } from '@prisma/client';
+import { PrismaClient, PurchaseConfirmationSource, PurchaseIntentStatus, RoleName } from '@prisma/client';
 import { PartnerEmployeeService } from '../src/modules/partners/partner-employee.service';
 import { PartnerBranchStaffService } from '../src/modules/partners/partner-branch-staff.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
@@ -41,13 +41,20 @@ describe('Purchase confirmation disclosure (integration)', () => {
     await truncateAll(prisma);
   });
 
-  /** A member of staff with the partner-scoped role an assignment needs. */
-  const hireStaff = async (partnerId: string) => {
+  /**
+   * A member of staff with a real partner-scoped role.
+   *
+   * Every confirmation below goes through it. A bare user would be refused
+   * by the standing check inside the settlement — correctly, since somebody
+   * who does not work here cannot confirm a sale here — and a fixture that
+   * papered over that would be testing a state the system never reaches.
+   */
+  const hireStaff = async (partnerId: string, role: RoleName = RoleName.PARTNER_STAFF) => {
     const staff = await createStaffUser(prisma);
     await prisma.userRole.create({
       data: {
         userId: staff.id,
-        roleId: (await prisma.role.findFirstOrThrow({ where: { name: 'PARTNER_STAFF' } })).id,
+        roleId: (await prisma.role.findFirstOrThrow({ where: { name: role } })).id,
         partnerId,
       },
     });
@@ -66,7 +73,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
   describe('a cashier confirming at a till', () => {
     it('names the person by their permanent code, not by a user id', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
 
       const intent = await intents.create({ partnerId: partner.id, grossAmount: '10000' }, customer.user.id);
@@ -165,7 +172,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
   describe('the two confirmations no person made', () => {
     it('tells a provider callback apart from a purchase nobody recorded', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
 
       const provider = await intents.create({ partnerId: partner.id, grossAmount: '10000' }, customer.user.id);
@@ -216,7 +223,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
   describe('the storage columns stay in the database', () => {
     it('sends the union and none of the five columns behind it', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
 
       const intent = await intents.create({ partnerId: partner.id, grossAmount: '10000' }, customer.user.id);
@@ -229,7 +236,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
 
     it('sends them from the list endpoint no more than from the single one', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
 
       const intent = await intents.create({ partnerId: partner.id, grossAmount: '10000' }, customer.user.id);
@@ -270,7 +277,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
 
     it('refuses a cashier confirmation that names no employee', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
       const id = await rowFor(partner.id, customer.user.id, prisma);
 
@@ -299,7 +306,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
 
     it('refuses an integration confirmation carrying a person', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
       const id = await rowFor(partner.id, customer.user.id, prisma);
 
@@ -330,7 +337,7 @@ describe('Purchase confirmation disclosure (integration)', () => {
 
     it('refuses a posting recorded without the role held under it', async () => {
       const partner = await createPartner(prisma);
-      const staff = await createStaffUser(prisma);
+      const staff = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
       const id = await rowFor(partner.id, customer.user.id, prisma);
 

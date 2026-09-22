@@ -77,12 +77,12 @@ describe('Partner employee card (integration)', () => {
     });
 
   /** A member of staff with the partner-scoped role an assignment needs. */
-  const hireStaff = async (partnerId: string) => {
+  const hireStaff = async (partnerId: string, role: RoleName = RoleName.PARTNER_STAFF) => {
     const staff = await createStaffUser(prisma);
     await prisma.userRole.create({
       data: {
         userId: staff.id,
-        roleId: (await prisma.role.findFirstOrThrow({ where: { name: RoleName.PARTNER_STAFF } })).id,
+        roleId: (await prisma.role.findFirstOrThrow({ where: { name: role } })).id,
         partnerId,
       },
     });
@@ -250,7 +250,9 @@ describe('Partner employee card (integration)', () => {
      */
     it('resolves whoever confirmed a purchase at its own branch', async () => {
       const partner = await createPartner(prisma);
-      const owner = await createStaffUser(prisma);
+      // A real owner: the standing check inside the settlement asks the
+      // database, not the fixture's intentions.
+      const owner = await hireStaff(partner.id, RoleName.PARTNER_OWNER);
       const cashier = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
       const north = await branchOf(partner.id, 'North');
@@ -280,7 +282,7 @@ describe('Partner employee card (integration)', () => {
 
     it('still refuses when that purchase was at another branch', async () => {
       const partner = await createPartner(prisma);
-      const owner = await createStaffUser(prisma);
+      const owner = await hireStaff(partner.id, RoleName.PARTNER_OWNER);
       const cashier = await hireStaff(partner.id);
       const customer = await createCustomer(prisma);
       const north = await branchOf(partner.id, 'North');

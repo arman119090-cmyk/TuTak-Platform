@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
@@ -82,27 +82,45 @@ export class PartnerEmployeeService {
     });
     if (existing) return existing.code;
 
-    const code = await this.nextCode(partnerId, db);
-    try {
-      const created = await db.partnerEmployee.create({
-        data: { partnerId, userId, code },
-        select: { code: true },
-      });
-      return created.code;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        // Either this person was given a code by a concurrent request, or the
-        // code we picked was taken by one. Both are answered by reading, and
-        // only the first can answer *this* call — so a second collision is a
-        // genuine failure rather than something to loop on.
+    // Two different collisions can fire on the insert below, and they need
+    // opposite answers.
+    //
+    // If *this person* was given a code by a concurrent request, the right
+    // answer is that code — re-read and return it. If the *number* we drew
+    // was taken, the right answer is to draw again: the counter is
+    // authoritative but not alone in the namespace. A hand-picked
+    // `EMP-042` on an assignment claims a number the counter has not reached,
+    // and during a rolling deploy the previous release is still issuing
+    // codes by reading the highest one and adding one, which lands on the
+    // number the counter is about to hand out.
+    //
+    // Bounded, because a loop that never gives up on a unique violation
+    // turns a misconfiguration into a hung request. Three draws past a
+    // contended number is already far beyond what a rollout window
+    // produces.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const code = await this.nextCode(partnerId, db);
+      try {
+        const created = await db.partnerEmployee.create({
+          data: { partnerId, userId, code },
+          select: { code: true },
+        });
+        return created.code;
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+          throw err;
+        }
         const won = await db.partnerEmployee.findUnique({
           where: { partnerId_userId: { partnerId, userId } },
           select: { code: true },
         });
         if (won) return won.code;
+        // The number was taken, not the person. Round again.
       }
-      throw err;
     }
+    throw new ConflictException(
+      'Could not allocate an employee code for this partner — please retry.',
+    );
   }
 
   /**
@@ -125,14 +143,50 @@ export class PartnerEmployeeService {
    * the writers ignore is not a counter.
    */
   async nextCode(partnerId: string, db: Db = this.prisma): Promise<string> {
-    const [row] = await db.$queryRaw<{ employeeCodeSeq: number }[]>`
-      UPDATE "partners"
-      SET "employeeCodeSeq" = "employeeCodeSeq" + 1
-      WHERE "id" = ${partnerId}
-      RETURNING "employeeCodeSeq"
-    `;
-    if (!row) throw new Error(`No such partner: ${partnerId}`);
-    return `${PREFIX}${String(row.employeeCodeSeq).padStart(3, '0')}`;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const [row] = await db.$queryRaw<{ employeeCodeSeq: number }[]>`
+        UPDATE "partners"
+        SET "employeeCodeSeq" = "employeeCodeSeq" + 1
+        WHERE "id" = ${partnerId}
+        RETURNING "employeeCodeSeq"
+      `;
+      if (!row) throw new Error(`No such partner: ${partnerId}`);
+      const code = `${PREFIX}${String(row.employeeCodeSeq).padStart(3, '0')}`;
+      if (!(await this.isTaken(partnerId, code, db))) return code;
+    }
+    throw new ConflictException(
+      'Could not allocate an employee code for this partner — please retry.',
+    );
+  }
+
+  /**
+   * Is this number already in use anywhere in the partner's `EMP-` namespace?
+   *
+   * The namespace spans two tables and the database does not know that: each
+   * has its own unique index, so `EMP-003` can be one person's permanent code
+   * and another person's posting code at the same time without either index
+   * objecting. Nothing inside this service produces that — it draws every
+   * number from one counter — but a writer outside it does, and one is
+   * guaranteed to exist for the length of every rolling deploy, because the
+   * release being replaced issues posting codes by reading the highest one
+   * and adding one.
+   *
+   * Checking after the draw rather than instead of it. The counter is still
+   * what makes two concurrent callers take different numbers; this only skips
+   * the numbers somebody took without asking it.
+   */
+  private async isTaken(partnerId: string, code: string, db: Db): Promise<boolean> {
+    const [employee, assignment] = await Promise.all([
+      db.partnerEmployee.findUnique({
+        where: { partnerId_code: { partnerId, code } },
+        select: { id: true },
+      }),
+      db.partnerBranchStaffAssignment.findFirst({
+        where: { partnerId, employeeDisplayCode: code },
+        select: { id: true },
+      }),
+    ]);
+    return Boolean(employee || assignment);
   }
 
   /**

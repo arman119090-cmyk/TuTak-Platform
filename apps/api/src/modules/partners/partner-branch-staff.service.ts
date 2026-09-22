@@ -10,6 +10,21 @@ import { PartnerEmployeeService } from './partner-employee.service';
  * already granted; it never grants partner-scoped access on its own — that
  * stays `AdminService.assignRole`'s job.
  */
+/**
+ * Which unique index a `P2002` came from.
+ *
+ * Prisma reports the target either by index name or by the columns it
+ * covers, depending on how it learned about it, and a partial index declared
+ * in SQL rather than in the schema is usually the columns. Both spellings
+ * are accepted; nothing else on this table is unique on these columns, so
+ * neither form can mean anything else.
+ */
+function collidedOn(err: Prisma.PrismaClientKnownRequestError, column: string): boolean {
+  const target = err.meta?.target;
+  const text = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return text.toLowerCase().includes(column.toLowerCase());
+}
+
 @Injectable()
 export class PartnerBranchStaffService {
   constructor(
@@ -96,7 +111,6 @@ export class PartnerBranchStaffService {
       throw new BadRequestException('This user has no staff role at this partner yet');
     }
 
-    const employeeDisplayCode = params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
     // A hand-picked code has to move the counter, or the allocator walks up
     // to it later and collides with a code this partner is already using.
     if (params.employeeDisplayCode) {
@@ -105,34 +119,49 @@ export class PartnerBranchStaffService {
 
     // The person's permanent code at this partner, minted now if this is the
     // first time they have been named. Separate from the assignment code
-    // above and deliberately so: this one survives the transfer that ends
+    // below and deliberately so: this one survives the transfer that ends
     // this assignment — see `PartnerEmployeeService`.
     await this.employees.codeFor(partnerId, params.userId);
 
-    try {
-      return await this.prisma.partnerBranchStaffAssignment.create({
-        data: {
-          partnerId,
-          partnerBranchId: branchId,
-          userId: params.userId,
-          role: params.role ?? BranchStaffRole.STAFF,
-          employeeDisplayCode,
-          assignedByUserId: params.assignedByUserId,
-        },
-      });
-    } catch (err) {
-      // Two distinct unique constraints can fire here: the partial "one
-      // ACTIVE assignment per (user, branch)" index (this user is already
-      // assigned here) and the ordinary "employeeDisplayCode unique per
-      // partner" one (a caller-supplied code collided, or a concurrent
-      // auto-generated one raced this request). Both are the caller's to
-      // retry with different input, never a 500.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException(
-          'This user is already assigned here, or the employee code is already taken — please retry.',
-        );
+    // A code the caller chose is theirs to fix if it is taken; a code this
+    // method drew is this method's to draw again.
+    //
+    // The second case is not hypothetical during a rolling deploy: the
+    // previous release issues assignment codes by reading the highest one
+    // and adding one, which is exactly the number the counter is about to
+    // hand out. One redraw walks past it. Bounded for the same reason
+    // `codeFor` bounds its own loop.
+    for (let attempt = 0; ; attempt += 1) {
+      const employeeDisplayCode =
+        params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
+      try {
+        return await this.prisma.partnerBranchStaffAssignment.create({
+          data: {
+            partnerId,
+            partnerBranchId: branchId,
+            userId: params.userId,
+            role: params.role ?? BranchStaffRole.STAFF,
+            employeeDisplayCode,
+            assignedByUserId: params.assignedByUserId,
+          },
+        });
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+          throw err;
+        }
+        // Two distinct unique constraints reach here. The partial "one ACTIVE
+        // assignment per (user, branch)" index means this person is already
+        // posted here, and redrawing a code would not change that; the
+        // "employeeDisplayCode unique per partner" one means the number is
+        // taken. Only the second is worth another round, and only when the
+        // number was ours to choose.
+        const codeCollision = collidedOn(err, 'employeeDisplayCode');
+        if (!codeCollision || params.employeeDisplayCode || attempt >= 3) {
+          throw new ConflictException(
+            'This user is already assigned here, or the employee code is already taken — please retry.',
+          );
+        }
       }
-      throw err;
     }
   }
 

@@ -9,6 +9,7 @@ import { ReferralModule } from '../referral/referral.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { PurchaseFundingService } from './purchase-funding.service';
+import { PurchaseHistoryService } from './purchase-history.service';
 import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
 import { PurchaseIntentRefundRequestsController } from './purchase-intent-refund-requests.controller';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
@@ -35,12 +36,14 @@ import { PurchaseIntentsService } from './purchase-intents.service';
   providers: [
     PurchaseIntentsService,
     PurchaseFundingService,
+    PurchaseHistoryService,
     PurchaseIntentRefundService,
     PurchaseIntentRefundRequestService,
   ],
   exports: [
     PurchaseIntentsService,
     PurchaseFundingService,
+    PurchaseHistoryService,
     PurchaseIntentRefundService,
     PurchaseIntentRefundRequestService,
   ],

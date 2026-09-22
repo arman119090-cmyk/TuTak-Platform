@@ -335,3 +335,66 @@ export interface CreateRefundRequestRequestDto {
 export interface RejectRefundRequestRequestDto {
   note?: string;
 }
+
+/**
+ * Who did one thing in a purchase's history.
+ *
+ * A union rather than a user id: a partner's screens name people by their
+ * code, and the two `STAFF` shapes are deliberately different. `frozen: true`
+ * is what the purchase recorded on the day and never changes; `frozen: false`
+ * is a code looked up now, for a fact stored with nothing but a user id —
+ * a refund, a refund decision. A `null` code there means somebody on the
+ * payroll who has never been issued one, which is not the same as `TUTAK`.
+ *
+ * `NOT_RECORDED` is never turned into a name. A purchase confirmed before
+ * the confirmation columns existed has no actor on record, and inventing
+ * one is the failure this union exists to prevent.
+ */
+export type PurchaseHistoryActorDto =
+  | { kind: 'CUSTOMER' }
+  | { kind: 'STAFF'; employeeCode: string; role: string | null; frozen: true }
+  | { kind: 'STAFF'; employeeCode: string | null; frozen: false }
+  | { kind: 'INTEGRATION'; apiKeyId: string }
+  | { kind: 'PROVIDER'; provider: string | null }
+  | { kind: 'TUTAK' }
+  | { kind: 'SYSTEM' }
+  | { kind: 'NOT_RECORDED' };
+
+export type PurchaseHistoryEventTypeDto =
+  | 'CREATED'
+  | 'MERCHANT_APPROVED'
+  | 'PROVIDER_PAYMENT_STARTED'
+  | 'PROVIDER_PAYMENT_CONFIRMED'
+  | 'PROVIDER_PAYMENT_FAILED'
+  | 'CONFIRMED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'REFUND_REQUESTED'
+  | 'REFUND_REQUEST_REJECTED'
+  | 'REFUNDED'
+  | 'EXTERNAL_REFUND_CONFIRMED';
+
+export interface PurchaseHistoryEventDto {
+  type: PurchaseHistoryEventTypeDto;
+  at: string;
+  actor: PurchaseHistoryActorDto;
+  /** Only what the event itself recorded. Never a reconstruction. */
+  detail: Record<string, string | null>;
+}
+
+/**
+ * Everything that happened to one purchase.
+ *
+ * A purchase carries a single `confirmation` — who or what moved it to
+ * CONFIRMED — and that one fact is not the whole story. Staff agreeing the
+ * line item, a provider reporting that money arrived, a customer
+ * withdrawing, and a refund a week later are four events with four actors.
+ */
+export interface PurchaseHistoryDto {
+  purchaseIntentId: string;
+  /** The same short form the account activity prints. */
+  reference: string;
+  status: string;
+  events: PurchaseHistoryEventDto[];
+}

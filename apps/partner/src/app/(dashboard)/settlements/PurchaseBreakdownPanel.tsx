@@ -6,6 +6,7 @@ import type { PurchaseBreakdownDto } from '@tutak/shared-types';
 import { settlementApi } from '@/lib/api/financeApi';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { PurchaseTimeline } from './PurchaseTimeline';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -86,6 +87,16 @@ export function PurchaseBreakdownPanel({
       ) : null}
 
       {breakdown ? <BreakdownBody breakdown={breakdown} /> : null}
+
+      {/*
+        What happened, next to what is owed. The single `confirmation` on a
+        purchase answers "who moved it to confirmed" and nothing else, and
+        that was starting to be read as the whole story.
+      */}
+      <div>
+        <h3 className="mb-2 text-[13px] font-semibold text-ink">What happened to this sale</h3>
+        <PurchaseTimeline purchaseIntentId={purchaseIntentId} />
+      </div>
     </section>
   );
 }

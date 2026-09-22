@@ -5,6 +5,7 @@ import SettlementsPage from './page';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { settlementApi } from '@/lib/api/financeApi';
 import { partnerApi } from '@/lib/api/partnerApi';
+import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
 import {
   PartnerSettlementStatus,
   type PartnerActivityPageDto,
@@ -35,6 +36,10 @@ jest.mock('@/lib/api/financeApi', () => ({
 
 jest.mock('@/lib/api/partnerApi', () => ({
   partnerApi: { listBranches: jest.fn() },
+}));
+
+jest.mock('@/lib/api/purchaseIntentApi', () => ({
+  purchaseIntentApi: { history: jest.fn() },
 }));
 
 function buildUser(): AuthenticatedUserDto {
@@ -181,6 +186,31 @@ describe('SettlementsPage', () => {
     (settlementApi.position as jest.Mock).mockResolvedValue(positionFixture());
     (settlementApi.reportProblem as jest.Mock).mockResolvedValue(statementFixture());
     (settlementApi.activity as jest.Mock).mockResolvedValue(activityPage());
+    (purchaseIntentApi.history as jest.Mock).mockResolvedValue({
+      purchaseIntentId: '11111111-2222-3333-4444-5555aabbccdd',
+      reference: '5555AABB',
+      status: 'CONFIRMED',
+      events: [
+        {
+          type: 'CREATED',
+          at: '2026-09-18T09:00:00.000Z',
+          actor: { kind: 'CUSTOMER' },
+          detail: { grossAmount: '10000.0000' },
+        },
+        {
+          type: 'CONFIRMED',
+          at: '2026-09-18T09:30:00.000Z',
+          actor: { kind: 'STAFF', employeeCode: 'EMP-004', role: 'PARTNER_STAFF', frozen: true },
+          detail: {},
+        },
+        {
+          type: 'REFUNDED',
+          at: '2026-09-20T11:00:00.000Z',
+          actor: { kind: 'STAFF', employeeCode: 'EMP-001', frozen: false },
+          detail: { amount: '1000.0000', reason: 'Customer returned an item' },
+        },
+      ],
+    });
     (partnerApi.listBranches as jest.Mock).mockResolvedValue([
       { id: 'branch-1', name: 'North' },
       { id: 'branch-2', name: 'South' },
@@ -630,5 +660,91 @@ describe('SettlementsPage', () => {
     renderPage();
     expect(await screen.findByText('Your account could not be loaded')).toBeTruthy();
     expect(screen.queryByText('Nothing has moved on your account yet.')).toBeNull();
+  });
+  it('shows the whole life of a sale, not just who confirmed it', async () => {
+    (settlementApi.purchaseBreakdown as jest.Mock).mockResolvedValue({
+      purchaseIntentId: '11111111-2222-3333-4444-5555aabbccdd',
+      confirmationCode: '0042',
+      confirmedAt: '2026-09-18T09:30:00.000Z',
+      status: 'CONFIRMED',
+      branchId: 'branch-1',
+      confirmationSource: 'STAFF',
+      employeeCode: 'EMP-004',
+      grossAmount: '10000.0000',
+      bonusApplied: '1000.0000',
+      prepaidApplied: '0.0000',
+      externalAmount: '9000.0000',
+      paymentRoute: 'DIRECT_PARTNER',
+      externalCollectedBy: 'PARTNER_TILL',
+      refundedAmount: '1000.0000',
+      refunds: [],
+      lines: [],
+      effectOnDebt: '0.0000',
+      stillOwed: '0.0000',
+      inOpenSettlement: '0.0000',
+      paid: '0.0000',
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /where is this from/i }));
+
+    expect(await screen.findByText('What happened to this sale')).toBeTruthy();
+    expect(await screen.findByText('Customer opened this purchase')).toBeTruthy();
+    expect(screen.getByText('Purchase confirmed')).toBeTruthy();
+    // "Refunded" also labels the amount refunded against the sale in the
+    // panel above; this is the timeline's own entry.
+    expect(screen.getAllByText('Refunded').length).toBeGreaterThanOrEqual(1);
+    // The two staff facts read differently: one is what the row froze that
+    // day, the other is the payroll as it stands now.
+    expect(screen.getByText(/EMP-004 \(partner staff, as recorded then\)/)).toBeTruthy();
+    expect(screen.getByText(/EMP-001 \(your staff today\)/)).toBeTruthy();
+  });
+
+  it('shows a gap in the record as a gap, never as a name', async () => {
+    (purchaseIntentApi.history as jest.Mock).mockResolvedValue({
+      purchaseIntentId: '11111111-2222-3333-4444-5555aabbccdd',
+      reference: '5555AABB',
+      status: 'CONFIRMED',
+      events: [
+        {
+          type: 'CONFIRMED',
+          at: '2026-09-18T09:30:00.000Z',
+          actor: { kind: 'NOT_RECORDED' },
+          detail: {},
+        },
+      ],
+    });
+    (settlementApi.purchaseBreakdown as jest.Mock).mockResolvedValue({
+      purchaseIntentId: '11111111-2222-3333-4444-5555aabbccdd',
+      confirmationCode: null,
+      confirmedAt: '2026-09-18T09:30:00.000Z',
+      status: 'CONFIRMED',
+      branchId: null,
+      confirmationSource: null,
+      employeeCode: null,
+      grossAmount: '10000.0000',
+      bonusApplied: '0.0000',
+      prepaidApplied: '0.0000',
+      externalAmount: '10000.0000',
+      paymentRoute: 'DIRECT_PARTNER',
+      externalCollectedBy: 'PARTNER_TILL',
+      refundedAmount: '0.0000',
+      refunds: [],
+      lines: [],
+      effectOnDebt: '0.0000',
+      stillOwed: '0.0000',
+      inOpenSettlement: '0.0000',
+      paid: '0.0000',
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /where is this from/i }));
+
+    const confirmed = await screen.findByText(/Purchase confirmed/);
+    expect(screen.getAllByText(/Not recorded/).length).toBeGreaterThan(0);
+    // Scoped to the timeline row: the activity table above has its own
+    // rows with their own codes, and this assertion is about the sale whose
+    // actor was never recorded.
+    const line = confirmed.closest('li')!;
+    expect(line.textContent).toContain('Not recorded');
+    expect(line.textContent).not.toContain('EMP-');
   });
 });

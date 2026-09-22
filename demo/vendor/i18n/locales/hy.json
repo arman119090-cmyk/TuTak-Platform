@@ -694,7 +694,13 @@
       "profile": "Հրապարակային էջ",
       "integrations": "Ինտեգրումներ",
       "signOut": "Դուրս գալ",
-      "language": "Լեզու"
+      "language": "Լեզու",
+      "menuOpen": "Բացել ընտրացանկը",
+      "menuClose": "Փակել ընտրացանկը",
+      "menuNav": "Հիմնական նավիգացիա",
+      "rolePARTNER_OWNER": "Սեփականատեր",
+      "rolePARTNER_MANAGER": "Մենեջեր",
+      "rolePARTNER_STAFF": "Գանձապահ"
     },
     "common": {
       "loading": "Բեռնվում է…",

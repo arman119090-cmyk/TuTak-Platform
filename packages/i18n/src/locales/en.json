@@ -694,7 +694,13 @@
       "profile": "Public profile",
       "integrations": "Integrations",
       "signOut": "Sign out",
-      "language": "Language"
+      "language": "Language",
+      "menuOpen": "Open the menu",
+      "menuClose": "Close the menu",
+      "menuNav": "Main navigation",
+      "rolePARTNER_OWNER": "Owner",
+      "rolePARTNER_MANAGER": "Manager",
+      "rolePARTNER_STAFF": "Cashier"
     },
     "common": {
       "loading": "Loading…",

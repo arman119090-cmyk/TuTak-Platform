@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { AppShell, type NavItem } from '@tutak/design/web';
 import { authApi } from '@/lib/api/authApi';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -36,6 +37,23 @@ const NAV: (Omit<NavItem, 'label'> & { labelKey: string })[] = [
   { href: '/profile', labelKey: 'partnerPanel.nav.profile', icon: <NavIcon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" /> },
   { href: '/integrations', labelKey: 'partnerPanel.nav.integrations', icon: <NavIcon d="M8 12a4 4 0 1 1 8 0 4 4 0 0 1-8 0ZM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /> },
 ];
+
+/**
+ * The role under the person's name, in their own language.
+ *
+ * It used to be `role.replace(/_/g, ' ').toLowerCase()`, which printed
+ * "partner owner" in the middle of an otherwise Armenian or Russian panel —
+ * an English word nobody chose, sitting under the owner's own name. A role
+ * nobody has named is left blank rather than shown as its enum value: an
+ * unlabelled line is better than `PARTNER_SOMETHING_NEW`.
+ */
+function roleLabel(roles: string[] | undefined, t: TFunction): string | undefined {
+  const role = roles?.find((name) => name.startsWith('PARTNER'));
+  if (!role) return undefined;
+  const key = `partnerPanel.nav.role${role}`;
+  const label = t(key, { defaultValue: '' });
+  return label || undefined;
+}
 
 function NavIcon({ d }: { d: string }) {
   return (
@@ -77,9 +95,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       nav={nav}
       currentPath={pathname}
       userName={user ? `${user.firstName} ${user.lastName}` : undefined}
-      userRole={user?.roles?.find((r) => r.startsWith('PARTNER'))?.replace(/_/g, ' ').toLowerCase()}
+      userRole={roleLabel(user?.roles, t)}
       onSignOut={handleSignOut}
       signOutLabel={t('partnerPanel.nav.signOut')}
+      menuLabels={{
+        open: t('partnerPanel.nav.menuOpen'),
+        close: t('partnerPanel.nav.menuClose'),
+        nav: t('partnerPanel.nav.menuNav'),
+      }}
       footerExtra={<LanguageSwitcher />}
       renderLink={(item, _active, className) => (
         <Link href={item.href} className={className}>

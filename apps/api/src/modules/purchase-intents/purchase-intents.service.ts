@@ -17,6 +17,7 @@ import {
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PurchaseConfirmationSource,
   PurchaseIntent,
   PurchaseIntentStatus,
   TransactionType,
@@ -165,6 +166,76 @@ function withoutHoldId<T extends object>(row: T): Omit<T, 'prepaidHoldTransactio
     prepaidHoldTransactionId?: unknown;
   };
   return rest;
+}
+
+/**
+ * The confirmation as a client reads it, mirroring `PurchaseConfirmationDto`
+ * in `@tutak/shared-types`.
+ *
+ * Declared here rather than imported: this package does not depend on the
+ * shared types package (see `password-rules-parity.spec.ts` for the same
+ * situation and the same answer), so the two are kept in step by a contract
+ * test — `purchase-confirmation-contract.spec.ts` — rather than by a shared
+ * declaration that does not exist.
+ *
+ * `staffUserId` is deliberately absent although the write-side
+ * `PurchaseConfirmation` carries it: the id already leaves in
+ * `confirmedByUserId`, and a partner's screens name people by their code.
+ */
+export type PurchaseConfirmationView =
+  | {
+      source: typeof PurchaseConfirmationSource.STAFF;
+      employeeCode: string;
+      assignmentId: string | null;
+      role: string | null;
+    }
+  | { source: typeof PurchaseConfirmationSource.PARTNER_INTEGRATION; apiKeyId: string }
+  | { source: typeof PurchaseConfirmationSource.PROVIDER_CALLBACK };
+
+/** The five columns the confirmation union is stored in. */
+type ConfirmationColumns = {
+  confirmationSource: PurchaseConfirmationSource | null;
+  confirmedByEmployeeCode: string | null;
+  confirmedByAssignmentId: string | null;
+  confirmedByRole: string | null;
+  confirmedByApiKeyId: string | null;
+};
+
+/**
+ * Swaps the five stored confirmation columns for the single union the
+ * clients read.
+ *
+ * The columns leave the response entirely. They are the storage shape, and a
+ * client offered both would sooner or later read `confirmedByEmployeeCode`
+ * without checking `confirmationSource` — which is exactly the inference the
+ * source column exists to stop. `confirmedByUserId` does stay: released
+ * clients read it, and it is the one field whose meaning does not change.
+ *
+ * A row that does not carry the columns is refused by the type rather than
+ * reported as "not recorded": a narrowed `select` that forgot them would
+ * otherwise tell a partner nobody confirmed their sale.
+ */
+function withConfirmation<T extends ConfirmationColumns>(
+  row: T,
+): Omit<T, keyof ConfirmationColumns> & { confirmation: PurchaseConfirmationView | null } {
+  const {
+    confirmationSource: source,
+    confirmedByEmployeeCode: employeeCode,
+    confirmedByAssignmentId: assignmentId,
+    confirmedByRole: role,
+    confirmedByApiKeyId: apiKeyId,
+    ...rest
+  } = row;
+
+  let confirmation: PurchaseConfirmationView | null = null;
+  if (source === PurchaseConfirmationSource.STAFF && employeeCode) {
+    confirmation = { source, employeeCode, assignmentId, role };
+  } else if (source === PurchaseConfirmationSource.PARTNER_INTEGRATION && apiKeyId) {
+    confirmation = { source, apiKeyId };
+  } else if (source === PurchaseConfirmationSource.PROVIDER_CALLBACK) {
+    confirmation = { source };
+  }
+  return { ...rest, confirmation };
 }
 
 export function isLivePurchaseCollision(error: unknown): boolean {
@@ -400,7 +471,7 @@ export class PurchaseIntentsService {
    * all of which would then be paying for an extra query.
    */
   async toDto<
-    T extends {
+    T extends ConfirmationColumns & {
       partnerId: string;
       brandDisplayName: string | null;
       brandLogoAssetId: string | null;
@@ -408,11 +479,11 @@ export class PurchaseIntentsService {
   >(intent: T) {
     const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
     const brand = await this.media.brandFor(intent);
-    return { ...withoutHoldId(rest), partnerBrand: brand! };
+    return { ...withConfirmation(withoutHoldId(rest)), partnerBrand: brand! };
   }
 
   async toDtos<
-    T extends {
+    T extends ConfirmationColumns & {
       partnerId: string;
       brandDisplayName: string | null;
       brandLogoAssetId: string | null;
@@ -421,7 +492,7 @@ export class PurchaseIntentsService {
     const brands = await this.media.brandsFor(intents);
     return intents.map((intent) => {
       const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
-      return { ...withoutHoldId(rest), partnerBrand: brands.get(intent)! };
+      return { ...withConfirmation(withoutHoldId(rest)), partnerBrand: brands.get(intent)! };
     });
   }
 

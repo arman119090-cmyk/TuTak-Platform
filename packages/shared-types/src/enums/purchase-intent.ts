@@ -104,3 +104,21 @@ export enum CustomerPaymentBlockReason {
   /** An earlier attempt may hold the money; a second one is refused. */
   UNRESOLVED_ATTEMPT = 'UNRESOLVED_ATTEMPT',
 }
+
+/**
+ * What kind of event moved a purchase to `CONFIRMED`.
+ *
+ * Three things can do it and they are not interchangeable. Only
+ * `PROVIDER_CALLBACK` is evidence that money reached TuTak; the other two say
+ * the sale happened, and nothing about who holds the cash. A statement that
+ * showed all three the same way would tell a partner they had been paid when
+ * they had not.
+ */
+export enum PurchaseConfirmationSource {
+  /** A person at a till, acting from their own authenticated session. */
+  STAFF = 'STAFF',
+  /** The partner's own POS or API integration, acting on its key. */
+  PARTNER_INTEGRATION = 'PARTNER_INTEGRATION',
+  /** A payment provider reporting that it collected the money. */
+  PROVIDER_CALLBACK = 'PROVIDER_CALLBACK',
+}

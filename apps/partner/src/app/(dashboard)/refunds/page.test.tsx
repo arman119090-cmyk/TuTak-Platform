@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 import {
   PaymentRoute,
+  PurchaseConfirmationSource,
   PurchaseIntentStatus,
   RefundRequestStatus,
   Role,
@@ -111,6 +112,12 @@ function purchaseFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIn
     merchantApprovedByUserId: 'owner-1',
     partnerBrand: { partnerId: 'partner-1', displayName: 'Verified Shop', logo: null },
     confirmedByUserId: 'owner-1',
+    confirmation: {
+      source: PurchaseConfirmationSource.STAFF,
+      employeeCode: 'EMP-001',
+      assignmentId: null,
+      role: null,
+    },
     rejectionReason: null,
     createdAt: new Date('2026-09-12T09:00:00Z').toISOString(),
     expiresAt: new Date('2026-09-12T09:03:00Z').toISOString(),

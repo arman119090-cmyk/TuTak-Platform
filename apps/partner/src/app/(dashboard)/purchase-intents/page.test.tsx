@@ -59,6 +59,7 @@ function intentFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
     maxBonusPaymentPercent: 100,
     partnerBrand: { partnerId: 'partner-1', displayName: 'HAZE', logo: null },
     confirmedByUserId: null,
+    confirmation: null,
     rejectedByUserId: null,
     rejectionReason: null,
     createdAt: new Date(Date.now() - 10_000).toISOString(),

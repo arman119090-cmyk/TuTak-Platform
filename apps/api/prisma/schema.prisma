@@ -945,6 +945,11 @@ model PurchaseIntent {
   /// and "this row predates the column", and a partner reading a statement
   /// cannot be asked to tell those apart. Null here means the second, and
   /// the interface says "not recorded" rather than naming anybody.
+  ///
+  /// Which of the five columns below may be set is a database rule, not
+  /// a convention — `purchase_intents_confirmation_is_consistent`. A union
+  /// in TypeScript binds the one writer that uses it; a backfill or a
+  /// support fix typed into psql is bound by nothing.
   confirmationSource      PurchaseConfirmationSource?
   /// The person's permanent code at this partner, frozen at confirmation.
   ///
@@ -960,7 +965,10 @@ model PurchaseIntent {
   /// anywhere — their reach is the role, not a posting.
   confirmedByAssignmentId String?
   /// The role held at that moment, frozen for the same reason as the code:
-  /// a promotion must not rewrite who approved what.
+  /// a promotion must not rewrite who approved what. Set together with the
+  /// assignment or not at all — a branch with a blank next to it on the
+  /// employee card is what `purchase_intents_confirmation_posting_is_whole`
+  /// forbids.
   confirmedByRole         String?
   /// Which integration key acted, when the source is a partner's own POS or
   /// API rather than a person. Distinct from `merchantApprovedByApiKeyId`,

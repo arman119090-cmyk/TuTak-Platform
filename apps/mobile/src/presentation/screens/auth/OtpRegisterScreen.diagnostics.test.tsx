@@ -6,6 +6,18 @@ import { getAllEvents, resetEvents } from '../../../diagnostics/eventLog';
 import { resetInstanceTrace } from '../../../diagnostics/instanceTrace';
 import { describeFocus, resetFocusRegistry } from '../../../diagnostics/focusRegistry';
 
+jest.mock('./useRegistrationConsents', () => ({
+  // The legal package is not published in this fixture, so registration asks
+  // nothing extra — exactly what these tests were written against.
+  useRegistrationConsents: () => ({
+    required: [],
+    accepted: {},
+    setAccepted: jest.fn(),
+    satisfied: true,
+    language: 'ru',
+    payload: null,
+  }),
+}));
 jest.mock('../../../data/api/authApi', () => ({
   authApi: {
     requestRegistrationOtp: jest.fn(),

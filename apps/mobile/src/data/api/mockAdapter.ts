@@ -578,11 +578,59 @@ function handle(
       );
     }
 
+    // ── The legal package ───────────────────────────────────────────────
+    /*
+     * The demonstration ships no legal texts, and says so.
+     *
+     * It would be easy to put a plausible-looking privacy policy here, and
+     * that is exactly the thing not to do: a demo policy is a false statement
+     * about what a real deployment collects. So the index answers "nothing
+     * published", which is the same answer the real API gives today — the
+     * registration form then asks for no consent, because there is nothing
+     * lawful to consent to.
+     */
+    case 'GET /legal/documents':
+      return envelope({
+        revision: 'demo',
+        published: false,
+        isDraft: true,
+        language: String((config.params as { lang?: string } | undefined)?.lang ?? 'ru'),
+        availableLanguages: ['ru', 'hy'],
+        requiredConsents: [],
+        documents: [],
+      });
+
+    case 'GET /legal/consents/me':
+      return envelope({
+        currentRevision: 'demo',
+        published: false,
+        consentEnforced: false,
+        requiredPurposes: [],
+        consents: [],
+      });
+
     default:
       break;
   }
 
   // Routes with an id in them.
+
+  const legalDocument = /^\/legal\/documents\/([^/]+)$/.exec(path);
+  if (method === 'GET' && legalDocument) {
+    const key = legalDocument[1]!;
+    return envelope({
+      key,
+      title: key,
+      revision: 'demo',
+      language: 'ru',
+      contentHash: '0'.repeat(64),
+      isDraft: true,
+      content:
+        '# Демонстрационная сборка\n\nВ этой сборке юридические тексты не поставляются. ' +
+        'Настоящие документы публикуются сервером после их утверждения.',
+    });
+  }
+
   // An impression or an open on a spotlight card. Counted on the server;
   // here there is nothing to count into, and 204 is what the API answers.
   const promoEvent = /^\/promos\/([^/]+)\/events$/.exec(path);

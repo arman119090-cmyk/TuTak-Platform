@@ -646,5 +646,31 @@
       "partnerSubmitted": "Your application is with us ✓",
       "lock": "For your eyes only"
     }
+  },
+  "legal": {
+    "sectionTitle": "Legal information",
+    "indexSubtitle": "The documents describing your rights and our obligations. They can be opened and saved without signing in.",
+    "draftBanner": "Draft for approval. This document has not been approved and has no force.",
+    "notPublished": "The documents are not published yet",
+    "notPublishedExplain": "The texts are being prepared and will appear here once they are approved.",
+    "loadFailed": "Could not load the document",
+    "retry": "Try again",
+    "languageChoiceTitle": "Which language should the documents open in?",
+    "languageNotice": "The documents exist in Russian and Armenian. There is no English edition yet, and we will not pass the Russian one off as English.",
+    "saveCopy": "Save a copy",
+    "revision": "Edition {{revision}}",
+    "checksum": "SHA-256: {{hash}}",
+    "consentTerms": "I accept the TuTak Terms of Use and the Bonus, Cancellation and Refund Rules (the documents are in Russian and Armenian)",
+    "consentPersonalData": "I consent to the necessary processing of personal data described in the Consent and the Personal Data Processing Policy",
+    "consentOptionalNote": "Marketing, location and biometrics are turned on only by your choice.",
+    "consentRequired": "Tick both required boxes to continue",
+    "openDocumentHint": "Tap a title to read the whole document",
+    "docs": {
+      "terms": "Terms of Use",
+      "bonus-refunds": "Bonus, cancellation and refund rules",
+      "consent": "Personal data processing consent",
+      "privacy": "Personal data processing policy",
+      "account-deletion": "Account closure and data requests"
+    }
   }
 }

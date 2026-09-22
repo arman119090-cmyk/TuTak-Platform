@@ -13,6 +13,24 @@ export type AuthStackParamList = {
   /** Item 3: the OTP-first alternative to Register/Login, phone -> SMS code -> account. */
   OtpRegister: undefined;
   OtpLogin: undefined;
+  /**
+   * The legal texts, mounted in the *auth* stack as well as the main one.
+   *
+   * The two consents on the registration form link into them, and there is
+   * no account at that moment — so they have to be reachable from here, not
+   * only from Settings.
+   */
+  Legal: undefined;
+  LegalDocument: LegalDocumentParams;
+};
+
+/** Which text, in which language, and optionally which past edition. */
+export type LegalDocumentParams = {
+  documentKey: string;
+  language: 'ru' | 'hy';
+  title?: string;
+  /** Omitted for the current edition; set to re-open exactly what was accepted. */
+  revision?: string;
 };
 
 export type MainTabParamList = {
@@ -56,6 +74,9 @@ export type RootStackParamList = {
    * has nothing to look up.
    */
   PartnerApplicationSent: { displayName: string; category: string; rateBps: number; taxId?: string };
+  /** "Правовая информация" in Settings — the same screens the auth stack mounts. */
+  Legal: undefined;
+  LegalDocument: LegalDocumentParams;
   ChangePassword: undefined;
   ChangePin: undefined;
   VerifyPhone: undefined;

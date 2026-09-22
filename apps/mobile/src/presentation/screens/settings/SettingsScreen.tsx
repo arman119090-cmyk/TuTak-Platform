@@ -232,13 +232,28 @@ export function SettingsScreen() {
           thumbColor="#FFFFFF"
         />
       </View>
-      {/* From the pilot-readiness branch: the privacy policy, as a plain row
-          in the premium group style. Hidden until the server publishes the
-          pages (LEGAL_BASE_URL at build time — see app.config.js). */}
+      {/*
+        Правовая информация: all five documents of the legal package, read
+        inside the app, in the language they were actually written in.
+
+        The old row below opened one page in a browser and only when the
+        build carried `LEGAL_BASE_URL`. It stays, because a published web
+        page is what an app-store listing points at — but it is no longer the
+        only way to the texts, and it is no longer the way a person reads
+        what they agreed to.
+      */}
+      <ListRow
+        title={t('legal.sectionTitle')}
+        subtitle={t('legal.indexSubtitle')}
+        leading={<SettingIcon name="document-text-outline" />}
+        trailing={<Chevron />}
+        onPress={() => navigation.navigate('Legal')}
+        last={!legalBaseUrl}
+      />
       {legalBaseUrl ? (
         <ListRow
           title={t('settings.privacyPolicy')}
-          leading={<SettingIcon name="document-text-outline" />}
+          leading={<SettingIcon name="open-outline" />}
           trailing={<Ionicons name="open-outline" size={18} color={color.borderStrong} />}
           onPress={() => {
             void Linking.openURL(`${legalBaseUrl}/privacy`);

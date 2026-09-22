@@ -1,5 +1,8 @@
+import type { AlertOutboxService } from '../../infrastructure/alerts/alert-outbox.service';
 import type { AccountDeletionService } from '../users/account-deletion.service';
 import type { BonusEngineService } from '../wallet/bonus-engine.service';
+import type { CustomerBalanceService } from '../customer-balance/customer-balance.service';
+import type { PartnerCheckoutService } from '../partner-checkout/partner-checkout.service';
 import type { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import type { EvReservationsService } from '../ev-charging/ev-reservations.service';
 import type { EvCdrReconciliationService } from '../ev-charging/ev-cdr-reconciliation.service';
@@ -43,6 +46,7 @@ export const SWEEP_DEPENDENCIES = Symbol('SWEEP_DEPENDENCIES');
 
 /** Everything a sweep is allowed to reach. Nothing here touches HTTP. */
 export interface SweepDependencies {
+  alertOutbox: AlertOutboxService;
   bonus: BonusEngineService;
   reservations: EvReservationsService;
   sessions: EvSessionsService;
@@ -56,6 +60,8 @@ export interface SweepDependencies {
   partnerSettlement: PartnerSettlementCheckService;
   pspAgeing: PspAttemptAgeingService;
   pspCallbacks: PspCallbackWorkerService;
+  customerBalance: CustomerBalanceService;
+  partnerCheckouts: PartnerCheckoutService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -134,6 +140,20 @@ export const SWEEPS: readonly SweepDefinition[] = [
     // worker's concurrency.
     lockTtlMs: null,
     run: ({ outbox }) => outbox.drain(),
+  },
+  {
+    name: 'alerts.redeliver',
+    why: "An alert that fires once — a dead-lettered outbox event, a PSP callback that gave up — has no second fire to fall back on: the row leaves every claim query the moment it reaches its terminal state. If the channel was down for that one second, that was the only notice anyone would ever have had (audit 22.09.2026, D05). This is what retries it until a channel accepts it.",
+    // Every thirty seconds. The alert is already late by the time it is being
+    // retried, and the work is one indexed query against a table that is
+    // almost always empty.
+    repeat: { every: 30_000 },
+    maxSilenceMs: 10 * 60_000,
+    // No lock: rows are claimed with FOR UPDATE SKIP LOCKED under a lease,
+    // so a second worker takes different alerts rather than queueing for the
+    // same ones — the same reasoning as the outbox drain.
+    lockTtlMs: null,
+    run: ({ alertOutbox }) => alertOutbox.redeliverDue(),
   },
   {
     name: 'bonus.promote-pending',
@@ -274,7 +294,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'psp.escalate-stale-attempts',
-    why: "A payment attempt the provider never answered leaves a customer possibly charged for a purchase nobody can complete, and it will not resolve itself. This sweep makes it louder — and deliberately never makes it *go away*: Arman's decision of 15.09.2026 is that time creates alerts and escalation, never a resolution. The one status change it makes (live → EXPIRED) keeps the attempt in the unsafe set, so the purchase stays blocked; releasing it takes the provider's own answer or two people reconciling it by hand.",
+    why: "A payment attempt the provider never answered leaves a customer possibly charged for a purchase nobody can complete, and it will not resolve itself. This sweep makes it louder — and deliberately never makes it *go away*: the product decision of 15.09.2026 is that time creates alerts and escalation, never a resolution. The one status change it makes (live → EXPIRED) keeps the attempt in the unsafe set, so the purchase stays blocked; releasing it takes the provider's own answer or two people reconciling it by hand.",
     // Every ten minutes. The customer whose money is somewhere unaccounted
     // for is the one waiting, so the escalation clock should be theirs rather
     // than an operator's convenience.
@@ -282,6 +302,22 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 60 * 60_000,
     lockTtlMs: 5 * 60_000,
     run: ({ pspAgeing }) => pspAgeing.escalateStaleAttempts(),
+  },
+  {
+    name: 'partner-checkout.expire',
+    why: 'A till-opened checkout nobody scanned must stop being claimable: a dynamic QR left on a screen is otherwise an open invitation to claim a sale that already happened some other way. Only OPEN rows are touched; a claimed one is a purchase with its own expiry.',
+    repeat: { every: 60_000 },
+    maxSilenceMs: 15 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ partnerCheckouts }) => partnerCheckouts.expireStale(),
+  },
+  {
+    name: 'balance.escalate-stale-topups',
+    why: 'A customer top-up the provider never answered is money a customer may have paid that nobody has credited, and it will not resolve itself. After thirty minutes it becomes UNRESOLVED — a state, not an outcome — and is alerted on every hour until the provider answers or an operator reads its statement. Nothing here ever credits or declines: time makes it louder, never decides it.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ customerBalance }) => customerBalance.escalateStaleTopUps(),
   },
   {
     name: 'reconciliation.nightly',

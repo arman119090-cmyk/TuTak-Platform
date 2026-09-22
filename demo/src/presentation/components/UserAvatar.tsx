@@ -10,8 +10,8 @@ import { useTheme } from '../../app/theme/ThemeProvider';
  * the small flat vector mark) on a green-tinted surface — a customer
  * without a photo still gets a recognisably TuTak avatar rather than a
  * generic placeholder, and the green tint is what tells a customer apart
- * from `PartnerMark`'s blue-tinted fallback at a glance. Per Arman's
- * explicit request, 2026-08-23 (first as the small vector mark, then
+ * from `PartnerMark`'s blue-tinted fallback at a glance. Per the explicit
+ * product decision of 2026-08-23 (first as the small vector mark, then
  * corrected to this exact logo image) — supersedes this component's
  * earlier initials-only fallback.
  *

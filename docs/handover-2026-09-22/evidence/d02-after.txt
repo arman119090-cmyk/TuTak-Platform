@@ -1,0 +1,26 @@
+# D02 — прогон ПОСЛЕ исправления (общий порядок блокировки)
+# commit: 941c566 (ветка claude/railway-connector-check-wy0ffq)
+
+Running one project: integration
+Loaded Prisma config from prisma.config.ts.
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": PostgreSQL database "tutak_test", schema "public" at "localhost:5432"
+80 migrations found in prisma/migrations
+No pending migrations to apply.
+PASS integration test/audit-2209-payout-settlement-race.int-spec.ts (11.707 s)
+  Audit 22.09 — payout and settlement at the same time (integration)
+    ✓ D02d: a payout cannot take the entitlement a draft is in the middle of claiming (1009 ms)
+    ✓ D02e: a draft cannot claim the entitlement a payout is in the middle of taking (888 ms)
+    ✓ D02f: two simultaneous drafts claim the entitlement once (514 ms)
+    ✓ D02g: two simultaneous payouts pay the entitlement once (537 ms)
+    ✓ D02h: a cancelled settlement releases its claim without paying twice (560 ms)
+    ✓ D02i: a settlement being marked paid does not free the money for a payout (549 ms)
+    ✓ D02j: a partial payout and a draft cannot together exceed the entitlement (517 ms)
+    ✓ D04c: a draft created mid-read never shows the same money twice (527 ms)
+    ✓ D02k: repeating a payout request after a lost answer pays once (133 ms)
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        11.778 s
+Ran all test suites within paths "test/audit-2209-payout-settlement-race.int-spec.ts".

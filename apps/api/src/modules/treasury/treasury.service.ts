@@ -22,7 +22,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
  *
  * ## What it deliberately does not do
  *
- * It does not move money, authorise anything, or trigger a payout. Arman's
+ * It does not move money, authorise anything, or trigger a payout. The product
  * decision stands: bank transfers are made by a human in a banking app. This
  * is the figure that human should be looking at first.
  */
@@ -50,8 +50,8 @@ export class TreasuryService {
      * Every balance in this ledger is debit-positive: `LedgerService` stores
      * a debit as `+amount` and a credit as `-amount`, whatever the account's
      * natural side. So the sign has to be read per account type rather than
-     * assumed, and getting it backwards is easy — I did, and the chain test
-     * below caught it.
+     * assumed, and getting it backwards is easy — the chain test below
+     * catches it.
      *
      * Cash and receivables are debit-normal, so a real balance reads
      * positive.

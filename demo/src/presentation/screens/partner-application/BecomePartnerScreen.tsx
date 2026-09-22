@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useMutation } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { PartnerCategory } from '@tutak/shared-types';
-import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { JakoScene } from '../../components/JakoScene';
+import { DataSafeNote } from '../../components/DataSafeNote';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { describeApiError } from '../../../data/api/errors';
@@ -31,10 +32,16 @@ type Props = NativeStackScreenProps<RootStackParamList, 'BecomePartner'>;
  * optional here because it is optional there: this is first contact with a
  * business that has agreed to nothing, and a required tax number at that
  * moment loses the applicant rather than producing the number.
+ *
+ * One page, as the owner's reference has it (20.09.2026): Jako greeting at
+ * the top, the three fields, the category, the cashback, one button. A
+ * three-step version of this form was tried and rejected the same day — a
+ * shop owner filling this in on a phone wants to see the whole ask at once.
+ * The filed state is `PartnerApplicationSentScreen`.
  */
 export function BecomePartnerScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
 
   const [legalName, setLegalName] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -77,15 +84,16 @@ export function BecomePartnerScreen({ navigation }: Props) {
 
   // The server's own minimum for both names. Checked here so the button is
   // honest about whether pressing it can work, not to replace that check.
-  const canSubmit =
-    legalName.trim().length >= 2 && displayName.trim().length >= 2 && !submit.isPending;
+  const canSubmit = legalName.trim().length >= 2 && displayName.trim().length >= 2 && !submit.isPending;
 
   return (
-    <Screen title={t('becomePartner.title')}>
-      <Text style={[text.body, { color: color.textSecondary, marginBottom: space[6] }]}>
-        {t('becomePartner.intro')}
-      </Text>
-
+    <JakoScene
+      state="partner-welcome"
+      title={t('becomePartner.title')}
+      subtitle={t('becomePartner.intro')}
+      note={t('scene.note.login')}
+      bubble={t('scene.bubble')}
+    >
       <TextField
         label={t('becomePartner.legalName')}
         value={legalName}
@@ -114,7 +122,10 @@ export function BecomePartnerScreen({ navigation }: Props) {
       <Text style={[text.label, { color: color.textSecondary, marginBottom: space[2] }]}>
         {t('becomePartner.category')}
       </Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2], marginBottom: space[6] }}>
+      {/* Pills: white with a hairline at rest, brand green when chosen. The
+          hairline is what lets an unchosen pill read as a choice on a white
+          sheet — a borderless grey pill there looks like a disabled tag. */}
+      <View style={[styles.chips, { gap: space[2], marginBottom: space[6] }]}>
         {CATEGORY_ORDER.map((value) => {
           const selected = value === category;
           return (
@@ -123,23 +134,20 @@ export function BecomePartnerScreen({ navigation }: Props) {
               onPress={() => setCategory(value)}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
-              style={{
-                minHeight: 44,
-                justifyContent: 'center',
-                paddingHorizontal: space[4] - 2,
-                borderRadius: radius.md,
-                borderWidth: 1,
-                borderColor: selected ? color.primary : color.border,
-                backgroundColor: selected ? color.primary : color.surface,
-              }}
+              style={({ pressed }) => [
+                styles.chip,
+                {
+                  paddingHorizontal: space[4],
+                  borderRadius: radius.full,
+                  borderColor: selected ? premium.brand.primary : color.border,
+                  backgroundColor: selected ? premium.brand.primary : pressed ? color.fillSubtlePressed : color.surface,
+                },
+              ]}
             >
               <Text
                 style={[
                   text.bodySm,
-                  {
-                    color: selected ? color.textInverse : color.textPrimary,
-                    fontWeight: selected ? '600' : '400',
-                  },
+                  { color: selected ? color.textInverse : color.textPrimary, fontWeight: selected ? '600' : '500' },
                 ]}
               >
                 {t(`partnerCategory.${value}`)}
@@ -152,9 +160,7 @@ export function BecomePartnerScreen({ navigation }: Props) {
       <CashbackRateField valueBps={rateBps} onChange={setRateBps} />
 
       {error ? (
-        <Text style={[text.caption, { color: color.dangerFill, marginBottom: space[4] }]}>
-          {error}
-        </Text>
+        <Text style={[text.caption, { color: color.dangerFill, marginBottom: space[4] }]}>{error}</Text>
       ) : null}
 
       <Button
@@ -167,6 +173,12 @@ export function BecomePartnerScreen({ navigation }: Props) {
         disabled={!canSubmit}
         icon={<JakoWingMark size={16} color={color.textInverse} />}
       />
-    </Screen>
+      <DataSafeNote />
+    </JakoScene>
   );
 }
+
+const styles = StyleSheet.create({
+  chips: { flexDirection: 'row', flexWrap: 'wrap' },
+  chip: { minHeight: 44, justifyContent: 'center', borderWidth: 1 },
+});

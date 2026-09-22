@@ -10,7 +10,7 @@ import { JakoWingMark } from './V2NavIcon';
  * blank screen a moment of brand warmth without adding noise. Renders the
  * same glossy Jako lockup as `UserAvatar`/`SplashScreen` (`assets/logo-mark.png`),
  * dimmed via opacity rather than the small flat vector mark this used to
- * draw — per Arman's request, 2026-08-23, that the actual logo photo appear
+ * draw — per the product decision of 2026-08-23, that the actual logo photo appear
  * everywhere a bird does, not a separately-drawn approximation of it.
  */
 export function EmptyState({
@@ -27,7 +27,7 @@ export function EmptyState({
   const { color, space, text } = useTheme();
 
   return (
-    <View style={[styles.wrap, { paddingVertical: space[10], gap: space[3] }]}>
+    <View style={[styles.wrap, { paddingVertical: space[9], gap: space[2] }]}>
       {/* Dimmed, not full-strength — an empty state should be quiet, not
           empty of its own illustration. */}
       <Image
@@ -63,5 +63,5 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  mark: { width: 56, height: 56, opacity: 0.55 },
+  mark: { width: 48, height: 48, opacity: 0.45 },
 });

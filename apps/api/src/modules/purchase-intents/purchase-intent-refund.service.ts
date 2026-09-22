@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -9,6 +10,7 @@ import {
 import {
   AuditAction,
   BonusEntryType,
+  ExternalRefundStatus,
   LedgerAccountType,
   PostingDirection,
   Prisma,
@@ -23,6 +25,7 @@ import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -56,7 +59,80 @@ export interface PurchaseIntentRefundResult {
   /** Total merchandise value refunded against this purchase after this refund, including this one. */
   totalRefunded: string;
   bonusRestored: string;
+  /** This refund's slice of the stored-money component, back on the customer's balance. */
+  prepaidRestored: string;
+  /** The slice the partner owes the customer outside TuTak. Zero when nothing was paid at the till. */
+  externalRefundDue: string;
+  /** `NOT_REQUIRED` / `PENDING_PARTNER` / `CONFIRMED` — never "completed" while the partner still owes. */
+  externalRefundStatus: ExternalRefundStatus;
 }
+
+/**
+ * The three slices of one refund, each computed by the same watermark rule
+ * (`entitlement(after) − entitlement(before)`), which is what makes them sum
+ * exactly and never drift across partial refunds. `external` is the
+ * residual, never independently rounded, for the reason
+ * `ReferralService.computePoolSplit` gives for its own `tutak` leg.
+ */
+export function splitRefundAcrossComponents(params: {
+  amount: Decimal;
+  grossAmount: Decimal;
+  bonusAmountRequested: Decimal;
+  prepaidAmountApplied: Decimal;
+  cumulativeBefore: Decimal;
+  cumulativeAfter: Decimal;
+}): { bonus: Decimal; prepaid: Decimal; external: Decimal } {
+  /*
+   * Rounding policy v2 (audit 21.09.2026, D09). Three cumulative watermarks
+   * at ledger scale, each defined from the one before so that rounding
+   * can never push a later component below zero:
+   *
+   *   Bc(t) = roundDown(t · B / G)          — the bonus watermark the
+   *                                            loyalty reversal uses, unchanged;
+   *   N(t)  = t − Bc(t)                      — the real money refunded so far;
+   *   Pc(t) = floor(N(t) · P / (G − B))      — the prepaid share of that money;
+   *   Ec(t) = N(t) − Pc(t)                   — what is left is the till's.
+   *
+   * v1 rounded the prepaid watermark independently, `roundDown(t·P/G)`, and
+   * took the external slice as whatever the current delta had left after
+   * the other two. With G=3, B=1, P=2 (no till money at all) three refunds
+   * of 1 produced external 0.0001, 0, −0.0001: a cash slice out of nothing,
+   * then a negative one the database rightly refuses. Defining each
+   * component from the previous one's remainder is what makes every delta
+   * non-negative, the sum exact, and the external slice identically zero
+   * whenever the purchase had no external money — at every step, not only
+   * at the end. `refund-split.spec.ts` proves the properties over the
+   * awkward amounts the auditor asked for.
+   *
+   * Why not clamp: `max(0, external)` would keep a −0.0001 from reaching
+   * the CHECK constraint by silently breaking conservation, which is the
+   * worse defect wearing the better face.
+   */
+  const gross = params.grossAmount;
+  const bonusTotal = params.bonusAmountRequested;
+  const prepaidTotal = params.prepaidAmountApplied;
+  const realMoneyTotal = gross.minus(bonusTotal);
+
+  const bonusAt = (cumulative: Decimal): Decimal =>
+    bonusTotal.lessThanOrEqualTo(0) ? new Decimal(0) : roundIssued(bonusTotal.times(cumulative).dividedBy(gross));
+  const prepaidAt = (cumulative: Decimal): Decimal => {
+    if (prepaidTotal.lessThanOrEqualTo(0) || realMoneyTotal.lessThanOrEqualTo(0)) return new Decimal(0);
+    const realMoneySoFar = cumulative.minus(bonusAt(cumulative));
+    return roundIssued(realMoneySoFar.times(prepaidTotal).dividedBy(realMoneyTotal));
+  };
+
+  const bonus = bonusAt(params.cumulativeAfter).minus(bonusAt(params.cumulativeBefore));
+  const prepaid = prepaidAt(params.cumulativeAfter).minus(prepaidAt(params.cumulativeBefore));
+  return { bonus, prepaid, external: params.amount.minus(bonus).minus(prepaid) };
+}
+
+/**
+ * The version of `splitRefundAcrossComponents` a refund row was computed
+ * with. Stored on every refund so a later change of policy can be told
+ * apart from a rounding drift, and so a purchase partially refunded under
+ * one policy is never continued under another (see the migration).
+ */
+export const REFUND_ROUNDING_POLICY_VERSION = 2;
 
 /** Did this come from the (actorId, idempotencyKey) unique index? Same reasoning as RefundEngineService's own check. */
 function isKeyCollision(err: unknown): boolean {
@@ -101,6 +177,7 @@ export class PurchaseIntentRefundService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly auditService: AuditService,
+    private readonly customerBalance: CustomerBalanceService,
   ) {}
 
   /**
@@ -167,7 +244,7 @@ export class PurchaseIntentRefundService {
    *
    * ## Why this is a refusal and not a workaround
    *
-   * Arman's decision of 15.09.2026, and he ruled out both of the obvious
+   * The product decision of 15.09.2026 ruled out both of the obvious
    * workarounds by name. Neither was rejected for being hard:
    *
    *  - **A routine manual bank transfer back to the customer.** It moves the
@@ -295,6 +372,26 @@ export class PurchaseIntentRefundService {
     const cumulativeBefore = intent.refundedAmount;
     const cumulativeAfter = cumulativeBefore.plus(amount);
 
+    // Rounding policy is pinned per purchase (audit D09): a purchase whose
+    // earlier partial refunds were split under v1 cannot be continued under
+    // v2 without the two policies disagreeing by a quantum somewhere — and
+    // the difference only exists when stored money was involved. Such a
+    // purchase is refused here rather than silently reconciled by a clamp;
+    // nothing in production carries stored money yet, so this is a guard,
+    // not a path.
+    if (cumulativeBefore.greaterThan(0) && intent.prepaidAmountApplied.greaterThan(0)) {
+      const earlier = await tx.purchaseIntentRefund.findFirst({
+        where: { purchaseIntentId: intent.id, roundingPolicyVersion: { not: REFUND_ROUNDING_POLICY_VERSION } },
+        select: { id: true, roundingPolicyVersion: true },
+      });
+      if (earlier) {
+        throw new ConflictException(
+          `Purchase ${intent.id} was partially refunded under rounding policy v${earlier.roundingPolicyVersion}; ` +
+            `the remaining ${remaining.toString()} needs manual reconciliation, not an automatic refund`,
+        );
+      }
+    }
+
     await tx.purchaseIntent.update({
       where: { id: intent.id },
       data: { refundedAmount: cumulativeAfter },
@@ -317,11 +414,56 @@ export class PurchaseIntentRefundService {
             reason,
           );
 
+    /*
+     * The funding split of this refund (20.09.2026). `bonus` here equals the
+     * `bonusRestored` the loyalty reversal above computed — same watermark
+     * formula on the same column — and is asserted to, because two
+     * arithmetics for one number is how drift starts. `prepaid` goes back to
+     * the customer's money balance and comes out of the partner's payable
+     * (a new posting, never an edit — a refund after the partner was paid
+     * leaves a fresh debit for the next settlement or a collection).
+     * `external` is what the partner owes the customer in cash: TuTak moves
+     * nothing for it and only records whether the partner says it was
+     * handed back.
+     */
+    const split = splitRefundAcrossComponents({
+      amount,
+      grossAmount: intent.grossAmount,
+      bonusAmountRequested: intent.bonusAmountRequested,
+      prepaidAmountApplied: intent.prepaidAmountApplied,
+      cumulativeBefore,
+      cumulativeAfter,
+    });
+    if (!split.bonus.equals(bonusRestored)) {
+      throw new InternalServerErrorException(
+        `Purchase intent ${intent.id} refund: bonus slice ${split.bonus.toString()} disagrees with ` +
+          `the loyalty reversal's ${bonusRestored.toString()}`,
+      );
+    }
+    if (split.prepaid.greaterThan(0)) {
+      await this.customerBalance.refundPrepaidFromPartner(
+        {
+          userId: intent.customerId,
+          partnerId: intent.partnerId,
+          amount: split.prepaid,
+          purchaseIntentId: intent.id,
+        },
+        tx,
+      );
+    }
+    const externalRefundStatus = split.external.greaterThan(0)
+      ? ExternalRefundStatus.PENDING_PARTNER
+      : ExternalRefundStatus.NOT_REQUIRED;
+
     const refund = await tx.purchaseIntentRefund.create({
       data: {
         purchaseIntentId: intent.id,
         amount,
         bonusRestored,
+        prepaidRestored: split.prepaid,
+        externalRefundDue: split.external,
+        externalRefundStatus,
+        roundingPolicyVersion: REFUND_ROUNDING_POLICY_VERSION,
         reason,
         ledgerTransactionId,
         actorId,
@@ -340,6 +482,8 @@ export class PurchaseIntentRefundService {
           amount: amount.toString(),
           totalRefunded: cumulativeAfter.toString(),
           bonusRestored: bonusRestored.toString(),
+          prepaidRestored: split.prepaid.toString(),
+          externalRefundDue: split.external.toString(),
           // Earned-bonus liability that could not be reclaimed from wallets
           // (already spent elsewhere or expired) — see `reverseLoyaltyEffects`.
           unrecoverableShortfall: shortfall.toString(),
@@ -358,7 +502,70 @@ export class PurchaseIntentRefundService {
       amount: amount.toFixed(MONEY_SCALE),
       totalRefunded: cumulativeAfter.toFixed(MONEY_SCALE),
       bonusRestored: bonusRestored.toFixed(MONEY_SCALE),
+      prepaidRestored: split.prepaid.toFixed(MONEY_SCALE),
+      externalRefundDue: split.external.toFixed(MONEY_SCALE),
+      externalRefundStatus,
     };
+  }
+
+  /**
+   * Somebody at the business states that the cash/card slice of a refund
+   * was handed back to the customer.
+   *
+   * TuTak cannot know this by itself — the money never passed through it —
+   * so the state is a partner's statement, recorded with who made it and
+   * when, and nothing more. Until it is made, the refund is *not* complete
+   * from the customer's point of view and no screen may say it is (§26).
+   * Idempotent: confirming twice is one confirmation.
+   */
+  async confirmExternalRefund(refundId: string, actorId: string) {
+    const refund = await this.prisma.purchaseIntentRefund.findUnique({
+      where: { id: refundId },
+      include: { purchaseIntent: { select: { partnerId: true, partnerBranchId: true } } },
+    });
+    if (!refund) throw new NotFoundException('Refund not found');
+    if (refund.externalRefundStatus === ExternalRefundStatus.NOT_REQUIRED) {
+      throw new BadRequestException(
+        'Nothing was paid at the till for this refund — there is no external part to confirm',
+      );
+    }
+    if (refund.externalRefundStatus === ExternalRefundStatus.CONFIRMED) return refund;
+
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.purchaseIntentRefund.updateMany({
+        where: { id: refundId, externalRefundStatus: ExternalRefundStatus.PENDING_PARTNER },
+        data: {
+          externalRefundStatus: ExternalRefundStatus.CONFIRMED,
+          externalRefundConfirmedAt: new Date(),
+          externalRefundConfirmedByUserId: actorId,
+        },
+      });
+      if (claimed.count === 0) return;
+      await this.auditService.record(
+        {
+          actorUserId: actorId,
+          action: AuditAction.PURCHASE_INTENT_REFUNDED,
+          entityType: 'PurchaseIntentRefund',
+          entityId: refundId,
+          metadata: {
+            event: 'external_refund_confirmed',
+            purchaseIntentId: refund.purchaseIntentId,
+            externalRefundDue: refund.externalRefundDue.toString(),
+          },
+        },
+        tx,
+      );
+    });
+    return this.prisma.purchaseIntentRefund.findUniqueOrThrow({ where: { id: refundId } });
+  }
+
+  async findRefundOrThrow(refundId: string) {
+    const refund = await this.prisma.purchaseIntentRefund.findUnique({
+      where: { id: refundId },
+      include: { purchaseIntent: { select: { partnerId: true, partnerBranchId: true, customerId: true } } },
+    });
+    if (!refund) throw new NotFoundException('Refund not found');
+    return refund;
   }
 
   /**
@@ -1025,6 +1232,9 @@ export class PurchaseIntentRefundService {
     id: string;
     amount: Decimal;
     bonusRestored: Decimal;
+    prepaidRestored: Decimal;
+    externalRefundDue: Decimal;
+    externalRefundStatus: ExternalRefundStatus;
     purchaseIntentId: string;
   }): Promise<PurchaseIntentRefundResult> {
     // Re-read rather than trust a stored snapshot: other refunds may have
@@ -1037,7 +1247,33 @@ export class PurchaseIntentRefundService {
         amount: refund.amount.toFixed(MONEY_SCALE),
         totalRefunded: intent.refundedAmount.toFixed(MONEY_SCALE),
         bonusRestored: refund.bonusRestored.toFixed(MONEY_SCALE),
+        prepaidRestored: refund.prepaidRestored.toFixed(MONEY_SCALE),
+        externalRefundDue: refund.externalRefundDue.toFixed(MONEY_SCALE),
+        externalRefundStatus: refund.externalRefundStatus,
       }));
+  }
+
+  /**
+   * Every refund of this partner's sales whose cash slice the business has
+   * not yet said it handed back — the till's own to-do list (§26). Branch
+   * scoped by the caller's filter, like the purchase queue.
+   */
+  listPendingExternal(partnerId: string, branchIds: string[] | null) {
+    return this.prisma.purchaseIntentRefund.findMany({
+      where: {
+        externalRefundStatus: ExternalRefundStatus.PENDING_PARTNER,
+        purchaseIntent: {
+          partnerId,
+          ...(branchIds ? { partnerBranchId: { in: branchIds } } : {}),
+        },
+      },
+      include: {
+        purchaseIntent: {
+          select: { id: true, partnerId: true, partnerBranchId: true, confirmationCode: true, grossAmount: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   listForIntent(purchaseIntentId: string) {

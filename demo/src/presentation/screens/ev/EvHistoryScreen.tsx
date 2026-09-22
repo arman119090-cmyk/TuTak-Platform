@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
-import { Surface } from '../../components/Surface';
 import { ListRow } from '../../components/ListRow';
 import { PartnerMark } from '../../components/PartnerMark';
 import { EmptyState } from '../../components/EmptyState';
@@ -15,7 +14,7 @@ import { formatAmd, formatDateTime, formatEnergy } from '../../utils/format';
 
 export function EvHistoryScreen() {
   const { t } = useTranslation();
-  const { color, space, radius } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const { data, isLoading } = useQuery({ queryKey: ['ev-history'], queryFn: evApi.myHistory });
 
   const sessions = data ?? [];
@@ -24,25 +23,16 @@ export function EvHistoryScreen() {
   return (
     <Screen title={t('ev.history')}>
       {sessions.length > 0 ? (
-        <Surface style={{ marginBottom: space[5] }}>
-          <Text style={{ color: color.textSecondary, fontSize: 13 }}>
-            {t('ev.totalDelivered')}
-          </Text>
-          <Text
-            style={{
-              color: color.textPrimary,
-              fontSize: 30,
-              fontWeight: '600',
-              marginTop: space[1],
-            }}
-          >
+        <View style={{ marginBottom: space[5] }}>
+          <Text style={[text.caption, { color: color.textSecondary }]}>{t('ev.totalDelivered')}</Text>
+          <Text style={[text.balanceSm, { color: color.textPrimary, marginTop: 2, fontVariant: ['tabular-nums'] }]}>
             {formatEnergy(totalEnergy)}
           </Text>
-        </Surface>
+        </View>
       ) : null}
 
-      <Surface padded={false}>
-        <View style={{ paddingHorizontal: space[5] }}>
+      <View>
+        <View>
           {isLoading ? (
             <View style={{ paddingVertical: space[5], gap: space[4] }}>
               {[0, 1, 2].map((i) => (
@@ -91,7 +81,7 @@ export function EvHistoryScreen() {
             ))
           )}
         </View>
-      </Surface>
+      </View>
     </Screen>
   );
 }

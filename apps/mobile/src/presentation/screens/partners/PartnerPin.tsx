@@ -13,8 +13,8 @@ import { mapPinStyles } from './mapPinStyles';
  * A disc with the partner's own logo, on a stem that points at the
  * coordinate — the stem matters, because a bare circle centred on a point is
  * ambiguous about which point it means once there are two of them a block
- * apart. Per Arman's confirmed request, 2026-08-23: "заменить иконку
- * категории на карте на логотип партнёра" — the category icon is now only
+ * apart. Per the confirmed product decision of 2026-08-23 — the map pin
+ * carries the partner's own logo — the category icon is now only
  * the fallback for a partner that has published no logo (every partner that
  * predates the media system, and any that simply hasn't uploaded one), via
  * `PartnerMark`'s `fallback` prop.

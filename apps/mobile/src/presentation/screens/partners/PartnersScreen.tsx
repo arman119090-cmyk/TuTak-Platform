@@ -55,7 +55,8 @@ type Filter =
   | { kind: 'all' }
   | { kind: 'category'; value: PartnerCategory }
   | { kind: 'stations' }
-  /** The "fuel" chip's own sub-filter — "Газ" or "Бензин" (Arman, 2026-08-26). */
+  /** The "fuel" chip's own sub-filter — "Газ" or "Бензин" (product decision,
+      2026-08-26). */
   | { kind: 'fuelType'; value: FuelType };
 
 type MapItem =
@@ -82,7 +83,7 @@ type MapItem =
  */
 export function PartnersScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius, glass } = useTheme();
+  const { color, space, text, radius } = useTheme();
   const tabBarSpace = useTabBarSpace();
   const route = useRoute<PartnersRoute>();
   const navigation = useNavigation<Nav>();
@@ -93,6 +94,7 @@ export function PartnersScreen() {
   );
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mapBusy, setMapBusy] = useState(false);
   const listRef = useRef<ScrollView>(null);
   const cardOffsets = useRef<Record<string, number>>({});
 
@@ -102,6 +104,13 @@ export function PartnersScreen() {
   // this fires each time the button is pressed, not just on first mount.
   React.useEffect(() => {
     if (route.params?.filter === 'stations') setFilter({ kind: 'stations' });
+    // A spotlight card's "go to this partner": the search box does the
+    // narrowing, on the same `q` the API takes, so the list and the map
+    // agree with what a person typing that name would see.
+    if (typeof route.params?.q === 'string') {
+      setSearch(route.params.q);
+      setFilter({ kind: 'all' });
+    }
   }, [route.params]);
 
   const centre = useApproximateLocation();
@@ -254,7 +263,7 @@ export function PartnersScreen() {
     // The person's own dot is not a destination.
     if (id === HERE_MARKER_ID) return;
     // A partner's pin opens its own page — a location on the map is
-    // expected to open what's there, per Arman's request, 2026-08-23. A
+    // expected to open what's there, per the product decision of 2026-08-23. A
     // station's pin still only selects and scrolls: there is no equivalent
     // "station page" being asked for, and the expanded card already carries
     // everything a station needs (connectors, availability, start action).
@@ -273,8 +282,24 @@ export function PartnersScreen() {
     }
   };
 
-  const isLoading = (showPartners && partners.isLoading) || (showStations && stations.isLoading);
-  const isError = (showPartners && partners.isError) || (showStations && stations.isError);
+  /*
+   * Two sources, judged separately (U10).
+   *
+   * Partners and charging stations come from different services. When one
+   * of them fails, the other's rows are still true and still useful — a
+   * driver who cannot see stations can still see the café next to them.
+   * So the list is only "loading" while nothing has arrived, only "failed"
+   * when every source asked has failed, and a source that failed on its
+   * own is reported above the rows the other one delivered.
+   */
+  const sources = [
+    ...(showPartners ? [partners] : []),
+    ...(showStations ? [stations] : []),
+  ];
+  const isLoading = sources.some((q) => q.isPending) && !sources.some((q) => q.data);
+  const isError = sources.length > 0 && sources.every((q) => q.isError && !q.data);
+  const partnersFailed = showPartners && partners.isError && !partners.data && !isError;
+  const stationsFailed = showStations && stations.isError && !stations.data && !isError;
   const hasFilter = Boolean(search) || filter.kind !== 'all';
 
   return (
@@ -282,6 +307,13 @@ export function PartnersScreen() {
       <ScrollView
         ref={listRef}
         keyboardShouldPersistTaps="handled"
+        /*
+         * Off while a finger is on the map. On Android the list takes any
+         * vertical drag for itself before the map's responder can claim it,
+         * which left the map pannable sideways only — and a two-finger pinch
+         * was read as a scroll. The map says when a touch begins and ends.
+         */
+        scrollEnabled={!mapBusy}
         // `Screen scroll={false}`, so this list owns its own bottom room —
         // 64 points of it, which is less than the tab bar is tall.
         contentContainerStyle={{ paddingBottom: tabBarSpace }}
@@ -305,6 +337,7 @@ export function PartnersScreen() {
           onSelect={selectFromMap}
           height={260}
           unavailableLabel={t('partners.mapUnavailable')}
+          onInteractionChange={setMapBusy}
         />
 
         {/*
@@ -317,8 +350,8 @@ export function PartnersScreen() {
             styles.search,
             {
               marginTop: space[4],
-              backgroundColor: glass.background,
-              borderColor: glass.border,
+              backgroundColor: color.backgroundSubtle,
+              borderColor: 'transparent',
               borderRadius: radius.md,
               paddingHorizontal: space[4],
               gap: space[2],
@@ -367,8 +400,8 @@ export function PartnersScreen() {
           />
           {CATEGORY_ORDER.map((value) =>
             // "Fuel" is not its own chip — a customer picking a pump wants
-            // gas or petrol specifically, not a generic АЗС chip (Arman,
-            // 2026-08-26). Two sub-filter chips take its place, in order.
+            // gas or petrol specifically, not a generic АЗС chip (product
+            // decision, 2026-08-26). Two sub-filter chips take its place, in order.
             value === PartnerCategoryEnum.FUEL ? (
               <React.Fragment key={value}>
                 <Chip
@@ -435,8 +468,28 @@ export function PartnersScreen() {
           </Pressable>
         ) : null}
 
-        <SectionHeader title={t('partners.nearYou')} />
+        {/* The charging history had a screen and a route and no way in: it
+            was registered in RootNavigator and nothing navigated to it.
+            The stations view is where a driver looks for their charging,
+            so that is where the history is offered. */}
+        <SectionHeader
+          title={t('partners.nearYou')}
+          actionLabel={filter.kind === 'stations' ? t('ev.history') : undefined}
+          onAction={filter.kind === 'stations' ? () => navigation.navigate('EvHistory') : undefined}
+        />
 
+        {partnersFailed ? (
+          <SourceWarning
+            message={t('partners.partnersUnavailable', 'Partners could not be loaded. Stations are shown below.')}
+            onRetry={() => void partners.refetch()}
+          />
+        ) : null}
+        {stationsFailed ? (
+          <SourceWarning
+            message={t('partners.stationsUnavailable', 'Charging stations could not be loaded. Partners are shown below.')}
+            onRetry={() => void stations.refetch()}
+          />
+        ) : null}
         {isLoading ? (
           <>
             <Skeleton height={84} style={{ marginBottom: space[3] }} />
@@ -508,6 +561,20 @@ export function PartnersScreen() {
           >
             {t('partners.approximateLocation')}
           </Text>
+        ) : centre.source === 'cached' ? (
+          // The same honesty for the OS's cache (audit D16): a position from
+          // a few minutes ago is shown as such, and tapping asks for a new
+          // fix rather than re-centring on the old one.
+          <Pressable onPress={centre.refresh} accessibilityRole="button" hitSlop={8}>
+            <Text
+              style={[
+                text.caption,
+                { color: color.textTertiary, textAlign: 'center', marginTop: space[4] },
+              ]}
+            >
+              {t('partners.lastKnownLocation')}
+            </Text>
+          </Pressable>
         ) : null}
       </ScrollView>
     </Screen>
@@ -625,7 +692,7 @@ function StationCard({
   startingConnectorId: string | null;
   disabled: boolean;
 }) {
-  const { color, space, text, radius, glass, premium } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
   const { t } = useTranslation();
 
   const free = station.connectors.filter((c) => c.status === 'AVAILABLE').length;
@@ -705,8 +772,7 @@ function StationCard({
                 style={({ pressed }) => [
                   styles.connector,
                   {
-                    borderColor: startable ? glass.border : color.border,
-                    backgroundColor: startable && pressed ? glass.light : 'transparent',
+                    backgroundColor: startable && pressed ? color.surfaceSunken : color.backgroundSubtle,
                     opacity: startable || starting ? 1 : 0.55,
                     borderRadius: radius.md,
                     paddingHorizontal: space[3],
@@ -758,7 +824,7 @@ function Chip({
   active: boolean;
   onPress: () => void;
 }) {
-  const { color, space, text, radius, premium, glass } = useTheme();
+  const { color, space, text, radius, premium } = useTheme();
 
   return (
     <Pressable
@@ -771,8 +837,8 @@ function Chip({
           borderRadius: radius.full,
           paddingHorizontal: space[4],
           gap: space[2],
-          backgroundColor: active ? premium.brand.primary : glass.background,
-          borderColor: active ? premium.brand.primary : glass.border,
+          backgroundColor: active ? premium.brand.primary : color.backgroundSubtle,
+          borderColor: 'transparent',
           opacity: pressed ? 0.7 : 1,
         },
       ]}
@@ -819,6 +885,38 @@ const styles = StyleSheet.create({
   cardIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   trailing: { alignItems: 'flex-end' },
   connectors: { flexDirection: 'row', flexWrap: 'wrap' },
-  connector: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth },
+  connector: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
 });
+
+/**
+ * One source did not answer; the other did. Said above the list, with a
+ * retry for that source alone, so the rows that did arrive stay in place.
+ */
+function SourceWarning({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useTranslation();
+  const { color, space, text, radius } = useTheme();
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: space[3],
+        padding: space[3],
+        marginBottom: space[3],
+        borderRadius: radius.md,
+        backgroundColor: color.pendingSurface,
+      }}
+    >
+      <Text style={[text.bodySm, { color: color.pendingText, flex: 1 }]}>{message}</Text>
+      <Text
+        accessibilityRole="button"
+        onPress={onRetry}
+        style={[text.bodySm, { color: color.pendingText, fontWeight: '600' }]}
+      >
+        {t('common.retry')}
+      </Text>
+    </View>
+  );
+}

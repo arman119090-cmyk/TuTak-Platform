@@ -123,6 +123,15 @@ export const semantic = {
   surfaceRaised: neutral[0],
   surfaceSunken: neutral[50],
   overlay: 'rgba(16, 24, 40, 0.48)',
+  /** Hairline between rows in a list. Lighter than `border`: a row divider
+   *  is punctuation, not an edge. */
+  divider: neutral[100],
+  /** The resting fill of a quiet control — a secondary button, an icon
+   *  button, a pressed list row — and the tone it darkens to under a
+   *  finger. Screens used to reach for `neutral[100]`/`[200]` directly for
+   *  these, which is invisible on white and glaring on a dark ground. */
+  fillSubtle: neutral[100],
+  fillSubtlePressed: neutral[200],
 
   // Lines
   border: neutral[200],

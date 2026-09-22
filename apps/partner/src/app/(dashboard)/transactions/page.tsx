@@ -4,6 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
+import { transactionStatusLabel, transactionTypeLabel } from '@/lib/labels';
+import { dataStateOf } from '@/lib/queryState';
+import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
 const num = (v: string | number | undefined) =>
   Number(v ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/,/g, ' ');
@@ -21,13 +24,13 @@ export default function TransactionsPage() {
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
 
-  const { data } = useQuery({
+  const query = useQuery({
     queryKey: ['partner-transactions', partnerId],
     queryFn: () => partnerApi.transactions(partnerId!),
     enabled: !!partnerId,
   });
-
-  const items = data?.items ?? [];
+  const state = dataStateOf(query);
+  const items = query.data?.items ?? [];
 
   return (
     <>
@@ -36,16 +39,34 @@ export default function TransactionsPage() {
         description="Every payment made at your business, newest first."
       />
 
-      {items.length === 0 ? (
+      {state === 'loading' ? (
+        <LoadingNotice label="Loading transactions…" />
+      ) : state === 'error' ? (
+        <LoadError
+          title="Transactions could not be loaded"
+          onRetry={() => void query.refetch()}
+          busy={query.isFetching}
+        />
+      ) : items.length === 0 ? (
         <EmptyState
           title="No transactions yet"
           message="Payments will appear here as soon as customers start paying with TuTak."
         />
       ) : (
+        <>
+        {state === 'stale' ? (
+          <StaleNotice
+            asOf={query.dataUpdatedAt}
+            what="transactions"
+            onRetry={() => void query.refetch()}
+            busy={query.isFetching}
+          />
+        ) : null}
         <Table>
           <thead>
             <tr>
               <Th>Type</Th>
+              <Th>Branch</Th>
               <Th align="right">Amount</Th>
               <Th align="right">Bonus applied</Th>
               <Th align="right">Bonus earned</Th>
@@ -57,7 +78,20 @@ export default function TransactionsPage() {
             {items.map((tx) => (
               <Tr key={tx.id}>
                 <Td>
-                  <span className="text-ink">{tx.type.replace(/_/g, ' ').toLowerCase()}</span>
+                  <span className="text-ink">{transactionTypeLabel(tx.type)}</span>
+                </Td>
+                {/* A dash, not an empty cell: a partner-wide QR, an EV session
+                    and roaming all record no branch, and a blank here reads as
+                    "we failed to load it" rather than "there is none". */}
+                <Td>
+                  {tx.branch ? (
+                    <>
+                      <span className="text-ink">{tx.branch.name}</span>
+                      <span className="block text-[12px] text-muted">{tx.branch.address}</span>
+                    </>
+                  ) : (
+                    <span className="text-faint">—</span>
+                  )}
                 </Td>
                 <Td align="right" className="tabular font-medium">
                   {num(tx.amount)} ֏
@@ -78,7 +112,7 @@ export default function TransactionsPage() {
                 </Td>
                 <Td>
                   <Badge tone={STATUS_TONE[tx.status as keyof typeof STATUS_TONE] ?? 'neutral'}>
-                    {tx.status.toLowerCase()}
+                    {transactionStatusLabel(tx.status)}
                   </Badge>
                 </Td>
                 <Td align="right" className="tabular text-[13px] text-muted">
@@ -88,6 +122,7 @@ export default function TransactionsPage() {
             ))}
           </tbody>
         </Table>
+        </>
       )}
     </>
   );

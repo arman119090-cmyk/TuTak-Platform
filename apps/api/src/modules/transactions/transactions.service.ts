@@ -251,20 +251,64 @@ export class TransactionsService {
         // customer was dealing with, as *that operation* recorded it.
         brandDisplayName: true,
         brandLogoAssetId: true,
+        // Which of the partner's branches this happened at. The column has
+        // been here since the branch work; it simply never reached a client,
+        // so a partner reading their own history could see the day and the
+        // amount but not which of their shops it came from.
+        partnerBranchId: true,
       },
       take: query.limit,
       ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
-      orderBy: { createdAt: 'desc' },
+      // The id is the tie-break, and it is not optional. A cursor page is
+      // "everything after this row in this order"; with `createdAt` alone,
+      // two rows written in the same millisecond (a purchase and its bonus
+      // accrual, a batch import) have no order between them, so the page
+      // boundary could fall on either side of the cursor row's twin and the
+      // next page would repeat it or skip it. `transaction-history-paging`
+      // proves the property with five rows on one timestamp.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
 
     // One batched resolution for the whole page rather than two queries per
     // row — see `MediaViewService.brandsFor`.
     const brands = await this.media.brandsFor(items);
 
+    // Which rows are purchases, so the customer can open the purchase
+    // itself. One query for the page; a purchase points at its transaction
+    // through `sourceTransactionId`, never the other way round.
+    const intents = items.length
+      ? await this.prisma.purchaseIntent.findMany({
+          where: { sourceTransactionId: { in: items.map((item) => item.id) } },
+          select: { id: true, sourceTransactionId: true },
+        })
+      : [];
+    const intentByTransaction = new Map(intents.map((i) => [i.sourceTransactionId, i.id]));
+
+    // One query for every branch on the page, the same batching shape as
+    // `brandsFor` above. Read live rather than snapshotted — see
+    // `TransactionDto.branch`, which says so rather than letting a reader
+    // assume otherwise. Deleted branches simply do not come back and the
+    // row keeps its null.
+    const branchIdsOnPage = [
+      ...new Set(items.map((item) => item.partnerBranchId).filter((id): id is string => id !== null)),
+    ];
+    const branchRows = branchIdsOnPage.length
+      ? await this.prisma.partnerBranch.findMany({
+          where: { id: { in: branchIdsOnPage } },
+          select: { id: true, name: true, address: true },
+        })
+      : [];
+    const branchById = new Map(branchRows.map((b) => [b.id, b]));
+
     return {
       items: items.map((item) => {
-        const { brandDisplayName: _name, brandLogoAssetId: _asset, ...row } = item;
-        return { ...row, partnerBrand: brands.get(item) ?? null };
+        const { brandDisplayName: _name, brandLogoAssetId: _asset, partnerBranchId, ...row } = item;
+        return {
+          ...row,
+          partnerBrand: brands.get(item) ?? null,
+          purchaseIntentId: intentByTransaction.get(item.id) ?? null,
+          branch: partnerBranchId ? (branchById.get(partnerBranchId) ?? null) : null,
+        };
       }),
       nextCursor: items.length === query.limit ? (items.at(-1)?.id ?? null) : null,
     };

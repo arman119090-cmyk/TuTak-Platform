@@ -4,7 +4,7 @@
  * never an amount. The customer types the amount themselves on the next
  * screen and a `PurchaseIntent` carries it from there, so nothing about the
  * purchase is ever baked into the code a partner prints or into what a
- * cashier can redeem unilaterally (`docs/NEXT_CLAUDE_TASK.md`, requirement
+ * cashier can redeem unilaterally (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`, requirement
  * 1-2). `apps/partner/src/lib/partnerPayQr.ts` builds the matching payload;
  * see there for why a branch id is a second colon-separated segment rather
  * than a replacement of the plain partner-only form.
@@ -36,4 +36,24 @@ export function parseBranchQrToken(raw: string): string | null {
   if (!raw.startsWith(BRANCH_PREFIX)) return null;
   const token = raw.slice(BRANCH_PREFIX.length).trim();
   return token || null;
+}
+
+/**
+ * A till-opened purchase's dynamic QR — `tutak://checkout/<token>` (what
+ * `PartnerCheckoutService` renders) or the bare `TUTAK-CHECKOUT:<token>`
+ * form. The token is all it carries; the server says what it is for.
+ */
+const CHECKOUT_URI_PREFIX = 'tutak://checkout/';
+const CHECKOUT_PREFIX = 'TUTAK-CHECKOUT:';
+
+export function parseCheckoutToken(raw: string): string | null {
+  const trimmed = raw.trim();
+  const prefix = trimmed.startsWith(CHECKOUT_URI_PREFIX)
+    ? CHECKOUT_URI_PREFIX
+    : trimmed.startsWith(CHECKOUT_PREFIX)
+      ? CHECKOUT_PREFIX
+      : null;
+  if (!prefix) return null;
+  const token = trimmed.slice(prefix.length).split(/[?#/]/)[0]?.trim() ?? '';
+  return /^[A-Za-z0-9_-]{16,}$/.test(token) ? token : null;
 }

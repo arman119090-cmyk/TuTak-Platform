@@ -81,7 +81,7 @@ async function run() {
   await shoot(p2, 'partner-transactions');
 
   // The payment code is static now — no amount, no generate step (spec:
-  // NEXT_CLAUDE_TASK.md requirement 1). One card per active branch if the
+  // REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 1). One card per active branch if the
   // partner has any (2026-08-26), otherwise the single whole-business code.
   await p2.getByRole('link', { name: 'Payment QR', exact: true }).click();
   await p2.waitForTimeout(900);

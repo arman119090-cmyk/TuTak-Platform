@@ -183,6 +183,7 @@ describe('Alerting (integration)', () => {
     const buildProcessor = () =>
       new SweepsProcessor(
         {
+          alertOutbox: undefined as never,
           bonus: harness.app.get(BonusEngineService),
           reservations: harness.app.get(EvReservationsService),
           sessions: harness.app.get(EvSessionsService),
@@ -198,6 +199,8 @@ describe('Alerting (integration)', () => {
           purchaseIntents: undefined as never,
           partnerSettlement: undefined as never,
           pspAgeing: undefined as never,
+          customerBalance: undefined as never,
+          partnerCheckouts: undefined as never,
           pspCallbacks: undefined as never,
           refunds: undefined as never,
         },

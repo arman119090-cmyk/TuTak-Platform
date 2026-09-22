@@ -15,7 +15,7 @@ import { useTheme } from '../../app/theme/ThemeProvider';
  * use (`assets/logo-mark.png`, not the small flat vector mark), on a
  * blue-tinted surface so a partner without a logo is still visually
  * distinguishable at a glance from `UserAvatar`'s green-tinted customer
- * fallback — per Arman's explicit request, 2026-08-23 (first as the small
+ * fallback — per the explicit product decision of 2026-08-23 (first as the small
  * vector mark recoloured, then corrected to this exact logo image on a
  * tinted background instead), which supersedes this component's earlier
  * initials-only fallback (the spec's written "initials" instruction
@@ -47,7 +47,7 @@ export function PartnerMark({
   /**
    * Renders fully round (`radius.full`) instead of this component's usual
    * soft-square `radius.md`. Added for `PartnerPin`: the map pin needs "a
-   * small circular avatar" per Arman's request, 2026-08-23, while every
+   * small circular avatar" per the product decision of 2026-08-23, while every
    * other surface (list cards, the detail header) keeps the rounded-square
    * logo treatment this component has always used.
    */
@@ -56,9 +56,9 @@ export function PartnerMark({
    * What to render instead of the glossy Jako lockup when there is no logo
    * (or it failed to load). Added for `PartnerPin` — the map pin's confirmed
    * behaviour is "the partner's own logo, falling back to the *category*
-   * icon", not this component's generic neutral mark, per Arman's request,
-   * 2026-08-23. Every other call site omits this and keeps the original
-   * fallback unchanged.
+   * icon", not this component's generic neutral mark, per the product
+   * decision of 2026-08-23. Every other call site omits this and keeps the
+   * original fallback unchanged.
    */
   fallback?: React.ReactNode;
   /** Paired with a custom `fallback` that wants a different tint than the

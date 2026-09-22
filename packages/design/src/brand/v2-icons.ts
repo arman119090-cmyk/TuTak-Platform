@@ -3,7 +3,7 @@
  * entry, and the small CTA wing signature.
  *
  * Source: `docs/design/assets/v2/icons/*.svg` on
- * `design/tutak-mobile-v2-handoff` (TUTAK_V2_CLAUDE_TASK.md, "individually
+ * `design/tutak-mobile-v2-handoff` (design handoff v2, "individually
  * exported vector button and bottom-navigation sources"). Paths are copied
  * byte-for-byte from those source SVGs — do not redraw or approximate them
  * from memory; if the design source changes, re-copy from there.

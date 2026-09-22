@@ -94,7 +94,13 @@ export class AuthOtpService {
     purpose: AuthOtpPurpose,
     code: string,
     ipAddress?: string,
-  ): Promise<void> {
+    /**
+     * The id of the challenge that was spent, so a caller can tie what the
+     * person did next to the phone confirmation that authorised it — the
+     * legal consent record does exactly that. It is an opaque row id: the
+     * code is not in it, and nothing here exposes the code or its hash.
+     */
+  ): Promise<{ challengeId: string }> {
     const invalid = new UnauthorizedException('Code is invalid or has expired');
 
     // Guessing spread thinly across many numbers costs the attacker nothing
@@ -169,5 +175,7 @@ export class AuthOtpService {
       data: { consumedAt: new Date() },
     });
     if (consumed.count === 0) throw invalid;
+
+    return { challengeId: challenge.id };
   }
 }

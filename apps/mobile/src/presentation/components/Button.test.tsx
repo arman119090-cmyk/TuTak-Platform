@@ -31,15 +31,15 @@ describe('Button sizing', () => {
     renderButton();
     const style = shapeOf();
 
-    expect(style.minHeight).toBe(54);
+    expect(style.minHeight).toBe(56);
     // The assertion that matters: a fixed height is what clipped the label.
     expect(style.height).toBeUndefined();
   });
 
   it.each([
-    ['lg', 54],
-    ['md', 46],
-    ['sm', 38],
+    ['lg', 56],
+    ['md', 44],
+    ['sm', 36],
   ])('keeps the %s size as a floor, not a ceiling', (size, expected) => {
     renderButton({ size });
     expect(shapeOf().minHeight).toBe(expected);
@@ -53,7 +53,7 @@ describe('Button sizing', () => {
   });
 
   it('records that the small size sits below the minimum touch target', () => {
-    // `layout.minTouchTarget` is 44 and `sm` is 38, which is under it. That
+    // `layout.minTouchTarget` is 44 and `sm` is 36, which is under it. That
     // is deliberate — `sm` is for a control inside a row that is itself
     // tappable — but it is worth pinning rather than rediscovering, so that
     // anyone reaching for `sm` as a standalone button sees this first.

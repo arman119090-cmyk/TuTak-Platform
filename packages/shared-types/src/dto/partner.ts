@@ -2,10 +2,11 @@ import type { MediaImageDto } from './media';
 import type { BranchFuelType } from '../enums/partner-branch';
 
 /**
- * One row of a partner's optional public product/service list — the
- * "товары/услуги с ценами" half of the public profile confirmed with Arman
- * 2026-08-23. Read-only from the customer's side: there is deliberately no
- * "add to cart"/"order" affordance anywhere this is rendered — see
+ * One row of a partner's optional public product/service list — the priced
+ * products/services half of the public profile settled by the product
+ * decision of 2026-08-23. Read-only from the customer's side: there is
+ * deliberately no "add to cart"/"order" affordance anywhere this is
+ * rendered — see
  * `docs/PARTNER_PROFILE_2026-08-23.md`.
  */
 export interface PartnerOfferingDto {
@@ -19,7 +20,7 @@ export interface PartnerOfferingDto {
 
 /**
  * One of a partner's own physical locations — spec: partner self-service
- * branches (Arman, 2026-08-26). Unlike `PartnerOfferingDto`, this is not a
+ * branches (product decision, 2026-08-26). Unlike `PartnerOfferingDto`, this is not a
  * bulk-replace list: `isActive` lets a partner close a branch without
  * deleting it, because `PurchaseIntent`/`PartnerIntegration` history keeps
  * referencing it by id.
@@ -260,7 +261,7 @@ export enum PartnerCategory {
 
 /**
  * The `fuel`-category sub-filter — "Газ" (propane and methane, counted as
- * one) vs "Бензин" (Arman, 2026-08-26). Not part of `PartnerCategory`: every
+ * one) vs "Бензин" (product decision, 2026-08-26). Not part of `PartnerCategory`: every
  * `fuel` partner keeps that one category, and this narrows the search within
  * it via `sellsGas`/`sellsPetrol` rather than widening the category set.
  */

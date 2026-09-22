@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import Constants from 'expo-constants';
 import type { AuthResponseDto, AuthTokensDto } from '@tutak/shared-types';
 import { useAuthStore } from '../stores/authStore';
+import { useAppLockStore } from '../stores/appLockStore';
 import { resolveApiBaseUrl } from './apiBaseUrl';
 import { mockAdapter } from './mockAdapter';
 import { shouldUseMocks } from './mockGate';
@@ -26,6 +27,18 @@ const API_BASE_URL = resolveApiBaseUrl(
  * `/v1` either.
  */
 export const healthUrl = API_BASE_URL.replace(/\/v\d+\/?$/, '') + '/health';
+
+/**
+ * The API's origin without the version prefix.
+ *
+ * The legal documents are served version-neutral, for the same reason
+ * `/health` is: an app-store listing and a printed link both point at a fixed
+ * path, and `/v1/legal/...` would break on the next API version. Requests for
+ * them pass this as `baseURL` and keep an ordinary `/legal/...` path, so
+ * every tool that reads these modules — the offline mock adapter among them —
+ * still sees the route it will have to answer.
+ */
+export const apiOrigin = API_BASE_URL.replace(/\/v\d+\/?$/, '');
 
 /**
  * Whether this build talks to memory instead of to a server.
@@ -62,6 +75,13 @@ interface SessionScopedRequest {
 }
 
 httpClient.interceptors.request.use((config) => {
+  // Behind the lock nothing private leaves the app; signing out is the one
+  // thing a locked screen may still do. Checked before the token is
+  // attached so the request never exists, rather than being cancelled.
+  const endingSession = config.method?.toLowerCase() === 'post' && config.url === '/auth/logout';
+  if (useAppLockStore.getState().status === 'locked' && !endingSession) {
+    throw new axios.CanceledError('Application locked');
+  }
   const { accessToken, sessionEpoch } = useAuthStore.getState();
   (config as typeof config & SessionScopedRequest)._sessionEpoch = sessionEpoch;
   if (accessToken) {
@@ -97,6 +117,7 @@ export class SessionChangedError extends Error {
 let refreshInFlight: { epoch: number; promise: Promise<AuthTokensDto> } | null = null;
 
 async function refreshTokens(epoch: number): Promise<AuthTokensDto> {
+  if (useAppLockStore.getState().status === 'locked') throw new axios.CanceledError('Application locked');
   const { refreshToken, deviceId, setTokens, clear } = useAuthStore.getState();
   if (!refreshToken) {
     throw new Error('No refresh token available');

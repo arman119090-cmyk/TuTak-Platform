@@ -17,7 +17,7 @@ import {
  * Was written against the old flat-rate QR flow: the merchant typed an
  * amount into the QR screen and generated a one-time invoice; the customer
  * "scanned" it by calling the redeem endpoint with the resulting token.
- * `docs/NEXT_CLAUDE_TASK.md` replaced that with the PurchaseIntent flow the
+ * `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` replaced that with the PurchaseIntent flow the
  * rest of this suite already assumes (`money-movement.e2e.ts`'s payments,
  * `docs/LAUNCH_READINESS_2026-08-16.md` §C): the QR carries no amount, the
  * customer enters it themselves and creates the `PurchaseIntent`, and the

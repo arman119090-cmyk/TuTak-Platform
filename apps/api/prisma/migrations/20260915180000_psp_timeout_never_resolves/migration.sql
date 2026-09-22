@@ -13,7 +13,7 @@ ADD COLUMN     "resolutionBasis" "PspResolutionBasis";
 -- ────────────────────────────────────────────────────────────────────────
 -- Time never releases a purchase.
 --
--- Arman's decision of 15.09.2026, stated as a never: a timeout is not a
+-- The product decision of 15.09.2026, stated as a never: a timeout is not a
 -- provider saying no. `EXPIRED` means nobody knows, and `FAILED` means the
 -- provider stated authoritatively that no money moved — the one status that
 -- lets another route collect. Letting a clock write the second from the first

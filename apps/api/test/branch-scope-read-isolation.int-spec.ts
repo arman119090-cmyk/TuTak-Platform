@@ -295,6 +295,78 @@ describe('Branch-scoped read isolation: staff roster, transactions, analytics (i
     });
   });
 
+  // ── The branch a row came from, as a reader sees it ──────────────────
+
+  describe('TransactionDto.branch', () => {
+    /**
+     * The column has been stamped since the branch work; until now it stopped
+     * at the database. A partner reading their own history could see the day
+     * and the amount of every sale but not which of their shops produced it,
+     * which is the one thing they need to check a statement against a till.
+     */
+    it('names the branch a purchase happened at', async () => {
+      const partner = await fuelPartner();
+      const branch = await createBranch(partner.id, 'Northern Avenue');
+      const intent = await completedPurchaseAt(partner.id, branch.id, '5000');
+      const row = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+
+      const transactions = harness.app.get(TransactionsService);
+      const { items } = await transactions.history({ userId: row.customerId, limit: 20 } as never);
+
+      expect(items).toHaveLength(1);
+      expect(items[0]!.branch).toEqual({
+        id: branch.id,
+        name: 'Northern Avenue',
+        // Carried as well as the name: a chain gives every shop the same
+        // name and the street is what tells two of them apart.
+        address: 'Addr',
+      });
+    });
+
+    it('is null — not a guess — for an operation that recorded no branch', async () => {
+      const partner = await createPartner(prisma, { category: 'retail', bonusAccrualRateBps: 500 });
+      const { user: customer } = await createCustomer(prisma);
+      const intent = await purchaseIntentsController.create(
+        {
+          id: customer.id,
+          phone: customer.phone,
+          roles: [RoleName.CUSTOMER],
+          permissions: [],
+          partnerScopes: {},
+          mustChangePassword: false,
+        } as RequestUser,
+        { partnerId: partner.id, grossAmount: '5000' },
+      );
+      const row = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+
+      const transactions = harness.app.get(TransactionsService);
+      const { items } = await transactions.history({ userId: row.customerId, limit: 20 } as never);
+
+      expect(items).toHaveLength(1);
+      expect(items[0]!.branch).toBeNull();
+    });
+
+    it('lets a deleted branch fall back to null rather than a stale name', async () => {
+      const partner = await fuelPartner();
+      const branch = await createBranch(partner.id, 'Closing down');
+      const intent = await completedPurchaseAt(partner.id, branch.id, '5000');
+      const row = await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } });
+
+      // `onDelete: SetNull` on `Transaction.partnerBranchId` — the row keeps
+      // its money and loses its branch, which is what the DTO's docblock
+      // says happens rather than something a reader has to discover.
+      await prisma.partnerBranch.delete({ where: { id: branch.id } });
+
+      const transactions = harness.app.get(TransactionsService);
+      const { items } = await transactions.history({ userId: row.customerId, limit: 20 } as never);
+
+      expect(items).toHaveLength(1);
+      expect(items[0]!.branch).toBeNull();
+      // The money is untouched by the branch going away.
+      expect(Number(items[0]!.amount)).toBe(5000);
+    });
+  });
+
   // ── Finding 3: a partner's analytics totals ──────────────────────────
 
   describe('GET /analytics/partners/:partnerId', () => {

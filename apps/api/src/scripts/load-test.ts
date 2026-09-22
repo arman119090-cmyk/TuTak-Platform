@@ -601,14 +601,42 @@ async function main() {
 
   // Every unit taken out of a lot must be accounted for by an allocation
   // naming that lot. Consume a lot twice and this is what disagrees.
+  //
+  // Released holds are excluded, and that is the invariant rather than an
+  // exception to it: releasing a hold puts the units back into the lot but
+  // keeps the allocation rows, because they are the audit trail of what the
+  // hold had taken. Summing those against a refilled lot compares a
+  // historical claim with a current balance and finds a difference that means
+  // nothing. Counting them made this check fail on 34 lots on 22.09.2026 —
+  // every one of them a customer who abandoned a purchase — while the money
+  // was exactly right (`wallet available = sum of available lots` passed in
+  // the same run, and excluding released holds gave zero).
   await check(
-    'every lot consumed exactly as much as its allocations claim',
+    'every lot consumed exactly as much as its live allocations claim',
     prisma.$queryRaw`
       SELECT count(*) AS n FROM bonus_lots bl
       LEFT JOIN (
-        SELECT "lotId", SUM(amount) AS s FROM bonus_reservation_allocations GROUP BY "lotId"
+        SELECT a."lotId", SUM(a.amount) AS s
+          FROM bonus_reservation_allocations a
+          JOIN bonus_reservations r ON r.id = a."reservationId"
+         WHERE r.status <> 'RELEASED'
+         GROUP BY a."lotId"
       ) a ON a."lotId" = bl.id
       WHERE bl."originalAmount" - bl."remainingAmount" <> COALESCE(a.s, 0)`,
+  );
+  // The other half of the same property: a released hold must have given
+  // back everything it took, so its allocations may not still be sitting in
+  // the lot's consumed figure.
+  await check(
+    'a released hold gave every unit back to its lot',
+    prisma.$queryRaw`
+      SELECT count(*) AS n FROM bonus_reservations r
+       WHERE r.status = 'RELEASED'
+         AND EXISTS (
+           SELECT 1 FROM bonus_reservation_allocations a
+            JOIN bonus_lots bl ON bl.id = a."lotId"
+           WHERE a."reservationId" = r.id
+             AND bl."remainingAmount" > bl."originalAmount")`,
   );
   await check(
     'no lot is over-consumed or negative',

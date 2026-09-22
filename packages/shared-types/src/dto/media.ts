@@ -10,7 +10,7 @@
  * to have nowhere to put one.
  */
 
-export type MediaAssetKind = 'USER_AVATAR' | 'PARTNER_LOGO' | 'PARTNER_COVER';
+export type MediaAssetKind = 'USER_AVATAR' | 'PARTNER_LOGO' | 'PARTNER_COVER' | 'PROMO_ARTWORK';
 
 export type MediaAssetStatus = 'PENDING_REVIEW' | 'ACTIVE' | 'REPLACED' | 'REVOKED';
 

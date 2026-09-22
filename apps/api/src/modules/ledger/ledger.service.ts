@@ -358,6 +358,40 @@ export class LedgerService {
     return client.ledgerAccount.findFirstOrThrow({ where });
   }
 
+  /**
+   * Takes the partner's entitlement off the table for the rest of this
+   * transaction.
+   *
+   * One partner's payable is one pot of money, and more than one writer can
+   * promise it away: a settlement draft claims the postings, a legacy payout
+   * debits the balance, and neither posts anything the other would notice
+   * until it commits. Read-then-write on a `READ COMMITTED` snapshot lets
+   * both read the same 50 000 and both promise it — proven on PostgreSQL in
+   * `audit-2209-payout-settlement-race.int-spec.ts`, where 50 000 of
+   * entitlement funded 100 000 of promises.
+   *
+   * So every writer that allocates against that pot takes this lock first and
+   * re-reads what is free afterwards. `FOR UPDATE` also conflicts with the
+   * `UPDATE ... SET balance = balance + delta` that `post()` runs, so a
+   * settlement being paid or an accrual landing mid-decision waits its turn
+   * instead of moving the number a decision was already made on.
+   *
+   * Every currency the partner has, locked in `id` order: one order for all
+   * callers is what makes a deadlock impossible, and the sum a settlement
+   * pays is not currency-aware today (see D02 notes), so locking the one row
+   * a caller happens to care about would leave the others unguarded. No rows
+   * means no account, which means no postings and nothing to allocate.
+   */
+  async lockPartnerPayable(tx: Tx, partnerId: string): Promise<Array<{ id: string }>> {
+    return tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "ledger_accounts"
+      WHERE "type" = ${LedgerAccountType.PARTNER_PAYABLE}::"LedgerAccountType"
+        AND "partnerId" = ${partnerId}
+      ORDER BY id
+      FOR UPDATE
+    `;
+  }
+
   /** Recomputes a balance from its postings. The reconciliation primitive. */
   async replayBalance(accountId: string): Promise<Decimal> {
     const postings = await this.prisma.ledgerPosting.findMany({

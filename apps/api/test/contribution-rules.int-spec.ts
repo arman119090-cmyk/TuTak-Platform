@@ -30,7 +30,7 @@ import { BonusEntryType } from '@prisma/client';
  * available are 300 bps (share 450) and 350 bps (share 525), and the brief's
  * own figure of 500 is unreachable between them.
  *
- * Arman's decision of 15.09.2026 was to fix neither by rounding the contract
+ * The product decision of 15.09.2026 was to fix neither by rounding the contract
  * nor by loosening the grid for everybody, but to admit that a per-litre
  * margin is a different kind of number from a percentage. Hence
  * `ContributionRuleKind.FIXED_PER_UNIT`, and hence these tests, which assert
@@ -685,7 +685,7 @@ describe('Partner contribution rules (integration)', () => {
   /**
    * A unit of measure is an identifier the arithmetic compares, not a label.
    *
-   * It used to be a free string, and Arman's decision of 15.09.2026 names the
+   * It used to be a free string, and the product decision of 15.09.2026 names the
    * consequence: "L", "l", "л", "litre" and "liter" are five different units
    * to an equality check, and that check decides whether 10 AMD per litre may
    * be multiplied by a quantity. A partner whose till sends "л" while their

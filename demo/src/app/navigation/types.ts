@@ -1,4 +1,9 @@
-import type { EvSessionDto, NearbyPartnerDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type {
+  EvSessionDto,
+  NearbyPartnerDto,
+  PurchaseIntentDto,
+  TransactionDto,
+} from '@tutak/shared-types';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -8,6 +13,24 @@ export type AuthStackParamList = {
   /** Item 3: the OTP-first alternative to Register/Login, phone -> SMS code -> account. */
   OtpRegister: undefined;
   OtpLogin: undefined;
+  /**
+   * The legal texts, mounted in the *auth* stack as well as the main one.
+   *
+   * The two consents on the registration form link into them, and there is
+   * no account at that moment — so they have to be reachable from here, not
+   * only from Settings.
+   */
+  Legal: undefined;
+  LegalDocument: LegalDocumentParams;
+};
+
+/** Which text, in which language, and optionally which past edition. */
+export type LegalDocumentParams = {
+  documentKey: string;
+  language: 'ru' | 'hy';
+  title?: string;
+  /** Omitted for the current edition; set to re-open exactly what was accepted. */
+  revision?: string;
 };
 
 export type MainTabParamList = {
@@ -19,8 +42,12 @@ export type MainTabParamList = {
    * lets a caller land directly on the stations view — the home screen's
    * "Начать зарядку" quick action passes `'stations'` rather than pushing a
    * separate route, since there no longer is one.
+   *
+   * `q` pre-fills the search box — a Home "Partner Spotlight" card lands on
+   * the map already narrowed to that partner's branches, nearest first,
+   * which is what "go to this partner" means for a chain with ten shops.
    */
-  Partners: { filter?: 'stations' } | undefined;
+  Partners: { filter?: 'stations'; q?: string } | undefined;
   Settings: undefined;
 };
 
@@ -29,6 +56,9 @@ export type RootStackParamList = {
   ScanQr: undefined;
   Notifications: undefined;
   TransactionHistory: undefined;
+  /** The row is passed through so the screen renders instantly; the purchase
+      behind it (route, refunds) is loaded from the server. */
+  TransactionDetail: { transaction: TransactionDto };
   Referral: undefined;
   EvHistory: undefined;
   /** The session is passed through so the screen renders instantly on start;
@@ -44,19 +74,39 @@ export type RootStackParamList = {
    * has nothing to look up.
    */
   PartnerApplicationSent: { displayName: string; category: string; rateBps: number; taxId?: string };
+  /** "Правовая информация" in Settings — the same screens the auth stack mounts. */
+  Legal: undefined;
+  LegalDocument: LegalDocumentParams;
   ChangePassword: undefined;
+  ChangePin: undefined;
   VerifyPhone: undefined;
   DeleteAccount: undefined;
   /** Spec §7: the customer has picked a partner (a map card's "Pay" action)
       and now enters the gross amount and, optionally, how much bonus to
       apply — the intent itself does not exist yet. */
-  CreatePurchaseIntent: { partnerId: string; partnerBranchId?: string; partnerName?: string };
+  CreatePurchaseIntent: {
+    partnerId: string;
+    partnerBranchId?: string;
+    partnerName?: string;
+    /**
+     * Present when the purchase was opened by the partner's till (a scanned
+     * `tutak://checkout/<token>`): the gross is the till's and is not
+     * editable; the customer only chooses how to fund it, and submitting
+     * claims the checkout instead of creating a purchase from scratch.
+     */
+    checkout?: { token: string; checkoutId: string; grossAmount: string };
+  };
   /** Opened by tapping a partner's pin on the map (`PartnersScreen`). The
       record travels through nav params rather than a fresh fetch — it came
       from `/partners/nearby` moments earlier in this same session, and this
       screen moves no money itself; `CreatePurchaseIntent` re-verifies the
-      partner by id from its own params before any amount is entered. */
-  PartnerDetail: { partner: NearbyPartnerDto };
+      partner by id from its own params before any amount is entered.
+
+      `{ partnerId }` alone is the other way in — a Home "Partner Spotlight"
+      card, which knows the business but not a branch. The screen then reads
+      `GET /partners/:id` for the identity and offers the map for the
+      branches, never picking one on the customer's behalf. */
+  PartnerDetail: { partner: NearbyPartnerDto } | { partnerId: string };
   /** The intent already exists; this screen only tracks it to a terminal
       state. Passed through so the screen renders instantly, the same way
       `EvSession` receives its session — it re-polls for the authoritative

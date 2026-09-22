@@ -337,6 +337,13 @@ BONUS_PENDING_HOURS=                # cooling-off before points become spendable
 BONUS_EXPIRY_MONTHS=
 RATE_LIMIT_TTL_SECONDS=
 RATE_LIMIT_MAX_REQUESTS=
+LEGAL_APPROVED_REVISION=            # the revision the owner approved; empty keeps /legal/* at 404 (docs/LEGAL_PAGES_HOSTING_RU.md)
+LEGAL_DRAFT_PREVIEW_ENABLED=false   # show unapproved drafts, marked as drafts; never in production
+LEGAL_CONSENT_REQUIRED=true         # demand the two mandatory consents at registration once the gate is open
+ALERT_TELEGRAM_BOT_TOKEN=           # optional second alert channel (Telegram); never logged
+ALERT_TELEGRAM_CHAT_ID=             # ...and the chat/group id — both or nothing
+OTP_IP_ISSUANCE_PER_HOUR=60         # per source address; raise for a launch venue on one wifi
+OTP_IP_VERIFICATION_PER_HOUR=120    # same; a typo restores the default, never disables the ceiling
 OTEL_EXPORTER_OTLP_ENDPOINT=       # e.g. https://otlp.your-collector.io
 OTEL_EXPORTER_OTLP_HEADERS=        # e.g. api-key=...
 OTEL_SERVICE_NAME=tutak-api
@@ -422,7 +429,10 @@ deploy are the ones you can still see afterwards.
 
 ## 5a. Alerts — who gets told when money is at risk
 
-Set `ALERT_WEBHOOK_URL` to a Slack/Mattermost/Discord incoming webhook, or to
+Set `ALERT_WEBHOOK_URL` to a Slack/Mattermost/Discord incoming webhook (or
+`ALERT_TELEGRAM_BOT_TOKEN` + `ALERT_TELEGRAM_CHAT_ID` for a Telegram group with a
+bot in it; both channels may be set at once and an alert counts as delivered
+when any receiver accepted it), or to
 anything that accepts a JSON POST. Three events reach it, and they are the
 three that mean money is at risk while nothing else in the system notices:
 
@@ -712,7 +722,7 @@ pg_archivecleanup /var/lib/tutak/wal-archive "$(cat /mnt/backups/base/base-<olde
 
 Both app stores require an in-app way to delete an account, and Google Play
 additionally requires a **public web page** explaining it that works without
-installing anything. Ship `public/account-deletion.html` at a stable URL —
+installing anything. Ship `apps/api/public/legal/account-deletion.html` at a stable URL —
 `https://tutak.am/account-deletion` or equivalent — and give Google Play that
 URL in the Data safety form. It is a single self-contained file with no
 external requests, so any static host will do; nothing about it depends on

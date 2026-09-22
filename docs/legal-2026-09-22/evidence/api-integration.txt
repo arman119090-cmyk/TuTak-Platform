@@ -1,0 +1,137 @@
+# Полный интеграционный прогон (PostgreSQL + Redis), локально, 22.09.2026
+
+PASS integration test/account-deletion.int-spec.ts (6.756 s)
+PASS integration test/account-state.int-spec.ts
+PASS integration test/accounting-export.int-spec.ts
+PASS integration test/acquirer-settlement.int-spec.ts
+PASS integration test/adversarial-probe.int-spec.ts (5.913 s)
+PASS integration test/alerting.int-spec.ts
+PASS integration test/audit-2109-allocation.int-spec.ts
+PASS integration test/audit-2109-psp-unresolved.int-spec.ts
+PASS integration test/audit-2109-purchase-atomicity.int-spec.ts
+PASS integration test/audit-2209-alert-delivery.int-spec.ts
+PASS integration test/audit-2209-payout-settlement-race.int-spec.ts (6.825 s)
+PASS integration test/auth-otp-hardening.int-spec.ts (6.266 s)
+PASS integration test/auth-otp.int-spec.ts (8.068 s)
+PASS integration test/authorization.int-spec.ts
+PASS integration test/bonus-engine.int-spec.ts (11.072 s)
+PASS integration test/branch-scope-read-isolation.int-spec.ts
+PASS integration test/concurrency-probe.int-spec.ts
+PASS integration test/contribution-rules.int-spec.ts (7.669 s)
+PASS integration test/crash-recovery.int-spec.ts
+PASS integration test/customer-balance-disabled.int-spec.ts
+PASS integration test/customer-balance-read.int-spec.ts
+PASS integration test/customer-balance.int-spec.ts (5.108 s)
+PASS integration test/demo-session.int-spec.ts
+PASS integration test/distributed-lock.int-spec.ts
+PASS integration test/error-disclosure.int-spec.ts
+PASS integration test/ev-cdr-reconciliation.int-spec.ts (6.497 s)
+PASS integration test/ev-charging.int-spec.ts (5.909 s)
+PASS integration test/ev-lifecycle-probe.int-spec.ts (5.525 s)
+PASS integration test/ev-metering.int-spec.ts
+PASS integration test/ev-roaming-capability.int-spec.ts
+PASS integration test/ev-roaming-financial-accounting.int-spec.ts
+PASS integration test/ev-stations-nearby.int-spec.ts
+PASS integration test/financial-authorization.int-spec.ts
+PASS integration test/health.int-spec.ts
+PASS integration test/hybrid-funding.int-spec.ts (6.232 s)
+PASS integration test/hybrid-race-matrix.int-spec.ts (5.468 s)
+PASS integration test/hybrid-refund.int-spec.ts
+PASS integration test/id-validation.int-spec.ts
+PASS integration test/idempotency.int-spec.ts
+PASS integration test/idor-sweep.int-spec.ts
+PASS integration test/jwt-secret-rotation.int-spec.ts
+PASS integration test/launch-load.int-spec.ts
+PASS integration test/ledger.int-spec.ts (7.304 s)
+PASS integration test/legal-consent-registration.int-spec.ts (5.38 s)
+PASS integration test/media-and-attempt-races.int-spec.ts
+PASS integration test/media-system.int-spec.ts (21.537 s)
+PASS integration test/metrics.int-spec.ts
+PASS integration test/migration-preflight.int-spec.ts
+PASS integration test/minting-ceiling.int-spec.ts
+PASS integration test/money-actor-identity.int-spec.ts
+PASS integration test/money-disabled-gate.int-spec.ts
+PASS integration test/money-disabled-routes.int-spec.ts
+PASS integration test/money-rounding.int-spec.ts (13.926 s)
+PASS integration test/money-sequence-fuzz.int-spec.ts (5.551 s)
+PASS integration test/nearby-partners-cashback-rank.int-spec.ts
+PASS integration test/nearby-partners-fuel-type.int-spec.ts
+PASS integration test/nearby-partners-personalization.int-spec.ts
+PASS integration test/nearby-partners.int-spec.ts
+PASS integration test/otp-consumption-races.int-spec.ts
+PASS integration test/otp-only-accounts.int-spec.ts
+PASS integration test/outbox.int-spec.ts
+PASS integration test/partner-application-lifecycle.int-spec.ts
+PASS integration test/partner-application.int-spec.ts
+PASS integration test/partner-branch-staff-and-qr.int-spec.ts (6.75 s)
+PASS integration test/partner-branches.int-spec.ts
+PASS integration test/partner-checkout.int-spec.ts (6.947 s)
+PASS integration test/partner-collection-single-step.int-spec.ts
+PASS integration test/partner-collection.int-spec.ts (6.8 s)
+PASS integration test/partner-commission-rate.int-spec.ts
+PASS integration test/partner-disclosure.int-spec.ts
+PASS integration test/partner-fuel-types.int-spec.ts
+PASS integration test/partner-integrations.int-spec.ts
+PASS integration test/partner-position.int-spec.ts
+PASS integration test/partner-profile.int-spec.ts
+PASS integration test/partner-reconstruction.int-spec.ts
+PASS integration test/partner-settlement-check.int-spec.ts
+PASS integration test/partner-settlement.int-spec.ts (9.648 s)
+PASS integration test/partner-state-and-fraud.int-spec.ts
+PASS integration test/partner-tenant-isolation.int-spec.ts
+PASS integration test/password.int-spec.ts (7.749 s)
+PASS integration test/payment-engine.int-spec.ts
+PASS integration test/payment-key-durability.int-spec.ts
+PASS integration test/payout-engine.int-spec.ts (5.989 s)
+PASS integration test/personalization-consent.int-spec.ts
+PASS integration test/phone-verification.int-spec.ts
+PASS integration test/production-boot.int-spec.ts (6.009 s)
+PASS integration test/promo-artwork.int-spec.ts (6.397 s)
+PASS integration test/promos.int-spec.ts
+PASS integration test/psp-adversarial-callbacks.int-spec.ts
+PASS integration test/psp-callback-burst-measured.int-spec.ts (11.669 s)
+PASS integration test/psp-callback-hardening.int-spec.ts (5.268 s)
+PASS integration test/psp-callback-inbox.int-spec.ts (7.879 s)
+PASS integration test/psp-can-begin.int-spec.ts
+PASS integration test/psp-payment.int-spec.ts (11.644 s)
+PASS integration test/psp-timeout-and-refund.int-spec.ts
+PASS integration test/purchase-intent-refund.int-spec.ts (11.095 s)
+PASS integration test/purchase-intents.int-spec.ts (21.081 s)
+PASS integration test/purchase-psp-lifecycle.int-spec.ts (9.44 s)
+PASS integration test/push-logout.int-spec.ts
+PASS integration test/push-notifications.int-spec.ts
+PASS integration test/qr-ledger-mirror.int-spec.ts
+PASS integration test/qr-payments.int-spec.ts (6.577 s)
+PASS integration test/reconciliation.int-spec.ts (6.61 s)
+PASS integration test/referral-abuse.int-spec.ts
+PASS integration test/referral-journey.int-spec.ts
+PASS integration test/refund-clawback-deep.int-spec.ts (10.478 s)
+PASS integration test/refund-decision-races.int-spec.ts
+PASS integration test/refund-dual-control.int-spec.ts (7.097 s)
+PASS integration test/refund-engine.int-spec.ts
+PASS integration test/refund-partner-debit.int-spec.ts
+PASS integration test/refund-payout-key-durability.int-spec.ts
+PASS integration test/refund-psp-confirmation.int-spec.ts
+PASS integration test/reservation-race.int-spec.ts
+PASS integration test/restaurant-branch-attribution.int-spec.ts
+PASS integration test/restaurant-discoverability.int-spec.ts
+PASS integration test/restaurant-journey.int-spec.ts
+PASS integration test/retention.int-spec.ts
+PASS integration test/roaming-cpo-settlement.int-spec.ts (6.723 s)
+PASS integration test/self-dealing.int-spec.ts
+PASS integration test/session-security.int-spec.ts (5.185 s)
+PASS integration test/settlement.int-spec.ts
+PASS integration test/sms-budget.int-spec.ts
+PASS integration test/staff-identity.int-spec.ts
+PASS integration test/sweeps.int-spec.ts
+PASS integration test/transaction-disclosure.int-spec.ts
+PASS integration test/transaction-history-paging.int-spec.ts
+PASS integration test/treasury-and-acquirer.int-spec.ts
+PASS integration test/wallet-without-wallet.int-spec.ts
+
+
+Test Suites: 128 passed, 128 total
+Tests:       1633 passed, 1633 total
+Snapshots:   0 total
+Time:        576.767 s
+Ran all test suites.

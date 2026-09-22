@@ -8,7 +8,7 @@ import { partnerApi } from '@/lib/api/partnerApi';
 
 /**
  * The partner public profile — "about" text plus an optional offerings
- * list, confirmed with Arman 2026-08-23. OWNER-only, no review step
+ * list, confirmed by the product decision of 2026-08-23. OWNER-only, no review step
  * (unlike `/branding`) — these tests prove the gate and the two forms.
  */
 

@@ -6,6 +6,8 @@ import {
   BonusReservationStatus,
   EvConnectorType,
   EvSessionStatus,
+  MediaAssetKind,
+  MediaAssetStatus,
   PrismaClient,
   RoleName,
 } from '@prisma/client';
@@ -347,6 +349,67 @@ describe('Account deletion (integration)', () => {
       });
       expect(request).toBe(1);
       expect(scrub).toBe(1);
+    });
+
+    it('takes the address and the device out of the security journal, and keeps the events', async () => {
+      const { user } = await customerWithPassword();
+      await deletion.requestDeletion(user.id, PASSWORD, {
+        ipAddress: '5.77.10.20',
+        userAgent: 'TuTak/1.0 (Android 14; Pixel 7)',
+      });
+      const before = await prisma.auditLog.findFirstOrThrow({
+        where: { action: AuditAction.ACCOUNT_DELETION_REQUESTED, actorUserId: user.id },
+      });
+      expect(before.ipAddress).toBe('5.77.10.20');
+
+      await deletion.anonymizeDue(new Date(Date.now() + 31 * 86_400_000));
+
+      const rows = await prisma.auditLog.findMany({ where: { actorUserId: user.id } });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.ipAddress).toBeNull();
+        expect(row.userAgent).toBeNull();
+      }
+    });
+
+    it('removes the profile photo from storage, not only from the profile', async () => {
+      const { user } = await customerWithPassword();
+      const keys = {
+        storageKey: `avatars/${user.id}/original`,
+        displayKey: `avatars/${user.id}/display`,
+        thumbnailKey: `avatars/${user.id}/thumb`,
+      };
+      for (const key of Object.values(keys)) {
+        await harness.mediaStorage.put(key, Buffer.from('jpeg-bytes'), 'image/jpeg');
+      }
+      const asset = await prisma.mediaAsset.create({
+        data: {
+          kind: MediaAssetKind.USER_AVATAR,
+          status: MediaAssetStatus.ACTIVE,
+          // Avatars are approved on upload; the CHECK constraint insists an
+          // ACTIVE row carries the stamp.
+          approvedAt: new Date(),
+          userId: user.id,
+          uploadedByUserId: user.id,
+          ...keys,
+          width: 256,
+          height: 256,
+          mimeType: 'image/jpeg',
+          byteSize: 9,
+          sha256: 'a'.repeat(64),
+        },
+      });
+      await prisma.user.update({ where: { id: user.id }, data: { avatarAssetId: asset.id } });
+
+      await deleteAndScrub(user.id);
+
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(after.avatarAssetId).toBeNull();
+      const row = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: asset.id } });
+      expect(row.status).toBe(MediaAssetStatus.REVOKED);
+      for (const key of Object.values(keys)) {
+        expect(await harness.mediaStorage.get(key)).toBeNull();
+      }
     });
 
     it('is idempotent — a second sweep finds nothing left to do', async () => {

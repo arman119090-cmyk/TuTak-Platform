@@ -334,6 +334,41 @@ const APP_NAME = APP_NAME_ENV === 'production' ? 'TuTak' : `TuTak (${APP_NAME_EN
  */
 const SENTRY_BUILD_INTEGRATION = Boolean(process.env.SENTRY_AUTH_TOKEN);
 
+/**
+ * App Transport Security, decided the same way `assertTransportSecurity`
+ * decides the API address: by build profile, not by hope.
+ *
+ * Expo's template ships `NSAllowsArbitraryLoads: true`, which is right for a
+ * development build — Metro and a local API answer over plain HTTP on a LAN
+ * address that no exception list can name in advance — and wrong for
+ * anything a person installs: it switches iOS's own refusal of cleartext
+ * off for every request the app will ever make, and App Review asks for a
+ * justification of exactly that flag. The API is HTTPS, the map tiles are
+ * HTTPS (`refuseUnkeyedMapInInstallableBuild` refuses `http://`), so an
+ * installable build has nothing to except and keeps ATS as Apple ships it.
+ */
+function iosTransportSecurity(appEnv) {
+  if (appEnv === 'development') {
+    return {
+      NSAllowsArbitraryLoads: true,
+      NSExceptionDomains: { localhost: { NSExceptionAllowsInsecureHTTPLoads: true } },
+    };
+  }
+  return { NSAllowsArbitraryLoads: false };
+}
+
+/**
+ * The Info.plist keys this app sets itself. Everything a config plugin
+ * writes (camera, location, photo library strings) stays with its plugin
+ * below, so a permission string lives next to the module that triggers the
+ * prompt.
+ */
+function iosInfoPlist(appEnv) {
+  return {
+    NSAppTransportSecurity: iosTransportSecurity(appEnv),
+  };
+}
+
 module.exports = ({ config }) => ({
   ...config,
   name: APP_NAME,
@@ -341,12 +376,13 @@ module.exports = ({ config }) => ({
   version: '0.1.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
-  // v2 is a light-only release (TUTAK_V2_CLAUDE_READ_FIRST.md: "the v2
-  // customer release is light-only... neither a fresh nor an existing
-  // customer [may] silently land in the legacy dark shell"). 'automatic'
-  // would hand a system-driven scheme to anything the app had not painted
-  // itself, which is exactly the partial-dark outcome that document forbids.
-  userInterfaceStyle: 'light',
+  // Both schemes ship (Settings → Appearance: light / dark / same as
+  // device, owner's decision of 20.09.2026, superseding the v2 light-only
+  // brief). 'automatic' lets the OS report its scheme to the app, which is
+  // what "same as device" reads through `useColorScheme()`; native chrome
+  // the app does not paint (alerts, the keyboard, share sheets) follows the
+  // phone too, so it matches whichever theme the app is showing.
+  userInterfaceStyle: 'automatic',
   scheme: 'tutak',
   splash: {
     image: './assets/splash-icon.png',
@@ -360,6 +396,13 @@ module.exports = ({ config }) => ({
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'am.tutak.app',
+    // The app uses only the TLS the operating system provides, which Apple
+    // exempts from export-compliance paperwork. Stated here so every
+    // TestFlight upload does not stop at the "Does your app use encryption?"
+    // question — and so the answer is in the repository, not in somebody's
+    // memory of what they clicked last time.
+    config: { usesNonExemptEncryption: false },
+    infoPlist: iosInfoPlist(APP_NAME_ENV),
   },
   android: {
     adaptiveIcon: {
@@ -380,6 +423,13 @@ module.exports = ({ config }) => ({
     favicon: './assets/icon.png',
   },
   plugins: [
+    // The app lock's biometric half: Face ID / fingerprint through
+    // expo-local-authentication, and the biometric-bound keystore entry the
+    // lock verifies through expo-secure-store's `requireAuthentication`.
+    // Both plugins write NSFaceIDUsageDescription; same string so the plist
+    // does not end up with two.
+    ['expo-local-authentication', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
+    ['expo-secure-store', { faceIDPermission: 'TuTak uses Face ID to unlock the app.' }],
     [
       'expo-camera',
       {
@@ -390,6 +440,27 @@ module.exports = ({ config }) => ({
         // the microphone is a reason to decline the install, and a question
         // at store review that has no good answer.
         recordAudioAndroid: false,
+        // And no microphone string on iOS for the same reason: the plugin
+        // writes one by default because the camera can record video.
+        microphonePermission: false,
+      },
+    ],
+    [
+      // Applied by Expo whether or not it is listed, so listing it is the
+      // only way to control what it writes. Left to its defaults it adds
+      // RECORD_AUDIO on Android and a microphone string on iOS — for a
+      // control that opens the photo library to pick an avatar and has never
+      // touched a microphone. Same reasoning as `recordAudioAndroid: false`
+      // above: a loyalty app asking for the microphone is a reason to decline
+      // the install, and a review question with no good answer.
+      'expo-image-picker',
+      {
+        photosPermission: 'TuTak needs access to your photos to set a profile picture.',
+        // The avatar control opens the library only (`launchImageLibraryAsync`);
+        // the camera string here matches expo-camera's so the two plugins
+        // cannot disagree about the one NSCameraUsageDescription.
+        cameraPermission: 'TuTak needs camera access to scan QR codes for payments.',
+        microphonePermission: false,
       },
     ],
     [
@@ -453,6 +524,14 @@ module.exports = ({ config }) => ({
     map: mapExtra(),
     appEnv: process.env.APP_ENV ?? 'development',
     /**
+     * Where the public legal pages live — the API serves them at `/legal`
+     * and below once the publication gate opens (approved revision, no
+     * placeholders, no draft marker; see `LegalDocumentsService`). Empty
+     * (the default) hides the Settings row: a link to a 404 is worse than
+     * no link, and the pages answer 404 until the texts are approved.
+     */
+    legalBaseUrl: (process.env.LEGAL_BASE_URL ?? '').replace(/\/+$/, ''),
+    /**
      * The on-screen event log. Only the `diagnostic` EAS profile sets this,
      * and it refuses to combine with production below.
      *
@@ -499,3 +578,4 @@ module.exports.assertTransportSecurity = assertTransportSecurity;
 module.exports.apiBaseUrl = apiBaseUrl;
 module.exports.refuseUnkeyedMapInInstallableBuild = refuseUnkeyedMapInInstallableBuild;
 module.exports.mapExtra = mapExtra;
+module.exports.iosTransportSecurity = iosTransportSecurity;

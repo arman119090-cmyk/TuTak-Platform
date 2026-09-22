@@ -29,7 +29,7 @@ export type PartnerCategory = (typeof PARTNER_CATEGORIES)[number];
 
 /**
  * The `fuel`-category sub-filter — "Газ" (propane and methane, counted as
- * one) vs "Бензин" (Arman, 2026-08-26). Mirrors `FuelType` in
+ * one) vs "Бензин" (product decision, 2026-08-26). Mirrors `FuelType` in
  * `@tutak/shared-types` — same reason as `PARTNER_CATEGORIES` above.
  */
 export const FUEL_TYPES = ['gas', 'petrol'] as const;

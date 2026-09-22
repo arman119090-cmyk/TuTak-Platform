@@ -19,7 +19,7 @@ ADD COLUMN     "reconciliationSource" "ReconciliationSource";
 -- ────────────────────────────────────────────────────────────────────────
 -- Resolving an ambiguous transfer takes evidence and two different people.
 --
--- Arman's decision of 15.09.2026. The reasoning is that "did the money move"
+-- The product decision of 15.09.2026. The reasoning is that "did the money move"
 -- has two wrong answers with very different costs — guessing it moved leaves
 -- a partner unpaid against a ledger that says otherwise, guessing it did not
 -- pays them twice — and neither is a judgement one person should make alone

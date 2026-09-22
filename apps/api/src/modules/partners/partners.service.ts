@@ -471,7 +471,7 @@ export class PartnersService {
     // and `logoAssetId` alone cannot express that.
     logoAsset: true,
     coverAsset: true,
-    // The public profile confirmed with Arman 2026-08-23. Unlike the media
+    // The public profile confirmed by the product decision of 2026-08-23. Unlike the media
     // fields above there is no status to gate on — `about`/`offerings` are
     // live the instant the partner writes them, so the raw column and the
     // ordered child rows are the whole story.

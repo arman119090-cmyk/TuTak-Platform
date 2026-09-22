@@ -7,7 +7,7 @@ ALTER TABLE "psp_payment_attempts" ADD COLUMN     "reconciliationProposedAt" TIM
 --
 -- It already took two *user ids*. That was not the same thing: one
 -- authenticated caller passed both, so the second person existed only as a
--- string the first one typed. Arman's decision of 15.09.2026 is explicit —
+-- string the first one typed. The product decision of 15.09.2026 is explicit —
 -- one HTTP caller cannot supply the identity of the second human.
 --
 -- So the proposal is now persisted on its own, by an authenticated actor, and

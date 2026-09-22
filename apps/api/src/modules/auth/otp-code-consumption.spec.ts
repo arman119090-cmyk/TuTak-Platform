@@ -124,7 +124,12 @@ describe('consuming an OTP (unit, stubbed database)', () => {
   it('accepts the right code and spends it', async () => {
     const { service, updateMany, row } = build({ challenge: live });
 
-    await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE)).resolves.toBeUndefined();
+    // The id of the challenge that was spent comes back, so a caller can tie
+    // what happens next to this phone confirmation — the legal consent record
+    // does exactly that. Never the code, and never its hash.
+    await expect(service.consumeCode(PHONE, AuthOtpPurpose.LOGIN, CODE)).resolves.toEqual({
+      challengeId: 't1',
+    });
     // Actually spent, not merely asked about.
     expect(row?.consumedAt).toBeInstanceOf(Date);
     // And spent conditionally on still being unconsumed: two requests racing

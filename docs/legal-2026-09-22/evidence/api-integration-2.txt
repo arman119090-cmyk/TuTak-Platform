@@ -1,0 +1,16 @@
+# Полный интеграционный прогон на c0f6002 (исправленные тексты + три правки кода)
+
+
+Test Suites: 128 passed, 128 total
+Tests:       1635 passed, 1635 total
+Snapshots:   0 total
+Time:        606.662 s
+Ran all test suites.
+# Полный интеграционный прогон после замены веб-страниц (один комплект документов)
+
+
+Test Suites: 128 passed, 128 total
+Tests:       1635 passed, 1635 total
+Snapshots:   0 total
+Time:        742.649 s
+Ran all test suites.

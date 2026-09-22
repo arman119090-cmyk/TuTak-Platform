@@ -1,3 +1,4 @@
+import { RequestContextMiddleware } from './request-context.middleware';
 import { requestContext } from './request-context';
 import { StructuredLogger } from './structured-logger';
 
@@ -80,6 +81,19 @@ describe('StructuredLogger', () => {
       path: '/v1/payments',
     });
     expect(lines[0]!.endsWith('\n')).toBe(true);
+  });
+
+  it('never carries the query string, so a position on the map is not in the log', () => {
+    const middleware = new RequestContextMiddleware();
+    let seen: string | undefined;
+    middleware.use(
+      { headers: {}, method: 'GET', originalUrl: '/v1/partners/nearby?lat=40.18&lng=44.51' } as never,
+      { setHeader: () => undefined } as never,
+      () => {
+        seen = requestContext.get()?.path;
+      },
+    );
+    expect(seen).toBe('/v1/partners/nearby');
   });
 
   it('omits correlation fields entirely outside a request', () => {

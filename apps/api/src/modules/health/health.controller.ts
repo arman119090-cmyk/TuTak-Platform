@@ -118,6 +118,31 @@ export class HealthController {
     // could not be fetched. It is reported, loudly, and an alert can act on
     // it; it is not a reason to stop serving.
     if (db.status === 'rejected' || redis.status === 'rejected') {
+      // Readiness failing takes this instance out of rotation, and that is
+      // visible to the platform — but not to a person. Nothing else fires
+      // here: the sweeps that would notice a dead database need Redis to
+      // run at all, and a dead Redis stops them the same way. So the one
+      // process that has just proved a dependency is down is the one that
+      // has to say so. Suppressed per dependency for the window; when Redis
+      // itself is the failure the suppression check fails and `fire` sends
+      // anyway, which is the right trade — a repeated page beats silence.
+      // Not awaited: the load balancer is owed an answer on time.
+      for (const [name, result] of [
+        ['database', db],
+        ['redis', redis],
+      ] as const) {
+        if (result.status !== 'rejected') continue;
+        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        this.logger.error(`Readiness: ${name} is unreachable: ${reason}`);
+        void this.alerts.fire({
+          key: `readiness.${name}.unreachable`,
+          severity: 'critical',
+          title: `${name === 'database' ? 'Postgres' : 'Redis'} is unreachable`,
+          body:
+            `Readiness could not reach ${name}: ${reason}. This instance is out of rotation; ` +
+            'purchases, bonus accrual and settlements are not being served until it is back.',
+        });
+      }
       throw new HttpException({ status: 'error', checks }, HttpStatus.SERVICE_UNAVAILABLE);
     }
 

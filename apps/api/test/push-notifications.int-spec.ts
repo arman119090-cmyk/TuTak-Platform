@@ -225,7 +225,7 @@ describe('Push notifications (integration)', () => {
       push: { title: 'Paid', body: '5000 AMD' },
     });
 
-    expect(sent[0]![0]!.data).toEqual({ notificationId: notification.id });
+    expect(sent[0]![0]!.data).toEqual({ notificationId: notification!.id });
   });
 });
 

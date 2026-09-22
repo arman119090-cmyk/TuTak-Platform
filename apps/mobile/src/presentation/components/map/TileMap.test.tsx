@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { TileMap } from './TileMap';
 
@@ -330,5 +330,223 @@ describe('the map controls', () => {
 
     const frame = mapFrame().props;
     expect(frame.onStartShouldSetResponder?.({ nativeEvent: {} })).toBeFalsy();
+  });
+});
+
+/**
+ * Two fingers.
+ *
+ * The map had no pinch at all — the only way to zoom was the pair of
+ * buttons — and that was reported as "I cannot zoom with my fingers". The
+ * responder is driven the same way as the drag above: through the props on
+ * the node, with a touch history holding two active touches, which is what
+ * `PanResponder` reads `numberActiveTouches` from.
+ */
+function twoFingers(a0: { x: number; y: number }, b0: { x: number; y: number }) {
+  let prev = [a0, b0];
+  let prevT = 0;
+  let clock = 0;
+  const ids = [1, 2];
+
+  return function at(a: { x: number; y: number }, b: { x: number; y: number }) {
+    clock += 16;
+    const bank: unknown[] = [];
+    [a, b].forEach((p, i) => {
+      bank[ids[i]] = {
+        touchActive: true,
+        startPageX: i === 0 ? a0.x : b0.x,
+        startPageY: i === 0 ? a0.y : b0.y,
+        startTimeStamp: 0,
+        currentPageX: p.x,
+        currentPageY: p.y,
+        currentTimeStamp: clock,
+        previousPageX: prev[i].x,
+        previousPageY: prev[i].y,
+        previousTimeStamp: prevT,
+      };
+    });
+    prev = [a, b];
+    prevT = clock;
+    return {
+      nativeEvent: {
+        identifier: ids[0],
+        pageX: a.x,
+        pageY: a.y,
+        touches: [
+          { identifier: ids[0], pageX: a.x, pageY: a.y },
+          { identifier: ids[1], pageX: b.x, pageY: b.y },
+        ],
+        changedTouches: [],
+      },
+      touchHistory: {
+        touchBank: bank,
+        numberActiveTouches: 2,
+        indexOfSingleActiveTouch: ids[0],
+        mostRecentTimeStamp: clock,
+      },
+    };
+  };
+}
+
+/**
+ * Where a marker's anchor sits: the nearest ancestor positioned absolutely,
+ * which is the view `TileMap` places at the projected point.
+ */
+function markerOffset(testID: string): { left: number; top: number } {
+  let node = screen.getByTestId(testID).parent;
+  while (node) {
+    const style = StyleSheet.flatten(node.props.style) as { position?: string; left?: number; top?: number } | undefined;
+    if (style?.position === 'absolute' && typeof style.left === 'number' && typeof style.top === 'number') {
+      return { left: style.left, top: style.top };
+    }
+    node = node.parent;
+  }
+  throw new Error(`marker ${testID} is not positioned`);
+}
+
+/** The level the tiles are drawn from and the size they are drawn at. */
+function tileLevel() {
+  const tile = tileImages()[0];
+  return { z: Number(String(tile.props.source.uri).match(/\/(\d+)\/\d+\/\d+/)?.[1]), size: tile.props.style.width };
+}
+
+function pinch(from: [{ x: number; y: number }, { x: number; y: number }], to: [{ x: number; y: number }, { x: number; y: number }], steps = 3) {
+  const at = twoFingers(from[0], from[1]);
+  act(() => {
+    const h = mapFrame().props;
+    expect(h.onStartShouldSetResponder?.(at(from[0], from[1]))).toBe(true);
+    h.onResponderGrant?.(at(from[0], from[1]));
+  });
+  for (let i = 1; i <= steps; i += 1) {
+    const k = i / steps;
+    const a = { x: from[0].x + (to[0].x - from[0].x) * k, y: from[0].y + (to[0].y - from[0].y) * k };
+    const b = { x: from[1].x + (to[1].x - from[1].x) * k, y: from[1].y + (to[1].y - from[1].y) * k };
+    act(() => {
+      mapFrame().props.onResponderMove?.(at(a, b));
+    });
+  }
+  act(() => {
+    mapFrame().props.onResponderRelease?.(at(to[0], to[1]));
+  });
+}
+
+describe('pinching the map', () => {
+  it('zooms in when the fingers spread and out when they close', () => {
+    renderMap();
+    const start = tileLevel();
+    expect(start).toEqual({ z: 13, size: 256 });
+
+    // Spread to twice the distance: exactly one level in.
+    pinch([{ x: 140, y: 130 }, { x: 180, y: 130 }], [{ x: 120, y: 130 }, { x: 200, y: 130 }]);
+    const spread = tileLevel();
+    expect(spread.z).toBe(14);
+    expect(spread.size).toBeCloseTo(256, 3);
+
+    // Close to a quarter of that distance: two levels out from there.
+    pinch([{ x: 120, y: 130 }, { x: 200, y: 130 }], [{ x: 150, y: 130 }, { x: 170, y: 130 }]);
+    expect(tileLevel().z).toBe(12);
+  });
+
+  it('draws the in-between zooms by scaling the nearest level', () => {
+    renderMap();
+    // 1.3× the distance is 0.38 of a level — nearer 13, drawn larger.
+    pinch([{ x: 110, y: 130 }, { x: 210, y: 130 }], [{ x: 95, y: 130 }, { x: 225, y: 130 }]);
+    const between = tileLevel();
+    expect(between.z).toBe(13);
+    expect(between.size).toBeCloseTo(256 * 1.3, 3);
+  });
+
+  it('keeps the place between the fingers between the fingers', () => {
+    // The pin sits where the fingers meet. After the pinch it must still be
+    // there, or the map zoomed onto somewhere else than what was pinched.
+    const pin = { id: 'p', position: { lat: 40.1772, lng: 44.5035 }, render: () => <View testID="pin" /> };
+    renderMap({ markers: [pin] });
+    const before = markerOffset('pin');
+    // The pin is at the centre, and the frame is at the window's origin in
+    // this renderer, so the fingers straddle the centre of the viewport.
+    pinch([{ x: 130, y: 130 }, { x: 190, y: 130 }], [{ x: 100, y: 130 }, { x: 220, y: 130 }]);
+    const after = markerOffset('pin');
+    expect(after.left).toBeCloseTo(before.left, 3);
+    expect(after.top).toBeCloseTo(before.top, 3);
+  });
+
+  it('carries a drag on with the finger that stays', () => {
+    renderMap();
+    pinch([{ x: 140, y: 130 }, { x: 180, y: 130 }], [{ x: 120, y: 130 }, { x: 200, y: 130 }]);
+    const afterPinch = firstTilePosition();
+
+    // The second finger lifts; the first carries on 40px to the left. The
+    // responder's running dx by then includes the whole pinch, so a map that
+    // measured from touch-down would jump.
+    drag([{ dx: -20, dy: 0 }, { dx: -40, dy: 0 }]);
+    expect(firstTilePosition().left).toBeCloseTo(afterPinch.left - 40, 0);
+  });
+
+  it('stops at the last level rather than drifting', () => {
+    renderMap({ initialZoom: 18 });
+    const before = firstTilePosition();
+    pinch([{ x: 140, y: 130 }, { x: 180, y: 130 }], [{ x: 100, y: 130 }, { x: 220, y: 130 }]);
+    expect(tileLevel().z).toBe(18);
+    expect(firstTilePosition()).toEqual(before);
+  });
+
+  it('is offered a two-finger touch before it moves', () => {
+    // A pinch that could only begin after the fingers had travelled 3px
+    // would start with a jump; two fingers cannot be a tap on a pin.
+    renderMap();
+    const at = twoFingers({ x: 140, y: 130 }, { x: 180, y: 130 });
+    expect(mapFrame().props.onStartShouldSetResponder?.(at({ x: 140, y: 130 }, { x: 180, y: 130 }))).toBe(true);
+  });
+});
+
+describe('tapping the map', () => {
+  function tap(x: number, y: number, timestamp: number) {
+    const event = { nativeEvent: { pageX: x, pageY: y, timestamp, touches: [], changedTouches: [] } };
+    act(() => {
+      mapFrame().props.onTouchStart?.({ nativeEvent: { ...event.nativeEvent, touches: [{ pageX: x, pageY: y }] } });
+      mapFrame().props.onTouchEnd?.(event);
+    });
+  }
+
+  it('zooms in one level on a double-tap, about the tap', () => {
+    const pin = { id: 'p', position: { lat: 40.1772, lng: 44.5035 }, render: () => <View testID="pin" /> };
+    renderMap({ markers: [pin] });
+    expect(tileLevel().z).toBe(13);
+    // Twice on the pin, which sits at the centre of a 320×260 map.
+    tap(160, 130, 1000);
+    tap(162, 131, 1200);
+    expect(tileLevel().z).toBe(14);
+    // Zoomed about the second tap: what was 2px left and 1px above it is
+    // now twice as far from it, and nothing else has moved.
+    const at = markerOffset('pin');
+    expect(at.left).toBeCloseTo(162 - 2 * 2, 3);
+    expect(at.top).toBeCloseTo(131 - 2 * 1, 3);
+  });
+
+  it('does not treat two slow taps as one double-tap', () => {
+    renderMap();
+    tap(160, 130, 1000);
+    tap(160, 130, 1600);
+    expect(tileLevel().z).toBe(13);
+  });
+
+  it('tells the parent while a finger is down, so a list around it can hold still', () => {
+    const onInteractionChange = jest.fn();
+    renderMap({ onInteractionChange });
+    act(() => {
+      mapFrame().props.onTouchStart?.({ nativeEvent: { pageX: 1, pageY: 1, touches: [{ pageX: 1, pageY: 1 }] } });
+    });
+    expect(onInteractionChange).toHaveBeenLastCalledWith(true);
+    act(() => {
+      // A second finger lands and lifts: still one interaction.
+      mapFrame().props.onTouchStart?.({ nativeEvent: { pageX: 5, pageY: 5, touches: [{ pageX: 1, pageY: 1 }, { pageX: 5, pageY: 5 }] } });
+      mapFrame().props.onTouchEnd?.({ nativeEvent: { pageX: 5, pageY: 5, touches: [{ pageX: 1, pageY: 1 }] } });
+    });
+    expect(onInteractionChange).toHaveBeenCalledTimes(1);
+    act(() => {
+      mapFrame().props.onTouchEnd?.({ nativeEvent: { pageX: 1, pageY: 1, touches: [] } });
+    });
+    expect(onInteractionChange).toHaveBeenLastCalledWith(false);
+    expect(onInteractionChange).toHaveBeenCalledTimes(2);
   });
 });

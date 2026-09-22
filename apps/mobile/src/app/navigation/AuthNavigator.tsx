@@ -5,6 +5,8 @@ import { ForgotPasswordScreen } from '../../presentation/screens/auth/ForgotPass
 import { ResetPasswordScreen } from '../../presentation/screens/auth/ResetPasswordScreen';
 import { OtpRegisterScreen } from '../../presentation/screens/auth/OtpRegisterScreen';
 import { OtpLoginScreen } from '../../presentation/screens/auth/OtpLoginScreen';
+import { LegalIndexScreen } from '../../presentation/screens/legal/LegalIndexScreen';
+import { LegalDocumentScreen } from '../../presentation/screens/legal/LegalDocumentScreen';
 import type { AuthStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -26,6 +28,10 @@ export function AuthNavigator() {
       <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
       <Stack.Screen name="OtpRegister" component={OtpRegisterScreen} />
       <Stack.Screen name="OtpLogin" component={OtpLoginScreen} />
+      {/* Readable before there is an account, which is the requirement: the
+          registration form links straight into these. */}
+      <Stack.Screen name="Legal" component={LegalIndexScreen} />
+      <Stack.Screen name="LegalDocument" component={LegalDocumentScreen} />
     </Stack.Navigator>
   );
 }

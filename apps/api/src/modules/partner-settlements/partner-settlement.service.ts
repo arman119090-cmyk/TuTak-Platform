@@ -12,6 +12,8 @@ import {
   Currency,
   LedgerAccountType,
   PartnerSettlementStatus,
+  PaymentRoute,
+  PurchaseIntentStatus,
   PostingDirection,
   Prisma,
   ReconciliationOutcome,
@@ -23,6 +25,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LedgerService } from '../ledger/ledger.service';
 import {
+  ALLOCATION_LEDGER_KINDS,
   SETTLEABLE_LEDGER_KINDS,
   SETTLEMENT_PAID_KIND,
   unrecognisedKinds,
@@ -36,7 +39,7 @@ type Tx = Prisma.TransactionClient;
  * `FAILED` is in the list deliberately. A settlement is the statement of what
  * a partner is owed; a bank refusing to move the money does not change what
  * is owed, it only means nobody has moved it yet. Treating `FAILED` as
- * terminal stranded the claimed postings for ever — the bug Arman's review of
+ * terminal stranded the claimed postings for ever — the bug the product review of
  * 15.09.2026 found.
  *
  * `REQUIRES_RECONCILIATION` is deliberately *not* in the list. There the
@@ -78,6 +81,50 @@ export interface UnsettledBreakdown {
 }
 
 /**
+ * The five figures a partner reads on their settlements page — see
+ * `UnsettledPositionDto` in shared-types for what each one means and why they
+ * never overlap.
+ */
+export interface PartnerPosition extends UnsettledBreakdown {
+  ledgerBalance: Decimal;
+  inOpenSettlements: Decimal;
+  underReview: Decimal;
+  paidTotal: Decimal;
+  asOf: Date;
+  funding: PartnerFundingBreakdown;
+}
+
+/**
+ * The owner's brief §29 (20.09.2026): where the money in a partner's sales
+ * actually came from, and what each source did to the position. All-time,
+ * confirmed purchases only, net of refunds where a refund reverses the
+ * figure. Every line is either a sum over `PurchaseIntent` rows or a sum of
+ * postings of one ledger kind on the partner's payable — nothing here is a
+ * second arithmetic of the position, which is why `ledgerBalance` is not
+ * derivable from these and is not meant to be.
+ */
+export interface PartnerFundingBreakdown {
+  /** Gross of every confirmed sale. */
+  salesGross: Decimal;
+  /** What the partner took at their own till (cash / their own card terminal) — never TuTak's money. `DIRECT_PARTNER` only. */
+  receivedDirectly: Decimal;
+  /** What the provider collected for TuTak on `TUTAK_PSP` sales — TuTak's to settle, never in the till (audit D12). */
+  receivedViaProvider: Decimal;
+  /** Paid from customers' stored balances: TuTak owes this to the partner (`partner.prepaid_funding`, net of refunds). */
+  fundedByPrepaid: Decimal;
+  /** Paid in bonus: TuTak compensates it (`partner.bonus_redemption_compensation`, net of refunds). */
+  fundedByBonus: Decimal;
+  /** The partner's contribution to the pool (`partner.contribution`, net of refunds). Reduces what TuTak owes. */
+  contribution: Decimal;
+  /** Merchandise value refunded across all sales. */
+  refundedGross: Decimal;
+  /** What the partner currently owes TuTak, if the ledger is on that side; zero otherwise. */
+  owedToTuTak: Decimal;
+  /** Transfers the partner made to TuTak that both sides have confirmed. */
+  collectionsConfirmed: Decimal;
+}
+
+/**
  * Turns a partner's unsettled ledger postings into a bank transfer somebody
  * makes by hand, and records that they made it.
  *
@@ -107,7 +154,7 @@ export interface UnsettledBreakdown {
  * ## What it deliberately does not do
  *
  * It never moves money. Transfers are made by a human in a banking app, per
- * Arman's decision of 14.09.2026, and this engine only records that it
+ * the product decision of 14.09.2026, and this engine only records that it
  * happened and closes out the matching liability. There is no bank adapter
  * here and adding one is a separate decision.
  */
@@ -155,11 +202,7 @@ export class PartnerSettlementService {
     }
 
     const postings = await db.ledgerPosting.findMany({
-      where: {
-        accountId: account.id,
-        settlementEntry: null,
-        ...(opts.until ? { transaction: { postedAt: { lte: opts.until } } } : {}),
-      },
+      where: { accountId: account.id, settlementEntry: null },
       select: {
         id: true,
         amount: true,
@@ -174,7 +217,17 @@ export class PartnerSettlementService {
     let deductions = new Decimal(0);
 
     for (const posting of postings) {
-      if (!SETTLEABLE_LEDGER_KINDS.has(posting.transaction.kind)) continue;
+      const kind = posting.transaction.kind;
+      // Economic postings are claimed up to the period end. Allocations —
+      // a legacy payout, a collection — are claimed whenever they exist:
+      // they are money that already moved against this residual, and a
+      // period boundary must not leave them out of the settlement that
+      // pays the entries they settled (audit D02/D03).
+      if (SETTLEABLE_LEDGER_KINDS.has(kind)) {
+        if (opts.until && posting.transaction.postedAt > opts.until) continue;
+      } else if (!ALLOCATION_LEDGER_KINDS.has(kind)) {
+        continue;
+      }
       entries.push({
         ledgerPostingId: posting.id,
         amount: posting.amount,
@@ -200,13 +253,162 @@ export class PartnerSettlementService {
   }
 
   /**
+   * What the partner is owed, in figures that do not overlap.
+   *
+   * `unsettled()` alone was what the partner's page showed as "accruing now",
+   * and a DRAFT settlement made it read zero while the money was still owed:
+   * a draft claims the postings, so they stop being unsettled, and nothing
+   * is paid until PAID. The total comes from the payable account's own
+   * balance — credit-normal, so negated here: positive means TuTak owes the
+   * partner. The open and under-review sums come from the settlements
+   * themselves. The identity `ledgerBalance = net + inOpenSettlements +
+   * underReview` holds because PAID is the only status that posts a payout,
+   * and CANCELLED releases its claims back into `net`
+   * (`partner-position.int-spec.ts` pins it).
+   */
+  async position(partnerId: string): Promise<PartnerPosition> {
+    // One snapshot (audit D04): the four reads run sequentially inside a
+    // REPEATABLE READ transaction, so a draft created or cancelled between
+    // them cannot show the same 50 000 as both "not yet settled" and "in a
+    // settlement". Sequential rather than `Promise.all` because an
+    // interactive transaction is one connection.
+    const position = await this.prisma.$transaction(
+      async (tx) => {
+        const breakdown = await this.unsettled(partnerId, { tx });
+        const account = await tx.ledgerAccount.findFirst({
+          where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+          select: { balance: true },
+        });
+        const settlements = await tx.partnerSettlement.findMany({
+          where: { partnerId },
+          select: { status: true, netPayableAmount: true },
+        });
+        const funding = await this.fundingBreakdown(partnerId, tx);
+
+        const sum = (statuses: PartnerSettlementStatus[]) =>
+          settlements
+            .filter((row) => statuses.includes(row.status))
+            .reduce((total, row) => total.plus(row.netPayableAmount), new Decimal(0));
+
+        return {
+          ...breakdown,
+          ledgerBalance: account ? account.balance.negated() : new Decimal(0),
+          inOpenSettlements: sum([
+            PartnerSettlementStatus.DRAFT,
+            PartnerSettlementStatus.READY,
+            PartnerSettlementStatus.APPROVED,
+            PartnerSettlementStatus.PAYMENT_PENDING,
+            PartnerSettlementStatus.FAILED,
+          ]),
+          underReview: sum([PartnerSettlementStatus.REQUIRES_RECONCILIATION]),
+          paidTotal: sum([PartnerSettlementStatus.PAID]),
+          asOf: new Date(),
+          funding,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+
+    // Branch names are resolved after the snapshot closes, not inside it.
+    // They are labels, not figures: the money in this position has to come
+    // from one consistent read, a shop's name does not, and holding the
+    // REPEATABLE READ transaction open for two more lookups buys nothing.
+    const branchBySource = await this.branchesForEntries(position.entries);
+    return {
+      ...position,
+      entries: position.entries.map((entry) => ({
+        ...entry,
+        branch: branchBySource.get(`${entry.sourceType}:${entry.sourceId}`) ?? null,
+      })),
+    };
+  }
+
+  private async fundingBreakdown(partnerId: string, tx: Tx): Promise<PartnerFundingBreakdown> {
+    const zero = new Decimal(0);
+    // Sequential on `tx`: one connection, one snapshot (see `position`).
+    const sales = await tx.purchaseIntent.aggregate({
+      where: { partnerId, status: PurchaseIntentStatus.CONFIRMED },
+      _sum: {
+        grossAmount: true,
+        prepaidAmountApplied: true,
+        bonusAmountRequested: true,
+        refundedAmount: true,
+      },
+    });
+    // The remainder by route (audit D12): at the till it is the partner's
+    // own money; through the provider it is TuTak's, collected on the
+    // partner's behalf and settled through the payable. Summing both as
+    // "received directly" made provider money look like cash in the till.
+    const remainderByRoute = await tx.purchaseIntent.groupBy({
+      by: ['paymentRoute'],
+      where: { partnerId, status: PurchaseIntentStatus.CONFIRMED },
+      _sum: { ordinaryPaymentRemainder: true },
+    });
+    const byKind = await tx.ledgerPosting.findMany({
+      where: {
+        account: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+        transaction: {
+          kind: {
+            in: [
+              'partner.contribution',
+              'partner.contribution_refund',
+              'partner.bonus_redemption_compensation',
+              'partner.bonus_redemption_compensation_refund',
+              'partner.prepaid_funding',
+              'partner.prepaid_funding_refund',
+              'partner.collection.recorded',
+              'partner.collection.confirmed',
+            ],
+          },
+        },
+      },
+      select: { amount: true, direction: true, transaction: { select: { kind: true } } },
+    });
+    const account = await tx.ledgerAccount.findFirst({
+      where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+      select: { balance: true },
+    });
+    const remainderFor = (route: PaymentRoute) =>
+      remainderByRoute.find((row) => row.paymentRoute === route)?._sum.ordinaryPaymentRemainder ?? zero;
+
+    // Credits positive, debits negative — so a kind and its refund net out.
+    const signed = new Map<string, Decimal>();
+    for (const posting of byKind) {
+      const kind = posting.transaction.kind;
+      const delta = posting.direction === PostingDirection.CREDIT ? posting.amount : posting.amount.negated();
+      signed.set(kind, (signed.get(kind) ?? zero).plus(delta));
+    }
+    const net = (kind: string, refundKind: string) =>
+      (signed.get(kind) ?? zero).plus(signed.get(refundKind) ?? zero);
+
+    const raw = account?.balance ?? zero;
+    return {
+      salesGross: sales._sum.grossAmount ?? zero,
+      receivedDirectly: remainderFor(PaymentRoute.DIRECT_PARTNER),
+      receivedViaProvider: remainderFor(PaymentRoute.TUTAK_PSP),
+      fundedByPrepaid: net('partner.prepaid_funding', 'partner.prepaid_funding_refund'),
+      fundedByBonus: net('partner.bonus_redemption_compensation', 'partner.bonus_redemption_compensation_refund'),
+      // Contribution is a debit; shown as the positive amount the partner contributes.
+      contribution: net('partner.contribution', 'partner.contribution_refund').negated(),
+      refundedGross: sales._sum.refundedAmount ?? zero,
+      owedToTuTak: raw.greaterThan(0) ? raw : zero,
+      // A confirmed collection credits the payable (the partner's debt shrinks).
+      // A single-step collection (dual control off) is confirmed the moment
+      // it is recorded, under its own kind.
+      collectionsConfirmed: (signed.get('partner.collection.confirmed') ?? zero).plus(
+        signed.get('partner.collection.recorded') ?? zero,
+      ),
+    };
+  }
+
+  /**
    * Claims everything settleable up to `periodEnd` into a new DRAFT.
    *
    * Refuses a non-positive net rather than creating a settlement for it. That
    * is not squeamishness: claiming a negative balance would *consume* the
    * postings that represent the partner's debt, and the debt has to stay
    * unclaimed so the next period picks it up and offsets it against new
-   * earnings — which is exactly what Arman asked for.
+   * earnings — which is exactly what the product decision calls for.
    */
   async createDraft(params: {
     partnerId: string;
@@ -219,6 +421,16 @@ export class PartnerSettlementService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // First statement in the transaction, before anything is read that the
+      // decision rests on (audit 22.09, D02d/D02e/D02j). A legacy payout
+      // against this same entitlement takes the same lock, so the two cannot
+      // both read 50 000 as free and both promise it: whichever arrives
+      // second waits here and then re-reads a `net` that already reflects the
+      // first. Without it, `unsettled()` below reads a snapshot a concurrent
+      // payout is about to invalidate, and the partner is promised the money
+      // twice — reproduced on PostgreSQL before this line existed.
+      await this.ledger.lockPartnerPayable(tx, params.partnerId);
+
       const partner = await tx.partner.findUnique({
         where: { id: params.partnerId },
         select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },
@@ -552,7 +764,7 @@ export class PartnerSettlementService {
    * that no money left. The settlement stays exactly as it is — same claimed
    * entries, same figure — and a new transfer may be attempted against it.
    *
-   * It used to be terminal. That was a real bug, found in Arman's review of
+   * It used to be terminal. That was a real bug, found in the product review of
    * 15.09.2026: the entries stayed claimed and no settlement could ever pick
    * them up again, so a partner whose transfer bounced was silently never
    * paid for those sales. "A fresh settlement is made for the retry" — what
@@ -619,7 +831,7 @@ export class PartnerSettlementService {
    * A partner says the money never arrived.
    *
    * Deliberately its own method rather than a flag on the one above, because
-   * it is a different act by a different kind of person. Arman's decision of
+   * it is a different act by a different kind of person. The product decision of
    * 15.09.2026: a partner may report a problem and may not confirm whether
    * money moved — they are the payee, and a payee who can both report a
    * missing transfer and confirm that it never arrived can order their own
@@ -660,7 +872,7 @@ export class PartnerSettlementService {
   /**
    * Somebody in finance has read the bank statement and says what it shows.
    *
-   * This is the **proposal**, and on its own it moves nothing. Arman's
+   * This is the **proposal**, and on its own it moves nothing. The product
    * decision of 15.09.2026 is that an ambiguous transfer is resolved by two
    * different people with evidence between them — the same maker/checker rule
    * the settlement's own approval already has, applied to the other decision
@@ -1017,6 +1229,74 @@ export class PartnerSettlementService {
   }
 
   /**
+   * Which branch each statement line came from, resolved in two queries for
+   * the whole statement rather than one per line.
+   *
+   * Only two source types can answer: a purchase (`PurchaseIntent`) and an
+   * operation row (`Transaction`), both of which carry `partnerBranchId`.
+   * Everything else on a statement — a payout, a collection, the settlement
+   * itself, a commission line — is not a sale and has no branch, so it stays
+   * null rather than being attributed to one.
+   *
+   * The name is read live, not snapshotted, exactly as `TransactionDto.branch`
+   * documents: renaming a branch renames it on last month's statement too.
+   * A statement a partner has already agreed to therefore stays correct in
+   * its figures, which are what the agreement is about, while its branch
+   * labels follow the current names.
+   */
+  private async branchesForEntries(
+    entries: { sourceType: string; sourceId: string }[],
+  ): Promise<Map<string, { id: string; name: string; address: string }>> {
+    const idsOf = (sourceType: string) =>
+      entries.filter((e) => e.sourceType === sourceType).map((e) => e.sourceId);
+    const intentIds = idsOf('PurchaseIntent');
+    const transactionIds = idsOf('Transaction');
+    if (intentIds.length === 0 && transactionIds.length === 0) return new Map();
+
+    const [intents, transactions] = await Promise.all([
+      intentIds.length
+        ? this.prisma.purchaseIntent.findMany({
+            where: { id: { in: intentIds } },
+            select: { id: true, partnerBranchId: true },
+          })
+        : Promise.resolve([]),
+      transactionIds.length
+        ? this.prisma.transaction.findMany({
+            where: { id: { in: transactionIds } },
+            select: { id: true, partnerBranchId: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // Keyed by source type as well as id, not by the caller's own row id:
+    // a settled statement line has one and a not-yet-settled posting does
+    // not, and both need this lookup. Both ids are uuids and a collision is
+    // not a practical worry, but a key that cannot mix a purchase with a
+    // transaction is one fewer thing to reason about.
+    const branchIdBySource = new Map<string, string>();
+    for (const row of intents) {
+      if (row.partnerBranchId) branchIdBySource.set(`PurchaseIntent:${row.id}`, row.partnerBranchId);
+    }
+    for (const row of transactions) {
+      if (row.partnerBranchId) branchIdBySource.set(`Transaction:${row.id}`, row.partnerBranchId);
+    }
+    if (branchIdBySource.size === 0) return new Map();
+
+    const branches = await this.prisma.partnerBranch.findMany({
+      where: { id: { in: [...new Set(branchIdBySource.values())] } },
+      select: { id: true, name: true, address: true },
+    });
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+
+    const bySource = new Map<string, { id: string; name: string; address: string }>();
+    for (const [key, branchId] of branchIdBySource) {
+      const branch = branchById.get(branchId);
+      if (branch) bySource.set(key, branch);
+    }
+    return bySource;
+  }
+
+  /**
    * A partner's own statement: opening, what moved, closing, itemised.
    *
    * The itemisation is the point. A partner told "we owe you 14,500" has no
@@ -1050,6 +1330,8 @@ export class PartnerSettlementService {
       .filter((e) => e.direction === PostingDirection.DEBIT)
       .reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
 
+    const branchByEntry = await this.branchesForEntries(settlement.entries);
+
     return {
       id: settlement.id,
       status: settlement.status,
@@ -1073,6 +1355,9 @@ export class PartnerSettlementService {
         amount: entry.amount.toFixed(4),
         sourceType: entry.sourceType,
         sourceId: entry.sourceId,
+        /** Which of the partner's own shops the sale came from, where the
+            source records one — see `branchesForEntries`. */
+        branch: branchByEntry.get(`${entry.sourceType}:${entry.sourceId}`) ?? null,
       })),
       /** Every try at moving it, including the ones that bounced. */
       transferAttempts: settlement.transferAttempts.map((attempt) => ({

@@ -125,7 +125,7 @@ describe('Partner integrations (integration)', () => {
     });
 
     /**
-     * Business decision (2026-08-18, Arman): integration requests are
+     * Business decision (2026-08-18): integration requests are
      * financially significant enough (auto-finalization once verified) to
      * restrict to the OWNER tier, the same call already made for
      * `updateCommercialSettings`.

@@ -1,0 +1,14 @@
+# Обновление схемы с production-состояния до кандидата (22.09.2026)
+# База tutak_upgrade создана пустой; применены миграции из 369eda1 (main),
+# затем миграции кандидата поверх них.
+
+1) миграции 369eda1 → 71 применено, _prisma_migrations = 71
+2) миграции кандидата поверх → 80 применено (9 новых, включая
+   20260922090000_alert_outbox), «All migrations have been successfully applied»
+3) prisma migrate diff --from-url tutak_upgrade --to-schema-datamodel schema.prisma
+   → "No difference detected."
+
+# Форма новой миграции (20260922090000_alert_outbox):
+#   ALTER/DROP: 0 строк
+#   CREATE:     4 строки (1 enum, 1 таблица, 2 индекса)
+#   → expand-only: код main этой таблицы не знает и не читает.

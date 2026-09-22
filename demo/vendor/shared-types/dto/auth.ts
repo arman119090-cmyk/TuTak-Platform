@@ -1,3 +1,5 @@
+import type { LegalConsentAcceptanceDto } from './legal';
+
 import { Role } from '../enums/roles';
 import type { MediaImageDto } from './media';
 
@@ -115,6 +117,15 @@ export interface ConfirmPhoneVerificationRequestDto {
 
 export interface RequestRegistrationOtpRequestDto {
   phone: string;
+  /**
+   * The mandatory legal choices, sent *before* the code is requested.
+   *
+   * An SMS is already processing of the number, so the notice and the choice
+   * come first. Optional in the type only for clients built before the legal
+   * package existed; the server decides whether their absence is acceptable,
+   * and once the texts are published it is not.
+   */
+  consents?: LegalConsentAcceptanceDto[];
 }
 
 export interface VerifyRegistrationOtpRequestDto {
@@ -137,6 +148,10 @@ export interface VerifyRegistrationOtpRequestDto {
   referralCode?: string;
   deviceId: string;
   deviceName?: string;
+  /** Repeated at the final step, and recorded with the account it creates. */
+  consents?: LegalConsentAcceptanceDto[];
+  /** The build that displayed the texts, stored with the consent record. */
+  appVersion?: string;
 }
 
 export interface RequestLoginOtpRequestDto {

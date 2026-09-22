@@ -5,8 +5,8 @@ import * as React from 'react';
  * (`/logo-mark.png`, copied into each Next.js app's `public/` — the same
  * source the mobile app bundles as `assets/logo-mark.png`) rather than a
  * hand-drawn vector approximation of it. Appears on the sign-in screens, in
- * the sidebar lockup, and in empty states — nowhere else. Per Arman's
- * request, 2026-08-23: the actual logo image everywhere a bird appears, not
+ * the sidebar lockup, and in empty states — nowhere else. Per the product
+ * decision of 2026-08-23: the actual logo image everywhere a bird appears, not
  * a separately-illustrated stand-in for it — the same correction already
  * applied to the mobile app's `UserAvatar`/`PartnerMark`/`EmptyState`.
  */

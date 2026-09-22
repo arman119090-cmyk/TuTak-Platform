@@ -4,8 +4,8 @@ import { Image } from 'react-native';
 import { PartnerPin } from './PartnerPin';
 
 /**
- * The map pin's own logo, per Arman's confirmed request, 2026-08-23:
- * "заменить иконку категории на карте на логотип партнёра" — the category
+ * The map pin's own logo, per the confirmed product decision of 2026-08-23,
+ * which replaced the category icon on the map with the partner's own. That
  * icon becomes the fallback (`PartnerMark`'s new `fallback` prop), used
  * only when the partner has no logo, or the logo failed to load.
  */

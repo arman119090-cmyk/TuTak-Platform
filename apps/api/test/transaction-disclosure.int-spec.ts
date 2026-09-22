@@ -47,6 +47,15 @@ describe('Transaction disclosure (integration)', () => {
     // key must never reach a client (spec §3.3), and this list is exactly the
     // place a leak like that would otherwise slip in unnoticed.
     'partnerBrand',
+    // Which purchase this row settled, so the customer can open it — added
+    // 2026-09-20 (U05). An id, never the purchase itself.
+    'purchaseIntentId',
+    // Which of the partner's branches the operation happened at — added
+    // 2026-09-22. Name and street only: a partner reading their own history
+    // needs to tell two of their own shops apart, and a customer's receipt
+    // needs to say where they were. Deliberately not the branch row, which
+    // also carries coordinates, staff and an activity flag.
+    'branch',
     'createdAt',
     'updatedAt',
   ];

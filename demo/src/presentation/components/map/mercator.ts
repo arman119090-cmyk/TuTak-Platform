@@ -81,6 +81,28 @@ export interface Tile {
   /** Where the tile's top-left corner sits, in screen pixels. */
   left: number;
   top: number;
+  /**
+   * The side to draw the tile at, in screen pixels.
+   *
+   * `TILE_SIZE` exactly at a whole zoom level. Between levels — mid-pinch,
+   * where the zoom is 13.4 — the nearest level's tiles are drawn scaled by
+   * `2^(zoom − z)`, so the map grows smoothly under the fingers instead of
+   * snapping a level at a time. Between √½ and √2 of their natural size,
+   * which is the range that stays sharp enough to read.
+   */
+  size: number;
+}
+
+/**
+ * The tile level to draw a zoom with, and the factor to scale its tiles by.
+ *
+ * Every provider only has whole levels. A fractional zoom is drawn from the
+ * nearest one, scaled — so `13.4` is level 13 at ×1.32, and `13.6` is level
+ * 14 at ×0.76.
+ */
+export function tileScale(zoom: number): { z: number; scale: number } {
+  const z = Math.round(zoom);
+  return { z, scale: 2 ** (zoom - z) };
 }
 
 /**
@@ -105,18 +127,23 @@ export function tilesForViewport(params: {
 }): Tile[] {
   const { centre, zoom, width, height } = params;
   const overscan = params.overscan ?? 1;
-  const z = Math.round(zoom);
+  const { z, scale } = tileScale(zoom);
   const span = 2 ** z;
+  // Each tile's footprint on screen. At a whole level this is `TILE_SIZE`;
+  // mid-pinch it is the level's tiles stretched or shrunk to the zoom asked.
+  const size = TILE_SIZE * scale;
 
-  const centreWorld = project(centre, z);
+  // Measured at the zoom actually asked for, not at the level drawn from,
+  // so the centre stays put while the tiles around it scale.
+  const centreWorld = project(centre, zoom);
   // The world pixel that lands on the viewport's top-left corner.
   const originX = centreWorld.x - width / 2;
   const originY = centreWorld.y - height / 2;
 
-  const firstCol = Math.floor(originX / TILE_SIZE) - overscan;
-  const lastCol = Math.floor((originX + width) / TILE_SIZE) + overscan;
-  const firstRow = Math.floor(originY / TILE_SIZE) - overscan;
-  const lastRow = Math.floor((originY + height) / TILE_SIZE) + overscan;
+  const firstCol = Math.floor(originX / size) - overscan;
+  const lastCol = Math.floor((originX + width) / size) + overscan;
+  const firstRow = Math.floor(originY / size) - overscan;
+  const lastRow = Math.floor((originY + height) / size) + overscan;
 
   const tiles: Tile[] = [];
   for (let row = firstRow; row <= lastRow; row += 1) {
@@ -126,8 +153,9 @@ export function tilesForViewport(params: {
         x: ((col % span) + span) % span,
         y: row,
         z,
-        left: col * TILE_SIZE - originX,
-        top: row * TILE_SIZE - originY,
+        left: col * size - originX,
+        top: row * size - originY,
+        size,
       });
     }
   }
@@ -149,9 +177,11 @@ export function screenPosition(params: {
   width: number;
   height: number;
 }): WorldPoint {
-  const z = Math.round(params.zoom);
-  const target = project(params.point, z);
-  const centre = project(params.centre, z);
+  // The projection takes a fractional zoom as it is: markers have to sit on
+  // the tiles at every instant of a pinch, not only at the levels the tiles
+  // come in.
+  const target = project(params.point, params.zoom);
+  const centre = project(params.centre, params.zoom);
 
   return {
     x: target.x - centre.x + params.width / 2,
@@ -172,9 +202,9 @@ export function panBy(params: {
   dx: number;
   dy: number;
 }): LatLng {
-  const z = Math.round(params.zoom);
-  const world = project(params.centre, z);
-  const size = worldSize(z);
+  const { zoom } = params;
+  const world = project(params.centre, zoom);
+  const size = worldSize(zoom);
 
   return unproject(
     {
@@ -183,8 +213,50 @@ export function panBy(params: {
       // world. Longitude is left to wrap; latitude has an end.
       y: clamp(world.y - params.dy, 0, size),
     },
-    z,
+    zoom,
   );
+}
+
+/**
+ * The centre after zooming about a point on screen.
+ *
+ * What a pinch and a double-tap both need: the place under the fingers has
+ * to stay under the fingers. Zooming about the viewport's centre instead
+ * makes the street a person is pinching towards slide off the side — the
+ * map zooms, but not onto what they meant.
+ *
+ * `focal` is in pixels from the viewport's top-left, like `screenPosition`
+ * returns. The zoom is clamped to `[minZoom, maxZoom]` here, so a pinch past
+ * the last level stops rather than drifting the centre by a clamped amount
+ * nobody asked for.
+ */
+export function zoomAround(params: {
+  centre: LatLng;
+  zoom: number;
+  toZoom: number;
+  focal: WorldPoint;
+  width: number;
+  height: number;
+  minZoom?: number;
+  maxZoom?: number;
+}): { centre: LatLng; zoom: number } {
+  const { centre, zoom, focal, width, height } = params;
+  const toZoom = clamp(params.toZoom, params.minZoom ?? 0, params.maxZoom ?? 22);
+  if (toZoom === zoom) return { centre, zoom };
+
+  // The world pixel under the focal point, at the zoom being left.
+  const offsetX = focal.x - width / 2;
+  const offsetY = focal.y - height / 2;
+  const before = project(centre, zoom);
+  const anchor = unproject({ x: before.x + offsetX, y: before.y + offsetY }, zoom);
+
+  // The same place, at the zoom being entered, must land on the same pixel.
+  const after = project(anchor, toZoom);
+  const size = worldSize(toZoom);
+  return {
+    centre: unproject({ x: after.x - offsetX, y: clamp(after.y - offsetY, 0, size) }, toZoom),
+    zoom: toZoom,
+  };
 }
 
 /**

@@ -5,7 +5,7 @@
 --
 -- `20260915130000_one_live_psp_checkout` constrained only `TUTAK_PSP` rows,
 -- and `assertNoUnresolvedPayment` reads `psp_payment_attempts`. Between them
--- was a window neither could see, found by Arman on 15.09.2026:
+-- was a window neither could see, found in the review of 15.09.2026:
 --
 --   1. purchase A is created on `TUTAK_PSP`. **No attempt row exists yet** —
 --      the customer has not pressed "pay" — so the service check finds
@@ -25,7 +25,7 @@
 --
 --   * Partial on `AWAITING_CONFIRMATION` — the one non-final status. A
 --     purchase that is CONFIRMED, REJECTED, CANCELLED or EXPIRED is over,
---     and the customer may start a new one immediately; Arman's decision of
+--     and the customer may start a new one immediately; the product decision of
 --     15.09.2026 is explicit that ordinary repeat business must not be
 --     blocked once the previous purchase is genuinely finished.
 --   * Route-independent, unlike the index it replaces. That was the bug.
@@ -39,7 +39,7 @@
 
 -- ── Rollout ─────────────────────────────────────────────────────────────
 --
--- This migration deliberately **does not** touch a single purchase. Arman's
+-- This migration deliberately **does not** touch a single purchase. The product
 -- decision of 15.09.2026 is explicit that existing purchases are not to be
 -- closed inside a migration to make room for an index, and the reasoning is
 -- worth writing down: a customer standing at a till with a live purchase is

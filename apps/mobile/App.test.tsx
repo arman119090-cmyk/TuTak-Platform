@@ -1,9 +1,28 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as SecureStore from 'expo-secure-store';
 import App from './App';
 import i18n from './src/app/i18n/i18n';
 import { useAuthStore } from './src/data/stores/authStore';
+import { useAppLockStore } from './src/data/stores/appLockStore';
+import { createPinRecord, serializePinRecord } from './src/data/appLock/pinCode';
+
+// Real hashing (Node's SHA-256) so the lock test opens with a code that was
+// actually stored, not with a mock that says yes.
+/* eslint-disable @typescript-eslint/no-require-imports */
+jest.mock('expo-crypto', () => ({
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  digestStringAsync: jest.fn(async (_alg: string, data: string) =>
+    require('node:crypto').createHash('sha256').update(data).digest('hex'),
+  ),
+  getRandomBytes: jest.fn((n: number) => Uint8Array.from(require('node:crypto').randomBytes(n))),
+}));
+/* eslint-enable @typescript-eslint/no-require-imports */
+// No strong biometric on the test device: the lock is code-only here.
+jest.mock('expo-local-authentication', () => ({
+  supportedAuthenticationTypesAsync: jest.fn(async () => []),
+  AuthenticationType: { FINGERPRINT: 1, FACIAL_RECOGNITION: 2 },
+}));
 
 /**
  * Does the app start?
@@ -71,6 +90,8 @@ jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
   deleteItemAsync: jest.fn(async () => undefined),
+  canUseBiometricAuthentication: jest.fn(() => false),
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 6,
 }));
 
 const mockedSecureStore = SecureStore as jest.Mocked<typeof SecureStore>;
@@ -89,6 +110,7 @@ describe('App', () => {
     jest.clearAllMocks();
     mockedSecureStore.getItemAsync.mockResolvedValue(null);
     mockedSecureStore.setItemAsync.mockResolvedValue();
+    useAppLockStore.setState({ status: 'idle', busy: false, biometricsEnabled: false, biometricKind: null });
     // Zustand stores outlive a test file. Without this, the second test
     // starts already hydrated and proves nothing about hydration.
     useAuthStore.setState({
@@ -151,28 +173,53 @@ describe('App', () => {
     expect(await screen.findByText(loginHeading())).toBeTruthy();
   });
 
-  it('goes to the signed-in app when a stored session is readable', async () => {
-    const user = {
-      id: 'user-1',
-      phoneNumber: '+37455123456',
-      firstName: 'Ani',
-      lastName: 'Sargsyan',
-      role: 'CUSTOMER',
-      isPhoneVerified: true,
-    };
-    mockedSecureStore.getItemAsync.mockImplementation(async (key: string) => {
-      if (key === 'tutak.accessToken') return 'access-token';
-      if (key === 'tutak.refreshToken') return 'refresh-token';
-      if (key === 'tutak.deviceId') return 'device-1';
-      if (key === 'tutak.user') return JSON.stringify(user);
-      return null;
-    });
+  const storedUser = {
+    id: 'user-1',
+    phoneNumber: '+37455123456',
+    firstName: 'Ani',
+    lastName: 'Sargsyan',
+    role: 'CUSTOMER',
+    isPhoneVerified: true,
+  };
+  const sessionKeys = (extra: Record<string, string> = {}) => async (key: string) => {
+    if (key === 'tutak.accessToken') return 'access-token';
+    if (key === 'tutak.refreshToken') return 'refresh-token';
+    if (key === 'tutak.deviceId') return 'device-1';
+    if (key === 'tutak.user') return JSON.stringify(storedUser);
+    return extra[key] ?? null;
+  };
+
+  it('asks a stored session without a code to choose one before showing the app', async () => {
+    mockedSecureStore.getItemAsync.mockImplementation(sessionKeys());
 
     render(<App />);
 
-    expect(await screen.findByText('signed-in-app')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('appLock.setupTitle'))).toBeTruthy();
     expect(useAuthStore.getState().user?.id).toBe('user-1');
+    expect(screen.queryByText('signed-in-app')).toBeNull();
     expect(screen.queryByText(loginHeading())).toBeNull();
+  });
+
+  it('locks a stored session that has a code, opens on the right code, and locks again on demand', async () => {
+    const record = await createPinRecord('1234');
+    mockedSecureStore.getItemAsync.mockImplementation(
+      sessionKeys({
+        'tutak.appLock.owner.v1': 'user-1',
+        'tutak.appLock.pin.v1': serializePinRecord(record),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(i18n.t('appLock.enterTitle'))).toBeTruthy();
+    expect(screen.queryByText('signed-in-app')).toBeNull();
+    for (const d of '1234') fireEvent.press(screen.getByTestId(`pin-key-${d}`));
+    expect(await screen.findByText('signed-in-app')).toBeTruthy();
+    act(() => {
+      useAppLockStore.getState().lock();
+    });
+    expect(screen.queryByText('signed-in-app')).toBeNull();
+    expect(screen.getByText(i18n.t('appLock.enterTitle'))).toBeTruthy();
   });
 
   it('treats an unparseable stored user as no session rather than a crash', async () => {

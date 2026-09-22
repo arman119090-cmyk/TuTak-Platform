@@ -24,6 +24,7 @@ import { parseDurationMs } from '../../common/utils/duration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MediaViewService } from '../media/media-view.service';
+import { LegalConsentService } from '../legal/legal-consent.service';
 import { UsersService } from '../users/users.service';
 import { FraudDetectionService } from '../security/fraud-detection.service';
 import { ReferralService } from '../referral/referral.service';
@@ -61,6 +62,7 @@ export class AuthService {
     private readonly authOtpService: AuthOtpService,
     private readonly otpIpRateLimit: OtpIpRateLimitService,
     private readonly mediaView: MediaViewService,
+    private readonly legalConsent: LegalConsentService,
   ) {}
 
   /**
@@ -329,6 +331,19 @@ export class AuthService {
   }
 
   async requestRegistrationOtp(dto: RequestRegistrationOtpDto, meta: RequestMeta = {}) {
+    /*
+     * Before anything else, and before a single SMS is paid for: the person
+     * has to have been shown what is collected and to have chosen.
+     *
+     * The order is the requirement, not a nicety (package §2, check 3): an
+     * OTP is already processing of a phone number, so it must not be the
+     * step that happens *before* the notice. A client that sends nothing is
+     * refused here once the publication gate is open, and is let through
+     * untouched while it is closed — which is also why this cannot be
+     * enabled by configuration alone.
+     */
+    this.legalConsent.assertRegistrationAcceptance(dto.consents);
+
     // Charged before the existence check, and allowed to throw. Spending the
     // budget on every request regardless of outcome is what keeps this
     // endpoint uniform: a limit that only applied when a code was actually
@@ -357,7 +372,16 @@ export class AuthService {
   }
 
   async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto, meta: RequestMeta) {
-    await this.authOtpService.consumeCode(dto.phone, AuthOtpPurpose.REGISTER, dto.code, meta.ipAddress);
+    // Checked before the code is spent, so a stale or mismatched legal
+    // edition costs the customer a re-read and not their SMS.
+    const consents = this.legalConsent.assertRegistrationAcceptance(dto.consents);
+
+    const { challengeId } = await this.authOtpService.consumeCode(
+      dto.phone,
+      AuthOtpPurpose.REGISTER,
+      dto.code,
+      meta.ipAddress,
+    );
 
     // Re-checked after the code is spent: nothing stops someone else
     // registering the same number via the password path in between.
@@ -429,6 +453,23 @@ export class AuthService {
           deviceName: dto.deviceName,
           platform: DevicePlatform.WEB,
         },
+      });
+
+      /*
+       * In the same transaction as the account, deliberately.
+       *
+       * An account that exists without the choices that justify it is the
+       * failure this ordering removes: either both land or neither does. The
+       * challenge id ties the choice to the confirmed phone without storing
+       * anything about the code itself.
+       */
+      await this.legalConsent.recordAccepted(tx, {
+        userId: created.id,
+        consents,
+        context: 'registration',
+        registrationChallengeId: challengeId,
+        appVersion: dto.appVersion ?? null,
+        scope: challengeId,
       });
 
       return created;

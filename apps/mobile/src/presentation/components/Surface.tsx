@@ -1,78 +1,71 @@
 import React from 'react';
-import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { StyleSheet, View, ViewStyle } from 'react-native';
 import { useTheme } from '../../app/theme/ThemeProvider';
 
+type Tone = 'raised' | 'subtle' | 'plain';
+
 /**
- * The one container in the system — a near-white glass card on the app's
- * light ground (see `light-premium.ts`'s own docblock: v2 is a light-only
- * release, so this always renders that scheme, never the dark one `glass`/
- * `glow` also support).
+ * The one container in the system.
  *
- * Three things make it read as glass rather than as a plain white box: a
- * blur of whatever is behind it, a faint ink-tinted fill so the pane has
- * substance against a white ground, and a low-alpha hairline along its edge.
- * The border is the part people skip, and it is the part that matters:
- * without an edge, a blur is a smudge.
+ * Three tones, and the choice between them is most of what makes a screen
+ * read as designed rather than assembled:
  *
- * Depth comes from a conventional soft shadow rather than a glow — on white,
- * a shadow pools under the element the way it would on paper; a glow only
- * reads as "light spilling out" against a dark ground, which this theme no
- * longer has.
+ * - `raised` — a white card lifted off the white ground by a soft neutral
+ *   shadow and nothing else. No hairline: an edge drawn around a card that
+ *   already casts a shadow is the "frame inside a frame" that made the
+ *   product look cheap, and it is gone.
+ * - `subtle` — a quiet grey group (`backgroundSubtle`), flat, no shadow, no
+ *   edge. For grouped rows (Settings, lists) where a card would be too much
+ *   presence and a bare list too little.
+ * - `plain` — no fill at all; padding only. For content that should sit
+ *   directly on the ground.
+ *
+ * There is no blur any more. iOS blurred and Android could not, so the two
+ * platforms shipped different products; a flat white card looks the same on
+ * both and scrolls at sixty frames on either.
+ *
+ * `elevated` is kept for callers that already pass it: it is `raised` with
+ * the hero's shadow, for the one or two cards on a screen that should feel
+ * closest to the reader.
  */
 export function Surface({
   children,
   style,
   padded = true,
   elevated = false,
+  tone = 'raised',
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
   padded?: boolean;
   elevated?: boolean;
+  tone?: Tone;
 }) {
-  const { space, radius, glass, glow } = useTheme();
+  const { space, radius, color, glow } = useTheme();
 
-  const shape: ViewStyle = {
-    borderRadius: elevated ? radius.xl : radius.lg,
-    borderColor: glass.border,
-  };
+  const fill: ViewStyle =
+    tone === 'raised'
+      ? { backgroundColor: color.surface, ...(elevated ? glow.md.native : glow.sm.native) }
+      : tone === 'subtle'
+        ? { backgroundColor: color.backgroundSubtle }
+        : {};
 
   return (
-    <View style={[styles.base, shape, elevated ? glow.md.native : glow.sm.native, style]}>
-      <GlassFill intensity={elevated ? 50 : 30}>
-        <View style={{ padding: padded ? space[6] : 0 }}>{children}</View>
-      </GlassFill>
+    <View
+      style={[
+        styles.base,
+        { borderRadius: radius.lg, padding: padded ? space[5] : 0 },
+        fill,
+        style,
+      ]}
+    >
+      {children}
     </View>
   );
 }
 
-/**
- * The blur itself, or an honest imitation of it on Android.
- *
- * `expo-blur` renders a real backdrop blur on iOS. On Android it needs an
- * experimental path that repaints the view hierarchy every frame, which is
- * fine for one card and visibly janky for a scrolling list of them — and a
- * loyalty app's main screens are exactly that list. Android therefore gets a
- * flat translucent fill: slightly less pretty, identical in colour, and it
- * scrolls at sixty frames a second, which the user notices and the blur they
- * would not.
- */
-function GlassFill({ children, intensity }: { children: React.ReactNode; intensity: number }) {
-  const { glass, premium } = useTheme();
-
-  if (Platform.OS === 'ios') {
-    return (
-      <BlurView intensity={intensity} tint={premium.blurTint} style={styles.fill}>
-        <View style={{ backgroundColor: glass.background }}>{children}</View>
-      </BlurView>
-    );
-  }
-
-  return <View style={[styles.fill, { backgroundColor: premium.card.background }]}>{children}</View>;
-}
-
 const styles = StyleSheet.create({
-  base: { borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  fill: { width: '100%' },
+  // `overflow: hidden` would clip the shadow on Android; children that need
+  // clipping (an image) round their own corners.
+  base: {},
 });

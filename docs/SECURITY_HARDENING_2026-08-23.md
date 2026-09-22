@@ -325,7 +325,7 @@ sets a `PartnerIntegration` to `ACTIVE` —
 gated by `assertPlatformAdmin()`. `create()` never sets `ACTIVE` under any
 input — `WEBSITE` starts `PENDING_VERIFICATION`, every other type starts
 `NOT_CONNECTED` and has **no** activation path coded anywhere in this
-codebase (matching `docs/NEXT_CLAUDE_TASK.md`'s recorded decision to defer
+codebase (matching `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`'s recorded decision to defer
 generic auto-finalization). So: no request, from anyone, can activate an
 integration without going through the one admin-only endpoint. This is
 the direct answer to "ensure requests cannot activate an integration
@@ -423,7 +423,7 @@ not re-proving what a same-day companion document already verified:
   (`docs/PENTEST_2026-08-23.md` §B.2) and for this one — this document does
   not duplicate that work or its verification.
 - Partner Integrations OWNER-only gating on `create`/`list` —
-  already recorded as resolved in `docs/NEXT_CLAUDE_TASK.md`
+  already recorded as resolved in `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`
   (2026-08-18) and re-confirmed as still holding, live, in §B.6 above
   rather than re-implemented.
 
@@ -569,6 +569,6 @@ change can close:
   never deployed one. Worth a real deploy-and-verify pass before this
   blueprint is used for anything beyond a demonstration.
 - Every other item already recorded as resolved in
-  `docs/NEXT_CLAUDE_TASK.md` and `docs/HARDENING_AUDIT_2026-08-16.md`
+  `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` and `docs/HARDENING_AUDIT_2026-08-16.md`
   remains resolved — re-confirmed rather than re-opened where this pass's
   scope touched them (§B).

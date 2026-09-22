@@ -7,7 +7,7 @@ import { TreasuryService } from './treasury.service';
 /**
  * The figure somebody should look at before authorising a bank transfer.
  *
- * Read-only, and that is not a limitation to be lifted later: Arman's
+ * Read-only, and that is not a limitation to be lifted later: the product
  * decision is that transfers are made by a human in a banking app, so the
  * platform's job here is to tell them the truth about what is in the account,
  * not to move it.

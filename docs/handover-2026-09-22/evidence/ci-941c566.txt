@@ -1,0 +1,16 @@
+# CI на итоговом SHA кода — 941c566653af699804d8e6f4aac5417ebe47b1d6
+# https://github.com/arman119090-cmyk/TuTak-Platform/actions/runs/35706511059
+
+Lint, test and build          success   08:45:08 → 08:50:06
+  lint, typecheck, sentry sanitizer parity, uptime probe self-test,
+  page-human self-test, railway backup contract test, dependency audit,
+  unit tests, migration drift check, mobile tests, demo parity,
+  admin tests, partner tests, build all applications
+Integration tests (1/3)       success   → 08:49:44
+Integration tests (2/3)       success   → 08:50:26
+Integration tests (3/3)       success   → 08:48:41
+Build the container images    success   → 08:58:30
+  API/Admin/Partner образы, подъём стека с сидом, E2E, прогон собранного
+  мобильного приложения против стека, backup and restore rehearsal
+
+Итого 5 из 5 job'ов зелёные.

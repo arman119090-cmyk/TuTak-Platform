@@ -1,9 +1,5 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScroll } from '../../components/KeyboardAwareScroll';
-import { BackButton } from '../../components/BackButton';
-import { useCompactLayout } from '../../components/useCompactLayout';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../../app/theme/ThemeProvider';
@@ -23,6 +19,11 @@ import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
 import { useMountTrace } from '../../../diagnostics/instanceTrace';
 import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
+import { JakoScene } from '../../components/JakoScene';
+import { DataSafeNote } from '../../components/DataSafeNote';
+import { localPhoneDigits } from '../../../domain/phone';
+import { ConsentCheckbox } from '../../components/ConsentCheckbox';
+import { useRegistrationConsents } from './useRegistrationConsents';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
@@ -68,8 +69,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
  */
 export function OtpRegisterScreen({ navigation }: Props) {
   const { t, i18n } = useTranslation();
-  const { color, space, text, layout } = useTheme();
-  const compact = useCompactLayout();
+  const { color, space, text } = useTheme();
   const { deviceId, setSession } = useAuthStore();
 
   /*
@@ -96,6 +96,18 @@ export function OtpRegisterScreen({ navigation }: Props) {
    */
   useMountTrace('OtpRegister');
   useDimensionsTrace();
+
+  /*
+   * The two mandatory legal choices, both empty until they are ticked.
+   *
+   * They live on stage one, before the code is asked for: an SMS is already
+   * processing of the number, so the notice and the choice come first. The
+   * hook below knows what has to be agreed to, against which edition, and
+   * hands the server the same hashes the screen showed; when the texts are
+   * not published it reports nothing to ask and this whole block disappears,
+   * which is what keeps an unapproved draft out of a registration form.
+   */
+  const consents = useRegistrationConsents();
 
   const [phone, setPhone] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -177,9 +189,21 @@ export function OtpRegisterScreen({ navigation }: Props) {
     clearErrors();
     setSending(true);
     try {
-      await authApi.requestRegistrationOtp({ phone: fullPhone });
+      await authApi.requestRegistrationOtp({
+        phone: fullPhone,
+        ...(consents.payload ? { consents: consents.payload } : {}),
+      });
       setStage('code');
     } catch (err) {
+      if (isStaleLegalEdition(err)) {
+        // The texts changed between opening the form and pressing the
+        // button. The ticks were given to an edition that no longer exists,
+        // so they are cleared and the current one is fetched — the person
+        // reads and chooses again, which is the whole point of the check.
+        consents.reset();
+        setFormError(t('legal.revisionChanged'));
+        return;
+      }
       // Never a field: this request carries the phone number and nothing
       // else, and the referral code it is drawn next to is not in it.
       setFormError(describeApiError(err) ?? t('auth.sendCodeFailed'));
@@ -217,6 +241,9 @@ export function OtpRegisterScreen({ navigation }: Props) {
         locale: i18n.language,
         referralCode: referralCode || undefined,
         deviceId,
+        // Sent again at the step that creates the account, because that is
+        // the request the record is written by, in the same transaction.
+        ...(consents.payload ? { consents: consents.payload } : {}),
       });
       // The one place a session is created. Reaching it means the code was
       // accepted, the password was accepted, and the account exists.
@@ -228,6 +255,12 @@ export function OtpRegisterScreen({ navigation }: Props) {
         // judged. Marking a field here would blame them for the network, and
         // sending them back a stage would lose work for no reason.
         setFormError(message);
+      } else if (isStaleLegalEdition(err)) {
+        // Same as on stage one, and back to stage one: the choices live
+        // there, and they have to be made again against the current text.
+        consents.reset();
+        setFormError(t('legal.revisionChanged'));
+        setStage('phone');
       } else if (apiErrorCode(err)?.startsWith('REFERRAL')) {
         // The referral field lives on stage one, so the message has to go
         // back with it or it is shown against nothing.
@@ -263,7 +296,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
     }
   };
 
-  const canSend = phone.length === 8 && !sending;
+  const canSend = phone.length === 8 && !sending && consents.satisfied;
   const canContinue = code.length === 6;
 
   /*
@@ -290,39 +323,35 @@ export function OtpRegisterScreen({ navigation }: Props) {
     password.length >= PASSWORD_MIN_LENGTH && password === confirmation && !verifying;
 
   return (
-    <SafeAreaView
-      style={[styles.flex, { backgroundColor: color.background }]}
-      edges={['top', 'bottom']}
-    >
-      <KeyboardAwareScroll
-        contentContainerStyle={[
-          styles.content,
-          { paddingHorizontal: layout.screenPaddingX, paddingTop: space[6] },
-        ]}
-      >
-        <BackButton />
-        <Text style={[text.titleLg, { color: color.textPrimary }]}>
-          {stage === 'password'
-            ? t('auth.createPasswordTitle')
+    <JakoScene
+      state={stage === 'phone' ? 'phone' : stage === 'code' ? 'otp-waiting' : stage === 'password' ? 'password' : 'login'}
+      title={
+        stage === 'password'
+          ? t('auth.createPasswordTitle')
+          : stage === 'name'
+            ? t('nameStep.title')
+            : t('auth.otpRegisterTitle')
+      }
+      subtitle={
+        stage === 'phone'
+          ? t('auth.otpRegisterSubtitle')
+          : stage === 'code'
+            ? t('auth.otpRegisterCodeSubtitle', { phone: fullPhone })
             : stage === 'name'
-              ? t('nameStep.title')
-              : t('auth.otpRegisterTitle')}
-        </Text>
-        <Text
-          style={[
-            text.bodySm,
-            { color: color.textSecondary, marginTop: space[2], marginBottom: compact ? space[5] : space[8] },
-          ]}
-        >
-          {stage === 'phone'
-            ? t('auth.otpRegisterSubtitle')
-            : stage === 'code'
-              ? t('auth.otpRegisterCodeSubtitle', { phone: fullPhone })
-              : stage === 'name'
-                ? t('nameStep.body')
-                : t('auth.createPasswordSubtitle')}
-        </Text>
-
+              ? t('nameStep.body')
+              : t('auth.createPasswordSubtitle')
+      }
+      note={
+        stage === 'phone'
+          ? t('scene.note.phone')
+          : stage === 'code'
+            ? t('scene.note.otp')
+            : stage === 'password'
+              ? t('scene.note.password')
+              : t('scene.note.login')
+      }
+      bubble={t('scene.bubble')}
+    >
         {stage === 'phone' ? (
           <>
             <TextField
@@ -330,11 +359,37 @@ export function OtpRegisterScreen({ navigation }: Props) {
               traceId="phone"
               prefix="+374"
               value={phone}
-              onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
+              onChangeText={(v) => setPhone(localPhoneDigits(v))}
               keyboardType="number-pad"
               placeholder="00 000 000"
               maxLength={8}
             />
+            {consents.required.map((consent) => (
+              <ConsentCheckbox
+                key={consent.purpose}
+                testID={`consent-${consent.purpose}`}
+                checked={consents.accepted[consent.purpose] ?? false}
+                onToggle={(next) => consents.setAccepted(consent.purpose, next)}
+                label={t(consent.labelKey)}
+                links={consent.documents.map((document) => ({
+                  label: t(`legal.docs.${document.key}`, { defaultValue: document.key }),
+                  onPress: () =>
+                    navigation.navigate('LegalDocument', {
+                      documentKey: document.key,
+                      language: consents.language,
+                      title: t(`legal.docs.${document.key}`, { defaultValue: document.key }),
+                    }),
+                }))}
+              />
+            ))}
+            {consents.required.length > 0 ? (
+              <Text
+                testID="consent-optional-note"
+                style={[text.caption, { color: color.textSecondary, marginTop: space[2] }]}
+              >
+                {t('legal.consentOptionalNote')}
+              </Text>
+            ) : null}
             <TextField
               label={t('auth.referralCodeOptional')}
               traceId="referral"
@@ -487,6 +542,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
                 disabled={!canCreate}
                 icon={<JakoWingMark size={16} color={color.textInverse} />}
               />
+              <DataSafeNote />
             </View>
           </>
         )}
@@ -499,13 +555,16 @@ export function OtpRegisterScreen({ navigation }: Props) {
             <Text style={[text.label, { color: color.primary }]}>{t('auth.login')}</Text>
           </Pressable>
         </View>
-      </KeyboardAwareScroll>
-    </SafeAreaView>
+    </JakoScene>
   );
 }
 
+/** The server refused the choices because the text they were made against is not the current one. */
+function isStaleLegalEdition(err: unknown): boolean {
+  const code = apiErrorCode(err);
+  return code === 'LEGAL_REVISION_STALE' || code === 'LEGAL_CONTENT_HASH_MISMATCH';
+}
+
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: { flexGrow: 1, paddingBottom: 40 },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
 });

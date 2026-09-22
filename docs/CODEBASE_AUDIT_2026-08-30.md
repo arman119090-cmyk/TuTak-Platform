@@ -20,7 +20,7 @@ kept because they turned out to be load-bearing.
 - `docs/ROAMING_CPO_INTEGRATION_2026-08-25.md`, `scripts/demo-README.md`:
   small factual/filename fixes.
 - `docs/TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md`,
-  `docs/NEXT_CLAUDE_TASK.md`: superseded banners added — both were frozen
+  `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`: superseded banners added — both were frozen
   at an earlier date and had drifted from the shipped platform.
 - `docs/README.md`: regenerated Current/Superseded index.
 

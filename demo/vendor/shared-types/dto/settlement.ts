@@ -75,6 +75,27 @@ export interface PartnerSettlementEntryDto {
   sourceType: string;
   sourceId: string;
   occurredAt: string;
+  /**
+   * Which of the partner's own branches produced this line, where the source
+   * records one.
+   *
+   * Set for the two source types that are sales — a purchase and an operation
+   * row. Null for everything that is not: payouts, collections, commission,
+   * the settlement's own carry-in. A partner checking a statement against
+   * their tills needs the shop as well as the day, and null here means "this
+   * line is not a sale", not "we lost the shop".
+   *
+   * Live name, not a snapshot — see `TransactionDto.branch`.
+   */
+  branch: SettlementBranchDto | null;
+}
+
+/** The branch behind a statement line. Address included for the same reason
+    `TransactionBranchDto` carries one: chains reuse names. */
+export interface SettlementBranchDto {
+  id: string;
+  name: string;
+  address: string;
 }
 
 /**
@@ -85,13 +106,68 @@ export interface PartnerSettlementEntryDto {
  * money whose side nobody has decided, and hiding it would make the three
  * figures above it quietly incomplete.
  */
-export interface UnsettledPositionDto {
+/**
+ * A partner's money position, in five figures that do not overlap.
+ *
+ * `net` is what is *not yet in any settlement*: the balance of settleable
+ * postings nobody has claimed. It is NOT what TuTak owes in total — the moment
+ * a DRAFT settlement claims those postings `net` drops to zero while not one
+ * dram has moved. The total is `ledgerBalance`, read from the payable account
+ * itself, and it equals `net + inOpenSettlements + underReview` by
+ * construction: a settlement takes postings out of `net` and holds them until
+ * it is PAID, and PAID is the only status that posts a payout back to the
+ * ledger. `paidTotal` is history — already deducted from `ledgerBalance` — and
+ * is never added to anything.
+ */
+export interface UnsettledBreakdownDto {
   partnerId: string;
+  /** Settleable credits not yet claimed by a settlement. */
   accrued: string;
+  /** Settleable debits not yet claimed by a settlement. */
   deductions: string;
+  /** `accrued - deductions`: what is not yet in any settlement. */
   net: string;
   entries: PartnerSettlementEntryDto[];
   unrecognised: string[];
+}
+
+export interface UnsettledPositionDto extends UnsettledBreakdownDto {
+  /**
+   * What TuTak owes this partner in total, from the ledger. Positive: TuTak
+   * owes the partner. Negative: the partner owes TuTak (refunds after a
+   * payout, contributions). Includes everything below except `paidTotal`.
+   */
+  ledgerBalance: string;
+  /** Claimed by settlements that have not been paid yet (DRAFT, READY, APPROVED, PAYMENT_PENDING, FAILED). */
+  inOpenSettlements: string;
+  /** Claimed by settlements whose transfer nobody can yet confirm (REQUIRES_RECONCILIATION). */
+  underReview: string;
+  /** Paid out and posted; already subtracted from `ledgerBalance`. */
+  paidTotal: string;
+  /** When these figures were read. */
+  asOf: string;
+  /** Where the money in this partner's sales came from — brief §29. */
+  funding: PartnerFundingBreakdownDto;
+}
+
+/**
+ * All-time, confirmed sales, net of refunds. `receivedDirectly` is the
+ * partner's own money taken at their till and never TuTak's;
+ * `receivedViaProvider` is what the provider collected for TuTak on
+ * `TUTAK_PSP` sales — TuTak's to settle, never in the till (audit D12);
+ * `fundedByPrepaid` and `fundedByBonus` are what TuTak owes for;
+ * `contribution` reduces it.
+ */
+export interface PartnerFundingBreakdownDto {
+  salesGross: string;
+  receivedDirectly: string;
+  receivedViaProvider: string;
+  fundedByPrepaid: string;
+  fundedByBonus: string;
+  contribution: string;
+  refundedGross: string;
+  owedToTuTak: string;
+  collectionsConfirmed: string;
 }
 
 /** A statement as a partner reads it: the settlement plus its itemisation. */

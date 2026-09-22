@@ -197,9 +197,9 @@ export class UsersService {
   }
 
   /**
-   * Turn nearby-partner personalisation on or off — spec: "как ты думаешь
-   * это правильно или нет" (Arman, 2026-08-26), answered by scoping this to
-   * an explicit, off-by-default opt-in rather than silent profiling. Mirrors
+   * Turn nearby-partner personalisation on or off. The product decision of
+   * 2026-08-26 left the posture open; it is settled here as an explicit,
+   * off-by-default opt-in rather than silent profiling. Mirrors
    * `MediaService.setAvatarConsent`'s shape: a plain flag flip, audited
    * because it is a consent decision, nothing cached or derived stored
    * anywhere beyond the flag itself.

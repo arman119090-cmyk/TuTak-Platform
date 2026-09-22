@@ -82,6 +82,24 @@ jobs:
       - name: Sentry sanitizer parity (apps/api vs @tutak/observability)
         run: pnpm test:sentry-parity
 
+      # The external uptime probe (.github/workflows/uptime.yml) is a shell
+      # script; this is its test: a fake API, a fake webhook and a fake
+      # Telegram Bot API, two dozen cases of healthy/unhealthy/paging/
+      # not-paging. It fails the build if the observer would page wrongly or
+      # stay silent. page-human.sh is what both uptime.yml and backup.yml
+      # page through; its test proves "delivered" means the receiver said so.
+      - name: Uptime probe self-test
+        run: bash scripts/uptime-probe.test.sh
+      - name: Page-human (webhook / Telegram) self-test
+        run: bash scripts/page-human.test.sh
+
+      # The Railway backup workflow is a shell script talking GraphQL; this is
+      # its contract test against a mock that speaks the published schema and
+      # misbehaves on demand (GraphQL errors on 200, null workflowId, a backup
+      # that never appears, stale backups, wrong token scope).
+      - name: Railway backup script contract test
+        run: bash scripts/railway-backup.test.sh
+
       # Reported, not enforced — and that is a decision rather than laziness.
       # Every advisory the last review turned up was either a build-time
       # dependency of the mobile app (`image-size`, `uuid`, reached only by
@@ -98,8 +116,20 @@ jobs:
         run: pnpm audit --audit-level moderate
 
       # Unit tests need no database, so a failure here is unambiguous.
+      # Coverage is reported, not enforced: the summary lands in the log and
+      # the lcov file in an artifact, so the number is known before a
+      # threshold is chosen (audit of 2026-09-20, item M9).
       - name: Unit tests
-        run: pnpm --filter @tutak/api test:unit
+        run: pnpm --filter @tutak/api test:unit --coverage --coverageReporters=text-summary --coverageReporters=lcov
+
+      - name: Upload API unit coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-api-unit
+          path: apps/api/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14
 
       # globalSetup creates tutak_test, applies the full migration history,
       # and runs VALIDATE CONSTRAINT on bonus_ledger_delta_matches_direction.
@@ -195,7 +225,16 @@ jobs:
           MIGRATED_DATABASE_URL: postgresql://tutak:tutak_ci_password@localhost:5432/tutak?schema=public
 
       - name: Mobile tests
-        run: pnpm --filter @tutak/mobile test
+        run: pnpm --filter @tutak/mobile test --coverage --coverageReporters=text-summary --coverageReporters=lcov
+
+      - name: Upload mobile coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-mobile
+          path: apps/mobile/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14
 
       # `demo/` is a generated copy of the mobile app with the workspace
       # taken out, so that somebody can download the repository as a ZIP and
@@ -316,6 +355,38 @@ jobs:
       # location instead of leaving silence. `--forceExit` is deliberately
       # absent — see the 2026-08-30 hardening note in git history for the
       # open handle it used to paper over and why removing it was the fix.
+      # This shard's database is destroyed with the container, so paying for
+      # crash durability buys nothing and occasionally costs the whole job.
+      # On 2026-09-21 shard 3 was killed by the 15-minute step timeout while
+      # tests were still executing: a single checkpoint on that runner took
+      # 38 seconds and fsynced 46,026 files. The same shard, on the same
+      # commit, finished in 5m22s on a healthy runner minutes earlier, and
+      # the same shard had timed out once before on 3ff6b41. Slow disk sync
+      # is the variable, so it is the one removed here.
+      #
+      # All three settings are reloadable (`fsync` and `full_page_writes` are
+      # sighup, `synchronous_commit` is per-session), so no restart is needed;
+      # the poll below is because a reload is asynchronous. The timeout stays
+      # at 15 minutes so a genuine hang is still caught rather than waited on.
+      - name: Drop durability in the throwaway test database
+        env:
+          PGPASSWORD: tutak_ci_password
+        run: |
+          psql -h localhost -U tutak -d tutak -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync = off;" \
+            -c "ALTER SYSTEM SET synchronous_commit = off;" \
+            -c "ALTER SYSTEM SET full_page_writes = off;" \
+            -c "SELECT pg_reload_conf();"
+          for _ in $(seq 1 20); do
+            if [ "$(psql -h localhost -U tutak -d tutak -tAc 'SHOW fsync')" = "off" ]; then
+              break
+            fi
+            sleep 0.5
+          done
+          psql -h localhost -U tutak -d tutak -tAc \
+            "SELECT name || '=' || setting FROM pg_settings
+             WHERE name IN ('fsync','synchronous_commit','full_page_writes');"
+
       - name: Integration tests
         timeout-minutes: 15
         run: pnpm --filter @tutak/api test:int:shard

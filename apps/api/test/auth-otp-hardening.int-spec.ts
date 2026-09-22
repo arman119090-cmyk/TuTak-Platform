@@ -230,7 +230,9 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
 
       expect(first).not.toBe(second);
       await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, first)).rejects.toThrow();
-      await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, second)).resolves.toBeUndefined();
+      await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, second)).resolves.toEqual({
+        challengeId: expect.any(String),
+      });
     });
 
     it('rejects the sixth attempt on one challenge', async () => {
@@ -252,7 +254,11 @@ describe('OTP hardening: no plaintext code at rest, and per-IP abuse limits (int
       await authService.requestRegistrationOtp({ phone });
       const code = lastCode();
 
-      await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code)).resolves.toBeUndefined();
+      // Resolves with the id of the challenge it just spent — what the legal
+      // consent record links to. The code itself is never returned.
+      await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code)).resolves.toEqual({
+        challengeId: expect.any(String),
+      });
       await expect(otpService.consumeCode(phone, AuthOtpPurpose.REGISTER, code)).rejects.toThrow();
     });
 

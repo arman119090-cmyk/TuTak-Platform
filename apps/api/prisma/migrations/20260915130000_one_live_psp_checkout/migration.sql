@@ -1,7 +1,7 @@
 -- ────────────────────────────────────────────────────────────────────────
 -- At most one live in-TuTak checkout per customer per business.
 --
--- The cross-purchase double payment Arman's review of 15.09.2026 found is
+-- The cross-purchase double payment the product review of 15.09.2026 found is
 -- not a bug inside any one purchase: purchase A collects through the
 -- provider and purchase B collects in cash, each settles exactly once, and
 -- the customer has paid for one meal twice. `PurchaseIntentsService.assert-

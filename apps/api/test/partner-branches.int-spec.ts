@@ -6,7 +6,7 @@ import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
- * Partner self-service branches (spec: Arman, 2026-08-26 — partners add
+ * Partner self-service branches (spec: product decision, 2026-08-26 — partners add
  * their own physical locations, not the platform on their behalf). Same
  * auth shape as `partner-profile.int-spec.ts`'s `offerings` suite, but
  * individual CRUD rather than bulk-replace: a branch is referenced by

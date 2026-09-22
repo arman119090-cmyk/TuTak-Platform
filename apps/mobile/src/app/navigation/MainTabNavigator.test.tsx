@@ -84,7 +84,7 @@ describe('MainTabNavigator — Android bottom safe-area clearance', () => {
     // Math.max(20, insets.bottom) — a zero inset still gets the 20px floor.
     // Raised from 12: a real 3-button-nav device reporting ~zero inset still
     // put its own back/home/recent row close enough beneath ours to read as
-    // one row (Arman, 2026-08-23).
+    // one row (product decision, 2026-08-23).
     expect(style.paddingBottom).toBe(20);
   });
 
@@ -102,5 +102,45 @@ describe('MainTabNavigator — Android bottom safe-area clearance', () => {
     // Different from the small-inset case above: proves the bar tracks the
     // *live* measurement rather than converging on one hardcoded number.
     expect(style.height).not.toBe(layout.tabBarHeight + 16);
+  });
+});
+
+describe('MainTabNavigator — iOS bottom safe-area clearance', () => {
+  const platformOSDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS')!;
+
+  beforeAll(() => {
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'ios' });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(Platform, 'OS', platformOSDescriptor);
+  });
+
+  afterEach(() => {
+    capturedScreenOptions = undefined;
+  });
+
+  it('grows by the home indicator on a Face ID iPhone and pads by exactly that inset', () => {
+    // 34 pt is what every iPhone without a home button reports. The bar
+    // used to stay at the fixed height with 28 pt of padding, which put
+    // the labels 6 pt inside the indicator's zone.
+    const style = tabBarStyleFor(34);
+    expect(style.height).toBe(layout.tabBarHeight + 34);
+    expect(style.paddingBottom).toBe(34);
+  });
+
+  it('keeps the 20 pt floor on an iPhone with a home button (zero inset)', () => {
+    const style = tabBarStyleFor(0);
+    expect(style.height).toBe(layout.tabBarHeight);
+    expect(style.paddingBottom).toBe(20);
+  });
+
+  it('is the same rule as Android, not a second one', () => {
+    const ios = tabBarStyleFor(34);
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'android' });
+    capturedScreenOptions = undefined;
+    const android = tabBarStyleFor(34);
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'ios' });
+    expect(ios).toEqual(android);
   });
 });

@@ -6,10 +6,14 @@ import { MainTabNavigator } from './MainTabNavigator';
 import { ScanQrScreen } from '../../presentation/screens/qr/ScanQrScreen';
 import { NotificationsScreen } from '../../presentation/screens/notifications/NotificationsScreen';
 import { TransactionHistoryScreen } from '../../presentation/screens/transactions/TransactionHistoryScreen';
+import { TransactionDetailScreen } from '../../presentation/screens/transactions/TransactionDetailScreen';
 import { ReferralScreen } from '../../presentation/screens/referral/ReferralScreen';
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { LegalIndexScreen } from '../../presentation/screens/legal/LegalIndexScreen';
+import { LegalDocumentScreen } from '../../presentation/screens/legal/LegalDocumentScreen';
+import { ChangePinScreen } from '../../presentation/screens/appLock/ChangePinScreen';
 import { EditProfileScreen } from '../../presentation/screens/settings/EditProfileScreen';
 import { BecomePartnerScreen } from '../../presentation/screens/partner-application/BecomePartnerScreen';
 import { PartnerApplicationSentScreen } from '../../presentation/screens/partner-application/PartnerApplicationSentScreen';
@@ -64,6 +68,11 @@ export function RootNavigator() {
         options={{ title: t('wallet.history'), headerShown: false }}
       />
       <Stack.Screen
+        name="TransactionDetail"
+        component={TransactionDetailScreen}
+        options={{ title: t('history.detailTitle'), headerShown: false }}
+      />
+      <Stack.Screen
         name="Referral"
         component={ReferralScreen}
         options={{ title: t('referral.inviteFriends'), headerShown: false }}
@@ -97,10 +106,28 @@ export function RootNavigator() {
         component={PartnerApplicationSentScreen}
         options={{ title: t('partnerApplication.title'), headerShown: false }}
       />
+      {/* The same two screens the auth stack mounts, so a signed-in customer
+          reaches the texts from Settings and a visitor reaches them from the
+          registration form. */}
+      <Stack.Screen
+        name="Legal"
+        component={LegalIndexScreen}
+        options={{ title: t('legal.sectionTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="LegalDocument"
+        component={LegalDocumentScreen}
+        options={{ title: t('legal.sectionTitle'), headerShown: false }}
+      />
       <Stack.Screen
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ title: t('settings.changePassword'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChangePin"
+        component={ChangePinScreen}
+        options={{ title: t('appLock.changeCode'), headerShown: false }}
       />
       <Stack.Screen
         name="VerifyPhone"

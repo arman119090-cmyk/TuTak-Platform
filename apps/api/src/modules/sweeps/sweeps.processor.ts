@@ -130,7 +130,9 @@ export class SweepsProcessor extends WorkerHost implements OnApplicationBootstra
   async onFailed(job: Job | undefined, error: Error): Promise<void> {
     if (!job) return;
 
-    const max = job.opts.attempts ?? 1;
+    // Never below one: BullMQ's own default is `attempts: 0`, which would
+    // make every first failure read as "permanent after 0 attempts".
+    const max = Math.max(job.opts.attempts ?? 1, 1);
     if (job.attemptsMade < max) {
       this.logger.warn(
         `${job.name} failed on attempt ${job.attemptsMade}/${max}, will retry: ${error.message}`,

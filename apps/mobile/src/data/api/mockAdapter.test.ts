@@ -175,6 +175,11 @@ describe('mockAdapter', () => {
        * that claim. The bar here, as for the avatar upload, is "not a 404".
        */
       'post /psp/purchases/sample-id/begin',
+      /*
+       * `POST /promos/:id/events` answers 204, exactly as the API does — an
+       * impression counter has nothing to say back — and 204 is not 200.
+       */
+      'post /promos/sample-id/events',
     ]);
 
     const unmocked: string[] = [];
@@ -241,7 +246,7 @@ describe('mockAdapter', () => {
     afterEach(() => jest.useRealTimers());
 
     /**
-     * NEXT_CLAUDE_TASK.md item 12 / audit issue #28: the demo auto-confirm
+     * REFERRAL_3_LEVEL_REWORK_2026-08-22.md item 12 / audit issue #28: the demo auto-confirm
      * used to credit the *entire* contribution pool as GREEN — for a 5%
      * partner rate on a 10,000 gross purchase that was 500, when the
      * canonical split (20/30/20/30) makes only 20% of the pool immediately

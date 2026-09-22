@@ -3,7 +3,7 @@ import { RoamingCpoSettlementService } from './roaming-cpo-settlement.service';
 
 /**
  * The margin/split arithmetic alone, with no database — exercises exactly
- * the worked examples Arman confirmed
+ * the worked examples the product decision of 2026-08-25 confirmed
  * (docs/ROAMING_CPO_INTEGRATION_2026-08-25.md): 80/105/120 AMD/kWh applied
  * against a 75 AMD/kWh wholesale rate and a 20 AMD/kWh referral-split cap.
  * `roaming-cpo-settlement.int-spec.ts` re-derives the same numbers end to end

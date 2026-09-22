@@ -273,7 +273,7 @@ describe('PSP payment route (integration)', () => {
     expect(await psp.hasUnsafeAttempt(intent.id)).toBe(false);
   });
   /**
-   * Finding 1 of Arman's review of 15.09.2026: a verified provider
+   * Finding 1 of the product review of 15.09.2026: a verified provider
    * confirmation must finalise the *purchase*, not merely record that a bill
    * was paid. Before this, the two halves were separate — the ledger learned
    * the money had arrived while the purchase sat in `AWAITING_CONFIRMATION`
@@ -311,8 +311,8 @@ describe('PSP payment route (integration)', () => {
    *  3. that a per-litre margin does not fit a basis-point grid at all. The
    *     platform already has the per-unit shape elsewhere
    *     (`Partner.evWholesaleRatePerKwh`); whether fuel partners move to it,
-   *     or the grid is loosened, is a commercial decision and Arman's, not
-   *     something to paper over by picking friendlier numbers here.
+   *     or the grid is loosened, is a commercial decision for the owner,
+   *     not something to paper over by picking friendlier numbers here.
    */
   it('finalises the purchase and owes the partner their whole entitlement (HAZE, 50 L)', async () => {
     // 300 AMD/л × 50 L = 15,000. 350 bps is the nearest rate the grid allows
@@ -705,7 +705,7 @@ describe('PSP payment route (integration)', () => {
   });
 
   /**
-   * The second race, found by Arman on 15.09.2026, and it went straight
+   * The second race, found in the review of 15.09.2026, and it went straight
    * through both guards written for the first one.
    *
    * The hole was that both of those guards were about *payment attempts*, and
@@ -841,8 +841,8 @@ describe('PSP payment route (integration)', () => {
      * what caught it. Since 15.09.2026 the database refuses to close such a
      * purchase at all, so no code path produces it any more. The guard stays,
      * because the two checks answer different questions ("is another purchase
-     * in flight" and "might the provider hold money") and I would rather the
-     * second still work if the first is ever loosened. Written straight into
+     * in flight" and "might the provider hold money") and the second must
+     * still work if the first is ever loosened. Written straight into
      * the tables because that is the only way left to reach it.
      */
     it('still blocks on an unresolved attempt even if its purchase is somehow closed', async () => {

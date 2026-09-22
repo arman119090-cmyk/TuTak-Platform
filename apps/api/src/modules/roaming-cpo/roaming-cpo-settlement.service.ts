@@ -76,8 +76,8 @@ const RECONCILE_TOLERANCE_FLOOR = new Decimal('1');
  * second copy of those percentages); margin above the cap is undivided
  * TuTak revenue that never enters the split at all.
  *
- * Worked examples (confirmed by Arman, reproduced as passing tests in
- * `roaming-cpo-settlement.int-spec.ts` and `roaming-cpo-settlement.service.spec.ts`):
+ * Worked examples (confirmed by the product decision, reproduced as passing
+ * tests in `roaming-cpo-settlement.int-spec.ts` and `roaming-cpo-settlement.service.spec.ts`):
  *  - 80 AMD/kWh applied, 75 wholesale → margin 5 → all 5 through the split.
  *  - 105 AMD/kWh applied → margin 30 → 20 through the split, 10 straight
  *    TuTak revenue.

@@ -259,14 +259,20 @@ export function assertProviderPaymentsConfigured(config: Record<string, unknown>
   // taken and stay unaccounted for, so it is the one that must not start blind.
   const webhook =
     typeof config.ALERT_WEBHOOK_URL === 'string' ? config.ALERT_WEBHOOK_URL.trim() : '';
-  if (webhook === '') {
+  const telegramToken =
+    typeof config.ALERT_TELEGRAM_BOT_TOKEN === 'string' ? config.ALERT_TELEGRAM_BOT_TOKEN.trim() : '';
+  const telegramChat =
+    typeof config.ALERT_TELEGRAM_CHAT_ID === 'string' ? config.ALERT_TELEGRAM_CHAT_ID.trim() : '';
+  const telegram = telegramToken !== '' && telegramChat !== '';
+  if (webhook === '' && !telegram) {
     throw new Error(
-      'TUTAK_PSP_ENABLED=true but ALERT_WEBHOOK_URL not set. A dead-lettered payment callback ' +
-        'would be logged and nobody told. Set the webhook and prove it with `pnpm alert:verify`, ' +
+      'TUTAK_PSP_ENABLED=true but no alert channel is set (ALERT_WEBHOOK_URL, or ' +
+        'ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID). A dead-lettered payment callback ' +
+        'would be logged and nobody told. Set one and prove it with `pnpm alert:verify`, ' +
         'or turn the route off.',
     );
   }
-  if (!/^https:\/\//.test(webhook)) {
+  if (webhook !== '' && !/^https:\/\//.test(webhook)) {
     throw new Error(
       `ALERT_WEBHOOK_URL must be an https URL when TUTAK_PSP_ENABLED=true (got "${webhook}").`,
     );

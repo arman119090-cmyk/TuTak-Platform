@@ -7,6 +7,19 @@ import { OtpRegisterScreen } from './OtpRegisterScreen';
 jest.mock('../../../data/api/authApi', () => ({
   authApi: { requestRegistrationOtp: jest.fn(), verifyRegistrationOtp: jest.fn() },
 }));
+jest.mock('./useRegistrationConsents', () => ({
+  // The legal package is not published in this fixture, so registration asks
+  // nothing extra — exactly what these tests were written against.
+  useRegistrationConsents: () => ({
+    required: [],
+    accepted: {},
+    setAccepted: jest.fn(),
+    satisfied: true,
+    language: 'ru',
+    payload: null,
+    reset: jest.fn(),
+  }),
+}));
 jest.mock('../../../data/stores/authStore', () => ({
   useAuthStore: () => ({ deviceId: 'test-device', setSession: jest.fn() }),
 }));
@@ -19,7 +32,7 @@ const { ThemeProvider } = require('../../../app/theme/ThemeProvider');
 const renderScreen = () =>
   render(
     <ThemeProvider>
-      {/* `BackButton` asks the navigator whether it can go back, so the screen
+      {/* `JakoScene` asks the navigator whether it can go back, so the screen
           needs a real navigation context to render at all. */}
       <NavigationContainer>
         <OtpRegisterScreen

@@ -7,11 +7,13 @@ import type {
   NearbyPartnerDto,
   NotificationDto,
   PartnerBrandDto,
+  PartnerPromoPublicDto,
   PurchaseIntentDto,
   ReferralCodeDto,
   ReferralInviteDto,
   TransactionDto,
 } from '@tutak/shared-types';
+import { MOCK_PROMO_ARTWORK } from './mockPromoArtwork';
 import {
   BonusEntryStatus,
   BonusEntryType,
@@ -87,6 +89,8 @@ export function mockTokens() {
  * something being looked at rather than used.
  */
 export interface MockState {
+  /** The stored money balance (hybrid funding). Money, not points — kept apart from `wallet`. */
+  prepaidAvailable: string;
   wallet: {
     id: string;
     userId: string;
@@ -115,7 +119,37 @@ export interface MockState {
   referralCode: ReferralCodeDto;
   invites: ReferralInviteDto[];
   purchaseIntents: PurchaseIntentDto[];
+  /**
+   * The Home "Partner Spotlight" strip, as `GET /promos/featured` returns it
+   * for `ru`. The other two languages live in `MOCK_PROMO_COPY`; the adapter
+   * swaps the copy for the `locale` the app asks for, falling back exactly
+   * as the API does (requested → ru → first filled).
+   */
+  promos: PartnerPromoPublicDto[];
 }
+
+/**
+ * The three cards' words per interface language. The third card has no
+ * Armenian on purpose: the Armenian interface then shows its Russian copy,
+ * which is the fallback the API applies and the thing a reviewer should be
+ * able to see happen.
+ */
+export const MOCK_PROMO_COPY: Record<string, Partial<Record<'hy' | 'ru' | 'en', { title: string; subtitle: string | null; benefitLabel: string }>>> = {
+  'promo-1': {
+    hy: { title: 'Սուրճ տանելու՝ 10% հետ', subtitle: 'Ամեն օր մինչև 12:00', benefitLabel: '10% քեշբեք' },
+    ru: { title: 'Кофе с собой — 10% обратно', subtitle: 'Каждый день до 12:00', benefitLabel: '10% кешбэк' },
+    en: { title: 'Coffee to go — 10% back', subtitle: 'Every day until 12:00', benefitLabel: '10% cashback' },
+  },
+  'promo-2': {
+    hy: { title: 'Շաբաթվա մթերքը՝ բոնուսներով', subtitle: 'Ցանցի բոլոր խանութներում', benefitLabel: '5% քեշբեք' },
+    ru: { title: 'Продукты на неделю — с бонусами', subtitle: 'Во всех магазинах сети', benefitLabel: '5% кешбэк' },
+    en: { title: 'A week of groceries — with bonus', subtitle: 'In every store of the chain', benefitLabel: '5% cashback' },
+  },
+  'promo-3': {
+    ru: { title: 'Ночная зарядка дешевле', subtitle: 'С 23:00 до 07:00 на всех станциях', benefitLabel: '−15%' },
+    en: { title: 'Night charging costs less', subtitle: '23:00–07:00 at every station', benefitLabel: '−15%' },
+  },
+};
 
 const WALLET_ID = 'mock-wallet-1';
 
@@ -162,6 +196,7 @@ function ledgerEntry(
 export function freshMockState(): MockState {
   return {
     user: { ...MOCK_USER },
+    prepaidAvailable: '25000.0000',
     wallet: {
       id: WALLET_ID,
       userId: MOCK_USER.id,
@@ -296,6 +331,8 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '120',
+        purchaseIntentId: null,
+        branch: null,
         description: 'Кафе «Ջազվե»',
         metadata: null,
         createdAt: minutesAgo(20),
@@ -312,6 +349,8 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '302.5',
+        purchaseIntentId: null,
+        branch: null,
         description: 'Супермаркет «Երևան Սիթի»',
         metadata: null,
         createdAt: daysAgo(2),
@@ -328,6 +367,8 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '95.4',
+        purchaseIntentId: null,
+        branch: null,
         description: 'Зарядка · Республики',
         metadata: null,
         createdAt: daysAgo(5),
@@ -344,6 +385,8 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '150',
         bonusEarnedAmount: '225',
+        purchaseIntentId: null,
+        branch: { id: 'branch-1', name: 'Северный проспект', address: 'Северный пр. 1' },
         description: 'Кафе «Ջազվե»',
         metadata: null,
         createdAt: daysAgo(9),
@@ -360,6 +403,8 @@ export function freshMockState(): MockState {
         currency: Currency.AMD,
         bonusAppliedAmount: '0',
         bonusEarnedAmount: '0',
+        purchaseIntentId: null,
+        branch: null,
         description: 'Возврат · Երևան Սիթի',
         metadata: null,
         createdAt: daysAgo(14),
@@ -804,5 +849,55 @@ export function freshMockState(): MockState {
     ],
 
     purchaseIntents: [],
+
+    /*
+     * Three featured placements, already filtered and ordered the way the
+     * server returns them — the app never decides what is live, it only
+     * draws what it is given. Partners are three of the twelve on the map,
+     * so a tap lands on real branches; `partnerLogo` is null throughout for
+     * the reason `MOCK_BRANDS` gives. One is marked sponsored so the small
+     * "Promo" mark can be seen in the preview.
+     */
+    promos: [
+      {
+        id: 'promo-1',
+        partnerId: 'partner-coffeeshop',
+        partnerName: 'Coffeeshop Company',
+        partnerLogo: null,
+        locale: 'ru',
+        title: 'Кофе с собой — 10% обратно',
+        subtitle: 'Каждый день до 12:00',
+        benefitLabel: '10% кешбэк',
+        artwork: { assetId: 'promo-art-1', url: MOCK_PROMO_ARTWORK.cafe, thumbnailUrl: MOCK_PROMO_ARTWORK.cafe, width: 720, height: 450 },
+        destination: 'PARTNER',
+        sponsored: true,
+      },
+      {
+        id: 'promo-2',
+        partnerId: 'partner-sas',
+        partnerName: 'SAS Supermarket',
+        partnerLogo: null,
+        locale: 'ru',
+        title: 'Продукты на неделю — с бонусами',
+        subtitle: 'Во всех магазинах сети',
+        benefitLabel: '5% кешбэк',
+        artwork: { assetId: 'promo-art-2', url: MOCK_PROMO_ARTWORK.market, thumbnailUrl: MOCK_PROMO_ARTWORK.market, width: 720, height: 450 },
+        destination: 'PARTNER',
+        sponsored: false,
+      },
+      {
+        id: 'promo-3',
+        partnerId: 'partner-3',
+        partnerName: 'TuTak Charge',
+        partnerLogo: null,
+        locale: 'ru',
+        title: 'Ночная зарядка дешевле',
+        subtitle: 'С 23:00 до 07:00 на всех станциях',
+        benefitLabel: '−15%',
+        artwork: { assetId: 'promo-art-3', url: MOCK_PROMO_ARTWORK.charge, thumbnailUrl: MOCK_PROMO_ARTWORK.charge, width: 720, height: 450 },
+        destination: 'PARTNERS_MAP',
+        sponsored: false,
+      },
+    ],
   };
 }

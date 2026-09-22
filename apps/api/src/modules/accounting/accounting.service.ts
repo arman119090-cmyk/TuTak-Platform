@@ -87,7 +87,7 @@ export class AccountingService {
    *
    * ## Why this is not one `findMany`
    *
-   * It was, and that was a defect I shipped. A year of postings is hundreds
+   * It was, and that was a defect. A year of postings is hundreds
    * of thousands of rows; loading them into one array and joining them into
    * one string holds the whole export in memory twice over, in a process
    * that is also serving customers. It never showed on test data, which is

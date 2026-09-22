@@ -152,13 +152,13 @@ describe('PSP adversarial callbacks (integration)', () => {
    * A worker that died mid-flight, and a second worker that reclaims the row
    * once the lease lapses.
    *
-   * This is the reachable version of the scenario. The first shape I wrote —
+   * This is the reachable version of the scenario. The first shape of it —
    * forcing an already-PROCESSED row back to PROCESSING — turned out to be
    * impossible: `psp_callback_inbox` refuses any change to a processed
    * callback at the database level, so a processed row cannot be resurrected
    * by a buggy worker, a careless migration or a console session. That is a
    * stronger guarantee than the test assumed, and finding it is worth more
-   * than the test I meant to write.
+   * than the test it replaced.
    *
    * What *can* happen is a worker claiming a row, taking the lease, and
    * dying before it commits anything. The row then sits PROCESSING with a

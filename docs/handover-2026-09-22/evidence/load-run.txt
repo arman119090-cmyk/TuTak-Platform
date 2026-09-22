@@ -1,0 +1,60 @@
+  p50 / p95 / p99   752 / 983 / 1152 ms
+  slowest       1273 ms
+  ✗ 382×  You already have a purchase in progress at this business. Finish or ca
+  ✗ 5×  
+Invalid `client.bonusLedgerEntry.create()` invocation in
+/home/user/T
+  ✗ 11×  
+Invalid `tx.wallet.update()` invocation in
+/home/user/TuTak-Platform/
+  ✗ 5×  Transaction failed due to a write conflict or a deadlock. Please retry
+  ✗ 3×  
+Invalid `tx.bonusReservation.create()` invocation in
+/home/user/TuTak
+  ✗ 3×  
+Invalid `client.wallet.findUniqueOrThrow()` invocation in
+/home/user/
+  ✗ 2×  
+Invalid `tx.bonusReservationAllocation.create()` invocation in
+/home/
+  ✗ 3×  
+Invalid `tx.bonusLot.updateMany()` invocation in
+/home/user/TuTak-Pla
+── Purchase through a 3-level chain ─────────────────────────────────
+  requests      1504 in 15.5s
+  throughput    38.3 ok/s
+  succeeded     594
+  failed        910
+  p50 / p95 / p99   627 / 865 / 997 ms
+  slowest       1081 ms
+  ✗ 910×  You already have a purchase in progress at this business. Finish or ca
+── Bonus + referral combined ─────────────────────────────────
+  requests      829 in 16.0s
+  throughput    22.2 ok/s
+  succeeded     354
+  failed        475
+  p50 / p95 / p99   1114 / 1532 / 1619 ms
+  slowest       1928 ms
+  ✗ 475×  You already have a purchase in progress at this business. Finish or ca
+── Ledger integrity ─────────────────────────────
+  accounts      5
+  postings      23809
+  sum           0.0000
+  dead-lettered 0
+
+── Money-path integrity ─────────────────────────
+  ✓ wallet available balance equals the sum of its available lots
+  ✓ wallet reserved balance equals the sum of its active holds
+  ✓ every lot consumed exactly as much as its live allocations claim
+  ✓ a released hold gave every unit back to its lot
+  ✓ no lot is over-consumed or negative
+  ✓ reservation status agrees with the intent that owns it
+  ✓ no active hold is left without an intent still waiting on it
+  ✓ no wallet was credited twice for one transaction
+  ✓ no deferred lot was written twice for one transaction
+  ✓ no unconfirmed intent left financial effects behind
+  ✓ all six legs match the program's own split on 2589 confirmed purchase(s)
+  ✓ every purchase paid its own customer's chain
+  holds         SETTLED=919 RELEASED=92
+  intents       CONFIRMED=2589
+  ✓ balanced, and every account agrees with a replay of its postings

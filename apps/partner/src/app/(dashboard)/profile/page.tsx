@@ -9,7 +9,7 @@ import { partnerApi } from '@/lib/api/partnerApi';
 
 /**
  * The partner's public profile — "о себе" plus an optional priced
- * products/services list, confirmed with Arman 2026-08-23. Shown to a
+ * products/services list, confirmed by the product decision of 2026-08-23. Shown to a
  * customer on the partner's own page in the mobile app.
  *
  * Unlike `/branding`, there is no review step here: what an owner saves on
@@ -153,7 +153,7 @@ function AboutCard({
 }
 
 /**
- * What a `fuel`-category station actually sells (Arman, 2026-08-26) —
+ * What a `fuel`-category station actually sells (product decision, 2026-08-26) —
  * "Газ"/"Бензин" on the customer's map filter. Propane and methane are one
  * customer-facing bucket, "Газ" — this toggle does not distinguish them.
  * Same immediacy as `AboutCard`: no review step, live on the map instantly.

@@ -41,7 +41,7 @@ export interface ProposeRuleParams {
  * ## Why this is not one call any more
  *
  * It used to be. `open()` wrote a live rule and, on a unique violation,
- * retried — and that retry is the bug Arman's review of 15.09.2026 names.
+ * retried — and that retry is the bug the product review of 15.09.2026 names.
  * Two administrators changing HAZE's margin at the same time did not
  * conflict: one won version 4, the loser's retry read the new state and
  * became version 5. Both looked like deliberate, audited changes. Nobody had

@@ -17,15 +17,17 @@ import {
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PurchaseIntent,
   PurchaseIntentStatus,
   TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parseMoney, parsePositiveMoney, roundCharge } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
 import { MediaViewService } from '../media/media-view.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
@@ -44,8 +46,25 @@ import { WalletService } from '../wallet/wallet.service';
 import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+import { PurchaseFundingService } from './purchase-funding.service';
 
 type Tx = Prisma.TransactionClient;
+
+/**
+ * Who is agreeing to a purchase's economics: a member of staff at the till,
+ * or the partner's own POS integration acting under its API key (brief §20,
+ * 20.09.2026). Exactly one, never both — the database says the same.
+ */
+/** See `PurchaseIntentsService.create`. */
+export interface CreatePurchaseIntentOptions {
+  /** Runs inside the insert's transaction, after it; a throw rolls the purchase back. */
+  bind?: (tx: Prisma.TransactionClient, intentId: string) => Promise<void>;
+}
+
+export type MerchantActor = { staffUserId: string } | { apiKeyId: string };
+
+const toMerchantActor = (actor: string | MerchantActor): MerchantActor =>
+  typeof actor === 'string' ? { staffUserId: actor } : actor;
 
 /**
  * The new standard purchase flow — spec §7-16. Additive alongside the
@@ -63,7 +82,7 @@ type Tx = Prisma.TransactionClient;
  *    entries, kept as two separate postings rather than one netted figure
  *    (spec §23).
  *
- * Business rule (2026-08-16, Arman): `confirm()`/`reject()` — the manual
+ * Business rule (2026-08-16): `confirm()`/`reject()` — the manual
  * cashier action below — applies only to *non-integrated* partners. A
  * *verified integrated* partner (API, POS, EV/OCPI — a `PartnerIntegration`
  * at `PartnerIntegrationStatus.ACTIVE`) is meant to have its own confirmed
@@ -115,6 +134,17 @@ export function isConfirmationCodeCollision(error: unknown): boolean {
  * collision is retried by drawing another code, and retrying *this* one would
  * loop twelve times and then lie about why it failed.
  */
+/**
+ * The hold's ledger id is bookkeeping, not part of the purchase a client
+ * sees. `prepaidAmountApplied` is; the transaction behind it is not.
+ */
+function withoutHoldId<T extends object>(row: T): Omit<T, 'prepaidHoldTransactionId'> {
+  const { prepaidHoldTransactionId: _hold, ...rest } = row as T & {
+    prepaidHoldTransactionId?: unknown;
+  };
+  return rest;
+}
+
 export function isLivePurchaseCollision(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
     return false;
@@ -202,6 +232,8 @@ export class PurchaseIntentsService {
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly media: MediaViewService,
+    private readonly customerBalance: CustomerBalanceService,
+    private readonly funding: PurchaseFundingService,
   ) {}
 
   /**
@@ -353,7 +385,7 @@ export class PurchaseIntentsService {
   >(intent: T) {
     const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
     const brand = await this.media.brandFor(intent);
-    return { ...rest, partnerBrand: brand! };
+    return { ...withoutHoldId(rest), partnerBrand: brand! };
   }
 
   async toDtos<
@@ -366,7 +398,7 @@ export class PurchaseIntentsService {
     const brands = await this.media.brandsFor(intents);
     return intents.map((intent) => {
       const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
-      return { ...rest, partnerBrand: brands.get(intent)! };
+      return { ...withoutHoldId(rest), partnerBrand: brands.get(intent)! };
     });
   }
 
@@ -376,7 +408,17 @@ export class PurchaseIntentsService {
    * No financial ledger entry exists yet — spec §7 step 11 is explicit that
    * those wait for confirmation.
    */
-  async create(dto: CreatePurchaseIntentDto, customerId: string) {
+  /**
+   * Opens a purchase.
+   *
+   * `opts.bind` (audit 21.09.2026, D10) runs inside the same transaction as
+   * the insert, after it, and is what a caller that owns a durable identity
+   * — a POS checkout — uses to tie that identity to this purchase. Either
+   * both the purchase and the binding commit, or neither: there is no
+   * moment where a purchase exists without its checkout knowing, which is
+   * the moment a second customer could claim the same till sale.
+   */
+  async create(dto: CreatePurchaseIntentDto, customerId: string, opts: CreatePurchaseIntentOptions = {}) {
     const grossAmount = parsePositiveMoney(dto.grossAmount, 'grossAmount');
     const bonusAmountRequested = dto.bonusAmountRequested
       ? parseMoney(dto.bonusAmountRequested, 'bonusAmountRequested')
@@ -518,7 +560,21 @@ export class PurchaseIntentsService {
       );
     }
 
-    const ordinaryPaymentRemainder = grossAmount.minus(bonusAmountRequested);
+    /*
+     * The hybrid split (20.09.2026): what the customer's own stored money
+     * covers, checked by the same rule set the checkout quote ran a moment
+     * ago. Refused here on message; guaranteed below by the hold, which is
+     * the atomic check. Zero — and everything exactly as before — for every
+     * client that does not send it.
+     */
+    const { prepaidAmountApplied, ordinaryPaymentRemainder } = await this.funding.components({
+      customerId,
+      partnerId: partner.id,
+      grossAmount: dto.grossAmount,
+      bonusAmountRequested: dto.bonusAmountRequested,
+      prepaidAmountApplied: dto.prepaidAmountApplied,
+      paymentRoute,
+    });
     const intentTimeoutSeconds = this.config.get('purchasePolicy.intentTimeoutSeconds', {
       infer: true,
     });
@@ -562,52 +618,93 @@ export class PurchaseIntentsService {
         bonusReservationId = reservation.reservationId;
       }
 
-      const intent = await this.createWithConfirmationCode({
-        customerId,
-        partnerId: partner.id,
-        partnerBranchId: dto.partnerBranchId,
-        grossAmount,
-        bonusAmountRequested,
-        ordinaryPaymentRemainder,
-        paymentRoute,
-        ...lineItem,
-        // The terms this purchase is priced under, named exactly and by
-        // version. `negotiatedRateBps` is still written below — it is what
-        // a purchase with no rule falls back to, and leaving it out would
-        // make the two paths differ in more than the arithmetic.
-        contributionRuleId: rule?.id ?? null,
-        contributionRuleVersion: rule?.version ?? null,
-        contributionRuleKind: rule?.kind ?? null,
-        // Commercial snapshot — spec §8. Frozen here; later changes to the
-        // partner's settings never touch a PurchaseIntent already created.
-        negotiatedRateBps: partner.bonusAccrualRateBps,
-        maxBonusPaymentPercent: partner.maxBonusPaymentPercent,
-        // Brand snapshot — spec §2.2, and frozen for the same reason the
-        // commercial snapshot above is. The QR purchase preview, the
-        // pending/confirmed/rejected/expired views, and the transaction this
-        // becomes must all show one consistent identity, even if the partner
-        // replaces its logo while the customer is still standing at the till.
-        brandDisplayName: partner.displayName,
-        brandLogoAssetId: partner.logoAssetId,
-        bonusReservationId,
-        sourceTransactionId: transaction.id,
-        expiresAt,
-      });
-
-      await this.auditService.record({
-        actorUserId: customerId,
-        action: AuditAction.PURCHASE_INTENT_CREATED,
-        entityType: 'PurchaseIntent',
-        entityId: intent.id,
-        metadata: {
+      /*
+       * The hold and the row are one transaction. A purchase that names a
+       * prepaid amount exists only if the money was actually spoken for,
+       * and money is spoken for only if the purchase exists — the database
+       * says the same (`purchase_intents_prepaid_hold_matches_amount`). The
+       * id is drawn up front so the hold's ledger posting can name the
+       * purchase it belongs to before the row is written.
+       */
+      const intentId = randomUUID();
+      const intent = await this.createWithConfirmationCode(
+        {
+          id: intentId,
+          customerId,
           partnerId: partner.id,
-          grossAmount: grossAmount.toString(),
-          bonusAmountRequested: bonusAmountRequested.toString(),
+          partnerBranchId: dto.partnerBranchId,
+          grossAmount,
+          bonusAmountRequested,
+          prepaidAmountApplied,
+          ordinaryPaymentRemainder,
           paymentRoute,
+          ...lineItem,
+          // The terms this purchase is priced under, named exactly and by
+          // version. `negotiatedRateBps` is still written below — it is what
+          // a purchase with no rule falls back to, and leaving it out would
+          // make the two paths differ in more than the arithmetic.
+          contributionRuleId: rule?.id ?? null,
           contributionRuleVersion: rule?.version ?? null,
           contributionRuleKind: rule?.kind ?? null,
+          // Commercial snapshot — spec §8. Frozen here; later changes to the
+          // partner's settings never touch a PurchaseIntent already created.
+          negotiatedRateBps: partner.bonusAccrualRateBps,
+          maxBonusPaymentPercent: partner.maxBonusPaymentPercent,
+          // Brand snapshot — spec §2.2, and frozen for the same reason the
+          // commercial snapshot above is. The QR purchase preview, the
+          // pending/confirmed/rejected/expired views, and the transaction this
+          // becomes must all show one consistent identity, even if the partner
+          // replaces its logo while the customer is still standing at the till.
+          brandDisplayName: partner.displayName,
+          brandLogoAssetId: partner.logoAssetId,
+          bonusReservationId,
+          sourceTransactionId: transaction.id,
+          expiresAt,
         },
-      });
+        {
+          fund: prepaidAmountApplied.greaterThan(0)
+            ? async (tx) => {
+                const hold = await this.customerBalance.holdForPurchase(
+                  { userId: customerId, amount: prepaidAmountApplied, purchaseIntentId: intentId },
+                  tx,
+                );
+                return { prepaidHoldTransactionId: hold.id };
+              }
+            : undefined,
+          /*
+           * The audit row and the caller's binding travel in the insert's
+           * own transaction (audit 21.09.2026, D18). They used to run after
+           * it, and an audit INSERT failing *after* the purchase had
+           * committed fell into the catch below — which released the bonus
+           * reservation and failed the source transaction of a purchase that
+           * was, in fact, live. Now a failure here rolls the purchase back
+           * with it, and the compensation below only ever runs when nothing
+           * was committed.
+           */
+          afterInsert: async (tx, created) => {
+            await this.auditService.record(
+              {
+                actorUserId: customerId,
+                action: AuditAction.PURCHASE_INTENT_CREATED,
+                entityType: 'PurchaseIntent',
+                entityId: created.id,
+                metadata: {
+                  partnerId: partner.id,
+                  grossAmount: grossAmount.toString(),
+                  bonusAmountRequested: bonusAmountRequested.toString(),
+                  prepaidAmountApplied: prepaidAmountApplied.toString(),
+                  externalAmountDue: ordinaryPaymentRemainder.toString(),
+                  paymentRoute,
+                  contributionRuleVersion: rule?.version ?? null,
+                  contributionRuleKind: rule?.kind ?? null,
+                },
+              },
+              tx,
+            );
+            if (opts.bind) await opts.bind(tx, created.id);
+          },
+        },
+      );
 
       return intent;
     } catch (err) {
@@ -631,7 +728,7 @@ export class PurchaseIntentsService {
    *
    * ## The failure this closes
    *
-   * Found in Arman's review of 15.09.2026, and it is a cross-purchase
+   * Found in the product review of 15.09.2026, and it is a cross-purchase
    * failure, which is why no amount of care inside a single purchase
    * prevents it:
    *
@@ -740,8 +837,23 @@ export class PurchaseIntentsService {
    * capacity limit, not a request error — hence 503 and "try again", which
    * is exactly what a customer's retry does.
    */
+  /**
+   * `fund`, when given, runs inside a transaction with the insert and its
+   * result is merged into the row — the prepaid hold. The whole transaction
+   * is retried on a code collision rather than the insert alone, because a
+   * unique violation aborts a PostgreSQL transaction outright: there is no
+   * "try another code" inside one. Retrying the hold with it costs one
+   * cheap posting on the rare collision and keeps the invariant that a
+   * purchase and its hold are written together or not at all. Without
+   * `fund` the insert runs on the plain client, exactly as it always has.
+   */
   private async createWithConfirmationCode(
     data: Omit<Prisma.PurchaseIntentUncheckedCreateInput, 'confirmationCode'>,
+    hooks: {
+      fund?: (tx: Tx) => Promise<Partial<Prisma.PurchaseIntentUncheckedCreateInput>>;
+      /** Runs after the insert, in the same transaction; a throw rolls the purchase back. */
+      afterInsert?: (tx: Tx, created: PurchaseIntent) => Promise<void>;
+    } = {},
   ) {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       // `randomInt` and not `Math.random`: the code is not a secret, but it
@@ -751,7 +863,14 @@ export class PurchaseIntentsService {
       // own note on why this is Char(4).
       const confirmationCode = String(randomInt(0, 10_000)).padStart(4, '0');
       try {
-        return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
+        // Always a transaction, even without `fund`: the audit row and a
+        // caller's binding commit with the row or not at all (D18/D10).
+        return await this.prisma.$transaction(async (tx) => {
+          const funded = hooks.fund ? await hooks.fund(tx) : {};
+          const created = await tx.purchaseIntent.create({ data: { ...data, ...funded, confirmationCode } });
+          if (hooks.afterInsert) await hooks.afterInsert(tx, created);
+          return created;
+        });
       } catch (error) {
         // Two creates raced past the service check and the database arbitrated.
         // Not retryable — drawing a different code changes nothing about the
@@ -892,10 +1011,11 @@ export class PurchaseIntentsService {
       contributionRuleKind: ContributionRuleKind | null;
       merchantApprovedAt: Date | null;
     },
-    staffUserId: string,
+    actor: string | MerchantActor,
     dto: ApprovePurchaseIntentDto,
   ): Promise<void> {
     if (intent.merchantApprovedAt) return;
+    const merchant = toMerchantActor(actor);
 
     const perUnit =
       intent.contributionRuleKind === ContributionRuleKind.FIXED_PER_UNIT ||
@@ -945,7 +1065,9 @@ export class PurchaseIntentsService {
     const claimed = await this.prisma.purchaseIntent.updateMany({
       where: { id: intent.id, merchantApprovedAt: null },
       data: {
-        merchantApprovedByUserId: staffUserId,
+        ...('staffUserId' in merchant
+          ? { merchantApprovedByUserId: merchant.staffUserId }
+          : { merchantApprovedByApiKeyId: merchant.apiKeyId }),
         merchantApprovedAt: new Date(),
         merchantApprovalNote:
           dto.note ??
@@ -971,7 +1093,13 @@ export class PurchaseIntentsService {
    * `FIXED_PER_UNIT` and `HYBRID` terms, where the quantity *is* the price of
    * the sale — see `stampMerchantApproval`.
    */
-  async confirm(intentId: string, staffUserId: string, dto: ApprovePurchaseIntentDto = {}) {
+  async confirm(
+    intentId: string,
+    actor: string | MerchantActor,
+    dto: ApprovePurchaseIntentDto = {},
+  ) {
+    const merchant = toMerchantActor(actor);
+    const staffUserId = 'staffUserId' in merchant ? merchant.staffUserId : null;
     const intent = await this.findByIdOrThrow(intentId);
 
     if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) {
@@ -1009,7 +1137,7 @@ export class PurchaseIntentsService {
      * economics; the only difference from the provider route is that they are
      * also saying the money is in the till. Stamped here rather than made a
      * separate call so the direct flow keeps working exactly as it did, which
-     * Arman's decision requires.
+     * the product decision requires.
      *
      * Before `settlePurchase`, because the freeze trigger fires on the update
      * that sets these columns and would otherwise have to run against a row
@@ -1017,7 +1145,7 @@ export class PurchaseIntentsService {
      * Payment` checks it — a per-unit partner's cashier confirms the quantity
      * whichever route the money takes.
      */
-    await this.stampMerchantApproval(intent, staffUserId, dto);
+    await this.stampMerchantApproval(intent, merchant, dto);
 
     const outcome = await this.settlePurchase(intent, staffUserId);
     if (outcome === 'already-resolved') {
@@ -1031,7 +1159,11 @@ export class PurchaseIntentsService {
       action: AuditAction.PURCHASE_INTENT_CONFIRMED,
       entityType: 'PurchaseIntent',
       entityId: intentId,
-      metadata: { partnerId: intent.partnerId, grossAmount: intent.grossAmount.toString() },
+      metadata: {
+        partnerId: intent.partnerId,
+        grossAmount: intent.grossAmount.toString(),
+        ...('apiKeyId' in merchant ? { via: 'pos', apiKeyId: merchant.apiKeyId } : {}),
+      },
     });
 
     return this.findByIdOrThrow(intentId);
@@ -1069,7 +1201,7 @@ export class PurchaseIntentsService {
    * existed, a verified provider payment moved the cash and left the purchase
    * itself unconfirmed: no points accrued, no referral paid, no commission
    * posted, and an intent still sitting in AWAITING_CONFIRMATION that a
-   * cashier could then be asked to confirm. Found by Arman's review of the
+   * cashier could then be asked to confirm. Found by the product review of the
    * branch, and it is the worst class of bug this system can have — money
    * moved, economics did not.
    *
@@ -1139,7 +1271,7 @@ export class PurchaseIntentsService {
     // place that difference exists. Everything below — the split into green,
     // deferred and three referrer legs, the debit to `PARTNER_PAYABLE`, the
     // refund reversal — takes `pool` and never asks how it was arrived at.
-    // That was Arman's explicit instruction: a new pricing shape must not
+    // That was the explicit product decision: a new pricing shape must not
     // duplicate the ledger economics.
     /*
      * Everything this method reads before opening (or joining) a transaction
@@ -1269,6 +1401,27 @@ export class PurchaseIntentsService {
         await this.postRedemptionCompensation(intent, tx);
       }
 
+      /*
+       * The prepaid component: the money held at creation is now owed to
+       * the partner. This is the *only* posting the funding split adds to a
+       * confirmation — bonus already posts its compensation above, and what
+       * the customer paid at the till or through the provider is not TuTak's
+       * money and posts nothing here. Everything else on this path (pool,
+       * cashback, deferred lot, referrers, contribution) is identical
+       * whichever way the purchase was funded, which is the whole point.
+       */
+      if (intent.prepaidAmountApplied.greaterThan(0)) {
+        await this.customerBalance.settleHoldToPartner(
+          {
+            userId: intent.customerId,
+            partnerId: intent.partnerId,
+            amount: intent.prepaidAmountApplied,
+            purchaseIntentId: intent.id,
+          },
+          tx,
+        );
+      }
+
       return 'settled' as const;
     };
 
@@ -1298,7 +1451,7 @@ export class PurchaseIntentsService {
    * A purchase with no rule snapshot — every purchase made before
    * 15.09.2026, and every partner who has never had a rule written — falls
    * back to `negotiatedRateBps`, which is the arithmetic those purchases have
-   * always used. Arman's decision is explicit that existing percentage
+   * always used. The product decision is explicit that existing percentage
    * partners are not to be broken.
    */
   private async contributionFor(
@@ -1511,7 +1664,7 @@ export class PurchaseIntentsService {
    * a cashier could still reject an intent whose deadline had already
    * passed but that the expiry sweep hadn't reached yet: the row would end
    * up `REJECTED` by a decision made outside the window it was valid for,
-   * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
+   * instead of `EXPIRED` (docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 11,
    * confirmed by independent audit — GitHub issue #28).
    */
   /**
@@ -1532,7 +1685,7 @@ export class PurchaseIntentsService {
    * a cashier could still reject an intent whose deadline had already
    * passed but that the expiry sweep hadn't reached yet: the row would end
    * up `REJECTED` by a decision made outside the window it was valid for,
-   * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
+   * instead of `EXPIRED` (docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 11,
    * confirmed by independent audit — GitHub issue #28).
    */
   async reject(intentId: string, staffUserId: string, dto: RejectPurchaseIntentDto) {
@@ -1546,9 +1699,9 @@ export class PurchaseIntentsService {
      * Turning a purchase away while the provider may be holding the
      * customer's money releases their points and closes the purchase, so a
      * callback landing afterwards has nothing to complete — the customer has
-     * paid and received nothing. Not named in Arman's list of expiry/cancel,
-     * but it is the same transition with the same consequence, and leaving it
-     * open would have been leaving a hole I could see.
+     * paid and received nothing. Not named in the product decision's list of
+     * expiry/cancel, but it is the same transition with the same consequence,
+     * and leaving it open would have left a known hole.
      */
     if (await this.hasUnsafePspAttempt(intentId)) {
       throw new ConflictException(
@@ -1583,6 +1736,9 @@ export class PurchaseIntentsService {
           'partner_rejected',
           tx,
         );
+      }
+      if (intent.prepaidHoldTransactionId) {
+        await this.customerBalance.releaseHold(intent.prepaidHoldTransactionId, tx);
       }
       if (intent.sourceTransactionId) {
         await this.transactionsService.markFailed(
@@ -1694,6 +1850,9 @@ export class PurchaseIntentsService {
           tx,
         );
       }
+      if (intent.prepaidHoldTransactionId) {
+        await this.customerBalance.releaseHold(intent.prepaidHoldTransactionId, tx);
+      }
       if (intent.sourceTransactionId) {
         await this.transactionsService.markFailed(
           intent.sourceTransactionId,
@@ -1739,6 +1898,7 @@ export class PurchaseIntentsService {
   private async expireOne(intent: {
     id: string;
     bonusReservationId: string | null;
+    prepaidHoldTransactionId: string | null;
     sourceTransactionId: string | null;
   }): Promise<boolean> {
     /*
@@ -1781,6 +1941,11 @@ export class PurchaseIntentsService {
           'purchase_intent_expired',
           tx,
         );
+      }
+      // Same exactly-once release as the bonus: the status claim above is
+      // what authorises it, and both commit with it or not at all.
+      if (intent.prepaidHoldTransactionId) {
+        await this.customerBalance.releaseHold(intent.prepaidHoldTransactionId, tx);
       }
       if (intent.sourceTransactionId) {
         await this.transactionsService.markFailed(

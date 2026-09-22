@@ -36,7 +36,7 @@ type Tx = Prisma.TransactionClient;
  * comes from a redirect: `SUCCESS_URL` and `FAIL_URL` move a browser, and a
  * browser arriving somewhere is not evidence that money did.
  */
-export type CustomerPaymentStatus =
+export type CustomerPaymentProgress =
   | { state: 'NOT_APPLICABLE' }
   | { state: 'NOT_STARTED' }
   /** A bill is open and the provider has told us nothing yet. */
@@ -46,14 +46,43 @@ export type CustomerPaymentStatus =
   | { state: 'SUCCEEDED'; attemptId: string }
   /** The provider said, authoritatively, that no money moved. */
   | { state: 'FAILED'; attemptId: string }
+  /**
+   * The platform stopped waiting and nothing authoritative has said whether
+   * the money moved (audit 21.09.2026, D06). Not `WAITING_PROVIDER`: nobody
+   * is waiting for the provider's page any more, and telling the customer
+   * so is what keeps them from paying at the till on top. Not
+   * `REQUIRES_RECONCILIATION` either: no person has been asked yet; the
+   * ageing sweep escalates it there.
+   */
+  | { state: 'UNRESOLVED'; attemptId: string }
   /** Nobody can say yet. A human is looking. */
   | { state: 'REQUIRES_RECONCILIATION'; attemptId: string };
+
+/**
+ * Why a begin call would be refused right now. Mirrors, in order, the checks
+ * `beginAttempt` makes — this is the same decision previewed, not a second
+ * opinion. `beginAttempt` still checks for itself: the preview is what the
+ * app shows, the call is what the app gets.
+ */
+export type CustomerPaymentBlockReason =
+  | 'NOT_ROUTED'
+  | 'PROVIDER_DISABLED'
+  | 'PURCHASE_NOT_OPEN'
+  | 'NOTHING_TO_COLLECT'
+  | 'AWAITING_MERCHANT_APPROVAL'
+  | 'UNRESOLVED_ATTEMPT';
+
+export type CustomerPaymentStatus = CustomerPaymentProgress & {
+  purchaseStatus: PurchaseIntentStatus;
+  canBeginPayment: boolean;
+  reason: CustomerPaymentBlockReason | null;
+};
 
 /**
  * The states a verified provider confirmation may still settle from.
  *
  * `EXPIRED` is the one that was missing, and its absence was a real defect
- * found by Arman on 15.09.2026. `EXPIRED` means the platform stopped waiting;
+ * found in the review of 15.09.2026. `EXPIRED` means the platform stopped waiting;
  * it does not mean the provider stopped processing. A customer who paid at
  * minute 31 of a 30-minute window had genuinely paid, and the callback saying
  * so could not be applied: the claim accepted only `INITIATED` and
@@ -218,7 +247,7 @@ export class PspPaymentService {
      * confirm. The gross, the quantity and the unit price on this purchase
      * were typed by the customer; one verified callback on them would credit
      * the partner, mint the customer's own cashback and pay their referrers
-     * for a sale that never happened. Arman's decision of 15.09.2026.
+     * for a sale that never happened. The product decision of 15.09.2026.
      *
      * The database refuses the same thing — a provider attempt cannot be
      * inserted against an unapproved purchase — so this check is the sentence
@@ -238,8 +267,8 @@ export class PspPaymentService {
      * own, and that gap was real: an amount mismatch clears `liveKey` (the
      * attempt is no longer *live*) while leaving the money's fate unknown.
      * Without this check the customer could be handed a fresh bill for a
-     * purchase the provider may already have charged them for. Found by
-     * Arman's review.
+     * purchase the provider may already have charged them for. Found in
+     * the product review.
      *
      * `EXPIRED` and `REQUIRES_RECONCILIATION` are both in the unsafe set for
      * the same reason `EXPIRED` always was: nothing authoritative said the
@@ -386,17 +415,68 @@ export class PspPaymentService {
   ): Promise<CustomerPaymentStatus> {
     const intent = await this.prisma.purchaseIntent.findUnique({
       where: { id: purchaseIntentId },
-      select: { id: true, customerId: true, status: true, paymentRoute: true },
+      select: {
+        id: true,
+        customerId: true,
+        status: true,
+        paymentRoute: true,
+        merchantApprovedAt: true,
+        ordinaryPaymentRemainder: true,
+      },
     });
     if (!intent || intent.customerId !== customerId) {
       throw new NotFoundException('Purchase not found');
     }
+
+    const progress = await this.paymentProgress(intent);
+    const reason = await this.beginBlockReason(intent);
+    return {
+      ...progress,
+      purchaseStatus: intent.status,
+      canBeginPayment: reason === null,
+      reason,
+    };
+  }
+
+  /**
+   * The same questions `beginAttempt` asks, in the same order, answered
+   * without side effects.
+   *
+   * Before this existed the app's only way to learn *why* it could not pay
+   * was to try and be refused — and it then told every customer the cashier
+   * had not agreed the amount, whatever the actual refusal said. A purchase
+   * that expired, a provider switched off, an earlier attempt that may hold
+   * the money: all of them read as "waiting for the cashier".
+   */
+  private async beginBlockReason(intent: {
+    id: string;
+    status: PurchaseIntentStatus;
+    paymentRoute: PaymentRoute;
+    merchantApprovedAt: Date | null;
+    ordinaryPaymentRemainder: Prisma.Decimal;
+  }): Promise<CustomerPaymentBlockReason | null> {
+    if (intent.paymentRoute !== PaymentRoute.TUTAK_PSP) return 'NOT_ROUTED';
+    if (!this.config.get('features.tutakPspEnabled', { infer: true })) {
+      return 'PROVIDER_DISABLED';
+    }
+    if (intent.status !== PurchaseIntentStatus.AWAITING_CONFIRMATION) return 'PURCHASE_NOT_OPEN';
+    if (intent.ordinaryPaymentRemainder.lessThanOrEqualTo(0)) return 'NOTHING_TO_COLLECT';
+    if (!intent.merchantApprovedAt) return 'AWAITING_MERCHANT_APPROVAL';
+    if (await this.hasUnsafeAttempt(intent.id)) return 'UNRESOLVED_ATTEMPT';
+    return null;
+  }
+
+  private async paymentProgress(intent: {
+    id: string;
+    status: PurchaseIntentStatus;
+    paymentRoute: PaymentRoute;
+  }): Promise<CustomerPaymentProgress> {
     if (intent.paymentRoute !== PaymentRoute.TUTAK_PSP) {
       return { state: 'NOT_APPLICABLE' };
     }
 
     const attempt = await this.prisma.pspPaymentAttempt.findFirst({
-      where: { purchaseIntentId },
+      where: { purchaseIntentId: intent.id },
       orderBy: { createdAt: 'desc' },
       select: { id: true, status: true, providerBillId: true },
     });
@@ -429,6 +509,9 @@ export class PspPaymentService {
     });
     if (queued > 0) return { state: 'PROCESSING', attemptId: attempt.id };
 
+    if (attempt.status === PspAttemptStatus.EXPIRED) {
+      return { state: 'UNRESOLVED', attemptId: attempt.id };
+    }
     return { state: 'WAITING_PROVIDER', attemptId: attempt.id };
   }
 
@@ -631,7 +714,7 @@ export class PspPaymentService {
    * people to finish, in two separate authenticated calls.
    *
    * It used to be one call taking two user ids, which is not dual control:
-   * the second person existed only as a string the first one typed. Arman's
+   * the second person existed only as a string the first one typed. The product
    * decision of 15.09.2026 is explicit that one HTTP caller cannot supply the
    * identity of the second human, so the proposal is persisted on its own and
    * `confirmManualReconciliation` is a separate request by a separate

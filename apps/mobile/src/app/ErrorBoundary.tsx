@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 
 interface Props {
@@ -57,6 +57,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
       <View style={styles.screen}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>TuTak could not start</Text>
+          {/* eslint-disable-next-line @typescript-eslint/no-require-imports */}
+          <Image source={require('../../assets/jako/warning.webp')} style={styles.jako} resizeMode="contain" />
           <Text style={styles.hint}>
             Please send a photograph of this screen — everything below is what went wrong.
           </Text>
@@ -91,6 +93,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0F' },
+  jako: { width: 96, height: 96, marginBottom: 12 },
   content: {
     padding: 20,
     // This boundary sits *outside* `SafeAreaProvider` on purpose — it has to

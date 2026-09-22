@@ -63,7 +63,7 @@ export const CURRENT_REFERRAL_PROGRAM_VERSION = ReferralProgramVersion.THREE_LEV
 /**
  * Three referral mechanics live here, and they are not the same thing — see
  * docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md §3 and the 2026-08-22 3-level
- * rework (`docs/NEXT_CLAUDE_TASK.md`, GitHub issue #28 comment 5360139848)
+ * rework (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`, GitHub issue #28 comment 5360139848)
  * for why they evolved the way they did rather than being written fresh.
  *
  * 1. **The 3-level upward chain's recurring pool share** (2026-08-22,

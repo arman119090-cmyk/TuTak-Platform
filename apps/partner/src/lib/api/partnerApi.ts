@@ -20,7 +20,7 @@ export const partnerApi = {
   },
 
   /**
-   * The public profile's "about" text — confirmed with Arman 2026-08-23. No
+   * The public profile's "about" text — confirmed by the product decision of 2026-08-23. No
    * review step on the API side, unlike `mediaApi.submit`: this takes effect
    * for every customer the instant it saves.
    */
@@ -32,7 +32,7 @@ export const partnerApi = {
   },
 
   /**
-   * What a `fuel`-category station actually sells (Arman, 2026-08-26) — see
+   * What a `fuel`-category station actually sells (product decision, 2026-08-26) — see
    * `PartnerDto.sellsGas`/`sellsPetrol`. Same immediacy as `updateAbout`:
    * no review step, live on the customer's map the instant it saves.
    */
@@ -61,7 +61,8 @@ export const partnerApi = {
     return data.data;
   },
 
-  /** A partner's own locations — spec: partner self-service branches (Arman, 2026-08-26). */
+  /** A partner's own locations — spec: partner self-service branches
+      (product decision, 2026-08-26). */
   async listBranches(id: string) {
     const { data } = await httpClient.get<ApiEnvelope<PartnerBranchDto[]>>(
       `/partners/${id}/branches`,

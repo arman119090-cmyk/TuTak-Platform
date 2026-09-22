@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════
--- Three of Arman's decisions of 15.09.2026, in one migration because they
+-- Three product decisions of 15.09.2026, in one migration because they
 -- touch the same two tables and splitting them would leave the schema in a
 -- state neither version describes.
 --

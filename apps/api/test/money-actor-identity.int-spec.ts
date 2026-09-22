@@ -12,7 +12,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  * Who a financial action is attributed to, and the ways it must not be
  * decidable by the caller.
  *
- * The rule Arman set on 15.09.2026: an actor comes from the authenticated
+ * The rule set on 15.09.2026: an actor comes from the authenticated
  * request, never from a field in the body. These tests hold the *service*
  * layer to the shape that makes that enforceable — a method that accepts two
  * actor ids in one call can be driven by one person however careful the

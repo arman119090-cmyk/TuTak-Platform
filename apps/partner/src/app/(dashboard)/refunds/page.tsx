@@ -22,6 +22,9 @@ import {
 import { getPrimaryPartnerId, isPartnerApprover, useAuthStore } from '@/lib/stores/authStore';
 import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
 import { refundRequestApi } from '@/lib/api/refundRequestApi';
+import { describeApiFailure, type ApiFailure } from '@/lib/apiError';
+import { dataStateOf } from '@/lib/queryState';
+import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
 const num = (v: string | number | null | undefined) =>
   Number(v ?? 0)
@@ -34,7 +37,52 @@ const STATUS_TONE = {
   [RefundRequestStatus.REJECTED]: 'danger',
 } as const;
 
+/**
+ * What a decision means to the person reading it. `APPROVED` is deliberately
+ * not "refunded": approval is the owner's programmatic decision and the
+ * engine's ledger move — whether cash was physically handed back at a till
+ * is a separate fact this screen has no record of.
+ */
+const STATUS_TEXT: Record<RefundRequestStatus, string> = {
+  [RefundRequestStatus.PENDING]: 'Waiting for a decision',
+  [RefundRequestStatus.APPROVED]: 'Approved — refund recorded',
+  [RefundRequestStatus.REJECTED]: 'Refused',
+};
+
 const shortId = (id: string) => id.slice(-8).toUpperCase();
+
+/**
+ * What the person is told when a decision or a request did not go through.
+ *
+ * After a lost answer the only honest thing to do is to read the request
+ * again: a decision may have landed. So the lists are re-read first and the
+ * person is told to look before pressing anything a second time. A second
+ * approve on a request already approved is refused by the server anyway,
+ * but the screen must not invite it.
+ */
+function ActionFailure({ failure }: { failure: ApiFailure }) {
+  if (failure.kind === 'state') {
+    return (
+      <p role="alert" className="text-[12px] text-pending-text">
+        This changed before your tap: {failure.message} The lists have been refreshed.
+      </p>
+    );
+  }
+  if (failure.kind === 'network') {
+    return (
+      <p role="alert" className="text-[12px] text-danger-text">
+        The server could not be reached, so the outcome is unknown. The lists have been
+        re-read — check the request&rsquo;s state before deciding again. Nothing you typed was
+        lost.
+      </p>
+    );
+  }
+  return (
+    <p role="alert" className="text-[12px] text-danger-text">
+      {failure.message} Nothing you typed was lost.
+    </p>
+  );
+}
 
 /**
  * Returns, both halves of them.
@@ -51,6 +99,14 @@ const shortId = (id: string) => id.slice(-8).toUpperCase();
  * Which half is actionable is decided by `isPartnerApprover`, and only to
  * choose what to draw — the server refuses either way, so this is about not
  * showing a cashier a button that can only answer 403.
+ *
+ * ## Two lists, two truths
+ *
+ * The requests and the completed sales come from different endpoints and
+ * fail independently. Each has its own loading, error, stale and empty
+ * state: "nothing waiting" is only ever said when the server said so, and a
+ * completed sale that cannot be listed is a load error, not a sale that did
+ * not happen.
  */
 export default function RefundsPage() {
   const { user } = useAuthStore();
@@ -63,8 +119,10 @@ export default function RefundsPage() {
   const [requestingFor, setRequestingFor] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [decisionFailure, setDecisionFailure] = useState<{ id: string; failure: ApiFailure } | null>(null);
+  const [createFailure, setCreateFailure] = useState<ApiFailure | null>(null);
 
-  const { data: requests } = useQuery({
+  const requestsQuery = useQuery({
     queryKey: ['refund-requests', partnerId],
     queryFn: () => refundRequestApi.list(partnerId!),
     enabled: !!partnerId,
@@ -72,16 +130,18 @@ export default function RefundsPage() {
     // typing on theirs, at the same counter.
     refetchInterval: 10_000,
   });
+  const requestsState = dataStateOf(requestsQuery);
 
-  const { data: confirmed } = useQuery({
+  const purchasesQuery = useQuery({
     queryKey: ['confirmed-purchases', partnerId],
     queryFn: () => purchaseIntentApi.list(partnerId!, PurchaseIntentStatus.CONFIRMED),
     enabled: !!partnerId,
   });
+  const purchasesState = dataStateOf(purchasesQuery);
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['refund-requests', partnerId] });
-    queryClient.invalidateQueries({ queryKey: ['confirmed-purchases', partnerId] });
+    void queryClient.invalidateQueries({ queryKey: ['refund-requests', partnerId] });
+    void queryClient.invalidateQueries({ queryKey: ['confirmed-purchases', partnerId] });
   };
 
   const create = useMutation({
@@ -90,35 +150,81 @@ export default function RefundsPage() {
         amount: amount.trim() ? amount.trim() : undefined,
         reason: reason.trim(),
       }),
+    onMutate: () => setCreateFailure(null),
     onSuccess: () => {
       setRequestingFor(null);
       setAmount('');
       setReason('');
       invalidate();
     },
+    // The form stays open with what was typed. If the request did land
+    // (a lost answer), the refreshed list shows it waiting and the server
+    // refuses a second one for the same sale — the button disappears.
+    onError: (error) => {
+      setCreateFailure(describeApiFailure(error));
+      invalidate();
+    },
   });
+
+  /*
+   * Decisions: re-read first, never act blind.
+   *
+   * A lost answer on approve or refuse is not "it did not happen". The
+   * lists are refreshed before the person sees the message, so a request
+   * that was in fact decided has already left the waiting list by the time
+   * they read "check before deciding again".
+   */
+  const onDecisionError = (id: string) => (error: unknown) => {
+    const described = describeApiFailure(error);
+    setDecisionFailure({ id, failure: described });
+    if (described.kind === 'state') {
+      setRejectingId(null);
+      setNote('');
+    }
+    invalidate();
+  };
 
   const approve = useMutation({
     mutationFn: (id: string) => refundRequestApi.approve(id),
+    onMutate: () => setDecisionFailure(null),
     onSuccess: invalidate,
+    onError: (error, id) => onDecisionError(id)(error),
   });
 
   const reject = useMutation({
     mutationFn: (id: string) => refundRequestApi.reject(id, { note: note.trim() || undefined }),
+    onMutate: () => setDecisionFailure(null),
     onSuccess: () => {
       setRejectingId(null);
       setNote('');
       invalidate();
     },
+    onError: (error, id) => onDecisionError(id)(error),
   });
 
-  const all = requests ?? [];
+  const all = requestsQuery.data ?? [];
   const pending = all.filter((r) => r.status === RefundRequestStatus.PENDING);
   const decided = all.filter((r) => r.status !== RefundRequestStatus.PENDING);
-  const purchases = confirmed ?? [];
   // A purchase with a request already waiting cannot take a second one —
   // the server refuses it, so the button is not offered either.
   const pendingByIntent = new Set(pending.map((r) => r.purchaseIntentId));
+
+  /*
+   * Finding the sale the customer is bringing back.
+   *
+   * The completed list is everything the server returns, which for a busy
+   * business is long. Matched locally on the till code or the last
+   * characters of the id — both things a receipt or the customer's phone
+   * shows — so the cashier is not scrolling a month of sales by eye.
+   */
+  const [saleFilter, setSaleFilter] = useState('');
+  const needle = saleFilter.trim().toUpperCase();
+  const purchases = (purchasesQuery.data ?? []).filter(
+    (purchase) =>
+      !needle ||
+      (purchase.confirmationCode ?? '').includes(needle) ||
+      purchase.id.toUpperCase().includes(needle),
+  );
 
   return (
     <>
@@ -131,92 +237,155 @@ export default function RefundsPage() {
         }
       />
 
+      {partnerId ? <CashToHandBack partnerId={partnerId} /> : null}
+
       <h2 className="mb-3 text-[15px] font-semibold text-ink">
         {canDecide ? 'Waiting for your decision' : 'Waiting for a decision'}
       </h2>
-      {pending.length === 0 ? (
-        <EmptyState
-          title="Nothing waiting"
-          message="A refund your staff ask for appears here until somebody decides it."
+      {requestsState === 'loading' ? (
+        <LoadingNotice label="Loading refund requests…" />
+      ) : requestsState === 'error' ? (
+        <LoadError
+          title="Refund requests could not be loaded"
+          onRetry={() => void requestsQuery.refetch()}
+          busy={requestsQuery.isFetching}
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Sale</Th>
-              <Th align="right">Amount</Th>
-              <Th>Reason</Th>
-              <Th>Asked</Th>
-              <Th align="right">Decision</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {pending.map((request) => (
-              <PendingRow
-                key={request.id}
-                request={request}
-                canDecide={canDecide}
-                rejecting={rejectingId === request.id}
-                note={note}
-                setNote={setNote}
-                onStartReject={() => setRejectingId(request.id)}
-                onCancelReject={() => {
-                  setRejectingId(null);
-                  setNote('');
-                }}
-                onApprove={() => approve.mutate(request.id)}
-                onReject={() => reject.mutate(request.id)}
-                busy={approve.isPending || reject.isPending}
-              />
-            ))}
-          </tbody>
-        </Table>
+        <>
+          {requestsState === 'stale' ? (
+            <StaleNotice
+              asOf={requestsQuery.dataUpdatedAt}
+              what="refund requests"
+              onRetry={() => void requestsQuery.refetch()}
+              busy={requestsQuery.isFetching}
+            />
+          ) : null}
+          {pending.length === 0 ? (
+            <EmptyState
+              title="Nothing waiting"
+              message="A refund your staff ask for appears here until somebody decides it."
+            />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Sale</Th>
+                  <Th align="right">Amount</Th>
+                  <Th>Reason</Th>
+                  <Th>Asked</Th>
+                  <Th align="right">Decision</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {pending.map((request) => (
+                  <PendingRow
+                    key={request.id}
+                    request={request}
+                    canDecide={canDecide}
+                    rejecting={rejectingId === request.id}
+                    note={note}
+                    setNote={setNote}
+                    onStartReject={() => {
+                      setDecisionFailure(null);
+                      setRejectingId(request.id);
+                    }}
+                    onCancelReject={() => {
+                      setRejectingId(null);
+                      setNote('');
+                    }}
+                    onApprove={() => approve.mutate(request.id)}
+                    onReject={() => reject.mutate(request.id)}
+                    busy={approve.isPending || reject.isPending}
+                    failure={decisionFailure?.id === request.id ? decisionFailure.failure : null}
+                  />
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </>
       )}
 
       <h2 className="mb-3 mt-10 text-[15px] font-semibold text-ink">Completed sales</h2>
-      {purchases.length === 0 ? (
-        <EmptyState
-          title="No completed sales yet"
-          message="A sale appears here once it has been confirmed at the till."
+      {purchasesState === 'loading' ? (
+        <LoadingNotice label="Loading completed sales…" />
+      ) : purchasesState === 'error' ? (
+        <LoadError
+          title="Completed sales could not be loaded"
+          onRetry={() => void purchasesQuery.refetch()}
+          busy={purchasesQuery.isFetching}
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Sale</Th>
-              <Th align="right">Amount</Th>
-              <Th align="right">Already returned</Th>
-              <Th align="right">Return</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {purchases.map((purchase) => (
-              <Tr key={purchase.id}>
-                <Td className="font-mono text-[12px] text-faint">{shortId(purchase.id)}</Td>
-                <Td align="right" className="tabular">
-                  {num(purchase.grossAmount)} ֏
-                </Td>
-                <Td align="right" className="tabular text-muted">
-                  {num(purchase.refundedAmount ?? '0')} ֏
-                </Td>
-                <Td align="right">
-                  {pendingByIntent.has(purchase.id) ? (
-                    <span className="text-[12px] text-muted">Waiting for a decision</span>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        setRequestingFor(requestingFor === purchase.id ? null : purchase.id)
-                      }
-                    >
-                      {requestingFor === purchase.id ? 'Cancel' : 'Ask for a refund'}
-                    </Button>
-                  )}
-                </Td>
-              </Tr>
-            ))}
-          </tbody>
-        </Table>
+        <>
+          {purchasesState === 'stale' ? (
+            <StaleNotice
+              asOf={purchasesQuery.dataUpdatedAt}
+              what="completed sales"
+              onRetry={() => void purchasesQuery.refetch()}
+              busy={purchasesQuery.isFetching}
+            />
+          ) : null}
+          {(purchasesQuery.data ?? []).length > 0 ? (
+            <div className="mb-4 max-w-[260px]">
+              <Input
+                placeholder="Till code or sale id"
+                aria-label="Find a completed sale by till code or id"
+                value={saleFilter}
+                onChange={(event) => setSaleFilter(event.target.value)}
+              />
+            </div>
+          ) : null}
+          {purchases.length === 0 ? (
+            <EmptyState
+              title={needle ? 'No completed sale matches' : 'No completed sales yet'}
+              message={
+                needle
+                  ? 'Check the code on the receipt or the customer’s phone. Older sales may not be in this list.'
+                  : 'A sale appears here once it has been confirmed at the till.'
+              }
+            />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Sale</Th>
+                  <Th>Code</Th>
+                  <Th align="right">Amount</Th>
+                  <Th align="right">Already returned</Th>
+                  <Th align="right">Return</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchases.map((purchase) => (
+                  <Tr key={purchase.id}>
+                    <Td className="font-mono text-[12px] text-faint">{shortId(purchase.id)}</Td>
+                    <Td className="font-mono text-[12px]">{purchase.confirmationCode ?? '—'}</Td>
+                    <Td align="right" className="tabular">
+                      {num(purchase.grossAmount)} ֏
+                    </Td>
+                    <Td align="right" className="tabular text-muted">
+                      {num(purchase.refundedAmount ?? '0')} ֏
+                    </Td>
+                    <Td align="right">
+                      {pendingByIntent.has(purchase.id) ? (
+                        <span className="text-[12px] text-muted">Waiting for a decision</span>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setCreateFailure(null);
+                            setRequestingFor(requestingFor === purchase.id ? null : purchase.id);
+                          }}
+                        >
+                          {requestingFor === purchase.id ? 'Cancel' : 'Ask for a refund'}
+                        </Button>
+                      )}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </>
       )}
 
       {requestingFor ? (
@@ -248,11 +417,7 @@ export default function RefundsPage() {
                 Send for a decision
               </Button>
             </div>
-            {create.isError ? (
-              <p className="text-[12px] text-danger-text">
-                Could not send this request. Check the amount is not more than the sale.
-              </p>
-            ) : null}
+            {createFailure ? <ActionFailure failure={createFailure} /> : null}
           </div>
         </Surface>
       ) : null}
@@ -280,7 +445,7 @@ export default function RefundsPage() {
                   </Td>
                   <Td className="text-muted">{request.reason}</Td>
                   <Td>
-                    <Badge tone={STATUS_TONE[request.status]}>{request.status}</Badge>
+                    <Badge tone={STATUS_TONE[request.status]}>{STATUS_TEXT[request.status]}</Badge>
                     {request.decisionNote ? (
                       <span className="ml-2 text-[12px] text-muted">{request.decisionNote}</span>
                     ) : null}
@@ -306,6 +471,7 @@ function PendingRow({
   onApprove,
   onReject,
   busy,
+  failure,
 }: {
   request: PurchaseIntentRefundRequestDto;
   canDecide: boolean;
@@ -317,6 +483,7 @@ function PendingRow({
   onApprove: () => void;
   onReject: () => void;
   busy: boolean;
+  failure: ApiFailure | null;
 }) {
   return (
     <Tr>
@@ -332,31 +499,121 @@ function PendingRow({
         {!canDecide ? (
           <span className="text-[12px] text-muted">Waiting for an owner or manager</span>
         ) : rejecting ? (
-          <div className="flex items-center justify-end gap-2">
-            <Input
-              placeholder="Why not?"
-              aria-label="Why this refund is refused"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-            />
-            <Button variant="destructive" loading={busy} onClick={onReject}>
-              Refuse
-            </Button>
-            <Button variant="secondary" onClick={onCancelReject}>
-              Cancel
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <Input
+                placeholder="Why not?"
+                aria-label="Why this refund is refused"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <Button variant="destructive" loading={busy} onClick={onReject}>
+                Refuse
+              </Button>
+              <Button variant="secondary" onClick={onCancelReject}>
+                Cancel
+              </Button>
+            </div>
+            {failure ? <ActionFailure failure={failure} /> : null}
           </div>
         ) : (
-          <div className="flex items-center justify-end gap-2">
-            <Button loading={busy} onClick={onApprove}>
-              Approve
-            </Button>
-            <Button variant="secondary" onClick={onStartReject}>
-              Refuse
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <Button loading={busy} onClick={onApprove}>
+                Approve
+              </Button>
+              <Button variant="secondary" onClick={onStartReject}>
+                Refuse
+              </Button>
+            </div>
+            {failure ? <ActionFailure failure={failure} /> : null}
           </div>
         )}
       </Td>
     </Tr>
+  );
+}
+
+/**
+ * The till's own to-do list (§26): refunds whose cash or card slice the
+ * business still has to hand back. TuTak moved the bonus and balance
+ * slices itself; this one it only records, on the business's word, and
+ * the customer is not told the refund is complete until that word is
+ * given.
+ */
+function CashToHandBack({ partnerId }: { partnerId: string }) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ['pending-external-refunds', partnerId],
+    queryFn: () => purchaseIntentApi.pendingExternalRefunds(partnerId),
+    refetchInterval: 30_000,
+  });
+  const [failure, setFailure] = useState<{ id: string; failure: ApiFailure } | null>(null);
+  const confirm = useMutation({
+    mutationFn: (id: string) => purchaseIntentApi.confirmExternalRefund(id),
+    onSuccess: () => {
+      setFailure(null);
+      void queryClient.invalidateQueries({ queryKey: ['pending-external-refunds', partnerId] });
+    },
+    onError: (error, id) => setFailure({ id, failure: describeApiFailure(error) }),
+  });
+  const state = dataStateOf(query);
+  const rows = query.data ?? [];
+  if (state === 'loading') return null;
+  if (state === 'error') {
+    return (
+      <div className="mb-6">
+        <LoadError
+          title="Cash still to hand back could not be loaded"
+          onRetry={() => void query.refetch()}
+          busy={query.isFetching}
+        />
+      </div>
+    );
+  }
+  if (rows.length === 0) return null;
+  return (
+    <section className="mb-8">
+      <h2 className="mb-3 text-[15px] font-semibold text-ink">Cash to hand back</h2>
+      <p className="mb-3 text-[13px] text-faint">
+        TuTak has already returned the bonus and balance parts of these refunds. The part the customer paid at
+        your till is yours to hand back — confirm here once you have.
+      </p>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Sale</Th>
+            <Th align="right">Refund</Th>
+            <Th align="right">Hand back in cash</Th>
+            <Th>Reason</Th>
+            <Th align="right">Action</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <Tr key={row.id}>
+              <Td className="font-mono text-[13px]">{row.confirmationCode ?? row.purchaseIntentId.slice(-8).toUpperCase()}</Td>
+              <Td align="right" className="tabular text-faint">
+                {Number(row.amount).toLocaleString('en-US')} ֏
+              </Td>
+              <Td align="right" className="tabular text-[16px] font-semibold text-ink">
+                {Number(row.externalRefundDue).toLocaleString('en-US')} ֏
+              </Td>
+              <Td className="text-[13px] text-faint">{row.reason}</Td>
+              <Td align="right">
+                <div className="flex flex-col items-end gap-1">
+                  <Button size="sm" loading={confirm.isPending && confirm.variables === row.id} onClick={() => confirm.mutate(row.id)}>
+                    Confirm cash returned
+                  </Button>
+                  {failure?.id === row.id ? (
+                    <span className="text-[12px] text-danger-text">{failure.failure.message}</span>
+                  ) : null}
+                </div>
+              </Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </section>
   );
 }

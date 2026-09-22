@@ -5,11 +5,12 @@ import {
   PrismaClient,
   ReconciliationOutcome,
   ReconciliationSource,
+  TransactionType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PartnerSettlementService } from '../src/modules/partner-settlements/partner-settlement.service';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
-import { createPartner, createStaffUser } from './setup/fixtures';
+import { createCustomer, createPartner, createStaffUser } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
@@ -213,6 +214,65 @@ describe('PartnerSettlementService (integration)', () => {
     ).rejects.toThrow();
   });
 
+  describe('which branch a statement line came from', () => {
+    /**
+     * A partner told "we owe you 14,500" can only check it against their
+     * tills if each line names the shop as well as the day. The branch is
+     * not stored on the settlement line — it is resolved from the source
+     * row, which is why a line whose source is not a sale has none.
+     */
+    it('names the branch behind a sale line and leaves a non-sale line without one', async () => {
+      const branch = await prisma.partnerBranch.create({
+        data: {
+          partnerId,
+          name: 'Komitas',
+          address: 'Komitas 12',
+          city: 'Yerevan',
+          latitude: 40.19,
+          longitude: 44.51,
+        },
+      });
+      const { user: customer } = await createCustomer(prisma);
+      const sale = await prisma.transaction.create({
+        data: {
+          userId: customer.id,
+          partnerId,
+          partnerBranchId: branch.id,
+          type: TransactionType.QR_PAYMENT,
+          amount: new Decimal('9000'),
+        },
+      });
+
+      const [payable, bonus] = await Promise.all([
+        ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }),
+        ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
+      ]);
+      await ledger.post({
+        kind: 'partner.bonus_redemption_compensation',
+        sourceType: 'Transaction',
+        sourceId: sale.id,
+        postings: [
+          { accountId: bonus.id, direction: PostingDirection.DEBIT, amount: new Decimal('9000') },
+          { accountId: payable.id, direction: PostingDirection.CREDIT, amount: new Decimal('9000') },
+        ],
+      });
+      // A second line from a source that is not a sale at all.
+      await accrue('1000');
+
+      const draft = await settlements.createDraft({ ...period(), partnerId, actorId: maker });
+      const statement = await settlements.partnerStatement(draft.id, partnerId);
+
+      const fromSale = statement.entries.find((e) => e.sourceId === sale.id);
+      expect(fromSale?.branch).toEqual({ id: branch.id, name: 'Komitas', address: 'Komitas 12' });
+
+      // `accrue` posts against a purchase id that no row carries, which is
+      // exactly the shape of every line that is not a sale: nothing to
+      // resolve, so nothing is claimed.
+      const other = statement.entries.find((e) => e.sourceId !== sale.id);
+      expect(other?.branch).toBeNull();
+    });
+  });
+
   describe('a refund after the partner has already been paid', () => {
     it('leaves the paid settlement alone and carries the debt forward', async () => {
       await accrue('9000');
@@ -288,7 +348,7 @@ describe('PartnerSettlementService (integration)', () => {
     expect(unsettled.net.toFixed(2)).toBe('1000.00');
   });
   /**
-   * Finding 3 of Arman's review of 15.09.2026, and it was a real bug rather
+   * Finding 3 of the product review of 15.09.2026, and it was a real bug rather
    * than a design preference.
    *
    * `FAILED` used to be terminal. The settlement kept its claimed
@@ -664,7 +724,7 @@ describe('PartnerSettlementService (integration)', () => {
   /**
    * A partner may say the money never arrived. A partner may not say whether
    * it moved — they are the payee, and a payee who can do both can order
-   * their own second payment. Arman's decision of 15.09.2026.
+   * their own second payment. The product decision of 15.09.2026.
    */
   describe('a partner reporting a missing transfer', () => {
     async function reported() {

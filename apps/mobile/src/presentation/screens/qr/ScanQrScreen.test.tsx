@@ -4,7 +4,7 @@ import { ScanQrScreen } from './ScanQrScreen';
 import { qrApi } from '../../../data/api/qrApi';
 
 /**
- * NEXT_CLAUDE_TASK.md requirement 1 / 10: scanning a partner's code must
+ * REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 1 / 10: scanning a partner's code must
  * open a PurchaseIntent and must never reach the legacy `qrApi.redeem()`
  * charge — this is the regression that proves the old financial path is no
  * longer wired to the normal customer scan flow, not just that it still

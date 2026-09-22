@@ -231,7 +231,7 @@ export class PartnersController {
   }
 
   /**
-   * The public profile's "about" text — confirmed with Arman 2026-08-23.
+   * The public profile's "about" text — confirmed by the product decision of 2026-08-23.
    * Same OWNER-only scoping as `commercial-settings` above and the same
    * reasoning: this is the partner's own public identity, and a STAFF/MANAGER
    * operator changing what customers read about the business is a call the
@@ -308,7 +308,7 @@ export class PartnersController {
 
   /**
    * A partner's own locations — spec: partner self-service branches
-   * (Arman, 2026-08-26: partners add their own, not the platform on their
+   * (product decision, 2026-08-26: partners add their own, not the platform on their
    * behalf). Individual CRUD rather than `replaceOfferings`' bulk-replace:
    * unlike an offering, a branch is referenced by `PurchaseIntent` and
    * `PartnerIntegration` rows, so it can never be blindly deleted-and-

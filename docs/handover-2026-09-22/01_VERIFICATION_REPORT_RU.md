@@ -290,10 +290,11 @@ git show 369eda1:apps/api/src/modules/partner-settlements/settleable-kinds.ts
 
 ## 8. Что не сделано в этом задании
 
-- Ссылка на CI кода — в шапке; на момент записи зелены 4 из 5 job'ов
-  (`Lint, test and build`, три шарда integration), `Build the container
-  images` доcобирался. Прогон CI на коммите с этими документами — после их
-  коммита, он ничего в коде не меняет.
+- CI на `941c566` — **5 из 5 job'ов зелёные**: `Lint, test and build`, три
+  шарда integration и `Build the container images` (сборка трёх образов,
+  подъём стека, E2E, прогон собранного мобильного приложения против стека,
+  репетиция backup/restore). Прогон на коммите с этими документами идёт
+  отдельно и кода не меняет.
 - Интегрированный кандидат — это ветка `claude/railway-connector-check-wy0ffq`
   поверх RC. Отдельной новой сборки APK не делалось: ключи EAS и доступ к
   сборочному сервису в этой среде отсутствуют (см. `04_RELEASE_READINESS_RU.md`

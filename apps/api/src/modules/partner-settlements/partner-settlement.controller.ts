@@ -10,6 +10,7 @@ import {
   CancelSettlementDto,
   CreateSettlementDraftDto,
   MarkReadyDto,
+  PartnerActivityQueryDto,
   ProposeSettlementReconciliationDto,
   RecordTransferDto,
   ReportTransferProblemDto,
@@ -252,6 +253,31 @@ export class PartnerSettlementPartnerController {
   ) {
     assertPartnerScope(actor, partnerId);
     return this.settlements.purchaseBreakdown(partnerId, purchaseIntentId);
+  }
+
+  /**
+   * Everything that moved this partner's debt, filtered and paged.
+   *
+   * Same permission as the position it itemises: this *is* the position,
+   * line by line, and a reader who may not see the total may not see its
+   * parts either.
+   */
+  @Get(':partnerId/activity')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
+  async activity(
+    @CurrentUser() actor: RequestUser,
+    @UuidParam('partnerId') partnerId: string,
+    @Query() query: PartnerActivityQueryDto,
+  ) {
+    assertPartnerScope(actor, partnerId);
+    return this.settlements.activity(partnerId, {
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+      branchId: query.branchId,
+      state: query.state,
+      cursor: query.cursor,
+      limit: query.limit,
+    });
   }
 
   @Post(':partnerId/statement/:id/report-problem')

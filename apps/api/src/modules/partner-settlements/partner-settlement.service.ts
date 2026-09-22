@@ -1396,6 +1396,252 @@ export class PartnerSettlementService {
     };
   }
 
+
+  /**
+   * Every movement on this partner's payable, filtered and paged.
+   *
+   * ## Why this is not the statement list
+   *
+   * A statement answers "what was in the transfer you sent me". This answers
+   * the question that comes before it — "where did this figure come from" —
+   * and it has to cover the movements no statement has claimed yet, the ones
+   * a draft is holding, and the payouts themselves. So it reads the payable
+   * account's postings directly, which is also what makes it agree with the
+   * position tiles by construction rather than by a second arithmetic.
+   *
+   * Nothing is excluded by kind. An unclassified posting is money whose side
+   * nobody has decided, and dropping it here would make the list quietly
+   * disagree with the ledger balance above it — see `unrecognisedKinds`.
+   *
+   * ## Paging that does not lie under a moving list
+   *
+   * Keyset, on `(postedAt, id)` descending, never `OFFSET`. New postings
+   * arrive on this account while a partner is reading page three, and with
+   * an offset that means rows shifting across page boundaries — a line read
+   * twice, or, worse, one never read at all. `(postedAt, id)` is unique
+   * because `id` is, so the order is total and a cursor names exactly one
+   * row. A row-value comparison does the seek in one index-friendly
+   * predicate rather than the three-way OR people write by hand and get
+   * wrong at the tie.
+   *
+   * ## The selection totals are the selection's
+   *
+   * `selection` sums what the filter selected and says how many rows that
+   * is. It is deliberately a separate object from anything in `position()`:
+   * "the six sales at this branch in March net to 18 000" is not a statement
+   * about what TuTak owes the organisation, and a screen that lets those two
+   * numbers look like the same kind of thing invites a partner to read a
+   * filtered subtotal as their balance.
+   */
+  async activity(
+    partnerId: string,
+    opts: {
+      from?: Date;
+      to?: Date;
+      branchId?: string;
+      state?: ActivityState;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<PartnerActivityPage> {
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    // Before the account lookup, not after. A cursor the client did not get
+    // from us is a bug in the client either way, and on a partner with no
+    // postings yet the early return below would have answered it with an
+    // empty page — a refusal that looks exactly like "you have no activity".
+    const cursor = decodeCursor(opts.cursor);
+    const account = await this.prisma.ledgerAccount.findFirst({
+      where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+      select: { id: true },
+    });
+    if (!account) {
+      return {
+        rows: [],
+        nextCursor: null,
+        selection: { credits: '0.0000', debits: '0.0000', net: '0.0000', rowCount: 0 },
+        filtered: isFiltered(opts),
+      };
+    }
+
+    const where = this.activityWhere(account.id, opts);
+    // `::timestamp` against an offset-free literal, never a bound `Date`.
+    // `postedAt` is `TIMESTAMP(3)` without a time zone, and comparing it
+    // with a `timestamptz` parameter makes PostgreSQL convert the column
+    // through the session's time zone — so the same cursor would seek to a
+    // different row on a server whose TZ is not UTC. See `stamp()`.
+    const seek = cursor
+      ? Prisma.sql`AND (t."postedAt", p."id") < (${cursor.postedAt}::timestamp, ${cursor.id})`
+      : Prisma.empty;
+
+    const raw = await this.prisma.$queryRaw<ActivityRawRow[]>`
+      SELECT p."id", p."amount", p."direction"::text AS "direction",
+             t."kind", t."sourceType", t."sourceId", t."postedAt",
+             e."settlementId", s."status"::text AS "settlementStatus"
+      FROM "ledger_postings" p
+      JOIN "ledger_transactions" t ON t."id" = p."transactionId"
+      LEFT JOIN "partner_settlement_entries" e ON e."ledgerPostingId" = p."id"
+      LEFT JOIN "partner_settlements" s ON s."id" = e."settlementId"
+      WHERE ${where}
+      ${seek}
+      ORDER BY t."postedAt" DESC, p."id" DESC
+      LIMIT ${limit + 1}`;
+
+    // The totals belong to the filter, not to the page: a partner who
+    // filters to one branch wants that branch's six months, not the fifty
+    // rows that happened to fit on screen. So the cursor is deliberately
+    // absent from this query.
+    const [totals] = await this.prisma.$queryRaw<
+      { credits: Decimal | null; debits: Decimal | null; rows: bigint }[]
+    >`
+      SELECT
+        SUM(CASE WHEN p."direction" = 'CREDIT' THEN p."amount" ELSE 0 END) AS "credits",
+        SUM(CASE WHEN p."direction" = 'DEBIT' THEN p."amount" ELSE 0 END) AS "debits",
+        COUNT(*) AS "rows"
+      FROM "ledger_postings" p
+      JOIN "ledger_transactions" t ON t."id" = p."transactionId"
+      LEFT JOIN "partner_settlement_entries" e ON e."ledgerPostingId" = p."id"
+      LEFT JOIN "partner_settlements" s ON s."id" = e."settlementId"
+      WHERE ${where}`;
+
+    const page = raw.slice(0, limit);
+    const last = page[page.length - 1];
+    const nextCursor =
+      raw.length > limit && last ? encodeCursor(last.postedAt, last.id) : null;
+
+    const sources = page.map((row) => ({ sourceType: row.sourceType, sourceId: row.sourceId }));
+    const [branchBySource, purchaseFacts] = await Promise.all([
+      this.branchesForEntries(sources),
+      this.purchaseFactsFor(sources),
+    ]);
+
+    const credits = new Decimal(totals?.credits ?? 0);
+    const debits = new Decimal(totals?.debits ?? 0);
+
+    return {
+      rows: page.map((row) => {
+        // CREDIT on a payable raises what TuTak owes; DEBIT lowers it. The
+        // sign is the whole content of the column a partner reads, so it is
+        // computed here once rather than in each client.
+        const signed =
+          row.direction === PostingDirection.CREDIT
+            ? new Decimal(row.amount)
+            : new Decimal(row.amount).negated();
+        const facts = purchaseFacts.get(row.sourceId) ?? null;
+        return {
+          postingId: row.id,
+          occurredAt: row.postedAt.toISOString(),
+          kind: row.kind,
+          /** What this line did to the debt, signed. */
+          debtChange: signed.toFixed(4),
+          state: stateOf(row.settlementStatus),
+          settlementId: row.settlementId,
+          sourceType: row.sourceType,
+          sourceId: row.sourceId,
+          /**
+           * What a partner quotes when they query this line. The purchase's
+           * own uuid is the only stable identifier it has — the four-digit
+           * confirmation code returns to the pool the moment the purchase
+           * ends, so it names nothing a day later. Shortened to the last
+           * eight characters because that is what fits on a row and what a
+           * person can read out; `sourceId` above is the whole of it.
+           */
+          reference: reference(row.sourceId),
+          /**
+           * The branch, by name only. The organisation is the one the
+           * partner is already looking at, and repeating the whole
+           * organisation → branch chain on every row buries the figures the
+           * row exists to show.
+           */
+          branch: branchBySource.get(`${row.sourceType}:${row.sourceId}`)?.name ?? null,
+          /**
+           * The factual source of the line. For a sale that is the person's
+           * permanent employee code as frozen at confirmation; for a
+           * provider or integration confirmation there is no person and the
+           * source says so rather than naming one.
+           */
+          employeeCode: facts?.employeeCode ?? null,
+          confirmationSource: facts?.confirmationSource ?? null,
+          /** Whether `purchaseBreakdown` can itemise this line further. */
+          itemisable: row.sourceType === 'PurchaseIntent',
+        };
+      }),
+      nextCursor,
+      selection: {
+        credits: credits.toFixed(4),
+        debits: debits.toFixed(4),
+        net: credits.minus(debits).toFixed(4),
+        rowCount: Number(totals?.rows ?? 0),
+      },
+      /** True when the totals above describe less than the whole account. */
+      filtered: isFiltered(opts),
+    };
+  }
+
+  /** The filter, shared by the page query and the selection totals so the
+      two can never disagree about what was selected. */
+  private activityWhere(
+    accountId: string,
+    opts: { from?: Date; to?: Date; branchId?: string; state?: ActivityState },
+  ): Prisma.Sql {
+    const parts: Prisma.Sql[] = [Prisma.sql`p."accountId" = ${accountId}`];
+    if (opts.from) parts.push(Prisma.sql`t."postedAt" >= ${stamp(opts.from)}::timestamp`);
+    if (opts.to) parts.push(Prisma.sql`t."postedAt" <= ${stamp(opts.to)}::timestamp`);
+    if (opts.branchId) {
+      // The branch lives on the source row, not on the posting. A subquery
+      // rather than a post-filter in TypeScript: filtering after the page
+      // was fetched would return short pages and a cursor that skips rows.
+      parts.push(Prisma.sql`(
+        (t."sourceType" = 'PurchaseIntent' AND t."sourceId" IN (
+          SELECT "id" FROM "purchase_intents" WHERE "partnerBranchId" = ${opts.branchId}))
+        OR (t."sourceType" = 'Transaction' AND t."sourceId" IN (
+          SELECT "id" FROM "transactions" WHERE "partnerBranchId" = ${opts.branchId}))
+      )`);
+    }
+    if (opts.state === 'UNSETTLED') parts.push(Prisma.sql`e."id" IS NULL`);
+    if (opts.state === 'IN_SETTLEMENT') {
+      parts.push(
+        Prisma.sql`s."status"::text IN ('DRAFT','READY','APPROVED','PAYMENT_PENDING','FAILED')`,
+      );
+    }
+    if (opts.state === 'UNDER_REVIEW') {
+      parts.push(Prisma.sql`s."status"::text = 'REQUIRES_RECONCILIATION'`);
+    }
+    if (opts.state === 'PAID') parts.push(Prisma.sql`s."status"::text = 'PAID'`);
+    return Prisma.join(parts, ' AND ');
+  }
+
+  /**
+   * Who or what confirmed each purchase behind these lines, read from the
+   * purchase's own frozen columns.
+   *
+   * Frozen, not joined through to the employee: `confirmedByEmployeeCode` is
+   * what the row said on the day, and resolving the person's code now would
+   * make last month's statement follow this month's transfers between
+   * branches. A row that predates the column returns nulls, and the
+   * interface says "not recorded" — it does not guess.
+   */
+  private async purchaseFactsFor(
+    sources: { sourceType: string; sourceId: string }[],
+  ): Promise<Map<string, { employeeCode: string | null; confirmationSource: string | null }>> {
+    const ids = [
+      ...new Set(sources.filter((s) => s.sourceType === 'PurchaseIntent').map((s) => s.sourceId)),
+    ];
+    if (ids.length === 0) return new Map();
+    const intents = await this.prisma.purchaseIntent.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, confirmedByEmployeeCode: true, confirmationSource: true },
+    });
+    return new Map(
+      intents.map((intent) => [
+        intent.id,
+        {
+          employeeCode: intent.confirmedByEmployeeCode,
+          confirmationSource: intent.confirmationSource,
+        },
+      ]),
+    );
+  }
+
   private async branchesForEntries(
     entries: { sourceType: string; sourceId: string }[],
   ): Promise<Map<string, { id: string; name: string; address: string }>> {
@@ -1562,4 +1808,99 @@ export class PartnerSettlementService {
       return tx.partnerSettlement.findUniqueOrThrow({ where: { id } });
     });
   }
+}
+
+/**
+ * Where one movement's money stands. The same four names the position tiles
+ * use, so a row and a tile cannot describe the same amount differently.
+ *
+ * A cancelled settlement is deliberately absent: cancelling deletes its
+ * claims, which is what releases the postings, so those rows read
+ * `UNSETTLED` again — which is what they are.
+ */
+export type ActivityState = 'UNSETTLED' | 'IN_SETTLEMENT' | 'UNDER_REVIEW' | 'PAID';
+
+interface ActivityRawRow {
+  id: string;
+  amount: Decimal;
+  direction: string;
+  kind: string;
+  sourceType: string;
+  sourceId: string;
+  postedAt: Date;
+  settlementId: string | null;
+  settlementStatus: string | null;
+}
+
+/** One line of the partner's own account, as they read it. */
+export interface PartnerActivityRow {
+  postingId: string;
+  occurredAt: string;
+  kind: string;
+  debtChange: string;
+  state: ActivityState;
+  settlementId: string | null;
+  sourceType: string;
+  sourceId: string;
+  reference: string;
+  branch: string | null;
+  employeeCode: string | null;
+  confirmationSource: string | null;
+  itemisable: boolean;
+}
+
+export interface PartnerActivityPage {
+  rows: PartnerActivityRow[];
+  /** Opaque. Pass it back to continue; null means this was the last page. */
+  nextCursor: string | null;
+  /**
+   * What the *filter* selected — never the organisation's position. See
+   * `activity`'s docblock for why these are kept apart.
+   */
+  selection: { credits: string; debits: string; net: string; rowCount: number };
+  filtered: boolean;
+}
+
+function stateOf(status: string | null): ActivityState {
+  if (status === null) return 'UNSETTLED';
+  if (status === PartnerSettlementStatus.PAID) return 'PAID';
+  if (status === PartnerSettlementStatus.REQUIRES_RECONCILIATION) return 'UNDER_REVIEW';
+  return 'IN_SETTLEMENT';
+}
+
+/** The short form of a source id, for quoting a line back to TuTak. */
+function reference(sourceId: string): string {
+  return sourceId.replace(/-/g, '').slice(-8).toUpperCase();
+}
+
+/** An offset-free literal for a `TIMESTAMP(3)` column — see the seek clause. */
+function stamp(value: Date): string {
+  return value.toISOString().replace('Z', '');
+}
+
+function encodeCursor(postedAt: Date, id: string): string {
+  return Buffer.from(`${stamp(postedAt)}|${id}`, 'utf8').toString('base64url');
+}
+
+/**
+ * A cursor the client did not get from us is refused, not ignored.
+ *
+ * Ignoring it would silently restart the list at the top, and a client
+ * paging through a statement would loop over the first page for ever
+ * without anything looking wrong.
+ */
+function decodeCursor(raw?: string): { postedAt: string; id: string } | null {
+  if (!raw) return null;
+  const decoded = Buffer.from(raw, 'base64url').toString('utf8');
+  const at = decoded.indexOf('|');
+  const postedAt = decoded.slice(0, at);
+  const id = decoded.slice(at + 1);
+  if (at < 0 || !/^\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(postedAt) || id.length === 0) {
+    throw new BadRequestException('Invalid cursor');
+  }
+  return { postedAt, id };
+}
+
+function isFiltered(opts: { from?: Date; to?: Date; branchId?: string; state?: ActivityState }) {
+  return Boolean(opts.from || opts.to || opts.branchId || opts.state);
 }

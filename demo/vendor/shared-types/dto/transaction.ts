@@ -34,8 +34,36 @@ export interface TransactionDto {
    * written before intents existed.
    */
   purchaseIntentId: string | null;
+  /**
+   * Which branch of `partnerId` this operation happened at, or null.
+   *
+   * Null for three different reasons, and the reader cannot tell them apart
+   * from here: the operation had no partner at all; it had one but recorded
+   * no branch (a partner-wide QR, an EV session, roaming reconciliation —
+   * see `Transaction.partnerBranchId`); or the branch row has since been
+   * deleted, which sets the column null by `onDelete: SetNull`.
+   *
+   * Unlike `partnerBrand` above, this is **not** a snapshot. There is no
+   * branch name stored on the transaction, so the name here is whatever the
+   * branch is called today. A branch renamed last week renames itself in
+   * every past row. That is a deliberate limitation of the current schema
+   * and not a promise: a receipt-grade branch name would have to be written
+   * onto the transaction the way `brandDisplayName` is.
+   */
+  branch: TransactionBranchDto | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A branch, as an operation row names it. Address as well as name, because
+ * a chain commonly gives every shop the same name and the street is the only
+ * thing that tells two of them apart.
+ */
+export interface TransactionBranchDto {
+  id: string;
+  name: string;
+  address: string;
 }
 
 /** One refund recorded against a purchase — what the customer may see of it. */

@@ -118,6 +118,7 @@
     "detailTitle": "Operation",
     "amounts": "Amounts",
     "date": "Date",
+    "branch": "Branch",
     "amount": "Amount",
     "gross": "Purchase total",
     "bonusApplied": "Paid with bonus",

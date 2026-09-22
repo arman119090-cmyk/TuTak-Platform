@@ -46,6 +46,7 @@ function tx(id: string, overrides: Partial<TransactionDto> = {}): TransactionDto
     metadata: null,
     partnerBrand: { partnerId: 'partner-1', displayName: 'Coffee Corner', logo: null },
     purchaseIntentId: `pi-${id}`,
+    branch: null,
     createdAt: '2026-09-18T10:00:00.000Z',
     updatedAt: '2026-09-18T10:00:00.000Z',
     ...overrides,

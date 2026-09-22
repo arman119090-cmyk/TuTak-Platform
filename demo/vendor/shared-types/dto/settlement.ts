@@ -75,6 +75,27 @@ export interface PartnerSettlementEntryDto {
   sourceType: string;
   sourceId: string;
   occurredAt: string;
+  /**
+   * Which of the partner's own branches produced this line, where the source
+   * records one.
+   *
+   * Set for the two source types that are sales — a purchase and an operation
+   * row. Null for everything that is not: payouts, collections, commission,
+   * the settlement's own carry-in. A partner checking a statement against
+   * their tills needs the shop as well as the day, and null here means "this
+   * line is not a sale", not "we lost the shop".
+   *
+   * Live name, not a snapshot — see `TransactionDto.branch`.
+   */
+  branch: SettlementBranchDto | null;
+}
+
+/** The branch behind a statement line. Address included for the same reason
+    `TransactionBranchDto` carries one: chains reuse names. */
+export interface SettlementBranchDto {
+  id: string;
+  name: string;
+  address: string;
 }
 
 /**

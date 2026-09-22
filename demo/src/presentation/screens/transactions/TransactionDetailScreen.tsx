@@ -105,6 +105,16 @@ export function TransactionDetailScreen() {
 
         <Text style={styles.section}>{t('history.amounts', 'Amounts')}</Text>
         <Row label={t('history.date', 'Date')} value={formatDateTime(tx.createdAt)} />
+        {/* Where it happened, when the operation recorded a branch. Omitted
+            rather than shown empty: a partner-wide QR and an EV session
+            genuinely have no branch, and "Branch: —" on a receipt invites the
+            question of what went wrong when nothing did. */}
+        {tx.branch ? (
+          <Row
+            label={t('history.branch', 'Branch')}
+            value={`${tx.branch.name}, ${tx.branch.address}`}
+          />
+        ) : null}
         <Row
           label={isPurchase ? t('history.gross', 'Purchase total') : t('history.amount', 'Amount')}
           value={formatAmd(tx.amount)}

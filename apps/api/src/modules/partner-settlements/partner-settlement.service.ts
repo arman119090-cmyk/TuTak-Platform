@@ -272,7 +272,7 @@ export class PartnerSettlementService {
     // them cannot show the same 50 000 as both "not yet settled" and "in a
     // settlement". Sequential rather than `Promise.all` because an
     // interactive transaction is one connection.
-    return this.prisma.$transaction(
+    const position = await this.prisma.$transaction(
       async (tx) => {
         const breakdown = await this.unsettled(partnerId, { tx });
         const account = await tx.ledgerAccount.findFirst({
@@ -308,6 +308,19 @@ export class PartnerSettlementService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
+
+    // Branch names are resolved after the snapshot closes, not inside it.
+    // They are labels, not figures: the money in this position has to come
+    // from one consistent read, a shop's name does not, and holding the
+    // REPEATABLE READ transaction open for two more lookups buys nothing.
+    const branchBySource = await this.branchesForEntries(position.entries);
+    return {
+      ...position,
+      entries: position.entries.map((entry) => ({
+        ...entry,
+        branch: branchBySource.get(`${entry.sourceType}:${entry.sourceId}`) ?? null,
+      })),
+    };
   }
 
   private async fundingBreakdown(partnerId: string, tx: Tx): Promise<PartnerFundingBreakdown> {
@@ -1216,6 +1229,74 @@ export class PartnerSettlementService {
   }
 
   /**
+   * Which branch each statement line came from, resolved in two queries for
+   * the whole statement rather than one per line.
+   *
+   * Only two source types can answer: a purchase (`PurchaseIntent`) and an
+   * operation row (`Transaction`), both of which carry `partnerBranchId`.
+   * Everything else on a statement — a payout, a collection, the settlement
+   * itself, a commission line — is not a sale and has no branch, so it stays
+   * null rather than being attributed to one.
+   *
+   * The name is read live, not snapshotted, exactly as `TransactionDto.branch`
+   * documents: renaming a branch renames it on last month's statement too.
+   * A statement a partner has already agreed to therefore stays correct in
+   * its figures, which are what the agreement is about, while its branch
+   * labels follow the current names.
+   */
+  private async branchesForEntries(
+    entries: { sourceType: string; sourceId: string }[],
+  ): Promise<Map<string, { id: string; name: string; address: string }>> {
+    const idsOf = (sourceType: string) =>
+      entries.filter((e) => e.sourceType === sourceType).map((e) => e.sourceId);
+    const intentIds = idsOf('PurchaseIntent');
+    const transactionIds = idsOf('Transaction');
+    if (intentIds.length === 0 && transactionIds.length === 0) return new Map();
+
+    const [intents, transactions] = await Promise.all([
+      intentIds.length
+        ? this.prisma.purchaseIntent.findMany({
+            where: { id: { in: intentIds } },
+            select: { id: true, partnerBranchId: true },
+          })
+        : Promise.resolve([]),
+      transactionIds.length
+        ? this.prisma.transaction.findMany({
+            where: { id: { in: transactionIds } },
+            select: { id: true, partnerBranchId: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // Keyed by source type as well as id, not by the caller's own row id:
+    // a settled statement line has one and a not-yet-settled posting does
+    // not, and both need this lookup. Both ids are uuids and a collision is
+    // not a practical worry, but a key that cannot mix a purchase with a
+    // transaction is one fewer thing to reason about.
+    const branchIdBySource = new Map<string, string>();
+    for (const row of intents) {
+      if (row.partnerBranchId) branchIdBySource.set(`PurchaseIntent:${row.id}`, row.partnerBranchId);
+    }
+    for (const row of transactions) {
+      if (row.partnerBranchId) branchIdBySource.set(`Transaction:${row.id}`, row.partnerBranchId);
+    }
+    if (branchIdBySource.size === 0) return new Map();
+
+    const branches = await this.prisma.partnerBranch.findMany({
+      where: { id: { in: [...new Set(branchIdBySource.values())] } },
+      select: { id: true, name: true, address: true },
+    });
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+
+    const bySource = new Map<string, { id: string; name: string; address: string }>();
+    for (const [key, branchId] of branchIdBySource) {
+      const branch = branchById.get(branchId);
+      if (branch) bySource.set(key, branch);
+    }
+    return bySource;
+  }
+
+  /**
    * A partner's own statement: opening, what moved, closing, itemised.
    *
    * The itemisation is the point. A partner told "we owe you 14,500" has no
@@ -1249,6 +1330,8 @@ export class PartnerSettlementService {
       .filter((e) => e.direction === PostingDirection.DEBIT)
       .reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
 
+    const branchByEntry = await this.branchesForEntries(settlement.entries);
+
     return {
       id: settlement.id,
       status: settlement.status,
@@ -1272,6 +1355,9 @@ export class PartnerSettlementService {
         amount: entry.amount.toFixed(4),
         sourceType: entry.sourceType,
         sourceId: entry.sourceId,
+        /** Which of the partner's own shops the sale came from, where the
+            source records one — see `branchesForEntries`. */
+        branch: branchByEntry.get(`${entry.sourceType}:${entry.sourceId}`) ?? null,
       })),
       /** Every try at moving it, including the ones that bounced. */
       transferAttempts: settlement.transferAttempts.map((attempt) => ({

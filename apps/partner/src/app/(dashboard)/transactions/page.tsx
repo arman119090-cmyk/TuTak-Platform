@@ -66,6 +66,7 @@ export default function TransactionsPage() {
           <thead>
             <tr>
               <Th>Type</Th>
+              <Th>Branch</Th>
               <Th align="right">Amount</Th>
               <Th align="right">Bonus applied</Th>
               <Th align="right">Bonus earned</Th>
@@ -78,6 +79,19 @@ export default function TransactionsPage() {
               <Tr key={tx.id}>
                 <Td>
                   <span className="text-ink">{transactionTypeLabel(tx.type)}</span>
+                </Td>
+                {/* A dash, not an empty cell: a partner-wide QR, an EV session
+                    and roaming all record no branch, and a blank here reads as
+                    "we failed to load it" rather than "there is none". */}
+                <Td>
+                  {tx.branch ? (
+                    <>
+                      <span className="text-ink">{tx.branch.name}</span>
+                      <span className="block text-[12px] text-muted">{tx.branch.address}</span>
+                    </>
+                  ) : (
+                    <span className="text-faint">—</span>
+                  )}
                 </Td>
                 <Td align="right" className="tabular font-medium">
                   {num(tx.amount)} ֏

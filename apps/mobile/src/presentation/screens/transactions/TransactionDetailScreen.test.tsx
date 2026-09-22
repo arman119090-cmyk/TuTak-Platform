@@ -53,6 +53,7 @@ function transaction(overrides: Partial<TransactionDto> = {}): TransactionDto {
     // The brand as it was recorded — not the partner's name today.
     partnerBrand: { partnerId: 'partner-1', displayName: 'Old Name Café', logo: null },
     purchaseIntentId: 'pi-1',
+    branch: null,
     createdAt: '2026-09-18T10:00:00.000Z',
     updatedAt: '2026-09-18T10:00:00.000Z',
     ...overrides,

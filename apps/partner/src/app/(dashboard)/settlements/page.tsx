@@ -412,6 +412,7 @@ export default function SettlementsPage() {
                 <thead>
                   <Tr>
                     <Th>When</Th>
+                    <Th>Branch</Th>
                     <Th>What</Th>
                     <Th>Amount</Th>
                   </Tr>
@@ -420,6 +421,19 @@ export default function SettlementsPage() {
                   {statement.entries.map((e) => (
                     <Tr key={e.id}>
                       <Td>{day(e.occurredAt)}</Td>
+                      {/* Which shop the sale came from. A dash on the lines
+                          that are not sales — a payout, a collection, carried
+                          debt — because those have no branch to name. */}
+                      <Td>
+                        {e.branch ? (
+                          <>
+                            <div>{e.branch.name}</div>
+                            <div className="text-[12px] text-muted">{e.branch.address}</div>
+                          </>
+                        ) : (
+                          <span className="text-faint">—</span>
+                        )}
+                      </Td>
                       <Td>
                         <div>{entryKindText(e.kind)}</div>
                         {/*

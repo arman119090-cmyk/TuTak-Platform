@@ -251,6 +251,11 @@ export class TransactionsService {
         // customer was dealing with, as *that operation* recorded it.
         brandDisplayName: true,
         brandLogoAssetId: true,
+        // Which of the partner's branches this happened at. The column has
+        // been here since the branch work; it simply never reached a client,
+        // so a partner reading their own history could see the day and the
+        // amount but not which of their shops it came from.
+        partnerBranchId: true,
       },
       take: query.limit,
       ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
@@ -279,13 +284,30 @@ export class TransactionsService {
       : [];
     const intentByTransaction = new Map(intents.map((i) => [i.sourceTransactionId, i.id]));
 
+    // One query for every branch on the page, the same batching shape as
+    // `brandsFor` above. Read live rather than snapshotted — see
+    // `TransactionDto.branch`, which says so rather than letting a reader
+    // assume otherwise. Deleted branches simply do not come back and the
+    // row keeps its null.
+    const branchIdsOnPage = [
+      ...new Set(items.map((item) => item.partnerBranchId).filter((id): id is string => id !== null)),
+    ];
+    const branchRows = branchIdsOnPage.length
+      ? await this.prisma.partnerBranch.findMany({
+          where: { id: { in: branchIdsOnPage } },
+          select: { id: true, name: true, address: true },
+        })
+      : [];
+    const branchById = new Map(branchRows.map((b) => [b.id, b]));
+
     return {
       items: items.map((item) => {
-        const { brandDisplayName: _name, brandLogoAssetId: _asset, ...row } = item;
+        const { brandDisplayName: _name, brandLogoAssetId: _asset, partnerBranchId, ...row } = item;
         return {
           ...row,
           partnerBrand: brands.get(item) ?? null,
           purchaseIntentId: intentByTransaction.get(item.id) ?? null,
+          branch: partnerBranchId ? (branchById.get(partnerBranchId) ?? null) : null,
         };
       }),
       nextCursor: items.length === query.limit ? (items.at(-1)?.id ?? null) : null,

@@ -137,9 +137,21 @@ export const settlementApi = {
     return data.data;
   },
 
-  // `reason`, matching `ReportTransferProblemDto` — the server validates it
-  // at 3-500 characters, so an empty complaint is refused there too.
-  async reportProblem(partnerId: string, id: string, reason: string): Promise<PartnerSettlementDto> {
+  /**
+   * "The money you say you sent never arrived."
+   *
+   * `reason`, matching `ReportTransferProblemDto` — the server validates it
+   * at 3-500 characters, so an empty complaint is refused there too.
+   *
+   * The answer is an acknowledgement, not the settlement: the report
+   * changes no status and moves no figure, and a write that answered with a
+   * financial record would be a second way to read one.
+   */
+  async reportProblem(
+    partnerId: string,
+    id: string,
+    reason: string,
+  ): Promise<{ id: string; status: string; reportedAt: string }> {
     const { data } = await httpClient.post(
       `/partner/settlements/${partnerId}/statement/${id}/report-problem`,
       { reason },

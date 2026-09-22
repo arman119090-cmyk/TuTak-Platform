@@ -741,12 +741,22 @@ describe('PartnerSettlementService (integration)', () => {
       return draft;
     }
 
-    it('flags it for finance and records who reported it', async () => {
+    /**
+     * Since 22.09.2026 a report records a report and nothing more.
+     *
+     * It used to move the settlement to `REQUIRES_RECONCILIATION` itself,
+     * which let the payee change the payout status on their own unverified
+     * word — and, since the route carried no permission, let anybody on the
+     * payroll park their employer's payouts in a state only two people at
+     * TuTak can lift. Finance still decides, with the step that was always
+     * theirs.
+     */
+    it('records who reported it without moving the settlement', async () => {
       const settlement = await reported();
       const after = await prisma.partnerSettlement.findUniqueOrThrow({
         where: { id: settlement.id },
       });
-      expect(after.status).toBe(PartnerSettlementStatus.REQUIRES_RECONCILIATION);
+      expect(after.status).toBe(PartnerSettlementStatus.PAYMENT_PENDING);
       expect(after.reconciliationSource).toBe(ReconciliationSource.PARTNER_REPORT);
       expect(after.reconciliationReportedByUserId).toBe(partnerUser);
       // A report is not a finding: nothing is proposed and nothing is paid.
@@ -756,8 +766,18 @@ describe('PartnerSettlementService (integration)', () => {
       ).toBe(0);
     });
 
-    it('will not let the reporting partner propose or confirm the answer', async () => {
+    /** Finance's own step, which the report does not perform for them. */
+    async function reviewed() {
       const settlement = await reported();
+      await settlements.markRequiresReconciliation(settlement.id, {
+        actorId: maker,
+        reason: 'Partner says nothing arrived; bank statement unclear',
+      });
+      return settlement;
+    }
+
+    it('will not let the reporting partner propose or confirm the answer', async () => {
+      const settlement = await reviewed();
 
       await expect(
         settlements.proposeReconciliationOutcome(settlement.id, {
@@ -778,7 +798,7 @@ describe('PartnerSettlementService (integration)', () => {
     });
 
     it('is resolved by two finance people, and then retryable', async () => {
-      const settlement = await reported();
+      const settlement = await reviewed();
 
       await settlements.proposeReconciliationOutcome(settlement.id, {
         actorId: maker,

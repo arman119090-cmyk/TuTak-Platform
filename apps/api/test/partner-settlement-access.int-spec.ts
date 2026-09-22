@@ -73,14 +73,25 @@ describe('Partner settlement access (integration)', () => {
     );
 
     /**
-     * Reporting a missing transfer is not a money read: a cashier who was
-     * told the bank transfer never arrived should be able to say so, and
-     * saying so asserts nothing about whether money moved (the route's own
-     * docblock). It stays outside the gate on purpose, and this pins that
-     * as a decision rather than an oversight.
+     * Reporting a missing transfer is behind the same gate, since
+     * 22.09.2026.
+     *
+     * The previous reading was that a cashier told the transfer never
+     * arrived should be able to say so. Two things were wrong with it. A
+     * cashier cannot know: they cannot see the settlement, its amount or
+     * its id, and the only screen that shows them is gated on this
+     * permission. And filing a report used to move the settlement to
+     * `REQUIRES_RECONCILIATION` — so an ungated route handed anybody on the
+     * payroll a way to park their employer's payouts in a state only two
+     * people at TuTak can lift.
+     *
+     * Both halves are now closed: the report changes no status, and only
+     * somebody who can see the settlement may file one. This is a
+     * narrowing — a manager could file one before and cannot now — so it
+     * widens nobody's financial access.
      */
-    it('leaves reporting a problem outside that gate on purpose', () => {
-      expect(permissionsOn('reportProblem')).not.toContain(PermissionName.SETTLEMENT_READ);
+    it('gates reporting a problem on the same permission as the reads', () => {
+      expect(permissionsOn('reportProblem')).toContain(PermissionName.SETTLEMENT_READ);
     });
   });
 

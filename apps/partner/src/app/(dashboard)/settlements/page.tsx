@@ -44,6 +44,18 @@ const STATUS_TONE: Record<string, 'pending' | 'available' | 'danger' | 'neutral'
   CANCELLED: 'neutral',
 };
 
+/**
+ * Where a report about a missing transfer is accepted. Mirrors the server's
+ * own `REPORTABLE`; a control the server would refuse teaches people the app
+ * is broken.
+ */
+const REPORTABLE_STATUSES = new Set([
+  'PAYMENT_PENDING',
+  'PAID',
+  'FAILED',
+  'REQUIRES_RECONCILIATION',
+]);
+
 const STATUS_TEXT: Record<string, string> = {
   DRAFT: 'Being prepared — not paid yet',
   READY: 'Awaiting approval — not paid yet',
@@ -411,8 +423,15 @@ export default function SettlementsPage() {
                         There is nothing to dispute about a settlement still being
                         assembled, and offering the control anyway would invite a
                         complaint the server would only refuse.
+
+                        The four states here are exactly the server's
+                        `REPORTABLE` list. `FAILED` belongs on it: a bank can
+                        report a transfer as bounced and still have moved the
+                        money, which is the case worth hearing about. A second
+                        report while a review is open is recorded rather than
+                        refused, so the control stays.
                       */}
-                      {s.status === 'PAYMENT_PENDING' || s.status === 'PAID' ? (
+                      {REPORTABLE_STATUSES.has(s.status) ? (
                         <Button variant="secondary" onClick={() => setReporting(s)}>
                           Report a problem
                         </Button>
@@ -518,7 +537,8 @@ export default function SettlementsPage() {
           />
           <p className="text-[12px] text-faint">
             This tells TuTak to look. It does not record whether the money
-            arrived — two people at TuTak decide that, and neither of them is
+            arrived, and it does not change this settlement or what you are
+            owed — two people at TuTak decide that, and neither of them is
             you.
           </p>
           <div className="flex gap-2">

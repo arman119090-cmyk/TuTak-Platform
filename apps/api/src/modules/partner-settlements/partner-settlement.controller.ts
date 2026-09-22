@@ -280,7 +280,22 @@ export class PartnerSettlementPartnerController {
     });
   }
 
+  /**
+   * "The money you say you sent never arrived."
+   *
+   * Gated on `SETTLEMENT_READ`, which is the owner's and not a manager's or
+   * a cashier's. That is a narrowing, not a widening: the route used to
+   * carry no permission at all, so anyone scoped to the partner could file
+   * one, and filing one used to change the settlement's status. Only
+   * somebody who can see the settlement can know a transfer is missing, and
+   * only they should be able to say so.
+   *
+   * The report asserts nothing about whether money moved and changes
+   * nothing that decides it — see `reportTransferProblem` for what it does
+   * and what it stopped doing.
+   */
   @Post(':partnerId/statement/:id/report-problem')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async reportProblem(
     @CurrentUser() actor: RequestUser,
     @UuidParam('partnerId') partnerId: string,

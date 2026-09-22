@@ -747,4 +747,26 @@ describe('SettlementsPage', () => {
     expect(line.textContent).toContain('Not recorded');
     expect(line.textContent).not.toContain('EMP-');
   });
+  it('offers the report control on a bounced transfer too', async () => {
+    (settlementApi.statements as jest.Mock).mockResolvedValue([
+      statementFixture({
+        status: PartnerSettlementStatus.FAILED,
+        paidAt: null,
+        failedReason: 'Beneficiary account closed',
+      }),
+    ]);
+    renderPage();
+    // A bank can report a transfer as bounced and still have moved the
+    // money. That is exactly the case worth hearing about, and the server
+    // accepts a report here.
+    expect(await screen.findByRole('button', { name: /report a problem/i })).toBeTruthy();
+  });
+
+  it('says the report changes nothing about what is owed', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /report a problem/i }));
+    expect(
+      screen.getByText(/does not change this settlement or what you are\s+owed/i),
+    ).toBeTruthy();
+  });
 });

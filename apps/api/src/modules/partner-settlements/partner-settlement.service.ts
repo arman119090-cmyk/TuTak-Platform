@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -20,6 +21,7 @@ import {
   ReconciliationSource,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { ALERT_CHANNEL, AlertChannel } from '../../infrastructure/alerts/alert-channel.interface';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -59,6 +61,22 @@ const TRANSFER_ATTEMPTABLE: readonly PartnerSettlementStatus[] = [
  * success is a unique violation rather than a second row nobody notices.
  */
 const TRANSFER_SUCCESS_KEY = 'paid';
+
+/**
+ * The states a partner may report a problem against.
+ *
+ * Every one of them is a settlement somebody at TuTak has claimed to have
+ * sent money for. `DRAFT`, `READY` and `APPROVED` are absent: nothing has
+ * been sent, so there is no transfer to be missing. `REQUIRES_RECONCILIATION`
+ * is present so a second report during a review is recorded rather than
+ * refused — a partner chasing an answer should not be told they are wrong.
+ */
+const REPORTABLE: readonly PartnerSettlementStatus[] = [
+  PartnerSettlementStatus.PAYMENT_PENDING,
+  PartnerSettlementStatus.PAID,
+  PartnerSettlementStatus.FAILED,
+  PartnerSettlementStatus.REQUIRES_RECONCILIATION,
+];
 
 export interface UnsettledEntry {
   ledgerPostingId: string;
@@ -167,6 +185,7 @@ export class PartnerSettlementService {
     private readonly ledger: LedgerService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
+    @Inject(ALERT_CHANNEL) private readonly alerts: AlertChannel,
   ) {}
 
   private get dualControl(): boolean {
@@ -811,7 +830,23 @@ export class PartnerSettlementService {
       source?: ReconciliationSource;
     },
   ) {
-    const source = params.source ?? ReconciliationSource.FINANCE;
+    // A partner's report is not overwritten by finance acting on it.
+    //
+    // These three columns are the record of *who said something is wrong*,
+    // and `partner_settlements_partner_reporter_does_not_resolve` — the
+    // database rule that stops the reporter judging their own report —
+    // reads them. Stamping the finance actor over a partner's report would
+    // erase the lock-out at the exact moment it starts to matter, and the
+    // person who reported the problem could then propose and confirm what
+    // the bank statement showed.
+    const existing = await this.prisma.partnerSettlement.findUnique({
+      where: { id },
+      select: { reconciliationSource: true, reconciliationReportedByUserId: true },
+    });
+    const keepPartnerReport =
+      existing?.reconciliationSource === ReconciliationSource.PARTNER_REPORT &&
+      existing.reconciliationReportedByUserId !== null;
+
     return this.recordOutcome(id, {
       actorId: params.actorId,
       reason: params.reason,
@@ -819,54 +854,130 @@ export class PartnerSettlementService {
       to: PartnerSettlementStatus.REQUIRES_RECONCILIATION,
       outcome: 'unresolved',
       event: 'settlement.requires_reconciliation',
-      extra: {
-        reconciliationSource: source,
-        reconciliationReportedByUserId: params.actorId,
-        reconciliationReportedAt: new Date(),
-      },
+      extra: keepPartnerReport
+        ? {}
+        : {
+            reconciliationSource: params.source ?? ReconciliationSource.FINANCE,
+            reconciliationReportedByUserId: params.actorId,
+            reconciliationReportedAt: new Date(),
+          },
     });
   }
 
   /**
-   * A partner says the money never arrived.
+   * The partner says the money did not arrive.
    *
-   * Deliberately its own method rather than a flag on the one above, because
-   * it is a different act by a different kind of person. The product decision of
-   * 15.09.2026: a partner may report a problem and may not confirm whether
-   * money moved — they are the payee, and a payee who can both report a
-   * missing transfer and confirm that it never arrived can order their own
-   * second payment.
+   * ## What this does, and what it deliberately stopped doing
    *
-   * So this records the doubt, moves the settlement out of the payable set,
-   * and locks the reporter out of both halves of resolving it. The database
-   * enforces the lock-out as well (see
-   * `partner_settlements_partner_reporter_does_not_resolve`), because a
-   * service method is not a boundary a script has to respect.
+   * Until 22.09.2026 a report moved the settlement straight to
+   * `REQUIRES_RECONCILIATION`. That was wrong in two ways at once, and the
+   * second is worse than the first.
+   *
+   * It changed the payout status on an unverified assertion by the payee —
+   * the same thing the rest of this module refuses to let a payee do. And
+   * because the route carried no permission, *anybody* scoped to the
+   * partner could do it: a cashier with a settlement id could park every
+   * open settlement of their employer in a state only two people at TuTak
+   * can lift it out of. A denial of the business's own payout, from
+   * inside the business, by somebody with no authority over its money.
+   *
+   * So a report now records a report and nothing else. It stamps who said
+   * it and when, writes the audit entry, and raises an alert at the finance
+   * desk. It writes no ledger posting, moves no status, and touches no
+   * figure a partner reads as their position. Finance decides whether the
+   * transfer is genuinely ambiguous, using `markRequiresReconciliation`,
+   * which is theirs and always was.
+   *
+   * Nothing is lost by this. The thing the old behaviour protected —
+   * stopping an automatic retry of a transfer that may already have moved
+   * money — was never automatic: every retry is a person calling
+   * `markPaid` or `markFailed`, and the report is on the settlement in
+   * front of them when they do.
+   *
+   * `assertNotTheReporter` still works, because the column it reads —
+   * `reconciliationReportedByUserId` — is still stamped here. Whoever
+   * reported a problem may not later propose or confirm what the bank
+   * statement showed.
+   *
+   * ## Which states accept a report
+   *
+   * Only a settlement somebody has claimed to have sent money for. There is
+   * nothing to dispute about a settlement still being assembled, and a
+   * report against one would be a complaint about a transfer that nobody
+   * ever said happened.
    */
   async reportTransferProblem(
     id: string,
     params: { partnerUserId: string; partnerId: string; reason: string },
-  ) {
-    const settlement = await this.prisma.partnerSettlement.findUnique({ where: { id } });
-    if (!settlement) throw new NotFoundException('Settlement not found');
-    if (settlement.partnerId !== params.partnerId) {
+  ): Promise<{ id: string; status: PartnerSettlementStatus; reportedAt: Date }> {
+    const reason = params.reason.trim();
+    if (!reason) throw new BadRequestException('A reason is required');
+
+    const reported = await this.prisma.$transaction(async (tx) => {
+      const settlement = await tx.partnerSettlement.findUnique({ where: { id } });
       // Not "forbidden": a partner should not learn that another partner's
       // settlement exists by being told they may not touch it.
-      throw new NotFoundException('Settlement not found');
-    }
+      if (!settlement || settlement.partnerId !== params.partnerId) {
+        throw new NotFoundException('Settlement not found');
+      }
+      if (!REPORTABLE.includes(settlement.status)) {
+        throw new ConflictException(
+          `Settlement is ${settlement.status}; there is no transfer to report a problem with yet`,
+        );
+      }
 
-    return this.recordOutcome(id, {
-      actorId: params.partnerUserId,
-      reason: params.reason,
-      to: PartnerSettlementStatus.REQUIRES_RECONCILIATION,
-      outcome: 'unresolved',
-      event: 'settlement.partner_reported_problem',
-      extra: {
-        reconciliationSource: ReconciliationSource.PARTNER_REPORT,
-        reconciliationReportedByUserId: params.partnerUserId,
-        reconciliationReportedAt: new Date(),
-      },
+      const reportedAt = new Date();
+      // Three columns that say *who complained and when*. None of them is
+      // the status, and none of them is read by anything that decides
+      // whether money moved.
+      await tx.partnerSettlement.update({
+        where: { id },
+        data: {
+          reconciliationSource: ReconciliationSource.PARTNER_REPORT,
+          reconciliationReportedByUserId: params.partnerUserId,
+          reconciliationReportedAt: reportedAt,
+        },
+      });
+
+      await this.audit.record(
+        {
+          actorUserId: params.partnerUserId,
+          action: AuditAction.PARTNER_UPDATED,
+          entityType: 'PartnerSettlement',
+          entityId: id,
+          metadata: {
+            event: 'settlement.partner_reported_problem',
+            partnerId: settlement.partnerId,
+            amount: settlement.netPayableAmount.toFixed(4),
+            statusAtReport: settlement.status,
+            reason,
+          },
+        },
+        tx,
+      );
+
+      return { id, status: settlement.status, reportedAt, amount: settlement.netPayableAmount };
     });
+
+    // Outside the transaction, and never allowed to fail it: an alert that
+    // could throw would turn "the partner told us something is wrong" into
+    // "the report was lost".
+    await this.alerts.send({
+      severity: 'warning',
+      title: 'A partner says a transfer did not arrive',
+      body:
+        `Settlement ${id} (${reported.amount.toFixed(4)}) is ${reported.status} and the partner ` +
+        'reports the money never reached them. Read the bank statement and decide; the ' +
+        'settlement has not been moved.',
+      key: `settlement.partner_report:${id}`,
+      context: { settlementId: id, partnerId: params.partnerId, status: reported.status },
+    });
+
+    // Deliberately not the settlement row. The reporter holds
+    // `SETTLEMENT_READ` and could read it anyway, but a write that answers
+    // with a financial record is how a route quietly becomes a second way
+    // to read one.
+    return { id: reported.id, status: reported.status, reportedAt: reported.reportedAt };
   }
 
   /**

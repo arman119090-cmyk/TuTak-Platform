@@ -1,0 +1,30 @@
+    console.log
+      Baseline seed complete. Disable SEED_BASELINE after the first successful login and password rotation.
+
+      at seedBaseline (src/scripts/seed-baseline.ts:79:11)
+
+PASS unit src/modules/partner-settlements/settleable-kinds.spec.ts
+PASS unit src/common/observability/sentry-sanitize.spec.ts
+PASS unit src/scripts/reset-staging-admin-password.spec.ts
+PASS unit src/config/configuration.spec.ts
+PASS unit src/modules/promos/promo-window.spec.ts
+PASS unit src/scripts/sentry-verify.spec.ts
+PASS unit src/scripts/money-permissions.spec.ts
+PASS unit src/config/demo-mode.spec.ts
+PASS unit src/modules/media/media.contracts.spec.ts
+PASS unit src/modules/auth/refresh-cookie.spec.ts
+PASS unit src/config/cors-origins.spec.ts
+PASS unit src/modules/promos/promo-translations.spec.ts
+PASS unit src/config/trust-proxy.spec.ts
+PASS unit src/config/public-base-url.spec.ts
+PASS unit src/common/observability/sentry.spec.ts
+PASS unit src/modules/accounting/csv.spec.ts
+PASS unit src/infrastructure/media/s3-media-storage.spec.ts
+PASS unit src/infrastructure/prisma/database-url.spec.ts
+PASS unit src/common/utils/phone-mask.spec.ts
+
+Test Suites: 60 passed, 60 total
+Tests:       756 passed, 756 total
+Snapshots:   0 total
+Time:        28.602 s
+Ran all test suites.

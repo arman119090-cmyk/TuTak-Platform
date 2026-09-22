@@ -206,6 +206,26 @@ describe('Legal consent at registration (integration)', () => {
     expect(documents.publicationState().publishable).toBe(false);
   });
 
+  it('lets a draft be corrected, because the freeze starts at approval', async () => {
+    // The owner will fill in the registration details and remove the "draft
+    // for approval" line without inventing a new revision id for each
+    // correction. While the revision is a draft, the archive follows the
+    // repository; the moment it is approved, the test above takes over.
+    const row = await prisma.legalDocumentRevision.findFirstOrThrow({
+      where: { documentKey: 'terms', language: 'ru', revision: FIXTURE_REVISION },
+    });
+    await prisma.legalDocumentRevision.update({
+      where: { id: row.id },
+      data: { content: 'an older draft', contentHash: 'b'.repeat(64), isDraft: true, approvedAt: null },
+    });
+
+    await documents.syncArchive();
+
+    const after = await prisma.legalDocumentRevision.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.contentHash).toBe(documents.getCurrent('terms', 'ru')!.contentHash);
+    expect(documents.publicationState().blockers).toEqual([]);
+  });
+
   // ── §5.5: repeats and parallel requests ────────────────────────────────
 
   it('collapses a repeated submit of the same choice onto one record', async () => {

@@ -1,0 +1,8 @@
+PASS src/domain/phone.test.ts
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+
+Test Suites: 81 passed, 81 total
+Tests:       721 passed, 721 total
+Snapshots:   0 total
+Time:        21.508 s
+Ran all test suites.

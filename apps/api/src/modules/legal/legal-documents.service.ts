@@ -317,6 +317,25 @@ export class LegalDocumentsService implements OnModuleInit {
       }
 
       if (existing.contentHash !== text.contentHash) {
+        /*
+         * A draft is allowed to move; a published edition is not.
+         *
+         * The freeze starts at approval, not at first sight. Before that the
+         * text is still being written — the owner is filling in registration
+         * details and removing the draft marker, and demanding a new revision
+         * id for every correction would make the gate an obstacle rather than
+         * a guard. The moment a revision is approved, this row stops
+         * changing for good, because that is the copy somebody accepted.
+         */
+        if (existing.isDraft && existing.approvedAt === null) {
+          await this.prisma.legalDocumentRevision.update({
+            where: { id: existing.id },
+            data: { title: text.title, content: text.content, contentHash: text.contentHash },
+          });
+          this.logger.log(`Draft ${text.key}/${text.language} at ${text.revision} updated from the repository`);
+          continue;
+        }
+
         const blocker = `archived-text-changed:${text.key}:${text.language}`;
         if (!this.state.blockers.includes(blocker)) {
           this.state = { ...this.state, publishable: false, blockers: [...this.state.blockers, blocker] };

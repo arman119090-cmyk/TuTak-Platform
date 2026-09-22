@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DevicePlatform, NotificationChannel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
+import { LegalConsentPurpose } from '@prisma/client';
+import { LegalConsentService } from '../legal/legal-consent.service';
 import { PushDispatchService } from './push-dispatch.service';
 
 /**
@@ -38,6 +40,19 @@ export interface SendNotificationParams {
    * so it needs the words themselves. Omit to persist only.
    */
   push?: { title: string; body: string };
+  /**
+   * Marketing, and through which channel — or absent, which means a service
+   * message the account needs in order to use what it bought.
+   *
+   * The distinction is a legal one, not a taxonomy: marketing needs a
+   * voluntary, per-channel consent that can be withdrawn, and a service
+   * message must never be dressed up as marketing to dodge that, nor
+   * marketing dressed up as service to escape it (package §5, check 6). When
+   * this is set, the consent is checked here *and* again immediately before
+   * the push leaves, so a withdrawal that lands after the message was
+   * composed still stops it.
+   */
+  marketing?: LegalConsentPurpose;
 }
 
 @Injectable()
@@ -47,6 +62,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pushDispatch: PushDispatchService,
+    private readonly legalConsent: LegalConsentService,
   ) {}
 
   /**
@@ -58,6 +74,13 @@ export class NotificationsService {
    * Delivery follows and cannot fail this call — see PushDispatchService.
    */
   async send(params: SendNotificationParams) {
+    if (params.marketing && !(await this.legalConsent.isGranted(params.userId, params.marketing))) {
+      // Not an error and not a retry: the person said no, so there is nothing
+      // to deliver and nothing to keep in their inbox either.
+      this.logger.log(`Marketing message withheld: ${params.marketing} not granted by ${params.userId}`);
+      return null;
+    }
+
     const notification = await this.prisma.notification.create({
       data: {
         userId: params.userId,
@@ -74,6 +97,7 @@ export class NotificationsService {
         title: params.push.title,
         body: params.push.body,
         data: { notificationId: notification.id },
+        marketing: params.marketing,
       });
     }
 

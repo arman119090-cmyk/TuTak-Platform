@@ -36,9 +36,16 @@ describe('what every OTP request records, and what it answers (unit, stubbed dep
     } as unknown as OtpIpRateLimitService;
 
     const stub = {} as never;
+    // The legal gate is closed in this fixture (no published package), which
+    // is what "accepts a request carrying no choices" means here. Registration
+    // *with* the gate open is covered on a real database — see
+    // `test/legal-consent-registration.int-spec.ts`.
+    const legalConsent = {
+      assertRegistrationAcceptance: jest.fn().mockReturnValue([]),
+    } as never;
     return new AuthService(
       stub, usersService, stub, stub, stub, stub, stub, stub,
-      authOtpService, otpIpRateLimit, stub,
+      authOtpService, otpIpRateLimit, stub, legalConsent,
     );
   };
 

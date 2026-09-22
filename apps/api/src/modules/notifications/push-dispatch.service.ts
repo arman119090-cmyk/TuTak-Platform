@@ -1,3 +1,5 @@
+import { LegalConsentPurpose } from '@prisma/client';
+import { LegalConsentService } from '../legal/legal-consent.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import {
@@ -11,6 +13,8 @@ export interface DispatchParams {
   title: string;
   body: string;
   data?: Record<string, string | number>;
+  /** Set for marketing; the consent is re-checked before the push leaves. */
+  marketing?: LegalConsentPurpose;
 }
 
 /**
@@ -32,10 +36,25 @@ export class PushDispatchService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(PUSH_PROVIDER) private readonly push: PushProvider,
+    private readonly legalConsent: LegalConsentService,
   ) {}
 
   async dispatch(params: DispatchParams): Promise<void> {
     try {
+      /*
+       * Re-checked here, as late as possible.
+       *
+       * The consent was already checked when the message was composed; this
+       * is the second check, against a withdrawal that landed in between. It
+       * is what makes "отзыв прекращает рекламную отправку, включая уже
+       * поставленную в очередь" hold no matter how long a message waits
+       * between being written and being sent.
+       */
+      if (params.marketing && !(await this.legalConsent.isGranted(params.userId, params.marketing))) {
+        this.logger.log(`Marketing push withheld at delivery: ${params.marketing} not granted by ${params.userId}`);
+        return;
+      }
+
       const devices = await this.prisma.device.findMany({
         where: { userId: params.userId, pushToken: { not: null } },
         select: { id: true, pushToken: true },

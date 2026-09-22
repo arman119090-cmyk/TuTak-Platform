@@ -1,4 +1,16 @@
-import { IsIn, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { LegalConsentAcceptanceDto } from '../../legal/dto/legal-consent.dto';
 import {
   ARMENIAN_PHONE_MESSAGE as PHONE_MESSAGE,
   ARMENIAN_PHONE_REGEX as PHONE_REGEX,
@@ -9,6 +21,24 @@ export class RequestRegistrationOtpDto {
   @IsString()
   @Matches(PHONE_REGEX, { message: PHONE_MESSAGE })
   phone: string;
+
+  /**
+   * The mandatory legal choices, each made against a named revision of a
+   * named text.
+   *
+   * Present on the *request* step on purpose: no SMS is sent, and no
+   * registration profile is kept, before the person has been told what is
+   * collected and has chosen (package §2). Optional in the type only so that
+   * a client built before this existed keeps working during the rollout
+   * window; the server decides whether missing choices are acceptable, and
+   * once the publication gate is open they are not.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ValidateNested({ each: true })
+  @Type(() => LegalConsentAcceptanceDto)
+  consents?: LegalConsentAcceptanceDto[];
 }
 
 /**
@@ -78,6 +108,30 @@ export class VerifyRegistrationOtpDto {
   @IsOptional()
   @IsString()
   deviceName?: string;
+
+  /**
+   * The mandatory legal choices, each made against a named revision of a
+   * named text.
+   *
+   * Present on the *request* step on purpose: no SMS is sent, and no
+   * registration profile is kept, before the person has been told what is
+   * collected and has chosen (package §2). Optional in the type only so that
+   * a client built before this existed keeps working during the rollout
+   * window; the server decides whether missing choices are acceptable, and
+   * once the publication gate is open they are not.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ValidateNested({ each: true })
+  @Type(() => LegalConsentAcceptanceDto)
+  consents?: LegalConsentAcceptanceDto[];
+
+  /** The client build that displayed the texts, recorded with the choice. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  appVersion?: string;
 }
 
 export class RequestLoginOtpDto {

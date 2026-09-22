@@ -230,6 +230,7 @@ model User {
   passwordResets            PasswordResetToken[]
   phoneVerifications        PhoneVerificationToken[]
   payments                  Payment[]
+  legalConsents             LegalConsentRecord[]
   balanceTopUps             BalanceTopUp[]
 
   avatarAsset         MediaAsset?  @relation("UserAvatarAsset", fields: [avatarAssetId], references: [id])
@@ -4244,4 +4245,111 @@ enum AlertDeliveryStatus {
   /// so retrying would be a loop with no receiver. Kept, and visible, rather
   /// than retried.
   UNDELIVERABLE
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Legal documents & consent evidence (package 2026-09-22)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// One language of one legal document at one revision, frozen.
+///
+/// The text itself lives in the repository under
+/// `public/legal/documents/<revision>/<language>/<key>.md`; this table is the
+/// archive that makes "open exactly the edition you accepted" true rather
+/// than intended. A row is written once from the file and never rewritten:
+/// `LegalDocumentsService.sync()` refuses to change the content of an
+/// existing (document, revision, language) and reports a mismatch instead,
+/// because changing a published text is a new revision, not an edit of an
+/// old one. That is also what keeps a consent record's `contentHash`
+/// resolvable years later — the file may move, the row may not change.
+model LegalDocumentRevision {
+  id          String    @id @default(uuid())
+  documentKey String
+  /// Revision id of the whole package, e.g. `0.9-draft-2026-09-22`.
+  revision    String
+  language    String
+  title       String
+  /// SHA-256 of `content`, lowercase hex. Quoted back by the client when it
+  /// accepts, and checked here — a client cannot invent a hash for a text
+  /// that was never published.
+  contentHash String
+  content     String
+  /// True until the owner approves the revision and the publication gate
+  /// passes. A draft is never served to the public app.
+  isDraft     Boolean   @default(true)
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([documentKey, revision, language])
+  @@index([revision])
+  @@map("legal_document_revisions")
+}
+
+/// What the person was asked, what they chose, and against which exact text.
+///
+/// Append-only: a revocation is a new row, never an update of the row that
+/// records the grant — "отзыв добровольного согласия не изменяет
+/// историческую запись о его выдаче" (package §3). Nothing here may carry an
+/// OTP, a password, a PIN or a token; `registrationChallengeId` links the
+/// choice to the phone confirmation without storing anything secret about
+/// it.
+model LegalConsentRecord {
+  id                      String              @id @default(uuid())
+  userId                  String
+  purpose                 LegalConsentPurpose
+  action                  LegalConsentAction
+  /// `[{ documentKey, revision, contentHash, language }]` — every document
+  /// whose text this choice was made against, as it was shown.
+  documents               Json
+  /// Package revision shown at the moment of the choice.
+  revision                String
+  /// Language the person read, which is not necessarily the interface
+  /// language: the app lets them choose when the interface is English.
+  language                String
+  /// Where the choice was made: `registration`, `settings`, `deletion`, …
+  context                 String
+  /// Client build that showed the text, when it identified itself.
+  appVersion              String?
+  /// The confirmed registration challenge this choice belongs to. An opaque
+  /// id of the OTP token row — never the code, never a hash of the code.
+  registrationChallengeId String?
+  /// Set only where a lawful reason for keeping it exists; otherwise null.
+  /// Never filled "just in case" — package §3.
+  ipAddress               String?
+  /// Server time. The only time this table trusts.
+  recordedAt              DateTime            @default(now())
+  /// Makes a repeated submit idempotent: the same choice from the same
+  /// registration or the same settings action collapses to one row instead
+  /// of two contradictory ones.
+  idempotencyKey          String?             @unique
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, purpose, recordedAt])
+  @@index([revision])
+  @@map("legal_consent_records")
+}
+
+enum LegalConsentPurpose {
+  /// Mandatory. Terms of use + bonus/cancellation/refund rules.
+  TERMS_AND_BONUS_RULES
+  /// Mandatory. The necessary processing of personal data described in the
+  /// consent text and the privacy policy.
+  PERSONAL_DATA_REQUIRED
+  /// Voluntary, per channel, offered separately and never bundled.
+  MARKETING_SMS
+  MARKETING_PUSH
+  MARKETING_EMAIL
+  /// Voluntary. Mirrors `User.personalizedRecommendationsConsent`.
+  PERSONALIZED_RECOMMENDATIONS
+  /// Voluntary. Mirrors `User.avatarConsentReferralList`.
+  AVATAR_IN_REFERRAL_LIST
+  /// Only once the owner approves an 18+ rule. A statement by the person,
+  /// not proof of age.
+  AGE_CONFIRMATION_18
+}
+
+enum LegalConsentAction {
+  ACCEPT
+  REVOKE
 }

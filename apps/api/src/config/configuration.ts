@@ -151,6 +151,37 @@ export interface AppConfig {
     /** Serve /legal/privacy and /legal/account-deletion. Off until a lawyer signed the texts. */
     enabled: boolean;
   };
+  legalDocuments: {
+    /**
+     * Where `manifest.json` and the versioned document tree live. Empty means
+     * the copy shipped with the API (`public/legal/documents`); tests point it
+     * at a fixture so the publication gate can be exercised on texts that are
+     * finished, which the real package deliberately is not yet.
+     */
+    contentDir: string | null;
+    /**
+     * The revision the owner approved, out of band, in writing
+     * (`0.9-draft-2026-09-22` and friends). The gate refuses to publish
+     * anything whose revision is not this exact string, so an edited text
+     * cannot become "approved" by being edited.
+     */
+    approvedRevision: string | null;
+    /**
+     * Serve an unapproved revision to a closed audience, clearly marked as a
+     * draft for approval. Never on in production — the only reason it exists
+     * is so the owner and a lawyer can read the texts inside the app before
+     * approving them.
+     */
+    previewEnabled: boolean;
+    /**
+     * Demand the two mandatory consents at registration. Only ever takes
+     * effect once the gate passes: a consent to an unpublishable text is not
+     * consent to anything. Set to `false` for a rollout window in which
+     * already-installed clients that do not send the choices yet must keep
+     * being able to register.
+     */
+    consentRequired: boolean;
+  };
   otpIpLimits: {
     /**
      * Ceilings per source address per hour on OTP issuance and verification
@@ -604,6 +635,14 @@ const buildConfig = (): AppConfig => ({
   },
   legalPages: {
     enabled: process.env.LEGAL_PAGES_ENABLED === 'true',
+  },
+  legalDocuments: {
+    contentDir: process.env.LEGAL_CONTENT_DIR?.trim() || null,
+    approvedRevision: process.env.LEGAL_APPROVED_REVISION?.trim() || null,
+    previewEnabled: process.env.LEGAL_DRAFT_PREVIEW_ENABLED === 'true',
+    // Default true: once the texts are publishable, asking is the lawful
+    // default and skipping it has to be someone's explicit decision.
+    consentRequired: process.env.LEGAL_CONSENT_REQUIRED !== 'false',
   },
   otpIpLimits: {
     // Defaults sit above what carrier-grade NAT puts behind one address in an

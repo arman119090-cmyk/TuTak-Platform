@@ -1,0 +1,59 @@
+{
+  "revision": "0.9-draft-2026-09-22",
+  "source": "TuTak_Legal_Package_2026-09-22",
+  "approvedByOwner": false,
+  "approvedAt": null,
+  "effectiveDate": null,
+  "languages": ["ru", "hy"],
+  "documents": [
+    {
+      "key": "terms",
+      "file": "terms.md",
+      "titles": {
+        "ru": "Условия использования TuTak",
+        "hy": "TuTak հավելվածի օգտագործման պայմանները"
+      },
+      "consentPurposes": ["TERMS_AND_BONUS_RULES"]
+    },
+    {
+      "key": "bonus-refunds",
+      "file": "bonus-refunds.md",
+      "titles": {
+        "ru": "Правила бонусов, отмен и возвратов",
+        "hy": "Բոնուսների, չեղարկումների և վերադարձների կանոնները"
+      },
+      "consentPurposes": ["TERMS_AND_BONUS_RULES"]
+    },
+    {
+      "key": "consent",
+      "file": "consent.md",
+      "titles": {
+        "ru": "Согласие на обработку персональных данных",
+        "hy": "Անձնական տվյալների մշակման համաձայնությունը"
+      },
+      "consentPurposes": ["PERSONAL_DATA_REQUIRED"]
+    },
+    {
+      "key": "privacy",
+      "file": "privacy.md",
+      "titles": {
+        "ru": "Политика обработки персональных данных",
+        "hy": "Անձնական տվյալների մշակման քաղաքականությունը"
+      },
+      "consentPurposes": ["PERSONAL_DATA_REQUIRED"]
+    },
+    {
+      "key": "account-deletion",
+      "file": "account-deletion.md",
+      "titles": {
+        "ru": "Закрытие аккаунта и обращения по данным",
+        "hy": "Հաշվի փակումը և տվյալների վերաբերյալ դիմումները"
+      },
+      "consentPurposes": []
+    }
+  ],
+  "requiredConsents": [
+    { "purpose": "TERMS_AND_BONUS_RULES", "documents": ["terms", "bonus-refunds"] },
+    { "purpose": "PERSONAL_DATA_REQUIRED", "documents": ["consent", "privacy"] }
+  ]
+}

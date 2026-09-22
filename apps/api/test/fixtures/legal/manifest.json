@@ -1,0 +1,19 @@
+{
+  "revision": "1.0-test-2026-09-22",
+  "source": "test fixture — not a legal text",
+  "approvedByOwner": true,
+  "approvedAt": "2026-09-22T00:00:00.000Z",
+  "effectiveDate": "2026-09-22",
+  "languages": ["ru", "hy"],
+  "documents": [
+    { "key": "terms", "file": "terms.md", "titles": { "ru": "Условия использования", "hy": "Օգտագործման պայմաններ" }, "consentPurposes": ["TERMS_AND_BONUS_RULES"] },
+    { "key": "bonus-refunds", "file": "bonus-refunds.md", "titles": { "ru": "Бонусы и возвраты", "hy": "Բոնուսներ և վերադարձներ" }, "consentPurposes": ["TERMS_AND_BONUS_RULES"] },
+    { "key": "consent", "file": "consent.md", "titles": { "ru": "Согласие", "hy": "Համաձայնություն" }, "consentPurposes": ["PERSONAL_DATA_REQUIRED"] },
+    { "key": "privacy", "file": "privacy.md", "titles": { "ru": "Политика данных", "hy": "Տվյալների քաղաքականություն" }, "consentPurposes": ["PERSONAL_DATA_REQUIRED"] },
+    { "key": "account-deletion", "file": "account-deletion.md", "titles": { "ru": "Закрытие аккаунта", "hy": "Հաշվի փակում" }, "consentPurposes": [] }
+  ],
+  "requiredConsents": [
+    { "purpose": "TERMS_AND_BONUS_RULES", "documents": ["terms", "bonus-refunds"] },
+    { "purpose": "PERSONAL_DATA_REQUIRED", "documents": ["consent", "privacy"] }
+  ]
+}

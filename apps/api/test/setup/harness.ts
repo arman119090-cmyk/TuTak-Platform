@@ -28,6 +28,7 @@ import { RecordingSmsProvider } from './recording-sms.provider';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
+import { LegalModule } from '../../src/modules/legal/legal.module';
 import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
 import { PurchaseIntentsModule } from '../../src/modules/purchase-intents/purchase-intents.module';
 import { PartnerCheckoutModule } from '../../src/modules/partner-checkout/partner-checkout.module';
@@ -194,6 +195,7 @@ function domainTestingModuleBuilder(
         RoamingCpoModule,
         CustomerBalanceModule,
         AuditModule,
+        LegalModule,
         UsersModule,
         AdminModule,
         ReferralModule,

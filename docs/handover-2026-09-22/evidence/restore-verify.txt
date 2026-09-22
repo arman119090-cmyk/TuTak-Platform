@@ -1,0 +1,27 @@
+PASS migrations_applied                   80                         expected 80
+PASS migrations_failed                    0                          
+PASS migrations_unique                    0                          
+PASS tables_present                       11                         
+INFO rows:users                           104                        source now: 104
+INFO rows:partners                        1                          source now: 1
+INFO rows:purchase_intents                2589                       source now: 2589
+INFO rows:ledger_transactions             9406                       source now: 9406
+INFO rows:ledger_postings                 23816                      source now: 23816
+INFO rows:ledger_accounts                 6                          source now: 6
+INFO rows:bonus_lots                      7908                       source now: 7908
+INFO rows:wallets                         102                        source now: 102
+INFO rows:partner_settlements             1                          source now: 1
+INFO rows:purchase_intent_refunds         1                          source now: 1
+INFO rows:referral_invites                28                         source now: 28
+INFO rows:purchase_intents_CONFIRMED      2589                       
+PASS ledger_imbalance                     0.0000                     sum of all account balances
+PASS accounts_match_postings              0                          
+PASS transactions_balanced                0                          
+PASS wallets_non_negative                 0                          
+PASS bonus_lots_consistent                0                          
+PASS refunds_within_gross                 0                          
+PASS postings_have_transactions           0                          
+INFO last_purchase_intent_at              2026-09-22 08:30:20.943    restore point by data
+INFO last_ledger_posting_at               2026-09-22 08:31:41.684    
+
+RESTORED DB: PASS — fit to switch traffic to (after the row counts make sense to a human)

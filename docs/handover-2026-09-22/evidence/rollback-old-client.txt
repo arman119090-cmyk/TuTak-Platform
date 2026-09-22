@@ -1,0 +1,15 @@
+# Откат приложения на новой схеме (22.09.2026)
+# Клиент Prisma, сгенерированный из схемы 369eda1 (production), запущен
+# против базы tutak_restored2 (схема кандидата, 80 миграций, реальные данные).
+
+{"users":104,"partners":1,"purchaseIntents":2589,"ledgerPostings":23816,
+ "ledgerAccounts":6,"bonusLots":7908,"wallets":102,"settlements":1,
+ "settlementEntries":6989,"outboxEvents":6070,"payouts":1067}
+models with no sample row: none
+old client write path: OK (transaction rolled back on purpose)
+
+# Что доказано: слой данных. Старый клиент читает каждую денежную модель,
+# получает по строке-образцу (отсутствующая колонка дала бы исключение) и
+# выполняет запись в транзакции.
+# Что НЕ доказано здесь: полный boot приложения 369eda1 на этой схеме —
+# в этой среде нет собранного dist для того коммита (см. 01_VERIFICATION §6).

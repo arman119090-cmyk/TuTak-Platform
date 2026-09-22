@@ -1,0 +1,64 @@
+# D02 — прогон ДО исправления (createDraft без общей блокировки)
+# commit базы: 293b02fa4e80840795fbe656af70af6bc439854c + тесты 22.09
+# команда: jest --selectProjects integration --runTestsByPath test/audit-2209-payout-settlement-race.int-spec.ts
+
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": PostgreSQL database "tutak_test", schema "public" at "localhost:5432"
+80 migrations found in prisma/migrations
+No pending migrations to apply.
+FAIL integration test/audit-2209-payout-settlement-race.int-spec.ts (10.969 s)
+  Audit 22.09 — payout and settlement at the same time (integration)
+    ✕ D02d: a payout cannot take the entitlement a draft is in the middle of claiming (403 ms)
+    ✕ D02e: a draft cannot claim the entitlement a payout is in the middle of taking (206 ms)
+    ✓ D02f: two simultaneous drafts claim the entitlement once (656 ms)
+    ✓ D02g: two simultaneous payouts pay the entitlement once (545 ms)
+    ✓ D02h: a cancelled settlement releases its claim without paying twice (559 ms)
+    ✓ D02i: a settlement being marked paid does not free the money for a payout (557 ms)
+    ✕ D02j: a partial payout and a draft cannot together exceed the entitlement (506 ms)
+    ✓ D04c: a draft created mid-read never shows the same money twice (505 ms)
+    ✓ D02k: repeating a payout request after a lost answer pays once (123 ms)
+  ● Audit 22.09 — payout and settlement at the same time (integration) › D02d: a payout cannot take the entitlement a draft is in the middle of claiming
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "within entitlement"
+    Received: "settlements 50000.0000 + payouts 50000.0000 = 100000.0000 committed against an entitlement of 50000.0000"
+      221 |       `settlements ${c.settlements.toFixed(4)} + payouts ${c.payouts.toFixed(4)} ` +
+      222 |       `= ${c.total.toFixed(4)} committed against an entitlement of ${new Decimal(entitlement).toFixed(4)}`;
+    > 223 |     expect(c.total.lessThanOrEqualTo(new Decimal(entitlement)) ? 'within entitlement' : detail).toBe(
+          |                                                                                                 ^
+      224 |       'within entitlement',
+      225 |     );
+      226 |   }
+      at expectNoDoubleAllocation (test/audit-2209-payout-settlement-race.int-spec.ts:223:97)
+      at Object.<anonymous> (test/audit-2209-payout-settlement-race.int-spec.ts:255:5)
+  ● Audit 22.09 — payout and settlement at the same time (integration) › D02e: a draft cannot claim the entitlement a payout is in the middle of taking
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "within entitlement"
+    Received: "settlements 50000.0000 + payouts 50000.0000 = 100000.0000 committed against an entitlement of 50000.0000"
+      221 |       `settlements ${c.settlements.toFixed(4)} + payouts ${c.payouts.toFixed(4)} ` +
+      222 |       `= ${c.total.toFixed(4)} committed against an entitlement of ${new Decimal(entitlement).toFixed(4)}`;
+    > 223 |     expect(c.total.lessThanOrEqualTo(new Decimal(entitlement)) ? 'within entitlement' : detail).toBe(
+          |                                                                                                 ^
+      224 |       'within entitlement',
+      225 |     );
+      226 |   }
+      at expectNoDoubleAllocation (test/audit-2209-payout-settlement-race.int-spec.ts:223:97)
+      at Object.<anonymous> (test/audit-2209-payout-settlement-race.int-spec.ts:286:5)
+  ● Audit 22.09 — payout and settlement at the same time (integration) › D02j: a partial payout and a draft cannot together exceed the entitlement
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "within entitlement"
+    Received: "settlements 50000.0000 + payouts 20000.0000 = 70000.0000 committed against an entitlement of 50000.0000"
+      221 |       `settlements ${c.settlements.toFixed(4)} + payouts ${c.payouts.toFixed(4)} ` +
+      222 |       `= ${c.total.toFixed(4)} committed against an entitlement of ${new Decimal(entitlement).toFixed(4)}`;
+    > 223 |     expect(c.total.lessThanOrEqualTo(new Decimal(entitlement)) ? 'within entitlement' : detail).toBe(
+          |                                                                                                 ^
+      224 |       'within entitlement',
+      225 |     );
+      226 |   }
+      at expectNoDoubleAllocation (test/audit-2209-payout-settlement-race.int-spec.ts:223:97)
+      at Object.<anonymous> (test/audit-2209-payout-settlement-race.int-spec.ts:398:5)
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 6 passed, 9 total
+Snapshots:   0 total
+Time:        11.047 s, estimated 13 s
+Ran all test suites within paths "test/audit-2209-payout-settlement-race.int-spec.ts".

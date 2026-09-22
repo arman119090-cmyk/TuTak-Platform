@@ -1,0 +1,27 @@
+# D05 — durable alert outbox, прогон на текущем коде
+
+80 migrations found in prisma/migrations
+No pending migrations to apply.
+[31m[Nest] 13288  - [39m09/22/2026, 8:46:59 AM [31m  ERROR[39m [38;5;3m[AlertsService] [39m[31mSuppression check failed for 'outbox.dead-letter:evt-redisdown', sending anyway: redis is down[39m
+[31m[Nest] 13288  - [39m09/22/2026, 8:46:59 AM [31m  ERROR[39m [38;5;3m[AlertOutboxService] [39m[31mCould not record alert 'outbox.dead-letter:evt-dbdown' for redelivery: database is down[39m
+[31m[Nest] 13288  - [39m09/22/2026, 8:46:59 AM [31m  ERROR[39m [38;5;3m[OutboxService] [39m[31mOutbox event 97ad8444-3908-44b1-b78d-f26b5022a589 (audit.alert-probe) exhausted 10 attempts: downstream refused[39m
+PASS integration test/audit-2209-alert-delivery.int-spec.ts
+  Audit 22.09 — an alert survives a channel that was down (integration)
+    ✓ a single fire() whose delivery fails is redelivered when the channel comes back (218 ms)
+    ✓ a still-broken channel keeps the alert and backs off instead of dropping it (102 ms)
+    ✓ a row written but never sent — the crash between the two — is picked up (86 ms)
+    ✓ two workers draining together deliver each alert once (109 ms)
+    ✓ a lease that expires lets another worker finish what a dead one started (97 ms)
+    ✓ a live lease keeps a second worker off the same row (84 ms)
+    ✓ a send whose outcome was never recorded is retried, not lost (88 ms)
+    ✓ with no channel that can deliver, the alert is kept and marked, not retried forever (88 ms)
+    ✓ Redis being down does not stop the alert being recorded and redelivered (87 ms)
+    ✓ the database being unavailable never fails the alert itself (84 ms)
+    ✓ a deployment with no database at all still alerts (the verify script) (80 ms)
+    ✓ redelivery carries exactly what was sent, and nothing the caller did not put there (91 ms)
+    ✓ a dead-lettered outbox event reaches a human even though the channel was down (100 ms)
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+Snapshots:   0 total
+Time:        3.642 s
+Ran all test suites within paths "test/audit-2209-alert-delivery.int-spec.ts".

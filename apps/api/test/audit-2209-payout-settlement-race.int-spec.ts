@@ -400,6 +400,53 @@ describe('Audit 22.09 — payout and settlement at the same time (integration)',
     expect(payoutResult.status).toBe('rejected');
   });
 
+  // ── D04c: the partner's page during a draft ───────────────────────────────
+
+  /**
+   * D04 was closed on 21.09 by construction — `position()` moved into one
+   * `RepeatableRead` transaction — and the report says plainly that the race
+   * itself was never reproduced. This reproduces it: the read is paused after
+   * its first query and a draft is created underneath it. The identity the
+   * partner's page rests on has to survive that.
+   */
+  it('D04c: a draft created mid-read never shows the same money twice', async () => {
+    await accrue('50000');
+
+    const { gate: g, arrive } = gate();
+    const original = settlements.unsettled.bind(settlements);
+    let armed = true;
+    (settlements as unknown as { unsettled: typeof settlements.unsettled }).unsettled = async (
+      ...args: Parameters<typeof settlements.unsettled>
+    ) => {
+      const result = await original(...args);
+      if (armed && args[1]?.tx) {
+        armed = false;
+        await arrive();
+      }
+      return result;
+    };
+    restores.push(() => {
+      delete (settlements as unknown as Record<string, unknown>).unsettled;
+    });
+
+    const reading = settlements.position(partnerId);
+    await g.reached; // position has read `unsettled`; the draft does not exist
+
+    const drafting = draft();
+    await new Promise((r) => setTimeout(r, 400));
+    g.release();
+
+    const [position] = await Promise.all([reading, drafting]);
+
+    // Whatever the snapshot caught, it is *one* snapshot: the money is either
+    // still unsettled or already in the settlement, never both.
+    expect(position.ledgerBalance.toFixed(4)).toBe(
+      position.net.plus(position.inOpenSettlements).plus(position.underReview).toFixed(4),
+    );
+    expect(position.net.plus(position.inOpenSettlements).toFixed(4)).toBe('50000.0000');
+    await expectNoDoubleAllocation('50000');
+  });
+
   // ── D02k: a retry after a lost answer is not a second allocation ──────────
 
   it('D02k: repeating a payout request after a lost answer pays once', async () => {

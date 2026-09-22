@@ -236,6 +236,24 @@ export class PartnerSettlementPartnerController {
     return this.settlements.position(partnerId);
   }
 
+  /**
+   * One purchase, and what it did to the debt.
+   *
+   * The same permission as the rest of the money reads: this itemises a
+   * financial position, and "which of my sales made up this figure" is the
+   * same question as "how much do you owe me", asked about one line.
+   */
+  @Get(':partnerId/purchases/:purchaseIntentId/breakdown')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
+  async purchaseBreakdown(
+    @CurrentUser() actor: RequestUser,
+    @UuidParam('partnerId') partnerId: string,
+    @UuidParam('purchaseIntentId') purchaseIntentId: string,
+  ) {
+    assertPartnerScope(actor, partnerId);
+    return this.settlements.purchaseBreakdown(partnerId, purchaseIntentId);
+  }
+
   @Post(':partnerId/statement/:id/report-problem')
   async reportProblem(
     @CurrentUser() actor: RequestUser,

@@ -1244,6 +1244,158 @@ export class PartnerSettlementService {
    * its figures, which are what the agreement is about, while its branch
    * labels follow the current names.
    */
+
+  /**
+   * Where one purchase's effect on the debt comes from.
+   *
+   * The screen above this answers "why do you owe me this much" with a list
+   * of days and amounts. This answers the next question, which a partner
+   * asks about one line: *this* sale, what it was, who took the money, what
+   * TuTak's share of it was, and what is left owing on it.
+   *
+   * Built from the ledger rather than recomputed from the purchase's own
+   * columns. The postings are what the debt actually is; a second
+   * calculation over `grossAmount` and the rate would be a number that
+   * agrees with the first one right up until it does not.
+   *
+   * ## What it deliberately does not say
+   *
+   * TuTak's own economics. A purchase carries the pool split — the
+   * customer's points, the deferred part, three levels of referral and
+   * TuTak's residual — and none of it is the partner's business: it is what
+   * the platform does with its own share after the partner's contractual
+   * deduction. The partner sees their own deduction, in full, because that
+   * is the number they signed and the one they check. Everything past it
+   * stays inside.
+   */
+  async purchaseBreakdown(partnerId: string, purchaseIntentId: string) {
+    const intent = await this.prisma.purchaseIntent.findFirst({
+      where: { id: purchaseIntentId, partnerId },
+      select: {
+        id: true,
+        confirmationCode: true,
+        confirmedAt: true,
+        grossAmount: true,
+        bonusAmountRequested: true,
+        prepaidAmountApplied: true,
+        ordinaryPaymentRemainder: true,
+        refundedAmount: true,
+        paymentRoute: true,
+        confirmationSource: true,
+        confirmedByEmployeeCode: true,
+        partnerBranchId: true,
+        status: true,
+      },
+    });
+    // Same answer for "not yours" and "no such purchase": the partner id is
+    // in the query rather than checked afterwards, so another partner's id
+    // cannot be confirmed by the shape of the refusal.
+    if (!intent) throw new NotFoundException('Purchase not found');
+
+    const account = await this.prisma.ledgerAccount.findFirst({
+      where: { type: LedgerAccountType.PARTNER_PAYABLE, partnerId },
+      select: { id: true },
+    });
+
+    const postings = account
+      ? await this.prisma.ledgerPosting.findMany({
+          where: {
+            accountId: account.id,
+            transaction: { sourceType: 'PurchaseIntent', sourceId: purchaseIntentId },
+          },
+          select: {
+            id: true,
+            amount: true,
+            direction: true,
+            transaction: { select: { kind: true, postedAt: true } },
+            settlementEntry: {
+              select: { settlement: { select: { id: true, status: true, paidAt: true } } },
+            },
+          },
+          orderBy: { id: 'asc' },
+        })
+      : [];
+
+    const zero = new Decimal(0);
+    let owed = zero;
+    let settled = zero;
+    let reserved = zero;
+
+    const lines = postings.map((posting) => {
+      const signed =
+        posting.direction === PostingDirection.CREDIT
+          ? new Decimal(posting.amount)
+          : new Decimal(posting.amount).negated();
+      owed = owed.plus(signed);
+
+      const settlement = posting.settlementEntry?.settlement ?? null;
+      // Three places one line's money can be, and they do not overlap: still
+      // owing, held by a settlement nobody has paid yet, or paid. A screen
+      // that showed the middle one as "paid" would be telling a partner a
+      // transfer happened when a draft was written.
+      const state =
+        settlement === null
+          ? 'UNSETTLED'
+          : settlement.status === PartnerSettlementStatus.PAID
+            ? 'PAID'
+            : 'IN_SETTLEMENT';
+      if (state === 'PAID') settled = settled.plus(signed);
+      if (state === 'IN_SETTLEMENT') reserved = reserved.plus(signed);
+
+      return {
+        kind: posting.transaction.kind,
+        amount: signed.toFixed(4),
+        occurredAt: posting.transaction.postedAt.toISOString(),
+        state,
+        settlementId: settlement?.id ?? null,
+      };
+    });
+
+    const refunds = await this.prisma.purchaseIntentRefund.findMany({
+      where: { purchaseIntentId },
+      select: { id: true, amount: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return {
+      purchaseIntentId: intent.id,
+      confirmationCode: intent.confirmationCode,
+      confirmedAt: intent.confirmedAt?.toISOString() ?? null,
+      status: intent.status,
+      branchId: intent.partnerBranchId,
+      /** Who or what confirmed it, as the statement line shows it. */
+      confirmationSource: intent.confirmationSource,
+      employeeCode: intent.confirmedByEmployeeCode,
+      /** What the customer bought, and how the three parts of it were funded. */
+      grossAmount: intent.grossAmount.toFixed(4),
+      bonusApplied: intent.bonusAmountRequested.toFixed(4),
+      prepaidApplied: intent.prepaidAmountApplied.toFixed(4),
+      externalAmount: intent.ordinaryPaymentRemainder.toFixed(4),
+      paymentRoute: intent.paymentRoute,
+      /**
+       * Who ended up holding the money the customer paid outside their TuTak
+       * balances — the partner's own till, or TuTak through the provider.
+       * The distinction is the whole reason a partner is owed anything on a
+       * provider sale and nothing extra on a till sale.
+       */
+      externalCollectedBy:
+        intent.paymentRoute === PaymentRoute.DIRECT_PARTNER ? 'PARTNER_TILL' : 'TUTAK_VIA_PROVIDER',
+      refundedAmount: intent.refundedAmount.toFixed(4),
+      refunds: refunds.map((refund) => ({
+        id: refund.id,
+        amount: refund.amount.toFixed(4),
+        occurredAt: refund.createdAt.toISOString(),
+      })),
+      /** Every ledger line this purchase put on the partner's payable. */
+      lines,
+      /** What the purchase did to the debt in total, and where that money stands now. */
+      effectOnDebt: owed.toFixed(4),
+      stillOwed: owed.minus(settled).minus(reserved).toFixed(4),
+      inOpenSettlement: reserved.toFixed(4),
+      paid: settled.toFixed(4),
+    };
+  }
+
   private async branchesForEntries(
     entries: { sourceType: string; sourceId: string }[],
   ): Promise<Map<string, { id: string; name: string; address: string }>> {

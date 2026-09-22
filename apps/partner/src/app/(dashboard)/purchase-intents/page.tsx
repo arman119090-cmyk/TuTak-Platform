@@ -387,6 +387,11 @@ function IntentRow({
               {viaProvider ? (
                 <Button
                   size="sm"
+                  /* A stable hook for the end-to-end run. The button's words
+                     follow the cashier's language now, and a test that matched
+                     "Confirm" was really asserting that this screen is in
+                     English — which stopped being true, correctly. */
+                  data-testid="approve-purchase"
                   loading={approve.isPending}
                   onClick={() => approve.mutate({ id: intent.id, dto: lineItem })}
                 >
@@ -395,6 +400,7 @@ function IntentRow({
               ) : (
                 <Button
                   size="sm"
+                  data-testid="confirm-purchase"
                   loading={confirm.isPending}
                   onClick={() => confirm.mutate({ id: intent.id, dto: lineItem })}
                 >

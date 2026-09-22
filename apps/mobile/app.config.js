@@ -524,11 +524,11 @@ module.exports = ({ config }) => ({
     map: mapExtra(),
     appEnv: process.env.APP_ENV ?? 'development',
     /**
-     * Where the public legal pages live — the API serves them at
-     * `/legal/privacy` and `/legal/account-deletion` once
-     * `LEGAL_PAGES_ENABLED=true` on the server. Empty (the default) hides
-     * the Settings row: a link to a 404 is worse than no link, and the
-     * pages stay unpublished until a lawyer has signed the texts.
+     * Where the public legal pages live — the API serves them at `/legal`
+     * and below once the publication gate opens (approved revision, no
+     * placeholders, no draft marker; see `LegalDocumentsService`). Empty
+     * (the default) hides the Settings row: a link to a 404 is worse than
+     * no link, and the pages answer 404 until the texts are approved.
      */
     legalBaseUrl: (process.env.LEGAL_BASE_URL ?? '').replace(/\/+$/, ''),
     /**

@@ -31,6 +31,18 @@ export class PartnerEmployeeController {
    * dispute about this morning's receipt needs the name on it; the narrowing
    * in `cardFor` is what keeps that from becoming the whole staff directory.
    */
+  /**
+   * Everyone who works here, with their permanent codes.
+   *
+   * Declared before `@Get(':code')` because Nest matches in declaration
+   * order and a path parameter would otherwise swallow the collection.
+   */
+  @Get()
+  async list(@CurrentUser() user: RequestUser, @UuidParam('id') partnerId: string) {
+    assertPartnerScope(user, partnerId);
+    return this.employees.listFor(partnerId, branchFilterFor(user, partnerId));
+  }
+
   @Get(':code')
   async byCode(
     @CurrentUser() user: RequestUser,

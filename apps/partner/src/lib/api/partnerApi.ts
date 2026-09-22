@@ -8,6 +8,9 @@ import type {
   PartnerBranchStaffAssignmentDto,
   PartnerDto,
   PartnerEmployeeCardDto,
+  PartnerEmployeeSummaryDto,
+  PartnerStaffInvitationDto,
+  InvitePartnerStaffRequestDto,
   PartnerOfferingDto,
   SetAllBranchesRequestDto,
   TransactionDto,
@@ -203,6 +206,45 @@ export const partnerApi = {
   async employeeCard(id: string, code: string) {
     const { data } = await httpClient.get<ApiEnvelope<PartnerEmployeeCardDto>>(
       `/partners/${id}/employees/${encodeURIComponent(code)}`,
+    );
+    return data.data;
+  },
+
+  /** Everyone who works here, with their permanent codes. People, not postings. */
+  async listEmployees(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerEmployeeSummaryDto[]>>(
+      `/partners/${id}/employees`,
+    );
+    return data.data;
+  },
+
+  async listInvitations(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerStaffInvitationDto[]>>(
+      `/partners/${id}/invitations`,
+    );
+    return data.data;
+  },
+
+  /** The answer carries no token: it went to the invited phone and nowhere else. */
+  async invite(id: string, dto: InvitePartnerStaffRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerStaffInvitationDto>>(
+      `/partners/${id}/invitations`,
+      dto,
+    );
+    return data.data;
+  },
+
+  /** Revokes the old one and issues a new token, so the old link stops working. */
+  async resendInvitation(id: string, invitationId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerStaffInvitationDto>>(
+      `/partners/${id}/invitations/${invitationId}/resend`,
+    );
+    return data.data;
+  },
+
+  async revokeInvitation(id: string, invitationId: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerStaffInvitationDto>>(
+      `/partners/${id}/invitations/${invitationId}/revoke`,
     );
     return data.data;
   },

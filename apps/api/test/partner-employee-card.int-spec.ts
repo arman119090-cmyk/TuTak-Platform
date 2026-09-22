@@ -371,4 +371,78 @@ describe('Partner employee card (integration)', () => {
       expect(refusals[0]).toEqual(refusals[1]);
     });
   });
+
+  describe('the list of people, not postings', () => {
+    it('gives the owner everyone, including people posted nowhere', async () => {
+      const partner = await createPartner(prisma);
+      const owner = await hireStaff(partner.id, RoleName.PARTNER_OWNER);
+      const cashier = await hireStaff(partner.id);
+      const north = await branchOf(partner.id, 'North');
+      await branchStaff.assign(partner.id, north.id, {
+        userId: cashier.id,
+        assignedByUserId: owner.id,
+      });
+      // By code, not by name: the fixture gives everybody the same name, and
+      // two people with one name is the case the code exists for.
+      const ownersCode = await employees.codeFor(partner.id, owner.id);
+
+      const listed = await controller.list(
+        actor(owner.id, [RoleName.PARTNER_OWNER], { PARTNER_OWNER: [partner.id] }),
+        partner.id,
+      );
+
+      expect(listed).toHaveLength(2);
+      expect(listed.find((row) => row.code === ownersCode)?.branches).toEqual([]);
+    });
+
+    it('counts somebody working two branches once', async () => {
+      const partner = await createPartner(prisma);
+      const owner = await hireStaff(partner.id, RoleName.PARTNER_OWNER);
+      const cashier = await hireStaff(partner.id);
+      const north = await branchOf(partner.id, 'North');
+      const south = await branchOf(partner.id, 'South');
+      await branchStaff.assign(partner.id, north.id, {
+        userId: cashier.id,
+        assignedByUserId: owner.id,
+      });
+      await branchStaff.assign(partner.id, south.id, {
+        userId: cashier.id,
+        assignedByUserId: owner.id,
+      });
+
+      const listed = await controller.list(
+        actor(owner.id, [RoleName.PARTNER_OWNER], { PARTNER_OWNER: [partner.id] }),
+        partner.id,
+      );
+
+      const cashiersCode = await employees.codeFor(partner.id, cashier.id);
+      const row = listed.find((r) => r.code === cashiersCode)!;
+      expect(row.branches.map((b) => b.branchName).sort()).toEqual(['North', 'South']);
+      expect(listed.filter((r) => r.code === cashiersCode)).toHaveLength(1);
+    });
+
+    it('shows a cashier only the people at their own branch', async () => {
+      const partner = await createPartner(prisma);
+      const owner = await hireStaff(partner.id, RoleName.PARTNER_OWNER);
+      const cashier = await hireStaff(partner.id);
+      const stranger = await hireStaff(partner.id);
+      const north = await branchOf(partner.id, 'North');
+      const south = await branchOf(partner.id, 'South');
+      await branchStaff.assign(partner.id, north.id, {
+        userId: cashier.id,
+        assignedByUserId: owner.id,
+      });
+      await branchStaff.assign(partner.id, south.id, {
+        userId: stranger.id,
+        assignedByUserId: owner.id,
+      });
+
+      const listed = await controller.list(
+        actor(cashier.id, [RoleName.PARTNER_STAFF], { PARTNER_STAFF: [partner.id] }, [north.id]),
+        partner.id,
+      );
+
+      expect(listed.map((r) => r.code)).toEqual([await employees.codeFor(partner.id, cashier.id)]);
+    });
+  });
 });

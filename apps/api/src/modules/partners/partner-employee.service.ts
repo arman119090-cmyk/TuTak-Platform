@@ -327,4 +327,70 @@ export class PartnerEmployeeService {
       roles: roles.map((r) => ({ role: r.role.name, allBranches: r.allBranches })),
     };
   }
+
+  /**
+   * The partner's people, as the "Employees" page lists them.
+   *
+   * A list of *people*, not of postings. The roster endpoint already returns
+   * assignments, and a person posted to two branches appears twice there —
+   * correct for "who works at this branch", wrong for "who works here".
+   * This is the other question, and the permanent code is the thing that
+   * makes it answerable.
+   *
+   * Narrowed the same way a single card is: a caller who does not see every
+   * branch sees the people posted to the branches they see, and nobody
+   * else. An owner sees everyone, including the people with no posting at
+   * all — themselves, usually.
+   */
+  async listFor(partnerId: string, branchIds: string[] | null = null) {
+    const employees = await this.prisma.partnerEmployee.findMany({
+      where: {
+        partnerId,
+        ...(branchIds === null
+          ? {}
+          : {
+              user: {
+                branchStaffAssignments: {
+                  some: { partnerId, partnerBranchId: { in: branchIds }, isActive: true },
+                },
+              },
+            }),
+      },
+      orderBy: { code: 'asc' },
+      select: {
+        code: true,
+        user: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    if (employees.length === 0) return [];
+
+    const userIds = employees.map((employee) => employee.user.id);
+    const [assignments, roles] = await Promise.all([
+      this.prisma.partnerBranchStaffAssignment.findMany({
+        where: {
+          partnerId,
+          userId: { in: userIds },
+          isActive: true,
+          ...(branchIds === null ? {} : { partnerBranchId: { in: branchIds } }),
+        },
+        select: { userId: true, role: true, branch: { select: { id: true, name: true } } },
+      }),
+      this.prisma.userRole.findMany({
+        where: { partnerId, userId: { in: userIds } },
+        select: { userId: true, allBranches: true, role: { select: { name: true } } },
+      }),
+    ]);
+
+    return employees.map((employee) => ({
+      code: employee.code,
+      firstName: employee.user.firstName,
+      lastName: employee.user.lastName,
+      branches: assignments
+        .filter((a) => a.userId === employee.user.id)
+        .map((a) => ({ branchId: a.branch.id, branchName: a.branch.name, role: a.role })),
+      roles: roles
+        .filter((r) => r.userId === employee.user.id)
+        .map((r) => ({ role: r.role.name, allBranches: r.allBranches })),
+    }));
+  }
 }

@@ -82,3 +82,58 @@ export interface PartnerEmployeeCardDto {
   /** Partner-scoped roles, including an all-branch grant that has no posting. */
   roles: { role: string; allBranches: boolean }[];
 }
+
+
+/**
+ * Where an invitation to work at a partner stands, as a person reads it.
+ *
+ * `EXPIRED` is not a stored status: the server computes it from the deadline
+ * so that an offer stops being acceptable at the moment it says it does,
+ * rather than when some sweep next runs.
+ */
+export enum PartnerStaffInvitationStatusDto {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  REVOKED = 'REVOKED',
+  EXPIRED = 'EXPIRED',
+}
+
+/**
+ * An offer of a job, as the owner's screen sees it.
+ *
+ * There is no token here, and there is no token anywhere a client can reach:
+ * it goes to the invited phone and is stored only as a hash. An owner who
+ * could read it could accept on the invitee's behalf.
+ */
+export interface PartnerStaffInvitationDto {
+  id: string;
+  partnerId: string;
+  phone: string;
+  /** Always `PARTNER_STAFF` or `PARTNER_MANAGER`; the server refuses anything else. */
+  role: string;
+  branchIds: string[];
+  status: PartnerStaffInvitationStatusDto;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+}
+
+/** What an owner sends to offer somebody a job. */
+export interface InvitePartnerStaffRequestDto {
+  phone: string;
+  role: string;
+  branchIds?: string[];
+}
+
+
+/** One person on the partner's "Employees" page. */
+export interface PartnerEmployeeSummaryDto {
+  /** Their permanent code at this partner. Stays with them across a transfer. */
+  code: string;
+  firstName: string;
+  lastName: string;
+  /** Active postings the caller is entitled to see; may be empty for an owner. */
+  branches: { branchId: string; branchName: string; role: string }[];
+  roles: { role: string; allBranches: boolean }[];
+}

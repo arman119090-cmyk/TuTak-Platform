@@ -1307,6 +1307,19 @@ model Partner {
   /// How often this partner is settled. Per-partner, not one global period:
   /// a weekly restaurant and a monthly fuel chain are both normal, and
   /// hardcoding one cadence would force the other into it (product decision, 14.09.2026).
+  /// Next `EMP-<n>` this partner will issue, bumped atomically.
+  ///
+  /// Exists because picking a code by reading the highest one already used is
+  /// a race: two requests read the same maximum and choose the same code.
+  /// `UPDATE ... SET "employeeCodeSeq" = "employeeCodeSeq" + 1 RETURNING` is
+  /// one statement, so PostgreSQL serialises concurrent callers on the row
+  /// lock and each gets a different number.
+  ///
+  /// Both allocators use it — the permanent employee code and the older
+  /// per-assignment display code — because they share one namespace per
+  /// partner. A caller naming a code by hand raises the counter to at least
+  /// that number, so a hand-picked `EMP-042` cannot be reached again later.
+  employeeCodeSeq        Int                            @default(0)
   settlementPeriodicity  SettlementPeriodicity          @default(MONTHLY)
   /// Day the period is anchored to. 1-7 (Mon-Sun) for WEEKLY/BIWEEKLY, 1-28
   /// for MONTHLY — 28 so a monthly anchor exists in February too.

@@ -68,37 +68,51 @@ export class PartnerEmployeeService {
   }
 
   /**
-   * `EMP-<n>`, one past the highest number this partner has issued — counting
-   * **both** tables.
+   * The next `EMP-<n>` for this partner, taken from the partner's own
+   * counter in one atomic statement.
    *
-   * Counting the assignment codes too is the point. They share the `EMP-`
-   * shape and the partner's namespace, and a person's permanent code is
-   * adopted from one of them by the migration. Numbering this table alone
-   * would hand `EMP-002` to a new hire while an old assignment row still
-   * shows `EMP-002` against somebody else — two people, one code, in two
-   * places a partner reads side by side.
+   * The first version read the highest code already issued and inserted one
+   * past it, which is a check followed by a hope: two requests read the same
+   * maximum, choose the same code, and the loser of the unique index is a
+   * request that fails. Eight concurrent allocations reproduced it.
+   *
+   * `UPDATE ... SET seq = seq + 1 RETURNING seq` has no such window.
+   * PostgreSQL takes the row lock for the duration of the statement, so
+   * concurrent callers queue behind it and each leaves with a different
+   * number. Nothing to release, no retry loop to get subtly wrong, and the
+   * uniqueness is the database's guarantee rather than this file's.
+   *
+   * Public because the older per-assignment display code is allocated from
+   * the same namespace and must come from the same counter — a counter half
+   * the writers ignore is not a counter.
    */
-  private async nextCode(partnerId: string, db: Db): Promise<string> {
-    const [employees, assignments] = await Promise.all([
-      db.partnerEmployee.findMany({
-        where: { partnerId, code: { startsWith: PREFIX } },
-        select: { code: true },
-      }),
-      db.partnerBranchStaffAssignment.findMany({
-        where: { partnerId, employeeDisplayCode: { startsWith: PREFIX } },
-        select: { employeeDisplayCode: true },
-      }),
-    ]);
+  async nextCode(partnerId: string, db: Db = this.prisma): Promise<string> {
+    const [row] = await db.$queryRaw<{ employeeCodeSeq: number }[]>`
+      UPDATE "partners"
+      SET "employeeCodeSeq" = "employeeCodeSeq" + 1
+      WHERE "id" = ${partnerId}
+      RETURNING "employeeCodeSeq"
+    `;
+    if (!row) throw new Error(`No such partner: ${partnerId}`);
+    return `${PREFIX}${String(row.employeeCodeSeq).padStart(3, '0')}`;
+  }
 
-    const highest = [
-      ...employees.map((row) => row.code),
-      ...assignments.map((row) => row.employeeDisplayCode),
-    ].reduce((max, code) => {
-      const n = Number(code.slice(PREFIX.length));
-      return Number.isFinite(n) && n > max ? n : max;
-    }, 0);
-
-    return `${PREFIX}${String(highest + 1).padStart(3, '0')}`;
+  /**
+   * Raise the counter to at least `n`, for a code somebody named by hand.
+   *
+   * Without this a partner who types `EMP-042` leaves the counter at 3, and
+   * the allocator walks up to 42 months later and collides with it. Also a
+   * single statement, so it cannot race the increment above.
+   */
+  async reserveUpTo(partnerId: string, code: string, db: Db = this.prisma): Promise<void> {
+    const match = /^EMP-(\d+)$/.exec(code);
+    if (!match) return; // Outside this namespace — the unique indexes still hold.
+    const n = Number(match[1]);
+    await db.$executeRaw`
+      UPDATE "partners"
+      SET "employeeCodeSeq" = GREATEST("employeeCodeSeq", ${n})
+      WHERE "id" = ${partnerId}
+    `;
   }
 
   /**

@@ -64,23 +64,16 @@ export class PartnerBranchStaffService {
   }
 
   /**
-   * `EMP-<n>` scoped to the partner, `n` one past the highest existing
-   * numeric suffix. Best-effort: two concurrent assignments could still
-   * collide on the partner-unique constraint, which the caller surfaces as
-   * an ordinary 409 rather than this racing to retry — assigning staff is
-   * low-frequency, manually-triggered work, not a hot path worth a retry
-   * loop.
+   * The assignment's own display code, taken from the partner's shared
+   * counter rather than from a second reading of the highest number.
+   *
+   * Both codes live in one `EMP-` namespace per partner, so both have to be
+   * issued by the same allocator — see `PartnerEmployeeService.nextCode` for
+   * why reading a maximum and inserting past it is a race rather than a
+   * scheme.
    */
-  private async nextDisplayCode(partnerId: string): Promise<string> {
-    const existing = await this.prisma.partnerBranchStaffAssignment.findMany({
-      where: { partnerId, employeeDisplayCode: { startsWith: 'EMP-' } },
-      select: { employeeDisplayCode: true },
-    });
-    const max = existing.reduce((highest, { employeeDisplayCode }) => {
-      const n = Number(employeeDisplayCode.slice('EMP-'.length));
-      return Number.isFinite(n) && n > highest ? n : highest;
-    }, 0);
-    return `EMP-${String(max + 1).padStart(3, '0')}`;
+  private nextDisplayCode(partnerId: string): Promise<string> {
+    return this.employees.nextCode(partnerId);
   }
 
   /**
@@ -104,6 +97,11 @@ export class PartnerBranchStaffService {
     }
 
     const employeeDisplayCode = params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
+    // A hand-picked code has to move the counter, or the allocator walks up
+    // to it later and collides with a code this partner is already using.
+    if (params.employeeDisplayCode) {
+      await this.employees.reserveUpTo(partnerId, params.employeeDisplayCode);
+    }
 
     // The person's permanent code at this partner, minted now if this is the
     // first time they have been named. Separate from the assignment code

@@ -1,6 +1,8 @@
 import type {
+  PartnerActivityPageDto,
   PartnerSettlementDto,
   PartnerStatementDto,
+  PurchaseBreakdownDto,
   UnsettledPositionDto,
 } from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
@@ -99,6 +101,39 @@ export const settlementApi = {
 
   async position(partnerId: string): Promise<UnsettledPositionDto> {
     const { data } = await httpClient.get(`/partner/settlements/${partnerId}/position`);
+    return data.data;
+  },
+
+  /**
+   * Every movement on the partner's own account, filtered and paged.
+   *
+   * The cursor is passed back exactly as it was received. Building one on
+   * this side would mean relying on a sort order the server is free to
+   * change, and a cursor the server did not issue is refused rather than
+   * quietly restarting the list at the top.
+   */
+  async activity(
+    partnerId: string,
+    params: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      state?: 'UNSETTLED' | 'IN_SETTLEMENT' | 'UNDER_REVIEW' | 'PAID';
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<PartnerActivityPageDto> {
+    const { data } = await httpClient.get(`/partner/settlements/${partnerId}/activity`, {
+      params,
+    });
+    return data.data;
+  },
+
+  /** One purchase: what it cost, what funded it, and where its money stands. */
+  async purchaseBreakdown(partnerId: string, purchaseIntentId: string): Promise<PurchaseBreakdownDto> {
+    const { data } = await httpClient.get(
+      `/partner/settlements/${partnerId}/purchases/${purchaseIntentId}/breakdown`,
+    );
     return data.data;
   },
 

@@ -16,6 +16,7 @@ import {
 import { settlementApi } from '@/lib/api/financeApi';
 import type { PartnerSettlementDto, UnsettledPositionDto } from '@tutak/shared-types';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
+import { ActivityFeed } from './ActivityFeed';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
@@ -173,10 +174,18 @@ export default function SettlementsPage() {
   const total = position ? Number(position.ledgerBalance) : null;
   const owedToYou = total !== null && total > 0;
   const youOwe = total !== null && total < 0;
+  // The third state, and the reason it is named rather than left to be
+  // inferred: a balance of zero and a screen that failed to load both print
+  // "0.00" under "TuTak owes you", and only one of them means the two sides
+  // are square. `positionState` decides which, and a figure that never
+  // arrived is a dash, never a nil balance.
+  const settledUp = total !== null && total === 0;
 
   const totalTile = figure(
-    (p) => p.ledgerBalance,
-    youOwe ? 'Negative: you owe TuTak this amount' : 'From the ledger. Includes the three below',
+    (p) => (Number(p.ledgerBalance) < 0 ? String(-Number(p.ledgerBalance)) : p.ledgerBalance),
+    youOwe
+      ? 'You transfer this to TuTak; TuTak records it'
+      : 'From the ledger. Includes the three below',
   );
   const unsettledTile = figure((p) => p.net, 'Nobody has drafted a settlement for this yet');
   const openTile = figure((p) => p.inOpenSettlements, 'Claimed by settlements that have not been paid');
@@ -207,9 +216,39 @@ export default function SettlementsPage() {
         />
       ) : null}
 
+      {/*
+        The position in words before it is a number.
+        Three states, named: TuTak owes you, you owe TuTak, or nothing is
+        outstanding either way. A partner should be able to answer "do I
+        have money coming" from one line, without reading a sign off a
+        figure and working out which direction it points.
+      */}
+      {positionState !== 'loading' && positionState !== 'error' && position ? (
+        <div
+          className="rounded-lg border border-subtle p-4"
+          data-testid="position-headline"
+          aria-live="polite"
+        >
+          <p className="text-[15px] font-semibold text-ink">
+            {owedToYou
+              ? 'TuTak owes you'
+              : youOwe
+                ? 'You owe TuTak'
+                : 'You and TuTak are square'}
+          </p>
+          <p className="text-[13px] text-muted">
+            {owedToYou
+              ? 'Your balance is in your favour. What is below says where that money currently stands.'
+              : youOwe
+                ? 'Your balance is against you — refunds after a payout and your contributions add up to more than TuTak owes for. You settle this by transferring it; TuTak records the transfer.'
+                : 'Nothing is outstanding in either direction right now.'}
+          </p>
+        </div>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <StatTile
-          label={youOwe ? 'You owe TuTak' : 'TuTak owes you in total'}
+          label={youOwe ? 'You owe TuTak' : settledUp ? 'Nothing outstanding' : 'TuTak owes you in total'}
           value={totalTile.value}
           tone={owedToYou ? 'available' : youOwe ? 'reserved' : 'default'}
           hint={totalTile.hint}
@@ -461,6 +500,9 @@ export default function SettlementsPage() {
           )}
         </div>
       ) : null}
+
+      {/* Where every figure above came from, line by line. */}
+      <ActivityFeed partnerId={partnerId} />
 
       {reporting ? (
         <Surfaceless>

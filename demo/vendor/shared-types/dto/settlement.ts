@@ -175,3 +175,91 @@ export interface PartnerStatementDto {
   settlement: PartnerSettlementDto;
   entries: PartnerSettlementEntryDto[];
 }
+
+/**
+ * Where one movement's money stands.
+ *
+ * The same four names the position tiles use, so a row and a tile cannot
+ * describe the same amount differently. A cancelled settlement is absent on
+ * purpose: cancelling deletes its claims, so its rows are `UNSETTLED` again,
+ * which is what they are.
+ */
+export type PartnerActivityState = 'UNSETTLED' | 'IN_SETTLEMENT' | 'UNDER_REVIEW' | 'PAID';
+
+/** One line of a partner's own account. */
+export interface PartnerActivityRowDto {
+  postingId: string;
+  occurredAt: string;
+  /** The ledger kind, as stored — what a partner quotes back to TuTak. */
+  kind: string;
+  /** What this line did to the debt, signed: positive raises what TuTak owes. */
+  debtChange: string;
+  state: PartnerActivityState;
+  settlementId: string | null;
+  sourceType: string;
+  sourceId: string;
+  /** The short, quotable form of `sourceId`. */
+  reference: string;
+  /** The branch by name only — never the organisation chain on every row. */
+  branch: string | null;
+  /** The person's permanent code, frozen at confirmation. Null when no person confirmed it. */
+  employeeCode: string | null;
+  confirmationSource: string | null;
+  /** Whether this line can be itemised further by the purchase breakdown. */
+  itemisable: boolean;
+}
+
+export interface PartnerActivityPageDto {
+  rows: PartnerActivityRowDto[];
+  /** Opaque; pass it back to continue. Null means this was the last page. */
+  nextCursor: string | null;
+  /**
+   * The totals of what the *filter* selected. Never the organisation's
+   * position: a branch's March is not what TuTak owes the business, and the
+   * two must not be printed as the same kind of number.
+   */
+  selection: { credits: string; debits: string; net: string; rowCount: number };
+  /** True when the selection above describes less than the whole account. */
+  filtered: boolean;
+}
+
+/** Where one line of a purchase's ledger effect currently stands. */
+export interface PurchaseBreakdownLineDto {
+  kind: string;
+  amount: string;
+  occurredAt: string;
+  state: 'UNSETTLED' | 'IN_SETTLEMENT' | 'PAID';
+  settlementId: string | null;
+}
+
+/**
+ * One purchase, and what it did to the debt.
+ *
+ * Deliberately silent about the pool split. What TuTak keeps of its own
+ * share, and what it pays referrers, is not this partner's business and
+ * telling them would leak other people's economics.
+ */
+export interface PurchaseBreakdownDto {
+  purchaseIntentId: string;
+  confirmationCode: string | null;
+  confirmedAt: string | null;
+  status: string;
+  branchId: string | null;
+  confirmationSource: string | null;
+  employeeCode: string | null;
+  grossAmount: string;
+  bonusApplied: string;
+  prepaidApplied: string;
+  externalAmount: string;
+  paymentRoute: string;
+  /** Who ended up holding the money paid outside the customer's TuTak balances. */
+  externalCollectedBy: 'PARTNER_TILL' | 'TUTAK_VIA_PROVIDER';
+  refundedAmount: string;
+  refunds: { id: string; amount: string; occurredAt: string }[];
+  lines: PurchaseBreakdownLineDto[];
+  /** What the purchase did to the debt in total, and where that money stands. */
+  effectOnDebt: string;
+  stillOwed: string;
+  inOpenSettlement: string;
+  paid: string;
+}

@@ -78,7 +78,7 @@ describe('Partner contribution rules (integration)', () => {
   beforeEach(async () => {
     await truncateAll(prisma);
     partnerId = (await createPartner(prisma)).id;
-    staffId = (await createStaffUser(prisma)).id;
+    staffId = (await createStaffUser(prisma, { partnerId })).id;
     adminId = (await createStaffUser(prisma)).id;
     checkerId = (await createStaffUser(prisma)).id;
   });

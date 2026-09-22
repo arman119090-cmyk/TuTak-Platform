@@ -1,4 +1,4 @@
-import { BonusEntryType, PrismaClient, PurchaseIntentStatus } from '@prisma/client';
+import { BonusEntryType, PrismaClient, PurchaseIntentStatus, RoleName } from '@prisma/client';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { PurchaseIntentsService } from '../src/modules/purchase-intents/purchase-intents.service';
 import { createCustomer, createPartner, createStaffUser } from './setup/fixtures';
@@ -47,11 +47,25 @@ describe('Launch-scale load on the till route (integration, pool 5)', () => {
   const REFERRED = 10;
 
   it('confirms 60 concurrent purchases at 20 partners exactly once, rewards every referrer, and keeps the ledger at zero', async () => {
-    const staffId = (await createStaffUser(prisma)).id;
     const partnerIds: string[] = [];
     for (let i = 0; i < PARTNERS; i += 1) {
       partnerIds.push((await createPartner(prisma, { displayName: `Shop ${i}` })).id);
     }
+    // One cashier who genuinely works at all twenty, because confirmation
+    // re-checks standing against the database at the moment it moves money.
+    // A single role row per partner is what a person working at twenty
+    // partners actually has.
+    const staffId = (await createStaffUser(prisma, { partnerId: partnerIds[0] })).id;
+    const partnerStaffRole = await prisma.role.findFirstOrThrow({
+      where: { name: RoleName.PARTNER_STAFF },
+    });
+    await prisma.userRole.createMany({
+      data: partnerIds.slice(1).map((partnerId) => ({
+        userId: staffId,
+        roleId: partnerStaffRole.id,
+        partnerId,
+      })),
+    });
     const customers = [] as { id: string; partnerId: string }[];
     for (let i = 0; i < PARTNERS * PER_PARTNER; i += 1) {
       const { user } = await createCustomer(prisma);

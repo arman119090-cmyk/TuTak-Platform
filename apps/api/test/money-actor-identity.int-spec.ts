@@ -47,7 +47,7 @@ describe('Actor identity on money paths (integration)', () => {
   beforeEach(async () => {
     await truncateAll(prisma);
     partnerId = (await createPartner(prisma)).id;
-    staffId = (await createStaffUser(prisma)).id;
+    staffId = (await createStaffUser(prisma, { partnerId })).id;
     financeA = (await createStaffUser(prisma)).id;
     financeB = (await createStaffUser(prisma)).id;
   });

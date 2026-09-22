@@ -70,7 +70,7 @@ describe('Money flags off (integration)', () => {
   beforeEach(async () => {
     await truncateAll(prisma);
     partnerId = (await createPartner(prisma)).id;
-    staffId = (await createStaffUser(prisma)).id;
+    staffId = (await createStaffUser(prisma, { partnerId })).id;
   });
 
   it('refuses to create a provider-routed purchase', async () => {

@@ -5,6 +5,7 @@ import {
   PostingDirection,
   PrismaClient,
   QrCodeType,
+  RoleName,
   User,
   Wallet,
 } from '@prisma/client';
@@ -57,9 +58,25 @@ export async function createCustomer(
  */
 export async function createStaffUser(
   prisma: PrismaClient,
-  overrides: Partial<{ firstName: string; lastName: string }> = {},
+  overrides: Partial<{
+    firstName: string;
+    lastName: string;
+    /**
+     * Give this person a real `PARTNER_STAFF` role at this partner.
+     *
+     * Needed by every test that then confirms a purchase through them.
+     * Confirmation re-checks standing against the database inside the
+     * transaction that moves the money (`assertStandingAtFinancialChange`),
+     * so a user with no role at the partner is refused — correctly, since
+     * somebody who does not work there cannot take money there. A fixture
+     * that left the role out was describing a state the system does not
+     * reach, and the tests built on it were proving nothing about a real
+     * cashier.
+     */
+    partnerId: string;
+  }> = {},
 ): Promise<User> {
-  return prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       phone: `+3747${Math.floor(Math.random() * 90_000_000 + 10_000_000)}`,
       passwordHash: 'test-not-a-real-hash',
@@ -69,6 +86,15 @@ export async function createStaffUser(
       isPhoneVerified: true,
     },
   });
+
+  if (overrides.partnerId) {
+    const role = await prisma.role.findFirstOrThrow({ where: { name: RoleName.PARTNER_STAFF } });
+    await prisma.userRole.create({
+      data: { userId: user.id, roleId: role.id, partnerId: overrides.partnerId },
+    });
+  }
+
+  return user;
 }
 
 export async function createPartner(

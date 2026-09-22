@@ -188,6 +188,15 @@ export class PartnerSettlementAdminController {
  *
  * The one write they have is reporting a problem, which asserts nothing
  * about whether money moved and locks them out of deciding it.
+ *
+ * Every read here demands `SETTLEMENT_READ` as well as partner scope, and
+ * the two are not interchangeable. Scope asks *which* partner and nothing
+ * else, so a cashier — scoped to their own partner like everybody else on
+ * its payroll — passed it. `ROLE_PERMISSIONS` grants `SETTLEMENT_READ` to
+ * `PARTNER_OWNER` alone and says why in its own docblock; these routes
+ * simply never asked for it, so the organisation's whole money position and
+ * every itemised statement were readable by anyone who could confirm a sale.
+ * `partner-settlement-access.int-spec.ts` pins both halves.
  */
 @ApiTags('partner-settlements')
 @ApiBearerAuth()
@@ -196,6 +205,7 @@ export class PartnerSettlementPartnerController {
   constructor(private readonly settlements: PartnerSettlementService) {}
 
   @Get(':partnerId')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async statements(@CurrentUser() actor: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(actor, partnerId);
     return this.settlements.list({ partnerId });
@@ -203,6 +213,7 @@ export class PartnerSettlementPartnerController {
 
   /** Opening, movements and closing, itemised to the source of each line. */
   @Get(':partnerId/statement/:id')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async statement(
     @CurrentUser() actor: RequestUser,
     @UuidParam('partnerId') partnerId: string,
@@ -219,6 +230,7 @@ export class PartnerSettlementPartnerController {
    * moment a draft was created, which told a partner they had been paid.
    */
   @Get(':partnerId/position')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async position(@CurrentUser() actor: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(actor, partnerId);
     return this.settlements.position(partnerId);

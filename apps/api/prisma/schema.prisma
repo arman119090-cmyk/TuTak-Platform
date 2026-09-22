@@ -1691,6 +1691,26 @@ model PartnerEmployee {
   @@map("partner_employees")
 }
 
+/// Where a branch stands in its life, as the partner's owner manages it.
+///
+/// `isActive` came first and answers one question — may a purchase be taken
+/// here right now. It stays, it stays in step with this column (the database
+/// enforces that, `partner_branches_state_matches_is_active`), and every
+/// query that reads it keeps working. What it cannot say is *why* a branch is
+/// shut, and the two reasons need different screens: a location closed for
+/// refurbishment comes back, and a location that is gone does not.
+enum PartnerBranchState {
+  /// Open. Purchases may be taken here.
+  ACTIVE
+  /// Temporarily shut by the owner. No new purchases; returns, disputes and
+  /// history all continue to work; the owner may reopen it.
+  SUSPENDED
+  /// Closed for good. Everything `SUSPENDED` allows, minus reopening in one
+  /// click — restoring it is a deliberate act — and it drops out of the
+  /// ordinary branch list rather than sitting there forever.
+  ARCHIVED
+}
+
 model PartnerBranch {
   id        String          @id @default(uuid())
   partnerId String
@@ -1707,6 +1727,18 @@ model PartnerBranch {
   /// predates this column is, in fact, still open; there is no historical
   /// case where the true value is otherwise.
   isActive  Boolean         @default(true)
+  /// Why it is open or shut — see `PartnerBranchState`.
+  ///
+  /// Kept beside `isActive` rather than replacing it. Replacing it would
+  /// have meant rewriting every read in the codebase and every released
+  /// client in one step, to answer a question none of them asks: they all
+  /// want "may I sell here", and `isActive` is that answer. The database
+  /// keeps the two from drifting.
+  state     PartnerBranchState @default(ACTIVE)
+  /// When the owner last shut or reopened it, and who did. Null on a branch
+  /// that has only ever been open.
+  stateChangedAt       DateTime?
+  stateChangedByUserId String?
   /// Meaningful only when the owning `Partner.category` is `"fuel"` — which
   /// single product this specific branch sells. Null for every non-fuel
   /// branch. Also null for a fuel branch nobody has classified yet: this is
@@ -1733,6 +1765,9 @@ model PartnerBranch {
   // assignment or QR code can never point at a branch belonging to a
   // *different* partner than the one it also names, without a trigger.
   @@unique([partnerId, id])
+  // The owner's branch list hides archived rows; the purchase path asks for
+  // open ones. Both are per-partner reads.
+  @@index([partnerId, state])
   @@map("partner_branches")
 }
 

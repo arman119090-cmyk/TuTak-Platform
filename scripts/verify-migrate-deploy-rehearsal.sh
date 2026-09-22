@@ -44,6 +44,7 @@ NEW_MIGRATIONS=(
   "20260922160100_purchase_confirmation_source"
   "20260922170000_partner_employee_code_sequence"
   "20260922180000_purchase_confirmation_consistency"
+  "20260922190000_partner_branch_state"
 )
 
 failures=0
@@ -143,7 +144,7 @@ echo "   партнёр 1, сотрудники 3, назначения $before_
 
 # ── The release under test ───────────────────────────────────────────────
 echo
-echo "3. Штатный deploy четырёх новых миграций"
+echo "3. Штатный deploy ${#NEW_MIGRATIONS[@]} новых миграций"
 for name in "${NEW_MIGRATIONS[@]}"; do
   cp -r "$API/prisma/migrations/$name" "$STAGE/migrations/$name"
 done
@@ -152,10 +153,11 @@ done
 echo
 echo "4. Проверки"
 
-check "применены ровно четыре новые миграции" "$((staged + 4))" \
+check "применены ровно новые миграции и ничего сверх" "$((staged + ${#NEW_MIGRATIONS[@]}))" \
   "SELECT count(*) FROM \"_prisma_migrations\" WHERE finished_at IS NOT NULL;"
-check "каждая новая записана в историю" "4" \
-  "SELECT count(*) FROM \"_prisma_migrations\" WHERE migration_name IN ('${NEW_MIGRATIONS[0]}','${NEW_MIGRATIONS[1]}','${NEW_MIGRATIONS[2]}','${NEW_MIGRATIONS[3]}');"
+names="$(printf "'%s'," "${NEW_MIGRATIONS[@]}")"
+check "каждая новая записана в историю" "${#NEW_MIGRATIONS[@]}" \
+  "SELECT count(*) FROM \"_prisma_migrations\" WHERE migration_name IN (${names%,});"
 check "ни одна не отмечена как откатанная" "0" \
   "SELECT count(*) FROM \"_prisma_migrations\" WHERE rolled_back_at IS NOT NULL;"
 
@@ -193,9 +195,15 @@ check "старой покупке не придуман источник под
 check "старая покупка сохранила исполнителя и время" "u12026-01-1511:00:00" \
   "SELECT \"confirmedByUserId\" || \"confirmedAt\" FROM \"purchase_intents\" WHERE \"id\"='pi-old';"
 
+check "филиалы получили состояние, выведенное из isActive" "ACTIVE|ACTIVE" \
+  "SELECT string_agg(\"state\"::text, '|' ORDER BY \"id\") FROM \"partner_branches\";"
+
+refuses "база отклоняет архивный филиал, который всё ещё торгует" \
+  "UPDATE \"partner_branches\" SET \"state\" = 'ARCHIVED' WHERE \"id\" = 'b1';"
+
 # ── The constraints the deploy was supposed to install ───────────────────
-check "оба ограничения подтверждения существуют" "2" \
-  "SELECT count(*) FROM pg_constraint WHERE conname IN ('purchase_intents_confirmation_is_consistent','purchase_intents_confirmation_posting_is_whole');"
+check "все три новых ограничения существуют" "3" \
+  "SELECT count(*) FROM pg_constraint WHERE conname IN ('purchase_intents_confirmation_is_consistent','purchase_intents_confirmation_posting_is_whole','partner_branches_state_matches_is_active');"
 
 refuses "база отклоняет подтверждение кассира без кода сотрудника" \
   "UPDATE \"purchase_intents\" SET \"confirmationSource\"='STAFF' WHERE \"id\"='pi-old';"

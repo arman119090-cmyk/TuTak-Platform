@@ -1,5 +1,6 @@
 import type { MediaImageDto } from './media';
 import type { BranchFuelType } from '../enums/partner-branch';
+import { PartnerBranchState } from '../enums/partner-branch';
 
 /**
  * One row of a partner's optional public product/service list — the priced
@@ -33,10 +34,26 @@ export interface PartnerBranchDto {
   city: string;
   latitude: number;
   longitude: number;
+  /** May a purchase be taken here right now. True exactly when `state` is `ACTIVE`. */
   isActive: boolean;
+  /**
+   * Why it is open or shut.
+   *
+   * Read this to decide what to show the owner; read `isActive` to decide
+   * whether selling is possible. The server keeps them in step, and the
+   * database refuses them coming apart.
+   */
+  state: PartnerBranchState;
+  /** When the owner last shut or reopened it. Null if it has only ever been open. */
+  stateChangedAt?: string | null;
   /** Meaningful only for a `fuel`-category partner — see `PartnerBranch.fuelType`. */
   fuelType?: BranchFuelType | null;
   createdAt: string;
+}
+
+/** The owner opening a location, shutting it for now, or closing it for good. */
+export interface SetBranchStateRequestDto {
+  state: PartnerBranchState;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AuthenticatedUserDto, PartnerBranchDto } from '@tutak/shared-types';
-import { Role } from '@tutak/shared-types';
+import { PartnerBranchState, Role } from '@tutak/shared-types';
 import LocationsPage from './page';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
@@ -18,7 +18,7 @@ jest.mock('@/lib/api/partnerApi', () => ({
     listBranches: jest.fn(),
     createBranch: jest.fn(),
     updateBranch: jest.fn(),
-    setBranchActive: jest.fn(),
+    setBranchState: jest.fn(),
   },
 }));
 
@@ -45,6 +45,7 @@ function branchFixture(overrides: Partial<PartnerBranchDto> = {}): PartnerBranch
   return {
     id: 'branch-1',
     partnerId: 'partner-1',
+    state: PartnerBranchState.ACTIVE,
     name: 'Downtown',
     address: '1 Republic Square',
     city: 'Yerevan',
@@ -56,10 +57,10 @@ function branchFixture(overrides: Partial<PartnerBranchDto> = {}): PartnerBranch
   };
 }
 
-/** The "Add location" button starts disabled while the branch list is still loading. */
+/** The "Add branch" button starts disabled while the branch list is still loading. */
 async function waitForLoaded() {
   await waitFor(() =>
-    expect((screen.getByText('Add location') as HTMLButtonElement).disabled).toBe(false),
+    expect((screen.getByText('Add branch') as HTMLButtonElement).disabled).toBe(false),
   );
 }
 
@@ -94,21 +95,28 @@ describe('LocationsPage', () => {
     renderPage();
 
     await waitFor(() => expect(partnerApi.listBranches).toHaveBeenCalledWith('partner-1'));
-    expect(await screen.findByText(/No locations yet/)).toBeTruthy();
+    expect(await screen.findByText(/No branches yet/)).toBeTruthy();
   });
 
-  it('renders the branches fetched from the server, with their status', async () => {
+  it('renders the branches fetched from the server, with their state', async () => {
     (partnerApi.listBranches as jest.Mock).mockResolvedValue([
-      branchFixture({ isActive: true }),
-      branchFixture({ id: 'branch-2', name: 'Airport', isActive: false }),
+      branchFixture({ isActive: true, state: PartnerBranchState.ACTIVE }),
+      branchFixture({
+        id: 'branch-2',
+        name: 'Airport',
+        isActive: false,
+        state: PartnerBranchState.SUSPENDED,
+      }),
     ]);
     useAuthStore.setState({ user: buildUser() });
     renderPage();
 
     expect(await screen.findByText('Downtown')).toBeTruthy();
     expect(screen.getByText('Airport')).toBeTruthy();
-    expect(screen.getByText('Active')).toBeTruthy();
-    expect(screen.getByText('Inactive')).toBeTruthy();
+    // "Open" and "Closed for now", not "Active" and "Inactive": the owner's
+    // two reasons for shutting a shop imply different next steps.
+    expect(screen.getByText('Open')).toBeTruthy();
+    expect(screen.getByText('Closed for now')).toBeTruthy();
   });
 
   it('lets the owner add a location with valid coordinates', async () => {
@@ -118,7 +126,7 @@ describe('LocationsPage', () => {
     renderPage();
 
     await waitForLoaded();
-    fireEvent.click(screen.getByText('Add location'));
+    fireEvent.click(screen.getByText('Add branch'));
 
     fireEvent.change(screen.getByPlaceholderText('Downtown'), { target: { value: 'Downtown' } });
     fireEvent.change(screen.getByPlaceholderText('1 Republic Square'), {
@@ -149,7 +157,7 @@ describe('LocationsPage', () => {
     renderPage();
 
     await waitForLoaded();
-    fireEvent.click(screen.getByText('Add location'));
+    fireEvent.click(screen.getByText('Add branch'));
 
     fireEvent.change(screen.getByPlaceholderText('Downtown'), { target: { value: 'Downtown' } });
     fireEvent.change(screen.getByPlaceholderText('1 Republic Square'), {
@@ -163,20 +171,71 @@ describe('LocationsPage', () => {
     expect(partnerApi.createBranch).not.toHaveBeenCalled();
   });
 
-  it('lets the owner deactivate an active branch', async () => {
-    (partnerApi.listBranches as jest.Mock).mockResolvedValue([branchFixture({ isActive: true })]);
-    (partnerApi.setBranchActive as jest.Mock).mockResolvedValue(branchFixture({ isActive: false }));
+  it('lets the owner close a location for now, which is not the same as for good', async () => {
+    (partnerApi.listBranches as jest.Mock).mockResolvedValue([
+      branchFixture({ isActive: true, state: PartnerBranchState.ACTIVE }),
+    ]);
+    (partnerApi.setBranchState as jest.Mock).mockResolvedValue(
+      branchFixture({ isActive: false, state: PartnerBranchState.SUSPENDED }),
+    );
     useAuthStore.setState({ user: buildUser() });
     renderPage();
 
     await screen.findByText('Downtown');
     await act(async () => {
-      fireEvent.click(screen.getByText('Deactivate'));
+      fireEvent.click(screen.getByText('Close for now'));
     });
 
     await waitFor(() =>
-      expect(partnerApi.setBranchActive).toHaveBeenCalledWith('partner-1', 'branch-1', false),
+      expect(partnerApi.setBranchState).toHaveBeenCalledWith(
+        'partner-1',
+        'branch-1',
+        PartnerBranchState.SUSPENDED,
+      ),
     );
+  });
+
+  it('offers to close a location for good, separately', async () => {
+    (partnerApi.listBranches as jest.Mock).mockResolvedValue([
+      branchFixture({ isActive: true, state: PartnerBranchState.ACTIVE }),
+    ]);
+    (partnerApi.setBranchState as jest.Mock).mockResolvedValue(
+      branchFixture({ isActive: false, state: PartnerBranchState.ARCHIVED }),
+    );
+    useAuthStore.setState({ user: buildUser() });
+    renderPage();
+
+    await screen.findByText('Downtown');
+    await act(async () => {
+      fireEvent.click(screen.getByText('Close for good'));
+    });
+
+    await waitFor(() =>
+      expect(partnerApi.setBranchState).toHaveBeenCalledWith(
+        'partner-1',
+        'branch-1',
+        PartnerBranchState.ARCHIVED,
+      ),
+    );
+  });
+
+  /**
+   * The question an owner has when shutting a shop is what happens to the
+   * sales already made there, so the answer is on the row rather than in a
+   * help page somewhere.
+   */
+  it('says on the row that returns and history carry on', async () => {
+    (partnerApi.listBranches as jest.Mock).mockResolvedValue([
+      branchFixture({ isActive: false, state: PartnerBranchState.ARCHIVED }),
+    ]);
+    useAuthStore.setState({ user: buildUser() });
+    renderPage();
+
+    expect(await screen.findByText('Closed for good')).toBeTruthy();
+    expect(screen.getByText(/Returns and history carry on/)).toBeTruthy();
+    // Nothing to archive twice, and reopening is offered instead.
+    expect(screen.queryByText('Close for good')).toBeNull();
+    expect(screen.getByText('Reopen')).toBeTruthy();
   });
 
   it('lets the owner edit an existing branch', async () => {

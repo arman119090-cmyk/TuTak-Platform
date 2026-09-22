@@ -1,5 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { BranchFuelType, MediaAsset, PartnerOfferingItem, PartnerStatus, Prisma, RoleName } from '@prisma/client';
+import {
+  BranchFuelType,
+  MediaAsset,
+  PartnerBranchState,
+  PartnerOfferingItem,
+  PartnerStatus,
+  Prisma,
+  RoleName,
+} from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MediaViewService } from '../media/media-view.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -321,9 +329,21 @@ export class PartnersService {
    * "my locations" list needs to show a closed branch too, so the partner
    * can reopen it rather than having to recreate it from scratch.
    */
-  listBranches(partnerId: string) {
+  /**
+   * A partner's branches, archived ones left out unless asked for.
+   *
+   * An archived location is not deleted and never will be — its purchases,
+   * statements and disputes all point at it — but a list that shows every
+   * location the business ever had, forever, stops being the list of places
+   * it trades at. `includeArchived` is for the screen that lets the owner
+   * look back or restore one.
+   */
+  listBranches(partnerId: string, includeArchived = false) {
     return this.prisma.partnerBranch.findMany({
-      where: { partnerId },
+      where: {
+        partnerId,
+        ...(includeArchived ? {} : { state: { not: PartnerBranchState.ARCHIVED } }),
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -370,14 +390,81 @@ export class PartnersService {
     return this.prisma.partnerBranch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  /** Deactivating rather than deleting — see `PartnerBranch.isActive`'s own docblock. */
-  async setBranchActive(partnerId: string, branchId: string, isActive: boolean) {
+  /**
+   * The older open/closed switch, kept working.
+   *
+   * Released clients send this and nothing else, so it keeps its meaning:
+   * off means shut, and shut without a stated reason is a suspension — the
+   * reversible one. Archiving is a deliberate act and has its own route; it
+   * is not something a client should be able to do by accident with a
+   * boolean.
+   *
+   * Reopening an archived branch this way is refused rather than silently
+   * performed, for the same reason: `isActive: true` means "open up again",
+   * and an owner who archived a location did not mean "until somebody
+   * toggles this".
+   */
+  async setBranchActive(
+    partnerId: string,
+    branchId: string,
+    isActive: boolean,
+    actorUserId?: string,
+  ) {
+    const current = await this.branchOrThrow(partnerId, branchId);
+    if (current.state === PartnerBranchState.ARCHIVED) {
+      throw new BadRequestException(
+        'This branch is archived. Restore it from the branch list if it is trading again.',
+      );
+    }
+    return this.setBranchState(
+      partnerId,
+      branchId,
+      isActive ? PartnerBranchState.ACTIVE : PartnerBranchState.SUSPENDED,
+      actorUserId,
+    );
+  }
+
+  /**
+   * Open it, shut it for now, or close it for good.
+   *
+   * `isActive` is written in the same statement, because the two are one
+   * fact and every read in this codebase asks the `isActive` half. The
+   * database refuses the pair coming apart
+   * (`partner_branches_state_matches_is_active`), so this method cannot
+   * quietly produce an archived branch that still takes money.
+   *
+   * What none of the three states touches is history. A suspended or
+   * archived branch keeps its purchases, its statement lines and its open
+   * disputes, and the people entitled to settle those keep being able to:
+   * refunds are checked against the purchase and the person's standing, not
+   * against whether the shop is open today. Closing a location is not a
+   * reason to strand the customer who bought something there last week.
+   */
+  async setBranchState(
+    partnerId: string,
+    branchId: string,
+    state: PartnerBranchState,
+    actorUserId?: string,
+  ) {
     const { count } = await this.prisma.partnerBranch.updateMany({
       where: { id: branchId, partnerId },
-      data: { isActive },
+      data: {
+        state,
+        isActive: state === PartnerBranchState.ACTIVE,
+        stateChangedAt: new Date(),
+        stateChangedByUserId: actorUserId ?? null,
+      },
     });
     if (count === 0) throw new NotFoundException('Branch not found');
     return this.prisma.partnerBranch.findUniqueOrThrow({ where: { id: branchId } });
+  }
+
+  private async branchOrThrow(partnerId: string, branchId: string) {
+    const branch = await this.prisma.partnerBranch.findFirst({
+      where: { id: branchId, partnerId },
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+    return branch;
   }
 
   /**

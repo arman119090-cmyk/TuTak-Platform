@@ -22,7 +22,10 @@ const NAV: NavItem[] = [
   },
   { href: '/ev-stations', label: 'EV stations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
   { href: '/branding', label: 'Branding', icon: <NavIcon d="M4 16.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5Zm0 0 4.5-4.5 3 3 3.5-3.5L20 15M9 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z" /> },
-  { href: '/locations', label: 'Locations', icon: <NavIcon d="M12 21s7-6.5 7-11.5a7 7 0 1 0-14 0C5 14.5 12 21 12 21Zm0-8.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /> },
+  // The organisation: where you trade and who works there. Kept as two
+  // entries rather than one page with tabs — the owner arrives with one of
+  // the two questions already in mind, and a tab would make them pick twice.
+  { href: '/locations', label: 'Branches', icon: <NavIcon d="M12 21s7-6.5 7-11.5a7 7 0 1 0-14 0C5 14.5 12 21 12 21Zm0-8.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /> },
   {
     href: '/employees',
     label: 'Employees',

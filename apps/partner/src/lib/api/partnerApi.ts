@@ -4,6 +4,7 @@ import type {
   PartnerAnalyticsDto,
   PartnerBranchDto,
   PartnerBranchQrCodeDto,
+  PartnerBranchState,
   PartnerBranchStaffAssignmentDto,
   PartnerDto,
   PartnerEmployeeCardDto,
@@ -64,9 +65,11 @@ export const partnerApi = {
 
   /** A partner's own locations — spec: partner self-service branches
       (product decision, 2026-08-26). */
-  async listBranches(id: string) {
+  /** Archived locations are left out unless asked for — they are history, not the list of places you trade at. */
+  async listBranches(id: string, includeArchived = false) {
     const { data } = await httpClient.get<ApiEnvelope<PartnerBranchDto[]>>(
       `/partners/${id}/branches`,
+      { params: includeArchived ? { includeArchived: 'true' } : undefined },
     );
     return data.data;
   },
@@ -95,10 +98,17 @@ export const partnerApi = {
   },
 
   /** Deactivates/reactivates rather than deleting — see `PartnerBranchDto.isActive`. */
-  async setBranchActive(id: string, branchId: string, isActive: boolean) {
+  /**
+   * Open a location, shut it for now, or close it for good.
+   *
+   * Prefer this over the older boolean: it says which of the two kinds of
+   * "shut" the owner meant, and archiving is not something to perform by
+   * toggling something.
+   */
+  async setBranchState(id: string, branchId: string, state: PartnerBranchState) {
     const { data } = await httpClient.patch<ApiEnvelope<PartnerBranchDto>>(
-      `/partners/${id}/branches/${branchId}/active`,
-      { isActive },
+      `/partners/${id}/branches/${branchId}/state`,
+      { state },
     );
     return data.data;
   },

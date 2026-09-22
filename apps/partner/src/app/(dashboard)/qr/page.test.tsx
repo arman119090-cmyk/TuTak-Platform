@@ -5,7 +5,7 @@ import type {
   PartnerBranchDto,
   PartnerBranchQrCodeDto,
 } from '@tutak/shared-types';
-import { Role } from '@tutak/shared-types';
+import { PartnerBranchState, Role } from '@tutak/shared-types';
 import QrPage from './page';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { buildPartnerPayQrPayload } from '@/lib/partnerPayQr';
@@ -92,6 +92,7 @@ function branchFixture(overrides: Partial<PartnerBranchDto> = {}): PartnerBranch
     latitude: 40.177,
     longitude: 44.5126,
     isActive: true,
+    state: PartnerBranchState.ACTIVE,
     createdAt: new Date().toISOString(),
     ...overrides,
   };

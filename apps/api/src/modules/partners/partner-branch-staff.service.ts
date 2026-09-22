@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { BranchStaffRole, Prisma } from '@prisma/client';
+import { BranchStaffRole, PartnerBranchState, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { PartnerEmployeeService } from './partner-employee.service';
 
@@ -32,11 +32,13 @@ export class PartnerBranchStaffService {
     private readonly employees: PartnerEmployeeService,
   ) {}
 
+  /** The branch, once it is established that it is this partner's. */
   private async assertBranchBelongsToPartner(partnerId: string, branchId: string) {
     const branch = await this.prisma.partnerBranch.findUnique({ where: { id: branchId } });
     if (!branch || branch.partnerId !== partnerId) {
       throw new NotFoundException('Branch not found');
     }
+    return branch;
   }
 
   listForBranch(partnerId: string, branchId: string, includeInactive = false) {
@@ -102,7 +104,15 @@ export class PartnerBranchStaffService {
     branchId: string,
     params: { userId: string; role?: BranchStaffRole; employeeDisplayCode?: string; assignedByUserId: string },
   ) {
-    await this.assertBranchBelongsToPartner(partnerId, branchId);
+    const branch = await this.assertBranchBelongsToPartner(partnerId, branchId);
+    // Posting somebody to a location that is closed for good is a promise
+    // nobody can keep: they could not take a purchase there, and the roster
+    // would name a place the business no longer trades at. A *suspended*
+    // branch is a different matter — it reopens, and the people who work
+    // there are still the people who work there.
+    if (branch.state === PartnerBranchState.ARCHIVED) {
+      throw new BadRequestException('This branch is archived and cannot take new staff');
+    }
 
     const hasPartnerRole = await this.prisma.userRole.findFirst({
       where: { userId: params.userId, partnerId },

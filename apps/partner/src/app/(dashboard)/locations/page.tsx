@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PartnerBranchDto } from '@tutak/shared-types';
+import { PartnerBranchState, type PartnerBranchDto } from '@tutak/shared-types';
 import { Badge, Button, Field, Input, PageHeader, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, isPartnerOwner, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
@@ -14,6 +14,36 @@ import { BranchFuelTools } from './BranchFuelTools';
  * fuel-type selector is fuel-specific. A branch is referenced by purchase
  * history, so closing one deactivates it rather than deleting the row.
  */
+/**
+ * What each state means to the person reading it.
+ *
+ * Deliberately not "Active / Inactive". The owner's two reasons for shutting
+ * a location need different words, because they imply different next steps:
+ * one is coming back and one is not.
+ */
+const STATE_LABEL: Record<PartnerBranchState, string> = {
+  [PartnerBranchState.ACTIVE]: 'Open',
+  [PartnerBranchState.SUSPENDED]: 'Closed for now',
+  [PartnerBranchState.ARCHIVED]: 'Closed for good',
+};
+
+const STATE_TONE: Record<PartnerBranchState, 'available' | 'pending' | 'neutral'> = {
+  [PartnerBranchState.ACTIVE]: 'available',
+  [PartnerBranchState.SUSPENDED]: 'pending',
+  [PartnerBranchState.ARCHIVED]: 'neutral',
+};
+
+/**
+ * The reassurance that belongs next to a closure, not in a help page: the
+ * question an owner actually has when shutting a shop is what happens to the
+ * sales already made there.
+ */
+const STATE_NOTE: Record<PartnerBranchState, string> = {
+  [PartnerBranchState.ACTIVE]: '',
+  [PartnerBranchState.SUSPENDED]: 'No new purchases. Returns and history carry on.',
+  [PartnerBranchState.ARCHIVED]: 'No new purchases or staff. Returns and history carry on.',
+};
+
 export default function LocationsPage() {
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
@@ -37,7 +67,7 @@ export default function LocationsPage() {
         <Header />
         <Surface>
           <p className="text-[13px] text-muted">
-            Only the partner owner can manage your locations. Ask your owner account to add or edit
+            Only the partner owner can manage your branches. Ask your owner account to add or edit
             them.
           </p>
         </Surface>
@@ -61,7 +91,7 @@ export default function LocationsPage() {
 function Header() {
   return (
     <PageHeader
-      title="Locations"
+      title="Branches"
       description="Every address customers can walk into and earn or spend points at. Add as many as you actually have — a closed location can be deactivated without losing its history."
     />
   );
@@ -189,11 +219,15 @@ function BranchesCard({
     },
   });
 
-  const toggleActive = useMutation({
-    mutationFn: ({ branchId, isActive }: { branchId: string; isActive: boolean }) =>
-      partnerApi.setBranchActive(partnerId, branchId, isActive),
+  const setState = useMutation({
+    mutationFn: ({ branchId, state }: { branchId: string; state: PartnerBranchState }) =>
+      partnerApi.setBranchState(partnerId, branchId, state),
     onSuccess: () => void invalidate(),
   });
+
+  /** One state change at a time, and only the row being changed shows it. */
+  const busyOn = (branchId: string) =>
+    setState.isPending && setState.variables?.branchId === branchId;
 
   const startEdit = (branch: PartnerBranchDto) => {
     setEditingId(branch.id);
@@ -209,10 +243,10 @@ function BranchesCard({
   return (
     <Surface>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="text-[15px] font-semibold text-ink">Your locations</div>
+        <div className="text-[15px] font-semibold text-ink">Your branches</div>
         {!adding && (
           <Button size="sm" variant="secondary" onClick={() => setAdding(true)} disabled={loading}>
-            Add location
+            Add branch
           </Button>
         )}
       </div>
@@ -247,7 +281,7 @@ function BranchesCard({
       )}
 
       {branches.length === 0 && !adding ? (
-        <p className="mt-4 text-[13px] text-faint">No locations yet. Add your first one above.</p>
+        <p className="mt-4 text-[13px] text-faint">No branches yet. Add your first one above.</p>
       ) : branches.length > 0 ? (
         <div className="mt-4">
           <Table>
@@ -296,9 +330,12 @@ function BranchesCard({
                       <Td>{branch.address}</Td>
                       <Td>{branch.city}</Td>
                       <Td>
-                        <Badge tone={branch.isActive ? 'available' : 'neutral'}>
-                          {branch.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
+                        <Badge tone={STATE_TONE[branch.state]}>{STATE_LABEL[branch.state]}</Badge>
+                        {branch.state !== PartnerBranchState.ACTIVE ? (
+                          <span className="block text-[12px] text-faint">
+                            {STATE_NOTE[branch.state]}
+                          </span>
+                        ) : null}
                       </Td>
                       <Td align="right">
                         <div className="flex justify-end gap-2">
@@ -312,18 +349,50 @@ function BranchesCard({
                           >
                             {managingId === branch.id ? 'Close' : 'Manage'}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="tertiary"
-                            loading={
-                              toggleActive.isPending && toggleActive.variables?.branchId === branch.id
-                            }
-                            onClick={() =>
-                              toggleActive.mutate({ branchId: branch.id, isActive: !branch.isActive })
-                            }
-                          >
-                            {branch.isActive ? 'Deactivate' : 'Reactivate'}
-                          </Button>
+                          {branch.state === PartnerBranchState.ACTIVE ? (
+                            <Button
+                              size="sm"
+                              variant="tertiary"
+                              loading={busyOn(branch.id)}
+                              onClick={() =>
+                                setState.mutate({
+                                  branchId: branch.id,
+                                  state: PartnerBranchState.SUSPENDED,
+                                })
+                              }
+                            >
+                              Close for now
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="tertiary"
+                              loading={busyOn(branch.id)}
+                              onClick={() =>
+                                setState.mutate({
+                                  branchId: branch.id,
+                                  state: PartnerBranchState.ACTIVE,
+                                })
+                              }
+                            >
+                              Reopen
+                            </Button>
+                          )}
+                          {branch.state === PartnerBranchState.ARCHIVED ? null : (
+                            <Button
+                              size="sm"
+                              variant="tertiary"
+                              loading={busyOn(branch.id)}
+                              onClick={() =>
+                                setState.mutate({
+                                  branchId: branch.id,
+                                  state: PartnerBranchState.ARCHIVED,
+                                })
+                              }
+                            >
+                              Close for good
+                            </Button>
+                          )}
                         </div>
                       </Td>
                     </Tr>

@@ -27,8 +27,8 @@ process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret-not-used-for-signing-any
 process.env.BONUS_PENDING_HOURS ??= '48';
 process.env.BONUS_EXPIRY_MONTHS ??= '12';
 process.env.BONUS_RESERVATION_HOLD_SECONDS ??= '300';
-// The in-TuTak payment route, off by default in production until Arman
-// decides otherwise (15.09.2026). Turned on here because the suites below
+// The in-TuTak payment route, off by default in production until the
+// product owner decides otherwise (15.09.2026). Turned on here because the suites below
 // exercise it deliberately: leaving it off would make them pass by never
 // reaching the code they exist to test.
 process.env.TUTAK_PSP_ENABLED ??= 'true';

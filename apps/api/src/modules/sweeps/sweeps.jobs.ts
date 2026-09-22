@@ -294,7 +294,7 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'psp.escalate-stale-attempts',
-    why: "A payment attempt the provider never answered leaves a customer possibly charged for a purchase nobody can complete, and it will not resolve itself. This sweep makes it louder — and deliberately never makes it *go away*: Arman's decision of 15.09.2026 is that time creates alerts and escalation, never a resolution. The one status change it makes (live → EXPIRED) keeps the attempt in the unsafe set, so the purchase stays blocked; releasing it takes the provider's own answer or two people reconciling it by hand.",
+    why: "A payment attempt the provider never answered leaves a customer possibly charged for a purchase nobody can complete, and it will not resolve itself. This sweep makes it louder — and deliberately never makes it *go away*: the product decision of 15.09.2026 is that time creates alerts and escalation, never a resolution. The one status change it makes (live → EXPIRED) keeps the attempt in the unsafe set, so the purchase stays blocked; releasing it takes the provider's own answer or two people reconciling it by hand.",
     // Every ten minutes. The customer whose money is somewhere unaccounted
     // for is the one waiting, so the escalation clock should be theirs rather
     // than an operator's convenience.

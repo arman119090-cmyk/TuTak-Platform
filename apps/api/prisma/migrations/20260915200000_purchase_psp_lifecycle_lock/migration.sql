@@ -1,7 +1,7 @@
 -- ────────────────────────────────────────────────────────────────────────
 -- A purchase whose provider may be holding money does not time out.
 --
--- Arman's decision of 15.09.2026, and the hole it closes is a clock racing a
+-- The product decision of 15.09.2026, and the hole it closes is a clock racing a
 -- payment. The generic three-minute expiry existed long before the provider
 -- route did, and it does three things on a purchase it finds stale: releases
 -- the bonus reservation, fails the source transaction, and marks the purchase
@@ -36,7 +36,7 @@ DECLARE
   unsafe_id text;
   unsafe_status "PspAttemptStatus";
 BEGIN
-  -- REJECTED is in the list although Arman's decision names only expiry and
+  -- REJECTED is in the list although the product decision names only expiry and
   -- cancellation: a cashier turning the purchase away while the provider may
   -- hold the money closes it just as thoroughly, and the callback that lands
   -- afterwards has nothing left to complete.

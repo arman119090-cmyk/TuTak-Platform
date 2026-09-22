@@ -50,7 +50,7 @@ Railway project «TuTak», environment `production`, проверено в на�
   и `docs/POST_MERGE_PR54_2026-09-19.md`; production-кода, случайных и
   посторонних файлов нет;
 - зачем: тест закрывает пробел доказательства (деньги были доказаны
-  выключенными на уровне сервисов, не HTTP-маршрутов); отчёт — по CLAUDE.md;
+  выключенными на уровне сервисов, не HTTP-маршрутов); отчёт — по docs/WORKING_AGREEMENT_RU.md;
 - regression-тест в `main` отсутствовал — PR нужен;
 - CI на `885fb10`: pull_request-run зелёный по всем 5 job (push-run тоже
   дошёл до зелёного).

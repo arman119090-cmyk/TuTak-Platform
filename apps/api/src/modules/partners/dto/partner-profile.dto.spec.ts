@@ -6,7 +6,7 @@ import { UpdatePartnerAboutDto } from './update-partner-about.dto';
 
 /**
  * The DTO boundary for the partner public profile (about text + offerings),
- * confirmed with Arman 2026-08-23. Neither field has a moderation step
+ * confirmed by the product decision of 2026-08-23. Neither field has a moderation step
  * behind it — this is the *only* gate before a partner's write reaches
  * every customer reading their page, so it has to actually reject what it
  * claims to.

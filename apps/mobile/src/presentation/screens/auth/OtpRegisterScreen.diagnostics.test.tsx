@@ -32,8 +32,8 @@ const { ThemeProvider } = require('../../../app/theme/ThemeProvider');
 const renderScreen = () =>
   render(
     <ThemeProvider>
-      {/* `BackButton` asks the navigator whether it can go back, so the
-          screen needs a real navigation context to render at all. */}
+      {/* `JakoScene` asks the navigator whether it can go back, so the screen
+          needs a real navigation context to render at all. */}
       <NavigationContainer>
         <OtpRegisterScreen
           navigation={{ navigate: jest.fn(), replace: jest.fn() } as never}

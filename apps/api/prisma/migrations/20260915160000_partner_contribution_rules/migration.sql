@@ -45,7 +45,7 @@ ALTER TABLE "partner_contribution_rules" ADD CONSTRAINT "partner_contribution_ru
 -- ────────────────────────────────────────────────────────────────────────
 -- Versioned commercial terms.
 --
--- Arman's decision of 15.09.2026: HAZE's 10 AMD per litre is neither rounded
+-- The product decision of 15.09.2026: HAZE's 10 AMD per litre is neither rounded
 -- to a percentage nor accommodated by loosening the global basis-point grid.
 -- It gets its own shape. Existing percentage partners are not touched — their
 -- purchases carry no rule snapshot and keep being priced from

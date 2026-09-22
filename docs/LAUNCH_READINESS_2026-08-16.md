@@ -180,7 +180,7 @@ behavior."
 helper (`common/auth/partner-scope.ts`) used by both
 `PartnerIntegrationsController` and `PartnersController`; the partner
 dashboard's Integrations page gates on the equivalent `isPartnerOwner`
-frontend check. See `docs/NEXT_CLAUDE_TASK.md` for the full record of this
+frontend check. See `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` for the full record of this
 and the other three decisions resolved the same day.
 
 ## F. Unresolved business decisions

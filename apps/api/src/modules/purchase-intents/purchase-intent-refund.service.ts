@@ -244,7 +244,7 @@ export class PurchaseIntentRefundService {
    *
    * ## Why this is a refusal and not a workaround
    *
-   * Arman's decision of 15.09.2026, and he ruled out both of the obvious
+   * The product decision of 15.09.2026 ruled out both of the obvious
    * workarounds by name. Neither was rejected for being hard:
    *
    *  - **A routine manual bank transfer back to the customer.** It moves the

@@ -6,7 +6,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
  * The partner public profile — "about" text plus an optional offerings
- * list, confirmed with Arman 2026-08-23. Two things this suite has to prove
+ * list, confirmed by the product decision of 2026-08-23. Two things this suite has to prove
  * that `partner-disclosure.int-spec.ts` doesn't already cover:
  *
  * 1. Unlike `logoAssetId`/`coverAssetId`, there is no approval step here —

@@ -1,7 +1,7 @@
 /**
  * Screenshots the partner public profile (about text + offerings list) and
- * the map pin's own-logo rendering, against a live API — confirmed with
- * Arman 2026-08-23.
+ * the map pin's own-logo rendering, against a live API — the partner public
+ * profile settled by the product decision of 2026-08-23.
  *
  * Same harness pattern as `shoot-map-redesign.mjs`: real, unmodified screen
  * components rendered through react-native-web against the running backend.

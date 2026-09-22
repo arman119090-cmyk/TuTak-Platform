@@ -6,7 +6,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
  * "Все станции могли заряжаться только из нашего application исключительно"
- * (Arman, 2026-08-26). A `ROAMING_CPO` station is excluded from customer
+ * (product decision, 2026-08-26). A `ROAMING_CPO` station is excluded from customer
  * discovery until its remote Start/Stop/trusted-CDR path is proven and
  * `customerChargingEnabled` is switched on — see `EvStation`'s own docblock
  * and docs/ROAMING_CPO_INTEGRATION_2026-08-27-SECURITY.md, Problem 2.

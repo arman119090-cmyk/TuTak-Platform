@@ -82,7 +82,7 @@ const toMerchantActor = (actor: string | MerchantActor): MerchantActor =>
  *    entries, kept as two separate postings rather than one netted figure
  *    (spec §23).
  *
- * Business rule (2026-08-16, Arman): `confirm()`/`reject()` — the manual
+ * Business rule (2026-08-16): `confirm()`/`reject()` — the manual
  * cashier action below — applies only to *non-integrated* partners. A
  * *verified integrated* partner (API, POS, EV/OCPI — a `PartnerIntegration`
  * at `PartnerIntegrationStatus.ACTIVE`) is meant to have its own confirmed
@@ -728,7 +728,7 @@ export class PurchaseIntentsService {
    *
    * ## The failure this closes
    *
-   * Found in Arman's review of 15.09.2026, and it is a cross-purchase
+   * Found in the product review of 15.09.2026, and it is a cross-purchase
    * failure, which is why no amount of care inside a single purchase
    * prevents it:
    *
@@ -1137,7 +1137,7 @@ export class PurchaseIntentsService {
      * economics; the only difference from the provider route is that they are
      * also saying the money is in the till. Stamped here rather than made a
      * separate call so the direct flow keeps working exactly as it did, which
-     * Arman's decision requires.
+     * the product decision requires.
      *
      * Before `settlePurchase`, because the freeze trigger fires on the update
      * that sets these columns and would otherwise have to run against a row
@@ -1201,7 +1201,7 @@ export class PurchaseIntentsService {
    * existed, a verified provider payment moved the cash and left the purchase
    * itself unconfirmed: no points accrued, no referral paid, no commission
    * posted, and an intent still sitting in AWAITING_CONFIRMATION that a
-   * cashier could then be asked to confirm. Found by Arman's review of the
+   * cashier could then be asked to confirm. Found by the product review of the
    * branch, and it is the worst class of bug this system can have — money
    * moved, economics did not.
    *
@@ -1271,7 +1271,7 @@ export class PurchaseIntentsService {
     // place that difference exists. Everything below — the split into green,
     // deferred and three referrer legs, the debit to `PARTNER_PAYABLE`, the
     // refund reversal — takes `pool` and never asks how it was arrived at.
-    // That was Arman's explicit instruction: a new pricing shape must not
+    // That was the explicit product decision: a new pricing shape must not
     // duplicate the ledger economics.
     /*
      * Everything this method reads before opening (or joining) a transaction
@@ -1451,7 +1451,7 @@ export class PurchaseIntentsService {
    * A purchase with no rule snapshot — every purchase made before
    * 15.09.2026, and every partner who has never had a rule written — falls
    * back to `negotiatedRateBps`, which is the arithmetic those purchases have
-   * always used. Arman's decision is explicit that existing percentage
+   * always used. The product decision is explicit that existing percentage
    * partners are not to be broken.
    */
   private async contributionFor(
@@ -1664,7 +1664,7 @@ export class PurchaseIntentsService {
    * a cashier could still reject an intent whose deadline had already
    * passed but that the expiry sweep hadn't reached yet: the row would end
    * up `REJECTED` by a decision made outside the window it was valid for,
-   * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
+   * instead of `EXPIRED` (docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 11,
    * confirmed by independent audit — GitHub issue #28).
    */
   /**
@@ -1685,7 +1685,7 @@ export class PurchaseIntentsService {
    * a cashier could still reject an intent whose deadline had already
    * passed but that the expiry sweep hadn't reached yet: the row would end
    * up `REJECTED` by a decision made outside the window it was valid for,
-   * instead of `EXPIRED` (docs/NEXT_CLAUDE_TASK.md requirement 11,
+   * instead of `EXPIRED` (docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 11,
    * confirmed by independent audit — GitHub issue #28).
    */
   async reject(intentId: string, staffUserId: string, dto: RejectPurchaseIntentDto) {
@@ -1699,9 +1699,9 @@ export class PurchaseIntentsService {
      * Turning a purchase away while the provider may be holding the
      * customer's money releases their points and closes the purchase, so a
      * callback landing afterwards has nothing to complete — the customer has
-     * paid and received nothing. Not named in Arman's list of expiry/cancel,
-     * but it is the same transition with the same consequence, and leaving it
-     * open would have been leaving a hole I could see.
+     * paid and received nothing. Not named in the product decision's list of
+     * expiry/cancel, but it is the same transition with the same consequence,
+     * and leaving it open would have left a known hole.
      */
     if (await this.hasUnsafePspAttempt(intentId)) {
       throw new ConflictException(

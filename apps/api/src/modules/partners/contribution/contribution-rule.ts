@@ -7,7 +7,7 @@ import { roundIssued } from '../../../common/utils/money';
  *
  * ## One function, deliberately
  *
- * Arman's instruction of 15.09.2026 was explicit: implement `FIXED_PER_UNIT`
+ * The product decision of 15.09.2026 was explicit: implement `FIXED_PER_UNIT`
  * **without duplicating the ledger economics**. This is what that means in
  * practice. The whole of the money model — the pool split into green,
  * deferred and three referrer legs, `PARTNER_PAYABLE` debited by the pool,
@@ -100,7 +100,7 @@ export function contributionUnderRule(terms: ContributionTerms, basis: Contribut
  * The fallback is the point. Every purchase made before 15.09.2026, and every
  * partner who has never had a rule row written, has `contributionRuleId` null
  * and `negotiatedRateBps` set — and must keep being priced exactly as it was.
- * Arman's decision is explicit that existing percentage partners are not to
+ * The product decision is explicit that existing percentage partners are not to
  * be broken, and "not broken" means the arithmetic is byte-identical, not
  * merely similar: `grossAmount × bps ÷ 10000`, rounded down, which is what
  * `settlePurchase` has always done.

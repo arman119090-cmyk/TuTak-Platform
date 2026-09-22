@@ -7,8 +7,8 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
  * The "fuel" chip's own sub-filter — "Газ" (propane and methane, one bucket)
- * vs "Бензин" (Arman, 2026-08-26: "чтобы было видно... газ вот эти бензин
- * вот эти"). What matters here: `fuelType` narrows within `fuel`, it forces
+ * vs "Бензин" (product decision, 2026-08-26: the two have to be visibly
+ * separate on the map). What matters here: `fuelType` narrows within `fuel`, it forces
  * `category` to `fuel` even if something else was sent, and a plain
  * `category=fuel` query (no sub-filter) still returns every fuel partner
  * regardless of what it sells.

@@ -16,7 +16,7 @@ import { createCustomer, createPartner, createStaffUser } from './setup/fixtures
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
- * Two of Arman's decisions of 15.09.2026, both stated as nevers, both tested
+ * Two product decisions of 15.09.2026, both stated as nevers, both tested
  * where a never has to live — in the database as well as in the service.
  *
  *  - **Time never resolves a payment.** A timeout is the absence of an
@@ -219,8 +219,8 @@ describe('PSP timeouts and refunds (integration)', () => {
 
     it('honours a per-provider threshold rather than a constant', async () => {
       // Twenty minutes old: stale under a fifteen-minute policy, fresh under
-      // the thirty-minute default. Arman's decision of 15.09.2026 is that
-      // this is configuration because thirty minutes was a number I picked.
+      // the thirty-minute default. The product decision of 15.09.2026 is that
+      // this is configuration: thirty minutes is an arbitrary default.
       const { attempt } = await attemptAged(20, 'bill-policy');
 
       expect((await ageing.escalateStaleAttempts()).expired).toBe(0);

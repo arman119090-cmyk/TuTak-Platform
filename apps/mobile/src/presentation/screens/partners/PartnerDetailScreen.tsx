@@ -25,7 +25,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 /**
  * Opened by a tap on the partner's pin on the map (`PartnersScreen`) — per
- * Arman's explicit request, 2026-08-23, that a location on the map open the
+ * the explicit product decision of 2026-08-23, that a location on the map open the
  * partner's own page rather than only scroll to and expand its card in the
  * list below (which a station pin still does; this screen is partner-only).
  *
@@ -46,8 +46,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * cover URL that 404s degrades to the same logo-only card rather than an
  * empty grey rectangle.
  *
- * The "about" text and offerings list (partner public profile, confirmed
- * with Arman 2026-08-23) live only on `PartnerPublicDto`, not the
+ * The "about" text and offerings list (partner public profile, settled by
+ * the product decision of 2026-08-23) live only on `PartnerPublicDto`, not the
  * `NearbyPartnerDto` this screen is opened with — see that DTO's own doc
  * comment for why the nearby/map projection deliberately stays lean. So this
  * screen now also fetches `GET /partners/:id` on mount
@@ -337,8 +337,8 @@ function CoverImage({
  * One row of the partner's optional offerings list — name, price, and an
  * optional description, matching `ListRow`'s own title/subtitle/value shape.
  * Deliberately no `onPress`: this is a read-only listing, not a catalogue a
- * customer can tap into — there is no marketplace behind it yet, per Arman's
- * explicit "полноценный маркетплейс сейчас НЕ строим".
+ * customer can tap into — there is no marketplace behind it yet, and the
+ * product decision is explicit that one is not being built now.
  */
 function OfferingRow({ offering, last }: { offering: PartnerOfferingDto; last: boolean }) {
   return (

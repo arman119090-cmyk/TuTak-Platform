@@ -1,8 +1,8 @@
 /**
  * Per-provider timeout thresholds, and the one thing they may never do.
  *
- * Arman's decision of 15.09.2026: thirty minutes was my number, not a fact
- * about payments, so it becomes configuration — and the decision also says,
+ * The product decision of 15.09.2026: thirty minutes is an arbitrary
+ * default, not a fact about payments, so it becomes configuration — and the decision also says,
  * in the same breath, that time is never evidence of failure. These are unit
  * tests because the parsing is pure; that the thresholds never produce
  * `MONEY_DID_NOT_MOVE` is proved against a real database in

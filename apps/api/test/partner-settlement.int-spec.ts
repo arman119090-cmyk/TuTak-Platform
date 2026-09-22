@@ -288,7 +288,7 @@ describe('PartnerSettlementService (integration)', () => {
     expect(unsettled.net.toFixed(2)).toBe('1000.00');
   });
   /**
-   * Finding 3 of Arman's review of 15.09.2026, and it was a real bug rather
+   * Finding 3 of the product review of 15.09.2026, and it was a real bug rather
    * than a design preference.
    *
    * `FAILED` used to be terminal. The settlement kept its claimed
@@ -664,7 +664,7 @@ describe('PartnerSettlementService (integration)', () => {
   /**
    * A partner may say the money never arrived. A partner may not say whether
    * it moved — they are the payee, and a payee who can do both can order
-   * their own second payment. Arman's decision of 15.09.2026.
+   * their own second payment. The product decision of 15.09.2026.
    */
   describe('a partner reporting a missing transfer', () => {
     async function reported() {

@@ -12,7 +12,7 @@ import { PartnerSettlementService } from './partner-settlement.service';
  *
  * Deliberately separate from `PayoutsModule`: that module is the legacy
  * ad-hoc payout (a partner asks, an admin sends), this one is the periodic
- * settlement Arman approved on 14.09.2026. They share the ledger rather than
+ * settlement approved on 14.09.2026. They share the ledger rather than
  * sharing a service, so neither has to grow a flag for the other's shape.
  */
 @Module({

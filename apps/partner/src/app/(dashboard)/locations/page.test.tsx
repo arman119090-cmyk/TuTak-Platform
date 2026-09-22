@@ -7,7 +7,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
 
 /**
- * Partner self-service branches (spec: Arman, 2026-08-26). OWNER-only, no
+ * Partner self-service branches (spec: product decision, 2026-08-26). OWNER-only, no
  * bulk-replace (unlike `/profile`'s offerings) — a branch is created,
  * edited and deactivated individually because real purchase history
  * references it by id.

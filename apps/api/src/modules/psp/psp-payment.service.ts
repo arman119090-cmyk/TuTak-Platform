@@ -82,7 +82,7 @@ export type CustomerPaymentStatus = CustomerPaymentProgress & {
  * The states a verified provider confirmation may still settle from.
  *
  * `EXPIRED` is the one that was missing, and its absence was a real defect
- * found by Arman on 15.09.2026. `EXPIRED` means the platform stopped waiting;
+ * found in the review of 15.09.2026. `EXPIRED` means the platform stopped waiting;
  * it does not mean the provider stopped processing. A customer who paid at
  * minute 31 of a 30-minute window had genuinely paid, and the callback saying
  * so could not be applied: the claim accepted only `INITIATED` and
@@ -247,7 +247,7 @@ export class PspPaymentService {
      * confirm. The gross, the quantity and the unit price on this purchase
      * were typed by the customer; one verified callback on them would credit
      * the partner, mint the customer's own cashback and pay their referrers
-     * for a sale that never happened. Arman's decision of 15.09.2026.
+     * for a sale that never happened. The product decision of 15.09.2026.
      *
      * The database refuses the same thing — a provider attempt cannot be
      * inserted against an unapproved purchase — so this check is the sentence
@@ -267,8 +267,8 @@ export class PspPaymentService {
      * own, and that gap was real: an amount mismatch clears `liveKey` (the
      * attempt is no longer *live*) while leaving the money's fate unknown.
      * Without this check the customer could be handed a fresh bill for a
-     * purchase the provider may already have charged them for. Found by
-     * Arman's review.
+     * purchase the provider may already have charged them for. Found in
+     * the product review.
      *
      * `EXPIRED` and `REQUIRES_RECONCILIATION` are both in the unsafe set for
      * the same reason `EXPIRED` always was: nothing authoritative said the
@@ -714,7 +714,7 @@ export class PspPaymentService {
    * people to finish, in two separate authenticated calls.
    *
    * It used to be one call taking two user ids, which is not dual control:
-   * the second person existed only as a string the first one typed. Arman's
+   * the second person existed only as a string the first one typed. The product
    * decision of 15.09.2026 is explicit that one HTTP caller cannot supply the
    * identity of the second human, so the proposal is persisted on its own and
    * `confirmManualReconciliation` is a separate request by a separate

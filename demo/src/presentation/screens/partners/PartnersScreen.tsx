@@ -55,7 +55,8 @@ type Filter =
   | { kind: 'all' }
   | { kind: 'category'; value: PartnerCategory }
   | { kind: 'stations' }
-  /** The "fuel" chip's own sub-filter — "Газ" or "Бензин" (Arman, 2026-08-26). */
+  /** The "fuel" chip's own sub-filter — "Газ" or "Бензин" (product decision,
+      2026-08-26). */
   | { kind: 'fuelType'; value: FuelType };
 
 type MapItem =
@@ -262,7 +263,7 @@ export function PartnersScreen() {
     // The person's own dot is not a destination.
     if (id === HERE_MARKER_ID) return;
     // A partner's pin opens its own page — a location on the map is
-    // expected to open what's there, per Arman's request, 2026-08-23. A
+    // expected to open what's there, per the product decision of 2026-08-23. A
     // station's pin still only selects and scrolls: there is no equivalent
     // "station page" being asked for, and the expanded card already carries
     // everything a station needs (connectors, availability, start action).
@@ -399,8 +400,8 @@ export function PartnersScreen() {
           />
           {CATEGORY_ORDER.map((value) =>
             // "Fuel" is not its own chip — a customer picking a pump wants
-            // gas or petrol specifically, not a generic АЗС chip (Arman,
-            // 2026-08-26). Two sub-filter chips take its place, in order.
+            // gas or petrol specifically, not a generic АЗС chip (product
+            // decision, 2026-08-26). Two sub-filter chips take its place, in order.
             value === PartnerCategoryEnum.FUEL ? (
               <React.Fragment key={value}>
                 <Chip

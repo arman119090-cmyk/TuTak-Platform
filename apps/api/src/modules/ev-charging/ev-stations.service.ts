@@ -84,10 +84,9 @@ export class EvStationsService {
    * Filtered by `customerChargingEnabled`, not by `provider` — see that
    * column's docblock. A `ROAMING_CPO` station is included exactly when its
    * remote Start/Stop/trusted-CDR path has been proven and switched on; an
-   * `INTERNAL` station always qualifies. Arman, 2026-08-26: "все станции
-   * могли заряжаться только из нашего application исключительно" — every
-   * discoverable station must be genuinely chargeable through this app, not
-   * excluded-by-brand.
+   * `INTERNAL` station always qualifies. The rule (product decision,
+   * 2026-08-26) is that every discoverable station must be genuinely
+   * chargeable through this app, not excluded by brand.
    */
   async listNearby(lat: number, lng: number, radiusKm = 10) {
     const latDelta = radiusKm / 111;

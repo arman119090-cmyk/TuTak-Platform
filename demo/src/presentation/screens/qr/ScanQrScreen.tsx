@@ -17,7 +17,7 @@ import { partnerBranchQrApi } from '../../../data/api/partnerBranchQrApi';
 import { partnerCheckoutApi } from '../../../data/api/partnerCheckoutApi';
 
 /**
- * NEXT_CLAUDE_TASK.md requirement 1: scanning a partner's payment code opens
+ * REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 1: scanning a partner's payment code opens
  * a `PurchaseIntent`, not the legacy `qrApi.redeem()` charge. The code
  * itself carries no amount and settles nothing by being scanned — it only
  * identifies which partner the customer is standing in front of. The
@@ -29,7 +29,7 @@ import { partnerCheckoutApi } from '../../../data/api/partnerCheckoutApi';
  * `qrApi.redeem()` and the old confirm/receipt stages this screen used to
  * carry are gone from the *normal* flow, not deleted from the codebase —
  * the backend endpoint still exists for whatever legacy compatibility
- * needs it (`docs/NEXT_CLAUDE_TASK.md` requirement 10), it's just no longer
+ * needs it (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` requirement 10), it's just no longer
  * reachable from here.
  */
 export function ScanQrScreen() {

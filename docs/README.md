@@ -92,7 +92,7 @@ should not be quietly rewritten. Each one is a snapshot of a specific commit.
 | Document | Written against | Why it no longer describes the platform |
 | --- | --- | --- |
 | [TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md](TUTAK_MASTER_PROJECT_CONTEXT_2026-08-16.md) | 16 Aug | Describes the single-level referral model the 2026-08-22 rework replaced; carries its own superseded banner |
-| [NEXT_CLAUDE_TASK.md](NEXT_CLAUDE_TASK.md) | 22 Aug | Frozen "no task queued" status; a week of shipped work since (fuel-station branches, roaming-CPO) is undocumented here; carries its own superseded banner |
+| [REFERRAL_3_LEVEL_REWORK_2026-08-22.md](REFERRAL_3_LEVEL_REWORK_2026-08-22.md) | 22 Aug | Frozen "no task queued" status; a week of shipped work since (fuel-station branches, roaming-CPO) is undocumented here; carries its own superseded banner |
 | [HARDENING_AUDIT_2026-08-16.md](HARDENING_AUDIT_2026-08-16.md) · [HARDENING_AUDIT_2026-08-19-P0-P3.md](HARDENING_AUDIT_2026-08-19-P0-P3.md) | 16/19 Aug | Point-in-time hardening rounds; findings closed, folded into the code and later audits |
 | [LAUNCH_READINESS_2026-08-16.md](LAUNCH_READINESS_2026-08-16.md) | 16 Aug | A launch checklist for the pre-migration architecture |
 | [AUDIT_FINAL_2026-08.md](AUDIT_FINAL_2026-08.md) | `9190116`, 6 Aug | Its three structural blockers — no payment layer, no outbox, replica-unsafe scheduling — have all been built since |

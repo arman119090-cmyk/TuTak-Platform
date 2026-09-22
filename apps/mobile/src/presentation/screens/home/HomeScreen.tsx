@@ -194,7 +194,7 @@ export function HomeScreen({ navigation }: Props) {
         {/* Referral entry — master spec §1: "sits immediately after the
             quick actions — before long transaction history — because it is
             a primary acquisition loop." Now after the spotlight, which is
-            the one thing the owner asked to sit between the two. */}
+            the one element specified to sit between the two. */}
         <View style={{ paddingHorizontal: layout.screenPaddingX, marginTop: space[6] }}>
           <ReferralEntryCard onPress={() => navigation.navigate('Referral')} />
         </View>

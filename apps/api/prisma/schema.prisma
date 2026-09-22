@@ -796,7 +796,7 @@ model PurchaseIntent {
   /// through Idram, and have one verified callback credit the partner's
   /// `PARTNER_PAYABLE`, mint their own cashback and pay their referrers on a
   /// sale that never happened. The provider would have done nothing wrong:
-  /// the money genuinely moved. Arman's decision of 15.09.2026 is that
+  /// the money genuinely moved. The product decision of 15.09.2026 is that
   /// somebody at the business has to agree the economics first.
   ///
   /// So a non-integrated partner's staff approve the snapshot — gross, bonus,
@@ -1153,7 +1153,8 @@ model Partner {
   /// gas. Propane and methane are one customer-facing bucket, not two: a
   /// shopper picking "Газ" on the map does not care which of the two a given
   /// station burns, so this is a single flag rather than a per-gas-type
-  /// field (Arman, 2026-08-26: "в категории газ пропан и метан для всех").
+  /// field: in the gas category propane and methane are one chip for every
+  /// station (product decision, 2026-08-26).
   sellsGas                  Boolean       @default(false)
   /// Meaningful only when `category` is `fuel` — whether this station sells
   /// petrol/gasoline. Independent of `sellsGas`: a real station commonly
@@ -1179,7 +1180,7 @@ model Partner {
   /// Roaming-CPO wholesale-resale integration only (docs/
   /// ROAMING_CPO_INTEGRATION_2026-08-25.md) — the contractual AMD/kWh rate
   /// TuTak owes this partner for wholesale energy, e.g. 75 AMD/kWh.
-  /// Configurable per Arman's explicit instruction, not a literal in service
+  /// Configurable by explicit product decision, not a literal in service
   /// code — same discipline as `bonusAccrualRateBps` above. Meaningless (and
   /// never read) for a partner with no `ROAMING_CPO`-provider `EvStation`;
   /// the default matches a typical current rate purely so an unrelated
@@ -1209,9 +1210,9 @@ model Partner {
   logoAssetId               String?
   /// Optional wide cover for the catalogue/detail card. Same approval rule.
   coverAssetId              String?
-  /// Free text the partner writes about themselves — the public profile
-  /// confirmed with Arman 2026-08-23: "текст «о себе»", shown on the
-  /// partner's detail page. Deliberately no approval workflow, unlike
+  /// Free text the partner writes about themselves — the "about" half of the
+  /// public profile settled by the product decision of 2026-08-23, shown on
+  /// the partner's detail page. Deliberately no approval workflow, unlike
   /// `logoAssetId`/`coverAssetId` above: a string carries no impersonation
   /// risk the way an uploaded image does, so the partner's own write is
   /// live immediately. Capped length enforced at the DTO boundary
@@ -1266,7 +1267,7 @@ model Partner {
   payments               Payment[]
   /// How often this partner is settled. Per-partner, not one global period:
   /// a weekly restaurant and a monthly fuel chain are both normal, and
-  /// hardcoding one cadence would force the other into it (Arman, 14.09.2026).
+  /// hardcoding one cadence would force the other into it (product decision, 14.09.2026).
   settlementPeriodicity  SettlementPeriodicity          @default(MONTHLY)
   /// Day the period is anchored to. 1-7 (Mon-Sun) for WEEKLY/BIWEEKLY, 1-28
   /// for MONTHLY — 28 so a monthly anchor exists in February too.
@@ -1730,7 +1731,7 @@ model PartnerBranchQrCode {
 
 /// One row of the partner's optional public product/service list — the
 /// "список из своих товаров/услуг с ценами" half of the public profile
-/// Arman confirmed 2026-08-23. Deliberately partner-level, not per-branch,
+/// Confirmed by the product decision of 2026-08-23. Deliberately partner-level, not per-branch,
 /// same reasoning as `logoAssetId`/`coverAssetId`: a chain's offering is one
 /// identity, not one per shop front.
 ///
@@ -1740,8 +1741,8 @@ model PartnerBranchQrCode {
 /// (its own table, one row per item, a stable id, a price in the platform's
 /// own money precision) is chosen so that a real "order this" flow could be
 /// layered on top later — e.g. a future `PurchaseIntent.offeringId` — without
-/// reshaping this table, per Arman's explicit "база данных будет сделана
-/// так, чтобы потом было легко это добавить".
+/// reshaping this table: the schema is required to make that later addition
+/// cheap rather than a migration of every existing row.
 model PartnerOfferingItem {
   id           String   @id @default(uuid())
   partnerId    String
@@ -2215,7 +2216,7 @@ model EvSession {
   /// taken off the top before the old green/deferred/referrer/tutak split.
   /// The 3-level program (`programVersion = THREE_LEVEL_V2`) does not use
   /// this: its whole pool splits directly by the six-leg rule, with no
-  /// separate upfront cut (`docs/NEXT_CLAUDE_TASK.md`, 2026-08-22 rework,
+  /// separate upfront cut (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`, 2026-08-22 rework,
   /// requirement 4 — a duplicate TuTak cut on top of the six-leg split is
   /// explicitly forbidden). Null for any row settled under the new program.
   tutakUpfrontAmount          Decimal?                @db.Decimal(18, 4)
@@ -3178,7 +3179,7 @@ model PartnerBankAccount {
 
 /// Who raised the doubt about a bank transfer.
 ///
-/// Arman's decision of 15.09.2026: a partner may *report* that a transfer did
+/// The product decision of 15.09.2026: a partner may *report* that a transfer did
 /// not arrive, and may not *confirm* whether money moved. The two are
 /// different acts and this column is what keeps them apart — a settlement
 /// flagged by a partner's report reads differently from one flagged by
@@ -3219,7 +3220,7 @@ enum PartnerSettlementStatus {
   ///
   /// Making this terminal was a real bug — it stranded the claimed postings
   /// for ever, so a partner whose transfer bounced could never be paid for
-  /// those sales at all. Found by Arman's review.
+  /// those sales at all. Found by the product review.
   FAILED
   /// The bank's answer is ambiguous — a timeout, a reference that cannot be
   /// found, a partial. Never retried automatically: a retry on an ambiguous
@@ -3289,7 +3290,7 @@ model PartnerSettlement {
 
   /// ── Reconciliation, when the bank's answer was ambiguous ──────────────
   ///
-  /// Every column here exists because Arman's decision of 15.09.2026 requires
+  /// Every column here exists because the product decision of 15.09.2026 requires
   /// that resolving an ambiguous transfer carry evidence and two different
   /// people. The proposal and the confirmation are separate acts by separate
   /// actors, exactly as `approve` is separate from `markReady`: one person
@@ -3401,7 +3402,7 @@ enum DirectTender {
 /// be collected for it by any other route.
 /// Why a provider attempt was resolved the way it was.
 ///
-/// Arman's decision of 15.09.2026: **time never resolves an attempt.** A
+/// The product decision of 15.09.2026: **time never resolves an attempt.** A
 /// timeout is the absence of an answer, not the answer "no", and letting the
 /// clock write `FAILED` is how a purchase the provider already charged for is
 /// declared safe to collect again. So an attempt may only leave the unsafe
@@ -3657,7 +3658,7 @@ enum FeePayer {
 /// How a partner's contribution to TuTak is priced.
 ///
 /// The platform started with one answer — a percentage of the sale, in basis
-/// points on a 50-point grid — and Arman's decision of 15.09.2026 is that
+/// points on a 50-point grid — and the product decision of 15.09.2026 is that
 /// this stays for the partners it fits and stops being the only answer.
 ///
 /// The forcing case is fuel. HAZE's terms are 10 AMD of every 300 AMD litre,
@@ -3669,7 +3670,7 @@ enum FeePayer {
 /// different kind of number.
 /// The units a per-unit commercial term may be priced in.
 ///
-/// Closed on purpose, and Arman's decision of 15.09.2026 says why: `unit` was
+/// Closed on purpose, and the product decision of 15.09.2026 says why: `unit` was
 /// a free string, and a free string in a financial identifier means "L", "l",
 /// "л", "litre" and "liter" are five different units as far as the equality
 /// check is concerned. That check decides whether 10 AMD per litre may be
@@ -3696,7 +3697,7 @@ enum UnitOfMeasure {
 
 /// Where a version of a partner's commercial terms is in its approval.
 ///
-/// Arman's decision of 15.09.2026: production changes to commercial terms go
+/// The product decision of 15.09.2026: production changes to commercial terms go
 /// through maker/checker. Before this, `open()` wrote a live rule in one call
 /// and retried on conflict — so two administrators editing at once produced
 /// two versions applied one after the other, each looking deliberate, with

@@ -4,7 +4,7 @@
  * never an amount. The customer types the amount themselves on the next
  * screen and a `PurchaseIntent` carries it from there, so nothing about the
  * purchase is ever baked into the code a partner prints or into what a
- * cashier can redeem unilaterally (`docs/NEXT_CLAUDE_TASK.md`, requirement
+ * cashier can redeem unilaterally (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`, requirement
  * 1-2). `apps/partner/src/lib/partnerPayQr.ts` builds the matching payload;
  * see there for why a branch id is a second colon-separated segment rather
  * than a replacement of the plain partner-only form.

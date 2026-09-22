@@ -6,9 +6,9 @@ import { createCustomer } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
- * Nearby-partner personalisation's consent switch (2026-08-26) — spec:
- * "как ты думаешь это правильно или нет" (Arman), answered by making this an
- * explicit, off-by-default opt-in, same posture as the avatar-consent flag
+ * Nearby-partner personalisation's consent switch (2026-08-26). The posture
+ * the product decision left open is settled here as an explicit,
+ * off-by-default opt-in, the same posture as the avatar-consent flag
  * `media-system.int-spec.ts` already covers. What is checked here is that
  * posture: defaults withheld, a customer can turn it on and off for
  * themselves, and every change is audited.

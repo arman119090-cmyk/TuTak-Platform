@@ -39,7 +39,7 @@ export class NearbyPartnersQueryDto {
   category?: PartnerCategory;
 
   /**
-   * The "fuel" chip's own sub-filter — "Газ" or "Бензин" (Arman, 2026-08-26).
+   * The "fuel" chip's own sub-filter — "Газ" or "Бензин" (product decision, 2026-08-26).
    * Implies `category: 'fuel'` regardless of what `category` was actually
    * sent — a customer picking a gas pump on the map is not also allowed to
    * ask for gas pumps that are cafés.

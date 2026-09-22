@@ -358,7 +358,7 @@ describe('PurchaseIntents (integration)', () => {
     });
 
     /**
-     * NEXT_CLAUDE_TASK.md requirement 11 / GitHub issue #28: `confirm()`
+     * REFERRAL_3_LEVEL_REWORK_2026-08-22.md requirement 11 / GitHub issue #28: `confirm()`
      * has always self-checked `expiresAt` before settling; `reject()` did
      * not, so a cashier's decline arriving after the 3-minute window but
      * before the sweep had processed the row flipped it straight to

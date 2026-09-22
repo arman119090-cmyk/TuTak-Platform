@@ -217,7 +217,7 @@ export interface AppConfig {
      *
      * ## The model below was superseded on 14.09.2026
      *
-     * Arman's decision of that date changes the business: the customer will
+     * The product decision of that date changes the business: the customer will
      * pay **inside** TuTak through a licensed provider (Idram is the one
      * being negotiated), TuTak will owe the partner a net amount, and that
      * amount will be paid out by ordinary bank transfer against a settlement
@@ -266,7 +266,7 @@ export interface AppConfig {
      * changes who owes whom. Turning it on where no provider contract exists
      * would let a customer open a purchase nothing can collect.
      *
-     * Production keeps this off until Arman decides otherwise (15.09.2026):
+     * Production keeps this off until the product owner decides otherwise (15.09.2026):
      * the Idram integration is written against published documentation and
      * has never been exercised against the real provider.
      */
@@ -325,7 +325,7 @@ export interface AppConfig {
      * Whether a purchase collected through the provider may be refunded
      * through this platform at all.
      *
-     * Off, and Arman's decision of 15.09.2026 is that it stays off until the
+     * Off, and the product decision of 15.09.2026 is that it stays off until the
      * provider's own refund/reversal API is confirmed to exist. The two
      * alternatives were both rejected on the record:
      *
@@ -349,11 +349,12 @@ export interface AppConfig {
    * How long an unanswered payment attempt may sit before the platform stops
    * presenting its bill as payable, and how often it is escalated after that.
    *
-   * Per provider, because thirty minutes was my number and not a fact. A
-   * redirect-and-callback provider, a provider whose customers finish in an
-   * app, and one that settles in overnight batches have genuinely different
-   * answers, and Arman's decision of 15.09.2026 is that this is configuration
-   * rather than a constant somebody has to read the source to find.
+   * Per provider, because thirty minutes is an arbitrary default and not a
+   * fact. A redirect-and-callback provider, a provider whose customers finish
+   * in an app, and one that settles in overnight batches have genuinely
+   * different answers, and the product decision of 15.09.2026 is that this is
+   * configuration rather than a constant somebody has to read the source to
+   * find.
    *
    * Neither number ever decides anything. Passing `staleAfterMs` moves an
    * attempt to `EXPIRED`, which is still in `MONEY_MAY_HAVE_MOVED` — the
@@ -466,7 +467,7 @@ export interface AppConfig {
      * `assertPoolSplitSums` asserts this at boot rather than trusting the
      * deployment config. Replaces the old single-leg `poolReferrerBps`
      * (20/30/20/30) outright; do not resurrect it or reuse its old value
-     * for `poolReferrerL1Bps` — see docs/NEXT_CLAUDE_TASK.md and
+     * for `poolReferrerL1Bps` — see docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md and
      * `docs/HARDENING_AUDIT_2026-08-16.md` for the full worked example.
      */
     poolGreenBps: number;
@@ -878,7 +879,7 @@ const buildConfig = (): AppConfig => ({
     // standing on a stale hold.
     intentTimeoutSeconds: parseInt(process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180', 10),
     // 30/20/30/10/5/5 (TuTak/Green/Deferred/L1/L2/L3), per the 2026-08-22
-    // 3-level referral rework (docs/NEXT_CLAUDE_TASK.md, GitHub issue #28
+    // 3-level referral rework (docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md, GitHub issue #28
     // comment 5360139848) — six legs of the contribution pool in basis
     // points (not of the gross purchase — the pool is gross ×
     // negotiatedRateBps first, then split this way). Replaces the old

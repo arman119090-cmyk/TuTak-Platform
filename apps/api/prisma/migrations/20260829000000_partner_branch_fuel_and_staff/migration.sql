@@ -1,4 +1,4 @@
--- Fuel-station branches task (Arman, 2026-08-29). Three additive pieces:
+-- Fuel-station branches task (product decision, 2026-08-29). Three additive pieces:
 --
 -- 1. `BranchFuelType` on `partner_branches` — the real, per-branch product
 --    classification (PETROL / METHANE_CNG / PROPANE_LPG) that

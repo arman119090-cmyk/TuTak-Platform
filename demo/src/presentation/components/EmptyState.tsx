@@ -10,7 +10,7 @@ import { JakoWingMark } from './V2NavIcon';
  * blank screen a moment of brand warmth without adding noise. Renders the
  * same glossy Jako lockup as `UserAvatar`/`SplashScreen` (`assets/logo-mark.png`),
  * dimmed via opacity rather than the small flat vector mark this used to
- * draw — per Arman's request, 2026-08-23, that the actual logo photo appear
+ * draw — per the product decision of 2026-08-23, that the actual logo photo appear
  * everywhere a bird does, not a separately-drawn approximation of it.
  */
 export function EmptyState({

@@ -10,7 +10,7 @@ import {
  * Every value below must be absent from the serialized output. Asserting on
  * `JSON.stringify(result)` rather than on a specific field is deliberate:
  * the claim being tested is "this string does not leave the process", not
- * "this string is not in the field I remembered to check".
+ * "this string is not in the one field the assertion happens to check".
  */
 const RAW_PATH_WITH_NAME = '/v1/users/Арман';
 const RAW_PATH_WITH_ACCOUNT = '/v1/customers/123456789';

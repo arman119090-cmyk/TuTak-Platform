@@ -18,7 +18,7 @@ export class PartnerIntegrationsController {
   constructor(private readonly integrations: PartnerIntegrationsService) {}
 
   /**
-   * Business decision (2026-08-18, Arman): integration requests are
+   * Business decision (2026-08-18): integration requests are
    * financially significant enough (they lead to auto-finalization once
    * verified) to restrict to the OWNER tier, the same call already made for
    * `updateCommercialSettings` — MANAGER/STAFF can no longer submit or list

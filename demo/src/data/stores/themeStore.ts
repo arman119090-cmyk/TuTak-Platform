@@ -11,7 +11,7 @@ const THEME_MODE_KEY = 'tutak.themeMode';
  *
  * History: the v2 release shipped light-only and this store existed purely
  * to migrate an older install's persisted `'dark'` back to `'light'`
- * (`TUTAK_V2_CLAUDE_READ_FIRST.md`). On 20.09.2026 the owner asked for a
+ * (design handoff v2). On 20.09.2026 the product decision was to offer a
  * user-switchable dark theme, which supersedes that brief; the dark theme
  * a stored `'dark'` now selects is the new green-on-ink
  * `tutakMobileDarkTheme`, not the legacy shell the migration was guarding

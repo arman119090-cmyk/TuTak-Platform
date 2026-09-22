@@ -39,7 +39,7 @@ type Tx = Prisma.TransactionClient;
  * `FAILED` is in the list deliberately. A settlement is the statement of what
  * a partner is owed; a bank refusing to move the money does not change what
  * is owed, it only means nobody has moved it yet. Treating `FAILED` as
- * terminal stranded the claimed postings for ever — the bug Arman's review of
+ * terminal stranded the claimed postings for ever — the bug the product review of
  * 15.09.2026 found.
  *
  * `REQUIRES_RECONCILIATION` is deliberately *not* in the list. There the
@@ -154,7 +154,7 @@ export interface PartnerFundingBreakdown {
  * ## What it deliberately does not do
  *
  * It never moves money. Transfers are made by a human in a banking app, per
- * Arman's decision of 14.09.2026, and this engine only records that it
+ * the product decision of 14.09.2026, and this engine only records that it
  * happened and closes out the matching liability. There is no bank adapter
  * here and adding one is a separate decision.
  */
@@ -395,7 +395,7 @@ export class PartnerSettlementService {
    * is not squeamishness: claiming a negative balance would *consume* the
    * postings that represent the partner's debt, and the debt has to stay
    * unclaimed so the next period picks it up and offsets it against new
-   * earnings — which is exactly what Arman asked for.
+   * earnings — which is exactly what the product decision calls for.
    */
   async createDraft(params: {
     partnerId: string;
@@ -751,7 +751,7 @@ export class PartnerSettlementService {
    * that no money left. The settlement stays exactly as it is — same claimed
    * entries, same figure — and a new transfer may be attempted against it.
    *
-   * It used to be terminal. That was a real bug, found in Arman's review of
+   * It used to be terminal. That was a real bug, found in the product review of
    * 15.09.2026: the entries stayed claimed and no settlement could ever pick
    * them up again, so a partner whose transfer bounced was silently never
    * paid for those sales. "A fresh settlement is made for the retry" — what
@@ -818,7 +818,7 @@ export class PartnerSettlementService {
    * A partner says the money never arrived.
    *
    * Deliberately its own method rather than a flag on the one above, because
-   * it is a different act by a different kind of person. Arman's decision of
+   * it is a different act by a different kind of person. The product decision of
    * 15.09.2026: a partner may report a problem and may not confirm whether
    * money moved — they are the payee, and a payee who can both report a
    * missing transfer and confirm that it never arrived can order their own
@@ -859,7 +859,7 @@ export class PartnerSettlementService {
   /**
    * Somebody in finance has read the bank statement and says what it shows.
    *
-   * This is the **proposal**, and on its own it moves nothing. Arman's
+   * This is the **proposal**, and on its own it moves nothing. The product
    * decision of 15.09.2026 is that an ambiguous transfer is resolved by two
    * different people with evidence between them — the same maker/checker rule
    * the settlement's own approval already has, applied to the other decision

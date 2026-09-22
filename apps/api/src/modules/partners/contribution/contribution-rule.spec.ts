@@ -26,7 +26,7 @@ describe('contributionForPurchase', () => {
   /**
    * Why there is no migration back-filling a rule row onto every partner.
    *
-   * Arman's decision of 15.09.2026 is that existing percentage partners must
+   * The product decision of 15.09.2026 is that existing percentage partners must
    * not be broken, and "not broken" means byte-identical, not similar. These
    * cases prove that a partner with no rule at all is priced exactly as one
    * carrying the equivalent `PERCENT_BPS` rule — so the absence of a rule row
@@ -92,7 +92,7 @@ describe('contributionForPurchase', () => {
 });
 
 describe('contributionUnderRule', () => {
-  /** Arman's worked HAZE example: 50 L × 300 = 15,000; TuTak = 50 × 10 = 500. */
+  /** The worked HAZE example: 50 L × 300 = 15,000; TuTak = 50 × 10 = 500. */
   it('prices HAZE per litre, not as a percentage', () => {
     const pool = contributionUnderRule(
       {

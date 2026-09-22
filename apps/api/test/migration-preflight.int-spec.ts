@@ -10,7 +10,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  * `purchase_intents_one_live_per_customer_partner` cannot be created while a
  * customer has two unfinished purchases at one business. The tempting fix is
  * a `UPDATE ... SET status = 'EXPIRED'` at the top of the migration, and
- * Arman's decision of 15.09.2026 forbids it: a customer standing at a till
+ * the product decision of 15.09.2026 forbids it: a customer standing at a till
  * with a live purchase is not a data-quality problem to be tidied away.
  * Expiring their purchase from a deploy script releases their reserved points
  * and voids a code they are about to read out, with nobody watching.

@@ -19,7 +19,7 @@
 > `EvSessionsService.stopOnce`). What's left of item 5 is only
 > Payments/Settlement's net-of-refund×flat-rate formula for card/PSP
 > transactions, which is a distinct product (acquirer settlement, not the
-> loyalty pool) and was never in question. See `docs/NEXT_CLAUDE_TASK.md`
+> loyalty pool) and was never in question. See `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`
 > for the current, non-stale backlog.
 
 Companion to `docs/CORE_ARCHITECTURE_MIGRATION_2026-08.md` (legacy-conflict
@@ -658,7 +658,7 @@ surfaced by this pass's broader entry-point/registration audits:
    exists to specify against.
 9. ~~**Normal customer QR purchase used the legacy `qr/redeem` financial
    path instead of `PurchaseIntent`**~~ — **RESOLVED 2026-08-16**
-   (`docs/NEXT_CLAUDE_TASK.md`). `ScanQrScreen.tsx` (mobile) and the
+   (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md`). `ScanQrScreen.tsx` (mobile) and the
    partner dashboard's "Payment QR" page both used to carry an amount
    through the scan — a cashier typed it in, generated a `DYNAMIC_INVOICE`,
    and the customer's scan charged it directly via
@@ -675,7 +675,7 @@ surfaced by this pass's broader entry-point/registration audits:
    `ScanQrScreen.test.tsx` proves the scan handler never calls
    `qrApi.redeem`; `partnerPayQr.test.ts` covers the payload parser.
 10. ~~**`reject()` had no expiry check, unlike `confirm()`**~~ —
-    **RESOLVED 2026-08-16** (`docs/NEXT_CLAUDE_TASK.md` requirement 11;
+    **RESOLVED 2026-08-16** (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` requirement 11;
     independently confirmed by GitHub issue #28). A cashier's decline
     arriving after the 3-minute window but before the sweep reached the row
     flipped it straight to `REJECTED` instead of `EXPIRED` — the wrong
@@ -690,7 +690,7 @@ surfaced by this pass's broader entry-point/registration audits:
     only ever come back as "already expired."
 11. ~~**Demo PurchaseIntent auto-confirm credited the whole contribution
     pool as GREEN, not the 20% canonical slice**~~ — **RESOLVED
-    2026-08-16** (`docs/NEXT_CLAUDE_TASK.md` requirement 12; GitHub issue
+    2026-08-16** (`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` requirement 12; GitHub issue
     #28 LOW finding). `mockAdapter.ts`'s auto-confirm branch computed
     `grossAmount × 0.05` directly as the customer's available GREEN bonus;
     for a 5% partner rate that is the entire contribution pool, five times
@@ -922,7 +922,7 @@ were not run this pass; recommend both before the next real deploy).
 
 ## S. Referral engine rework — single-level to 3-level upward chain (2026-08-22)
 
-Implements the decision recorded in `docs/NEXT_CLAUDE_TASK.md` (2026-08-19,
+Implements the decision recorded in `docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` (2026-08-19,
 Arman) and detailed in full in GitHub Issue #28 comment 5360139848
 (2026-08-20) — the authoritative spec this section follows. Replaces
 **only** the referral engine's economics; nothing else in this hardening
@@ -932,7 +932,7 @@ pass's prior findings (§A-R) was touched or weakened.
 the tip of the 2026-08-19 hardening pass, §R above).
 **HEAD AFTER (code):** `f2f978ebcbce4ca6eab8b2a58654844a36c4acf1` (`f2f978e`)
 — the last commit that changes code or tests. This document and
-`docs/NEXT_CLAUDE_TASK.md` are committed immediately after, as
+`docs/REFERRAL_3_LEVEL_REWORK_2026-08-22.md` are committed immediately after, as
 documentation-only commits on top of that SHA.
 **Branch:** `claude/tutak-loyalty-mvp-e485jm`, pushed.
 

@@ -18,7 +18,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 /**
  * The purchase and the payment are one lifecycle, not two.
  *
- * Arman's decision of 15.09.2026, and the hole it closes is a clock racing a
+ * The product decision of 15.09.2026, and the hole it closes is a clock racing a
  * payment. The generic three-minute expiry predates the provider route
  * entirely, and on a stale purchase it releases the bonus reservation, fails
  * the source transaction and marks the purchase EXPIRED. Every one of those

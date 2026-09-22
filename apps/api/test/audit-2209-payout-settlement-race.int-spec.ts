@@ -212,7 +212,7 @@ describe('Audit 22.09 — payout and settlement at the same time (integration)',
   }
 
   /**
-   * The line the owner asked never to be crossed. Expressed as a string so a
+   * The line that must never be crossed. Expressed as a string so a
    * failure prints both sides of it rather than `expected true, got false`.
    */
   async function expectNoDoubleAllocation(entitlement: string) {

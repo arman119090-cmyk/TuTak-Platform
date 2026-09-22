@@ -9,7 +9,7 @@ import { PSP_ADAPTER, PspAdapter } from './psp-adapter.interface';
 /**
  * Ageing, and the one thing it is not allowed to do.
  *
- * Arman's decision of 15.09.2026: **time creates alerts and escalation, and
+ * The product decision of 15.09.2026: **time creates alerts and escalation, and
  * never a resolution.** An attempt nobody has answered for an hour is exactly
  * as unsafe as one nobody has answered for a minute — the provider may hold
  * the customer's money in both cases, and the only difference is how long
@@ -40,10 +40,10 @@ export class PspAttemptAgeingService {
   /**
    * The thresholds for one provider.
    *
-   * Per provider because thirty minutes was a number I picked, not a fact
+   * Per provider because thirty minutes is an arbitrary default, not a fact
    * about payments: a provider whose customers finish inside an app and one
-   * that settles in overnight batches deserve different answers, and Arman's
-   * decision of 15.09.2026 is that this is configuration. Neither number ever
+   * that settles in overnight batches deserve different answers, and the
+   * product decision of 15.09.2026 is that this is configuration. Neither number ever
    * resolves anything — see the class docblock.
    */
   private policyFor(provider: string): { staleAfterMs: number; escalateEveryMs: number } {

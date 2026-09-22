@@ -5,8 +5,8 @@ import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
 /**
- * Partner self-service: what a `fuel`-category station sells (Arman,
- * 2026-08-26) — see `Partner.sellsGas`/`sellsPetrol` and the "Газ"/"Бензин"
+ * Partner self-service: what a `fuel`-category station sells (product
+ * decision, 2026-08-26) — see `Partner.sellsGas`/`sellsPetrol` and the "Газ"/"Бензин"
  * customer filter that reads them. Same OWNER-only scoping as
  * `partner-branches.int-spec.ts`.
  */

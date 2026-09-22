@@ -84,7 +84,7 @@ describe('MainTabNavigator — Android bottom safe-area clearance', () => {
     // Math.max(20, insets.bottom) — a zero inset still gets the 20px floor.
     // Raised from 12: a real 3-button-nav device reporting ~zero inset still
     // put its own back/home/recent row close enough beneath ours to read as
-    // one row (Arman, 2026-08-23).
+    // one row (product decision, 2026-08-23).
     expect(style.paddingBottom).toBe(20);
   });
 

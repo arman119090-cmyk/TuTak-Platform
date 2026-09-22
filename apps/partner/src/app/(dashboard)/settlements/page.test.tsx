@@ -794,4 +794,13 @@ describe('SettlementsPage', () => {
     expect(screen.queryByText('This is not yours to see')).toBeNull();
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
   });
+
+  it('links the employee code on a movement to that person’s card', async () => {
+    renderPage();
+    const code = await screen.findByText('EMP-004');
+    // The question after "who confirmed this" is always "who is that", and
+    // the card is the one place in the panel that turns a code into a
+    // person.
+    expect(code.closest('a')?.getAttribute('href')).toBe('/employees/EMP-004');
+  });
 });

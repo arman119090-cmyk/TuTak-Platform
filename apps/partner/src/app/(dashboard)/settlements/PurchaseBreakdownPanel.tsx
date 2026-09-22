@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button } from '@tutak/design/web';
@@ -131,7 +132,12 @@ function BreakdownBody({ breakdown }: { breakdown: PurchaseBreakdownDto }) {
         */}
         <Row label={t('partnerPanel.breakdown.confirmedBy')}>
           {breakdown.employeeCode ? (
-            <span className="font-mono">{breakdown.employeeCode}</span>
+            <Link
+              href={`/employees/${encodeURIComponent(breakdown.employeeCode)}`}
+              className="font-mono underline"
+            >
+              {breakdown.employeeCode}
+            </Link>
           ) : breakdown.confirmationSource === 'PROVIDER' ? (
             t('partnerPanel.breakdown.byProvider')
           ) : breakdown.confirmationSource === 'INTEGRATION' ? (

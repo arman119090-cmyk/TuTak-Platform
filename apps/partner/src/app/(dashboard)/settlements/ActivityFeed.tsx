@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -273,8 +274,16 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                         figures the row exists to show. */}
                     <Td>{row.branch ?? <span className="text-faint">—</span>}</Td>
                     <Td>
+                      {/* The code links to the person's card, because the
+                          question after "who confirmed this" is always "who
+                          is that". */}
                       {row.employeeCode ? (
-                        <span className="font-mono text-[12px]">{row.employeeCode}</span>
+                        <Link
+                          href={`/employees/${encodeURIComponent(row.employeeCode)}`}
+                          className="font-mono text-[12px] underline"
+                        >
+                          {row.employeeCode}
+                        </Link>
                       ) : row.confirmationSource === 'PROVIDER' ? (
                         <span className="text-[12px] text-muted">
                           {t('partnerPanel.activity.provider')}

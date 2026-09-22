@@ -769,4 +769,29 @@ describe('SettlementsPage', () => {
       screen.getByText(/does not change this settlement or what you are\s+owed/i),
     ).toBeTruthy();
   });
+  it('calls a refusal a refusal, with no retry button and no zero balance', async () => {
+    const forbidden = Object.assign(new Error('Forbidden'), { response: { status: 403 } });
+    (settlementApi.position as jest.Mock).mockRejectedValue(forbidden);
+    (settlementApi.statements as jest.Mock).mockRejectedValue(forbidden);
+    renderPage();
+
+    expect(await screen.findByText('This is not yours to see')).toBeTruthy();
+    expect(screen.getByText(/Only the business owner can see/)).toBeTruthy();
+    // Not "could not load, check the connection": a 403 is an answer, and a
+    // retry button re-asks the same question of the same account.
+    expect(screen.queryByText('Your balance could not be loaded')).toBeNull();
+    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
+    // And no figure at all, least of all a zero.
+    expect(screen.queryByText('0.00')).toBeNull();
+    expect(screen.queryByTestId('position-headline')).toBeNull();
+  });
+
+  it('still calls a network failure a network failure', async () => {
+    (settlementApi.position as jest.Mock).mockRejectedValue(new Error('network'));
+    renderPage();
+
+    expect(await screen.findByText('Your balance could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('This is not yours to see')).toBeNull();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
+  });
 });

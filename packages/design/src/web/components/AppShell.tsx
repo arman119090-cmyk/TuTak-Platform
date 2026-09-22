@@ -107,7 +107,16 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="flex-1 lg:pl-[260px]">
+      {/*
+        `min-w-0` is what makes the tables inside actually scroll.
+        A flex child's minimum width defaults to its content's intrinsic
+        width, so a wide table pushed this column past the viewport and the
+        `overflow-x-auto` wrapper around the table never had anything to
+        scroll — the whole page scrolled sideways instead, taking the
+        sidebar and the headings with it. Measured at 390px and at 200%
+        text: 398px and 220px of page-wide overflow before this.
+      */}
+      <main className="min-w-0 flex-1 lg:pl-[260px]">
         <div className="mx-auto max-w-[1240px] px-6 py-8 lg:px-10 lg:py-10">{children}</div>
       </main>
     </div>

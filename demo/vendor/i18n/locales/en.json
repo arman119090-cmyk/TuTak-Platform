@@ -1010,6 +1010,12 @@
       "statusACCEPTED": "Accepted",
       "statusREVOKED": "Cancelled",
       "statusEXPIRED": "Expired"
+    },
+    "refused": {
+      "title": "This is not yours to see",
+      "settlements": "Only the business owner can see what TuTak owes the organisation. Ask your owner account.",
+      "branches": "Only the business owner can manage branches. Ask your owner account.",
+      "employees": "This list is not available to your account. Your owner account can see it."
     }
   }
 }

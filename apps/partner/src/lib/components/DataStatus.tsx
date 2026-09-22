@@ -39,6 +39,23 @@ export function LoadError({
 }
 
 /**
+ * Shown instead of content the server refused.
+ *
+ * Deliberately without a retry: a 403 is an answer, not a failure, and a
+ * button that re-asks the same question of the same account only teaches
+ * people the app is unreliable. What it says instead is who can see this,
+ * because that is the next step the person actually has.
+ */
+export function AccessRefused({ title, message }: { title: string; message: string }) {
+  return (
+    <div role="alert" className="flex flex-col items-start gap-2 rounded-lg border border-subtle p-4">
+      <p className="text-[13px] font-medium text-ink">{title}</p>
+      <p className="text-[12px] text-muted">{message}</p>
+    </div>
+  );
+}
+
+/**
  * Shown above content that arrived once and has stopped refreshing.
  *
  * The figures stay on screen — they were true at `asOf` — but a person

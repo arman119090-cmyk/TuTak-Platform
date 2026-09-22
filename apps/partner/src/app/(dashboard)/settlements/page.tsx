@@ -20,7 +20,12 @@ import type { PartnerSettlementDto, UnsettledPositionDto } from '@tutak/shared-t
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { ActivityFeed } from './ActivityFeed';
 import { dataStateOf } from '@/lib/queryState';
-import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import {
+  AccessRefused,
+  LoadError,
+  LoadingNotice,
+  StaleNotice,
+} from '@/lib/components/DataStatus';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -144,6 +149,12 @@ export default function SettlementsPage() {
     },
   });
 
+  // A refusal on the position is a refusal on the whole screen: every
+  // figure and every list below it answers the same question, so showing
+  // three separate "could not load" boxes with retry buttons would be three
+  // wrong descriptions of one answer.
+  const refused = positionState === 'forbidden';
+
   if (!partnerId) {
     return (
       <EmptyState
@@ -158,7 +169,11 @@ export default function SettlementsPage() {
     if (positionState === 'loading') {
       return { value: '—', hint: t('partnerPanel.common.loading') };
     }
-    if (positionState === 'error') {
+    // Anything that is not a figure in hand is a dash. `position` is only
+    // safe to read in the two states that mean it arrived, and reading it
+    // in any other threw — which on this screen is a blank page where a
+    // balance should be.
+    if (positionState !== 'fresh' && positionState !== 'stale') {
       return { value: '—', hint: t('partnerPanel.common.couldNotLoad') };
     }
     return { value: money(value(position!)), hint: caption };
@@ -198,6 +213,13 @@ export default function SettlementsPage() {
         description={t('partnerPanel.settlements.description')}
       />
 
+      {refused ? (
+        <AccessRefused
+          title={t('partnerPanel.refused.title')}
+          message={t('partnerPanel.refused.settlements')}
+        />
+      ) : null}
+
       {positionState === 'error' ? (
         <LoadError
           title={t('partnerPanel.settlements.balanceError')}
@@ -221,7 +243,7 @@ export default function SettlementsPage() {
         have money coming" from one line, without reading a sign off a
         figure and working out which direction it points.
       */}
-      {positionState !== 'loading' && positionState !== 'error' && position ? (
+      {positionState === 'fresh' || positionState === 'stale' ? (
         <div
           className="rounded-lg border border-subtle p-4"
           data-testid="position-headline"
@@ -248,7 +270,7 @@ export default function SettlementsPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={refused ? 'hidden' : 'grid gap-4 sm:grid-cols-2'}>
         <StatTile
           label={t(
             youOwe
@@ -380,7 +402,7 @@ export default function SettlementsPage() {
         </p>
       ) : null}
 
-      {statementsState === 'loading' ? (
+      {refused ? null : statementsState === 'loading' ? (
         <LoadingNotice label={t('partnerPanel.statement.loading')} />
       ) : statementsState === 'error' ? (
         <LoadError
@@ -539,7 +561,7 @@ export default function SettlementsPage() {
       ) : null}
 
       {/* Where every figure above came from, line by line. */}
-      <ActivityFeed partnerId={partnerId} />
+      {refused ? null : <ActivityFeed partnerId={partnerId} />}
 
       {reporting ? (
         <Surfaceless>

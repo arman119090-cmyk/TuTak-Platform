@@ -91,7 +91,7 @@ describe('LoginPage error messages', () => {
     render(<LoginPage />);
     await submit();
     expect(
-      screen.getByText('Cannot reach the staging API. This is a deployment configuration issue, not a password error.'),
+      screen.getByText('Cannot reach the API. This is a deployment configuration issue, not a password error.'),
     ).toBeTruthy();
   });
 });

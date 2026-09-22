@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { BonusCompositionBar, PageHeader, StatTile, Surface } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
@@ -10,6 +11,7 @@ const num = (v: string | number | undefined) =>
 const amd = (v: string | number | undefined) => `${num(v)} ֏`;
 
 export default function OverviewPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
 
@@ -30,8 +32,8 @@ export default function OverviewPage() {
   return (
     <>
       <PageHeader
-        title={partner?.displayName ?? 'Overview'}
-        description="How your business is performing on TuTak."
+        title={partner?.displayName ?? t('partnerPanel.overview.title')}
+        description={t('partnerPanel.overview.description')}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -40,19 +42,28 @@ export default function OverviewPage() {
             refunds at all — so the headline number is what was actually
             sold, and the two figures it is made of are named next to it. */}
         <StatTile
-          label="Net revenue"
+          label={t('partnerPanel.overview.netRevenue')}
           value={amd(analytics?.netRevenue)}
           tone="brand"
-          hint="Sales less refunds"
+          hint={t('partnerPanel.overview.netRevenueHint')}
         />
-        <StatTile label="Gross revenue" value={amd(analytics?.totalRevenue)} />
-        <StatTile label="Refunded" value={amd(analytics?.totalRefunded)} />
-        <StatTile label="Transactions" value={num(analytics?.totalTransactions)} />
-        <StatTile label="Unique customers" value={num(analytics?.uniqueCustomers)} />
         <StatTile
-          label="Bonus accrual rate"
+          label={t('partnerPanel.overview.grossRevenue')}
+          value={amd(analytics?.totalRevenue)}
+        />
+        <StatTile label={t('partnerPanel.overview.refunded')} value={amd(analytics?.totalRefunded)} />
+        <StatTile
+          label={t('partnerPanel.overview.transactions')}
+          value={num(analytics?.totalTransactions)}
+        />
+        <StatTile
+          label={t('partnerPanel.overview.uniqueCustomers')}
+          value={num(analytics?.uniqueCustomers)}
+        />
+        <StatTile
+          label={t('partnerPanel.overview.accrualRate')}
           value={partner ? `${(partner.bonusAccrualRateBps / 100).toFixed(2)}%` : '—'}
-          hint="Earned by customers on every payment"
+          hint={t('partnerPanel.overview.accrualRateHint')}
         />
       </div>
 
@@ -60,20 +71,22 @@ export default function OverviewPage() {
         {/* Issued vs redeemed is the number a partner actually cares about:
             what the loyalty programme costs versus what it brings back. */}
         <Surface>
-          <div className="text-[15px] font-semibold text-ink">Bonus flow</div>
+          <div className="text-[15px] font-semibold text-ink">
+            {t('partnerPanel.overview.bonusFlow')}
+          </div>
           <p className="mt-1 mb-5 text-[13px] text-muted">
-            Points you have given customers, and points they have spent with you.
+            {t('partnerPanel.overview.bonusFlowHint')}
           </p>
 
           <div className="space-y-4">
             <div className="flex items-baseline justify-between">
-              <span className="text-[14px] text-muted">Issued to customers</span>
+              <span className="text-[14px] text-muted">{t('partnerPanel.overview.issued')}</span>
               <span className="tabular text-[19px] font-semibold text-available-text">
                 {num(issued)}
               </span>
             </div>
             <div className="flex items-baseline justify-between">
-              <span className="text-[14px] text-muted">Redeemed with you</span>
+              <span className="text-[14px] text-muted">{t('partnerPanel.overview.redeemed')}</span>
               <span className="tabular text-[19px] font-semibold text-reserved-text">
                 {num(redeemed)}
               </span>
@@ -85,25 +98,32 @@ export default function OverviewPage() {
               available={issued}
               pending={0}
               reserved={redeemed}
-              labels={{ available: 'Issued', pending: '—', reserved: 'Redeemed' }}
+              labels={{
+                available: t('partnerPanel.overview.issuedShort'),
+                pending: '—',
+                reserved: t('partnerPanel.overview.redeemedShort'),
+              }}
               showLegend={false}
             />
             <p className="mt-3 text-[12px] text-faint">
-              Redeemed points return customers to your business — a higher share is a healthier
-              programme.
+              {t('partnerPanel.overview.redeemedNote')}
             </p>
           </div>
         </Surface>
 
         <Surface>
-          <div className="text-[15px] font-semibold text-ink">Your business</div>
+          <div className="text-[15px] font-semibold text-ink">
+            {t('partnerPanel.overview.yourBusiness')}
+          </div>
           <dl className="mt-5 space-y-4">
-            <Row label="Legal name" value={partner?.legalName ?? '—'} />
-            <Row label="Category" value={partner?.category ?? '—'} />
-            <Row label="Tax ID" value={partner?.taxId ?? '—'} mono />
+            <Row label={t('partnerPanel.overview.legalName')} value={partner?.legalName ?? '—'} />
+            <Row label={t('partnerPanel.overview.category')} value={partner?.category ?? '—'} />
+            <Row label={t('partnerPanel.overview.taxId')} value={partner?.taxId ?? '—'} mono />
             <Row
-              label="Status"
-              value={partner?.isActive ? 'Active' : 'Inactive'}
+              label={t('partnerPanel.overview.statusLabel')}
+              value={t(
+                partner?.isActive ? 'partnerPanel.overview.active' : 'partnerPanel.overview.inactive',
+              )}
               tone={partner?.isActive ? 'text-available-text' : 'text-muted'}
             />
           </dl>

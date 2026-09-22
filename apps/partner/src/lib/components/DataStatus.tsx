@@ -1,13 +1,15 @@
 'use client';
 
+import { useTranslation } from 'react-i18next';
 import { Button } from '@tutak/design/web';
 import { clockTime } from '../queryState';
 
 /** Shown in place of content the server has not answered about yet. */
-export function LoadingNotice({ label = 'Loading…' }: { label?: string }) {
+export function LoadingNotice({ label }: { label?: string }) {
+  const { t } = useTranslation();
   return (
     <p role="status" className="py-6 text-[13px] text-faint">
-      {label}
+      {label ?? t('partnerPanel.common.loading')}
     </p>
   );
 }
@@ -25,14 +27,13 @@ export function LoadError({
   onRetry: () => void;
   busy?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div role="alert" className="flex flex-col items-start gap-3 rounded-lg border border-danger-text/30 p-4">
       <p className="text-[13px] font-medium text-danger-text">{title}</p>
-      <p className="text-[12px] text-muted">
-        Nothing below is known until this loads. Check the connection and try again.
-      </p>
+      <p className="text-[12px] text-muted">{t('partnerPanel.notice.loadErrorBody')}</p>
       <Button variant="secondary" size="sm" loading={busy} onClick={onRetry}>
-        Try again
+        {t('partnerPanel.notice.tryAgain')}
       </Button>
     </div>
   );
@@ -73,16 +74,15 @@ export function StaleNotice({
   onRetry: () => void;
   busy?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       role="alert"
       className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-pending/40 bg-pending-surface px-4 py-2 text-[12px] text-pending-text"
     >
-      <span>
-        Connection problem. Showing {what} as of {clockTime(asOf)} — it may have changed since.
-      </span>
+      <span>{t('partnerPanel.notice.stale', { what, time: clockTime(asOf) })}</span>
       <Button variant="secondary" size="sm" loading={busy} onClick={onRetry}>
-        Refresh
+        {t('partnerPanel.notice.refresh')}
       </Button>
     </div>
   );

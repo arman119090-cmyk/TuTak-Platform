@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 import { AuthShell, Button, Field, Input, PasswordInput } from '@tutak/design/web';
 import { authApi } from '@/lib/api/authApi';
 import { PARTNER_ROLES, useAuthStore } from '@/lib/stores/authStore';
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { deviceId, setSession } = useAuthStore();
   const [phone, setPhone] = useState('+374');
@@ -24,7 +26,7 @@ export default function LoginPage() {
         (PARTNER_ROLES as readonly string[]).includes(r),
       );
       if (!isPartner) {
-        setError('This account is not linked to a partner business.');
+        setError(t('partnerPanel.login.notAPartner'));
         return;
       }
       setSession(result.user, result.tokens);
@@ -41,9 +43,9 @@ export default function LoginPage() {
         typeof error === 'object' && error !== null && 'response' in error
           ? (error as { response?: { status?: number } }).response?.status
           : undefined;
-      if (status === 401) setError('Incorrect phone number or password.');
-      else if (status === 429) setError('Too many attempts. Please wait a minute and try again.');
-      else setError('Cannot reach the staging API. This is a deployment configuration issue, not a password error.');
+      if (status === 401) setError(t('partnerPanel.login.wrongCredentials'));
+      else if (status === 429) setError(t('partnerPanel.login.throttled'));
+      else setError(t('partnerPanel.login.unreachable'));
     } finally {
       setLoading(false);
     }
@@ -51,12 +53,12 @@ export default function LoginPage() {
 
   return (
     <AuthShell
-      title="Sign in to Partner"
-      description="Track your sales, bonuses and charging stations."
-      footer="Need access? Ask your TuTak account manager."
+      title={t('partnerPanel.login.title')}
+      description={t('partnerPanel.login.description')}
+      footer={t('partnerPanel.login.footer')}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Field label="Phone">
+        <Field label={t('partnerPanel.login.phone')}>
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -65,7 +67,7 @@ export default function LoginPage() {
           />
         </Field>
 
-        <Field label="Password" error={error ?? undefined}>
+        <Field label={t('partnerPanel.login.password')} error={error ?? undefined}>
           {/* This screen had the only eye in the panels, built inline. It is
               the shared one now, so the admin panel's four password boxes get
               the same control rather than a second copy of this code. */}
@@ -78,7 +80,7 @@ export default function LoginPage() {
         </Field>
 
         <Button type="submit" size="lg" loading={loading} className="w-full">
-          Sign in
+          {t('partnerPanel.login.submit')}
         </Button>
       </form>
     </AuthShell>

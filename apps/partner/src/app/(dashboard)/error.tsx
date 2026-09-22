@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/nextjs';
 
 /**
@@ -29,6 +30,8 @@ export default function DashboardError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const { t } = useTranslation();
+
   useEffect(() => {
     // Same reporting as the global boundary, and for the same reason: a
     // no-op without a DSN, and the operator's only chance of us finding out.
@@ -37,19 +40,21 @@ export default function DashboardError({
 
   return (
     <div role="alert" className="rounded-lg border border-line bg-surface p-6">
-      <h2 className="text-[15px] font-semibold text-ink">This section could not load</h2>
-      <p className="mt-1 text-[13px] text-muted">
-        The rest of the dashboard is unaffected. Try again, or pick another section.
-      </p>
+      <h2 className="text-[15px] font-semibold text-ink">
+        {t('partnerPanel.notice.sectionFailedTitle')}
+      </h2>
+      <p className="mt-1 text-[13px] text-muted">{t('partnerPanel.notice.sectionFailedBody')}</p>
       {error.digest && (
-        <p className="mt-2 font-mono text-[11px] text-faint">Reference: {error.digest}</p>
+        <p className="mt-2 font-mono text-[11px] text-faint">
+          {t('partnerPanel.notice.reference', { digest: error.digest })}
+        </p>
       )}
       <button
         type="button"
         onClick={reset}
         className="mt-4 rounded-md border border-line px-3 py-2 text-[13px] font-medium text-ink"
       >
-        Try again
+        {t('partnerPanel.notice.tryAgain')}
       </button>
     </div>
   );

@@ -91,7 +91,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShell
-      subtitle="Partner"
+      subtitle={t('partnerPanel.nav.subtitle')}
       nav={nav}
       currentPath={pathname}
       userName={user ? `${user.firstName} ${user.lastName}` : undefined}

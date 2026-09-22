@@ -125,7 +125,7 @@ function BranchForm({
         <Input
           value={form.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="Downtown"
+          placeholder={t('partnerPanel.branches.namePlaceholder')}
           maxLength={120}
         />
       </Field>
@@ -133,7 +133,7 @@ function BranchForm({
         <Input
           value={form.address}
           onChange={(e) => onChange({ address: e.target.value })}
-          placeholder="1 Republic Square"
+          placeholder={t('partnerPanel.branches.addressPlaceholder')}
           maxLength={300}
         />
       </Field>
@@ -141,7 +141,7 @@ function BranchForm({
         <Input
           value={form.city}
           onChange={(e) => onChange({ city: e.target.value })}
-          placeholder="Yerevan"
+          placeholder={t('partnerPanel.branches.cityPlaceholder')}
           maxLength={100}
         />
       </Field>

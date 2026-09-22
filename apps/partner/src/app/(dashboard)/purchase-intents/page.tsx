@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import {
   ContributionRuleKind,
@@ -9,7 +10,7 @@ import {
   PurchaseIntentStatus,
   type ApprovePurchaseIntentRequestDto,
 } from '@tutak/shared-types';
-import { unitLabel } from '@tutak/i18n';
+import { unitLabelKey } from '@tutak/i18n';
 import { Badge, Button, EmptyState, Input, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
@@ -89,22 +90,24 @@ function LineItem({
   setEcho: (next: { quantity: string; unitPrice: string }) => void;
   editable: boolean;
 }) {
-  // English, because this dashboard is English-only. The label still comes
-  // from the shared translation layer rather than being written here, so the
-  // financial enum stays the only identifier and adding a locale later is a
-  // change in one place.
-  const unit = intent.quantityUnit ? unitLabel(intent.quantityUnit, 'en') : '';
+  const { t } = useTranslation();
+  // The label comes from the shared translation layer rather than being
+  // written here, so the financial enum stays the only identifier and the
+  // unit reads in the panel's language like everything around it.
+  const unit = intent.quantityUnit ? t(unitLabelKey(intent.quantityUnit)) : '';
   const product = Number(echo.quantity || 0) * Number(echo.unitPrice || 0);
   const matches = product === Number(intent.grossAmount);
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-muted p-3">
       <div className="text-[12px] font-medium text-faint">
-        This business is paid per {unit || 'unit'}. Check what the pump says.
+        {t('partnerPanel.purchaseIntents.perUnitHint', {
+          unit: unit || t('partnerPanel.purchaseIntents.unitFallback'),
+        })}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
         <Input
-          aria-label="Quantity"
+          aria-label={t('partnerPanel.purchaseIntents.quantityLabel')}
           disabled={!editable}
           value={echo.quantity}
           onChange={(e) => setEcho({ ...echo, quantity: e.target.value })}
@@ -113,7 +116,7 @@ function LineItem({
         <span className="text-faint">{unit}</span>
         <span className="text-faint">×</span>
         <Input
-          aria-label="Unit price"
+          aria-label={t('partnerPanel.purchaseIntents.unitPriceLabel')}
           disabled={!editable}
           value={echo.unitPrice}
           onChange={(e) => setEcho({ ...echo, unitPrice: e.target.value })}
@@ -136,7 +139,7 @@ function LineItem({
         </span>
         {!matches && (
           <span className="text-[12px] text-danger-text">
-            does not match the purchase ({num(intent.grossAmount)} ֏)
+            {t('partnerPanel.purchaseIntents.mismatch', { amount: num(intent.grossAmount) })}
           </span>
         )}
       </div>
@@ -154,12 +157,12 @@ function LineItem({
  * cannot see the provider's ledger.
  */
 function AwaitingProvider() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-end gap-1">
-      <Badge tone="pending">Waiting for payment</Badge>
+      <Badge tone="pending">{t('partnerPanel.purchaseIntents.awaitingTitle')}</Badge>
       <span className="max-w-[16rem] text-right text-[11px] leading-tight text-faint">
-        The customer is paying in TuTak. This will complete on its own —
-        do not take cash for it.
+        {t('partnerPanel.purchaseIntents.awaitingNote')}
       </span>
     </div>
   );
@@ -176,24 +179,24 @@ function AwaitingProvider() {
  * and the person is told to look before tapping again.
  */
 function ActionFailure({ failure }: { failure: ApiFailure }) {
+  const { t } = useTranslation();
   if (failure.kind === 'state') {
     return (
       <p role="alert" className="max-w-[20rem] text-right text-[12px] text-pending-text">
-        This purchase changed before your tap: {failure.message} The queue has been refreshed.
+        {t('partnerPanel.purchaseIntents.failureState', { message: failure.message })}
       </p>
     );
   }
   if (failure.kind === 'network') {
     return (
       <p role="alert" className="max-w-[20rem] text-right text-[12px] text-danger-text">
-        Not sent — the server could not be reached. Nothing you typed was lost. The queue is
-        being re-read; check the row before trying again.
+        {t('partnerPanel.purchaseIntents.failureNetwork')}
       </p>
     );
   }
   return (
     <p role="alert" className="max-w-[20rem] text-right text-[12px] text-danger-text">
-      {failure.message} Nothing you typed was lost.
+      {t('partnerPanel.purchaseIntents.failureOther', { message: failure.message })}
     </p>
   );
 }
@@ -222,6 +225,7 @@ function IntentRow({
   /** The last failed action on this row, if any. */
   failure: ApiFailure | null;
 }) {
+  const { t } = useTranslation();
   // The 3-minute window is a server rule (reject() now enforces it the
   // same way confirm() always has — see purchase-intents.service.ts), but
   // a cashier should never be able to *tap* Confirm/Reject on a row the
@@ -270,8 +274,14 @@ function IntentRow({
             ) : null}
             {/* The customer's own stored money — TuTak's to settle, not the till's to take. */}
             {Number(intent.prepaidAmountApplied) > 0 ? (
-              <span className="text-reserved-text" title="Paid from the customer's TuTak balance">
-                −{num(intent.prepaidAmountApplied)} <span className="text-[11px] text-faint">balance</span>
+              <span
+                className="text-reserved-text"
+                title={t('partnerPanel.purchaseIntents.balanceTitle')}
+              >
+                −{num(intent.prepaidAmountApplied)}{' '}
+                <span className="text-[11px] text-faint">
+                  {t('partnerPanel.purchaseIntents.balance')}
+                </span>
               </span>
             ) : null}
           </div>
@@ -302,7 +312,7 @@ function IntentRow({
         */}
         {Number(intent.ordinaryPaymentRemainder) === 0 && !viaProvider ? (
           <div className="text-[11px] font-normal text-faint">
-            Collect 0 ֏ — paid through TuTak after you confirm
+            {t('partnerPanel.purchaseIntents.collectZero')}
           </div>
         ) : null}
       </Td>
@@ -311,9 +321,9 @@ function IntentRow({
       </Td>
       <Td>
         {viaProvider ? (
-          <Badge tone="pending">In TuTak</Badge>
+          <Badge tone="pending">{t('partnerPanel.purchaseIntents.howInTutak')}</Badge>
         ) : (
-          <Badge tone="neutral">At the till</Badge>
+          <Badge tone="neutral">{t('partnerPanel.purchaseIntents.howAtTill')}</Badge>
         )}
       </Td>
       <Td align="right">
@@ -339,14 +349,16 @@ function IntentRow({
         {viaProvider && approved ? (
           <AwaitingProvider />
         ) : expired ? (
-          <span className="text-[12px] text-faint">Expiring…</span>
+          <span className="text-[12px] text-faint">
+            {t('partnerPanel.purchaseIntents.expiring')}
+          </span>
         ) : rejecting ? (
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center justify-end gap-2">
               <Input
                 autoFocus
-                placeholder="Reason"
-                aria-label="Reason for declining"
+                placeholder={t('partnerPanel.purchaseIntents.reasonPlaceholder')}
+                aria-label={t('partnerPanel.purchaseIntents.reasonLabel')}
                 value={reasonCode}
                 onChange={(e) => setReasonCode(e.target.value)}
                 className="h-8 w-40 text-[13px]"
@@ -358,10 +370,10 @@ function IntentRow({
                 disabled={!reasonCode}
                 onClick={() => reject.mutate(intent.id)}
               >
-                Confirm decline
+                {t('partnerPanel.purchaseIntents.confirmDecline')}
               </Button>
               <Button size="sm" variant="secondary" onClick={onCancelReject}>
-                Cancel
+                {t('partnerPanel.purchaseIntents.cancel')}
               </Button>
             </div>
             {failure ? <ActionFailure failure={failure} /> : null}
@@ -370,7 +382,7 @@ function IntentRow({
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center justify-end gap-2">
               <Button size="sm" variant="secondary" onClick={onStartReject}>
-                Reject
+                {t('partnerPanel.purchaseIntents.reject')}
               </Button>
               {viaProvider ? (
                 <Button
@@ -378,7 +390,7 @@ function IntentRow({
                   loading={approve.isPending}
                   onClick={() => approve.mutate({ id: intent.id, dto: lineItem })}
                 >
-                  Approve for payment
+                  {t('partnerPanel.purchaseIntents.approveForPayment')}
                 </Button>
               ) : (
                 <Button
@@ -386,7 +398,7 @@ function IntentRow({
                   loading={confirm.isPending}
                   onClick={() => confirm.mutate({ id: intent.id, dto: lineItem })}
                 >
-                  Confirm
+                  {t('partnerPanel.purchaseIntents.confirm')}
                 </Button>
               )}
             </div>
@@ -418,6 +430,7 @@ function IntentRow({
  * connection problem — the customer's purchase is still live on the server.
  */
 export default function PurchaseIntentsPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
   const queryClient = useQueryClient();
@@ -521,15 +534,15 @@ export default function PurchaseIntentsPage() {
   return (
     <>
       <PageHeader
-        title="Purchase requests"
-        description="Customers who scanned your code and entered an amount. Confirm a till sale to complete it. A purchase being paid in TuTak is approved here and then completes on its own — never take cash for one."
+        title={t('partnerPanel.purchaseIntents.title')}
+        description={t('partnerPanel.purchaseIntents.description')}
       />
 
       {queueState === 'loading' ? (
-        <LoadingNotice label="Loading the queue…" />
+        <LoadingNotice label={t('partnerPanel.purchaseIntents.loading')} />
       ) : queueState === 'error' ? (
         <LoadError
-          title="The queue could not be loaded"
+          title={t('partnerPanel.purchaseIntents.loadError')}
           onRetry={() => void queue.refetch()}
           busy={queue.isFetching}
         />
@@ -538,7 +551,7 @@ export default function PurchaseIntentsPage() {
           {queueState === 'stale' ? (
             <StaleNotice
               asOf={queue.dataUpdatedAt}
-              what="the queue"
+              what={t('partnerPanel.purchaseIntents.staleWhat')}
               onRetry={() => void queue.refetch()}
               busy={queue.isFetching}
             />
@@ -549,8 +562,8 @@ export default function PurchaseIntentsPage() {
               <Input
                 inputMode="numeric"
                 maxLength={4}
-                placeholder="Code, e.g. 0042"
-                aria-label="Find a request by the code the customer read out"
+                placeholder={t('partnerPanel.purchaseIntents.filterPlaceholder')}
+                aria-label={t('partnerPanel.purchaseIntents.filterLabel')}
                 value={digitsOnly}
                 onChange={(event) => setCodeFilter(event.target.value)}
               />
@@ -559,12 +572,16 @@ export default function PurchaseIntentsPage() {
 
           {items.length === 0 ? (
             <EmptyState
-              title={digitsOnly ? 'No request with that code' : 'No pending requests'}
-              message={
+              title={t(
                 digitsOnly
-                  ? 'Check the digits with the customer. A request also leaves this queue on its own after 3 minutes.'
-                  : 'A new request appears here the moment a customer submits one, and expires on its own after 3 minutes if nobody acts.'
-              }
+                  ? 'partnerPanel.purchaseIntents.emptyFilteredTitle'
+                  : 'partnerPanel.purchaseIntents.emptyTitle',
+              )}
+              message={t(
+                digitsOnly
+                  ? 'partnerPanel.purchaseIntents.emptyFilteredMessage'
+                  : 'partnerPanel.purchaseIntents.emptyMessage',
+              )}
             />
           ) : (
             <Table>
@@ -576,14 +593,14 @@ export default function PurchaseIntentsPage() {
                     support asks for later. A row from before codes existed
                     shows a dash and is matched by its id as before.
                   */}
-                  <Th>Code</Th>
-                  <Th>ID</Th>
-                  <Th align="right">Purchase</Th>
-                  <Th align="right">Bonus / balance</Th>
-                  <Th align="right">To collect</Th>
-                  <Th>How</Th>
-                  <Th>Expires in</Th>
-                  <Th align="right">Action</Th>
+                  <Th>{t('partnerPanel.purchaseIntents.colCode')}</Th>
+                  <Th>{t('partnerPanel.purchaseIntents.colId')}</Th>
+                  <Th align="right">{t('partnerPanel.purchaseIntents.colPurchase')}</Th>
+                  <Th align="right">{t('partnerPanel.purchaseIntents.colBonus')}</Th>
+                  <Th align="right">{t('partnerPanel.purchaseIntents.colCollect')}</Th>
+                  <Th>{t('partnerPanel.purchaseIntents.colHow')}</Th>
+                  <Th>{t('partnerPanel.purchaseIntents.colExpires')}</Th>
+                  <Th align="right">{t('partnerPanel.purchaseIntents.colAction')}</Th>
                 </tr>
               </thead>
               <tbody>

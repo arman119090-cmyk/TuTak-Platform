@@ -20,6 +20,7 @@ jest.mock('./useRegistrationConsents', () => ({
     satisfied: true,
     language: 'ru',
     payload: null,
+    reset: jest.fn(),
   }),
 }));
 jest.mock('../../../data/stores/authStore', () => ({

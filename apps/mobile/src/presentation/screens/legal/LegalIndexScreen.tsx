@@ -11,6 +11,7 @@ import { ListRow } from '../../components/ListRow';
 import { Button } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { legalApi } from '../../../data/api/legalApi';
+import { useAuthStore } from '../../../data/stores/authStore';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import {
   LEGAL_DOCUMENT_LANGUAGES,
@@ -47,6 +48,26 @@ export function LegalIndexScreen() {
     enabled: language !== null,
     retry: false,
   });
+
+  /*
+   * The edition this person accepted, when there is a person.
+   *
+   * "Ранее принятые редакции доступны для сохранения" is a promise the terms
+   * make, and a promise needs a door: when the accepted revision is not the
+   * current one, the list offers to open exactly the copy that was accepted,
+   * from the archive, hash and all. Absent before sign-in — there is nothing
+   * to look up — and absent for accounts that registered before the texts
+   * existed, which have no record and are never told they "accepted" one.
+   */
+  const signedIn = useAuthStore((s) => s.user !== null);
+  const mine = useQuery({
+    queryKey: ['legal', 'consents', 'me'],
+    queryFn: () => legalApi.myConsents(),
+    enabled: signedIn && language !== null,
+    retry: false,
+  });
+  const accepted = mine.data?.consents.find((entry) => entry.granted)?.revision ?? null;
+  const acceptedIsOlder = accepted !== null && index.data !== undefined && accepted !== index.data.revision;
 
   if (!language) {
     return (
@@ -104,6 +125,35 @@ export function LegalIndexScreen() {
           last={i === all.length - 1}
         />
       ))}
+
+      {accepted ? (
+        <View testID="legal-accepted-edition" style={{ marginTop: space[4] }}>
+          <Text style={[text.caption, { color: color.textSecondary }]}>
+            {t('legal.acceptedEdition', { revision: accepted })}
+          </Text>
+          {acceptedIsOlder ? (
+            <>
+              <Text style={[text.caption, { color: color.textTertiary, marginTop: space[1] }]}>
+                {t('legal.currentEditionNote')}
+              </Text>
+              <View style={{ marginTop: space[2] }}>
+                <Button
+                  label={t('legal.acceptedEditionOpen')}
+                  variant="secondary"
+                  onPress={() =>
+                    navigation.navigate('LegalDocument', {
+                      documentKey: 'terms',
+                      language,
+                      revision: accepted,
+                      title: t('legal.docs.terms'),
+                    })
+                  }
+                />
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
 
       {index.data ? (
         <Text style={[text.caption, { color: color.textTertiary, marginTop: space[4] }]}>

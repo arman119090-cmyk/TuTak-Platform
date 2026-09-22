@@ -2,6 +2,8 @@
 
 Сверка текстов пакета `TuTak_Legal_2026-09-22` с тем, что система делает на
 самом деле, на коммите ветки `claude/railway-connector-check-wy0ffq`.
+Обновлено 22.09 после исправления текстов (редакция `1.0-draft-2026-09-22`)
+и трёх правок кода; строки с пометкой «22.09» — то, что изменилось.
 
 Колонка «Состояние»:
 
@@ -18,7 +20,7 @@
 
 | Положение документа | Реализация | Проверка | Состояние |
 | --- | --- | --- | --- |
-| Оператор, реквизиты, контакты | `{{OPERATOR_LEGAL_NAME}}` и ещё 8 полей не заполнены | `legal-publication-gate.spec.ts` — gate не публикует | решение владельца |
+| Оператор, реквизиты, контакты | `{{OPERATOR_LEGAL_NAME}}` и ещё 8 полей не заполнены | `legal-publication-gate.spec.ts` — gate не публикует; список полей закреплён в тесте | решение владельца |
 | Регистрация по номеру +374 с подтверждением кодом | `auth.service.ts` `requestRegistrationOtp` / `verifyRegistrationOtp`, формат телефона — `common/validators/armenian-phone.ts` | `auth-otp.int-spec.ts` | реализовано |
 | Аккаунт создаётся только после подтверждения номера | Аккаунт пишется в транзакции `verifyRegistrationOtp` после `consumeCode` | `auth-otp.int-spec.ts` | реализовано |
 | Пароль знает только пользователь | `argon2.hash(dto.password)`, `passwordChangedAt` ставится при создании | `auth-otp.int-spec.ts` («usable from the sign-in screen») | реализовано |
@@ -30,12 +32,12 @@
 | Положение документа | Реализация | Проверка | Состояние |
 | --- | --- | --- | --- |
 | Состав данных: телефон, профиль, устройства, покупки, бонусы, приглашения, обращения | Таблицы `users`, `devices`, `transactions`, `purchase_intents`, `bonus_*`, `referral_*`, `audit_logs` | `prisma/schema.prisma` | реализовано |
-| Геолокация — только на переднем плане | `expo-location` с `isIosBackgroundLocationEnabled: false` и `isAndroidBackgroundLocationEnabled: false`; единственный вызов — `requestForegroundPermissionsAsync` | `apps/mobile/app.config.js:466`, `useApproximateLocation.ts:131` | реализовано |
+| Геолокация — только на переднем плане, координаты не сохраняются | `expo-location` с фоновыми опциями выключенными; единственный вызов — `requestForegroundPermissionsAsync`; на сервере координаты не пишутся в БД, а из журнала запросов **убраны 22.09** — контекст запроса больше не несёт строку запроса | `apps/mobile/app.config.js:466`, `useApproximateLocation.ts:131`, `request-context.middleware.ts`, `request-context.spec.ts` («never carries the query string») | реализовано (было: координаты попадали в логи) |
 | Биометрия добровольна, шаблоны не покидают устройство | `expo-local-authentication`; на сервер уходит только факт разблокировки, ключ лежит в Secure Enclave/Keystone устройства | `apps/mobile/src/data/biometrics/biometricDevice.ts` | реализовано, но формулировку про «шаблоны» должен подтвердить юрист (см. `04_…`) |
 | Данные передаются подрядчикам | Фактические получатели: Expo Push (`https://exp.host/--/api/v2/push/send`), Sentry, MapTiler (тайлы карты), Viva (SMS), Telegram (служебные алерты), Railway (хостинг и БД), S3-совместимое хранилище (фото) | `configuration.ts:772`, `app.config.js`, `viva-sms.provider.ts`, `telegram-alert.channel.ts` | требует изменения текста: реестр получателей `{{RECIPIENTS_REGISTER_URL}}` не заполнен |
 | В телеметрию не уходят персональные данные | `sentry-sanitize.ts` вырезает весь свободный текст (`request`, `message`, `user`, `extra`, `contexts`), оставляя только структурные поля из allow-list; паритет с `@tutak/observability` проверяется скриптом в CI | `scripts/verify-sentry-sanitizer-parity.js`, `sentry-otel.spec.ts` | реализовано |
 | Чужие фотографии не открываются в обход интерфейса | Аватары отдаются только по подписанной ссылке, и маршрут доставки **на каждом обращении** заново проверяет право смотреть — отозванное согласие действует немедленно, а не по истечении ссылки | `media-delivery.service.ts:76-90`, `media-system.int-spec.ts` | реализовано |
-| Сроки хранения по категориям | `{{RETENTION_SCHEDULE_URL}}`, `{{SECURITY_LOG_RETENTION}}`, `{{SUPPORT_RETENTION}}`, `{{LOCATION_RETENTION}}` не заполнены; в коде есть только срок удаления аккаунта | `configuration.ts` `accountDeletion.graceDays` (30) | решение владельца |
+| Сроки хранения по категориям | таблица в политике §6 заполнена из `RETENTION_*` (30/90/90/90/180 дней), `ACCOUNT_DELETION_GRACE_DAYS` (30) и фактов кода; журнал безопасности хранит IP пока жив аккаунт, при закрытии IP/User-Agent стираются — **добавлено 22.09** | `configuration.ts`, `retention.service.ts`, `account-deletion.service.ts` (`auditLog.updateMany`), тест «takes the address and the device out of the security journal» | реализовано; три срока остались владельцу (`SUPPORT_RETENTION`, `BACKUP_RETENTION`, `FINANCIAL_RETENTION_BASIS`) |
 | Сроки ответа на обращения | В коде нет автоматики обращений; сроки по армянскому закону (5 дней / 10 рабочих дней / 3 рабочих дня) нельзя подменять сроками GDPR | `source/internal/07_APPROVAL_AND_SOURCES_RU.md` | решение владельца |
 
 ## 3. Правила бонусов, отмен и возвратов (`03_BONUS_AND_REFUNDS.md`)
@@ -43,10 +45,10 @@
 | Положение документа | Реализация | Проверка | Состояние |
 | --- | --- | --- | --- |
 | Параметры покупки фиксируются и не меняются задним числом | Ставка и правило вклада пишутся в `purchase_intents` при создании | `contribution-rules.int-spec.ts` | реализовано |
-| Бонусы сгорают по сроку, тратятся в определённом порядке | FIFO по `expiresAt` в `bonus-engine.service.ts` | `bonus-engine.int-spec.ts` | реализовано; но само правило срока `{{BONUS_VALIDITY_RULE}}` и порядок списания `{{BONUS_SPEND_ORDER}}` в документе не заполнены | 
+| Бонусы сгорают по сроку, тратятся в определённом порядке | 12 месяцев (`BONUS_EXPIRY_MONTHS`), доступны через 48 часов (`BONUS_PENDING_HOURS`), FIFO по `expiresAt` | `bonus-engine.int-spec.ts` | реализовано; в тексте теперь стоят значения из кода — владелец подтверждает, что хочет именно их |
 | Возврат разделяет деньги и бонусы | Аллокатор возврата по компонентам финансирования | `hybrid-refund.int-spec.ts`, `refund-engine.int-spec.ts` | реализовано |
-| Возвращённые бонусы и их срок | `{{RESTORED_BONUS_EXPIRY_RULE}}` не заполнено | — | решение владельца |
-| Отложенные бонусы, предельный срок | `{{DEFERRED_MAX_DAYS}}`, `{{DEFERRED_RESOLUTION_POLICY}}` не заполнены | — | решение владельца |
+| Возвращённые бонусы и их срок | `restoreSpentBonus` создаёт новый лот с новым 12-месячным сроком — так и записано | `bonus-engine.service.ts:614-627` | реализовано |
+| Отложенные бонусы, предельный срок | окно 3 месяца (`DEFERRED_BONUS_WINDOW_MONTHS`), разблокировка по накопленному обороту, по истечении — сгорание (`expireOverdue`) | `deferred-bonus-lot.service.ts:163,519` | реализовано |
 
 ## 4. Согласия (`04_CONSENTS.md`)
 
@@ -55,7 +57,7 @@
 | Два независимых обязательных согласия, по умолчанию пустые | `ConsentCheckbox`, состояние в `useRegistrationConsents`; сервер требует обе цели | `OtpRegisterScreen.consents.test.tsx`, `legal-consent-registration.int-spec.ts` | реализовано |
 | Согласие даётся к конкретной редакции текста | В записи хранятся `revision`, `contentHash`, `language` по каждому документу; хэш проверяется на сервере | `legal-consent-registration.int-spec.ts` («refuses a hash the server never published») | реализовано |
 | Отзыв не стирает историю выдачи | Таблица `legal_consent_records` только дополняется, отзыв — новая строка | тот же файл, тест про отзыв маркетинга | реализовано |
-| Реклама по каналам отдельно, скрытое включение запрещено | Цели `MARKETING_SMS/PUSH/EMAIL` есть в модели и проверяются при отправке и повторно перед доставкой | `notifications.service.ts`, `push-dispatch.service.ts` | реализовано на сервере; **экрана управления каналами в приложении нет** — рассылок пока нет вовсе (см. отчёт, раздел «Что не сделано») |
+| Реклама по каналам отдельно, скрытое включение запрещено | Цели `MARKETING_SMS/PUSH/EMAIL` есть в модели и проверяются при отправке и повторно перед доставкой; текст согласия теперь прямо говорит, что рассылок в этой редакции нет | `notifications.service.ts`, `push-dispatch.service.ts` | реализовано на сервере; экрана каналов нет, потому что нет рассылок |
 | Согласие хранит связь с подтверждением телефона, но не код | `registrationChallengeId` — id строки `auth_otp_tokens`; ни кода, ни его хэша в записи нет | тест «stores the edition, the language, the hash and the link» | реализовано |
 | Рекомендации и видимость фото — отдельно и по умолчанию выключены | `User.personalizedRecommendationsConsent` и `User.avatarConsentReferralList`, оба `@default(false)`; переключатели живут в настройках, не на форме регистрации | `schema.prisma`, `SettingsScreen.tsx`, `AvatarControl.tsx` | реализовано |
 | Разрешения (камера, геолокация, push, биометрия) спрашиваются в момент использования, отказ не блокирует | Геолокация запрашивается на экране карты и при отказе экран продолжает работать; биометрия — необязательная надстройка над обязательным кодом приложения | `useApproximateLocation.ts`, `AppLockSettings.tsx` | реализовано; на устройстве не проверялось |
@@ -66,8 +68,8 @@
 | Положение документа | Реализация | Проверка | Состояние |
 | --- | --- | --- | --- |
 | Закрытие доступно из приложения | Экран `DeleteAccountScreen`, `DELETE /users/me` | `account-deletion.int-spec.ts` | реализовано |
-| Доступ прекращается сразу, данные стираются позже | `deletedAt` закрывает вход немедленно; `anonymizedAt` ставит sweep через `ACCOUNT_DELETION_GRACE_DAYS` (сейчас 30) | `account-deletion.service.ts:81,224,268` | реализовано; срок — решение владельца |
-| Финансовая история не уничтожается | Связь `Wallet → User` стоит `onDelete: Restrict`, жёсткого удаления нет нигде; обезличивание сохраняет проводки | `schema.prisma`, `account-deletion.int-spec.ts` | реализовано |
+| Доступ прекращается сразу, данные стираются позже | `deletedAt` закрывает вход немедленно; через 30 дней стираются номер, имя, email, пароль, уведомления, коды, **с 22.09 также IP/User-Agent из журнала и фото профиля из хранилища**; текст называет 30 дней и перечисляет ровно это | `account-deletion.service.ts`, тесты «takes the address…», «removes the profile photo from storage» | реализовано |
+| Финансовая история не уничтожается | Связь `Wallet → User` стоит `onDelete: Restrict`, жёсткого удаления нет нигде; обезличивание сохраняет проводки; бонусы при закрытии сгорают — так и записано | `schema.prisma`, `account-deletion.int-spec.ts` («keeps the financial record intact», «retires the remaining points») | реализовано |
 | Аккаунт не возвращается из резервной копии | Проверить нечем: политика резервных копий Railway владельцу неизвестна, `{{BACKUP_RETENTION}}` не заполнено | — | **не проверено**, решение владельца |
 | Push-токены после закрытия | Устройства и токены обезличиваются вместе с аккаунтом | `account-deletion.service.ts` | реализовано |
-| Обращение по данным без входа в аккаунт | Такого канала в продукте нет: есть только удаление из приложения и статическая страница `/legal/account-deletion` | `legal.controller.ts` | **не реализовано**, см. отчёт |
+| Обращение по данным без входа в аккаунт | Текст теперь называет канал: письмо на `{{PRIVACY_EMAIL}}` с номером телефона аккаунта и соразмерная проверка владения номером. Это процесс поддержки, а не функция приложения | — | описано; требует, чтобы ящик читали (владелец) и чтобы юрист подтвердил достаточность (вопрос 7) |

@@ -33,7 +33,7 @@ describe('legal publication gate (real package)', () => {
     const state = build().publicationState();
 
     expect(state.publishable).toBe(false);
-    expect(state.revision).toBe('0.9-draft-2026-09-22');
+    expect(state.revision).toBe('1.0-draft-2026-09-22');
 
     const placeholders = state.blockers.filter((blocker) => blocker.startsWith('placeholder:'));
     const draftMarkers = state.blockers.filter((blocker) => blocker.startsWith('draft-marker:'));
@@ -41,8 +41,33 @@ describe('legal publication gate (real package)', () => {
     // Every one of the five documents, in both languages, still carries the
     // author's "Проект для согласования" line.
     expect(draftMarkers).toHaveLength(10);
-    // And the operator's own registration details are still unfilled.
+    // And the operator's own registration details are still unfilled. After
+    // the 22.09 correction only the company's own data, the vendor of the
+    // object storage and three legal/operational terms are left — everything
+    // that could be derived from the code has been.
     expect(placeholders.length).toBeGreaterThan(20);
+    const fields = new Set(placeholders.map((blocker) => blocker.split(':')[3]));
+    expect([...fields].sort()).toEqual(
+      [
+        'BACKUP_RETENTION',
+        'EFFECTIVE_DATE',
+        'FINANCIAL_RETENTION_BASIS',
+        'LEGAL_BASE_URL',
+        'LEGAL_FORM',
+        'MEDIA_STORAGE_COUNTRY',
+        'MEDIA_STORAGE_PROVIDER',
+        'OPERATOR_LEGAL_NAME',
+        'PRIVACY_EMAIL',
+        'REGISTERED_ADDRESS',
+        'REGISTRATION_NUMBER',
+        'SUPPORT_EMAIL',
+        'SUPPORT_HOURS',
+        'SUPPORT_PHONE',
+        'SUPPORT_RETENTION',
+        'TAX_ID',
+        'TRANSFER_BASIS_SUMMARY',
+      ].sort(),
+    );
     expect(state.blockers).toContain('manifest-not-approved-by-owner');
     expect(state.blockers).toContain('effective-date-missing');
     expect(state.blockers).toContain('approved-revision-not-configured');
@@ -51,7 +76,7 @@ describe('legal publication gate (real package)', () => {
   it('names the missing field, not just "not ready"', () => {
     const blockers = build().publicationState().blockers;
     expect(blockers).toContain('placeholder:terms:ru:OPERATOR_LEGAL_NAME');
-    expect(blockers).toContain('placeholder:privacy:ru:RETENTION_SCHEDULE_URL');
+    expect(blockers).toContain('placeholder:privacy:hy:BACKUP_RETENTION');
   });
 
   it('serves nothing while the gate is closed, and marks a draft as a draft in preview', () => {

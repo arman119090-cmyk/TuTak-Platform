@@ -671,6 +671,10 @@
       "consent": "Personal data processing consent",
       "privacy": "Personal data processing policy",
       "account-deletion": "Account closure and data requests"
-    }
+    },
+    "revisionChanged": "The documents were updated while the form was open. Please read the new edition and tick your consent again.",
+    "acceptedEdition": "The edition you accepted: {{revision}}",
+    "acceptedEditionOpen": "Open the edition you accepted",
+    "currentEditionNote": "Below is the current edition. The copy you accepted can be opened separately."
   }
 }

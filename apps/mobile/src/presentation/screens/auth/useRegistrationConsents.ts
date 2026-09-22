@@ -31,6 +31,12 @@ export interface RegistrationConsents {
   language: LegalDocumentLanguage;
   /** What travels to the API, or null when there is nothing to send. */
   payload: LegalConsentAcceptanceDto[] | null;
+  /**
+   * The texts moved while the form was open: forget the ticks, fetch the
+   * current edition, and ask again. Called when the server answers
+   * `LEGAL_REVISION_STALE` or `LEGAL_CONTENT_HASH_MISMATCH`.
+   */
+  reset: () => void;
 }
 
 /**
@@ -94,5 +100,9 @@ export function useRegistrationConsents(): RegistrationConsents {
     satisfied,
     language,
     payload,
+    reset: () => {
+      setAcceptedState({});
+      void index.refetch();
+    },
   };
 }

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,12 +13,14 @@ import {
   BonusLotStatus,
   BonusReservationStatus,
   EvSessionStatus,
+  MediaAssetStatus,
   RoleName,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { MEDIA_STORAGE, MediaStorage } from '../../infrastructure/media/media-storage.interface';
 import { AuditService } from '../audit/audit.service';
 
 export interface DeletionMeta {
@@ -75,6 +78,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
+    @Inject(MEDIA_STORAGE) private readonly storage: MediaStorage,
   ) {}
 
   private get graceMs(): number {
@@ -251,6 +255,13 @@ export class AccountDeletionService {
     // collide.
     const token = randomBytes(9).toString('hex');
 
+    // Read before the transaction flips them to REVOKED, so the keys are
+    // known whatever happens to the rows.
+    const photos = await this.prisma.mediaAsset.findMany({
+      where: { userId },
+      select: { storageKey: true, displayKey: true, thumbnailKey: true },
+    });
+
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: userId },
@@ -276,6 +287,37 @@ export class AccountDeletionService {
       await tx.device.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
       await tx.phoneVerificationToken.deleteMany({ where: { userId } });
+
+      /*
+       * The security journal keeps the events and loses the person.
+       *
+       * "Signed in from 5.77.x.x with Chrome on Android" is what a
+       * post-incident investigation needs while the account is alive; once
+       * the person has asked to be forgotten, the address and the device
+       * string identify somebody the platform has promised not to be able to
+       * name. The rows stay — "did we delete them, and when" must still be
+       * answerable — but nothing in them points at a real network or phone.
+       */
+      await tx.auditLog.updateMany({
+        where: { actorUserId: userId },
+        data: { ipAddress: null, userAgent: null },
+      });
+
+      /*
+       * The face goes with the name.
+       *
+       * The avatar's bytes would otherwise sit in object storage under a key
+       * nobody can resolve any more — the delivery route re-checks the
+       * owner on every hit and the owner is now inactive — which is "not
+       * reachable", not "erased". The rows flip to REVOKED inside the
+       * transaction; the objects are removed once it has committed (below),
+       * because a storage call cannot be rolled back with the database.
+       */
+      await tx.user.update({ where: { id: userId }, data: { avatarAssetId: null } });
+      await tx.mediaAsset.updateMany({
+        where: { userId, revokedAt: null },
+        data: { status: MediaAssetStatus.REVOKED, revokedAt: now },
+      });
 
       if (walletId) {
         // Retiring the balance rather than zeroing it. Setting `expiresAt` in
@@ -304,5 +346,16 @@ export class AccountDeletionService {
         tx,
       );
     });
+
+    // Best effort and after the commit: a storage backend that is down for a
+    // minute must not undo an anonymisation the database already made true.
+    // A leftover object is logged with its key so it can be swept by hand.
+    for (const photo of photos) {
+      for (const key of [photo.storageKey, photo.displayKey, photo.thumbnailKey]) {
+        await this.storage.delete(key).catch((err: Error) => {
+          this.logger.warn(`Could not remove avatar object ${key} of anonymised account: ${err.message}`);
+        });
+      }
+    }
   }
 }

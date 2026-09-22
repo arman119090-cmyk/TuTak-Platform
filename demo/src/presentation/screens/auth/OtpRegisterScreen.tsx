@@ -195,6 +195,15 @@ export function OtpRegisterScreen({ navigation }: Props) {
       });
       setStage('code');
     } catch (err) {
+      if (isStaleLegalEdition(err)) {
+        // The texts changed between opening the form and pressing the
+        // button. The ticks were given to an edition that no longer exists,
+        // so they are cleared and the current one is fetched — the person
+        // reads and chooses again, which is the whole point of the check.
+        consents.reset();
+        setFormError(t('legal.revisionChanged'));
+        return;
+      }
       // Never a field: this request carries the phone number and nothing
       // else, and the referral code it is drawn next to is not in it.
       setFormError(describeApiError(err) ?? t('auth.sendCodeFailed'));
@@ -246,6 +255,12 @@ export function OtpRegisterScreen({ navigation }: Props) {
         // judged. Marking a field here would blame them for the network, and
         // sending them back a stage would lose work for no reason.
         setFormError(message);
+      } else if (isStaleLegalEdition(err)) {
+        // Same as on stage one, and back to stage one: the choices live
+        // there, and they have to be made again against the current text.
+        consents.reset();
+        setFormError(t('legal.revisionChanged'));
+        setStage('phone');
       } else if (apiErrorCode(err)?.startsWith('REFERRAL')) {
         // The referral field lives on stage one, so the message has to go
         // back with it or it is shown against nothing.
@@ -542,6 +557,12 @@ export function OtpRegisterScreen({ navigation }: Props) {
         </View>
     </JakoScene>
   );
+}
+
+/** The server refused the choices because the text they were made against is not the current one. */
+function isStaleLegalEdition(err: unknown): boolean {
+  const code = apiErrorCode(err);
+  return code === 'LEGAL_REVISION_STALE' || code === 'LEGAL_CONTENT_HASH_MISMATCH';
 }
 
 const styles = StyleSheet.create({

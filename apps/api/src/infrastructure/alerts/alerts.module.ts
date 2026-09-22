@@ -2,6 +2,7 @@ import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
 import { ALERT_CHANNEL } from './alert-channel.interface';
+import { AlertOutboxService } from './alert-outbox.service';
 import { AlertsService } from './alerts.service';
 import { AlertChannel } from './alert-channel.interface';
 import { CompositeAlertChannel } from './composite-alert.channel';
@@ -55,8 +56,9 @@ import { WebhookAlertChannel } from './webhook-alert.channel';
         return channel;
       },
     },
+    AlertOutboxService,
     AlertsService,
   ],
-  exports: [ALERT_CHANNEL, AlertsService],
+  exports: [ALERT_CHANNEL, AlertsService, AlertOutboxService],
 })
 export class AlertsModule {}

@@ -183,6 +183,7 @@ describe('Alerting (integration)', () => {
     const buildProcessor = () =>
       new SweepsProcessor(
         {
+          alertOutbox: undefined as never,
           bonus: harness.app.get(BonusEngineService),
           reservations: harness.app.get(EvReservationsService),
           sessions: harness.app.get(EvSessionsService),

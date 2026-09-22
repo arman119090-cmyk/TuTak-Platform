@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { Alert, ALERT_CHANNEL, AlertChannel, AlertDelivery } from './alert-channel.interface';
+import { AlertOutboxService } from './alert-outbox.service';
 import { REDIS_CLIENT } from '../redis/redis-client.token';
 
 /**
@@ -50,6 +51,7 @@ export class AlertsService {
   constructor(
     @Inject(ALERT_CHANNEL) private readonly channel: AlertChannel,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly outbox: AlertOutboxService,
   ) {}
 
   /**
@@ -83,7 +85,14 @@ export class AlertsService {
         };
       }
 
+      // Written down before it is sent, not after (audit 22.09.2026, D05).
+      // A crash in between then leaves a PENDING row the sweep picks up,
+      // where the other order would leave nothing at all — and for an alert
+      // that fires once, on a dead-lettered event or a dead callback, nothing
+      // at all is the end of it. Nobody fires it a second time.
+      const recorded = await this.outbox.record(alert);
       const delivery = await this.channel.send(alert);
+      await this.outbox.settle(recorded, delivery);
       await this.settleWindow(alert.key, delivery);
       return this.outcome(delivery);
     } catch (err) {
@@ -96,10 +105,15 @@ export class AlertsService {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      // Redis is what suppresses repeats; the outbox is what stops an alert
+      // being lost. Losing the first does not excuse skipping the second.
+      const recorded = await this.outbox.record(alert);
       const delivery = await this.channel.send(alert).catch((sendErr: unknown) => ({
         delivered: false,
+        retryable: true,
         detail: `channel threw: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`,
       }));
+      await this.outbox.settle(recorded, delivery);
       return this.outcome(delivery);
     }
   }

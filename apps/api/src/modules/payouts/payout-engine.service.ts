@@ -192,18 +192,24 @@ export class PayoutEngineService {
     try {
       payout = await this.prisma.$transaction(async (tx) => {
         // The whole concurrency story, in one line. `FOR UPDATE` holds this
-        // account's row until the transaction commits, so a second payout
-        // request against the same partner blocks here and then re-reads a
-        // balance that already reflects the first one. Without it, both would
-        // read the same pre-payout balance, both would find it sufficient, and
-        // the partner would be paid twice.
+        // partner's payable rows until the transaction commits, so a second
+        // payout request against the same partner blocks here and then
+        // re-reads a balance that already reflects the first one. Without it,
+        // both would read the same pre-payout balance, both would find it
+        // sufficient, and the partner would be paid twice.
         //
         // A conditional UPDATE would be the usual alternative, but not here:
         // `ledger.post` below moves this same balance, so a claim that also
         // moved it would double-count. Locking states the intent — exclude
         // concurrent readers — without touching the number.
+        //
+        // Taken through `lockPartnerPayable` rather than inline, because a
+        // settlement draft must take *the same* lock in *the same* order for
+        // either to mean anything (audit 22.09, D02d/D02e); one lock with two
+        // spellings is how the 21.09 fix came to protect only half the cases.
+        await this.ledger.lockPartnerPayable(tx, partnerId);
         const locked = await tx.$queryRaw<Array<{ balance: string }>>`
-        SELECT balance FROM "ledger_accounts" WHERE id = ${payableAccount.id} FOR UPDATE
+        SELECT balance FROM "ledger_accounts" WHERE id = ${payableAccount.id}
       `;
 
         // Credit-normal: a payable of 9,750 is stored as -9,750. Less what

@@ -408,6 +408,16 @@ export class PartnerSettlementService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // First statement in the transaction, before anything is read that the
+      // decision rests on (audit 22.09, D02d/D02e/D02j). A legacy payout
+      // against this same entitlement takes the same lock, so the two cannot
+      // both read 50 000 as free and both promise it: whichever arrives
+      // second waits here and then re-reads a `net` that already reflects the
+      // first. Without it, `unsettled()` below reads a snapshot a concurrent
+      // payout is about to invalidate, and the partner is promised the money
+      // twice — reproduced on PostgreSQL before this line existed.
+      await this.ledger.lockPartnerPayable(tx, params.partnerId);
+
       const partner = await tx.partner.findUnique({
         where: { id: params.partnerId },
         select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },

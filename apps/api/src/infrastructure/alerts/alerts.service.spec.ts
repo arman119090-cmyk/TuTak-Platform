@@ -1,3 +1,4 @@
+import { AlertOutboxService } from './alert-outbox.service';
 import { AlertsService } from './alerts.service';
 import { Alert, AlertChannel, AlertDelivery } from './alert-channel.interface';
 
@@ -73,7 +74,10 @@ const ok: AlertDelivery = { delivered: true, detail: 'webhook answered 200' };
 function build(script: AlertDelivery[]) {
   const redis = new FakeRedis();
   const channel = new ScriptedChannel(script);
-  const service = new AlertsService(channel, redis as never);
+  // No Prisma: `AlertOutboxService` then reports itself non-durable and this
+  // suite keeps testing exactly what it did before — the suppression window.
+  // The durable half has its own integration suite, against a real database.
+  const service = new AlertsService(channel, redis as never, new AlertOutboxService(channel));
   return { redis, channel, service };
 }
 

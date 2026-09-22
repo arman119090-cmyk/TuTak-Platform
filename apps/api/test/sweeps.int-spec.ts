@@ -82,6 +82,9 @@ describe('Sweeps (integration)', () => {
   const partnerCheckouts = {
     expireStale: jest.fn(record('partner-checkout.expire')),
   };
+  const alertOutbox = {
+    redeliverDue: jest.fn(record('alerts.redeliver')),
+  };
   const refunds = {
     reconcilePendingRefunds: jest.fn(record('payments.reconcile-pending-refunds')),
   };
@@ -112,6 +115,7 @@ describe('Sweeps (integration)', () => {
         {
           provide: SWEEP_DEPENDENCIES,
           useValue: {
+            alertOutbox,
             bonus,
             reservations,
             sessions,
@@ -228,6 +232,7 @@ describe('Sweeps (integration)', () => {
       expect(pspCallbacks.processPending).toHaveBeenCalledTimes(1);
       expect(customerBalance.escalateStaleTopUps).toHaveBeenCalledTimes(1);
       expect(partnerCheckouts.expireStale).toHaveBeenCalledTimes(1);
+      expect(alertOutbox.redeliverDue).toHaveBeenCalledTimes(1);
     });
 
     it('reconciles yesterday, not today', async () => {

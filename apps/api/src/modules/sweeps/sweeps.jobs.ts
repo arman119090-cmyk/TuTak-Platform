@@ -1,3 +1,4 @@
+import type { AlertOutboxService } from '../../infrastructure/alerts/alert-outbox.service';
 import type { AccountDeletionService } from '../users/account-deletion.service';
 import type { BonusEngineService } from '../wallet/bonus-engine.service';
 import type { CustomerBalanceService } from '../customer-balance/customer-balance.service';
@@ -45,6 +46,7 @@ export const SWEEP_DEPENDENCIES = Symbol('SWEEP_DEPENDENCIES');
 
 /** Everything a sweep is allowed to reach. Nothing here touches HTTP. */
 export interface SweepDependencies {
+  alertOutbox: AlertOutboxService;
   bonus: BonusEngineService;
   reservations: EvReservationsService;
   sessions: EvSessionsService;
@@ -138,6 +140,20 @@ export const SWEEPS: readonly SweepDefinition[] = [
     // worker's concurrency.
     lockTtlMs: null,
     run: ({ outbox }) => outbox.drain(),
+  },
+  {
+    name: 'alerts.redeliver',
+    why: "An alert that fires once — a dead-lettered outbox event, a PSP callback that gave up — has no second fire to fall back on: the row leaves every claim query the moment it reaches its terminal state. If the channel was down for that one second, that was the only notice anyone would ever have had (audit 22.09.2026, D05). This is what retries it until a channel accepts it.",
+    // Every thirty seconds. The alert is already late by the time it is being
+    // retried, and the work is one indexed query against a table that is
+    // almost always empty.
+    repeat: { every: 30_000 },
+    maxSilenceMs: 10 * 60_000,
+    // No lock: rows are claimed with FOR UPDATE SKIP LOCKED under a lease,
+    // so a second worker takes different alerts rather than queueing for the
+    // same ones — the same reasoning as the outbox drain.
+    lockTtlMs: null,
+    run: ({ alertOutbox }) => alertOutbox.redeliverDue(),
   },
   {
     name: 'bonus.promote-pending',

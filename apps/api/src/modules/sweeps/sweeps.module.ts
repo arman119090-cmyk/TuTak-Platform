@@ -31,6 +31,7 @@ import { SweepsHeartbeatService } from './sweeps.heartbeat.service';
 import { PspAttemptAgeingService } from '../psp/psp-attempt-ageing.service';
 import { PspCallbackWorkerService } from '../psp/psp-callback-worker.service';
 import { PspModule } from '../psp/psp.module';
+import { AlertOutboxService } from '../../infrastructure/alerts/alert-outbox.service';
 import { SWEEPS_QUEUE, SWEEP_DEPENDENCIES, SweepDependencies } from './sweeps.jobs';
 import { SweepsProcessor } from './sweeps.processor';
 import { SweepsScheduler } from './sweeps.scheduler';
@@ -82,6 +83,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     {
       provide: SWEEP_DEPENDENCIES,
       inject: [
+        AlertOutboxService,
         BonusEngineService,
         EvReservationsService,
         EvSessionsService,
@@ -105,6 +107,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         ...(cardPaymentsEnabled ? [RefundEngineService] : []),
       ],
       useFactory: (
+        alertOutbox: AlertOutboxService,
         bonus: BonusEngineService,
         reservations: EvReservationsService,
         sessions: EvSessionsService,
@@ -122,6 +125,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         partnerCheckouts: PartnerCheckoutService,
         refunds?: RefundEngineService,
       ): SweepDependencies => ({
+        alertOutbox,
         bonus,
         reservations,
         sessions,

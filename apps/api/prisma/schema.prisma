@@ -4191,3 +4191,57 @@ model MediaAsset {
   @@index([status, createdAt])
   @@map("media_assets")
 }
+
+/// One alert, kept until a human channel has accepted it.
+///
+/// Shortening the Redis suppression window after a failed send (audit
+/// 21.09.2026, D05) allows the *next* `fire()` through — and for an alert
+/// that only ever fires once there is no next one. A dead-lettered outbox
+/// event and a dead PSP callback are both terminal states: the row leaves
+/// the claim query, nothing looks at it again, and if the channel was down
+/// for that one second the alert is gone. The audit of 22.09.2026 confirmed
+/// no other mechanism re-detects them.
+///
+/// So the alert itself is written down before it is sent, and a sweep
+/// retries it until the channel answers. Delivery is only ever recorded from
+/// the channel's own answer, never from "we tried".
+model AlertOutboxEvent {
+  id       String @id @default(uuid())
+  /// The `Alert.key` — stable per *kind* of alert, not unique here: an alert
+  /// suppressed by the Redis window never reaches this table, and one that
+  /// legitimately fires again later is a second thing to deliver.
+  key      String
+  severity String
+  title    String
+  body     String
+  /// `Alert.context`, already scrubbed by the caller.
+  context  Json?
+
+  status        AlertDeliveryStatus @default(PENDING)
+  attempts      Int                 @default(0)
+  nextAttemptAt DateTime            @default(now())
+  /// Held by the worker currently sending this one, so two replicas draining
+  /// the table do not both deliver it.
+  leaseUntil    DateTime?
+  lastError     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([key])
+  @@map("alert_outbox_events")
+}
+
+enum AlertDeliveryStatus {
+  /// Not yet accepted by a channel. Retried by `alerts.redeliver` for as long
+  /// as it takes — an undelivered critical alert is never dropped on a
+  /// schedule.
+  PENDING
+  /// A channel answered that it accepted the alert.
+  DELIVERED
+  /// The deployment has no channel that can deliver (the console fallback),
+  /// so retrying would be a loop with no receiver. Kept, and visible, rather
+  /// than retried.
+  UNDELIVERABLE
+}

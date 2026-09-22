@@ -4,7 +4,7 @@
 **Ветка:** `partner-settlement-transparency`, force push не делался
 **База PR:** `claude/railway-connector-check-wy0ffq` (`978caa0`)
 **PR:** [#69](https://github.com/arman119090-cmyk/TuTak-Platform/pull/69), черновик, merge не делался
-**Итоговая голова:** ЗАПОЛНИТЬ_HEAD
+**Итоговая голова:** `395a4ab`
 
 Задача была не переделывать уже сделанный кабинет, а закрыть реальные
 остатки: навигацию на телефоне, непереведённые экраны, приглашение целиком

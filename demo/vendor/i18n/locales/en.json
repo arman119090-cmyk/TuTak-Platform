@@ -1016,6 +1016,12 @@
       "settlements": "Only the business owner can see what TuTak owes the organisation. Ask your owner account.",
       "branches": "Only the business owner can manage branches. Ask your owner account.",
       "employees": "This list is not available to your account. Your owner account can see it."
+    },
+    "storageNotice": {
+      "regionLabel": "How this dashboard uses browser storage",
+      "body": "This dashboard keeps two things in your browser: an identifier for this device, so your session can be tied to it and signed out separately, and your chosen theme. Nothing here tracks you or is shared with anyone.",
+      "privacyLink": "Privacy policy",
+      "acknowledge": "Got it"
     }
   }
 }

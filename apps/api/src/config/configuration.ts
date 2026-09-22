@@ -147,10 +147,6 @@ export interface AppConfig {
      */
     graceDays: number;
   };
-  legalPages: {
-    /** Serve /legal/privacy and /legal/account-deletion. Off until a lawyer signed the texts. */
-    enabled: boolean;
-  };
   legalDocuments: {
     /**
      * Where `manifest.json` and the versioned document tree live. Empty means
@@ -632,9 +628,6 @@ const buildConfig = (): AppConfig => ({
     // Access ends the moment they press the button — this window is about
     // the data, not the account.
     graceDays: parseInt(process.env.ACCOUNT_DELETION_GRACE_DAYS ?? '30', 10),
-  },
-  legalPages: {
-    enabled: process.env.LEGAL_PAGES_ENABLED === 'true',
   },
   legalDocuments: {
     contentDir: process.env.LEGAL_CONTENT_DIR?.trim() || null,

@@ -1,46 +1,76 @@
 # Юридические страницы — где живут и как включаются
 
-Дата: 19.09.2026.
+Дата: 19.09.2026. **Переписано 22.09.2026** — страницы больше не отдельные
+HTML-файлы, а тот же текст, что показывает приложение.
 
 ## Проблема, которая была
 
-`public/privacy.html` и `public/account-deletion.html` лежали в корне репо и
-**никем не раздавались**: ни один сервис их не копировал и не отдавал.
-Панели ссылались на `https://tutak.am/privacy`, которого нет; в мобильном
-приложении ссылки на политику не было вовсе. Магазины требуют URL,
-отвечающий без установки приложения.
+Сначала `public/privacy.html` и `public/account-deletion.html` лежали в корне
+репо и никем не раздавались. Это исправили 19.09: API стал отдавать их по
+`/legal/privacy` и `/legal/account-deletion` за флагом `LEGAL_PAGES_ENABLED`.
 
-## Что сделано
+Осталась вторая проблема, которую увидели 22.09: это были **два разных
+комплекта юридических текстов**. В вебе — два рукописных HTML на английском
+с заглушками `[OPERATOR]`, `[ADDRESS]`, `[CONTACT EMAIL]`; в приложении — пять
+документов правового пакета на русском и армянском, к которым человек даёт
+согласие при регистрации. Два комплекта расходятся: обещание в приложении
+перестаёт совпадать с обещанием в сторе.
+
+## Что сделано (22.09)
 
 | Что | Где |
 |---|---|
-| Страницы перенесены | `apps/api/public/legal/privacy.html`, `apps/api/public/legal/account-deletion.html` (копируются в образ API) |
-| Раздача | API, `GET /legal/privacy`, `GET /legal/account-deletion` (version-neutral, без `/v1`, без авторизации), собственный узкий CSP, `Cache-Control: public, max-age=300` |
-| Выключатель | `LEGAL_PAGES_ENABLED=true` на tutak-api. Пока не задан — **404** («not published yet»). Тексты с плейсхолдерами наружу не публикуются |
-| Панели | `NEXT_PUBLIC_PRIVACY_URL` (уже было; ссылка появляется только если задано) |
-| Мобильное приложение | `LEGAL_BASE_URL` при сборке → `extra.legalBaseUrl` → строка «Политика конфиденциальности» в Настройках (скрыта, пока не задано) |
+| Оба HTML-файла | **удалены** |
+| Источник текста | `apps/api/public/legal/documents/<редакция>/{ru,hy}/*.md` — тот же, что читает приложение и по которому считается хэш в записи согласия |
+| Раздача | API, version-neutral, без авторизации: `GET /legal` (список), `/legal/privacy`, `/legal/account-deletion`, `/legal/terms`, `/legal/bonus-refunds`, `/legal/consent`; `?lang=ru` или `?lang=hy` |
+| Выключатель | **отдельного выключателя больше нет.** Решает публикационный gate: пока в текстах есть `{{...}}`, метка «Проект для согласования» или редакция не утверждена владельцем — все адреса отвечают 404 |
+| Оформление | самодостаточная страница: без шрифтов, скриптов и картинок, поэтому CSP остаётся `default-src 'none'`; тёмная тема по системной настройке; переключатель языка; внизу — редакция, SHA-256 текста и ссылка на скачивание этой же редакции файлом |
+| Панели | `NEXT_PUBLIC_PRIVACY_URL` (без изменений) |
+| Мобильное приложение | раздел «Правовая информация» читает документы через API; `LEGAL_BASE_URL` нужен только для внешней ссылки в настройках |
+
+Почему один выключатель, а не два: текст, который нельзя показать клиенту в
+приложении, нельзя показать и проверяющему из магазина. Два переключателя
+рано или поздно разойдутся — и разошлись бы ровно в тот момент, когда это
+важнее всего.
 
 ## Канонические адреса
 
 Сейчас (без собственного домена):
 
+- `https://tutak-api-production.up.railway.app/legal` — список
 - `https://tutak-api-production.up.railway.app/legal/privacy`
 - `https://tutak-api-production.up.railway.app/legal/account-deletion`
 
 Когда появится домен (например `tutak.am`): привязать его к **tutak-api**
-как custom domain в Railway (или к отдельному поддомену `api.tutak.am`), и
-те же пути станут `https://<домен>/legal/privacy`. Менять придётся только
-три значения: `NEXT_PUBLIC_PRIVACY_URL` (admin, partner), `LEGAL_BASE_URL`
-(mobile, пересборка) и URL в карточках магазинов.
+как custom domain в Railway (или к поддомену `api.tutak.am`), и те же пути
+станут `https://<домен>/legal/...`. Менять придётся только три значения:
+`NEXT_PUBLIC_PRIVACY_URL` (admin, partner), `LEGAL_BASE_URL` (mobile,
+пересборка) и URL в карточках магазинов.
 
-## Порядок включения (после юриста)
+## Порядок включения
 
-1. Юрист утверждает тексты; заменить плейсхолдеры `[CONTACT EMAIL]`,
-   `[OPERATOR]`, `[ADDRESS]` в двух HTML (PR).
-2. tutak-api → Variables → `LEGAL_PAGES_ENABLED=true` → redeploy.
-3. Проверить: `curl -I https://tutak-api-production.up.railway.app/legal/privacy` → 200, `text/html`.
-4. tutak-admin и tutak-partner → `NEXT_PUBLIC_PRIVACY_URL=https://tutak-api-production.up.railway.app/legal/privacy` → redeploy (переменная build-time).
-5. Следующая сборка APK — с `LEGAL_BASE_URL=https://tutak-api-production.up.railway.app/legal`.
-6. Те же два URL — в Google Play Data safety / App Store Privacy Policy URL.
+1. Владелец заполняет оставшиеся поля в текстах — список и откуда брать:
+   `docs/legal-2026-09-22/03_OWNER_DATA_AND_DECISIONS_RU.md`.
+2. Юрист вычитывает тексты, в том числе армянские
+   (`docs/legal-2026-09-22/04_LAWYER_QUESTIONS_RU.md`).
+3. Из текстов убирается строка «Проект для согласования» /
+   «Համաձայնեցման նախագիծ»; в `manifest.json` ставятся
+   `"approvedByOwner": true` и `effectiveDate` (PR).
+4. tutak-api → Variables → `LEGAL_APPROVED_REVISION=<редакция из манифеста>`
+   → redeploy.
+5. Проверить: `curl -I https://tutak-api-production.up.railway.app/legal/privacy`
+   → 200, `text/html`; `GET /legal/publication-state` (под админом) → пустой
+   список блокеров.
+6. tutak-admin и tutak-partner → `NEXT_PUBLIC_PRIVACY_URL=…/legal/privacy`
+   → redeploy (переменная build-time).
+7. Следующая сборка APK — с `LEGAL_BASE_URL=…/legal`.
+8. Те же адреса — в Google Play Data safety / App Store Privacy Policy URL.
 
-До шага 1 состояние: **технически готово, не опубликовано**.
+До шага 3 состояние: **технически готово, не опубликовано** — и это видно
+по 404, а не по странице с незаполненными полями.
+
+## Предпросмотр до утверждения
+
+`LEGAL_DRAFT_PREVIEW_ENABLED=true` показывает неутверждённые тексты с
+баннером «Проект для согласования» и `Cache-Control: no-store`. Для
+согласования с юристом на staging; в production не включать.

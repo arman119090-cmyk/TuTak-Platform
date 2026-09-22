@@ -1,4 +1,10 @@
-import { PermissionName, PrismaClient, PurchaseIntentStatus, RoleName } from '@prisma/client';
+import {
+  PartnerBranchState,
+  PermissionName,
+  PrismaClient,
+  PurchaseIntentStatus,
+  RoleName,
+} from '@prisma/client';
 import { PurchaseIntentsController } from '../src/modules/purchase-intents/purchase-intents.controller';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { createCustomer, createPartner } from './setup/fixtures';
@@ -51,6 +57,11 @@ describe('A restaurant purchase names the branch it happened at (integration)', 
   const restaurant = () =>
     createPartner(prisma, { category: 'restaurant', displayName: 'Dolmama', bonusAccrualRateBps: 500 });
 
+  /**
+   * `state` is written alongside `isActive` because the database refuses the
+   * two coming apart — they are one fact, and a fixture that set only the
+   * boolean was describing a branch that cannot exist.
+   */
   const branch = (partnerId: string, name: string, isActive = true) =>
     prisma.partnerBranch.create({
       data: {
@@ -61,6 +72,7 @@ describe('A restaurant purchase names the branch it happened at (integration)', 
         latitude: 40.18,
         longitude: 44.51,
         isActive,
+        state: isActive ? PartnerBranchState.ACTIVE : PartnerBranchState.SUSPENDED,
       },
     });
 

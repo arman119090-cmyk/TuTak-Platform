@@ -45,6 +45,7 @@ NEW_MIGRATIONS=(
   "20260922170000_partner_employee_code_sequence"
   "20260922180000_purchase_confirmation_consistency"
   "20260922190000_partner_branch_state"
+  "20260922190100_partner_branch_state_follows_is_active"
 )
 
 failures=0
@@ -198,8 +199,18 @@ check "старая покупка сохранила исполнителя и 
 check "филиалы получили состояние, выведенное из isActive" "ACTIVE|ACTIVE" \
   "SELECT string_agg(\"state\"::text, '|' ORDER BY \"id\") FROM \"partner_branches\";"
 
-refuses "база отклоняет архивный филиал, который всё ещё торгует" \
-  "UPDATE \"partner_branches\" SET \"state\" = 'ARCHIVED' WHERE \"id\" = 'b1';"
+# The trigger fills in the half the statement did not name, so a writer that
+# knows only one of the two columns keeps working across a rolling deploy.
+psql -d "$DB" -q -v ON_ERROR_STOP=1 -c "UPDATE \"partner_branches\" SET \"state\" = 'ARCHIVED' WHERE \"id\" = 'b1';"
+check "архив, названный одной колонкой, закрывает и вторую" "f" \
+  "SELECT \"isActive\" FROM \"partner_branches\" WHERE \"id\" = 'b1';"
+
+psql -d "$DB" -q -v ON_ERROR_STOP=1 -c "UPDATE \"partner_branches\" SET \"isActive\" = false WHERE \"id\" = 'b2';"
+check "старый писатель, знающий только isActive, приостанавливает, а не архивирует" "SUSPENDED" \
+  "SELECT \"state\" FROM \"partner_branches\" WHERE \"id\" = 'b2';"
+
+refuses "база отклоняет строку, которая противоречит сама себе" \
+  "UPDATE \"partner_branches\" SET \"state\" = 'ARCHIVED', \"isActive\" = true WHERE \"id\" = 'b2';"
 
 # ── The constraints the deploy was supposed to install ───────────────────
 check "все три новых ограничения существуют" "3" \

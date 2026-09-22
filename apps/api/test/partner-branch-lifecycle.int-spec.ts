@@ -114,20 +114,90 @@ describe('Partner branch lifecycle (integration)', () => {
     });
 
     /**
-     * The two columns are one fact written twice, so the database refuses
-     * them coming apart. Without this an archived branch could still take
-     * money after a single forgetful UPDATE — the exact state archiving
-     * exists to prevent.
+     * The two columns are one fact written twice, and the database keeps
+     * them that way rather than trusting every writer to remember.
+     *
+     * A statement naming only `state` is saying which kind of closure it
+     * means, so the boolean follows it — an archived branch cannot end up
+     * still trading, which is the whole point of archiving.
      */
-    it('will not let the database hold an archived branch that still trades', async () => {
+    it('makes the boolean follow a statement that names only the state', async () => {
       const partner = await createPartner(prisma);
       const branch = await branchOf(partner.id, 'North');
 
+      await prisma.$executeRaw`
+        UPDATE "partner_branches" SET "state" = 'ARCHIVED' WHERE "id" = ${branch.id}
+      `;
+
+      const after = await prisma.partnerBranch.findUniqueOrThrow({ where: { id: branch.id } });
+      expect(after.state).toBe(PartnerBranchState.ARCHIVED);
+      expect(after.isActive).toBe(false);
+    });
+
+    /**
+     * The previous release, mid-deploy: it flips the boolean and knows
+     * nothing about `state`. It must keep working, and "off" in its
+     * vocabulary has always meant the reversible closure — so it suspends,
+     * and never archives by accident.
+     */
+    it('makes the state follow a writer that only knows the old boolean', async () => {
+      const partner = await createPartner(prisma);
+      const branch = await branchOf(partner.id, 'North');
+
+      await prisma.$executeRaw`
+        UPDATE "partner_branches" SET "isActive" = false WHERE "id" = ${branch.id}
+      `;
+
+      const shut = await prisma.partnerBranch.findUniqueOrThrow({ where: { id: branch.id } });
+      expect(shut.state).toBe(PartnerBranchState.SUSPENDED);
+
+      await prisma.$executeRaw`
+        UPDATE "partner_branches" SET "isActive" = true WHERE "id" = ${branch.id}
+      `;
+      const reopened = await prisma.partnerBranch.findUniqueOrThrow({ where: { id: branch.id } });
+      expect(reopened.state).toBe(PartnerBranchState.ACTIVE);
+    });
+
+    /**
+     * What the trigger cannot fix, and must not guess at: a writer that sets
+     * both columns and contradicts itself. That is the backstop the check
+     * constraint remains for.
+     */
+    it('still refuses a row that says both things at once', async () => {
+      const partner = await createPartner(prisma);
+      const branch = await branchOf(partner.id, 'North');
+      // Shut first, so that setting `isActive` back to true below is a real
+      // change. A trigger sees changed values, not intent: `SET isActive =
+      // true` on a branch that is already open is indistinguishable from not
+      // mentioning the column, and the trigger fills it in rather than
+      // treating it as a contradiction.
+      await partners.setBranchState(partner.id, branch.id, PartnerBranchState.SUSPENDED);
+
       await expect(
         prisma.$executeRaw`
-          UPDATE "partner_branches" SET "state" = 'ARCHIVED' WHERE "id" = ${branch.id}
+          UPDATE "partner_branches"
+          SET "state" = 'ARCHIVED', "isActive" = true
+          WHERE "id" = ${branch.id}
         `,
       ).rejects.toThrow(/partner_branches_state_matches_is_active/);
+    });
+
+    it('creates a shut branch consistently even when told only the boolean', async () => {
+      const partner = await createPartner(prisma);
+
+      const created = await prisma.partnerBranch.create({
+        data: {
+          partnerId: partner.id,
+          name: 'Closed on arrival',
+          address: 'Somewhere 1',
+          city: 'Yerevan',
+          latitude: 40.18,
+          longitude: 44.51,
+          isActive: false,
+        },
+      });
+
+      expect(created.state).toBe(PartnerBranchState.SUSPENDED);
     });
 
     it('refuses to reopen an archived branch with the old boolean', async () => {

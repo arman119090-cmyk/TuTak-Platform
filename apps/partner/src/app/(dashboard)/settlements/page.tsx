@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
@@ -14,6 +15,7 @@ import {
   Tr,
 } from '@tutak/design/web';
 import { settlementApi } from '@/lib/api/financeApi';
+import { kindKey } from './ActivityFeed';
 import type { PartnerSettlementDto, UnsettledPositionDto } from '@tutak/shared-types';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { ActivityFeed } from './ActivityFeed';
@@ -56,37 +58,6 @@ const REPORTABLE_STATUSES = new Set([
   'REQUIRES_RECONCILIATION',
 ]);
 
-const STATUS_TEXT: Record<string, string> = {
-  DRAFT: 'Being prepared — not paid yet',
-  READY: 'Awaiting approval — not paid yet',
-  APPROVED: 'Approved for transfer — not paid yet',
-  PAYMENT_PENDING: 'Transfer sent, not yet landed',
-  PAID: 'Paid',
-  FAILED: 'Transfer bounced — still owed',
-  REQUIRES_RECONCILIATION: 'Unclear — being checked',
-  CANCELLED: 'Cancelled',
-};
-
-/**
- * What a ledger posting kind means to the person being paid.
- *
- * The code stays on the line next to it: a partner querying a line needs to
- * quote something TuTak can look up, and a translated name is not that. What
- * changed is that they no longer have to read the code to know what it was.
- */
-const ENTRY_KIND_TEXT: Record<string, string> = {
-  'partner.bonus_redemption_compensation': 'Bonus points a customer spent with you',
-  'partner.bonus_redemption_compensation_refund': 'Refund of bonus points spent',
-  'partner.contribution': 'Your contribution to the bonus pool',
-  'partner.contribution_refund': 'Contribution returned on a refund',
-  'psp.payment.captured': 'Customer paid in TuTak',
-  'psp.payment.refunded': 'Refund of a TuTak payment',
-  'referral.commission': 'Referral commission',
-  'ev.cdr.reconciliation': 'Charging session settlement',
-};
-
-const entryKindText = (kind: string) => ENTRY_KIND_TEXT[kind] ?? 'Other activity';
-
 /**
  * What TuTak owes this partner, and every statement of it.
  *
@@ -120,6 +91,7 @@ const entryKindText = (kind: string) => ENTRY_KIND_TEXT[kind] ?? 'Other activity
  * button letting the payee decide a payment question about themselves.
  */
 export default function SettlementsPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
   const queryClient = useQueryClient();
@@ -173,13 +145,22 @@ export default function SettlementsPage() {
   });
 
   if (!partnerId) {
-    return <EmptyState title="No business" message="This account is not attached to a business." />;
+    return (
+      <EmptyState
+        title={t('partnerPanel.common.noBusiness')}
+        message={t('partnerPanel.common.noBusinessMessage')}
+      />
+    );
   }
 
   /** A tile's value and caption for the state its figure is in. */
   const figure = (value: (p: UnsettledPositionDto) => string, caption: string) => {
-    if (positionState === 'loading') return { value: '—', hint: 'Loading…' };
-    if (positionState === 'error') return { value: '—', hint: 'Could not load' };
+    if (positionState === 'loading') {
+      return { value: '—', hint: t('partnerPanel.common.loading') };
+    }
+    if (positionState === 'error') {
+      return { value: '—', hint: t('partnerPanel.common.couldNotLoad') };
+    }
     return { value: money(value(position!)), hint: caption };
   };
 
@@ -195,26 +176,31 @@ export default function SettlementsPage() {
 
   const totalTile = figure(
     (p) => (Number(p.ledgerBalance) < 0 ? String(-Number(p.ledgerBalance)) : p.ledgerBalance),
-    youOwe
-      ? 'You transfer this to TuTak; TuTak records it'
-      : 'From the ledger. Includes the three below',
+    t(
+      youOwe
+        ? 'partnerPanel.settlements.totalHintYouOwe'
+        : 'partnerPanel.settlements.totalHintOwed',
+    ),
   );
-  const unsettledTile = figure((p) => p.net, 'Nobody has drafted a settlement for this yet');
-  const openTile = figure((p) => p.inOpenSettlements, 'Claimed by settlements that have not been paid');
-  const paidTile = figure((p) => p.paidTotal, 'Already transferred; not part of the total');
-  const reviewTile = figure((p) => p.underReview, 'A transfer nobody can confirm yet');
+  const unsettledTile = figure((p) => p.net, t('partnerPanel.settlements.notInSettlementHint'));
+  const openTile = figure(
+    (p) => p.inOpenSettlements,
+    t('partnerPanel.settlements.inOpenSettlementsHint'),
+  );
+  const paidTile = figure((p) => p.paidTotal, t('partnerPanel.settlements.paidOutHint'));
+  const reviewTile = figure((p) => p.underReview, t('partnerPanel.settlements.underReviewHint'));
   const showReview = position ? Number(position.underReview) !== 0 : false;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Settlements"
-        description="What TuTak owes you, where that money currently is, and every transfer against it."
+        title={t('partnerPanel.settlements.title')}
+        description={t('partnerPanel.settlements.description')}
       />
 
       {positionState === 'error' ? (
         <LoadError
-          title="Your balance could not be loaded"
+          title={t('partnerPanel.settlements.balanceError')}
           onRetry={() => void positionQuery.refetch()}
           busy={positionQuery.isFetching}
         />
@@ -222,7 +208,7 @@ export default function SettlementsPage() {
       {positionState === 'stale' ? (
         <StaleNotice
           asOf={positionQuery.dataUpdatedAt}
-          what="your balance"
+          what={t('partnerPanel.stale.whatBalance')}
           onRetry={() => void positionQuery.refetch()}
           busy={positionQuery.isFetching}
         />
@@ -242,39 +228,62 @@ export default function SettlementsPage() {
           aria-live="polite"
         >
           <p className="text-[15px] font-semibold text-ink">
-            {owedToYou
-              ? 'TuTak owes you'
-              : youOwe
-                ? 'You owe TuTak'
-                : 'You and TuTak are square'}
+            {t(
+              owedToYou
+                ? 'partnerPanel.settlements.stateOwedToYou'
+                : youOwe
+                  ? 'partnerPanel.settlements.stateYouOwe'
+                  : 'partnerPanel.settlements.stateSquare',
+            )}
           </p>
           <p className="text-[13px] text-muted">
-            {owedToYou
-              ? 'Your balance is in your favour. What is below says where that money currently stands.'
-              : youOwe
-                ? 'Your balance is against you — refunds after a payout and your contributions add up to more than TuTak owes for. You settle this by transferring it; TuTak records the transfer.'
-                : 'Nothing is outstanding in either direction right now.'}
+            {t(
+              owedToYou
+                ? 'partnerPanel.settlements.stateOwedToYouBody'
+                : youOwe
+                  ? 'partnerPanel.settlements.stateYouOweBody'
+                  : 'partnerPanel.settlements.stateSquareBody',
+            )}
           </p>
         </div>
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <StatTile
-          label={youOwe ? 'You owe TuTak' : settledUp ? 'Nothing outstanding' : 'TuTak owes you in total'}
+          label={t(
+            youOwe
+              ? 'partnerPanel.settlements.stateYouOwe'
+              : settledUp
+                ? 'partnerPanel.settlements.totalNothing'
+                : 'partnerPanel.settlements.totalOwed',
+          )}
           value={totalTile.value}
           tone={owedToYou ? 'available' : youOwe ? 'reserved' : 'default'}
           hint={totalTile.hint}
         />
-        <StatTile label="Not yet in a settlement" value={unsettledTile.value} hint={unsettledTile.hint} />
         <StatTile
-          label="In settlements not yet paid"
+          label={t('partnerPanel.settlements.notInSettlement')}
+          value={unsettledTile.value}
+          hint={unsettledTile.hint}
+        />
+        <StatTile
+          label={t('partnerPanel.settlements.inOpenSettlements')}
           value={openTile.value}
           tone={position && Number(position.inOpenSettlements) > 0 ? 'pending' : 'default'}
           hint={openTile.hint}
         />
-        <StatTile label="Paid out so far" value={paidTile.value} hint={paidTile.hint} />
+        <StatTile
+          label={t('partnerPanel.settlements.paidOut')}
+          value={paidTile.value}
+          hint={paidTile.hint}
+        />
         {showReview ? (
-          <StatTile label="Transfers under review" value={reviewTile.value} tone="reserved" hint={reviewTile.hint} />
+          <StatTile
+            label={t('partnerPanel.settlements.underReview')}
+            value={reviewTile.value}
+            tone="reserved"
+            hint={reviewTile.hint}
+          />
         ) : null}
       </div>
 
@@ -287,54 +296,64 @@ export default function SettlementsPage() {
       */}
       {position && positionState !== 'error' ? (
         <section className="space-y-3">
-          <h2 className="text-[15px] font-semibold text-ink">Where your sales were paid from</h2>
+          <h2 className="text-[15px] font-semibold text-ink">
+            {t('partnerPanel.funding.heading')}
+          </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile label="Sales total" value={money(position.funding.salesGross)} hint="All confirmed sales" />
             <StatTile
-              label="Received at your till"
+              label={t('partnerPanel.funding.salesTotal')}
+              value={money(position.funding.salesGross)}
+              hint={t('partnerPanel.funding.salesTotalHint')}
+            />
+            <StatTile
+              label={t('partnerPanel.funding.atTill')}
               value={money(position.funding.receivedDirectly)}
-              hint="Cash and your own card terminal. Yours already — not part of what TuTak owes"
+              hint={t('partnerPanel.funding.atTillHint')}
             />
             {Number(position.funding.receivedViaProvider) > 0 ? (
               <StatTile
-                label="Collected by the payment provider"
+                label={t('partnerPanel.funding.viaProvider')}
                 value={money(position.funding.receivedViaProvider)}
                 tone="available"
-                hint="Paid inside TuTak. Not in your till — TuTak settles it to you"
+                hint={t('partnerPanel.funding.viaProviderHint')}
               />
             ) : null}
             <StatTile
-              label="Paid from TuTak balances"
+              label={t('partnerPanel.funding.fromBalances')}
               value={money(position.funding.fundedByPrepaid)}
               tone={Number(position.funding.fundedByPrepaid) > 0 ? 'available' : 'default'}
-              hint="Customers' stored money. TuTak owes you this"
+              hint={t('partnerPanel.funding.fromBalancesHint')}
             />
             <StatTile
-              label="Paid with bonus"
+              label={t('partnerPanel.funding.withBonus')}
               value={money(position.funding.fundedByBonus)}
               tone={Number(position.funding.fundedByBonus) > 0 ? 'available' : 'default'}
-              hint="Compensated by TuTak"
+              hint={t('partnerPanel.funding.withBonusHint')}
             />
             <StatTile
-              label="Your contribution"
+              label={t('partnerPanel.funding.contribution')}
               value={money(position.funding.contribution)}
               tone={Number(position.funding.contribution) > 0 ? 'reserved' : 'default'}
-              hint="Under your terms. Reduces what TuTak owes you"
+              hint={t('partnerPanel.funding.contributionHint')}
             />
-            <StatTile label="Refunded" value={money(position.funding.refundedGross)} hint="Merchandise value returned" />
+            <StatTile
+              label={t('partnerPanel.funding.refunded')}
+              value={money(position.funding.refundedGross)}
+              hint={t('partnerPanel.funding.refundedHint')}
+            />
             {Number(position.funding.owedToTuTak) > 0 ? (
               <StatTile
-                label="You owe TuTak"
+                label={t('partnerPanel.funding.youOwe')}
                 value={money(position.funding.owedToTuTak)}
                 tone="reserved"
-                hint="Settled by a transfer you make; TuTak records it"
+                hint={t('partnerPanel.funding.youOweHint')}
               />
             ) : null}
             {Number(position.funding.collectionsConfirmed) > 0 ? (
               <StatTile
-                label="Transfers to TuTak confirmed"
+                label={t('partnerPanel.funding.collections')}
                 value={money(position.funding.collectionsConfirmed)}
-                hint="Both sides have confirmed these"
+                hint={t('partnerPanel.funding.collectionsHint')}
               />
             ) : null}
           </div>
@@ -343,9 +362,9 @@ export default function SettlementsPage() {
 
       {position && positionState !== 'error' ? (
         <p className="text-[12px] text-faint">
-          Total = not yet in a settlement + in settlements not yet paid
-          {showReview ? ' + under review' : ''}. A settlement being prepared does not mean you have been
-          paid: only &ldquo;Paid&rdquo; below moves money.
+          {t('partnerPanel.settlements.identity', {
+            review: showReview ? t('partnerPanel.settlements.identityReview') : '',
+          })}
         </p>
       ) : null}
 
@@ -357,30 +376,29 @@ export default function SettlementsPage() {
       */}
       {position?.unrecognised?.length ? (
         <p className="text-[13px] text-faint">
-          Some activity is not yet classified and is excluded from the figures above:{' '}
-          {position.unrecognised.join(', ')}. TuTak has been notified.
+          {t('partnerPanel.funding.unrecognised', { kinds: position.unrecognised.join(', ') })}
         </p>
       ) : null}
 
       {statementsState === 'loading' ? (
-        <LoadingNotice label="Loading your settlements…" />
+        <LoadingNotice label={t('partnerPanel.statement.loading')} />
       ) : statementsState === 'error' ? (
         <LoadError
-          title="Your settlements could not be loaded"
+          title={t('partnerPanel.statement.listError')}
           onRetry={() => void statementsQuery.refetch()}
           busy={statementsQuery.isFetching}
         />
       ) : statements!.length === 0 ? (
         <EmptyState
-          title="No settlements yet"
-          message="Nothing has been drafted. What you have earned so far is shown above."
+          title={t('partnerPanel.statement.emptyTitle')}
+          message={t('partnerPanel.statement.emptyMessage')}
         />
       ) : (
         <div>
           {statementsState === 'stale' ? (
             <StaleNotice
               asOf={statementsQuery.dataUpdatedAt}
-              what="your settlements"
+              what={t('partnerPanel.stale.whatSettlements')}
               onRetry={() => void statementsQuery.refetch()}
               busy={statementsQuery.isFetching}
             />
@@ -388,11 +406,11 @@ export default function SettlementsPage() {
           <Table>
             <thead>
               <Tr>
-                <Th>Period</Th>
-                <Th>Net</Th>
-                <Th>Status</Th>
-                <Th>Reference</Th>
-                <Th>Paid</Th>
+                <Th>{t('partnerPanel.statement.period')}</Th>
+                <Th>{t('partnerPanel.statement.net')}</Th>
+                <Th>{t('partnerPanel.statement.statusColumn')}</Th>
+                <Th>{t('partnerPanel.statement.reference')}</Th>
+                <Th>{t('partnerPanel.statement.paid')}</Th>
                 <Th />
               </Tr>
             </thead>
@@ -405,7 +423,7 @@ export default function SettlementsPage() {
                   <Td>{money(s.netPayableAmount)}</Td>
                   <Td>
                     <Badge tone={STATUS_TONE[s.status] ?? 'neutral'}>
-                      {STATUS_TEXT[s.status] ?? s.status}
+                      {t(`partnerPanel.status.${s.status}`, { defaultValue: s.status })}
                     </Badge>
                   </Td>
                   <Td>{s.bankTransferReference ?? '—'}</Td>
@@ -416,7 +434,9 @@ export default function SettlementsPage() {
                         variant="secondary"
                         onClick={() => setOpenStatement(openStatement === s.id ? null : s.id)}
                       >
-                        {openStatement === s.id ? 'Hide detail' : 'What is this made of?'}
+                        {openStatement === s.id
+                          ? t('partnerPanel.statement.hide')
+                          : t('partnerPanel.statement.open')}
                       </Button>
                       {/*
                         Only once a transfer has been claimed to have gone out.
@@ -433,7 +453,7 @@ export default function SettlementsPage() {
                       */}
                       {REPORTABLE_STATUSES.has(s.status) ? (
                         <Button variant="secondary" onClick={() => setReporting(s)}>
-                          Report a problem
+                          {t('partnerPanel.settlements.reportProblem')}
                         </Button>
                       ) : null}
                     </div>
@@ -447,12 +467,12 @@ export default function SettlementsPage() {
 
       {openStatement ? (
         <div className="space-y-2 rounded-lg border border-subtle p-4">
-          <h2 className="text-[14px] font-medium">What this settlement is made of</h2>
+          <h2 className="text-[14px] font-medium">{t('partnerPanel.statement.heading')}</h2>
           {statementState === 'loading' ? (
             <LoadingNotice />
           ) : statementState === 'error' ? (
             <LoadError
-              title="The itemisation could not be loaded"
+              title={t('partnerPanel.statement.loadError')}
               onRetry={() => void statementQuery.refetch()}
               busy={statementQuery.isFetching}
             />
@@ -461,7 +481,7 @@ export default function SettlementsPage() {
               {statementState === 'stale' ? (
                 <StaleNotice
                   asOf={statementQuery.dataUpdatedAt}
-                  what="this itemisation"
+                  what={t('partnerPanel.stale.whatItemisation')}
                   onRetry={() => void statementQuery.refetch()}
                   busy={statementQuery.isFetching}
                 />
@@ -469,10 +489,10 @@ export default function SettlementsPage() {
               <Table>
                 <thead>
                   <Tr>
-                    <Th>When</Th>
-                    <Th>Branch</Th>
-                    <Th>What</Th>
-                    <Th>Amount</Th>
+                    <Th>{t('partnerPanel.statement.when')}</Th>
+                    <Th>{t('partnerPanel.statement.branch')}</Th>
+                    <Th>{t('partnerPanel.statement.what')}</Th>
+                    <Th>{t('partnerPanel.statement.amount')}</Th>
                   </Tr>
                 </thead>
                 <tbody>
@@ -493,7 +513,7 @@ export default function SettlementsPage() {
                         )}
                       </Td>
                       <Td>
-                        <div>{entryKindText(e.kind)}</div>
+                        <div>{t(kindKey(e.kind))}</div>
                         {/*
                           The posting kind as stored, kept beside the plain
                           words: a partner querying a line needs to quote
@@ -513,9 +533,7 @@ export default function SettlementsPage() {
               </Table>
             </>
           ) : (
-            <p className="text-[12px] text-faint">
-              This settlement has no itemised lines recorded.
-            </p>
+            <p className="text-[12px] text-faint">{t('partnerPanel.statement.noLines')}</p>
           )}
         </div>
       ) : null}
@@ -526,7 +544,7 @@ export default function SettlementsPage() {
       {reporting ? (
         <Surfaceless>
           <label htmlFor="settlement-problem" className="text-[13px] font-medium">
-            What is wrong with this transfer?
+            {t('partnerPanel.settlements.reportQuestion')}
           </label>
           <textarea
             id="settlement-problem"
@@ -535,12 +553,7 @@ export default function SettlementsPage() {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
-          <p className="text-[12px] text-faint">
-            This tells TuTak to look. It does not record whether the money
-            arrived, and it does not change this settlement or what you are
-            owed — two people at TuTak decide that, and neither of them is
-            you.
-          </p>
+          <p className="text-[12px] text-faint">{t('partnerPanel.settlements.reportNote')}</p>
           <div className="flex gap-2">
             <Button
               // Three characters is the server's own minimum; matching it here
@@ -548,14 +561,14 @@ export default function SettlementsPage() {
               disabled={reason.trim().length < 3 || report.isPending}
               onClick={() => report.mutate({ id: reporting.id, reason: reason.trim() })}
             >
-              Send
+              {t('partnerPanel.common.send')}
             </Button>
             <Button variant="secondary" onClick={() => setReporting(null)}>
-              Cancel
+              {t('partnerPanel.common.cancel')}
             </Button>
           </div>
           {report.isError ? (
-            <p className="text-[12px] text-danger">That could not be sent. Please try again.</p>
+            <p className="text-[12px] text-danger">{t('partnerPanel.settlements.reportFailed')}</p>
           ) : null}
         </Surfaceless>
       ) : null}

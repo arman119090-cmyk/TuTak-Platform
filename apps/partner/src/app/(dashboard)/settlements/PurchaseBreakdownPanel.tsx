@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Badge, Button } from '@tutak/design/web';
 import type { PurchaseBreakdownDto } from '@tutak/shared-types';
 import { settlementApi } from '@/lib/api/financeApi';
@@ -13,10 +14,10 @@ const money = (v: string) =>
 
 const moment = (iso: string) => new Date(iso).toLocaleString('en-GB');
 
-const LINE_STATE: Record<string, { text: string; tone: 'available' | 'pending' | 'neutral' }> = {
-  UNSETTLED: { text: 'Not in a settlement yet', tone: 'neutral' },
-  IN_SETTLEMENT: { text: 'Held by an unpaid settlement', tone: 'pending' },
-  PAID: { text: 'Paid', tone: 'available' },
+const LINE_TONE: Record<string, 'available' | 'pending' | 'neutral'> = {
+  UNSETTLED: 'neutral',
+  IN_SETTLEMENT: 'pending',
+  PAID: 'available',
 };
 
 /**
@@ -51,6 +52,7 @@ export function PurchaseBreakdownPanel({
   reference: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const query = useQuery({
     queryKey: ['partner-purchase-breakdown', partnerId, purchaseIntentId],
     queryFn: () => settlementApi.purchaseBreakdown(partnerId, purchaseIntentId),
@@ -61,18 +63,24 @@ export function PurchaseBreakdownPanel({
   return (
     <section className="space-y-3 rounded-lg border border-subtle p-4" aria-live="polite">
       <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* The reference is monospaced as a whole, not spliced into the
+            sentence: which side of the word the number sits on differs by
+            language, and a component-splitting translation would have to be
+            got right in three of them to avoid a broken heading. */}
         <h2 className="text-[14px] font-medium">
-          Sale <span className="font-mono">{reference}</span>
+          <span className="font-mono">
+            {t('partnerPanel.breakdown.heading', { reference })}
+          </span>
         </h2>
         <Button variant="secondary" onClick={onClose}>
-          Close
+          {t('partnerPanel.common.close')}
         </Button>
       </div>
 
-      {state === 'loading' ? <LoadingNotice label="Loading this sale…" /> : null}
+      {state === 'loading' ? <LoadingNotice label={t('partnerPanel.breakdown.loading')} /> : null}
       {state === 'error' ? (
         <LoadError
-          title="This sale could not be loaded"
+          title={t('partnerPanel.breakdown.loadError')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
@@ -80,7 +88,7 @@ export function PurchaseBreakdownPanel({
       {state === 'stale' ? (
         <StaleNotice
           asOf={query.dataUpdatedAt}
-          what="this sale"
+          what={t('partnerPanel.stale.whatSale')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
@@ -94,7 +102,9 @@ export function PurchaseBreakdownPanel({
         that was starting to be read as the whole story.
       */}
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-ink">What happened to this sale</h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-ink">
+          {t('partnerPanel.timeline.heading')}
+        </h3>
         <PurchaseTimeline purchaseIntentId={purchaseIntentId} />
       </div>
     </section>
@@ -102,75 +112,98 @@ export function PurchaseBreakdownPanel({
 }
 
 function BreakdownBody({ breakdown }: { breakdown: PurchaseBreakdownDto }) {
+  const { t } = useTranslation();
   const collectedByTuTak = breakdown.externalCollectedBy === 'TUTAK_VIA_PROVIDER';
   return (
     <div className="space-y-4">
       <dl className="grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
-        <Row label="Confirmed">
-          {breakdown.confirmedAt ? moment(breakdown.confirmedAt) : 'Not confirmed'}
+        <Row label={t('partnerPanel.breakdown.confirmed')}>
+          {breakdown.confirmedAt
+            ? moment(breakdown.confirmedAt)
+            : t('partnerPanel.breakdown.notConfirmed')}
         </Row>
-        <Row label="Status">{breakdown.status}</Row>
+        <Row label={t('partnerPanel.breakdown.status')}>{breakdown.status}</Row>
         {/*
           Who confirmed it, as the row was frozen on the day — not looked up
           now. A person's code, or the plain statement that no person was
           involved. "Not recorded" is for the rows that predate the column
           and is never turned into a name.
         */}
-        <Row label="Confirmed by">
+        <Row label={t('partnerPanel.breakdown.confirmedBy')}>
           {breakdown.employeeCode ? (
             <span className="font-mono">{breakdown.employeeCode}</span>
           ) : breakdown.confirmationSource === 'PROVIDER' ? (
-            'The payment provider — no member of staff'
+            t('partnerPanel.breakdown.byProvider')
           ) : breakdown.confirmationSource === 'INTEGRATION' ? (
-            'Your own till integration — no member of staff'
+            t('partnerPanel.breakdown.byIntegration')
           ) : (
-            'Not recorded'
+            t('partnerPanel.breakdown.notRecorded')
           )}
         </Row>
-        <Row label="Sold for">{money(breakdown.grossAmount)}</Row>
+        <Row label={t('partnerPanel.breakdown.soldFor')}>{money(breakdown.grossAmount)}</Row>
       </dl>
 
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-ink">What paid for it</h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-ink">
+          {t('partnerPanel.breakdown.whatPaid')}
+        </h3>
         <dl className="grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
-          <Row label="Paid with bonus">{money(breakdown.bonusApplied)}</Row>
-          <Row label="Paid from a TuTak balance">{money(breakdown.prepaidApplied)}</Row>
+          <Row label={t('partnerPanel.breakdown.paidWithBonus')}>
+            {money(breakdown.bonusApplied)}
+          </Row>
+          <Row label={t('partnerPanel.breakdown.paidFromBalance')}>
+            {money(breakdown.prepaidApplied)}
+          </Row>
           {/*
             The one line on this panel a partner most often misreads, so it
             names the holder rather than the method: money taken at their own
             till was never TuTak's and is not part of what TuTak owes.
           */}
-          <Row label={collectedByTuTak ? 'Collected by the provider' : 'Taken at your till'}>
+          <Row
+            label={t(
+              collectedByTuTak
+                ? 'partnerPanel.breakdown.collectedByProvider'
+                : 'partnerPanel.breakdown.takenAtTill',
+            )}
+          >
             {money(breakdown.externalAmount)}
             <span className="ml-2 text-[12px] text-faint">
-              {collectedByTuTak ? 'TuTak settles this to you' : 'Yours already'}
+              {t(
+                collectedByTuTak
+                  ? 'partnerPanel.breakdown.tutakSettles'
+                  : 'partnerPanel.breakdown.yoursAlready',
+              )}
             </span>
           </Row>
-          <Row label="Refunded since">{money(breakdown.refundedAmount)}</Row>
+          <Row label={t('partnerPanel.breakdown.refundedSince')}>
+            {money(breakdown.refundedAmount)}
+          </Row>
         </dl>
       </div>
 
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-ink">What it did to the debt</h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-ink">
+          {t('partnerPanel.breakdown.whatItDid')}
+        </h3>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Figure label="Still owed to you" value={breakdown.stillOwed} />
+          <Figure label={t('partnerPanel.breakdown.stillOwed')} value={breakdown.stillOwed} />
           <Figure
-            label="Held by an unpaid settlement"
+            label={t('partnerPanel.breakdown.heldBySettlement')}
             value={breakdown.inOpenSettlement}
-            hint="Claimed, not transferred"
+            hint={t('partnerPanel.breakdown.heldHint')}
           />
-          <Figure label="Already paid" value={breakdown.paid} />
+          <Figure label={t('partnerPanel.breakdown.alreadyPaid')} value={breakdown.paid} />
         </div>
         <p className="mt-2 text-[12px] text-faint">
-          This sale changed what TuTak owes you by {money(breakdown.effectOnDebt)}. The three
-          figures above say where that amount stands now; a settlement holding it is not a
-          transfer.
+          {t('partnerPanel.breakdown.effect', { amount: money(breakdown.effectOnDebt) })}
         </p>
       </div>
 
       {breakdown.lines.length > 0 ? (
         <div>
-          <h3 className="mb-2 text-[13px] font-semibold text-ink">Every line it put on your account</h3>
+          <h3 className="mb-2 text-[13px] font-semibold text-ink">
+            {t('partnerPanel.breakdown.everyLine')}
+          </h3>
           <ul className="space-y-1.5">
             {breakdown.lines.map((line, index) => (
               <li
@@ -179,8 +212,8 @@ function BreakdownBody({ breakdown }: { breakdown: PurchaseBreakdownDto }) {
               >
                 <span className="font-mono text-[12px] text-faint">{line.kind}</span>
                 <span className="flex items-center gap-2">
-                  <Badge tone={LINE_STATE[line.state]?.tone ?? 'neutral'}>
-                    {LINE_STATE[line.state]?.text ?? line.state}
+                  <Badge tone={LINE_TONE[line.state] ?? 'neutral'}>
+                    {t(`partnerPanel.activityState.${line.state}`)}
                   </Badge>
                   <span>{money(line.amount)}</span>
                 </span>
@@ -189,15 +222,14 @@ function BreakdownBody({ breakdown }: { breakdown: PurchaseBreakdownDto }) {
           </ul>
         </div>
       ) : (
-        <p className="text-[12px] text-faint">
-          This sale has not put anything on your account. A purchase that was never confirmed
-          never does.
-        </p>
+        <p className="text-[12px] text-faint">{t('partnerPanel.breakdown.noLines')}</p>
       )}
 
       {breakdown.refunds.length > 0 ? (
         <div>
-          <h3 className="mb-2 text-[13px] font-semibold text-ink">Refunds against this sale</h3>
+          <h3 className="mb-2 text-[13px] font-semibold text-ink">
+            {t('partnerPanel.breakdown.refunds')}
+          </h3>
           <ul className="space-y-1 text-[13px]">
             {breakdown.refunds.map((refund) => (
               <li key={refund.id} className="flex justify-between gap-2">

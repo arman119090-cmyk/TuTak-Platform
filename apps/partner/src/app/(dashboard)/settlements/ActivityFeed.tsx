@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
@@ -26,35 +27,42 @@ const money = (v: string) =>
 
 const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
-const STATE_TEXT: Record<PartnerActivityState, { text: string; tone: 'available' | 'pending' | 'reserved' | 'neutral' }> = {
-  UNSETTLED: { text: 'Not in a settlement yet', tone: 'neutral' },
-  IN_SETTLEMENT: { text: 'Held by an unpaid settlement', tone: 'pending' },
-  UNDER_REVIEW: { text: 'Under review', tone: 'reserved' },
-  PAID: { text: 'Paid', tone: 'available' },
+const STATE_TONE: Record<PartnerActivityState, 'available' | 'pending' | 'reserved' | 'neutral'> = {
+  UNSETTLED: 'neutral',
+  IN_SETTLEMENT: 'pending',
+  UNDER_REVIEW: 'reserved',
+  PAID: 'available',
 };
 
 /**
- * What a ledger kind means to the person being paid. Same map as the
- * statement's, because the same posting must not have two names depending
- * on which screen a partner opens it from.
+ * The ledger kind a partner reads, in their own language.
+ *
+ * Keyed by the kind exactly as stored, so a kind nobody has named yet falls
+ * through to "other activity" rather than disappearing — and the raw kind
+ * stays on the row beside it, because a partner querying a line needs to
+ * quote something TuTak can look up.
  */
-const KIND_TEXT: Record<string, string> = {
-  'partner.bonus_redemption_compensation': 'Bonus points a customer spent with you',
-  'partner.bonus_redemption_compensation_refund': 'Refund of bonus points spent',
-  'partner.prepaid_funding': 'Paid from a customer’s TuTak balance',
-  'partner.prepaid_funding_refund': 'Refund of a TuTak balance payment',
-  'partner.contribution': 'Your contribution to the bonus pool',
-  'partner.contribution_refund': 'Contribution returned on a refund',
-  'psp.payment.captured': 'Customer paid inside TuTak',
-  'psp.payment.refunded': 'Refund of a TuTak payment',
-  'partner.collection.recorded': 'Your transfer to TuTak, recorded',
-  'partner.collection.confirmed': 'Your transfer to TuTak, confirmed',
-  'partner.settlement.paid': 'TuTak transferred this to you',
-  'payout.requested': 'Payout requested',
-  'payout.failed': 'Payout bounced — returned to your balance',
-  'referral.commission': 'Referral commission',
-  'ev.cdr.reconciliation': 'Charging session settlement',
-};
+const KNOWN_KINDS = new Set([
+  'partner.bonus_redemption_compensation',
+  'partner.bonus_redemption_compensation_refund',
+  'partner.prepaid_funding',
+  'partner.prepaid_funding_refund',
+  'partner.contribution',
+  'partner.contribution_refund',
+  'psp.payment.captured',
+  'psp.payment.refunded',
+  'partner.collection.recorded',
+  'partner.collection.confirmed',
+  'partner.settlement.paid',
+  'payout.requested',
+  'payout.failed',
+  'referral.commission',
+  'ev.cdr.reconciliation',
+]);
+
+export function kindKey(kind: string): string {
+  return KNOWN_KINDS.has(kind) ? `partnerPanel.kind.${kind}` : 'partnerPanel.kind.other';
+}
 
 const PAGE_SIZE = 25;
 
@@ -92,6 +100,7 @@ const EMPTY: Filters = { from: '', to: '', branchId: '', state: '' };
  * box invites exactly that reading.
  */
 export function ActivityFeed({ partnerId }: { partnerId: string }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<Filters>(EMPTY);
   const [applied, setApplied] = useState<Filters>(EMPTY);
   // The cursor for the page on screen, and the ones that led to it.
@@ -146,15 +155,12 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-[15px] font-semibold text-ink">Everything that moved your balance</h2>
-        <p className="text-[13px] text-muted">
-          Each line is one movement on your account: what it was, which shop it came from, who
-          confirmed it, and what it did to what TuTak owes you.
-        </p>
+        <h2 className="text-[15px] font-semibold text-ink">{t('partnerPanel.activity.title')}</h2>
+        <p className="text-[13px] text-muted">{t('partnerPanel.activity.description')}</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="From">
+        <Field label={t('partnerPanel.activity.from')}>
           <Input
             type="date"
             value={draft.from}
@@ -162,7 +168,7 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
             onChange={(e) => setDraft({ ...draft, from: e.target.value })}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('partnerPanel.activity.to')}>
           <Input
             type="date"
             value={draft.to}
@@ -170,12 +176,12 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
             onChange={(e) => setDraft({ ...draft, to: e.target.value })}
           />
         </Field>
-        <Field label="Shop">
+        <Field label={t('partnerPanel.activity.shop')}>
           <Select
             value={draft.branchId}
             onChange={(e) => setDraft({ ...draft, branchId: e.target.value })}
           >
-            <option value="">All shops</option>
+            <option value="">{t('partnerPanel.activity.allShops')}</option>
             {(branchesQuery.data ?? []).map((branch) => (
               <option key={branch.id} value={branch.id}>
                 {branch.name}
@@ -183,31 +189,32 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
             ))}
           </Select>
         </Field>
-        <Field label="Where the money is">
+        <Field label={t('partnerPanel.activity.whereMoneyIs')}>
           <Select
             value={draft.state}
             onChange={(e) => setDraft({ ...draft, state: e.target.value as Filters['state'] })}
           >
-            <option value="">Anywhere</option>
-            <option value="UNSETTLED">Not in a settlement yet</option>
-            <option value="IN_SETTLEMENT">Held by an unpaid settlement</option>
-            <option value="UNDER_REVIEW">Under review</option>
-            <option value="PAID">Paid</option>
+            <option value="">{t('partnerPanel.activity.anywhere')}</option>
+            {(['UNSETTLED', 'IN_SETTLEMENT', 'UNDER_REVIEW', 'PAID'] as const).map((state) => (
+              <option key={state} value={state}>
+                {t(`partnerPanel.activityState.${state}`)}
+              </option>
+            ))}
           </Select>
         </Field>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={apply}>Apply</Button>
+        <Button onClick={apply}>{t('partnerPanel.common.apply')}</Button>
         <Button variant="secondary" onClick={clear}>
-          Show everything
+          {t('partnerPanel.common.showEverything')}
         </Button>
       </div>
 
-      {state === 'loading' ? <LoadingNotice label="Loading your account…" /> : null}
+      {state === 'loading' ? <LoadingNotice label={t('partnerPanel.common.loading')} /> : null}
       {state === 'error' ? (
         <LoadError
-          title="Your account could not be loaded"
+          title={t('partnerPanel.activity.loadError')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
@@ -215,7 +222,7 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
       {state === 'stale' ? (
         <StaleNotice
           asOf={query.dataUpdatedAt}
-          what="this list"
+          what={t('partnerPanel.stale.whatActivity')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
@@ -223,11 +230,11 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
 
       {page && page.rows.length === 0 ? (
         <EmptyState
-          title="Nothing here"
+          title={t('partnerPanel.activity.emptyTitle')}
           message={
             page.filtered
-              ? 'No movement matches this filter. Clearing it shows the whole account.'
-              : 'Nothing has moved on your account yet.'
+              ? t('partnerPanel.activity.emptyFiltered')
+              : t('partnerPanel.activity.emptyAll')
           }
         />
       ) : null}
@@ -237,13 +244,13 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
           <Table>
             <thead>
               <Tr>
-                <Th>Date</Th>
-                <Th>Number</Th>
-                <Th>What</Th>
-                <Th>Shop</Th>
-                <Th>Confirmed by</Th>
-                <Th>Change in what you are owed</Th>
-                <Th>Where it is</Th>
+                <Th>{t('partnerPanel.activity.date')}</Th>
+                <Th>{t('partnerPanel.activity.number')}</Th>
+                <Th>{t('partnerPanel.activity.what')}</Th>
+                <Th>{t('partnerPanel.activity.shop')}</Th>
+                <Th>{t('partnerPanel.activity.confirmedBy')}</Th>
+                <Th>{t('partnerPanel.activity.debtChange')}</Th>
+                <Th>{t('partnerPanel.activity.whereItIs')}</Th>
                 <Th />
               </Tr>
             </thead>
@@ -258,7 +265,7 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                       <span className="font-mono text-[12px]">{row.reference}</span>
                     </Td>
                     <Td>
-                      <div>{KIND_TEXT[row.kind] ?? 'Other activity'}</div>
+                      <div>{t(kindKey(row.kind))}</div>
                       <div className="font-mono text-[11px] text-faint">{row.kind}</div>
                     </Td>
                     {/* The shop, by name. The business is the one being
@@ -269,9 +276,13 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                       {row.employeeCode ? (
                         <span className="font-mono text-[12px]">{row.employeeCode}</span>
                       ) : row.confirmationSource === 'PROVIDER' ? (
-                        <span className="text-[12px] text-muted">Payment provider</span>
+                        <span className="text-[12px] text-muted">
+                          {t('partnerPanel.activity.provider')}
+                        </span>
                       ) : row.confirmationSource === 'INTEGRATION' ? (
-                        <span className="text-[12px] text-muted">Your till integration</span>
+                        <span className="text-[12px] text-muted">
+                          {t('partnerPanel.activity.integration')}
+                        </span>
                       ) : (
                         <span className="text-faint">—</span>
                       )}
@@ -283,7 +294,9 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                       </span>
                     </Td>
                     <Td>
-                      <Badge tone={STATE_TEXT[row.state].tone}>{STATE_TEXT[row.state].text}</Badge>
+                      <Badge tone={STATE_TONE[row.state]}>
+                        {t(`partnerPanel.activityState.${row.state}`)}
+                      </Badge>
                     </Td>
                     <Td>
                       {row.itemisable ? (
@@ -297,7 +310,9 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                             )
                           }
                         >
-                          {openPurchase?.id === row.sourceId ? 'Hide' : 'Where is this from?'}
+                          {openPurchase?.id === row.sourceId
+                            ? t('partnerPanel.activity.hideBreakdown')
+                            : t('partnerPanel.activity.openBreakdown')}
                         </Button>
                       ) : null}
                     </Td>
@@ -315,18 +330,23 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
           */}
           <div className="rounded-md border border-subtle p-3 text-[13px]">
             <div className="font-medium text-ink">
-              {page.filtered ? 'Total of the lines you selected' : 'Total of every line on your account'}
+              {page.filtered
+                ? t('partnerPanel.activity.selectionFiltered')
+                : t('partnerPanel.activity.selectionAll')}
             </div>
             <div className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-muted">
-              <span>{page.selection.rowCount} lines</span>
-              <span>Added to what you are owed: {money(page.selection.credits)}</span>
-              <span>Taken off: {money(page.selection.debits)}</span>
-              <span className="text-ink">Net: {money(page.selection.net)}</span>
+              <span>{t('partnerPanel.activity.lines', { count: page.selection.rowCount })}</span>
+              <span>
+                {t('partnerPanel.activity.credits', { amount: money(page.selection.credits) })}
+              </span>
+              <span>{t('partnerPanel.activity.debits', { amount: money(page.selection.debits) })}</span>
+              <span className="text-ink">
+                {t('partnerPanel.activity.net', { amount: money(page.selection.net) })}
+              </span>
             </div>
             {page.filtered ? (
               <p className="mt-1 text-[12px] text-faint">
-                This is the total of the filter above, not what TuTak owes your business. That
-                figure is at the top of this page.
+                {t('partnerPanel.activity.notThePosition')}
               </p>
             ) : null}
           </div>
@@ -344,7 +364,7 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                 setOpenPurchase(null);
               }}
             >
-              Previous
+              {t('partnerPanel.common.previous')}
             </Button>
             <Button
               variant="secondary"
@@ -355,10 +375,10 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                 setOpenPurchase(null);
               }}
             >
-              Next
+              {t('partnerPanel.common.next')}
             </Button>
             <span className="text-[12px] text-faint">
-              {PAGE_SIZE} lines at a time, newest first
+              {t('partnerPanel.activity.pageSize', { count: PAGE_SIZE })}
             </span>
           </div>
         </>

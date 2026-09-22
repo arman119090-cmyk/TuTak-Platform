@@ -24,6 +24,7 @@ export function AppShell({
   onSignOut,
   signOutLabel = 'Sign out',
   renderLink,
+  footerExtra,
   children,
 }: {
   subtitle: string;
@@ -35,6 +36,13 @@ export function AppShell({
   signOutLabel?: string;
   /** App supplies its router's Link so the shell stays framework-agnostic. */
   renderLink: (item: NavItem, active: boolean, className: string) => React.ReactNode;
+  /**
+   * Anything the app wants under the sign-out row — a language switcher, for
+   * instance. A slot rather than a `locales` prop: the shell is shared by two
+   * dashboards with different ideas about preferences, and the one that does
+   * not want a control should not have to pass a flag to hide it.
+   */
+  footerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const initials = (userName ?? '')
@@ -95,6 +103,7 @@ export function AppShell({
                 preference you have to go looking for does not get used. */}
             <ThemeToggle />
           </div>
+          {footerExtra}
         </div>
       </aside>
 

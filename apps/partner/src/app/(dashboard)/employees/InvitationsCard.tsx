@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   PartnerStaffInvitationStatusDto,
   type PartnerBranchDto,
@@ -15,13 +17,6 @@ import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStat
 
 const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
-const STATUS_LABEL: Record<PartnerStaffInvitationStatusDto, string> = {
-  [PartnerStaffInvitationStatusDto.PENDING]: 'Waiting',
-  [PartnerStaffInvitationStatusDto.ACCEPTED]: 'Accepted',
-  [PartnerStaffInvitationStatusDto.REVOKED]: 'Cancelled',
-  [PartnerStaffInvitationStatusDto.EXPIRED]: 'Expired',
-};
-
 const STATUS_TONE: Record<PartnerStaffInvitationStatusDto, 'pending' | 'available' | 'neutral'> = {
   [PartnerStaffInvitationStatusDto.PENDING]: 'pending',
   [PartnerStaffInvitationStatusDto.ACCEPTED]: 'available',
@@ -29,9 +24,17 @@ const STATUS_TONE: Record<PartnerStaffInvitationStatusDto, 'pending' | 'availabl
   [PartnerStaffInvitationStatusDto.EXPIRED]: 'neutral',
 };
 
-const messageOf = (error: unknown): string => {
+/**
+ * The server's own refusal, when it sent one.
+ *
+ * Kept in the server's words rather than translated: a refusal like "that
+ * phone already works here" is specific to what happened, and a generic
+ * translated fallback would lose it. Only the "no message at all" case has
+ * a translated sentence, because there is nothing else to say.
+ */
+const messageOf = (error: unknown, t: TFunction): string => {
   const data = (error as AxiosError<{ message?: string }> | undefined)?.response?.data;
-  return data?.message ?? 'Could not do that. Please try again.';
+  return data?.message ?? t('partnerPanel.invitations.genericError');
 };
 
 /**
@@ -50,6 +53,7 @@ export function InvitationsCard({
   partnerId: string;
   branches: PartnerBranchDto[];
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [phone, setPhone] = useState('+374');
   const [role, setRole] = useState('PARTNER_STAFF');
@@ -94,10 +98,12 @@ export function InvitationsCard({
 
   return (
     <Surface>
-      <h3 className="text-[15px] font-semibold text-ink">Invitations</h3>
+      <h3 className="text-[15px] font-semibold text-ink">
+        {t('partnerPanel.invitations.title')}
+      </h3>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <Field label="Phone">
+        <Field label={t('partnerPanel.invitations.phone')}>
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -105,15 +111,15 @@ export function InvitationsCard({
             autoComplete="off"
           />
         </Field>
-        <Field label="Role">
+        <Field label={t('partnerPanel.invitations.role')}>
           <Select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="PARTNER_STAFF">Cashier</option>
-            <option value="PARTNER_MANAGER">Manager</option>
+            <option value="PARTNER_STAFF">{t('partnerPanel.invitations.roleStaff')}</option>
+            <option value="PARTNER_MANAGER">{t('partnerPanel.invitations.roleManager')}</option>
           </Select>
         </Field>
-        <Field label="Branch">
+        <Field label={t('partnerPanel.invitations.branch')}>
           <Select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-            <option value="">No branch yet</option>
+            <option value="">{t('partnerPanel.invitations.noBranch')}</option>
             {branches.map((branch) => (
               <option key={branch.id} value={branch.id}>
                 {branch.name}
@@ -122,26 +128,24 @@ export function InvitationsCard({
           </Select>
         </Field>
         <Button onClick={() => invite.mutate()} loading={invite.isPending} disabled={!canInvite}>
-          Send invitation
+          {t('partnerPanel.invitations.send')}
         </Button>
       </div>
 
-      <p className="mt-3 text-[12px] text-muted">
-        The code goes to that phone by SMS and is never shown here — not even to you. That is what
-        makes accepting it proof that the person holds the number. If they did not get it, cancel
-        the invitation and send a new one.
-      </p>
+      <p className="mt-3 text-[12px] text-muted">{t('partnerPanel.invitations.secretNote')}</p>
       {invite.isError ? (
         <p role="alert" className="mt-2 text-[13px] text-danger-text">
-          {messageOf(invite.error)}
+          {messageOf(invite.error, t)}
         </p>
       ) : null}
 
       <div className="mt-5">
-        {state === 'loading' ? <LoadingNotice label="Loading invitations…" /> : null}
+        {state === 'loading' ? (
+          <LoadingNotice label={t('partnerPanel.invitations.loading')} />
+        ) : null}
         {state === 'error' ? (
           <LoadError
-            title="Could not load invitations."
+            title={t('partnerPanel.invitations.loadError')}
             onRetry={() => void query.refetch()}
             busy={query.isFetching}
           />
@@ -149,7 +153,7 @@ export function InvitationsCard({
         {state === 'stale' ? (
           <StaleNotice
             asOf={query.dataUpdatedAt}
-            what="this invitation list"
+            what={t('partnerPanel.invitations.staleWhat')}
             onRetry={() => void query.refetch()}
             busy={query.isFetching}
           />
@@ -157,16 +161,16 @@ export function InvitationsCard({
 
         {state !== 'loading' && state !== 'error' ? (
           invitations.length === 0 ? (
-            <p className="text-[13px] text-faint">No invitations yet.</p>
+            <p className="text-[13px] text-faint">{t('partnerPanel.invitations.empty')}</p>
           ) : (
             <Table>
               <thead>
                 <Tr>
-                  <Th>Phone</Th>
-                  <Th>Role</Th>
-                  <Th>Sent</Th>
-                  <Th>Status</Th>
-                  <Th align="right">Action</Th>
+                  <Th>{t('partnerPanel.invitations.phone')}</Th>
+                  <Th>{t('partnerPanel.invitations.role')}</Th>
+                  <Th>{t('partnerPanel.invitations.sent')}</Th>
+                  <Th>{t('partnerPanel.invitations.statusColumn')}</Th>
+                  <Th align="right">{t('partnerPanel.invitations.action')}</Th>
                 </Tr>
               </thead>
               <tbody>
@@ -174,16 +178,22 @@ export function InvitationsCard({
                   <Tr key={invitation.id}>
                     <Td className="tabular">{invitation.phone}</Td>
                     <Td className="text-muted">
-                      {invitation.role === 'PARTNER_MANAGER' ? 'Manager' : 'Cashier'}
+                      {t(
+                        invitation.role === 'PARTNER_MANAGER'
+                          ? 'partnerPanel.invitations.roleManager'
+                          : 'partnerPanel.invitations.roleStaff',
+                      )}
                     </Td>
                     <Td className="tabular text-muted">{day(invitation.createdAt)}</Td>
                     <Td>
                       <Badge tone={STATUS_TONE[invitation.status]}>
-                        {STATUS_LABEL[invitation.status]}
+                        {t(`partnerPanel.invitations.status${invitation.status}`)}
                       </Badge>
                       {invitation.status === PartnerStaffInvitationStatusDto.PENDING ? (
                         <span className="block text-[12px] text-faint">
-                          until {day(invitation.expiresAt)}
+                          {t('partnerPanel.invitations.until', {
+                            date: day(invitation.expiresAt),
+                          })}
                         </span>
                       ) : null}
                     </Td>
@@ -196,7 +206,7 @@ export function InvitationsCard({
                             loading={resend.isPending && resend.variables === invitation.id}
                             onClick={() => resend.mutate(invitation.id)}
                           >
-                            Send again
+                            {t('partnerPanel.invitations.sendAgain')}
                           </Button>
                           <Button
                             size="sm"
@@ -204,7 +214,7 @@ export function InvitationsCard({
                             loading={revoke.isPending && revoke.variables === invitation.id}
                             onClick={() => revoke.mutate(invitation.id)}
                           >
-                            Cancel
+                            {t('partnerPanel.invitations.cancel')}
                           </Button>
                         </div>
                       ) : (
@@ -219,11 +229,7 @@ export function InvitationsCard({
         ) : null}
       </div>
 
-      <p className="mt-4 text-[12px] text-muted">
-        Sending again cancels the old code and issues a new one, so a link that went to the wrong
-        number stops working. Cancelling an invitation does not remove access somebody already
-        has — that comes off the staff list.
-      </p>
+      <p className="mt-4 text-[12px] text-muted">{t('partnerPanel.invitations.resendNote')}</p>
     </Surface>
   );
 }

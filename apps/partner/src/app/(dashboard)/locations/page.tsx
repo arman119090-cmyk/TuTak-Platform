@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { PartnerBranchState, type PartnerBranchDto } from '@tutak/shared-types';
 import { Badge, Button, Field, Input, PageHeader, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, isPartnerOwner, useAuthStore } from '@/lib/stores/authStore';
@@ -21,30 +22,14 @@ import { BranchFuelTools } from './BranchFuelTools';
  * a location need different words, because they imply different next steps:
  * one is coming back and one is not.
  */
-const STATE_LABEL: Record<PartnerBranchState, string> = {
-  [PartnerBranchState.ACTIVE]: 'Open',
-  [PartnerBranchState.SUSPENDED]: 'Closed for now',
-  [PartnerBranchState.ARCHIVED]: 'Closed for good',
-};
-
 const STATE_TONE: Record<PartnerBranchState, 'available' | 'pending' | 'neutral'> = {
   [PartnerBranchState.ACTIVE]: 'available',
   [PartnerBranchState.SUSPENDED]: 'pending',
   [PartnerBranchState.ARCHIVED]: 'neutral',
 };
 
-/**
- * The reassurance that belongs next to a closure, not in a help page: the
- * question an owner actually has when shutting a shop is what happens to the
- * sales already made there.
- */
-const STATE_NOTE: Record<PartnerBranchState, string> = {
-  [PartnerBranchState.ACTIVE]: '',
-  [PartnerBranchState.SUSPENDED]: 'No new purchases. Returns and history carry on.',
-  [PartnerBranchState.ARCHIVED]: 'No new purchases or staff. Returns and history carry on.',
-};
-
 export default function LocationsPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
   const isOwner = isPartnerOwner(user, partnerId);
@@ -66,10 +51,7 @@ export default function LocationsPage() {
       <>
         <Header />
         <Surface>
-          <p className="text-[13px] text-muted">
-            Only the partner owner can manage your branches. Ask your owner account to add or edit
-            them.
-          </p>
+          <p className="text-[13px] text-muted">{t('partnerPanel.branches.ownerOnly')}</p>
         </Surface>
       </>
     );
@@ -89,10 +71,11 @@ export default function LocationsPage() {
 }
 
 function Header() {
+  const { t } = useTranslation();
   return (
     <PageHeader
-      title="Branches"
-      description="Every address customers can walk into and earn or spend points at. Add as many as you actually have — a closed location can be deactivated without losing its history."
+      title={t('partnerPanel.branches.title')}
+      description={t('partnerPanel.branches.description')}
     />
   );
 }
@@ -135,9 +118,10 @@ function BranchForm({
   form: BranchForm;
   onChange: (patch: Partial<BranchForm>) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      <Field label="Name">
+      <Field label={t('partnerPanel.branches.name')}>
         <Input
           value={form.name}
           onChange={(e) => onChange({ name: e.target.value })}
@@ -145,7 +129,7 @@ function BranchForm({
           maxLength={120}
         />
       </Field>
-      <Field label="Address">
+      <Field label={t('partnerPanel.branches.address')}>
         <Input
           value={form.address}
           onChange={(e) => onChange({ address: e.target.value })}
@@ -153,7 +137,7 @@ function BranchForm({
           maxLength={300}
         />
       </Field>
-      <Field label="City">
+      <Field label={t('partnerPanel.branches.city')}>
         <Input
           value={form.city}
           onChange={(e) => onChange({ city: e.target.value })}
@@ -161,7 +145,7 @@ function BranchForm({
           maxLength={100}
         />
       </Field>
-      <Field label="Latitude">
+      <Field label={t('partnerPanel.branches.latitude')}>
         <Input
           value={form.latitude}
           onChange={(e) => onChange({ latitude: e.target.value })}
@@ -169,7 +153,7 @@ function BranchForm({
           placeholder="40.1772"
         />
       </Field>
-      <Field label="Longitude">
+      <Field label={t('partnerPanel.branches.longitude')}>
         <Input
           value={form.longitude}
           onChange={(e) => onChange({ longitude: e.target.value })}
@@ -192,6 +176,7 @@ function BranchesCard({
   loading: boolean;
   isFuelPartner: boolean;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['partner-branches', partnerId] });
@@ -243,10 +228,12 @@ function BranchesCard({
   return (
     <Surface>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="text-[15px] font-semibold text-ink">Your branches</div>
+        <div className="text-[15px] font-semibold text-ink">
+          {t('partnerPanel.branches.yourBranches')}
+        </div>
         {!adding && (
           <Button size="sm" variant="secondary" onClick={() => setAdding(true)} disabled={loading}>
-            Add branch
+            {t('partnerPanel.branches.add')}
           </Button>
         )}
       </div>
@@ -261,7 +248,7 @@ function BranchesCard({
               loading={create.isPending}
               disabled={!isValidForm(newForm)}
             >
-              Save
+              {t('partnerPanel.branches.save')}
             </Button>
             <Button
               size="sm"
@@ -271,26 +258,28 @@ function BranchesCard({
                 setNewForm(EMPTY_FORM);
               }}
             >
-              Cancel
+              {t('partnerPanel.branches.cancel')}
             </Button>
             {create.isError ? (
-              <span className="text-[13px] text-danger-text">Could not save. Please try again.</span>
+              <span className="text-[13px] text-danger-text">
+                {t('partnerPanel.branches.saveFailed')}
+              </span>
             ) : null}
           </div>
         </div>
       )}
 
       {branches.length === 0 && !adding ? (
-        <p className="mt-4 text-[13px] text-faint">No branches yet. Add your first one above.</p>
+        <p className="mt-4 text-[13px] text-faint">{t('partnerPanel.branches.empty')}</p>
       ) : branches.length > 0 ? (
         <div className="mt-4">
           <Table>
             <thead>
               <tr>
-                <Th>Name</Th>
-                <Th>Address</Th>
-                <Th>City</Th>
-                <Th>Status</Th>
+                <Th>{t('partnerPanel.branches.name')}</Th>
+                <Th>{t('partnerPanel.branches.address')}</Th>
+                <Th>{t('partnerPanel.branches.city')}</Th>
+                <Th>{t('partnerPanel.branches.statusColumn')}</Th>
                 <Th />
               </tr>
             </thead>
@@ -310,14 +299,14 @@ function BranchesCard({
                           loading={update.isPending}
                           disabled={!isValidForm(editForm)}
                         >
-                          Save
+                          {t('partnerPanel.branches.save')}
                         </Button>
                         <Button size="sm" variant="tertiary" onClick={() => setEditingId(null)}>
-                          Cancel
+                          {t('partnerPanel.branches.cancel')}
                         </Button>
                         {update.isError ? (
                           <span className="text-[13px] text-danger-text">
-                            Could not save. Please try again.
+                            {t('partnerPanel.branches.saveFailed')}
                           </span>
                         ) : null}
                       </div>
@@ -330,24 +319,32 @@ function BranchesCard({
                       <Td>{branch.address}</Td>
                       <Td>{branch.city}</Td>
                       <Td>
-                        <Badge tone={STATE_TONE[branch.state]}>{STATE_LABEL[branch.state]}</Badge>
+                        <Badge tone={STATE_TONE[branch.state]}>
+                          {t(`partnerPanel.branches.state${branch.state}`)}
+                        </Badge>
+                        {/* The reassurance that belongs next to a closure, not
+                            in a help page: the question an owner actually has
+                            when shutting a shop is what happens to the sales
+                            already made there. */}
                         {branch.state !== PartnerBranchState.ACTIVE ? (
                           <span className="block text-[12px] text-faint">
-                            {STATE_NOTE[branch.state]}
+                            {t(`partnerPanel.branches.note${branch.state}`)}
                           </span>
                         ) : null}
                       </Td>
                       <Td align="right">
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="tertiary" onClick={() => startEdit(branch)}>
-                            Edit
+                            {t('partnerPanel.branches.edit')}
                           </Button>
                           <Button
                             size="sm"
                             variant="tertiary"
                             onClick={() => setManagingId(managingId === branch.id ? null : branch.id)}
                           >
-                            {managingId === branch.id ? 'Close' : 'Manage'}
+                            {managingId === branch.id
+                              ? t('partnerPanel.branches.close')
+                              : t('partnerPanel.branches.manage')}
                           </Button>
                           {branch.state === PartnerBranchState.ACTIVE ? (
                             <Button
@@ -361,7 +358,7 @@ function BranchesCard({
                                 })
                               }
                             >
-                              Close for now
+                              {t('partnerPanel.branches.closeForNow')}
                             </Button>
                           ) : (
                             <Button
@@ -375,7 +372,7 @@ function BranchesCard({
                                 })
                               }
                             >
-                              Reopen
+                              {t('partnerPanel.branches.reopen')}
                             </Button>
                           )}
                           {branch.state === PartnerBranchState.ARCHIVED ? null : (
@@ -390,7 +387,7 @@ function BranchesCard({
                                 })
                               }
                             >
-                              Close for good
+                              {t('partnerPanel.branches.closeForGood')}
                             </Button>
                           )}
                         </div>

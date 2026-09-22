@@ -467,7 +467,7 @@ describe('SettlementsPage', () => {
   it('names a posting kind in plain words and keeps the code beside it', async () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /what is this made of/i }));
-    expect(await screen.findByText('Customer paid in TuTak')).toBeTruthy();
+    expect(await screen.findByText('Customer paid inside TuTak')).toBeTruthy();
     expect(screen.getByText('psp.payment.captured')).toBeTruthy();
   });
 

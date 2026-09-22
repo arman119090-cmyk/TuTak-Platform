@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { themeInitScript, Providers, StorageNotice } from '@tutak/design/web';
+import { I18nProvider } from '@/lib/i18n/I18nProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -25,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Providers>
-          {children}
+          <I18nProvider>{children}</I18nProvider>
           {/*
             Configured, not hard-coded: the policy exists in `public/
             privacy.html` but is not yet served at a permanent address, and a

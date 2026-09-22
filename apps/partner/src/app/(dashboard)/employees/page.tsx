@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 import { Badge, Button, Field, Input, PageHeader, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, isPartnerOwner, useAuthStore } from '@/lib/stores/authStore';
@@ -20,6 +21,7 @@ import { InvitationsCard } from './InvitationsCard';
  * branch — and lives with the branch.
  */
 export default function EmployeesPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
@@ -44,18 +46,22 @@ export default function EmployeesPage() {
   return (
     <>
       <PageHeader
-        title="Employees"
-        description="Everyone who works at your organisation, and the code each of them appears under on receipts and statements."
+        title={t('partnerPanel.employees.title')}
+        description={t('partnerPanel.employees.description')}
       />
 
       <div className="flex flex-col gap-4">
         <Surface>
-          <h3 className="text-[15px] font-semibold text-ink">Your people</h3>
+          <h3 className="text-[15px] font-semibold text-ink">
+            {t('partnerPanel.employees.yourPeople')}
+          </h3>
 
-          {state === 'loading' ? <LoadingNotice label="Loading employees…" /> : null}
+          {state === 'loading' ? (
+            <LoadingNotice label={t('partnerPanel.employees.loading')} />
+          ) : null}
           {state === 'error' ? (
             <LoadError
-              title="Could not load your employees."
+              title={t('partnerPanel.employees.loadError')}
               onRetry={() => void people.refetch()}
               busy={people.isFetching}
             />
@@ -63,7 +69,7 @@ export default function EmployeesPage() {
           {state === 'stale' ? (
             <StaleNotice
               asOf={people.dataUpdatedAt}
-              what="this employee list"
+              what={t('partnerPanel.employees.staleWhat')}
               onRetry={() => void people.refetch()}
               busy={people.isFetching}
             />
@@ -72,17 +78,17 @@ export default function EmployeesPage() {
           {state !== 'loading' && state !== 'error' ? (
             (people.data ?? []).length === 0 ? (
               <p className="mt-2 text-[13px] text-faint">
-                Nobody yet. Invite somebody below — they get a code by SMS and join themselves.
+                {t('partnerPanel.employees.empty')}
               </p>
             ) : (
               <div className="mt-4">
                 <Table>
                   <thead>
                     <Tr>
-                      <Th>Code</Th>
-                      <Th>Name</Th>
-                      <Th>Branches</Th>
-                      <Th>Role</Th>
+                      <Th>{t('partnerPanel.employees.code')}</Th>
+                      <Th>{t('partnerPanel.employees.name')}</Th>
+                      <Th>{t('partnerPanel.employees.branches')}</Th>
+                      <Th>{t('partnerPanel.employees.role')}</Th>
                     </Tr>
                   </thead>
                   <tbody>
@@ -100,7 +106,9 @@ export default function EmployeesPage() {
                           {person.branches.length === 0 ? (
                             // Not a gap: an owner or an all-branch manager
                             // acts from their role, not from a posting.
-                            <span className="text-faint">Not posted to a branch</span>
+                            <span className="text-faint">
+                              {t('partnerPanel.employees.notPosted')}
+                            </span>
                           ) : (
                             person.branches.map((b) => b.branchName).join(', ')
                           )}
@@ -109,7 +117,7 @@ export default function EmployeesPage() {
                           {person.roles.map((r) => (
                             <Badge key={r.role} tone={r.allBranches ? 'available' : 'neutral'}>
                               {r.role.replace(/_/g, ' ').toLowerCase()}
-                              {r.allBranches ? ' · all branches' : ''}
+                              {r.allBranches ? t('partnerPanel.employees.allBranches') : ''}
                             </Badge>
                           ))}
                         </Td>
@@ -121,10 +129,7 @@ export default function EmployeesPage() {
             )
           ) : null}
 
-          <p className="mt-4 text-[12px] text-muted">
-            A code stays with the person for as long as they work here. Moving them between
-            branches does not change it, and it is never given to anybody else.
-          </p>
+          <p className="mt-4 text-[12px] text-muted">{t('partnerPanel.employees.codeNote')}</p>
         </Surface>
 
         {isOwner && partnerId ? (
@@ -132,7 +137,9 @@ export default function EmployeesPage() {
         ) : null}
 
         <Surface>
-          <h3 className="text-[15px] font-semibold text-ink">Look up a code</h3>
+          <h3 className="text-[15px] font-semibold text-ink">
+            {t('partnerPanel.employees.lookupTitle')}
+          </h3>
           <form
             className="mt-3 flex flex-wrap items-end gap-3"
             onSubmit={(e) => {
@@ -140,7 +147,7 @@ export default function EmployeesPage() {
               if (trimmed) router.push(`/employees/${encodeURIComponent(trimmed)}`);
             }}
           >
-            <Field label="Employee code">
+            <Field label={t('partnerPanel.employees.lookupLabel')}>
               <Input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
@@ -150,12 +157,10 @@ export default function EmployeesPage() {
               />
             </Field>
             <Button type="submit" disabled={!trimmed}>
-              Look up
+              {t('partnerPanel.employees.lookup')}
             </Button>
           </form>
-          <p className="mt-3 text-[12px] text-muted">
-            For a code read off a paper receipt, when the person is not in the list above.
-          </p>
+          <p className="mt-3 text-[12px] text-muted">{t('partnerPanel.employees.lookupNote')}</p>
         </Surface>
       </div>
     </>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Trans, useTranslation } from 'react-i18next';
 import { Badge, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
 import type { AxiosError } from 'axios';
 import { partnerApi } from '@/lib/api/partnerApi';
@@ -28,6 +29,7 @@ const statusOf = (error: unknown): number | undefined =>
  * so rather than showing an empty card.
  */
 export function EmployeeCard({ partnerId, code }: { partnerId: string; code: string }) {
+  const { t } = useTranslation();
   const query = useQuery({
     queryKey: ['partner-employee', partnerId, code],
     queryFn: () => partnerApi.employeeCard(partnerId, code),
@@ -40,22 +42,33 @@ export function EmployeeCard({ partnerId, code }: { partnerId: string; code: str
   const state = dataStateOf(query);
   const status = statusOf(query.error);
 
-  if (state === 'loading') return <LoadingNotice label="Looking up the code…" />;
+  if (state === 'loading') return <LoadingNotice label={t('partnerPanel.employees.looking')} />;
 
   if (state === 'error' && (status === 404 || status === 403)) {
     return (
       <Surface>
+        {/* The code is a component inside the sentence rather than a
+            separate line: where it sits in the sentence differs by language,
+            and the monospaced run has to travel with it. */}
         <p role="status" className="text-[13px] text-muted">
-          <span className="font-mono tracking-[0.15em] text-ink">{code}</span> does not resolve
-          for your account. Either no such employee code exists at your organisation, or it
-          belongs to a branch you are not assigned to. Your owner account can look it up.
+          <Trans
+            i18nKey="partnerPanel.employees.unresolved"
+            values={{ code }}
+            components={[<span key="code" className="font-mono tracking-[0.15em] text-ink" />]}
+          />
         </p>
       </Surface>
     );
   }
 
   if (state === 'error') {
-    return <LoadError title="Could not look up this code." onRetry={() => void query.refetch()} busy={query.isFetching} />;
+    return (
+      <LoadError
+        title={t('partnerPanel.employees.lookupFailed')}
+        onRetry={() => void query.refetch()}
+        busy={query.isFetching}
+      />
+    );
   }
 
   const card = query.data!;
@@ -65,7 +78,7 @@ export function EmployeeCard({ partnerId, code }: { partnerId: string; code: str
       {state === 'stale' && (
         <StaleNotice
           asOf={query.dataUpdatedAt}
-          what="this employee card"
+          what={t('partnerPanel.employees.staleCard')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
@@ -79,15 +92,14 @@ export function EmployeeCard({ partnerId, code }: { partnerId: string; code: str
           <span className="font-mono text-[14px] tracking-[0.2em] text-faint">{card.code}</span>
         </div>
         <p className="mt-2 text-[12px] text-muted">
-          This code stays with this person for as long as they work here. Moving them between
-          branches does not change it, and it is never given to anybody else.
+          {t('partnerPanel.employees.personCodeNote')}
         </p>
         {card.roles.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {card.roles.map((r) => (
               <Badge key={r.role} tone={r.allBranches ? 'available' : 'neutral'}>
                 {r.role.replace(/_/g, ' ').toLowerCase()}
-                {r.allBranches ? ' · all branches' : ''}
+                {r.allBranches ? t('partnerPanel.employees.allBranches') : ''}
               </Badge>
             ))}
           </div>
@@ -95,22 +107,21 @@ export function EmployeeCard({ partnerId, code }: { partnerId: string; code: str
       </Surface>
 
       <Surface>
-        <h3 className="mb-3 text-[13px] font-semibold text-ink">Branches</h3>
+        <h3 className="mb-3 text-[13px] font-semibold text-ink">
+          {t('partnerPanel.employees.branches')}
+        </h3>
         {card.assignments.length === 0 ? (
           // Not an error and not an empty organisation: an owner or an
           // all-branch manager acts without being posted anywhere.
-          <p className="text-[13px] text-muted">
-            Not posted to a specific branch. Their reach comes from their role, not from a
-            posting.
-          </p>
+          <p className="text-[13px] text-muted">{t('partnerPanel.employees.notPostedCard')}</p>
         ) : (
           <Table>
             <thead>
               <Tr>
-                <Th>Branch</Th>
-                <Th>Role</Th>
-                <Th>From</Th>
-                <Th>Status</Th>
+                <Th>{t('partnerPanel.employees.branch')}</Th>
+                <Th>{t('partnerPanel.employees.role')}</Th>
+                <Th>{t('partnerPanel.employees.from')}</Th>
+                <Th>{t('partnerPanel.employees.statusColumn')}</Th>
               </Tr>
             </thead>
             <tbody>
@@ -124,10 +135,12 @@ export function EmployeeCard({ partnerId, code }: { partnerId: string; code: str
                   <Td className="tabular text-muted">{day(a.assignedAt)}</Td>
                   <Td>
                     {a.isActive ? (
-                      <Badge tone="available">Working here</Badge>
+                      <Badge tone="available">{t('partnerPanel.employees.workingHere')}</Badge>
                     ) : (
                       <Badge tone="neutral">
-                        Ended{a.deactivatedAt ? ` ${day(a.deactivatedAt)}` : ''}
+                        {a.deactivatedAt
+                          ? t('partnerPanel.employees.endedOn', { date: day(a.deactivatedAt) })
+                          : t('partnerPanel.employees.ended')}
                       </Badge>
                     )}
                   </Td>

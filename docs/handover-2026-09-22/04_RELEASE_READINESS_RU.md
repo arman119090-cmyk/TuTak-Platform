@@ -82,7 +82,7 @@
 
 | № | Пункт | Состояние |
 | --- | --- | --- |
-| B1 | Юридическая модель сбора средств в пользу партнёра, письменно | 🔴 владелец |
+| B1 | Юридическая модель сбора средств в пользу партнёра, письменно | 🟡 владелец сообщил устно 22.09: **работаем как маркетплейс** — TuTak площадка-посредник, партнёр остаётся продавцом. Письменного подтверждения и ответа «чей фискальный чек» нет. См. `PREPAID_BALANCE_LEGAL_QUESTIONS_RU.md` |
 | B2 | Договор с Idram + письменные ответы: checksum, `EDP_TRANS_ID`, повтор callback, запрос статуса, refund API, комиссия, сроки оплаты bill | 🔴 владелец ↔ Idram |
 | B3 | Sandbox на staging: оплата, повтор callback, два callback с одним `EDP_TRANS_ID`, callback после cancel/timeout, EXPIRED → UNRESOLVED, refund | 🔴 ждёт B2 |
 | B4 | Production-креды в Railway, таймауты `PSP_STALE_AFTER_MS`/`PSP_ESCALATE_EVERY_MS` по ответам Idram | 🔴 владелец |

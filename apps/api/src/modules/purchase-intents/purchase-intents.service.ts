@@ -35,6 +35,7 @@ import { LedgerService } from '../ledger/ledger.service';
 import { contributionForPurchase } from '../partners/contribution/contribution-rule';
 import { PartnerContributionRuleService } from '../partners/contribution/partner-contribution-rule.service';
 import { PartnersService } from '../partners/partners.service';
+import { PartnerEmployeeService } from '../partners/partner-employee.service';
 import { MONEY_MAY_HAVE_MOVED } from '../psp/psp-attempt-safety';
 import {
   CURRENT_REFERRAL_PROGRAM_VERSION,
@@ -62,6 +63,27 @@ export interface CreatePurchaseIntentOptions {
 }
 
 export type MerchantActor = { staffUserId: string } | { apiKeyId: string };
+
+/**
+ * What confirmed a purchase, in the shape the row records it.
+ *
+ * A discriminated union rather than a bag of nullable fields, because the
+ * three cases carry different evidence and mixing them is the mistake worth
+ * making impossible: a provider callback has no employee to name, and a
+ * cashier's confirmation is not proof that money reached TuTak.
+ */
+export type PurchaseConfirmation =
+  | {
+      source: 'STAFF';
+      staffUserId: string;
+      /** Permanent at this partner — see `PartnerEmployeeService`. */
+      employeeCode: string;
+      /** Null for an owner or all-branch manager: reach by role, not posting. */
+      assignmentId: string | null;
+      role: string | null;
+    }
+  | { source: 'PARTNER_INTEGRATION'; apiKeyId: string }
+  | { source: 'PROVIDER_CALLBACK' };
 
 const toMerchantActor = (actor: string | MerchantActor): MerchantActor =>
   typeof actor === 'string' ? { staffUserId: actor } : actor;
@@ -234,6 +256,7 @@ export class PurchaseIntentsService {
     private readonly media: MediaViewService,
     private readonly customerBalance: CustomerBalanceService,
     private readonly funding: PurchaseFundingService,
+    private readonly employees: PartnerEmployeeService,
   ) {}
 
   /**
@@ -1147,7 +1170,7 @@ export class PurchaseIntentsService {
      */
     await this.stampMerchantApproval(intent, merchant, dto);
 
-    const outcome = await this.settlePurchase(intent, staffUserId);
+    const outcome = await this.settlePurchase(intent, await this.confirmationFor(intent, merchant));
     if (outcome === 'already-resolved') {
       // Lost the race — someone else confirmed, rejected, or the sweep
       // expired it a moment ago.
@@ -1236,7 +1259,7 @@ export class PurchaseIntentsService {
         `Purchase is ${intent.status} but the provider confirmed payment — not settled, needs investigation`,
       );
     }
-    return this.settlePurchase(intent, null, tx);
+    return this.settlePurchase(intent, { source: 'PROVIDER_CALLBACK' }, tx);
   }
 
   /**
@@ -1258,11 +1281,65 @@ export class PurchaseIntentsService {
    * confirmed it, and recording a person who did not act would be a lie in
    * the audit trail.
    */
+  /**
+   * What to write down about this confirmation, resolved at the moment it
+   * happens.
+   *
+   * Two things are deliberate here. The actor is the one the caller was
+   * authenticated as — never a value from the request body, which carries no
+   * actor at all — so there is nothing to substitute. And the employee's
+   * *current* branch assignment is read now, because "which posting were
+   * they acting under" is only answerable while it is still true; read a
+   * month later it would answer with wherever they work today.
+   *
+   * An owner or an all-branch manager has no assignment and gets a null one
+   * rather than a borrowed one. They still get a code: a person who
+   * confirmed a sale is a person the partner can point at, whatever their
+   * reach.
+   */
+  private async confirmationFor(
+    intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
+    merchant: MerchantActor,
+  ): Promise<PurchaseConfirmation> {
+    if ('apiKeyId' in merchant) {
+      return { source: 'PARTNER_INTEGRATION', apiKeyId: merchant.apiKeyId };
+    }
+
+    const staffUserId = merchant.staffUserId;
+    const [employeeCode, assignment] = await Promise.all([
+      this.employees.codeFor(intent.partnerId, staffUserId),
+      // The assignment covering the branch this purchase actually happened
+      // at, and only an active one: a deactivated posting is not what
+      // somebody acted under, and the branch-scope check the controller ran
+      // has already refused this call if they had no standing at all.
+      intent.partnerBranchId
+        ? this.prisma.partnerBranchStaffAssignment.findFirst({
+            where: {
+              partnerId: intent.partnerId,
+              partnerBranchId: intent.partnerBranchId,
+              userId: staffUserId,
+              isActive: true,
+            },
+            select: { id: true, role: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      source: 'STAFF',
+      staffUserId,
+      employeeCode,
+      assignmentId: assignment?.id ?? null,
+      role: assignment?.role ?? null,
+    };
+  }
+
   private async settlePurchase(
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
-    staffUserId: string | null,
+    confirmation: PurchaseConfirmation | null,
     externalTx?: Prisma.TransactionClient,
   ): Promise<'settled' | 'already-resolved'> {
+    const staffUserId = confirmation?.source === 'STAFF' ? confirmation.staffUserId : null;
     // Spec §12: the pool is computed from the terms this purchase was
     // *snapshotted* under — not from whatever the partner's terms are today.
     //
@@ -1311,6 +1388,19 @@ export class PurchaseIntentsService {
         data: {
           status: PurchaseIntentStatus.CONFIRMED,
           confirmedByUserId: staffUserId,
+          // Frozen, not joined on read. `employeeCode` is the person's
+          // permanent code at this partner; the assignment and role are the
+          // posting they acted under. A later transfer, rename, promotion or
+          // deactivation changes none of it — which is the requirement, and
+          // the reason these are columns rather than a lookup.
+          confirmationSource: confirmation?.source ?? null,
+          confirmedByEmployeeCode:
+            confirmation?.source === 'STAFF' ? confirmation.employeeCode : null,
+          confirmedByAssignmentId:
+            confirmation?.source === 'STAFF' ? confirmation.assignmentId : null,
+          confirmedByRole: confirmation?.source === 'STAFF' ? confirmation.role : null,
+          confirmedByApiKeyId:
+            confirmation?.source === 'PARTNER_INTEGRATION' ? confirmation.apiKeyId : null,
           confirmedAt: new Date(),
           // Spec §12's pool split, snapshotted at the moment it is
           // actually posted — a later refund reverses these exact

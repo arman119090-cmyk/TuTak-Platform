@@ -238,6 +238,8 @@ model User {
   mediaAssetsUploaded MediaAsset[] @relation("MediaAssetUploader")
   mediaAssetsApproved MediaAsset[] @relation("MediaAssetApprover")
 
+  partnerEmployeeCodes PartnerEmployee[]
+
   @@index([createdAt])
   /// The anonymisation sweep asks for "deleted, not yet scrubbed", which is a
   /// vanishing fraction of the table and would otherwise scan all of it every
@@ -921,21 +923,58 @@ model PurchaseIntent {
   brandDisplayName String?
   brandLogoAssetId String?
 
-  bonusReservationId  String?
-  sourceTransactionId String?
+  bonusReservationId      String?
+  sourceTransactionId     String?
   /// Individual staff identity of whoever confirmed this purchase — spec
   /// §25/§33. Confirmation only: this column used to claim it held "whoever
   /// confirmed or rejected", and `reject()` never wrote it, so for every
   /// rejected purchase the row did not say who turned the customer away.
-  confirmedByUserId   String?
+  confirmedByUserId       String?
+  /// What kind of event confirmed this purchase, recorded rather than
+  /// inferred.
+  ///
+  /// Three things can move a purchase to CONFIRMED and they are not
+  /// interchangeable: a cashier taking money at a till, a partner's own POS
+  /// or API integration acting on its key, and a payment provider reporting
+  /// that money reached it. Only the last is evidence that anybody paid
+  /// TuTak anything.
+  ///
+  /// It could be guessed from `confirmedByUserId`, `confirmedByApiKeyId` and
+  /// `paymentRoute` together, and guessing is exactly what this column
+  /// exists to stop: a null actor currently means both "the provider did it"
+  /// and "this row predates the column", and a partner reading a statement
+  /// cannot be asked to tell those apart. Null here means the second, and
+  /// the interface says "not recorded" rather than naming anybody.
+  confirmationSource      PurchaseConfirmationSource?
+  /// The person's permanent code at this partner, frozen at confirmation.
+  ///
+  /// Not derived on read, and this is the whole point of the column.
+  /// `PartnerBranchStaffAssignment.employeeDisplayCode` belongs to an
+  /// assignment, so moving somebody to another branch would silently change
+  /// what last month's receipts appear to say. `PartnerEmployee.code` is
+  /// stable, but even that is looked up *here* rather than joined on read,
+  /// so the row keeps saying what it said on the day.
+  confirmedByEmployeeCode String?
+  /// Which branch assignment authorised it, when one did. Null for an
+  /// owner or an all-branch manager, who act without being assigned
+  /// anywhere — their reach is the role, not a posting.
+  confirmedByAssignmentId String?
+  /// The role held at that moment, frozen for the same reason as the code:
+  /// a promotion must not rewrite who approved what.
+  confirmedByRole         String?
+  /// Which integration key acted, when the source is a partner's own POS or
+  /// API rather than a person. Distinct from `merchantApprovedByApiKeyId`,
+  /// which records a different event entirely — agreeing the terms of a
+  /// sale, not confirming it happened.
+  confirmedByApiKeyId     String?
   /// And who did. Separate from `confirmedByUserId` rather than shared with
   /// it: a column named "confirmed by" holding the person who refused is the
   /// kind of naming that misleads a year later, when somebody reads a report
   /// instead of this comment. Null on every row rejected before this column
   /// existed — their actor is in `AuditLog` and nowhere else, and inventing
   /// one here would misstate who did what.
-  rejectedByUserId    String?
-  rejectionReason     String?
+  rejectedByUserId        String?
+  rejectionReason         String?
 
   /// Set once, at confirmation. A repeat confirm call with the same key
   /// becomes a lookup rather than a second execution — spec §7's idempotency
@@ -1294,6 +1333,8 @@ model Partner {
   partnerContributionRules PartnerContributionRule[]
   promos                   PartnerPromo[]
 
+  employees PartnerEmployee[]
+
   @@map("partners")
 }
 
@@ -1562,6 +1603,71 @@ enum BranchFuelType {
   PETROL
   METHANE_CNG
   PROPANE_LPG
+}
+
+/// A person's permanent, readable identity inside one partner organisation.
+///
+/// `PartnerBranchStaffAssignment.employeeDisplayCode` came first and is a
+/// different thing: it names an *assignment to a branch*. Moving somebody to
+/// another branch ends one assignment and starts another, so their code
+/// changes; working two branches gives them two. That is right for an audit
+/// trail of assignments and wrong for "who confirmed this sale" — a partner
+/// looking at last month's receipts must see one person, not two identities
+/// that happen to be the same human.
+///
+/// So the person's code lives here, one row per `(partnerId, userId)`,
+/// allocated once and never reused for anybody else. Transfers, renames and
+/// deactivation do not touch it.
+///
+/// ## Why not `PartnerMembership`, which already has `(partnerId, userId)`
+///
+/// Because that model does not mean what its name suggests. In production
+/// code a row is created only for a partner's *founding owner*
+/// (`PartnersService.create`/`apply`); every other staff member is attached
+/// through a partner-scoped `UserRole` and never gets one — `isAffiliated`
+/// exists precisely to paper over that, and says so. Worse, `isMember`
+/// branches on the row's presence for self-dealing checks, so backfilling
+/// memberships for staff would quietly change who is allowed to pay
+/// themselves. A registry of employees had to be a new, additive table
+/// rather than a redefinition of that one.
+///
+/// ## Not a credential
+///
+/// The code identifies; it never authorises. Nothing accepts it as input to
+/// act as that person: the server reads the actor from the authenticated
+/// session, and this column is only ever an output.
+/// What kind of event moved a purchase to CONFIRMED — see
+/// `PurchaseIntent.confirmationSource`.
+enum PurchaseConfirmationSource {
+  /// A person at a till, acting from their own authenticated session.
+  STAFF
+  /// The partner's own POS or API integration, acting on its key. Proves the
+  /// partner's system said the sale happened; proves nothing about money
+  /// reaching TuTak.
+  PARTNER_INTEGRATION
+  /// A payment provider reporting that it collected the money. The only one
+  /// of the three that is evidence of a payment to TuTak, and never to be
+  /// shown as a cashier's action.
+  PROVIDER_CALLBACK
+}
+
+model PartnerEmployee {
+  id        String @id @default(uuid())
+  partnerId String
+  userId    String
+  /// `EMP-001`, unique within the partner and never handed to a second
+  /// person — including after the first one leaves, so a purchase confirmed
+  /// in March still resolves to the person who confirmed it.
+  code      String
+
+  createdAt DateTime @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, userId])
+  @@unique([partnerId, code])
+  @@map("partner_employees")
 }
 
 model PartnerBranch {

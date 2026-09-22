@@ -11,6 +11,7 @@ import {
   PartnerStaffController,
 } from './partner-branch-staff.controller';
 import { PartnerBranchStaffService } from './partner-branch-staff.service';
+import { PartnerEmployeeService } from './partner-employee.service';
 import {
   PartnerBranchQrController,
   PartnerBranchQrResolveController,
@@ -38,9 +39,10 @@ import { PartnerContributionRuleService } from './contribution/partner-contribut
     PartnersService,
     PartnerIntegrationsService,
     PartnerBranchStaffService,
+    PartnerEmployeeService,
     PartnerBranchQrService,
     PartnerContributionRuleService,
   ],
-  exports: [PartnersService, PartnerContributionRuleService],
+  exports: [PartnersService, PartnerContributionRuleService, PartnerEmployeeService],
 })
 export class PartnersModule {}

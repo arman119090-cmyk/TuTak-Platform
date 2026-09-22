@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BranchStaffRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { PartnerEmployeeService } from './partner-employee.service';
 
 /**
  * Which branch(es) of a multi-branch partner a member of staff may actually
@@ -11,7 +12,10 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
  */
 @Injectable()
 export class PartnerBranchStaffService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly employees: PartnerEmployeeService,
+  ) {}
 
   private async assertBranchBelongsToPartner(partnerId: string, branchId: string) {
     const branch = await this.prisma.partnerBranch.findUnique({ where: { id: branchId } });
@@ -100,6 +104,12 @@ export class PartnerBranchStaffService {
     }
 
     const employeeDisplayCode = params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
+
+    // The person's permanent code at this partner, minted now if this is the
+    // first time they have been named. Separate from the assignment code
+    // above and deliberately so: this one survives the transfer that ends
+    // this assignment — see `PartnerEmployeeService`.
+    await this.employees.codeFor(partnerId, params.userId);
 
     try {
       return await this.prisma.partnerBranchStaffAssignment.create({

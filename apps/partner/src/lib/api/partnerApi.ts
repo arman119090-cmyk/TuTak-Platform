@@ -6,6 +6,7 @@ import type {
   PartnerBranchQrCodeDto,
   PartnerBranchStaffAssignmentDto,
   PartnerDto,
+  PartnerEmployeeCardDto,
   PartnerOfferingDto,
   SetAllBranchesRequestDto,
   TransactionDto,
@@ -179,6 +180,19 @@ export const partnerApi = {
     const { data } = await httpClient.get<ApiEnvelope<PaginatedResultDto<TransactionDto>>>(
       `/partners/${id}/transactions`,
       { params: { cursor } },
+    );
+    return data.data;
+  },
+
+  /**
+   * Who a permanent employee code belongs to.
+   *
+   * 404 here means either "no such code" or "not yours to resolve" — the
+   * server answers both the same way on purpose, so the screen must too.
+   */
+  async employeeCard(id: string, code: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerEmployeeCardDto>>(
+      `/partners/${id}/employees/${encodeURIComponent(code)}`,
     );
     return data.data;
   },

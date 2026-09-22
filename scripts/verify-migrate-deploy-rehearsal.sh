@@ -46,6 +46,7 @@ NEW_MIGRATIONS=(
   "20260922180000_purchase_confirmation_consistency"
   "20260922190000_partner_branch_state"
   "20260922190100_partner_branch_state_follows_is_active"
+  "20260922200000_partner_staff_invitations"
 )
 
 failures=0
@@ -213,8 +214,14 @@ refuses "база отклоняет строку, которая противо
   "UPDATE \"partner_branches\" SET \"state\" = 'ARCHIVED', \"isActive\" = true WHERE \"id\" = 'b2';"
 
 # ── The constraints the deploy was supposed to install ───────────────────
-check "все три новых ограничения существуют" "3" \
-  "SELECT count(*) FROM pg_constraint WHERE conname IN ('purchase_intents_confirmation_is_consistent','purchase_intents_confirmation_posting_is_whole','partner_branches_state_matches_is_active');"
+check "все четыре новых ограничения существуют" "4" \
+  "SELECT count(*) FROM pg_constraint WHERE conname IN ('purchase_intents_confirmation_is_consistent','purchase_intents_confirmation_posting_is_whole','partner_branches_state_matches_is_active','partner_staff_invitations_outcome_is_complete');"
+
+check "таблица приглашений создана пустой" "0" \
+  "SELECT count(*) FROM \"partner_staff_invitations\";"
+
+refuses "база отклоняет принятое приглашение, не назвавшее, кто его принял" \
+  "INSERT INTO \"partner_staff_invitations\" (\"id\",\"partnerId\",\"phone\",\"role\",\"branchIds\",\"tokenHash\",\"status\",\"expiresAt\",\"createdByUserId\") VALUES ('i1','p1','+37491000001','PARTNER_STAFF','{}','hash-1','ACCEPTED', NOW() + interval '1 day','u1');"
 
 refuses "база отклоняет подтверждение кассира без кода сотрудника" \
   "UPDATE \"purchase_intents\" SET \"confirmationSource\"='STAFF' WHERE \"id\"='pi-old';"

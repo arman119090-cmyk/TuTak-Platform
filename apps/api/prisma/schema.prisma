@@ -246,6 +246,8 @@ model User {
   /// hour.
   @@index([deletedAt, anonymizedAt])
   @@map("users")
+  invitationsCreated  PartnerStaffInvitation[] @relation("PartnerStaffInvitationCreatedBy")
+  invitationsAccepted PartnerStaffInvitation[] @relation("PartnerStaffInvitationAcceptedBy")
 }
 
 enum DevicePlatform {
@@ -1357,6 +1359,7 @@ model Partner {
   employees PartnerEmployee[]
 
   @@map("partners")
+  staffInvitations       PartnerStaffInvitation[]
 }
 
 /// Where a tap on a Home "Partner Spotlight" card lands. Deliberately not a
@@ -1689,6 +1692,96 @@ model PartnerEmployee {
   @@unique([partnerId, userId])
   @@unique([partnerId, code])
   @@map("partner_employees")
+}
+
+/// Where an invitation to work at a partner stands.
+///
+/// Expiry is deliberately not one of these. A row whose `expiresAt` has
+/// passed is still `PENDING` in the database, and every reader computes
+/// "expired" from the clock — because the alternative is a sweep that has to
+/// run for the status to be true, and an invitation that is accepted in the
+/// gap between the deadline and the sweep is an invitation accepted after it
+/// expired.
+enum PartnerStaffInvitationStatus {
+  /// Sent, not yet used. May still be accepted if the deadline has not passed.
+  PENDING
+  /// Used. The access it described exists now; the invitation itself is spent.
+  ACCEPTED
+  /// Called back by the owner before it was used.
+  REVOKED
+}
+
+/// An offer of a job at a partner, made to a phone number.
+///
+/// ## What it is not
+///
+/// Not a credential, and not a password. The owner never sees the token:
+/// it goes to the invited person's phone and nowhere else, so possessing it
+/// is evidence about that phone rather than about who typed it into the
+/// owner's screen. The permanent employee code (`PartnerEmployee.code`) is
+/// not usable here either — it identifies and never authorises.
+///
+/// ## Why only a hash is stored
+///
+/// A readable invitation token in the database is a set of working keys to
+/// other people's jobs, available to anything that can read one table — a
+/// backup, a support query, a log line that printed a row. The token is
+/// random and is kept only as its SHA-256, so a stolen database contains no
+/// usable invitation. Lookups hash the presented token and search by that.
+model PartnerStaffInvitation {
+  id        String @id @default(uuid())
+  partnerId String
+
+  /// The phone the offer was sent to, in E.164.
+  ///
+  /// Acceptance requires a session belonging to *this* number, which is what
+  /// ties the invitation to a person rather than to whoever has the link.
+  /// Proving the number is the existing OTP flow's job; this only insists
+  /// the two match.
+  phone String
+
+  /// The role acceptance grants. Constrained to the two partner-staff tiers
+  /// by `PartnerStaffInvitationService` — an invitation can never hand out
+  /// ownership of a business or any platform role, whatever is posted to it.
+  role RoleName
+
+  /// Which branches to post the person to.
+  ///
+  /// Ids rather than a relation: a branch may be archived between the offer
+  /// and its acceptance, and acceptance re-reads the list against the
+  /// branches that still take staff rather than trusting what was true when
+  /// the offer went out.
+  branchIds String[]
+
+  /// SHA-256 of the token. The token itself is never written down.
+  tokenHash String @unique
+
+  status    PartnerStaffInvitationStatus @default(PENDING)
+  expiresAt DateTime
+
+  /// How many times a token that hashes to this row has been presented and
+  /// refused. A ceiling on this is the part of brute-force protection that
+  /// does not depend on being able to tell callers apart by address.
+  attemptCount Int @default(0)
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  /// Set together with `status = ACCEPTED`, in the same transaction as the
+  /// role and the postings it grants.
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  revokedAt        DateTime?
+  revokedByUserId  String?
+
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("PartnerStaffInvitationCreatedBy", fields: [createdByUserId], references: [id])
+  acceptedBy User?  @relation("PartnerStaffInvitationAcceptedBy", fields: [acceptedByUserId], references: [id])
+
+  /// The owner's list, newest first, and the "is there already one open for
+  /// this number" check that stops a second offer racing the first.
+  @@index([partnerId, status, createdAt])
+  @@index([partnerId, phone])
+  @@map("partner_staff_invitations")
 }
 
 /// Where a branch stands in its life, as the partner's owner manages it.

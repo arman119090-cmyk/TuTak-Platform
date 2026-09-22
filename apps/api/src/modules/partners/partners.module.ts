@@ -11,6 +11,7 @@ import {
   PartnerStaffController,
 } from './partner-branch-staff.controller';
 import { PartnerBranchStaffService } from './partner-branch-staff.service';
+import { PartnerEmployeeController } from './partner-employee.controller';
 import { PartnerEmployeeService } from './partner-employee.service';
 import {
   PartnerBranchQrController,
@@ -30,6 +31,7 @@ import { PartnerContributionRuleService } from './contribution/partner-contribut
     PartnerIntegrationsController,
     PartnerBranchStaffController,
     PartnerStaffController,
+    PartnerEmployeeController,
     PartnerBranchQrController,
     PartnerBranchQrResolveController,
     PartnerContributionRuleController,

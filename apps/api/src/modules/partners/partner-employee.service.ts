@@ -8,6 +8,44 @@ type Db = Prisma.TransactionClient | PrismaService;
 const PREFIX = 'EMP-';
 
 /**
+ * One posting on an employee card, as the partner's panel draws it.
+ *
+ * `deactivatedAt` is carried rather than inferred from `isActive`, because a
+ * card that says "no longer here" without saying since when is the answer to
+ * a different question than the one somebody reading last quarter's receipt
+ * is asking.
+ */
+export interface PartnerEmployeeCardAssignment {
+  branchId: string;
+  branchName: string;
+  branchAddress: string;
+  role: string;
+  isActive: boolean;
+  assignedAt: string;
+  deactivatedAt: string | null;
+}
+
+/**
+ * Who a permanent employee code belongs to, mirroring
+ * `PartnerEmployeeCardDto` in `@tutak/shared-types`.
+ *
+ * Restated here rather than imported: this package's build cannot reach
+ * across the workspace (TS6059), the same constraint `media.contracts.ts`
+ * lives under, so the two are kept in step by a contract test.
+ *
+ * No phone, no email, no user id — see `cardFor`.
+ */
+export interface PartnerEmployeeCard {
+  code: string;
+  firstName: string;
+  lastName: string;
+  /** Only the postings this caller may see; may be empty. */
+  assignments: PartnerEmployeeCardAssignment[];
+  /** Partner-scoped roles, including an all-branch grant that has no posting. */
+  roles: { role: string; allBranches: boolean }[];
+}
+
+/**
  * The code a partner sees instead of a user id, and the one rule that makes
  * it worth having: it names a person, for as long as that person works
  * there.
@@ -116,13 +154,16 @@ export class PartnerEmployeeService {
   }
 
   /**
-   * Who a code belongs to, for the partner's own employee card.
+   * Who a code belongs to, within one partner.
    *
-   * Scoped to one partner by the caller, and deliberately narrow in what it
-   * returns: the person, their current branch assignments and whether each
-   * is still active. No phone, no email, no user id — a partner checking
-   * which of their staff confirmed a sale needs a name and a place, not a
-   * way to contact somebody through the platform's records.
+   * The lookup itself, unnarrowed: `cardFor` is what an endpoint calls,
+   * because a code belonging to this partner is not the same question as a
+   * code this particular caller is allowed to resolve.
+   *
+   * Partner-scoped by its key rather than by a filter somebody has to
+   * remember to pass — `partnerId_code` is the unique index, so a code from
+   * another organisation cannot be resolved here at all, whatever the caller
+   * types.
    */
   async byCode(partnerId: string, code: string) {
     const employee = await this.prisma.partnerEmployee.findUnique({
@@ -155,5 +196,81 @@ export class PartnerEmployeeService {
     });
 
     return { employee, assignments, roles };
+  }
+
+  /**
+   * The employee card as a caller at this partner may see it.
+   *
+   * Partner scope alone is not the answer. `listForPartner` was narrowed for
+   * exactly this reason: a cashier posted to one branch could read another
+   * branch's roster — names, phone numbers and codes — from an endpoint
+   * whose sibling refused precisely that. Handing the same cashier a lookup
+   * from `EMP-007` to a name would reopen it in a form that is easier to
+   * enumerate, not harder.
+   *
+   * So a caller who does not see every branch resolves a code on one of two
+   * grounds, both of which are things they can already see:
+   *
+   *   * the person is posted to a branch the caller is posted to, which is
+   *     what the roster already tells them; or
+   *   * the person confirmed a purchase at such a branch, which is what the
+   *     purchase list already tells them — the code is on the row.
+   *
+   * The second ground is not a loosening. It is what makes an owner
+   * resolvable: an owner or an all-branch manager confirms sales without
+   * being posted anywhere, so on the first ground alone the one person a
+   * cashier most often reads on a receipt would come back "no such
+   * employee".
+   *
+   * Anything else is `null`, which the controller turns into a 404 rather
+   * than a 403: "this code is not yours to resolve" and "there is no such
+   * code" must look identical, or the difference between them is an
+   * enumeration oracle.
+   *
+   * What comes back is deliberately narrow — the person's name, the
+   * postings the caller may see, and the roles. No phone, no email, no user
+   * id: a partner checking who confirmed a sale needs a name and a place,
+   * not a way to reach somebody through the platform's records.
+   */
+  async cardFor(
+    partnerId: string,
+    code: string,
+    branchIds: string[] | null = null,
+  ): Promise<PartnerEmployeeCard | null> {
+    const found = await this.byCode(partnerId, code);
+    if (!found) return null;
+
+    const { employee, assignments, roles } = found;
+    const visible =
+      branchIds === null
+        ? assignments
+        : assignments.filter((a) => branchIds.includes(a.branch.id));
+
+    if (branchIds !== null && visible.length === 0) {
+      const confirmedHere = await this.prisma.purchaseIntent.count({
+        where: {
+          partnerId,
+          confirmedByEmployeeCode: code,
+          partnerBranchId: { in: branchIds },
+        },
+      });
+      if (confirmedHere === 0) return null;
+    }
+
+    return {
+      code: employee.code,
+      firstName: employee.user.firstName,
+      lastName: employee.user.lastName,
+      assignments: visible.map((a) => ({
+        branchId: a.branch.id,
+        branchName: a.branch.name,
+        branchAddress: a.branch.address,
+        role: a.role,
+        isActive: a.isActive,
+        assignedAt: a.createdAt.toISOString(),
+        deactivatedAt: a.deactivatedAt?.toISOString() ?? null,
+      })),
+      roles: roles.map((r) => ({ role: r.role.name, allBranches: r.allBranches })),
+    };
   }
 }

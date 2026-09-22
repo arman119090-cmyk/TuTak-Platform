@@ -26,6 +26,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { randomInt, randomUUID } from 'node:crypto';
 import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parseMoney, parsePositiveMoney, roundCharge } from '../../common/utils/money';
+import { assertStandingAtFinancialChange } from '../../common/auth/standing';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
@@ -1451,6 +1452,28 @@ export class PurchaseIntentsService {
     const l3Entry = chain.find((c) => c.level === 3) ?? null;
 
     const run = async (tx: Prisma.TransactionClient) => {
+      // The last word on authorization, asked where the money moves rather
+      // than where the request came in.
+      //
+      // The controller already refused anybody without standing, from claims
+      // rebuilt on this request. What it cannot cover is the gap between
+      // that read and this write: the owner may have ended the posting, or
+      // deactivated the person, in between. `assertStandingAtFinancial-
+      // Change` is that gap closed — see its docblock for the ordering it
+      // establishes and for why a revocation that lands *after* this point
+      // correctly leaves the sale confirmed.
+      //
+      // Only for a person. A provider callback has no standing to lose, and
+      // an integration key's validity is checked by the route that accepts
+      // the key.
+      if (confirmation?.source === 'STAFF') {
+        await assertStandingAtFinancialChange(tx, {
+          partnerId: intent.partnerId,
+          branchId: intent.partnerBranchId,
+          userId: confirmation.staffUserId,
+        });
+      }
+
       // Conditional on still being AWAITING_CONFIRMATION, exactly like
       // the rest of this codebase's claim-then-act pattern — but now the
       // claim and the act are the same atomic unit.

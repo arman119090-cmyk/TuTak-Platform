@@ -22,6 +22,8 @@ import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 import { JakoScene } from '../../components/JakoScene';
 import { DataSafeNote } from '../../components/DataSafeNote';
 import { localPhoneDigits } from '../../../domain/phone';
+import { ConsentCheckbox } from '../../components/ConsentCheckbox';
+import { useRegistrationConsents } from './useRegistrationConsents';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpRegister'>;
 
@@ -94,6 +96,18 @@ export function OtpRegisterScreen({ navigation }: Props) {
    */
   useMountTrace('OtpRegister');
   useDimensionsTrace();
+
+  /*
+   * The two mandatory legal choices, both empty until they are ticked.
+   *
+   * They live on stage one, before the code is asked for: an SMS is already
+   * processing of the number, so the notice and the choice come first. The
+   * hook below knows what has to be agreed to, against which edition, and
+   * hands the server the same hashes the screen showed; when the texts are
+   * not published it reports nothing to ask and this whole block disappears,
+   * which is what keeps an unapproved draft out of a registration form.
+   */
+  const consents = useRegistrationConsents();
 
   const [phone, setPhone] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -175,7 +189,10 @@ export function OtpRegisterScreen({ navigation }: Props) {
     clearErrors();
     setSending(true);
     try {
-      await authApi.requestRegistrationOtp({ phone: fullPhone });
+      await authApi.requestRegistrationOtp({
+        phone: fullPhone,
+        ...(consents.payload ? { consents: consents.payload } : {}),
+      });
       setStage('code');
     } catch (err) {
       // Never a field: this request carries the phone number and nothing
@@ -215,6 +232,9 @@ export function OtpRegisterScreen({ navigation }: Props) {
         locale: i18n.language,
         referralCode: referralCode || undefined,
         deviceId,
+        // Sent again at the step that creates the account, because that is
+        // the request the record is written by, in the same transaction.
+        ...(consents.payload ? { consents: consents.payload } : {}),
       });
       // The one place a session is created. Reaching it means the code was
       // accepted, the password was accepted, and the account exists.
@@ -261,7 +281,7 @@ export function OtpRegisterScreen({ navigation }: Props) {
     }
   };
 
-  const canSend = phone.length === 8 && !sending;
+  const canSend = phone.length === 8 && !sending && consents.satisfied;
   const canContinue = code.length === 6;
 
   /*
@@ -329,6 +349,32 @@ export function OtpRegisterScreen({ navigation }: Props) {
               placeholder="00 000 000"
               maxLength={8}
             />
+            {consents.required.map((consent) => (
+              <ConsentCheckbox
+                key={consent.purpose}
+                testID={`consent-${consent.purpose}`}
+                checked={consents.accepted[consent.purpose] ?? false}
+                onToggle={(next) => consents.setAccepted(consent.purpose, next)}
+                label={t(consent.labelKey)}
+                links={consent.documents.map((document) => ({
+                  label: t(`legal.docs.${document.key}`, { defaultValue: document.key }),
+                  onPress: () =>
+                    navigation.navigate('LegalDocument', {
+                      documentKey: document.key,
+                      language: consents.language,
+                      title: t(`legal.docs.${document.key}`, { defaultValue: document.key }),
+                    }),
+                }))}
+              />
+            ))}
+            {consents.required.length > 0 ? (
+              <Text
+                testID="consent-optional-note"
+                style={[text.caption, { color: color.textSecondary, marginTop: space[2] }]}
+              >
+                {t('legal.consentOptionalNote')}
+              </Text>
+            ) : null}
             <TextField
               label={t('auth.referralCodeOptional')}
               traceId="referral"

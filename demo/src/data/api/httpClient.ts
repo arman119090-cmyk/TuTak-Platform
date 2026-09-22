@@ -29,6 +29,18 @@ const API_BASE_URL = resolveApiBaseUrl(
 export const healthUrl = API_BASE_URL.replace(/\/v\d+\/?$/, '') + '/health';
 
 /**
+ * The API's origin without the version prefix.
+ *
+ * The legal documents are served version-neutral, for the same reason
+ * `/health` is: an app-store listing and a printed link both point at a fixed
+ * path, and `/v1/legal/...` would break on the next API version. Requests for
+ * them pass this as `baseURL` and keep an ordinary `/legal/...` path, so
+ * every tool that reads these modules — the offline mock adapter among them —
+ * still sees the route it will have to answer.
+ */
+export const apiOrigin = API_BASE_URL.replace(/\/v\d+\/?$/, '');
+
+/**
  * Whether this build talks to memory instead of to a server.
  *
  * Two independent flags have to agree, and `app.config.js` cannot produce

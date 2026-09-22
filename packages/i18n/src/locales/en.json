@@ -1202,6 +1202,40 @@
       "failureState": "This changed before your tap: {{message}} The lists have been refreshed.",
       "failureNetwork": "The server could not be reached, so the outcome is unknown. The lists have been re-read — check the request’s state before deciding again. Nothing you typed was lost.",
       "failureOther": "{{message}} Nothing you typed was lost."
+    },
+    "transactions": {
+      "title": "Transactions",
+      "description": "Every payment made at your business, newest first.",
+      "loading": "Loading transactions…",
+      "loadError": "Transactions could not be loaded",
+      "staleWhat": "transactions",
+      "emptyTitle": "No transactions yet",
+      "emptyMessage": "Payments will appear here as soon as customers start paying with TuTak.",
+      "colType": "Type",
+      "colBranch": "Branch",
+      "colAmount": "Amount",
+      "colBonusApplied": "Bonus applied",
+      "colBonusEarned": "Bonus earned",
+      "colStatus": "Status",
+      "colDate": "Date"
+    },
+    "transactionType": {
+      "QR_PAYMENT": "QR payment",
+      "EV_CHARGING": "EV charging",
+      "BONUS_ACCRUAL": "Bonus earned",
+      "BONUS_REDEMPTION": "Bonus spent",
+      "REFERRAL_REWARD": "Referral reward",
+      "REFUND": "Refund",
+      "MANUAL_ADJUSTMENT": "Manual adjustment",
+      "PARTNER_PURCHASE": "Purchase"
+    },
+    "transactionStatus": {
+      "INITIATED": "Started",
+      "PENDING": "In progress",
+      "COMPLETED": "Completed",
+      "FAILED": "Failed",
+      "REVERSED": "Reversed",
+      "FLAGGED": "Under review"
     }
   }
 }

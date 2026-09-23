@@ -22,11 +22,11 @@ import { partnerApi } from '@/lib/api/partnerApi';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 import { PurchaseBreakdownPanel } from './PurchaseBreakdownPanel';
+import { localDay } from '@/lib/dates';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
 const STATE_TONE: Record<PartnerActivityState, 'available' | 'pending' | 'reserved' | 'neutral'> = {
   UNSETTLED: 'neutral',
@@ -260,7 +260,7 @@ export function ActivityFeed({ partnerId }: { partnerId: string }) {
                 const change = Number(row.debtChange);
                 return (
                   <Tr key={row.postingId}>
-                    <Td>{day(row.occurredAt)}</Td>
+                    <Td>{localDay(row.occurredAt)}</Td>
                     {/* What a partner quotes when they query this line. */}
                     <Td>
                       <span className="font-mono text-[12px]">{row.reference}</span>

@@ -26,11 +26,11 @@ import {
   LoadingNotice,
   StaleNotice,
 } from '@/lib/components/DataStatus';
+import { localDay, utcDay } from '@/lib/dates';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
 /**
  * Tone per settlement status.
@@ -440,7 +440,7 @@ export default function SettlementsPage() {
               {statements!.map((s) => (
                 <Tr key={s.id}>
                   <Td>
-                    {day(s.periodStart)} — {day(s.periodEnd)}
+                    {utcDay(s.periodStart)} — {utcDay(s.periodEnd)}
                   </Td>
                   <Td>{money(s.netPayableAmount)}</Td>
                   <Td>
@@ -449,7 +449,7 @@ export default function SettlementsPage() {
                     </Badge>
                   </Td>
                   <Td>{s.bankTransferReference ?? '—'}</Td>
-                  <Td>{s.paidAt ? day(s.paidAt) : '—'}</Td>
+                  <Td>{s.paidAt ? localDay(s.paidAt) : '—'}</Td>
                   <Td>
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button
@@ -520,7 +520,7 @@ export default function SettlementsPage() {
                 <tbody>
                   {statement.entries.map((e) => (
                     <Tr key={e.id}>
-                      <Td>{day(e.occurredAt)}</Td>
+                      <Td>{localDay(e.occurredAt)}</Td>
                       {/* Which shop the sale came from. A dash on the lines
                           that are not sales — a payout, a collection, carried
                           debt — because those have no branch to name. */}

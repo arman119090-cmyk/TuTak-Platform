@@ -211,7 +211,7 @@ describe('CreatePurchaseIntentScreen', () => {
       expect(screen.getByText(/1\D?000/)).toBeTruthy();
     });
 
-    it('sends the amounts as typed and lets the server decide', async () => {
+    it('sends the amounts it checked and lets the server decide', async () => {
       (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
       (purchaseIntentApi.create as jest.Mock).mockResolvedValue({ id: 'pi-1' });
       const { findByText } = renderScreen();
@@ -222,8 +222,30 @@ describe('CreatePurchaseIntentScreen', () => {
       fireEvent.press(screen.getByText('purchaseIntent.submit'));
       await waitFor(() =>
         expect(purchaseIntentApi.create).toHaveBeenCalledWith(
-          expect.objectContaining({ grossAmount: '1000', bonusAmountRequested: '400' }),
+          expect.objectContaining({ grossAmount: '1000.0000', bonusAmountRequested: '400.0000' }),
         ),
+      );
+    });
+
+    it('sends a comma-decimal amount in the form the server accepts', async () => {
+      // A Russian or Armenian decimal pad types a comma. The screen accepts
+      // it; the API's @IsNumberString does not — so the screen must not pass
+      // the raw text through.
+      (walletApi.getMyWallet as jest.Mock).mockResolvedValue({ availableBonus: '5000' });
+      (purchaseIntentApi.create as jest.Mock).mockResolvedValue({ id: 'pi-1' });
+      const { findByText } = renderScreen();
+      await findByText('purchaseIntent.grossAmount');
+      const [grossField, bonusField] = screen.getAllByPlaceholderText('0');
+      fireEvent.changeText(grossField!, '1 500,5');
+      fireEvent.changeText(bonusField!, '10,25');
+      fireEvent.press(screen.getByText('purchaseIntent.submit'));
+      await waitFor(() =>
+        expect(purchaseIntentApi.create).toHaveBeenCalledWith(
+          expect.objectContaining({ grossAmount: '1500.5000', bonusAmountRequested: '10.2500' }),
+        ),
+      );
+      expect(purchaseIntentApi.quote).toHaveBeenCalledWith(
+        expect.objectContaining({ grossAmount: '1500.5000', bonusAmountRequested: '10.2500' }),
       );
     });
   });
@@ -310,7 +332,11 @@ describe('CreatePurchaseIntentScreen', () => {
       fireEvent.press(screen.getByText('purchaseIntent.submit'));
       await waitFor(() =>
         expect(purchaseIntentApi.create).toHaveBeenCalledWith(
-          expect.objectContaining({ grossAmount: '50000', bonusAmountRequested: '5000', prepaidAmountApplied: '45000' }),
+          expect.objectContaining({
+            grossAmount: '50000.0000',
+            bonusAmountRequested: '5000.0000',
+            prepaidAmountApplied: '45000.0000',
+          }),
         ),
       );
     });
@@ -334,7 +360,7 @@ describe('CreatePurchaseIntentScreen', () => {
       await waitFor(() =>
         expect(partnerCheckoutApi.claim).toHaveBeenCalledWith(
           'tok_abcdefghijklmnop',
-          expect.objectContaining({ bonusAmountRequested: '5000' }),
+          expect.objectContaining({ bonusAmountRequested: '5000.0000' }),
         ),
       );
       expect(purchaseIntentApi.create).not.toHaveBeenCalled();

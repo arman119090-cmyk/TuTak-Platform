@@ -151,6 +151,41 @@ describe('LocationsPage', () => {
     );
   });
 
+  it('accepts a decimal comma and a coordinate pair pasted from a map', async () => {
+    (partnerApi.listBranches as jest.Mock).mockResolvedValue([]);
+    (partnerApi.createBranch as jest.Mock).mockResolvedValue({});
+    useAuthStore.setState({ user: buildUser() });
+    renderPage();
+
+    await waitForLoaded();
+    fireEvent.click(screen.getByText('Add branch'));
+    fireEvent.change(screen.getByPlaceholderText('Downtown'), { target: { value: 'Downtown' } });
+    fireEvent.change(screen.getByPlaceholderText('1 Republic Square'), {
+      target: { value: '1 Republic Square' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Yerevan'), { target: { value: 'Yerevan' } });
+
+    // Right-click → copy in Google Maps gives both numbers at once.
+    fireEvent.change(screen.getByPlaceholderText('40.1772'), {
+      target: { value: '40.177200, 44.512600' },
+    });
+    expect((screen.getByPlaceholderText('44.5126') as HTMLInputElement).value).toBe('44.512600');
+
+    // A Russian or Armenian keyboard writes the decimal with a comma.
+    fireEvent.change(screen.getByPlaceholderText('40.1772'), { target: { value: '40,1772' } });
+    expect((screen.getByPlaceholderText('44.5126') as HTMLInputElement).value).toBe('44.512600');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Save'));
+    });
+    await waitFor(() =>
+      expect(partnerApi.createBranch).toHaveBeenCalledWith(
+        'partner-1',
+        expect.objectContaining({ latitude: 40.1772, longitude: 44.5126 }),
+      ),
+    );
+  });
+
   it('blocks saving a new location with missing or out-of-range coordinates', async () => {
     (partnerApi.listBranches as jest.Mock).mockResolvedValue([]);
     useAuthStore.setState({ user: buildUser() });

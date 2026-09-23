@@ -26,6 +26,7 @@ import { refundRequestApi } from '@/lib/api/refundRequestApi';
 import { describeApiFailure, type ApiFailure } from '@/lib/apiError';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { normalizeDecimal } from '@/lib/decimal';
 
 const num = (v: string | number | null | undefined) =>
   Number(v ?? 0)
@@ -148,7 +149,9 @@ export default function RefundsPage() {
   const create = useMutation({
     mutationFn: ({ purchaseIntentId }: { purchaseIntentId: string }) =>
       refundRequestApi.create(purchaseIntentId, {
-        amount: amount.trim() ? amount.trim() : undefined,
+        // "1500,50" from a Russian or Armenian keyboard reaches the API as
+        // "1500.50"; the request DTO accepts only a dot.
+        amount: amount.trim() ? (normalizeDecimal(amount) ?? amount.trim()) : undefined,
         reason: reason.trim(),
       }),
     onMutate: () => setCreateFailure(null),

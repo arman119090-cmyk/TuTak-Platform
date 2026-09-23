@@ -47,6 +47,20 @@ import {
  * is used only as an instant placeholder while that request is in flight,
  * never as the thing actually shown once it resolves.
  */
+/**
+ * What the customer typed, in the form the API validates: a dot, no spaces,
+ * four decimals. `parseMoney` accepts "1500,5" — the comma an Armenian or
+ * Russian keyboard puts on the decimal pad — and the button is on for it, but
+ * the server's `@IsNumberString` refuses a comma, so the raw text reached the
+ * API and came back as an English validation message. Blank means "not
+ * used", which is `undefined`, never zero.
+ */
+function toApiAmount(input: string): string | undefined {
+  if (input.trim() === '') return undefined;
+  const value = parseMoney(input);
+  return value === null ? input : moneyToString(value);
+}
+
 export function CreatePurchaseIntentScreen() {
   const { t } = useTranslation();
   const { color, space, text } = useTheme();
@@ -105,15 +119,15 @@ export function CreatePurchaseIntentScreen() {
     mutationFn: () =>
       checkout
         ? partnerCheckoutApi.claim(checkout.token, {
-            bonusAmountRequested: bonusAmount || undefined,
-            prepaidAmountApplied: prepaidAmount || undefined,
+            bonusAmountRequested: toApiAmount(bonusAmount),
+            prepaidAmountApplied: toApiAmount(prepaidAmount),
           })
         : purchaseIntentApi.create({
             partnerId,
             partnerBranchId,
-            grossAmount,
-            bonusAmountRequested: bonusAmount || undefined,
-            prepaidAmountApplied: prepaidAmount || undefined,
+            grossAmount: toApiAmount(grossAmount) ?? grossAmount,
+            bonusAmountRequested: toApiAmount(bonusAmount),
+            prepaidAmountApplied: toApiAmount(prepaidAmount),
           }),
     onSuccess: (intent) => {
       navigation.replace('PurchaseIntentStatus', { intent });
@@ -191,9 +205,9 @@ export function CreatePurchaseIntentScreen() {
       purchaseIntentApi.quote({
         partnerId,
         partnerBranchId,
-        grossAmount,
-        bonusAmountRequested: bonusAmount || undefined,
-        prepaidAmountApplied: prepaidAmount || undefined,
+        grossAmount: toApiAmount(grossAmount) ?? grossAmount,
+        bonusAmountRequested: toApiAmount(bonusAmount),
+        prepaidAmountApplied: toApiAmount(prepaidAmount),
       }),
     enabled: canSubmit,
     staleTime: 10_000,

@@ -83,9 +83,36 @@ function Header() {
 const EMPTY_FORM = { name: '', address: '', city: '', latitude: '', longitude: '' };
 type BranchForm = typeof EMPTY_FORM;
 
+/**
+ * A coordinate as typed. A decimal comma — "40,1772" — is how a Russian or
+ * Armenian keyboard writes it, and `Number("40,1772")` is `NaN`: the form
+ * silently refused a correct position with the Save button off and nothing
+ * saying why.
+ */
+function coordinate(input: string): number {
+  const trimmed = input.trim();
+  return trimmed === '' ? Number.NaN : Number(trimmed.replace(',', '.'));
+}
+
+/**
+ * "40.177200, 44.512600" — what Google Maps copies when you right-click a
+ * place — pasted into either box fills both, instead of making one of them
+ * invalid.
+ */
+// Both halves must carry a dot, or "40,1772" — one coordinate with a decimal
+// comma — would be read as the pair 40 / 1772.
+const PAIR = /^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/;
+function coordinatePatch(
+  field: 'latitude' | 'longitude',
+  value: string,
+): Partial<BranchForm> {
+  const pair = PAIR.exec(value);
+  return pair ? { latitude: pair[1]!, longitude: pair[2]! } : { [field]: value };
+}
+
 function isValidForm(form: BranchForm): boolean {
-  const lat = Number(form.latitude);
-  const lng = Number(form.longitude);
+  const lat = coordinate(form.latitude);
+  const lng = coordinate(form.longitude);
   return (
     form.name.trim().length > 0 &&
     form.address.trim().length > 0 &&
@@ -106,8 +133,8 @@ function toBranchInput(form: BranchForm) {
     name: form.name.trim(),
     address: form.address.trim(),
     city: form.city.trim(),
-    latitude: Number(form.latitude),
-    longitude: Number(form.longitude),
+    latitude: coordinate(form.latitude),
+    longitude: coordinate(form.longitude),
   };
 }
 
@@ -148,7 +175,7 @@ function BranchForm({
       <Field label={t('partnerPanel.branches.latitude')}>
         <Input
           value={form.latitude}
-          onChange={(e) => onChange({ latitude: e.target.value })}
+          onChange={(e) => onChange(coordinatePatch('latitude', e.target.value))}
           inputMode="decimal"
           placeholder="40.1772"
         />
@@ -156,7 +183,7 @@ function BranchForm({
       <Field label={t('partnerPanel.branches.longitude')}>
         <Input
           value={form.longitude}
-          onChange={(e) => onChange({ longitude: e.target.value })}
+          onChange={(e) => onChange(coordinatePatch('longitude', e.target.value))}
           inputMode="decimal"
           placeholder="44.5126"
         />

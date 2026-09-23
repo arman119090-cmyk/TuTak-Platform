@@ -7,8 +7,8 @@ import type { AxiosError } from 'axios';
 import { partnerApi } from '@/lib/api/partnerApi';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { localDay } from '@/lib/dates';
 
-const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
 const statusOf = (error: unknown): number | undefined =>
   (error as AxiosError | undefined)?.response?.status;
@@ -132,14 +132,14 @@ export function EmployeeCard({ partnerId, code }: { partnerId: string; code: str
                     <span className="block text-[12px] text-faint">{a.branchAddress}</span>
                   </Td>
                   <Td className="text-muted">{a.role.replace(/_/g, ' ').toLowerCase()}</Td>
-                  <Td className="tabular text-muted">{day(a.assignedAt)}</Td>
+                  <Td className="tabular text-muted">{localDay(a.assignedAt)}</Td>
                   <Td>
                     {a.isActive ? (
                       <Badge tone="available">{t('partnerPanel.employees.workingHere')}</Badge>
                     ) : (
                       <Badge tone="neutral">
                         {a.deactivatedAt
-                          ? t('partnerPanel.employees.endedOn', { date: day(a.deactivatedAt) })
+                          ? t('partnerPanel.employees.endedOn', { date: localDay(a.deactivatedAt) })
                           : t('partnerPanel.employees.ended')}
                       </Badge>
                     )}

@@ -14,8 +14,9 @@ import type { AxiosError } from 'axios';
 import { partnerApi } from '@/lib/api/partnerApi';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { localDay } from '@/lib/dates';
+import { normalizeArmenianPhone } from '@tutak/shared-types';
 
-const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
 const STATUS_TONE: Record<PartnerStaffInvitationStatusDto, 'pending' | 'available' | 'neutral'> = {
   [PartnerStaffInvitationStatusDto.PENDING]: 'pending',
@@ -58,6 +59,7 @@ export function InvitationsCard({
   const [phone, setPhone] = useState('+374');
   const [role, setRole] = useState('PARTNER_STAFF');
   const [branchId, setBranchId] = useState('');
+  const normalizedPhone = normalizeArmenianPhone(phone);
 
   const query = useQuery({
     queryKey: ['partner-invitations', partnerId],
@@ -71,7 +73,7 @@ export function InvitationsCard({
   const invite = useMutation({
     mutationFn: () =>
       partnerApi.invite(partnerId, {
-        phone: phone.trim(),
+        phone: normalizedPhone ?? phone.trim(),
         role,
         branchIds: branchId ? [branchId] : [],
       }),
@@ -94,7 +96,7 @@ export function InvitationsCard({
 
   const state = dataStateOf(query);
   const invitations: PartnerStaffInvitationDto[] = query.data ?? [];
-  const canInvite = /^\+374\d{8}$/.test(phone.trim());
+  const canInvite = normalizedPhone !== null;
 
   return (
     <Surface>
@@ -132,6 +134,14 @@ export function InvitationsCard({
         </Button>
       </div>
 
+      {/* Only once something beyond the prefix has been typed: a form that
+          opens already scolding is noise, but a disabled button with no
+          reason given left owners guessing. */}
+      {!canInvite && phone.replace(/\D/g, '').length > 3 ? (
+        <p className="mt-2 text-[12px] text-danger-text">
+          {t('partnerPanel.invitations.phoneInvalid')}
+        </p>
+      ) : null}
       <p className="mt-3 text-[12px] text-muted">{t('partnerPanel.invitations.secretNote')}</p>
       {invite.isError ? (
         <p role="alert" className="mt-2 text-[13px] text-danger-text">
@@ -184,7 +194,7 @@ export function InvitationsCard({
                           : 'partnerPanel.invitations.roleStaff',
                       )}
                     </Td>
-                    <Td className="tabular text-muted">{day(invitation.createdAt)}</Td>
+                    <Td className="tabular text-muted">{localDay(invitation.createdAt)}</Td>
                     <Td>
                       <Badge tone={STATUS_TONE[invitation.status]}>
                         {t(`partnerPanel.invitations.status${invitation.status}`)}
@@ -192,7 +202,7 @@ export function InvitationsCard({
                       {invitation.status === PartnerStaffInvitationStatusDto.PENDING ? (
                         <span className="block text-[12px] text-faint">
                           {t('partnerPanel.invitations.until', {
-                            date: day(invitation.expiresAt),
+                            date: localDay(invitation.expiresAt),
                           })}
                         </span>
                       ) : null}

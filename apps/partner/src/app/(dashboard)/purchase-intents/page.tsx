@@ -17,6 +17,7 @@ import { purchaseIntentApi } from '@/lib/api/purchaseIntentApi';
 import { describeApiFailure, type ApiFailure } from '@/lib/apiError';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { decimalEquals, multiplyExact, normalizeDecimal } from '@/lib/decimal';
 
 const num = (v: string | number | undefined) =>
   Number(v ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/,/g, ' ');
@@ -95,8 +96,10 @@ function LineItem({
   // written here, so the financial enum stays the only identifier and the
   // unit reads in the panel's language like everything around it.
   const unit = intent.quantityUnit ? t(unitLabelKey(intent.quantityUnit)) : '';
-  const product = Number(echo.quantity || 0) * Number(echo.unitPrice || 0);
-  const matches = product === Number(intent.grossAmount);
+  // Exact, like the server's `Decimal` check it mirrors: in floating point
+  // 33.3 × 480 is 15983.999999999998 and a correct sale was drawn in red.
+  const product = multiplyExact(echo.quantity || '0', echo.unitPrice || '0');
+  const matches = product !== null && decimalEquals(product, intent.grossAmount);
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-muted p-3">
@@ -135,7 +138,7 @@ function LineItem({
               : 'tabular font-semibold text-danger-text'
           }
         >
-          {num(product)} ֏
+          {product === null ? '—' : num(product)} ֏
         </span>
         {!matches && (
           <span className="text-[12px] text-danger-text">
@@ -251,9 +254,11 @@ function IntentRow({
 
   const lineItem: ApprovePurchaseIntentRequestDto = perUnit
     ? {
-        quantity: echo.quantity,
+        // A comma typed on a Russian or Armenian keyboard is the decimal
+        // separator; the API's number validation only knows a dot.
+        quantity: normalizeDecimal(echo.quantity) ?? echo.quantity,
         quantityUnit: intent.quantityUnit ?? undefined,
-        unitPrice: echo.unitPrice,
+        unitPrice: normalizeDecimal(echo.unitPrice) ?? echo.unitPrice,
       }
     : {};
 

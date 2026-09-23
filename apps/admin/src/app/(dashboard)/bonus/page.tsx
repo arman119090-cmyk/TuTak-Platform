@@ -17,7 +17,13 @@ export default function BonusAdjustmentPage() {
     setSubmitting(true);
     setStatus(null);
     try {
-      await walletApi.manualAdjust(userId, amount, direction, reason);
+      // "150,5" → "150.5": the API validates a dot decimal only.
+      await walletApi.manualAdjust(
+        userId,
+        amount.trim().replace(/\s+/g, '').replace(',', '.'),
+        direction,
+        reason,
+      );
       setStatus({ ok: true, message: 'Adjustment applied and written to the audit trail.' });
       setAmount('');
       setReason('');

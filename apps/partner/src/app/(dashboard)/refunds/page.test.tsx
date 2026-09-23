@@ -238,6 +238,25 @@ describe('RefundsPage', () => {
     );
   });
 
+  it('sends a comma-decimal refund amount with a dot', async () => {
+    useAuthStore.setState({ user: buildUser(Role.PARTNER_STAFF) });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ask for a refund/i }));
+    fireEvent.change(screen.getByLabelText(/amount to return/i), { target: { value: '1500,50' } });
+    fireEvent.change(screen.getByLabelText(/reason for the refund/i), {
+      target: { value: 'Wrong size' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send for a decision/i }));
+
+    await waitFor(() =>
+      expect(refundRequestApi.create).toHaveBeenCalledWith(
+        'ffffffff-1111-2222-3333-444455556666',
+        { amount: '1500.50', reason: 'Wrong size' },
+      ),
+    );
+  });
+
   it('does not offer a second request on a sale that already has one waiting', async () => {
     (refundRequestApi.list as jest.Mock).mockResolvedValue([
       requestFixture({ purchaseIntentId: 'ffffffff-1111-2222-3333-444455556666' }),

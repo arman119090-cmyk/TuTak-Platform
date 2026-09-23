@@ -22,7 +22,8 @@
     "offlineBody": "Check your connection — data will refresh by itself.",
     "optional": "optional",
     "today": "Today",
-    "yesterday": "Yesterday"
+    "yesterday": "Yesterday",
+    "close": "Close"
   },
   "auth": {
     "tagline": "More possibilities, closer",
@@ -524,7 +525,8 @@
     "paidViaTutak": "Paid through TuTak — nothing was due at the till",
     "tillAmount": "Amount from the till",
     "tillAmountHint": "The business entered this amount. You choose only how to pay it.",
-    "claimFailed": "Could not take this purchase"
+    "claimFailed": "Could not take this purchase",
+    "awaitingApproval": "Waiting for the business to agree the amount"
   },
   "psp": {
     "readyToPay": "Pay for this purchase inside TuTak.",
@@ -556,7 +558,8 @@
     "beginRefused": "TuTak did not start the payment. The state has been re-checked; the reason is shown above.",
     "unresolved": "The provider did not answer in time. We are checking whether your payment went through.",
     "unresolvedHint": "Do not pay another way for this purchase. If the money moved, it will be confirmed; if it did not, staff will release the purchase.",
-    "beginUnknownServer": "TuTak answered with an error, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms."
+    "beginUnknownServer": "TuTak answered with an error, so we do not know whether the payment was opened. Checking now — nothing is charged until the provider confirms.",
+    "title": "Payment"
   },
   "profile": {
     "sectionTitle": "Photo",
@@ -1019,7 +1022,8 @@
       "statusPENDING": "Waiting",
       "statusACCEPTED": "Accepted",
       "statusREVOKED": "Cancelled",
-      "statusEXPIRED": "Expired"
+      "statusEXPIRED": "Expired",
+      "phoneInvalid": "An Armenian mobile number: +374 and 8 digits, e.g. +374 91 234567."
     },
     "refused": {
       "title": "This is not yours to see",
@@ -1043,7 +1047,15 @@
       "notAPartner": "This account is not linked to a partner business.",
       "wrongCredentials": "Incorrect phone number or password.",
       "throttled": "Too many attempts. Please wait a minute and try again.",
-      "unreachable": "Cannot reach the API. This is a deployment configuration issue, not a password error."
+      "unreachable": "Cannot reach the API. This is a deployment configuration issue, not a password error.",
+      "phoneInvalid": "Enter an Armenian mobile number: +374 and 8 digits.",
+      "inviteTitle": "Join a business",
+      "inviteHint": "If a business invited you to work with it, you received an SMS with a code. Paste the whole code here.",
+      "inviteCode": "Invitation code",
+      "inviteAccept": "Accept invitation",
+      "inviteBack": "Back to sign-in",
+      "inviteInvalid": "This invitation is not valid. It may have expired, been cancelled or already used, or it was sent to a different number. Ask the owner to send a new one.",
+      "inviteAcceptedSignInAgain": "The invitation was accepted. Sign in again to open the panel."
     },
     "overview": {
       "title": "Overview",

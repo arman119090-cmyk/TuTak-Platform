@@ -6,6 +6,7 @@ import type { PartnerOfferingDto } from '@tutak/shared-types';
 import { Button, Field, PageHeader, Surface, Table, Td, Textarea, Th, Tr, Input } from '@tutak/design/web';
 import { getPrimaryPartnerId, isPartnerOwner, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
+import { normalizeDecimal } from '@/lib/decimal';
 
 /**
  * The partner's public profile — "о себе" plus an optional priced
@@ -269,7 +270,7 @@ function OfferingsCard({
         rows.map((r) => ({
           name: r.name.trim(),
           description: r.description.trim() || undefined,
-          price: r.price.trim(),
+          price: normalizeDecimal(r.price) ?? r.price.trim(),
         })),
       ),
     onSuccess: (saved) => {
@@ -286,7 +287,12 @@ function OfferingsCard({
   const addRow = () =>
     setRows((prev) => [...prev, { key: newDraftKey(), name: '', description: '', price: '' }]);
 
-  const priceValid = (value: string) => /^\d{1,14}(\.\d{1,4})?$/.test(value) && Number(value) > 0;
+  // A decimal comma ("1500,50") is a valid price typed on a Russian or
+  // Armenian keyboard; it is checked, and sent, with a dot.
+  const priceValid = (typed: string) => {
+    const value = normalizeDecimal(typed) ?? '';
+    return /^\d{1,14}(\.\d{1,4})?$/.test(value) && Number(value) > 0;
+  };
   const rowsValid = rows.every((r) => r.name.trim().length > 0 && priceValid(r.price));
 
   return (

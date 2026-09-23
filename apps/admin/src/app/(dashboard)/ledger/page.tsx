@@ -59,7 +59,11 @@ export default function LedgerPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
-  const [settledOn, setSettledOn] = useState(() => new Date().toISOString().slice(0, 10));
+  // Today on this computer's calendar. The UTC date is yesterday in Yerevan
+  // until 04:00, and a remittance recorded then defaulted to the wrong day.
+  const [settledOn, setSettledOn] = useState(() =>
+    new Intl.DateTimeFormat('en-CA').format(new Date()),
+  );
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -152,7 +156,10 @@ export default function LedgerPage() {
             <Field label="Amount">
               <Input
                 value={amount}
-                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                // A comma is the decimal separator on a Russian or Armenian
+                // keyboard. Stripping it with everything else turned
+                // "1500,50" into 150050 — a remittance a hundred times larger.
+                onChange={(e) => setAmount(e.target.value.replace(',', '.').replace(/[^\d.]/g, ''))}
                 placeholder="0"
                 inputMode="decimal"
               />

@@ -1,5 +1,6 @@
 import { handleCallback } from "@/lib/payments/service";
 import { rateLimit } from "@/lib/security/rate-limit";
+import { ipFromHeaders } from "@/lib/security/request";
 
 // Server-to-server payment notifications. No cookies, no CSRF token: the
 // request is authenticated by the provider's signature (verified in the
@@ -8,7 +9,7 @@ import { rateLimit } from "@/lib/security/rate-limit";
 export async function POST(request: Request, { params }: { params: Promise<{ adapter: string }> }) {
   const { adapter } = await params;
   if (!/^[a-z]{2,20}$/.test(adapter)) return new Response("Not found", { status: 404 });
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = ipFromHeaders(request.headers);
   const limit = await rateLimit("webhook", `${adapter}:${ip}`);
   if (!limit.ok) return new Response("Too many requests", { status: 429, headers: { "retry-after": String(limit.retryAfterSec) } });
   const { response, outcome } = await handleCallback(adapter, request);

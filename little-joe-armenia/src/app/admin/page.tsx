@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { requireAdmin, canAccess } from "@/lib/admin/auth";
 import { amd, dt, ORDER_STATUS_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/admin/format";
-import { lowStock, productNames, REVENUE_STATUSES, sweepReservations } from "@/lib/admin/queries";
+import { daysAgo, lowStock, productNames, REVENUE_STATUSES, sweepReservations } from "@/lib/admin/queries";
 import { Badge, Card, Empty, PageHeader, Stat } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Обзор" };
@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   if (!canAccess(admin.role, "orders")) return <ContentDashboard />;
 
   await sweepReservations();
-  const since = new Date(Date.now() - 30 * 24 * 3600_000);
+  const since = daysAgo(30);
   const revenueWhere = { status: { in: REVENUE_STATUSES } };
 
   const [all, last30, ordersTotal, orders30, popular, low, latest] = await Promise.all([

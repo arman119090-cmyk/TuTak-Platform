@@ -49,3 +49,8 @@ export async function productNames(ids: string[]): Promise<Map<string, string>> 
   }
   return out;
 }
+
+/** Start of the rolling window `days` back from now. */
+export function daysAgo(days: number): Date {
+  return new Date(Date.now() - days * 24 * 3600_000);
+}

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test.describe("locale negotiation: unsupported browser language", () => {
   test.use({ locale: "de-DE" });
@@ -55,7 +55,9 @@ test.describe("storefront", () => {
     await page.getByRole("searchbox").press("Enter");
     await expect(page).toHaveURL(/q=cherry/);
     await expect(page.getByTestId("product-card")).toHaveCount(1);
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    // Crawlers load the URL fresh: check the server-rendered robots meta.
+    const html = await (await page.request.get(page.url())).text();
+    expect(html).toMatch(/<meta name="robots" content="noindex/);
 
     await page.goto("/en/shop?family=fresh");
     const count = await page.getByTestId("product-card").count();

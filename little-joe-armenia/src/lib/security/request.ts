@@ -3,14 +3,23 @@ import { headers } from "next/headers";
 import { env } from "@/lib/env";
 
 /**
- * Client IP. Render (and most proxies) append the client address to
- * X-Forwarded-For; the first entry is the original client.
+ * Client IP for rate limiting. The client can send any X-Forwarded-For it
+ * likes; only the LAST entry is appended by our own edge proxy (Render),
+ * so that is the one we trust. Taking the first entry would let an
+ * attacker rotate fake IPs and bypass every per-IP limit.
  */
-export async function clientIp(): Promise<string> {
-  const h = await headers();
+export function ipFromHeaders(h: Headers): string {
   const xff = h.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
+  if (xff) {
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) return last;
+  }
   return h.get("x-real-ip") ?? "unknown";
+}
+
+export async function clientIp(): Promise<string> {
+  return ipFromHeaders(await headers());
 }
 
 /**

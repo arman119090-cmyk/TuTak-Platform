@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { addFirstProductToCart, fillCheckout } from "./helpers";
 
 test.describe("cart and checkout", () => {

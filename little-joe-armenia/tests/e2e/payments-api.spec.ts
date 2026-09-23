@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test.describe("payment callback endpoint", () => {
   test("rejects unsigned and unknown callbacks", async ({ request }) => {

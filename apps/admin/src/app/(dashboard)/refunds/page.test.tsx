@@ -75,6 +75,23 @@ describe('RefundsPage', () => {
     mockedFinance.searchPayments.mockResolvedValue([payment]);
   });
 
+  it('reads a decimal comma in a partial refund as the decimal point', async () => {
+    renderPage();
+    await openRefundForm();
+    const amount = screen.getByPlaceholderText('1000.00') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '150,50' } });
+    // Not 15050 — more than the payment itself.
+    expect(amount.value).toBe('150.50');
+  });
+
+  it('says the payments could not be loaded instead of "No payments"', async () => {
+    mockedFinance.searchPayments.mockRejectedValue(new Error('500'));
+    renderPage();
+
+    expect(await screen.findByText('Could not load payments')).toBeTruthy();
+    expect(screen.queryByText('No payments')).toBeNull();
+  });
+
   it('retries a timed-out refund with the key the first attempt used', async () => {
     mockedFinance.refund
       .mockRejectedValueOnce(new Error('timeout of 15000ms exceeded'))

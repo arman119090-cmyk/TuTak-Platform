@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, EmptyState, PageHeader, Surface } from '@tutak/design/web';
 import { mediaApi, type PendingMediaRow } from '@/lib/api/mediaApi';
+import { LoadFailed } from '@/components/LoadFailed';
 
 /**
  * The brand-media approval queue — the platform half of
@@ -29,7 +30,7 @@ import { mediaApi, type PendingMediaRow } from '@/lib/api/mediaApi';
  * heavier action — revocation — and it lives on the partner's own record.
  */
 export default function MediaQueuePage() {
-  const { data, isLoading } = useQuery({ queryKey: ['media-pending'], queryFn: mediaApi.pending });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['media-pending'], queryFn: mediaApi.pending });
 
   return (
     <>
@@ -41,6 +42,10 @@ export default function MediaQueuePage() {
       {isLoading ? (
         <Surface>
           <p className="text-[13px] text-muted">Loading…</p>
+        </Surface>
+      ) : isError ? (
+        <Surface>
+          <LoadFailed what="the review queue" onRetry={() => refetch()} />
         </Surface>
       ) : !data || data.length === 0 ? (
         <Surface>

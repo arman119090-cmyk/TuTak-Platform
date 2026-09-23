@@ -20,6 +20,7 @@ import {
 import { settlementAdminApi } from '@/lib/api/financeApi';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { LoadFailed } from '@/components/LoadFailed';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -131,7 +132,12 @@ export default function AdminSettlementsPage() {
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
 
-  const { data: settlements = [], isLoading } = useQuery({
+  const {
+    data: settlements = [],
+    isLoading,
+    isError: settlementsFailed,
+    refetch: refetchSettlements,
+  } = useQuery({
     queryKey: ['admin-settlements'],
     queryFn: () => settlementAdminApi.list(),
   });
@@ -329,7 +335,9 @@ export default function AdminSettlementsPage() {
         ) : null}
       </div>
 
-      {isLoading ? null : settlements.length === 0 ? (
+      {settlementsFailed ? (
+        <LoadFailed what="settlements" onRetry={() => refetchSettlements()} />
+      ) : isLoading ? null : settlements.length === 0 ? (
         <EmptyState
           title="No settlements"
           message="Nothing has been drafted for any partner yet."

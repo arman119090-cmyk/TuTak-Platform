@@ -17,6 +17,7 @@ import {
 } from '@tutak/design/web';
 import { financeApi } from '@/lib/api/financeApi';
 import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
+import { LoadFailed } from '@/components/LoadFailed';
 
 /**
  * `balance` is stored DEBIT-positive / CREDIT-negative, not normalized per
@@ -71,7 +72,11 @@ export default function LedgerPage() {
     queryKey: ['acquirer-outstanding'],
     queryFn: financeApi.outstandingReceivable,
   });
-  const { data: settlements } = useQuery({
+  const {
+    data: settlements,
+    isError: settlementsFailed,
+    refetch: refetchSettlements,
+  } = useQuery({
     queryKey: ['acquirer-settlements'],
     queryFn: financeApi.acquirerSettlements,
   });
@@ -105,7 +110,11 @@ export default function LedgerPage() {
     },
   });
 
-  const { data: accounts } = useQuery({
+  const {
+    data: accounts,
+    isError: accountsFailed,
+    refetch: refetchAccounts,
+  } = useQuery({
     queryKey: ['ledger-accounts'],
     queryFn: financeApi.ledgerAccounts,
   });
@@ -191,6 +200,11 @@ export default function LedgerPage() {
         </div>
         {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
 
+        {settlementsFailed && (
+          <div className="mt-5">
+            <LoadFailed what="recorded settlements" onRetry={() => refetchSettlements()} />
+          </div>
+        )}
         {settlements && settlements.length > 0 && (
           <div className="mt-5">
             <Table>
@@ -217,7 +231,11 @@ export default function LedgerPage() {
         )}
       </Surface>
 
-      {rows.length === 0 ? (
+      {accountsFailed ? (
+        <LoadFailed what="ledger accounts" onRetry={() => refetchAccounts()} />
+      ) : accounts === undefined ? (
+        <p className="text-[13px] text-muted">Loading accounts…</p>
+      ) : rows.length === 0 ? (
         <EmptyState
           title="No accounts yet"
           message="Ledger accounts are created on demand, the first time money moves through one."

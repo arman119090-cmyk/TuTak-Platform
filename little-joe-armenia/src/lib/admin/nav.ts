@@ -7,6 +7,7 @@ const ITEMS: { href: string; label: string; area: Area }[] = [
   { href: "/admin/customers", label: "Покупатели", area: "customers" },
   { href: "/admin/products", label: "Товары", area: "products" },
   { href: "/admin/photos", label: "Фото товаров", area: "products" },
+  { href: "/admin/prices", label: "Цены и остатки", area: "products" },
   { href: "/admin/collections", label: "Коллекции", area: "collections" },
   { href: "/admin/scent", label: "Семейства и теги", area: "scent" },
   { href: "/admin/promotions", label: "Промокоды", area: "promotions" },

@@ -105,3 +105,23 @@ test.describe("admin photo manager", () => {
     await expect(menu).not.toHaveAttribute("open", "");
   });
 });
+
+test.describe("admin prices and launch checklist", () => {
+  test("bulk price for a line clears the demo label on the storefront", async ({ page, isMobile }) => {
+    // Each project uses its own line: the two projects share one database.
+    const line = isMobile ? "Tumble Fresh" : "Little Joe Scented Card";
+    const slug = isMobile ? "tumble-fresh-lavender" : "scented-card-lavender";
+    const price = isMobile ? "3700" : "1600";
+    await login(page);
+    await expect(page.getByRole("heading", { name: "Готовность к запуску" })).toBeVisible();
+    await page.goto("/admin/prices");
+    const card = page.locator("section, div.adm-card").filter({ has: page.getByText(line, { exact: true }) }).last();
+    await card.getByLabel("Цена, ֏").fill(price);
+    await card.getByLabel("Остаток, шт.").fill("12");
+    await card.getByRole("button", { name: "Применить" }).click();
+    await expect(card.getByText(/Готово: цена/)).toBeVisible();
+    await page.goto(`/en/p/${slug}`);
+    await expect(page.getByText("Demo price")).toHaveCount(0);
+    await expect(page.locator("main")).toContainText(Number(price).toLocaleString("en-US"));
+  });
+});

@@ -5,6 +5,8 @@ import { requireAdmin, canAccess } from "@/lib/admin/auth";
 import { amd, dt, ORDER_STATUS_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/admin/format";
 import { daysAgo, lowStock, productNames, REVENUE_STATUSES, sweepReservations } from "@/lib/admin/queries";
 import { Badge, Card, Empty, PageHeader, Stat } from "@/components/admin/ui";
+import { env } from "@/lib/env";
+import { getSetting } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Обзор" };
 
@@ -45,6 +47,7 @@ export default async function DashboardPage() {
   return (
     <>
       <PageHeader title="Обзор" subtitle="Выручка — заказы в статусах Оплачен, Подтверждён, Сборка, Передан в доставку, Доставлен." />
+      <LaunchChecklist />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Выручка за 30 дней" value={amd(revenue30)} hint={`${last30._count} заказ(ов)`} />
         <Stat label="Выручка за всё время" value={amd(revenueAll)} hint={`${all._count} заказ(ов)`} />
@@ -193,5 +196,58 @@ async function ContentDashboard() {
         </Link>
       </div>
     </>
+  );
+}
+
+/**
+ * What is still missing before the shop can trade for real. Each line links
+ * to the place where it is fixed; the site mode itself is an environment
+ * setting (DEMO_MODE) switched by the developer once everything is green.
+ */
+const PAY_LABEL: Record<string, string> = { CASH_ON_DELIVERY: "наличными при получении", IDRAM: "Idram", TELCELL: "Telcell", BANK_CARD: "банковская карта" };
+
+async function LaunchChecklist() {
+  const e = env();
+  const [demoPrices, contacts, business, delivery, payments] = await Promise.all([
+    db.variant.count({ where: { priceIsDemo: true, isActive: true, product: { status: "ACTIVE" } } }),
+    getSetting("contacts"),
+    getSetting("business"),
+    db.deliveryMethod.findMany({ where: { isActive: true }, select: { priceAmd: true } }),
+    db.paymentMethodSetting.findMany({ where: { isEnabled: true }, select: { provider: true } }),
+  ]);
+  const items: { done: boolean; title: string; hint: string; href: string }[] = [
+    { done: demoPrices === 0, title: "Настоящие цены", hint: demoPrices ? `С демо-ценой ещё ${demoPrices} товаров` : "Все цены настоящие", href: "/admin/prices" },
+    { done: Boolean(contacts.phone && contacts.email), title: "Контакты магазина", hint: "Телефон и email для покупателей", href: "/admin/settings#s-contacts" },
+    { done: Boolean(business.legalName && business.taxId), title: "Юридические данные", hint: "Название юрлица и ՀՎՀՀ — нужны в оферте и на страницах", href: "/admin/settings#s-business" },
+    { done: delivery.length > 0, title: "Доставка", hint: delivery.length ? `Включено способов: ${delivery.length}` : "Нет ни одного включённого способа", href: "/admin/settings#delivery" },
+    { done: payments.length > 0, title: "Оплата", hint: payments.length ? `Включено: ${payments.map((p) => PAY_LABEL[p.provider] ?? p.provider).join(", ")}` : "Нет ни одного способа оплаты", href: "/admin/settings#payments" },
+  ];
+  const ready = items.every((i) => i.done);
+  return (
+    <Card title="Готовность к запуску" id="launch">
+      <ul className="grid gap-2">
+        {items.map((i) => (
+          <li key={i.title} className="flex items-start gap-3">
+            <Badge tone={i.done ? "ok" : "warn"}>{i.done ? "готово" : "нужно"}</Badge>
+            <span className="min-w-0">
+              <Link href={i.href} className="font-semibold underline decoration-line-strong underline-offset-2">
+                {i.title}
+              </Link>
+              <span className="block text-sm text-muted">{i.hint}</span>
+            </span>
+          </li>
+        ))}
+        <li className="flex items-start gap-3 border-t border-line pt-3">
+          <Badge tone={e.DEMO_MODE ? "warn" : "ok"}>{e.DEMO_MODE ? "демо" : "работает"}</Badge>
+          <span className="text-sm">
+            {e.DEMO_MODE
+              ? ready
+                ? "Всё готово — можно переключать сайт в рабочий режим (убрать баннер «демо», открыть сайт для поисковиков)."
+                : "Сайт в демо-режиме: сверху баннер «демо», поисковики его не индексируют. Переключим, когда пункты выше будут готовы."
+              : "Сайт в рабочем режиме."}
+          </span>
+        </li>
+      </ul>
+    </Card>
   );
 }

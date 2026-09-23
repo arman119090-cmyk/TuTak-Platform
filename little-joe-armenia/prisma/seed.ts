@@ -326,14 +326,23 @@ const RETAILER_FOR_COLLECTION = "https://stonercarcare.com/collections/little-jo
 
 async function bootstrapAdmin() {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD;
+  const password = process.env.ADMIN_PASSWORD?.trim();
   if (!email || !password) {
     console.info("[seed] ADMIN_EMAIL / ADMIN_PASSWORD not set — no admin created.");
     return;
   }
   if (password.length < 12) throw new Error("ADMIN_PASSWORD must be at least 12 characters");
   const existing = await db.adminUser.findUnique({ where: { email } });
-  if (existing) return;
+  if (existing) {
+    // Owner locked out: set ADMIN_RESET_PASSWORD=true for ONE deploy to put
+    // ADMIN_PASSWORD back on this account, then remove the flag.
+    if (process.env.ADMIN_RESET_PASSWORD === "true") {
+      await db.adminUser.update({ where: { id: existing.id }, data: { passwordHash: await hashPassword(password), isActive: true } });
+      await db.auditLog.create({ data: { actor: "seed", action: "admin.password_reset", entity: "AdminUser", entityId: existing.id } });
+      console.info(`[seed] password of ${email} reset from ADMIN_PASSWORD — remove ADMIN_RESET_PASSWORD now`);
+    }
+    return;
+  }
   await db.adminUser.create({ data: { email, name: "Owner", role: "OWNER", passwordHash: await hashPassword(password) } });
   await db.auditLog.create({ data: { actor: "seed", action: "admin.bootstrap", entity: "AdminUser", entityId: email } });
   console.info(`[seed] admin ${email} created`);

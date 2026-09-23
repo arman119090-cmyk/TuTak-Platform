@@ -13,7 +13,8 @@ import { fail, type ActionState } from "@/lib/admin/forms";
 
 const schema = z.object({
   email: z.string().trim().toLowerCase().email().max(200),
-  password: z.string().min(1).max(200),
+  // Copying a password from a chat or notes on a phone often adds a space.
+  password: z.string().trim().min(1).max(200),
 });
 
 const GENERIC = "Неверный email или пароль";

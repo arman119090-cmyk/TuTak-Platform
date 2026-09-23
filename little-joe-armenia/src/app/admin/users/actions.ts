@@ -14,7 +14,7 @@ export async function createAdminUser(_prev: ActionState, fd: FormData): Promise
         email: z.string({ error: "Email обязателен" }).trim().toLowerCase().email("Некорректный email").max(200),
         name: z.string({ error: "Имя обязательно" }).min(1, "Имя обязательно").max(120),
         role: z.enum(["OWNER", "MANAGER", "CONTENT"]),
-        password: z.string({ error: "Пароль обязателен" }).min(12, "Пароль: минимум 12 символов").max(200),
+        password: z.string({ error: "Пароль обязателен" }).trim().min(12, "Пароль: минимум 12 символов").max(200),
       }),
       { email: s(fd, "email"), name: s(fd, "name"), role: s(fd, "role"), password: fd.get("password") },
     );

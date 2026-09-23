@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   PurchaseIntentStatus,
@@ -25,6 +26,7 @@ import { refundRequestApi } from '@/lib/api/refundRequestApi';
 import { describeApiFailure, type ApiFailure } from '@/lib/apiError';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { normalizeDecimal } from '@/lib/decimal';
 
 const num = (v: string | number | null | undefined) =>
   Number(v ?? 0)
@@ -43,10 +45,10 @@ const STATUS_TONE = {
  * engine's ledger move — whether cash was physically handed back at a till
  * is a separate fact this screen has no record of.
  */
-const STATUS_TEXT: Record<RefundRequestStatus, string> = {
-  [RefundRequestStatus.PENDING]: 'Waiting for a decision',
-  [RefundRequestStatus.APPROVED]: 'Approved — refund recorded',
-  [RefundRequestStatus.REJECTED]: 'Refused',
+const STATUS_KEY: Record<RefundRequestStatus, string> = {
+  [RefundRequestStatus.PENDING]: 'partnerPanel.refunds.outcomePending',
+  [RefundRequestStatus.APPROVED]: 'partnerPanel.refunds.outcomeApproved',
+  [RefundRequestStatus.REJECTED]: 'partnerPanel.refunds.outcomeRejected',
 };
 
 const shortId = (id: string) => id.slice(-8).toUpperCase();
@@ -61,25 +63,24 @@ const shortId = (id: string) => id.slice(-8).toUpperCase();
  * but the screen must not invite it.
  */
 function ActionFailure({ failure }: { failure: ApiFailure }) {
+  const { t } = useTranslation();
   if (failure.kind === 'state') {
     return (
       <p role="alert" className="text-[12px] text-pending-text">
-        This changed before your tap: {failure.message} The lists have been refreshed.
+        {t('partnerPanel.refunds.failureState', { message: failure.message })}
       </p>
     );
   }
   if (failure.kind === 'network') {
     return (
       <p role="alert" className="text-[12px] text-danger-text">
-        The server could not be reached, so the outcome is unknown. The lists have been
-        re-read — check the request&rsquo;s state before deciding again. Nothing you typed was
-        lost.
+        {t('partnerPanel.refunds.failureNetwork')}
       </p>
     );
   }
   return (
     <p role="alert" className="text-[12px] text-danger-text">
-      {failure.message} Nothing you typed was lost.
+      {t('partnerPanel.refunds.failureOther', { message: failure.message })}
     </p>
   );
 }
@@ -109,6 +110,7 @@ function ActionFailure({ failure }: { failure: ApiFailure }) {
  * not happen.
  */
 export default function RefundsPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
   const canDecide = isPartnerApprover(user, partnerId);
@@ -147,7 +149,9 @@ export default function RefundsPage() {
   const create = useMutation({
     mutationFn: ({ purchaseIntentId }: { purchaseIntentId: string }) =>
       refundRequestApi.create(purchaseIntentId, {
-        amount: amount.trim() ? amount.trim() : undefined,
+        // "1500,50" from a Russian or Armenian keyboard reaches the API as
+        // "1500.50"; the request DTO accepts only a dot.
+        amount: amount.trim() ? (normalizeDecimal(amount) ?? amount.trim()) : undefined,
         reason: reason.trim(),
       }),
     onMutate: () => setCreateFailure(null),
@@ -229,24 +233,26 @@ export default function RefundsPage() {
   return (
     <>
       <PageHeader
-        title="Returns"
-        description={
+        title={t('partnerPanel.refunds.title')}
+        description={t(
           canDecide
-            ? 'Refunds your staff have asked for. Nothing has moved until you approve it.'
-            : 'Ask for a refund on a completed sale. An owner or manager decides.'
-        }
+            ? 'partnerPanel.refunds.descriptionApprover'
+            : 'partnerPanel.refunds.descriptionStaff',
+        )}
       />
 
       {partnerId ? <CashToHandBack partnerId={partnerId} /> : null}
 
       <h2 className="mb-3 text-[15px] font-semibold text-ink">
-        {canDecide ? 'Waiting for your decision' : 'Waiting for a decision'}
+        {t(
+          canDecide ? 'partnerPanel.refunds.waitingYours' : 'partnerPanel.refunds.waitingSomeone',
+        )}
       </h2>
       {requestsState === 'loading' ? (
-        <LoadingNotice label="Loading refund requests…" />
+        <LoadingNotice label={t('partnerPanel.refunds.loadingRequests')} />
       ) : requestsState === 'error' ? (
         <LoadError
-          title="Refund requests could not be loaded"
+          title={t('partnerPanel.refunds.requestsLoadError')}
           onRetry={() => void requestsQuery.refetch()}
           busy={requestsQuery.isFetching}
         />
@@ -255,25 +261,25 @@ export default function RefundsPage() {
           {requestsState === 'stale' ? (
             <StaleNotice
               asOf={requestsQuery.dataUpdatedAt}
-              what="refund requests"
+              what={t('partnerPanel.refunds.requestsStaleWhat')}
               onRetry={() => void requestsQuery.refetch()}
               busy={requestsQuery.isFetching}
             />
           ) : null}
           {pending.length === 0 ? (
             <EmptyState
-              title="Nothing waiting"
-              message="A refund your staff ask for appears here until somebody decides it."
+              title={t('partnerPanel.refunds.nothingWaitingTitle')}
+              message={t('partnerPanel.refunds.nothingWaitingMessage')}
             />
           ) : (
             <Table>
               <thead>
                 <tr>
-                  <Th>Sale</Th>
-                  <Th align="right">Amount</Th>
-                  <Th>Reason</Th>
-                  <Th>Asked</Th>
-                  <Th align="right">Decision</Th>
+                  <Th>{t('partnerPanel.refunds.colSale')}</Th>
+                  <Th align="right">{t('partnerPanel.refunds.colAmount')}</Th>
+                  <Th>{t('partnerPanel.refunds.colReason')}</Th>
+                  <Th>{t('partnerPanel.refunds.colAsked')}</Th>
+                  <Th align="right">{t('partnerPanel.refunds.colDecision')}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -305,12 +311,14 @@ export default function RefundsPage() {
         </>
       )}
 
-      <h2 className="mb-3 mt-10 text-[15px] font-semibold text-ink">Completed sales</h2>
+      <h2 className="mb-3 mt-10 text-[15px] font-semibold text-ink">
+        {t('partnerPanel.refunds.completedSales')}
+      </h2>
       {purchasesState === 'loading' ? (
-        <LoadingNotice label="Loading completed sales…" />
+        <LoadingNotice label={t('partnerPanel.refunds.loadingSales')} />
       ) : purchasesState === 'error' ? (
         <LoadError
-          title="Completed sales could not be loaded"
+          title={t('partnerPanel.refunds.salesLoadError')}
           onRetry={() => void purchasesQuery.refetch()}
           busy={purchasesQuery.isFetching}
         />
@@ -319,7 +327,7 @@ export default function RefundsPage() {
           {purchasesState === 'stale' ? (
             <StaleNotice
               asOf={purchasesQuery.dataUpdatedAt}
-              what="completed sales"
+              what={t('partnerPanel.refunds.salesStaleWhat')}
               onRetry={() => void purchasesQuery.refetch()}
               busy={purchasesQuery.isFetching}
             />
@@ -327,8 +335,8 @@ export default function RefundsPage() {
           {(purchasesQuery.data ?? []).length > 0 ? (
             <div className="mb-4 max-w-[260px]">
               <Input
-                placeholder="Till code or sale id"
-                aria-label="Find a completed sale by till code or id"
+                placeholder={t('partnerPanel.refunds.salesFilterPlaceholder')}
+                aria-label={t('partnerPanel.refunds.salesFilterLabel')}
                 value={saleFilter}
                 onChange={(event) => setSaleFilter(event.target.value)}
               />
@@ -336,22 +344,26 @@ export default function RefundsPage() {
           ) : null}
           {purchases.length === 0 ? (
             <EmptyState
-              title={needle ? 'No completed sale matches' : 'No completed sales yet'}
-              message={
+              title={t(
                 needle
-                  ? 'Check the code on the receipt or the customer’s phone. Older sales may not be in this list.'
-                  : 'A sale appears here once it has been confirmed at the till.'
-              }
+                  ? 'partnerPanel.refunds.noSaleMatchesTitle'
+                  : 'partnerPanel.refunds.noSalesTitle',
+              )}
+              message={t(
+                needle
+                  ? 'partnerPanel.refunds.noSaleMatchesMessage'
+                  : 'partnerPanel.refunds.noSalesMessage',
+              )}
             />
           ) : (
             <Table>
               <thead>
                 <tr>
-                  <Th>Sale</Th>
-                  <Th>Code</Th>
-                  <Th align="right">Amount</Th>
-                  <Th align="right">Already returned</Th>
-                  <Th align="right">Return</Th>
+                  <Th>{t('partnerPanel.refunds.colSale')}</Th>
+                  <Th>{t('partnerPanel.refunds.colCode')}</Th>
+                  <Th align="right">{t('partnerPanel.refunds.colAmount')}</Th>
+                  <Th align="right">{t('partnerPanel.refunds.colAlreadyReturned')}</Th>
+                  <Th align="right">{t('partnerPanel.refunds.colReturn')}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -367,7 +379,9 @@ export default function RefundsPage() {
                     </Td>
                     <Td align="right">
                       {pendingByIntent.has(purchase.id) ? (
-                        <span className="text-[12px] text-muted">Waiting for a decision</span>
+                        <span className="text-[12px] text-muted">
+                          {t('partnerPanel.refunds.waitingSomeone')}
+                        </span>
                       ) : (
                         <Button
                           variant="secondary"
@@ -376,7 +390,11 @@ export default function RefundsPage() {
                             setRequestingFor(requestingFor === purchase.id ? null : purchase.id);
                           }}
                         >
-                          {requestingFor === purchase.id ? 'Cancel' : 'Ask for a refund'}
+                          {t(
+                            requestingFor === purchase.id
+                              ? 'partnerPanel.refunds.cancel'
+                              : 'partnerPanel.refunds.askForRefund',
+                          )}
                         </Button>
                       )}
                     </Td>
@@ -391,20 +409,21 @@ export default function RefundsPage() {
       {requestingFor ? (
         <Surface className="mt-4 max-w-[520px] p-4">
           <p className="mb-3 text-[13px] text-muted">
-            Sale <span className="font-mono">{shortId(requestingFor)}</span>. Leave the amount empty
-            to return everything that is left.
+            {t('partnerPanel.refunds.formSalePrefix')}{' '}
+            <span className="font-mono">{shortId(requestingFor)}</span>
+            {t('partnerPanel.refunds.formSaleSuffix')}
           </p>
           <div className="flex flex-col gap-3">
             <Input
               inputMode="decimal"
-              placeholder="Amount, e.g. 1500"
-              aria-label="Amount to return"
+              placeholder={t('partnerPanel.refunds.amountPlaceholder')}
+              aria-label={t('partnerPanel.refunds.amountLabel')}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
             <Input
-              placeholder="Why is it coming back?"
-              aria-label="Reason for the refund"
+              placeholder={t('partnerPanel.refunds.reasonPlaceholder')}
+              aria-label={t('partnerPanel.refunds.reasonLabel')}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />
@@ -414,7 +433,7 @@ export default function RefundsPage() {
                 disabled={reason.trim().length < 3}
                 onClick={() => create.mutate({ purchaseIntentId: requestingFor })}
               >
-                Send for a decision
+                {t('partnerPanel.refunds.sendForDecision')}
               </Button>
             </div>
             {createFailure ? <ActionFailure failure={createFailure} /> : null}
@@ -424,14 +443,16 @@ export default function RefundsPage() {
 
       {decided.length > 0 ? (
         <>
-          <h2 className="mb-3 mt-10 text-[15px] font-semibold text-ink">Already decided</h2>
+          <h2 className="mb-3 mt-10 text-[15px] font-semibold text-ink">
+            {t('partnerPanel.refunds.alreadyDecided')}
+          </h2>
           <Table>
             <thead>
               <tr>
-                <Th>Sale</Th>
-                <Th align="right">Amount</Th>
-                <Th>Reason</Th>
-                <Th>Outcome</Th>
+                <Th>{t('partnerPanel.refunds.colSale')}</Th>
+                <Th align="right">{t('partnerPanel.refunds.colAmount')}</Th>
+                <Th>{t('partnerPanel.refunds.colReason')}</Th>
+                <Th>{t('partnerPanel.refunds.colOutcome')}</Th>
               </tr>
             </thead>
             <tbody>
@@ -441,11 +462,13 @@ export default function RefundsPage() {
                     {shortId(request.purchaseIntentId)}
                   </Td>
                   <Td align="right" className="tabular">
-                    {request.amount ? `${num(request.amount)} ֏` : 'Everything left'}
+                    {request.amount
+                      ? `${num(request.amount)} ֏`
+                      : t('partnerPanel.refunds.everythingLeft')}
                   </Td>
                   <Td className="text-muted">{request.reason}</Td>
                   <Td>
-                    <Badge tone={STATUS_TONE[request.status]}>{STATUS_TEXT[request.status]}</Badge>
+                    <Badge tone={STATUS_TONE[request.status]}>{t(STATUS_KEY[request.status])}</Badge>
                     {request.decisionNote ? (
                       <span className="ml-2 text-[12px] text-muted">{request.decisionNote}</span>
                     ) : null}
@@ -485,11 +508,12 @@ function PendingRow({
   busy: boolean;
   failure: ApiFailure | null;
 }) {
+  const { t } = useTranslation();
   return (
     <Tr>
       <Td className="font-mono text-[12px] text-faint">{shortId(request.purchaseIntentId)}</Td>
       <Td align="right" className="tabular font-medium">
-        {request.amount ? `${num(request.amount)} ֏` : 'Everything left'}
+        {request.amount ? `${num(request.amount)} ֏` : t('partnerPanel.refunds.everythingLeft')}
       </Td>
       <Td className="text-muted">{request.reason}</Td>
       <Td className="text-[12px] text-muted">
@@ -497,21 +521,23 @@ function PendingRow({
       </Td>
       <Td align="right">
         {!canDecide ? (
-          <span className="text-[12px] text-muted">Waiting for an owner or manager</span>
+          <span className="text-[12px] text-muted">
+            {t('partnerPanel.refunds.waitingApprover')}
+          </span>
         ) : rejecting ? (
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center justify-end gap-2">
               <Input
-                placeholder="Why not?"
-                aria-label="Why this refund is refused"
+                placeholder={t('partnerPanel.refunds.notePlaceholder')}
+                aria-label={t('partnerPanel.refunds.noteLabel')}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
               />
               <Button variant="destructive" loading={busy} onClick={onReject}>
-                Refuse
+                {t('partnerPanel.refunds.refuse')}
               </Button>
               <Button variant="secondary" onClick={onCancelReject}>
-                Cancel
+                {t('partnerPanel.refunds.cancel')}
               </Button>
             </div>
             {failure ? <ActionFailure failure={failure} /> : null}
@@ -520,10 +546,10 @@ function PendingRow({
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center justify-end gap-2">
               <Button loading={busy} onClick={onApprove}>
-                Approve
+                {t('partnerPanel.refunds.approve')}
               </Button>
               <Button variant="secondary" onClick={onStartReject}>
-                Refuse
+                {t('partnerPanel.refunds.refuse')}
               </Button>
             </div>
             {failure ? <ActionFailure failure={failure} /> : null}
@@ -542,6 +568,7 @@ function PendingRow({
  * given.
  */
 function CashToHandBack({ partnerId }: { partnerId: string }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['pending-external-refunds', partnerId],
@@ -564,7 +591,7 @@ function CashToHandBack({ partnerId }: { partnerId: string }) {
     return (
       <div className="mb-6">
         <LoadError
-          title="Cash still to hand back could not be loaded"
+          title={t('partnerPanel.refunds.cashLoadError')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
@@ -574,19 +601,18 @@ function CashToHandBack({ partnerId }: { partnerId: string }) {
   if (rows.length === 0) return null;
   return (
     <section className="mb-8">
-      <h2 className="mb-3 text-[15px] font-semibold text-ink">Cash to hand back</h2>
-      <p className="mb-3 text-[13px] text-faint">
-        TuTak has already returned the bonus and balance parts of these refunds. The part the customer paid at
-        your till is yours to hand back — confirm here once you have.
-      </p>
+      <h2 className="mb-3 text-[15px] font-semibold text-ink">
+        {t('partnerPanel.refunds.cashTitle')}
+      </h2>
+      <p className="mb-3 text-[13px] text-faint">{t('partnerPanel.refunds.cashNote')}</p>
       <Table>
         <thead>
           <tr>
-            <Th>Sale</Th>
-            <Th align="right">Refund</Th>
-            <Th align="right">Hand back in cash</Th>
-            <Th>Reason</Th>
-            <Th align="right">Action</Th>
+            <Th>{t('partnerPanel.refunds.colSale')}</Th>
+            <Th align="right">{t('partnerPanel.refunds.colRefund')}</Th>
+            <Th align="right">{t('partnerPanel.refunds.colHandBack')}</Th>
+            <Th>{t('partnerPanel.refunds.colReason')}</Th>
+            <Th align="right">{t('partnerPanel.refunds.colAction')}</Th>
           </tr>
         </thead>
         <tbody>
@@ -603,7 +629,7 @@ function CashToHandBack({ partnerId }: { partnerId: string }) {
               <Td align="right">
                 <div className="flex flex-col items-end gap-1">
                   <Button size="sm" loading={confirm.isPending && confirm.variables === row.id} onClick={() => confirm.mutate(row.id)}>
-                    Confirm cash returned
+                    {t('partnerPanel.refunds.confirmCashReturned')}
                   </Button>
                   {failure?.id === row.id ? (
                     <span className="text-[12px] text-danger-text">{failure.failure.message}</span>

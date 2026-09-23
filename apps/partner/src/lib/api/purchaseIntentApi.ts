@@ -1,6 +1,7 @@
 import type {
   ApprovePurchaseIntentRequestDto,
   PendingExternalRefundDto,
+  PurchaseHistoryDto,
   PurchaseIntentDto,
   PurchaseIntentStatus,
   RejectPurchaseIntentRequestDto,
@@ -8,6 +9,20 @@ import type {
 import { httpClient, ApiEnvelope } from '../httpClient';
 
 export const purchaseIntentApi = {
+  /**
+   * Everything that happened to one purchase, not just who confirmed it.
+   *
+   * Separate from the settlement breakdown on purpose: this says what
+   * happened, that one says what is owed, and they are gated on different
+   * permissions because they answer different questions.
+   */
+  async history(id: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PurchaseHistoryDto>>(
+      `/purchase-intents/${id}/history`,
+    );
+    return data.data;
+  },
+
   async list(partnerId: string, status?: PurchaseIntentStatus) {
     const { data } = await httpClient.get<ApiEnvelope<PurchaseIntentDto[]>>('/purchase-intents', {
       params: { partnerId, status },

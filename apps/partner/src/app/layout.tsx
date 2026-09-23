@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import { themeInitScript, Providers, StorageNotice } from '@tutak/design/web';
+import { themeInitScript, Providers } from '@tutak/design/web';
+import { LocalisedStorageNotice } from '@/components/LocalisedStorageNotice';
+import { I18nProvider } from '@/lib/i18n/I18nProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -25,14 +27,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Providers>
-          {children}
-          {/*
-            Configured, not hard-coded: the policy exists in `public/
-            privacy.html` but is not yet served at a permanent address, and a
-            link to a page that 404s is worse than no link. When it is
-            published, set NEXT_PUBLIC_PRIVACY_URL and the link appears.
-          */}
-          <StorageNotice privacyUrl={process.env.NEXT_PUBLIC_PRIVACY_URL} />
+          <I18nProvider>
+            {children}
+            {/*
+              Inside the provider, so the notice speaks the same language as
+              the screen behind it.
+
+              Configured, not hard-coded: the policy exists in `public/
+              privacy.html` but is not yet served at a permanent address, and
+              a link to a page that 404s is worse than no link. When it is
+              published, set NEXT_PUBLIC_PRIVACY_URL and the link appears.
+            */}
+            <LocalisedStorageNotice privacyUrl={process.env.NEXT_PUBLIC_PRIVACY_URL} />
+          </I18nProvider>
         </Providers>
       </body>
     </html>

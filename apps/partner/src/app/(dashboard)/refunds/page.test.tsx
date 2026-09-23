@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 import {
   PaymentRoute,
+  PurchaseConfirmationSource,
   PurchaseIntentStatus,
   RefundRequestStatus,
   Role,
@@ -111,6 +112,12 @@ function purchaseFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIn
     merchantApprovedByUserId: 'owner-1',
     partnerBrand: { partnerId: 'partner-1', displayName: 'Verified Shop', logo: null },
     confirmedByUserId: 'owner-1',
+    confirmation: {
+      source: PurchaseConfirmationSource.STAFF,
+      employeeCode: 'EMP-001',
+      assignmentId: null,
+      role: null,
+    },
     rejectionReason: null,
     createdAt: new Date('2026-09-12T09:00:00Z').toISOString(),
     expiresAt: new Date('2026-09-12T09:03:00Z').toISOString(),
@@ -227,6 +234,25 @@ describe('RefundsPage', () => {
       expect(refundRequestApi.create).toHaveBeenCalledWith(
         'ffffffff-1111-2222-3333-444455556666',
         { amount: '2500', reason: 'Damaged on opening' },
+      ),
+    );
+  });
+
+  it('sends a comma-decimal refund amount with a dot', async () => {
+    useAuthStore.setState({ user: buildUser(Role.PARTNER_STAFF) });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ask for a refund/i }));
+    fireEvent.change(screen.getByLabelText(/amount to return/i), { target: { value: '1500,50' } });
+    fireEvent.change(screen.getByLabelText(/reason for the refund/i), {
+      target: { value: 'Wrong size' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send for a decision/i }));
+
+    await waitFor(() =>
+      expect(refundRequestApi.create).toHaveBeenCalledWith(
+        'ffffffff-1111-2222-3333-444455556666',
+        { amount: '1500.50', reason: 'Wrong size' },
       ),
     );
   });

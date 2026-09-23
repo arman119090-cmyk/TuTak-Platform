@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   PaymentRoute,
+  PurchaseConfirmationSource,
   PurchaseIntentStatus,
   TransactionStatus,
   TransactionType,
@@ -87,6 +88,12 @@ function purchase(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIntentDto
     merchantApprovedByUserId: null,
     partnerBrand: { partnerId: 'partner-1', displayName: 'New Name Café', logo: null },
     confirmedByUserId: 'staff-1',
+    confirmation: {
+      source: PurchaseConfirmationSource.STAFF,
+      employeeCode: 'EMP-001',
+      assignmentId: null,
+      role: null,
+    },
     rejectionReason: null,
     createdAt: '2026-09-18T09:58:00.000Z',
     expiresAt: '2026-09-18T10:01:00.000Z',

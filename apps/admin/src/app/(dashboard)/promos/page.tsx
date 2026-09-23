@@ -25,6 +25,7 @@ import type {
 } from '@tutak/shared-types';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { promosApi } from '@/lib/api/promosApi';
+import { LoadFailed } from '@/components/LoadFailed';
 
 /**
  * Home "Partner Spotlight" — the curated strip of partner offers on every
@@ -186,7 +187,7 @@ export function openRate(promo: Pick<PartnerPromoAdminDto, 'impressionCount' | '
 
 export default function PromosPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ['admin-promos'], queryFn: promosApi.list });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['admin-promos'], queryFn: promosApi.list });
   const { data: partners } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
 
   const [editing, setEditing] = useState<PartnerPromoAdminDto | null>(null);
@@ -409,6 +410,10 @@ export default function PromosPage() {
       {isLoading ? (
         <Surface>
           <p className="text-[13px] text-muted">Loading…</p>
+        </Surface>
+      ) : isError ? (
+        <Surface>
+          <LoadFailed what="placements" onRetry={() => refetch()} />
         </Surface>
       ) : !data || data.length === 0 ? (
         <Surface>

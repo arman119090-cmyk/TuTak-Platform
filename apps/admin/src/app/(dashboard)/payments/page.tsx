@@ -15,6 +15,7 @@ import {
   Tr,
 } from '@tutak/design/web';
 import { pspApi, treasuryApi, type UnresolvedPspAttempt } from '@/lib/api/financeApi';
+import { LoadFailed } from '@/components/LoadFailed';
 
 const num = (v: string | number | undefined) =>
   Number(v ?? 0)
@@ -140,17 +141,29 @@ function AttemptRow({ attempt }: { attempt: UnresolvedPspAttempt }) {
  * the opposite one, and it takes two of them.
  */
 export default function PaymentsPage() {
-  const { data: unresolved } = useQuery({
+  const {
+    data: unresolved,
+    isError: unresolvedFailed,
+    refetch: refetchUnresolved,
+  } = useQuery({
     queryKey: ['psp-unresolved'],
     queryFn: pspApi.unresolved,
     refetchInterval: 15_000,
   });
-  const { data: dead } = useQuery({
+  const {
+    data: dead,
+    isError: deadFailed,
+    refetch: refetchDead,
+  } = useQuery({
     queryKey: ['psp-dead-lettered'],
     queryFn: pspApi.deadLettered,
     refetchInterval: 30_000,
   });
-  const { data: position } = useQuery({
+  const {
+    data: position,
+    isError: positionFailed,
+    refetch: refetchPosition,
+  } = useQuery({
     queryKey: ['treasury-position'],
     queryFn: treasuryApi.position,
     refetchInterval: 30_000,
@@ -163,6 +176,13 @@ export default function PaymentsPage() {
         description="Provider payments that have not resolved, and what the platform can actually pay out today."
       />
 
+      {/* A failed poll says nothing about the money: "Nothing unresolved" or a
+          missing position over an error is the screen an operator trusts. */}
+      {positionFailed && !position && (
+        <div className="mb-6">
+          <LoadFailed what="the treasury position" onRetry={() => refetchPosition()} />
+        </div>
+      )}
       {position && (
         <Surface className="mb-6 grid grid-cols-2 gap-4 p-4 md:grid-cols-4">
           <Figure label="In the bank" value={`${num(position.platformBank)} ֏`} />
@@ -190,7 +210,11 @@ export default function PaymentsPage() {
         </Surface>
       )}
 
-      {unresolved && unresolved.length > 0 ? (
+      {unresolvedFailed ? (
+        <LoadFailed what="unresolved payments" onRetry={() => refetchUnresolved()} />
+      ) : unresolved === undefined ? (
+        <p className="text-[13px] text-muted">Loading payments…</p>
+      ) : unresolved.length > 0 ? (
         <Table>
           <thead>
             <Tr>
@@ -215,6 +239,11 @@ export default function PaymentsPage() {
         />
       )}
 
+      {deadFailed && (
+        <div className="mt-6">
+          <LoadFailed what="failed provider callbacks" onRetry={() => refetchDead()} />
+        </div>
+      )}
       {dead && dead.length > 0 && (
         <Surface className="mt-6 p-4">
           <div className="mb-2 text-[13px] font-semibold text-danger-text">

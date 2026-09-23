@@ -1,10 +1,11 @@
 'use client';
 
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
-import { transactionStatusLabel, transactionTypeLabel } from '@/lib/labels';
+import { transactionStatusKey, transactionTypeKey } from '@/lib/labels';
 import { dataStateOf } from '@/lib/queryState';
 import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
@@ -21,6 +22,7 @@ const STATUS_TONE = {
 } as const;
 
 export default function TransactionsPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
 
@@ -35,29 +37,29 @@ export default function TransactionsPage() {
   return (
     <>
       <PageHeader
-        title="Transactions"
-        description="Every payment made at your business, newest first."
+        title={t('partnerPanel.transactions.title')}
+        description={t('partnerPanel.transactions.description')}
       />
 
       {state === 'loading' ? (
-        <LoadingNotice label="Loading transactions…" />
+        <LoadingNotice label={t('partnerPanel.transactions.loading')} />
       ) : state === 'error' ? (
         <LoadError
-          title="Transactions could not be loaded"
+          title={t('partnerPanel.transactions.loadError')}
           onRetry={() => void query.refetch()}
           busy={query.isFetching}
         />
       ) : items.length === 0 ? (
         <EmptyState
-          title="No transactions yet"
-          message="Payments will appear here as soon as customers start paying with TuTak."
+          title={t('partnerPanel.transactions.emptyTitle')}
+          message={t('partnerPanel.transactions.emptyMessage')}
         />
       ) : (
         <>
         {state === 'stale' ? (
           <StaleNotice
             asOf={query.dataUpdatedAt}
-            what="transactions"
+            what={t('partnerPanel.transactions.staleWhat')}
             onRetry={() => void query.refetch()}
             busy={query.isFetching}
           />
@@ -65,20 +67,22 @@ export default function TransactionsPage() {
         <Table>
           <thead>
             <tr>
-              <Th>Type</Th>
-              <Th>Branch</Th>
-              <Th align="right">Amount</Th>
-              <Th align="right">Bonus applied</Th>
-              <Th align="right">Bonus earned</Th>
-              <Th>Status</Th>
-              <Th align="right">Date</Th>
+              <Th>{t('partnerPanel.transactions.colType')}</Th>
+              <Th>{t('partnerPanel.transactions.colBranch')}</Th>
+              <Th align="right">{t('partnerPanel.transactions.colAmount')}</Th>
+              <Th align="right">{t('partnerPanel.transactions.colBonusApplied')}</Th>
+              <Th align="right">{t('partnerPanel.transactions.colBonusEarned')}</Th>
+              <Th>{t('partnerPanel.transactions.colStatus')}</Th>
+              <Th align="right">{t('partnerPanel.transactions.colDate')}</Th>
             </tr>
           </thead>
           <tbody>
             {items.map((tx) => (
               <Tr key={tx.id}>
                 <Td>
-                  <span className="text-ink">{transactionTypeLabel(tx.type)}</span>
+                  <span className="text-ink">
+                    {t(transactionTypeKey(tx.type), { defaultValue: tx.type })}
+                  </span>
                 </Td>
                 {/* A dash, not an empty cell: a partner-wide QR, an EV session
                     and roaming all record no branch, and a blank here reads as
@@ -112,7 +116,7 @@ export default function TransactionsPage() {
                 </Td>
                 <Td>
                   <Badge tone={STATUS_TONE[tx.status as keyof typeof STATUS_TONE] ?? 'neutral'}>
-                    {transactionStatusLabel(tx.status)}
+                    {t(transactionStatusKey(tx.status), { defaultValue: tx.status })}
                   </Badge>
                 </Td>
                 <Td align="right" className="tabular text-[13px] text-muted">

@@ -67,6 +67,21 @@ describe('money permissions', () => {
     );
   });
 
+  /*
+   * The owner's decision of 22.09.2026, written down so it cannot drift:
+   * SETTLEMENT_READ belongs to the owner and to nobody else on the partner
+   * side. A manager runs the shift; what the business is owed is the
+   * owner's to see. Nothing above pinned this — the shared list covers
+   * SETTLEMENT_MANAGE and the rate permissions, not this read — so a later
+   * edit could have granted it without a single test noticing.
+   */
+  it.each([RoleName.PARTNER_MANAGER, RoleName.PARTNER_STAFF])(
+    'keeps the settlements read away from %s',
+    (role) => {
+      expect(ROLE_PERMISSIONS[role]).not.toContain(PermissionName.SETTLEMENT_READ);
+    },
+  );
+
   it('never gives a cashier anything beyond confirming a purchase', () => {
     const cashier = ROLE_PERMISSIONS[RoleName.PARTNER_STAFF];
     expect(cashier).toContain(PermissionName.PURCHASE_INTENT_CONFIRM);

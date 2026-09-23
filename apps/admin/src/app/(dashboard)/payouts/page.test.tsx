@@ -228,6 +228,34 @@ describe('PayoutsPage', () => {
 
   // ── Collections: the other settlement direction ──────────────────────
 
+  it('reads a decimal comma in the payout amount as the decimal point', async () => {
+    renderPage();
+    await selectPartner();
+    const amount = screen.getAllByPlaceholderText('0.00')[0] as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '1500,50' } });
+    // Not 150050 — a transfer a hundred times larger than the one meant.
+    expect(amount.value).toBe('1500.50');
+  });
+
+  it('says the payouts could not be loaded instead of "No payouts yet"', async () => {
+    mockedFinance.partnerPayouts.mockRejectedValue(new Error('500'));
+    renderPage();
+    await screen.findByRole('option', { name: 'Coffee Bar' });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'partner-1' } });
+
+    expect(await screen.findByText('Could not load payouts')).toBeTruthy();
+    expect(screen.queryByText('No payouts yet')).toBeNull();
+  });
+
+  it('does not say the partner owes nothing when the balance failed to load', async () => {
+    mockedFinance.partnerBalance.mockRejectedValue(new Error('500'));
+    renderPage();
+    await selectPartner();
+
+    expect(await screen.findByText("Could not load this partner's balance")).toBeTruthy();
+    expect(screen.queryByText(/does not currently owe/)).toBeNull();
+  });
+
   describe('collections', () => {
     it("has nothing to collect when the balance is in the partner's favor", async () => {
       renderPage();

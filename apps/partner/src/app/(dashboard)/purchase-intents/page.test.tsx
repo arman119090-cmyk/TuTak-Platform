@@ -59,6 +59,7 @@ function intentFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
     maxBonusPaymentPercent: 100,
     partnerBrand: { partnerId: 'partner-1', displayName: 'HAZE', logo: null },
     confirmedByUserId: null,
+    confirmation: null,
     rejectedByUserId: null,
     rejectionReason: null,
     createdAt: new Date(Date.now() - 10_000).toISOString(),
@@ -203,6 +204,35 @@ describe('the cashier queue', () => {
     // and the screen is a mirror.
     expect((screen.getByRole('button', { name: 'Confirm' }) as HTMLButtonElement).disabled).toBe(
       false,
+    );
+  });
+
+  it('does not flag a correct fuel sale because of floating-point drift', async () => {
+    // 33.3 × 480 is 15983.999999999998 in floating point and 15984 exactly.
+    api.list.mockResolvedValue([
+      perUnit({ quantity: '33.3000', unitPrice: '480.0000', grossAmount: '15984.0000' }),
+    ]);
+    renderPage();
+
+    expect(await screen.findByDisplayValue('33.3000')).toBeTruthy();
+    expect(screen.queryByText(/does not match the purchase/i)).toBeNull();
+  });
+
+  it('sends a comma-decimal quantity with a dot, which is what the API accepts', async () => {
+    api.list.mockResolvedValue([
+      perUnit({ quantity: '33.3000', unitPrice: '480.0000', grossAmount: '15984.0000' }),
+    ]);
+    api.confirm.mockResolvedValue(perUnit());
+    renderPage();
+
+    fireEvent.change(await screen.findByDisplayValue('33.3000'), { target: { value: '33,3' } });
+    expect(screen.queryByText(/does not match the purchase/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(api.confirm).toHaveBeenCalledWith(
+        perUnit().id,
+        expect.objectContaining({ quantity: '33.3', unitPrice: '480.0000' }),
+      ),
     );
   });
 

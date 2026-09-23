@@ -98,7 +98,11 @@ test.describe('QR payment loop', () => {
     await page.goto(`${PARTNER}/purchase-intents`);
     const row = page.locator('tr', { hasText: intent.id.slice(-8).toUpperCase() });
     await expect(row).toBeVisible({ timeout: 20_000 });
-    await row.getByRole('button', { name: /^confirm$/i }).click();
+    // By test id, not by the word on it: the cashier's screen speaks the
+    // signed-in person's language, and the seeded owner's profile says
+    // Armenian. Matching /^confirm$/i asserted that this screen is in
+    // English, which it is no longer — and should not be.
+    await row.getByTestId('confirm-purchase').click();
     // Confirmed rows drop out of the AWAITING_CONFIRMATION queue this page
     // filters on.
     await expect(row).toBeHidden({ timeout: 20_000 });

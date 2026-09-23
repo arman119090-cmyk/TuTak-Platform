@@ -1,32 +1,22 @@
 /**
- * Plain-English names for the codes the API hands out.
+ * Readable names for the codes the API hands out.
  *
- * The partner panel is English-only by decision (14.09.2026), but "English"
- * is not `status.toLowerCase()`: "outoforder" and "partner purchase" are
- * codes with the case knocked off, not words a cashier reads without
- * stopping. Every map falls back to the code itself so a value the map does
- * not know is still shown, never hidden.
+ * "Readable" is not `status.toLowerCase()`: "outoforder" and "partner
+ * purchase" are codes with the case knocked off, not words a cashier reads
+ * without stopping. Every map falls back to the code itself so a value the
+ * map does not know is still shown, never hidden.
+ *
+ * The screens already translated read a key instead of a finished string —
+ * `transactionTypeKey` and friends below — so the word follows the panel's
+ * language. The maps that remain belong to screens still on the English
+ * backlog; they keep their finished strings until those screens are done,
+ * because a half-translated screen is harder to read than an English one.
  */
 
-const TRANSACTION_TYPE: Record<string, string> = {
-  QR_PAYMENT: 'QR payment',
-  EV_CHARGING: 'EV charging',
-  BONUS_ACCRUAL: 'Bonus earned',
-  BONUS_REDEMPTION: 'Bonus spent',
-  REFERRAL_REWARD: 'Referral reward',
-  REFUND: 'Refund',
-  MANUAL_ADJUSTMENT: 'Manual adjustment',
-  PARTNER_PURCHASE: 'Purchase',
-};
-
-const TRANSACTION_STATUS: Record<string, string> = {
-  INITIATED: 'Started',
-  PENDING: 'In progress',
-  COMPLETED: 'Completed',
-  FAILED: 'Failed',
-  REVERSED: 'Reversed',
-  FLAGGED: 'Under review',
-};
+/** `partnerPanel.transactionType.QR_PAYMENT` — for a screen with `t()`. */
+export const transactionTypeKey = (code: string) => `partnerPanel.transactionType.${code}`;
+/** `partnerPanel.transactionStatus.COMPLETED` — for a screen with `t()`. */
+export const transactionStatusKey = (code: string) => `partnerPanel.transactionStatus.${code}`;
 
 const PAYOUT_STATUS: Record<string, string> = {
   REQUESTED: 'Requested — not sent yet',
@@ -53,8 +43,6 @@ const BRANCH_ROLE: Record<string, string> = {
 
 const label = (map: Record<string, string>) => (code: string) => map[code] ?? code;
 
-export const transactionTypeLabel = label(TRANSACTION_TYPE);
-export const transactionStatusLabel = label(TRANSACTION_STATUS);
 export const payoutStatusLabel = label(PAYOUT_STATUS);
 export const connectorStatusLabel = label(CONNECTOR_STATUS);
 export const branchRoleLabel = label(BRANCH_ROLE);

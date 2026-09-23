@@ -100,7 +100,12 @@ export class PayoutsController {
     return result;
   }
 
+  // Owner-only on the partner side, like `GET /partner/settlements/*`
+  // (owner's decision, `role-permissions.ts`): what TuTak owes the
+  // organisation is not a cashier's or a manager's to read. These four legacy
+  // reads only checked which partner, so every member of staff passed.
   @Get('partners/:partnerId/balance')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async balance(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     const available = await this.payouts.availableBalance(partnerId);
@@ -117,6 +122,7 @@ export class PayoutsController {
   // on) — see `PartnerCollectionService`'s own docblock for why.
 
   @Get('partners/:partnerId/collections')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async listCollections(
     @CurrentUser() user: RequestUser,
     @UuidParam('partnerId') partnerId: string,
@@ -176,12 +182,14 @@ export class PayoutsController {
   // method, while the sibling `balance` above only ever rejects. Nest copes
   // with either; a caller reading the class should not have to.
   @Get('partners/:partnerId/settlements')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async settlements(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     return this.settlement.listForPartner(partnerId);
   }
 
   @Get('partners/:partnerId')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async list(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     return this.payouts.listForPartner(partnerId);

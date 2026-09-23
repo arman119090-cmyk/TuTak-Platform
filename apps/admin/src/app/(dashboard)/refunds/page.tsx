@@ -19,6 +19,7 @@ import {
 import { financeApi, type PaymentRow } from '@/lib/api/financeApi';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
+import { LoadFailed } from '@/components/LoadFailed';
 
 export default function RefundsPage() {
   const queryClient = useQueryClient();
@@ -30,7 +31,11 @@ export default function RefundsPage() {
   const [done, setDone] = useState<string | null>(null);
 
   const { data: partners } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
-  const { data: payments } = useQuery({
+  const {
+    data: payments,
+    isError: paymentsFailed,
+    refetch: refetchPayments,
+  } = useQuery({
     queryKey: ['payments-search', partnerId],
     queryFn: () => financeApi.searchPayments({ partnerId: partnerId || undefined }),
   });
@@ -96,8 +101,11 @@ export default function RefundsPage() {
               <Field label="Amount (blank = full)">
                 <Input
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                  // A comma is the decimal separator on a Russian or Armenian
+                  // keyboard; stripping it turned "150,50" into 15050.
+                  onChange={(e) => setAmount(e.target.value.replace(',', '.').replace(/[^\d.]/g, ''))}
                   placeholder={target.amount}
+                  inputMode="decimal"
                 />
               </Field>
             </div>
@@ -128,7 +136,11 @@ export default function RefundsPage() {
       )}
 
       <div className="mt-6">
-        {rows.length === 0 ? (
+        {paymentsFailed ? (
+          <LoadFailed what="payments" onRetry={() => refetchPayments()} />
+        ) : payments === undefined ? (
+          <p className="text-[13px] text-muted">Loading payments…</p>
+        ) : rows.length === 0 ? (
           <EmptyState title="No payments" message="No payments match this filter yet." />
         ) : (
           <Table>

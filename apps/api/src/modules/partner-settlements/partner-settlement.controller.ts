@@ -10,6 +10,7 @@ import {
   CancelSettlementDto,
   CreateSettlementDraftDto,
   MarkReadyDto,
+  PartnerActivityQueryDto,
   ProposeSettlementReconciliationDto,
   RecordTransferDto,
   ReportTransferProblemDto,
@@ -188,6 +189,15 @@ export class PartnerSettlementAdminController {
  *
  * The one write they have is reporting a problem, which asserts nothing
  * about whether money moved and locks them out of deciding it.
+ *
+ * Every read here demands `SETTLEMENT_READ` as well as partner scope, and
+ * the two are not interchangeable. Scope asks *which* partner and nothing
+ * else, so a cashier — scoped to their own partner like everybody else on
+ * its payroll — passed it. `ROLE_PERMISSIONS` grants `SETTLEMENT_READ` to
+ * `PARTNER_OWNER` alone and says why in its own docblock; these routes
+ * simply never asked for it, so the organisation's whole money position and
+ * every itemised statement were readable by anyone who could confirm a sale.
+ * `partner-settlement-access.int-spec.ts` pins both halves.
  */
 @ApiTags('partner-settlements')
 @ApiBearerAuth()
@@ -196,6 +206,7 @@ export class PartnerSettlementPartnerController {
   constructor(private readonly settlements: PartnerSettlementService) {}
 
   @Get(':partnerId')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async statements(@CurrentUser() actor: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(actor, partnerId);
     return this.settlements.list({ partnerId });
@@ -203,6 +214,7 @@ export class PartnerSettlementPartnerController {
 
   /** Opening, movements and closing, itemised to the source of each line. */
   @Get(':partnerId/statement/:id')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async statement(
     @CurrentUser() actor: RequestUser,
     @UuidParam('partnerId') partnerId: string,
@@ -219,12 +231,71 @@ export class PartnerSettlementPartnerController {
    * moment a draft was created, which told a partner they had been paid.
    */
   @Get(':partnerId/position')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async position(@CurrentUser() actor: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(actor, partnerId);
     return this.settlements.position(partnerId);
   }
 
+  /**
+   * One purchase, and what it did to the debt.
+   *
+   * The same permission as the rest of the money reads: this itemises a
+   * financial position, and "which of my sales made up this figure" is the
+   * same question as "how much do you owe me", asked about one line.
+   */
+  @Get(':partnerId/purchases/:purchaseIntentId/breakdown')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
+  async purchaseBreakdown(
+    @CurrentUser() actor: RequestUser,
+    @UuidParam('partnerId') partnerId: string,
+    @UuidParam('purchaseIntentId') purchaseIntentId: string,
+  ) {
+    assertPartnerScope(actor, partnerId);
+    return this.settlements.purchaseBreakdown(partnerId, purchaseIntentId);
+  }
+
+  /**
+   * Everything that moved this partner's debt, filtered and paged.
+   *
+   * Same permission as the position it itemises: this *is* the position,
+   * line by line, and a reader who may not see the total may not see its
+   * parts either.
+   */
+  @Get(':partnerId/activity')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
+  async activity(
+    @CurrentUser() actor: RequestUser,
+    @UuidParam('partnerId') partnerId: string,
+    @Query() query: PartnerActivityQueryDto,
+  ) {
+    assertPartnerScope(actor, partnerId);
+    return this.settlements.activity(partnerId, {
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+      branchId: query.branchId,
+      state: query.state,
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+  }
+
+  /**
+   * "The money you say you sent never arrived."
+   *
+   * Gated on `SETTLEMENT_READ`, which is the owner's and not a manager's or
+   * a cashier's. That is a narrowing, not a widening: the route used to
+   * carry no permission at all, so anyone scoped to the partner could file
+   * one, and filing one used to change the settlement's status. Only
+   * somebody who can see the settlement can know a transfer is missing, and
+   * only they should be able to say so.
+   *
+   * The report asserts nothing about whether money moved and changes
+   * nothing that decides it — see `reportTransferProblem` for what it does
+   * and what it stopped doing.
+   */
   @Post(':partnerId/statement/:id/report-problem')
+  @RequirePermissions(PermissionName.SETTLEMENT_READ)
   async reportProblem(
     @CurrentUser() actor: RequestUser,
     @UuidParam('partnerId') partnerId: string,

@@ -54,6 +54,7 @@ const intentFixture = (overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
   maxBonusPaymentPercent: 50,
   partnerBrand: { partnerId: 'partner-1', displayName: 'Verified Shop', logo: null },
   confirmedByUserId: null,
+  confirmation: null,
   rejectedByUserId: null,
   rejectionReason: null,
   // The hybrid money flow (15.09.2026). This screen is the customer's view

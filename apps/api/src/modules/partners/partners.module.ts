@@ -11,6 +11,13 @@ import {
   PartnerStaffController,
 } from './partner-branch-staff.controller';
 import { PartnerBranchStaffService } from './partner-branch-staff.service';
+import { PartnerEmployeeController } from './partner-employee.controller';
+import {
+  PartnerStaffInvitationAcceptController,
+  PartnerStaffInvitationController,
+} from './partner-staff-invitation.controller';
+import { PartnerStaffInvitationService } from './partner-staff-invitation.service';
+import { PartnerEmployeeService } from './partner-employee.service';
 import {
   PartnerBranchQrController,
   PartnerBranchQrResolveController,
@@ -29,6 +36,9 @@ import { PartnerContributionRuleService } from './contribution/partner-contribut
     PartnerIntegrationsController,
     PartnerBranchStaffController,
     PartnerStaffController,
+    PartnerEmployeeController,
+    PartnerStaffInvitationController,
+    PartnerStaffInvitationAcceptController,
     PartnerBranchQrController,
     PartnerBranchQrResolveController,
     PartnerContributionRuleController,
@@ -38,9 +48,11 @@ import { PartnerContributionRuleService } from './contribution/partner-contribut
     PartnersService,
     PartnerIntegrationsService,
     PartnerBranchStaffService,
+    PartnerEmployeeService,
+    PartnerStaffInvitationService,
     PartnerBranchQrService,
     PartnerContributionRuleService,
   ],
-  exports: [PartnersService, PartnerContributionRuleService],
+  exports: [PartnersService, PartnerContributionRuleService, PartnerEmployeeService],
 })
 export class PartnersModule {}

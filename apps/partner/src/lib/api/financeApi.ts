@@ -1,6 +1,8 @@
 import type {
+  PartnerActivityPageDto,
   PartnerSettlementDto,
   PartnerStatementDto,
+  PurchaseBreakdownDto,
   UnsettledPositionDto,
 } from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
@@ -102,9 +104,54 @@ export const settlementApi = {
     return data.data;
   },
 
-  // `reason`, matching `ReportTransferProblemDto` — the server validates it
-  // at 3-500 characters, so an empty complaint is refused there too.
-  async reportProblem(partnerId: string, id: string, reason: string): Promise<PartnerSettlementDto> {
+  /**
+   * Every movement on the partner's own account, filtered and paged.
+   *
+   * The cursor is passed back exactly as it was received. Building one on
+   * this side would mean relying on a sort order the server is free to
+   * change, and a cursor the server did not issue is refused rather than
+   * quietly restarting the list at the top.
+   */
+  async activity(
+    partnerId: string,
+    params: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      state?: 'UNSETTLED' | 'IN_SETTLEMENT' | 'UNDER_REVIEW' | 'PAID';
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<PartnerActivityPageDto> {
+    const { data } = await httpClient.get(`/partner/settlements/${partnerId}/activity`, {
+      params,
+    });
+    return data.data;
+  },
+
+  /** One purchase: what it cost, what funded it, and where its money stands. */
+  async purchaseBreakdown(partnerId: string, purchaseIntentId: string): Promise<PurchaseBreakdownDto> {
+    const { data } = await httpClient.get(
+      `/partner/settlements/${partnerId}/purchases/${purchaseIntentId}/breakdown`,
+    );
+    return data.data;
+  },
+
+  /**
+   * "The money you say you sent never arrived."
+   *
+   * `reason`, matching `ReportTransferProblemDto` — the server validates it
+   * at 3-500 characters, so an empty complaint is refused there too.
+   *
+   * The answer is an acknowledgement, not the settlement: the report
+   * changes no status and moves no figure, and a write that answered with a
+   * financial record would be a second way to read one.
+   */
+  async reportProblem(
+    partnerId: string,
+    id: string,
+    reason: string,
+  ): Promise<{ id: string; status: string; reportedAt: string }> {
     const { data } = await httpClient.post(
       `/partner/settlements/${partnerId}/statement/${id}/report-problem`,
       { reason },

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import type { PartnerBranchDto } from '@tutak/shared-types';
@@ -28,6 +29,7 @@ const QR_DARK = '#0A0D14';
 const QR_LIGHT = '#FFFFFF';
 
 export default function QrPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
 
@@ -43,9 +45,7 @@ export default function QrPage() {
       <>
         <Header multiLocation={false} />
         <Surface className="flex min-h-[280px] flex-col items-center justify-center">
-          <div className="text-center text-[13px] text-muted">
-            Your account isn't linked to a business yet.
-          </div>
+          <div className="text-center text-[13px] text-muted">{t('partnerPanel.qr.noBusiness')}</div>
         </Surface>
       </>
     );
@@ -58,8 +58,7 @@ export default function QrPage() {
         <Surface className="flex min-h-[280px] flex-col items-center justify-center">
           <QrCard payload={buildPartnerPayQrPayload(partnerId)} />
           <p className="mt-4 max-w-md text-center text-[12px] text-faint">
-            This is the legacy whole-business code because this partner has no active branch rows.
-            Add a location to switch to revocable branch-specific QR tokens.
+            {t('partnerPanel.qr.wholeBusinessFallback')}
           </p>
         </Surface>
       </>
@@ -82,14 +81,13 @@ export default function QrPage() {
 }
 
 function Header({ multiLocation }: { multiLocation: boolean }) {
+  const { t } = useTranslation();
   return (
     <PageHeader
-      title="Payment QR"
-      description={
-        multiLocation
-          ? 'One revocable code per location. Print each at its own till — a scan is resolved by TuTak to that exact active branch before a purchase can be opened.'
-          : "Your business's payment code. Customers scan it, enter the amount themselves, and it appears on Purchase requests for you to confirm."
-      }
+      title={t('partnerPanel.qr.title')}
+      description={t(
+        multiLocation ? 'partnerPanel.qr.descriptionMulti' : 'partnerPanel.qr.descriptionSingle',
+      )}
     />
   );
 }
@@ -106,6 +104,7 @@ function BranchLabel({ branch }: { branch: PartnerBranchDto }) {
 }
 
 function BranchQrCard({ partnerId, branch }: { partnerId: string; branch: PartnerBranchDto }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const queryKey = ['branch-qr', partnerId, branch.id] as const;
   const { data: qr, isLoading, isError } = useQuery({
@@ -119,24 +118,24 @@ function BranchQrCard({ partnerId, branch }: { partnerId: string; branch: Partne
   });
 
   if (isLoading) {
-    return <p className="py-8 text-[13px] text-faint">Loading QR…</p>;
+    return <p className="py-8 text-[13px] text-faint">{t('partnerPanel.qr.loading')}</p>;
   }
 
   if (isError) {
-    return <p className="py-8 text-[13px] text-danger-text">Could not load this branch QR.</p>;
+    return (
+      <p className="py-8 text-[13px] text-danger-text">{t('partnerPanel.qr.loadError')}</p>
+    );
   }
 
   if (!qr) {
     return (
       <div className="py-8 text-center">
-        <p className="mb-4 max-w-sm text-[13px] text-muted">
-          This branch has no active QR yet. Issue one before printing anything for this till.
-        </p>
+        <p className="mb-4 max-w-sm text-[13px] text-muted">{t('partnerPanel.qr.noneYet')}</p>
         <Button loading={issue.isPending} onClick={() => issue.mutate()}>
-          Issue branch QR
+          {t('partnerPanel.qr.issue')}
         </Button>
         {issue.isError ? (
-          <p className="mt-3 text-[12px] text-danger-text">Could not issue the QR. Please try again.</p>
+          <p className="mt-3 text-[12px] text-danger-text">{t('partnerPanel.qr.issueFailed')}</p>
         ) : null}
       </div>
     );
@@ -146,13 +145,14 @@ function BranchQrCard({ partnerId, branch }: { partnerId: string; branch: Partne
 }
 
 function QrCard({ payload }: { payload: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   return (
     <div className="w-full max-w-md text-center">
       <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-available-surface px-3 py-1 text-[12px] font-medium text-available-text">
         <span className="h-1.5 w-1.5 rounded-full bg-available" />
-        Active
+        {t('partnerPanel.qr.active')}
       </div>
 
       <div
@@ -167,12 +167,14 @@ function QrCard({ payload }: { payload: string }) {
           marginSize={2}
           bgColor={QR_LIGHT}
           fgColor={QR_DARK}
-          title="Payment QR code"
+          title={t('partnerPanel.qr.imageTitle')}
         />
       </div>
 
       <div className="mx-auto mt-4 rounded-tutak-lg bg-canvas p-4 text-left">
-        <div className="mb-1.5 text-[12px] font-medium text-muted">Payment code</div>
+        <div className="mb-1.5 text-[12px] font-medium text-muted">
+          {t('partnerPanel.qr.codeLabel')}
+        </div>
         <code
           data-testid="partner-pay-code"
           className="block break-all font-mono text-[13px] leading-relaxed text-ink"
@@ -181,10 +183,7 @@ function QrCard({ payload }: { payload: string }) {
         </code>
       </div>
 
-      <p className="mt-4 text-[12px] text-faint">
-        Print it or display it at the till. It never carries an amount — the customer always enters
-        that themselves.
-      </p>
+      <p className="mt-4 text-[12px] text-faint">{t('partnerPanel.qr.printNote')}</p>
 
       <div className="mt-4 flex justify-center">
         <Button
@@ -194,7 +193,7 @@ function QrCard({ payload }: { payload: string }) {
             setCopied(true);
           }}
         >
-          {copied ? 'Copied' : 'Copy code'}
+          {t(copied ? 'partnerPanel.qr.copied' : 'partnerPanel.qr.copy')}
         </Button>
       </div>
     </div>

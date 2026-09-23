@@ -17,6 +17,7 @@ import {
 } from '@tutak/design/web';
 import { financeApi } from '@/lib/api/financeApi';
 import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
+import { LoadFailed } from '@/components/LoadFailed';
 
 /**
  * `balance` is stored DEBIT-positive / CREDIT-negative, not normalized per
@@ -59,7 +60,11 @@ export default function LedgerPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
-  const [settledOn, setSettledOn] = useState(() => new Date().toISOString().slice(0, 10));
+  // Today on this computer's calendar. The UTC date is yesterday in Yerevan
+  // until 04:00, and a remittance recorded then defaulted to the wrong day.
+  const [settledOn, setSettledOn] = useState(() =>
+    new Intl.DateTimeFormat('en-CA').format(new Date()),
+  );
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -67,7 +72,11 @@ export default function LedgerPage() {
     queryKey: ['acquirer-outstanding'],
     queryFn: financeApi.outstandingReceivable,
   });
-  const { data: settlements } = useQuery({
+  const {
+    data: settlements,
+    isError: settlementsFailed,
+    refetch: refetchSettlements,
+  } = useQuery({
     queryKey: ['acquirer-settlements'],
     queryFn: financeApi.acquirerSettlements,
   });
@@ -101,7 +110,11 @@ export default function LedgerPage() {
     },
   });
 
-  const { data: accounts } = useQuery({
+  const {
+    data: accounts,
+    isError: accountsFailed,
+    refetch: refetchAccounts,
+  } = useQuery({
     queryKey: ['ledger-accounts'],
     queryFn: financeApi.ledgerAccounts,
   });
@@ -152,7 +165,10 @@ export default function LedgerPage() {
             <Field label="Amount">
               <Input
                 value={amount}
-                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                // A comma is the decimal separator on a Russian or Armenian
+                // keyboard. Stripping it with everything else turned
+                // "1500,50" into 150050 — a remittance a hundred times larger.
+                onChange={(e) => setAmount(e.target.value.replace(',', '.').replace(/[^\d.]/g, ''))}
                 placeholder="0"
                 inputMode="decimal"
               />
@@ -184,6 +200,11 @@ export default function LedgerPage() {
         </div>
         {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
 
+        {settlementsFailed && (
+          <div className="mt-5">
+            <LoadFailed what="recorded settlements" onRetry={() => refetchSettlements()} />
+          </div>
+        )}
         {settlements && settlements.length > 0 && (
           <div className="mt-5">
             <Table>
@@ -210,7 +231,11 @@ export default function LedgerPage() {
         )}
       </Surface>
 
-      {rows.length === 0 ? (
+      {accountsFailed ? (
+        <LoadFailed what="ledger accounts" onRetry={() => refetchAccounts()} />
+      ) : accounts === undefined ? (
+        <p className="text-[13px] text-muted">Loading accounts…</p>
+      ) : rows.length === 0 ? (
         <EmptyState
           title="No accounts yet"
           message="Ledger accounts are created on demand, the first time money moves through one."

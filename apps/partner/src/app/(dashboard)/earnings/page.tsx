@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   Badge,
   EmptyState,
@@ -15,7 +16,7 @@ import { financeApi } from '@/lib/api/financeApi';
 import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { payoutStatusLabel } from '@/lib/labels';
 import { dataStateOf } from '@/lib/queryState';
-import { LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
+import { AccessRefused, LoadError, LoadingNotice, StaleNotice } from '@/lib/components/DataStatus';
 
 const money = (v: string) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,6 +38,7 @@ const STATUS_TONE = {
  * second number to disagree with.
  */
 export default function EarningsPage() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
 
@@ -111,6 +113,24 @@ export default function EarningsPage() {
         title="No partner linked"
         message="This account is not scoped to a partner, so there are no earnings to show."
       />
+    );
+  }
+
+  // What TuTak owes the organisation is the owner's to read (the same rule as
+  // the settlements screen). A cashier or manager used to get the figures;
+  // now the API refuses them, and one plain sentence beats five red boxes.
+  if (balanceState === 'forbidden') {
+    return (
+      <>
+        <PageHeader
+          title="Earnings"
+          description="What you are owed, the purchase activity behind it, and every transfer between you and TuTak."
+        />
+        <AccessRefused
+          title={t('partnerPanel.refused.title')}
+          message={t('partnerPanel.refused.settlements')}
+        />
+      </>
     );
   }
 

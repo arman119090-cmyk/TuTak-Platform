@@ -319,4 +319,12 @@ describe('AdminSettlementsPage', () => {
     // always claimed it had. Covered by the propose/confirm tests above.
     expect(await screen.findByRole('button', { name: /money did move/i })).toBeTruthy();
   });
+
+  it('says the settlements could not be loaded instead of "No settlements"', async () => {
+    (settlementAdminApi.list as jest.Mock).mockRejectedValue(new Error('500'));
+    renderPage();
+
+    expect(await screen.findByText('Could not load settlements')).toBeTruthy();
+    expect(screen.queryByText('No settlements')).toBeNull();
+  });
 });

@@ -238,12 +238,16 @@ model User {
   mediaAssetsUploaded MediaAsset[] @relation("MediaAssetUploader")
   mediaAssetsApproved MediaAsset[] @relation("MediaAssetApprover")
 
+  partnerEmployeeCodes PartnerEmployee[]
+
   @@index([createdAt])
   /// The anonymisation sweep asks for "deleted, not yet scrubbed", which is a
   /// vanishing fraction of the table and would otherwise scan all of it every
   /// hour.
   @@index([deletedAt, anonymizedAt])
   @@map("users")
+  invitationsCreated  PartnerStaffInvitation[] @relation("PartnerStaffInvitationCreatedBy")
+  invitationsAccepted PartnerStaffInvitation[] @relation("PartnerStaffInvitationAcceptedBy")
 }
 
 enum DevicePlatform {
@@ -921,21 +925,66 @@ model PurchaseIntent {
   brandDisplayName String?
   brandLogoAssetId String?
 
-  bonusReservationId  String?
-  sourceTransactionId String?
+  bonusReservationId      String?
+  sourceTransactionId     String?
   /// Individual staff identity of whoever confirmed this purchase — spec
   /// §25/§33. Confirmation only: this column used to claim it held "whoever
   /// confirmed or rejected", and `reject()` never wrote it, so for every
   /// rejected purchase the row did not say who turned the customer away.
-  confirmedByUserId   String?
+  confirmedByUserId       String?
+  /// What kind of event confirmed this purchase, recorded rather than
+  /// inferred.
+  ///
+  /// Three things can move a purchase to CONFIRMED and they are not
+  /// interchangeable: a cashier taking money at a till, a partner's own POS
+  /// or API integration acting on its key, and a payment provider reporting
+  /// that money reached it. Only the last is evidence that anybody paid
+  /// TuTak anything.
+  ///
+  /// It could be guessed from `confirmedByUserId`, `confirmedByApiKeyId` and
+  /// `paymentRoute` together, and guessing is exactly what this column
+  /// exists to stop: a null actor currently means both "the provider did it"
+  /// and "this row predates the column", and a partner reading a statement
+  /// cannot be asked to tell those apart. Null here means the second, and
+  /// the interface says "not recorded" rather than naming anybody.
+  ///
+  /// Which of the five columns below may be set is a database rule, not
+  /// a convention — `purchase_intents_confirmation_is_consistent`. A union
+  /// in TypeScript binds the one writer that uses it; a backfill or a
+  /// support fix typed into psql is bound by nothing.
+  confirmationSource      PurchaseConfirmationSource?
+  /// The person's permanent code at this partner, frozen at confirmation.
+  ///
+  /// Not derived on read, and this is the whole point of the column.
+  /// `PartnerBranchStaffAssignment.employeeDisplayCode` belongs to an
+  /// assignment, so moving somebody to another branch would silently change
+  /// what last month's receipts appear to say. `PartnerEmployee.code` is
+  /// stable, but even that is looked up *here* rather than joined on read,
+  /// so the row keeps saying what it said on the day.
+  confirmedByEmployeeCode String?
+  /// Which branch assignment authorised it, when one did. Null for an
+  /// owner or an all-branch manager, who act without being assigned
+  /// anywhere — their reach is the role, not a posting.
+  confirmedByAssignmentId String?
+  /// The role held at that moment, frozen for the same reason as the code:
+  /// a promotion must not rewrite who approved what. Set together with the
+  /// assignment or not at all — a branch with a blank next to it on the
+  /// employee card is what `purchase_intents_confirmation_posting_is_whole`
+  /// forbids.
+  confirmedByRole         String?
+  /// Which integration key acted, when the source is a partner's own POS or
+  /// API rather than a person. Distinct from `merchantApprovedByApiKeyId`,
+  /// which records a different event entirely — agreeing the terms of a
+  /// sale, not confirming it happened.
+  confirmedByApiKeyId     String?
   /// And who did. Separate from `confirmedByUserId` rather than shared with
   /// it: a column named "confirmed by" holding the person who refused is the
   /// kind of naming that misleads a year later, when somebody reads a report
   /// instead of this comment. Null on every row rejected before this column
   /// existed — their actor is in `AuditLog` and nowhere else, and inventing
   /// one here would misstate who did what.
-  rejectedByUserId    String?
-  rejectionReason     String?
+  rejectedByUserId        String?
+  rejectionReason         String?
 
   /// Set once, at confirmation. A repeat confirm call with the same key
   /// becomes a lookup rather than a second execution — spec §7's idempotency
@@ -1268,6 +1317,19 @@ model Partner {
   /// How often this partner is settled. Per-partner, not one global period:
   /// a weekly restaurant and a monthly fuel chain are both normal, and
   /// hardcoding one cadence would force the other into it (product decision, 14.09.2026).
+  /// Next `EMP-<n>` this partner will issue, bumped atomically.
+  ///
+  /// Exists because picking a code by reading the highest one already used is
+  /// a race: two requests read the same maximum and choose the same code.
+  /// `UPDATE ... SET "employeeCodeSeq" = "employeeCodeSeq" + 1 RETURNING` is
+  /// one statement, so PostgreSQL serialises concurrent callers on the row
+  /// lock and each gets a different number.
+  ///
+  /// Both allocators use it — the permanent employee code and the older
+  /// per-assignment display code — because they share one namespace per
+  /// partner. A caller naming a code by hand raises the counter to at least
+  /// that number, so a hand-picked `EMP-042` cannot be reached again later.
+  employeeCodeSeq        Int                            @default(0)
   settlementPeriodicity  SettlementPeriodicity          @default(MONTHLY)
   /// Day the period is anchored to. 1-7 (Mon-Sun) for WEEKLY/BIWEEKLY, 1-28
   /// for MONTHLY — 28 so a monthly anchor exists in February too.
@@ -1294,7 +1356,10 @@ model Partner {
   partnerContributionRules PartnerContributionRule[]
   promos                   PartnerPromo[]
 
+  employees PartnerEmployee[]
+
   @@map("partners")
+  staffInvitations       PartnerStaffInvitation[]
 }
 
 /// Where a tap on a Home "Partner Spotlight" card lands. Deliberately not a
@@ -1564,6 +1629,181 @@ enum BranchFuelType {
   PROPANE_LPG
 }
 
+/// A person's permanent, readable identity inside one partner organisation.
+///
+/// `PartnerBranchStaffAssignment.employeeDisplayCode` came first and is a
+/// different thing: it names an *assignment to a branch*. Moving somebody to
+/// another branch ends one assignment and starts another, so their code
+/// changes; working two branches gives them two. That is right for an audit
+/// trail of assignments and wrong for "who confirmed this sale" — a partner
+/// looking at last month's receipts must see one person, not two identities
+/// that happen to be the same human.
+///
+/// So the person's code lives here, one row per `(partnerId, userId)`,
+/// allocated once and never reused for anybody else. Transfers, renames and
+/// deactivation do not touch it.
+///
+/// ## Why not `PartnerMembership`, which already has `(partnerId, userId)`
+///
+/// Because that model does not mean what its name suggests. In production
+/// code a row is created only for a partner's *founding owner*
+/// (`PartnersService.create`/`apply`); every other staff member is attached
+/// through a partner-scoped `UserRole` and never gets one — `isAffiliated`
+/// exists precisely to paper over that, and says so. Worse, `isMember`
+/// branches on the row's presence for self-dealing checks, so backfilling
+/// memberships for staff would quietly change who is allowed to pay
+/// themselves. A registry of employees had to be a new, additive table
+/// rather than a redefinition of that one.
+///
+/// ## Not a credential
+///
+/// The code identifies; it never authorises. Nothing accepts it as input to
+/// act as that person: the server reads the actor from the authenticated
+/// session, and this column is only ever an output.
+/// What kind of event moved a purchase to CONFIRMED — see
+/// `PurchaseIntent.confirmationSource`.
+enum PurchaseConfirmationSource {
+  /// A person at a till, acting from their own authenticated session.
+  STAFF
+  /// The partner's own POS or API integration, acting on its key. Proves the
+  /// partner's system said the sale happened; proves nothing about money
+  /// reaching TuTak.
+  PARTNER_INTEGRATION
+  /// A payment provider reporting that it collected the money. The only one
+  /// of the three that is evidence of a payment to TuTak, and never to be
+  /// shown as a cashier's action.
+  PROVIDER_CALLBACK
+}
+
+model PartnerEmployee {
+  id        String @id @default(uuid())
+  partnerId String
+  userId    String
+  /// `EMP-001`, unique within the partner and never handed to a second
+  /// person — including after the first one leaves, so a purchase confirmed
+  /// in March still resolves to the person who confirmed it.
+  code      String
+
+  createdAt DateTime @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, userId])
+  @@unique([partnerId, code])
+  @@map("partner_employees")
+}
+
+/// Where an invitation to work at a partner stands.
+///
+/// Expiry is deliberately not one of these. A row whose `expiresAt` has
+/// passed is still `PENDING` in the database, and every reader computes
+/// "expired" from the clock — because the alternative is a sweep that has to
+/// run for the status to be true, and an invitation that is accepted in the
+/// gap between the deadline and the sweep is an invitation accepted after it
+/// expired.
+enum PartnerStaffInvitationStatus {
+  /// Sent, not yet used. May still be accepted if the deadline has not passed.
+  PENDING
+  /// Used. The access it described exists now; the invitation itself is spent.
+  ACCEPTED
+  /// Called back by the owner before it was used.
+  REVOKED
+}
+
+/// An offer of a job at a partner, made to a phone number.
+///
+/// ## What it is not
+///
+/// Not a credential, and not a password. The owner never sees the token:
+/// it goes to the invited person's phone and nowhere else, so possessing it
+/// is evidence about that phone rather than about who typed it into the
+/// owner's screen. The permanent employee code (`PartnerEmployee.code`) is
+/// not usable here either — it identifies and never authorises.
+///
+/// ## Why only a hash is stored
+///
+/// A readable invitation token in the database is a set of working keys to
+/// other people's jobs, available to anything that can read one table — a
+/// backup, a support query, a log line that printed a row. The token is
+/// random and is kept only as its SHA-256, so a stolen database contains no
+/// usable invitation. Lookups hash the presented token and search by that.
+model PartnerStaffInvitation {
+  id        String @id @default(uuid())
+  partnerId String
+
+  /// The phone the offer was sent to, in E.164.
+  ///
+  /// Acceptance requires a session belonging to *this* number, which is what
+  /// ties the invitation to a person rather than to whoever has the link.
+  /// Proving the number is the existing OTP flow's job; this only insists
+  /// the two match.
+  phone String
+
+  /// The role acceptance grants. Constrained to the two partner-staff tiers
+  /// by `PartnerStaffInvitationService` — an invitation can never hand out
+  /// ownership of a business or any platform role, whatever is posted to it.
+  role RoleName
+
+  /// Which branches to post the person to.
+  ///
+  /// Ids rather than a relation: a branch may be archived between the offer
+  /// and its acceptance, and acceptance re-reads the list against the
+  /// branches that still take staff rather than trusting what was true when
+  /// the offer went out.
+  branchIds String[]
+
+  /// SHA-256 of the token. The token itself is never written down.
+  tokenHash String @unique
+
+  status    PartnerStaffInvitationStatus @default(PENDING)
+  expiresAt DateTime
+
+  /// How many times a token that hashes to this row has been presented and
+  /// refused. A ceiling on this is the part of brute-force protection that
+  /// does not depend on being able to tell callers apart by address.
+  attemptCount Int @default(0)
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  /// Set together with `status = ACCEPTED`, in the same transaction as the
+  /// role and the postings it grants.
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  revokedAt        DateTime?
+  revokedByUserId  String?
+
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("PartnerStaffInvitationCreatedBy", fields: [createdByUserId], references: [id])
+  acceptedBy User?  @relation("PartnerStaffInvitationAcceptedBy", fields: [acceptedByUserId], references: [id])
+
+  /// The owner's list, newest first, and the "is there already one open for
+  /// this number" check that stops a second offer racing the first.
+  @@index([partnerId, status, createdAt])
+  @@index([partnerId, phone])
+  @@map("partner_staff_invitations")
+}
+
+/// Where a branch stands in its life, as the partner's owner manages it.
+///
+/// `isActive` came first and answers one question — may a purchase be taken
+/// here right now. It stays, it stays in step with this column (the database
+/// enforces that, `partner_branches_state_matches_is_active`), and every
+/// query that reads it keeps working. What it cannot say is *why* a branch is
+/// shut, and the two reasons need different screens: a location closed for
+/// refurbishment comes back, and a location that is gone does not.
+enum PartnerBranchState {
+  /// Open. Purchases may be taken here.
+  ACTIVE
+  /// Temporarily shut by the owner. No new purchases; returns, disputes and
+  /// history all continue to work; the owner may reopen it.
+  SUSPENDED
+  /// Closed for good. Everything `SUSPENDED` allows, minus reopening in one
+  /// click — restoring it is a deliberate act — and it drops out of the
+  /// ordinary branch list rather than sitting there forever.
+  ARCHIVED
+}
+
 model PartnerBranch {
   id        String          @id @default(uuid())
   partnerId String
@@ -1580,6 +1820,18 @@ model PartnerBranch {
   /// predates this column is, in fact, still open; there is no historical
   /// case where the true value is otherwise.
   isActive  Boolean         @default(true)
+  /// Why it is open or shut — see `PartnerBranchState`.
+  ///
+  /// Kept beside `isActive` rather than replacing it. Replacing it would
+  /// have meant rewriting every read in the codebase and every released
+  /// client in one step, to answer a question none of them asks: they all
+  /// want "may I sell here", and `isActive` is that answer. The database
+  /// keeps the two from drifting.
+  state     PartnerBranchState @default(ACTIVE)
+  /// When the owner last shut or reopened it, and who did. Null on a branch
+  /// that has only ever been open.
+  stateChangedAt       DateTime?
+  stateChangedByUserId String?
   /// Meaningful only when the owning `Partner.category` is `"fuel"` — which
   /// single product this specific branch sells. Null for every non-fuel
   /// branch. Also null for a fuel branch nobody has classified yet: this is
@@ -1606,6 +1858,9 @@ model PartnerBranch {
   // assignment or QR code can never point at a branch belonging to a
   // *different* partner than the one it also names, without a trigger.
   @@unique([partnerId, id])
+  // The owner's branch list hides archived rows; the purchase path asks for
+  // open ones. Both are per-partner reads.
+  @@index([partnerId, state])
   @@map("partner_branches")
 }
 

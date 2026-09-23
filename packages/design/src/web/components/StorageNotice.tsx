@@ -31,7 +31,39 @@ const DISMISSED_KEY = 'tutak-storage-notice-ack';
  * The acknowledgement itself is stored under the same exemption: remembering
  * that somebody has read a notice is part of showing it correctly.
  */
-export function StorageNotice({ privacyUrl }: { privacyUrl?: string }) {
+/**
+ * The copy, so an app that speaks more than one language can supply it.
+ *
+ * Defaults in English because the admin panel is English-only and passing
+ * five strings to keep that unchanged would be noise. The partner panel
+ * passes its own: a Russian screen with one English paragraph pinned to the
+ * bottom of it is the kind of thing that makes a whole translation look
+ * unfinished.
+ */
+export interface StorageNoticeCopy {
+  regionLabel: string;
+  body: string;
+  privacyLink: string;
+  acknowledge: string;
+}
+
+const DEFAULT_COPY: StorageNoticeCopy = {
+  regionLabel: 'How this dashboard uses browser storage',
+  body:
+    'This dashboard keeps two things in your browser: an identifier for this device, so your ' +
+    'session can be tied to it and signed out separately, and your chosen theme. Nothing here ' +
+    'tracks you or is shared with anyone.',
+  privacyLink: 'Privacy policy',
+  acknowledge: 'Got it',
+};
+
+export function StorageNotice({
+  privacyUrl,
+  copy = DEFAULT_COPY,
+}: {
+  privacyUrl?: string;
+  copy?: StorageNoticeCopy;
+}) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -61,18 +93,15 @@ export function StorageNotice({ privacyUrl }: { privacyUrl?: string }) {
   return (
     <div
       role="region"
-      aria-label="How this dashboard uses browser storage"
+      aria-label={copy.regionLabel}
       className="fixed inset-x-0 bottom-0 z-50 border-t border-subtle bg-surface px-4 py-3 text-[13px] shadow-lg"
     >
       <div className="mx-auto flex max-w-4xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-secondary">
-          This dashboard keeps two things in your browser: an identifier for
-          this device, so your session can be tied to it and signed out
-          separately, and your chosen theme. Nothing here tracks you or is
-          shared with anyone.{' '}
+          {copy.body}{' '}
           {privacyUrl ? (
             <a className="underline" href={privacyUrl} target="_blank" rel="noreferrer">
-              Privacy policy
+              {copy.privacyLink}
             </a>
           ) : null}
         </p>
@@ -81,7 +110,7 @@ export function StorageNotice({ privacyUrl }: { privacyUrl?: string }) {
           onClick={acknowledge}
           className="shrink-0 rounded-md border border-subtle px-3 py-1.5 font-medium"
         >
-          Got it
+          {copy.acknowledge}
         </button>
       </div>
     </div>

@@ -21,6 +21,7 @@ import { financeApi, type Payout } from '@/lib/api/financeApi';
 import { useIdempotencyKey } from '@/lib/useIdempotencyKey';
 import { partnersApi } from '@/lib/api/partnersApi';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { LoadFailed } from '@/components/LoadFailed';
 
 const STATUS_TONE = {
   REQUESTED: 'pending',
@@ -35,6 +36,13 @@ const COLLECTION_STATUS_TONE = {
 
 const fmt = (v: string | number) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+/**
+ * Keeps what can be part of an amount. A comma is the decimal separator on a
+ * Russian or Armenian keyboard: stripping it with everything else turned
+ * "1500,50" into 150050 — a transfer a hundred times larger.
+ */
+const amountInput = (raw: string) => raw.replace(',', '.').replace(/[^\d.]/g, '');
 
 export default function PayoutsPage() {
   const queryClient = useQueryClient();
@@ -62,17 +70,29 @@ export default function PayoutsPage() {
   const canMoveMoney = user?.roles?.includes(Role.SUPER_ADMIN) ?? false;
 
   const { data: partners } = useQuery({ queryKey: ['partners'], queryFn: partnersApi.list });
-  const { data: balance } = useQuery({
+  const {
+    data: balance,
+    isError: balanceFailed,
+    refetch: refetchBalance,
+  } = useQuery({
     queryKey: ['partner-balance', partnerId],
     queryFn: () => financeApi.partnerBalance(partnerId),
     enabled: !!partnerId,
   });
-  const { data: payouts } = useQuery({
+  const {
+    data: payouts,
+    isError: payoutsFailed,
+    refetch: refetchPayouts,
+  } = useQuery({
     queryKey: ['partner-payouts', partnerId],
     queryFn: () => financeApi.partnerPayouts(partnerId),
     enabled: !!partnerId,
   });
-  const { data: collections } = useQuery({
+  const {
+    data: collections,
+    isError: collectionsFailed,
+    refetch: refetchCollections,
+  } = useQuery({
     queryKey: ['partner-collections', partnerId],
     queryFn: () => financeApi.partnerCollections(partnerId),
     enabled: !!partnerId,
@@ -232,8 +252,9 @@ export default function PayoutsPage() {
                 <Field label="Amount (AMD)">
                   <Input
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                    onChange={(e) => setAmount(amountInput(e.target.value))}
                     placeholder="0.00"
+                    inputMode="decimal"
                     disabled={!canMoveMoney}
                   />
                 </Field>
@@ -261,6 +282,11 @@ export default function PayoutsPage() {
               AMD
             </span>
           </p>
+        )}
+        {partnerId && balanceFailed && (
+          <div className="mt-3">
+            <LoadFailed what="this partner's balance" onRetry={() => refetchBalance()} />
+          </div>
         )}
         {!canMoveMoney && (
           <p className="mt-2 text-[13px] text-muted">
@@ -290,8 +316,9 @@ export default function PayoutsPage() {
                 <Field label="Amount (AMD)">
                   <Input
                     value={collectionAmount}
-                    onChange={(e) => setCollectionAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                    onChange={(e) => setCollectionAmount(amountInput(e.target.value))}
                     placeholder="0.00"
+                    inputMode="decimal"
                     disabled={!canMoveMoney}
                   />
                 </Field>
@@ -332,6 +359,13 @@ export default function PayoutsPage() {
                 {recordCollection.isPending ? 'Recording…' : 'Record collection'}
               </Button>
             </div>
+          ) : !balance ? (
+            // Loading or failed: an unknown balance is not "owes nothing".
+            <p className="mt-3 text-[13px] text-muted">
+              {balanceFailed
+                ? 'The balance could not be loaded, so what this partner owes is unknown.'
+                : 'Loading the balance…'}
+            </p>
           ) : (
             <p className="mt-3 text-[13px] text-muted">
               This partner does not currently owe TuTak anything — there is nothing to collect.
@@ -350,6 +384,10 @@ export default function PayoutsPage() {
       <div className="mt-6">
         {!partnerId ? (
           <EmptyState title="Select a partner" message="Pick a partner above to see their payouts." />
+        ) : payoutsFailed ? (
+          <LoadFailed what="payouts" onRetry={() => refetchPayouts()} />
+        ) : payouts === undefined ? (
+          <p className="text-[13px] text-muted">Loading payouts…</p>
         ) : rows.length === 0 ? (
           <EmptyState
             title="No payouts yet"
@@ -437,7 +475,11 @@ export default function PayoutsPage() {
       {partnerId && (
         <div className="mt-6">
           <h2 className="mb-3 text-[15px] font-semibold text-ink">Collections</h2>
-          {collectionRows.length === 0 ? (
+          {collectionsFailed ? (
+            <LoadFailed what="collections" onRetry={() => refetchCollections()} />
+          ) : collections === undefined ? (
+            <p className="text-[13px] text-muted">Loading collections…</p>
+          ) : collectionRows.length === 0 ? (
             <EmptyState
               title="No collections yet"
               message="Nothing has been recorded as transferred in from this partner."

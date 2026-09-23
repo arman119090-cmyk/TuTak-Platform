@@ -26,6 +26,7 @@ import { UpdateCommercialSettingsDto } from './dto/update-commercial-settings.dt
 import { UpdatePartnerAboutDto } from './dto/update-partner-about.dto';
 import { UpdatePartnerFuelTypesDto } from './dto/update-partner-fuel-types.dto';
 import { SetBranchFuelTypeDto } from './dto/set-branch-fuel-type.dto';
+import { SetBranchStateDto } from './dto/set-branch-state.dto';
 import { SetActiveDto } from '../admin/dto/set-active.dto';
 import { NearbyPartnersQueryDto } from './dto/nearby-partners.query.dto';
 import { PartnersService } from './partners.service';
@@ -320,9 +321,13 @@ export class PartnersController {
    * `replaceOfferings`.
    */
   @Get(':id/branches')
-  listBranches(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
+  listBranches(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @Query('includeArchived') includeArchived?: string,
+  ) {
     assertPartnerScope(user, id);
-    return this.partnersService.listBranches(id);
+    return this.partnersService.listBranches(id, includeArchived === 'true');
   }
 
   @Post(':id/branches')
@@ -364,6 +369,34 @@ export class PartnersController {
     return branch;
   }
 
+  /**
+   * Open it, shut it for now, or close it for good.
+   *
+   * Owner-only, like every other branch write: which locations a business
+   * trades at is not a cashier's decision. Archiving keeps every purchase,
+   * statement line and open dispute exactly where it was — see
+   * `PartnersService.setBranchState`.
+   */
+  @Patch(':id/branches/:branchId/state')
+  async setBranchState(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('id') id: string,
+    @UuidParam('branchId') branchId: string,
+    @Body() dto: SetBranchStateDto,
+  ) {
+    assertPartnerScope(user, id);
+    assertPartnerOwner(user, id, 'change a branch state');
+    const branch = await this.partnersService.setBranchState(id, branchId, dto.state, user.id);
+    await this.auditService.record({
+      actorUserId: user.id,
+      action: AuditAction.PARTNER_UPDATED,
+      entityType: 'Partner',
+      entityId: id,
+      metadata: { field: 'branches', op: 'state', branchId, state: dto.state },
+    });
+    return branch;
+  }
+
   /** Deactivate/reactivate — see `PartnerBranch.isActive` for why this is never a hard delete. */
   @Patch(':id/branches/:branchId/active')
   async setBranchActive(
@@ -374,7 +407,7 @@ export class PartnersController {
   ) {
     assertPartnerScope(user, id);
     assertPartnerOwner(user, id, 'deactivate or reactivate a branch');
-    const branch = await this.partnersService.setBranchActive(id, branchId, dto.isActive);
+    const branch = await this.partnersService.setBranchActive(id, branchId, dto.isActive, user.id);
     await this.auditService.record({
       actorUserId: user.id,
       action: AuditAction.PARTNER_UPDATED,

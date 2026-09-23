@@ -89,8 +89,34 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
   };
 
   /** Staff scoped to the partner, optionally already assigned to specific branches. */
+  /**
+   * A cashier posted to these branches — in the database, not only in the
+   * claims.
+   *
+   * The postings used to be claimed and never written, which was enough
+   * while every check read the claims. It stopped being enough when
+   * confirmation began re-checking standing against the rows at the moment
+   * it moves money: a claim that no posting backs is exactly what that check
+   * exists to catch, and a fixture that fabricates one tests nothing.
+   *
+   * The display code is deliberately outside the `EMP-` namespace so these
+   * rows neither collide with the allocator nor move its counter.
+   */
+  let postingSeq = 0;
   const branchStaff = async (partnerId: string, branchIds: string[] = []) => {
     const u = await staffMember(partnerId, RoleName.PARTNER_STAFF);
+    for (const branchId of branchIds) {
+      postingSeq += 1;
+      await prisma.partnerBranchStaffAssignment.create({
+        data: {
+          partnerId,
+          partnerBranchId: branchId,
+          userId: u.id,
+          employeeDisplayCode: `T-${String(postingSeq).padStart(3, '0')}`,
+          assignedByUserId: u.id,
+        },
+      });
+    }
     return asRequestUser(u.id, RoleName.PARTNER_STAFF, partnerId, { branchIds });
   };
 
@@ -230,7 +256,10 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
 
       const assignedCaller = await branchStaff(partner.id, [branch.id]);
       const roster = await branchStaffController.list(assignedCaller, partner.id, branch.id);
-      expect(roster).toHaveLength(1);
+      // Two: the person the owner posted, and the caller — who is now posted
+      // here in the database rather than only in their claims.
+      expect(roster).toHaveLength(2);
+      expect(roster.map((r) => r.userId)).toContain(staffUser.id);
 
       // `list()` throws synchronously (the guard runs before any `await`),
       // so the assertion itself must be synchronous too.

@@ -1,5 +1,17 @@
 import { ReconciliationOutcome } from '@prisma/client';
-import { IsDateString, IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsDateString,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateSettlementDraftDto {
   @IsDateString()
@@ -69,4 +81,43 @@ export class CancelSettlementDto {
   @IsString()
   @Length(3, 500)
   reason: string;
+}
+
+/**
+ * The filter on a partner's own account activity.
+ *
+ * Every field is optional and the unfiltered call is the whole account, so a
+ * partner never has to guess a starting filter to see their own money. The
+ * cursor is opaque on purpose: it encodes the sort key, and a client that
+ * built one itself would be relying on an ordering this service is free to
+ * change.
+ */
+export class PartnerActivityQueryDto {
+  @IsDateString()
+  @IsOptional()
+  from?: string;
+
+  @IsDateString()
+  @IsOptional()
+  to?: string;
+
+  @IsUUID()
+  @IsOptional()
+  branchId?: string;
+
+  @IsIn(['UNSETTLED', 'IN_SETTLEMENT', 'UNDER_REVIEW', 'PAID'])
+  @IsOptional()
+  state?: 'UNSETTLED' | 'IN_SETTLEMENT' | 'UNDER_REVIEW' | 'PAID';
+
+  @IsString()
+  @Length(1, 400)
+  @IsOptional()
+  cursor?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  @IsOptional()
+  limit?: number;
 }

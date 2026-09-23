@@ -2,30 +2,58 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { AppShell, type NavItem } from '@tutak/design/web';
 import { authApi } from '@/lib/api/authApi';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { useAuthStore } from '@/lib/stores/authStore';
 
-const NAV: NavItem[] = [
-  { href: '/', label: 'Overview', icon: <NavIcon d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5" /> },
-  { href: '/transactions', label: 'Transactions', icon: <NavIcon d="M4 7h16M4 7l3-3M4 7l3 3M20 17H4M20 17l-3-3M20 17l-3 3" /> },
-  { href: '/qr', label: 'Payment QR', icon: <NavIcon d="M4 4h6v6H4V4ZM14 4h6v6h-6V4ZM4 14h6v6H4v-6ZM14 14h2.5v2.5H14V14ZM19.5 19.5H17V17h2.5v2.5Z" /> },
-  { href: '/purchase-intents', label: 'Purchase requests', icon: <NavIcon d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 13l2 2 4-4" /> },
-  { href: '/refunds', label: 'Returns', icon: <NavIcon d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /> },
-  { href: '/earnings', label: 'Earnings', icon: <NavIcon d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" /> },
+const NAV: (Omit<NavItem, 'label'> & { labelKey: string })[] = [
+  { href: '/', labelKey: 'partnerPanel.nav.overview', icon: <NavIcon d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5" /> },
+  { href: '/transactions', labelKey: 'partnerPanel.nav.transactions', icon: <NavIcon d="M4 7h16M4 7l3-3M4 7l3 3M20 17H4M20 17l-3-3M20 17l-3 3" /> },
+  { href: '/qr', labelKey: 'partnerPanel.nav.qr', icon: <NavIcon d="M4 4h6v6H4V4ZM14 4h6v6h-6V4ZM4 14h6v6H4v-6ZM14 14h2.5v2.5H14V14ZM19.5 19.5H17V17h2.5v2.5Z" /> },
+  { href: '/purchase-intents', labelKey: 'partnerPanel.nav.purchaseIntents', icon: <NavIcon d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 13l2 2 4-4" /> },
+  { href: '/refunds', labelKey: 'partnerPanel.nav.refunds', icon: <NavIcon d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /> },
+  { href: '/earnings', labelKey: 'partnerPanel.nav.earnings', icon: <NavIcon d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" /> },
   // Next to Earnings deliberately: Earnings is what activity produced, this
   // is what TuTak has actually drafted and transferred against it.
   {
     href: '/settlements',
-    label: 'Settlements',
+    labelKey: 'partnerPanel.nav.settlements',
     icon: <NavIcon d="M4 7h16M4 12h16M4 17h10" />,
   },
-  { href: '/ev-stations', label: 'EV stations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
-  { href: '/branding', label: 'Branding', icon: <NavIcon d="M4 16.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5Zm0 0 4.5-4.5 3 3 3.5-3.5L20 15M9 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z" /> },
-  { href: '/locations', label: 'Locations', icon: <NavIcon d="M12 21s7-6.5 7-11.5a7 7 0 1 0-14 0C5 14.5 12 21 12 21Zm0-8.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /> },
-  { href: '/profile', label: 'Public profile', icon: <NavIcon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" /> },
-  { href: '/integrations', label: 'Integrations', icon: <NavIcon d="M8 12a4 4 0 1 1 8 0 4 4 0 0 1-8 0ZM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /> },
+  { href: '/ev-stations', labelKey: 'partnerPanel.nav.evStations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
+  { href: '/branding', labelKey: 'partnerPanel.nav.branding', icon: <NavIcon d="M4 16.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5Zm0 0 4.5-4.5 3 3 3.5-3.5L20 15M9 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z" /> },
+  // The organisation: where you trade and who works there. Kept as two
+  // entries rather than one page with tabs — the owner arrives with one of
+  // the two questions already in mind, and a tab would make them pick twice.
+  { href: '/locations', labelKey: 'partnerPanel.nav.branches', icon: <NavIcon d="M12 21s7-6.5 7-11.5a7 7 0 1 0-14 0C5 14.5 12 21 12 21Zm0-8.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /> },
+  {
+    href: '/employees',
+    labelKey: 'partnerPanel.nav.employees',
+    icon: <NavIcon d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 8a6 6 0 0 1 12 0M16 7.5a2.5 2.5 0 1 0 0-5M17 19a5 5 0 0 0-2-4" />,
+  },
+  { href: '/profile', labelKey: 'partnerPanel.nav.profile', icon: <NavIcon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" /> },
+  { href: '/integrations', labelKey: 'partnerPanel.nav.integrations', icon: <NavIcon d="M8 12a4 4 0 1 1 8 0 4 4 0 0 1-8 0ZM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /> },
 ];
+
+/**
+ * The role under the person's name, in their own language.
+ *
+ * It used to be `role.replace(/_/g, ' ').toLowerCase()`, which printed
+ * "partner owner" in the middle of an otherwise Armenian or Russian panel —
+ * an English word nobody chose, sitting under the owner's own name. A role
+ * nobody has named is left blank rather than shown as its enum value: an
+ * unlabelled line is better than `PARTNER_SOMETHING_NEW`.
+ */
+function roleLabel(roles: string[] | undefined, t: TFunction): string | undefined {
+  const role = roles?.find((name) => name.startsWith('PARTNER'));
+  if (!role) return undefined;
+  const key = `partnerPanel.nav.role${role}`;
+  const label = t(key, { defaultValue: '' });
+  return label || undefined;
+}
 
 function NavIcon({ d }: { d: string }) {
   return (
@@ -42,6 +70,7 @@ function NavIcon({ d }: { d: string }) {
 }
 
 export function Sidebar({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const router = useRouter();
   const { user, deviceId, clear } = useAuthStore();
@@ -55,14 +84,26 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Translated here rather than stored translated: the nav is a module
+  // constant so it is not rebuilt on every render, and a label baked into it
+  // at import time would be stuck in whatever language the page loaded in.
+  const nav: NavItem[] = NAV.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) }));
+
   return (
     <AppShell
-      subtitle="Partner"
-      nav={NAV}
+      subtitle={t('partnerPanel.nav.subtitle')}
+      nav={nav}
       currentPath={pathname}
       userName={user ? `${user.firstName} ${user.lastName}` : undefined}
-      userRole={user?.roles?.find((r) => r.startsWith('PARTNER'))?.replace(/_/g, ' ').toLowerCase()}
+      userRole={roleLabel(user?.roles, t)}
       onSignOut={handleSignOut}
+      signOutLabel={t('partnerPanel.nav.signOut')}
+      menuLabels={{
+        open: t('partnerPanel.nav.menuOpen'),
+        close: t('partnerPanel.nav.menuClose'),
+        nav: t('partnerPanel.nav.menuNav'),
+      }}
+      footerExtra={<LanguageSwitcher />}
       renderLink={(item, _active, className) => (
         <Link href={item.href} className={className}>
           {item.icon}

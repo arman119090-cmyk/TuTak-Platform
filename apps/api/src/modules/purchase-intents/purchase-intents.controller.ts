@@ -16,6 +16,7 @@ import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
 import { PurchaseFundingService } from './purchase-funding.service';
 import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
+import { PurchaseHistoryService } from './purchase-history.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
 @ApiTags('purchase-intents')
@@ -27,6 +28,7 @@ export class PurchaseIntentsController {
     private readonly purchaseIntentRefunds: PurchaseIntentRefundService,
     private readonly refundRequests: PurchaseIntentRefundRequestService,
     private readonly funding: PurchaseFundingService,
+    private readonly purchaseHistory: PurchaseHistoryService,
   ) {}
 
   /**
@@ -284,6 +286,23 @@ export class PurchaseIntentsController {
       refund.purchaseIntent.partnerBranchId,
     );
     return this.purchaseIntentRefunds.confirmExternalRefund(refundId, staff.id);
+  }
+
+  /**
+   * Everything that happened to this purchase, not just who confirmed it.
+   *
+   * Gated exactly like the purchase itself and its refunds: the customer
+   * who made it, or somebody with reach over the branch it was made at. No
+   * `SETTLEMENT_READ` — this says what happened, never what is owed, and
+   * the money question has its own endpoint with its own permission.
+   */
+  @Get(':id/history')
+  async history(@CurrentUser() user: RequestUser, @UuidParam('id') id: string) {
+    const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    if (intent.customerId !== user.id) {
+      assertResourceBranchScope(user, intent.partnerId, intent.partnerBranchId);
+    }
+    return this.purchaseHistory.forIntent(id);
   }
 
   @Get(':id/refunds')

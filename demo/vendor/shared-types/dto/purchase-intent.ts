@@ -3,6 +3,7 @@ import {
   CustomerPaymentBlockReason,
   CustomerPaymentState,
   PaymentRoute,
+  PurchaseConfirmationSource,
   PurchaseIntentStatus,
   UnitOfMeasure,
 } from '../enums/purchase-intent';
@@ -52,6 +53,39 @@ export interface RejectPurchaseIntentRequestDto {
   reasonCode: string;
   comment?: string;
 }
+
+/**
+ * Who or what confirmed a purchase, as the partner's own screens read it.
+ *
+ * A discriminated union rather than five optional fields, because the five
+ * columns behind it are only ever valid in three combinations and a client
+ * that has to remember which is a client that will one day print a cashier's
+ * name next to a provider callback. The database enforces the same three
+ * shapes — `purchase_intents_confirmation_is_consistent`.
+ *
+ * `null` means the source was not recorded: every purchase confirmed before
+ * these columns existed, and every purchase not yet confirmed. Shown as "not
+ * recorded", never attributed to anybody.
+ */
+export type PurchaseConfirmationDto =
+  | {
+      source: PurchaseConfirmationSource.STAFF;
+      /**
+       * The person's permanent code at this partner, frozen on the day. A
+       * transfer, a promotion or leaving changes none of it.
+       */
+      employeeCode: string;
+      /** The posting they acted under. Null for an owner or all-branch manager. */
+      assignmentId: string | null;
+      /** The role held at that moment, set with `assignmentId` or not at all. */
+      role: string | null;
+    }
+  | {
+      source: PurchaseConfirmationSource.PARTNER_INTEGRATION;
+      /** Which of the partner's own keys acted. No person was involved. */
+      apiKeyId: string;
+    }
+  | { source: PurchaseConfirmationSource.PROVIDER_CALLBACK };
 
 /** Mirrors the PurchaseIntent row the API returns. */
 export interface PurchaseIntentDto {
@@ -116,7 +150,27 @@ export interface PurchaseIntentDto {
    * partner replaces its logo in between.
    */
   partnerBrand: PartnerBrandDto;
+  /**
+   * The user id of the member of staff who confirmed it.
+   *
+   * Superseded by `confirmation` and kept because released clients read it:
+   * the admin dashboard's finance views (`financeApi.ts`) and the mobile
+   * build in the field both do. It is still written on every staff
+   * confirmation, so nothing that reads it breaks, and it stays null for the
+   * two sources that involve no person — which is exactly why a screen that
+   * wants to name somebody should read `confirmation` instead. Removed only
+   * once no shipped client reads it.
+   */
   confirmedByUserId: string | null;
+  /**
+   * What kind of event confirmed this purchase, and who acted in it.
+   *
+   * Read this rather than inferring from `confirmedByUserId` being null:
+   * null means both "a provider confirmed it" and "this purchase predates
+   * the record", and the two are not the same thing to a partner reading a
+   * statement.
+   */
+  confirmation: PurchaseConfirmationDto | null;
   /** Who refused it. Null on purchases rejected before this was recorded. */
   rejectedByUserId: string | null;
   rejectionReason: string | null;
@@ -280,4 +334,67 @@ export interface CreateRefundRequestRequestDto {
 /** What an owner or manager sends when turning one down. */
 export interface RejectRefundRequestRequestDto {
   note?: string;
+}
+
+/**
+ * Who did one thing in a purchase's history.
+ *
+ * A union rather than a user id: a partner's screens name people by their
+ * code, and the two `STAFF` shapes are deliberately different. `frozen: true`
+ * is what the purchase recorded on the day and never changes; `frozen: false`
+ * is a code looked up now, for a fact stored with nothing but a user id —
+ * a refund, a refund decision. A `null` code there means somebody on the
+ * payroll who has never been issued one, which is not the same as `TUTAK`.
+ *
+ * `NOT_RECORDED` is never turned into a name. A purchase confirmed before
+ * the confirmation columns existed has no actor on record, and inventing
+ * one is the failure this union exists to prevent.
+ */
+export type PurchaseHistoryActorDto =
+  | { kind: 'CUSTOMER' }
+  | { kind: 'STAFF'; employeeCode: string; role: string | null; frozen: true }
+  | { kind: 'STAFF'; employeeCode: string | null; frozen: false }
+  | { kind: 'INTEGRATION'; apiKeyId: string }
+  | { kind: 'PROVIDER'; provider: string | null }
+  | { kind: 'TUTAK' }
+  | { kind: 'SYSTEM' }
+  | { kind: 'NOT_RECORDED' };
+
+export type PurchaseHistoryEventTypeDto =
+  | 'CREATED'
+  | 'MERCHANT_APPROVED'
+  | 'PROVIDER_PAYMENT_STARTED'
+  | 'PROVIDER_PAYMENT_CONFIRMED'
+  | 'PROVIDER_PAYMENT_FAILED'
+  | 'CONFIRMED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'REFUND_REQUESTED'
+  | 'REFUND_REQUEST_REJECTED'
+  | 'REFUNDED'
+  | 'EXTERNAL_REFUND_CONFIRMED';
+
+export interface PurchaseHistoryEventDto {
+  type: PurchaseHistoryEventTypeDto;
+  at: string;
+  actor: PurchaseHistoryActorDto;
+  /** Only what the event itself recorded. Never a reconstruction. */
+  detail: Record<string, string | null>;
+}
+
+/**
+ * Everything that happened to one purchase.
+ *
+ * A purchase carries a single `confirmation` — who or what moved it to
+ * CONFIRMED — and that one fact is not the whole story. Staff agreeing the
+ * line item, a provider reporting that money arrived, a customer
+ * withdrawing, and a refund a week later are four events with four actors.
+ */
+export interface PurchaseHistoryDto {
+  purchaseIntentId: string;
+  /** The same short form the account activity prints. */
+  reference: string;
+  status: string;
+  events: PurchaseHistoryEventDto[];
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { BranchStaffRole, Prisma } from '@prisma/client';
+import { BranchStaffRole, PartnerBranchState, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { PartnerEmployeeService } from './partner-employee.service';
 
 /**
  * Which branch(es) of a multi-branch partner a member of staff may actually
@@ -9,15 +10,35 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
  * already granted; it never grants partner-scoped access on its own — that
  * stays `AdminService.assignRole`'s job.
  */
+/**
+ * Which unique index a `P2002` came from.
+ *
+ * Prisma reports the target either by index name or by the columns it
+ * covers, depending on how it learned about it, and a partial index declared
+ * in SQL rather than in the schema is usually the columns. Both spellings
+ * are accepted; nothing else on this table is unique on these columns, so
+ * neither form can mean anything else.
+ */
+function collidedOn(err: Prisma.PrismaClientKnownRequestError, column: string): boolean {
+  const target = err.meta?.target;
+  const text = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return text.toLowerCase().includes(column.toLowerCase());
+}
+
 @Injectable()
 export class PartnerBranchStaffService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly employees: PartnerEmployeeService,
+  ) {}
 
+  /** The branch, once it is established that it is this partner's. */
   private async assertBranchBelongsToPartner(partnerId: string, branchId: string) {
     const branch = await this.prisma.partnerBranch.findUnique({ where: { id: branchId } });
     if (!branch || branch.partnerId !== partnerId) {
       throw new NotFoundException('Branch not found');
     }
+    return branch;
   }
 
   listForBranch(partnerId: string, branchId: string, includeInactive = false) {
@@ -60,23 +81,16 @@ export class PartnerBranchStaffService {
   }
 
   /**
-   * `EMP-<n>` scoped to the partner, `n` one past the highest existing
-   * numeric suffix. Best-effort: two concurrent assignments could still
-   * collide on the partner-unique constraint, which the caller surfaces as
-   * an ordinary 409 rather than this racing to retry — assigning staff is
-   * low-frequency, manually-triggered work, not a hot path worth a retry
-   * loop.
+   * The assignment's own display code, taken from the partner's shared
+   * counter rather than from a second reading of the highest number.
+   *
+   * Both codes live in one `EMP-` namespace per partner, so both have to be
+   * issued by the same allocator — see `PartnerEmployeeService.nextCode` for
+   * why reading a maximum and inserting past it is a race rather than a
+   * scheme.
    */
-  private async nextDisplayCode(partnerId: string): Promise<string> {
-    const existing = await this.prisma.partnerBranchStaffAssignment.findMany({
-      where: { partnerId, employeeDisplayCode: { startsWith: 'EMP-' } },
-      select: { employeeDisplayCode: true },
-    });
-    const max = existing.reduce((highest, { employeeDisplayCode }) => {
-      const n = Number(employeeDisplayCode.slice('EMP-'.length));
-      return Number.isFinite(n) && n > highest ? n : highest;
-    }, 0);
-    return `EMP-${String(max + 1).padStart(3, '0')}`;
+  private nextDisplayCode(partnerId: string): Promise<string> {
+    return this.employees.nextCode(partnerId);
   }
 
   /**
@@ -90,7 +104,15 @@ export class PartnerBranchStaffService {
     branchId: string,
     params: { userId: string; role?: BranchStaffRole; employeeDisplayCode?: string; assignedByUserId: string },
   ) {
-    await this.assertBranchBelongsToPartner(partnerId, branchId);
+    const branch = await this.assertBranchBelongsToPartner(partnerId, branchId);
+    // Posting somebody to a location that is closed for good is a promise
+    // nobody can keep: they could not take a purchase there, and the roster
+    // would name a place the business no longer trades at. A *suspended*
+    // branch is a different matter — it reopens, and the people who work
+    // there are still the people who work there.
+    if (branch.state === PartnerBranchState.ARCHIVED) {
+      throw new BadRequestException('This branch is archived and cannot take new staff');
+    }
 
     const hasPartnerRole = await this.prisma.userRole.findFirst({
       where: { userId: params.userId, partnerId },
@@ -99,32 +121,57 @@ export class PartnerBranchStaffService {
       throw new BadRequestException('This user has no staff role at this partner yet');
     }
 
-    const employeeDisplayCode = params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
+    // A hand-picked code has to move the counter, or the allocator walks up
+    // to it later and collides with a code this partner is already using.
+    if (params.employeeDisplayCode) {
+      await this.employees.reserveUpTo(partnerId, params.employeeDisplayCode);
+    }
 
-    try {
-      return await this.prisma.partnerBranchStaffAssignment.create({
-        data: {
-          partnerId,
-          partnerBranchId: branchId,
-          userId: params.userId,
-          role: params.role ?? BranchStaffRole.STAFF,
-          employeeDisplayCode,
-          assignedByUserId: params.assignedByUserId,
-        },
-      });
-    } catch (err) {
-      // Two distinct unique constraints can fire here: the partial "one
-      // ACTIVE assignment per (user, branch)" index (this user is already
-      // assigned here) and the ordinary "employeeDisplayCode unique per
-      // partner" one (a caller-supplied code collided, or a concurrent
-      // auto-generated one raced this request). Both are the caller's to
-      // retry with different input, never a 500.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException(
-          'This user is already assigned here, or the employee code is already taken — please retry.',
-        );
+    // The person's permanent code at this partner, minted now if this is the
+    // first time they have been named. Separate from the assignment code
+    // below and deliberately so: this one survives the transfer that ends
+    // this assignment — see `PartnerEmployeeService`.
+    await this.employees.codeFor(partnerId, params.userId);
+
+    // A code the caller chose is theirs to fix if it is taken; a code this
+    // method drew is this method's to draw again.
+    //
+    // The second case is not hypothetical during a rolling deploy: the
+    // previous release issues assignment codes by reading the highest one
+    // and adding one, which is exactly the number the counter is about to
+    // hand out. One redraw walks past it. Bounded for the same reason
+    // `codeFor` bounds its own loop.
+    for (let attempt = 0; ; attempt += 1) {
+      const employeeDisplayCode =
+        params.employeeDisplayCode ?? (await this.nextDisplayCode(partnerId));
+      try {
+        return await this.prisma.partnerBranchStaffAssignment.create({
+          data: {
+            partnerId,
+            partnerBranchId: branchId,
+            userId: params.userId,
+            role: params.role ?? BranchStaffRole.STAFF,
+            employeeDisplayCode,
+            assignedByUserId: params.assignedByUserId,
+          },
+        });
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+          throw err;
+        }
+        // Two distinct unique constraints reach here. The partial "one ACTIVE
+        // assignment per (user, branch)" index means this person is already
+        // posted here, and redrawing a code would not change that; the
+        // "employeeDisplayCode unique per partner" one means the number is
+        // taken. Only the second is worth another round, and only when the
+        // number was ours to choose.
+        const codeCollision = collidedOn(err, 'employeeDisplayCode');
+        if (!codeCollision || params.employeeDisplayCode || attempt >= 3) {
+          throw new ConflictException(
+            'This user is already assigned here, or the employee code is already taken — please retry.',
+          );
+        }
       }
-      throw err;
     }
   }
 

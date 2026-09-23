@@ -17,6 +17,7 @@ import {
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PurchaseConfirmationSource,
   PurchaseIntent,
   PurchaseIntentStatus,
   TransactionType,
@@ -25,6 +26,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { randomInt, randomUUID } from 'node:crypto';
 import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parseMoney, parsePositiveMoney, roundCharge } from '../../common/utils/money';
+import { assertStandingAtFinancialChange } from '../../common/auth/standing';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CustomerBalanceService } from '../customer-balance/customer-balance.service';
@@ -35,6 +37,7 @@ import { LedgerService } from '../ledger/ledger.service';
 import { contributionForPurchase } from '../partners/contribution/contribution-rule';
 import { PartnerContributionRuleService } from '../partners/contribution/partner-contribution-rule.service';
 import { PartnersService } from '../partners/partners.service';
+import { PartnerEmployeeService } from '../partners/partner-employee.service';
 import { MONEY_MAY_HAVE_MOVED } from '../psp/psp-attempt-safety';
 import {
   CURRENT_REFERRAL_PROGRAM_VERSION,
@@ -62,6 +65,27 @@ export interface CreatePurchaseIntentOptions {
 }
 
 export type MerchantActor = { staffUserId: string } | { apiKeyId: string };
+
+/**
+ * What confirmed a purchase, in the shape the row records it.
+ *
+ * A discriminated union rather than a bag of nullable fields, because the
+ * three cases carry different evidence and mixing them is the mistake worth
+ * making impossible: a provider callback has no employee to name, and a
+ * cashier's confirmation is not proof that money reached TuTak.
+ */
+export type PurchaseConfirmation =
+  | {
+      source: 'STAFF';
+      staffUserId: string;
+      /** Permanent at this partner — see `PartnerEmployeeService`. */
+      employeeCode: string;
+      /** Null for an owner or all-branch manager: reach by role, not posting. */
+      assignmentId: string | null;
+      role: string | null;
+    }
+  | { source: 'PARTNER_INTEGRATION'; apiKeyId: string }
+  | { source: 'PROVIDER_CALLBACK' };
 
 const toMerchantActor = (actor: string | MerchantActor): MerchantActor =>
   typeof actor === 'string' ? { staffUserId: actor } : actor;
@@ -143,6 +167,76 @@ function withoutHoldId<T extends object>(row: T): Omit<T, 'prepaidHoldTransactio
     prepaidHoldTransactionId?: unknown;
   };
   return rest;
+}
+
+/**
+ * The confirmation as a client reads it, mirroring `PurchaseConfirmationDto`
+ * in `@tutak/shared-types`.
+ *
+ * Declared here rather than imported: this package does not depend on the
+ * shared types package (see `password-rules-parity.spec.ts` for the same
+ * situation and the same answer), so the two are kept in step by a contract
+ * test — `purchase-confirmation-contract.spec.ts` — rather than by a shared
+ * declaration that does not exist.
+ *
+ * `staffUserId` is deliberately absent although the write-side
+ * `PurchaseConfirmation` carries it: the id already leaves in
+ * `confirmedByUserId`, and a partner's screens name people by their code.
+ */
+export type PurchaseConfirmationView =
+  | {
+      source: typeof PurchaseConfirmationSource.STAFF;
+      employeeCode: string;
+      assignmentId: string | null;
+      role: string | null;
+    }
+  | { source: typeof PurchaseConfirmationSource.PARTNER_INTEGRATION; apiKeyId: string }
+  | { source: typeof PurchaseConfirmationSource.PROVIDER_CALLBACK };
+
+/** The five columns the confirmation union is stored in. */
+type ConfirmationColumns = {
+  confirmationSource: PurchaseConfirmationSource | null;
+  confirmedByEmployeeCode: string | null;
+  confirmedByAssignmentId: string | null;
+  confirmedByRole: string | null;
+  confirmedByApiKeyId: string | null;
+};
+
+/**
+ * Swaps the five stored confirmation columns for the single union the
+ * clients read.
+ *
+ * The columns leave the response entirely. They are the storage shape, and a
+ * client offered both would sooner or later read `confirmedByEmployeeCode`
+ * without checking `confirmationSource` — which is exactly the inference the
+ * source column exists to stop. `confirmedByUserId` does stay: released
+ * clients read it, and it is the one field whose meaning does not change.
+ *
+ * A row that does not carry the columns is refused by the type rather than
+ * reported as "not recorded": a narrowed `select` that forgot them would
+ * otherwise tell a partner nobody confirmed their sale.
+ */
+function withConfirmation<T extends ConfirmationColumns>(
+  row: T,
+): Omit<T, keyof ConfirmationColumns> & { confirmation: PurchaseConfirmationView | null } {
+  const {
+    confirmationSource: source,
+    confirmedByEmployeeCode: employeeCode,
+    confirmedByAssignmentId: assignmentId,
+    confirmedByRole: role,
+    confirmedByApiKeyId: apiKeyId,
+    ...rest
+  } = row;
+
+  let confirmation: PurchaseConfirmationView | null = null;
+  if (source === PurchaseConfirmationSource.STAFF && employeeCode) {
+    confirmation = { source, employeeCode, assignmentId, role };
+  } else if (source === PurchaseConfirmationSource.PARTNER_INTEGRATION && apiKeyId) {
+    confirmation = { source, apiKeyId };
+  } else if (source === PurchaseConfirmationSource.PROVIDER_CALLBACK) {
+    confirmation = { source };
+  }
+  return { ...rest, confirmation };
 }
 
 export function isLivePurchaseCollision(error: unknown): boolean {
@@ -234,6 +328,7 @@ export class PurchaseIntentsService {
     private readonly media: MediaViewService,
     private readonly customerBalance: CustomerBalanceService,
     private readonly funding: PurchaseFundingService,
+    private readonly employees: PartnerEmployeeService,
   ) {}
 
   /**
@@ -377,7 +472,7 @@ export class PurchaseIntentsService {
    * all of which would then be paying for an extra query.
    */
   async toDto<
-    T extends {
+    T extends ConfirmationColumns & {
       partnerId: string;
       brandDisplayName: string | null;
       brandLogoAssetId: string | null;
@@ -385,11 +480,11 @@ export class PurchaseIntentsService {
   >(intent: T) {
     const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
     const brand = await this.media.brandFor(intent);
-    return { ...withoutHoldId(rest), partnerBrand: brand! };
+    return { ...withConfirmation(withoutHoldId(rest)), partnerBrand: brand! };
   }
 
   async toDtos<
-    T extends {
+    T extends ConfirmationColumns & {
       partnerId: string;
       brandDisplayName: string | null;
       brandLogoAssetId: string | null;
@@ -398,7 +493,7 @@ export class PurchaseIntentsService {
     const brands = await this.media.brandsFor(intents);
     return intents.map((intent) => {
       const { brandDisplayName: _name, brandLogoAssetId: _asset, ...rest } = intent;
-      return { ...withoutHoldId(rest), partnerBrand: brands.get(intent)! };
+      return { ...withConfirmation(withoutHoldId(rest)), partnerBrand: brands.get(intent)! };
     });
   }
 
@@ -1147,7 +1242,7 @@ export class PurchaseIntentsService {
      */
     await this.stampMerchantApproval(intent, merchant, dto);
 
-    const outcome = await this.settlePurchase(intent, staffUserId);
+    const outcome = await this.settlePurchase(intent, await this.confirmationFor(intent, merchant));
     if (outcome === 'already-resolved') {
       // Lost the race — someone else confirmed, rejected, or the sweep
       // expired it a moment ago.
@@ -1236,7 +1331,7 @@ export class PurchaseIntentsService {
         `Purchase is ${intent.status} but the provider confirmed payment — not settled, needs investigation`,
       );
     }
-    return this.settlePurchase(intent, null, tx);
+    return this.settlePurchase(intent, { source: 'PROVIDER_CALLBACK' }, tx);
   }
 
   /**
@@ -1258,11 +1353,65 @@ export class PurchaseIntentsService {
    * confirmed it, and recording a person who did not act would be a lie in
    * the audit trail.
    */
+  /**
+   * What to write down about this confirmation, resolved at the moment it
+   * happens.
+   *
+   * Two things are deliberate here. The actor is the one the caller was
+   * authenticated as — never a value from the request body, which carries no
+   * actor at all — so there is nothing to substitute. And the employee's
+   * *current* branch assignment is read now, because "which posting were
+   * they acting under" is only answerable while it is still true; read a
+   * month later it would answer with wherever they work today.
+   *
+   * An owner or an all-branch manager has no assignment and gets a null one
+   * rather than a borrowed one. They still get a code: a person who
+   * confirmed a sale is a person the partner can point at, whatever their
+   * reach.
+   */
+  private async confirmationFor(
+    intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
+    merchant: MerchantActor,
+  ): Promise<PurchaseConfirmation> {
+    if ('apiKeyId' in merchant) {
+      return { source: 'PARTNER_INTEGRATION', apiKeyId: merchant.apiKeyId };
+    }
+
+    const staffUserId = merchant.staffUserId;
+    const [employeeCode, assignment] = await Promise.all([
+      this.employees.codeFor(intent.partnerId, staffUserId),
+      // The assignment covering the branch this purchase actually happened
+      // at, and only an active one: a deactivated posting is not what
+      // somebody acted under, and the branch-scope check the controller ran
+      // has already refused this call if they had no standing at all.
+      intent.partnerBranchId
+        ? this.prisma.partnerBranchStaffAssignment.findFirst({
+            where: {
+              partnerId: intent.partnerId,
+              partnerBranchId: intent.partnerBranchId,
+              userId: staffUserId,
+              isActive: true,
+            },
+            select: { id: true, role: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      source: 'STAFF',
+      staffUserId,
+      employeeCode,
+      assignmentId: assignment?.id ?? null,
+      role: assignment?.role ?? null,
+    };
+  }
+
   private async settlePurchase(
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
-    staffUserId: string | null,
+    confirmation: PurchaseConfirmation | null,
     externalTx?: Prisma.TransactionClient,
   ): Promise<'settled' | 'already-resolved'> {
+    const staffUserId = confirmation?.source === 'STAFF' ? confirmation.staffUserId : null;
     // Spec §12: the pool is computed from the terms this purchase was
     // *snapshotted* under — not from whatever the partner's terms are today.
     //
@@ -1303,6 +1452,28 @@ export class PurchaseIntentsService {
     const l3Entry = chain.find((c) => c.level === 3) ?? null;
 
     const run = async (tx: Prisma.TransactionClient) => {
+      // The last word on authorization, asked where the money moves rather
+      // than where the request came in.
+      //
+      // The controller already refused anybody without standing, from claims
+      // rebuilt on this request. What it cannot cover is the gap between
+      // that read and this write: the owner may have ended the posting, or
+      // deactivated the person, in between. `assertStandingAtFinancial-
+      // Change` is that gap closed — see its docblock for the ordering it
+      // establishes and for why a revocation that lands *after* this point
+      // correctly leaves the sale confirmed.
+      //
+      // Only for a person. A provider callback has no standing to lose, and
+      // an integration key's validity is checked by the route that accepts
+      // the key.
+      if (confirmation?.source === 'STAFF') {
+        await assertStandingAtFinancialChange(tx, {
+          partnerId: intent.partnerId,
+          branchId: intent.partnerBranchId,
+          userId: confirmation.staffUserId,
+        });
+      }
+
       // Conditional on still being AWAITING_CONFIRMATION, exactly like
       // the rest of this codebase's claim-then-act pattern — but now the
       // claim and the act are the same atomic unit.
@@ -1311,6 +1482,19 @@ export class PurchaseIntentsService {
         data: {
           status: PurchaseIntentStatus.CONFIRMED,
           confirmedByUserId: staffUserId,
+          // Frozen, not joined on read. `employeeCode` is the person's
+          // permanent code at this partner; the assignment and role are the
+          // posting they acted under. A later transfer, rename, promotion or
+          // deactivation changes none of it — which is the requirement, and
+          // the reason these are columns rather than a lookup.
+          confirmationSource: confirmation?.source ?? null,
+          confirmedByEmployeeCode:
+            confirmation?.source === 'STAFF' ? confirmation.employeeCode : null,
+          confirmedByAssignmentId:
+            confirmation?.source === 'STAFF' ? confirmation.assignmentId : null,
+          confirmedByRole: confirmation?.source === 'STAFF' ? confirmation.role : null,
+          confirmedByApiKeyId:
+            confirmation?.source === 'PARTNER_INTEGRATION' ? confirmation.apiKeyId : null,
           confirmedAt: new Date(),
           // Spec §12's pool split, snapshotted at the moment it is
           // actually posted — a later refund reverses these exact

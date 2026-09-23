@@ -12,7 +12,6 @@ import { ProductGrid } from "@/components/product/product-grid";
 import { ProductImage } from "@/components/product/product-image";
 import { Stars } from "@/components/product/stars";
 import { ARM_NUMERALS, Ararat, Braid, Rosette } from "@/components/ui/armenia";
-import { BRAND_TAGLINE } from "@/components/layout/site-header";
 import { IconArrow } from "@/components/ui/icons";
 
 type Props = { params: Promise<{ locale: string }> };
@@ -64,6 +63,9 @@ export default async function HomePage({ params }: Props) {
   const sidekicks = family.filter((f) => f.collectionSlug !== "little-joe").slice(0, 2);
   // Collection tiles: a representative character per collection.
   const collectionTiles = family;
+  // Armenian letters serve as numerals on the Armenian site; other
+  // languages get plain figures so no foreign script appears on the page.
+  const nums: readonly string[] = locale === "hy" ? ARM_NUMERALS : ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
   const heroTitle = home.hero?.title ?? `${m.home.heroLine1} ${m.home.heroLine2}`;
   const [line1, line2] = home.hero ? splitHeadline(heroTitle) : [m.home.heroLine1, m.home.heroLine2];
 
@@ -134,8 +136,7 @@ export default async function HomePage({ params }: Props) {
                   <ProductImage media={s.image} accent="transparent" fit="contain" sizes="160px" />
                 </div>
               ))}
-              <Seal className="absolute -right-4 -top-4 size-24 md:-right-8 md:-top-6 md:size-28" />
-              <span className="sr-only">{BRAND_TAGLINE}</span>
+              <Seal text={m.brand.seal} className="absolute -right-4 -top-4 size-24 md:-right-8 md:-top-6 md:size-28" />
             </Link>
           ) : null}
         </div>
@@ -144,17 +145,17 @@ export default async function HomePage({ params }: Props) {
       {/* ── Promise: four points numbered with Armenian letters ── */}
       <section className="border-y border-line bg-card/60">
         <ul className="container-lj grid grid-cols-2 md:grid-cols-4">
-          <Trust n={0} title={m.home.trustDeliveryTitle} body={m.home.trustDeliveryBody} href={paths.page(locale, "delivery")} />
-          <Trust n={1} title={m.home.trustPaymentTitle} body={m.home.trustPaymentBody} href={paths.page(locale, "payment")} />
-          <Trust n={2} title={m.home.trustFinderTitle} body={m.home.trustFinderBody} href={paths.finder(locale)} />
-          <Trust n={3} title={m.home.trustSupportTitle} body={m.home.trustSupportBody} href={paths.page(locale, "contact")} />
+          <Trust nums={nums} n={0} title={m.home.trustDeliveryTitle} body={m.home.trustDeliveryBody} href={paths.page(locale, "delivery")} />
+          <Trust nums={nums} n={1} title={m.home.trustPaymentTitle} body={m.home.trustPaymentBody} href={paths.page(locale, "payment")} />
+          <Trust nums={nums} n={2} title={m.home.trustFinderTitle} body={m.home.trustFinderBody} href={paths.finder(locale)} />
+          <Trust nums={nums} n={3} title={m.home.trustSupportTitle} body={m.home.trustSupportBody} href={paths.page(locale, "contact")} />
         </ul>
       </section>
 
       {/* ── Popular scents ── */}
       {popular.length > 0 ? (
         <section className="container-lj py-16 md:py-24" aria-labelledby="popular-title">
-          <SectionHead n={0} id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
+          <SectionHead nums={nums} n={0} id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
           <ProductGrid products={popular} locale={locale} favorites={favorites} listName="popular" columns="six" priorityCount={2} />
         </section>
       ) : null}
@@ -162,7 +163,7 @@ export default async function HomePage({ params }: Props) {
       {/* ── The family: one arch per character collection ── */}
       {collectionTiles.length > 1 ? (
         <section className="container-lj pb-16 md:pb-24" aria-labelledby="family-tiles-title">
-          <SectionHead n={1} id="family-tiles-title" title={m.home.familyTitle} />
+          <SectionHead nums={nums} n={1} id="family-tiles-title" title={m.home.familyTitle} />
           <ul className="no-scrollbar -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-5 md:gap-5 md:overflow-visible md:px-0">
             {collectionTiles.map((c) => (
               <li key={c.collectionSlug} className="w-[58vw] max-w-[15rem] shrink-0 snap-start md:w-auto md:max-w-none">
@@ -201,7 +202,7 @@ export default async function HomePage({ params }: Props) {
               <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[0.75rem] text-white/75 md:justify-start">
                 {[m.home.quizPoint1, m.home.quizPoint2, m.home.quizPoint3].map((t, i) => (
                   <li key={t} className="flex items-center gap-2">
-                    <span className="font-[family-name:var(--font-serif)] text-white">{ARM_NUMERALS[i]}</span>
+                    <span className="font-[family-name:var(--font-serif)] text-white">{nums[i]}</span>
                     {t}
                   </li>
                 ))}
@@ -333,12 +334,12 @@ export default async function HomePage({ params }: Props) {
   );
 }
 
-function Trust({ n, title, body, href }: { n: number; title: string; body: string; href: string }) {
+function Trust({ nums, n, title, body, href }: { nums: readonly string[]; n: number; title: string; body: string; href: string }) {
   return (
     <li className="min-w-0 border-line [&:nth-child(2n)]:border-l md:border-l md:first:border-l-0 [&:nth-child(n+3)]:border-t md:[&:nth-child(n+3)]:border-t-0">
       <Link href={href} className="group flex h-full items-start gap-2.5 px-2 py-6 [hyphens:auto] sm:gap-3 sm:px-3 md:px-6 md:py-8">
         <span className="numeral shrink-0 !size-7 !text-[0.9rem] transition-colors group-hover:border-brand group-hover:text-brand sm:!size-9 sm:!text-[1.05rem]" aria-hidden="true">
-          {ARM_NUMERALS[n]}
+          {nums[n]}
         </span>
         <span className="min-w-0">
           <span className="block text-[0.84rem] font-semibold leading-tight [overflow-wrap:anywhere] sm:text-[0.9rem]">{title}</span>
@@ -349,12 +350,12 @@ function Trust({ n, title, body, href }: { n: number; title: string; body: strin
   );
 }
 
-function SectionHead({ n, id, title, href, cta }: { n: number; id: string; title: string; href?: string; cta?: string }) {
+function SectionHead({ nums, n, id, title, href, cta }: { nums: readonly string[]; n: number; id: string; title: string; href?: string; cta?: string }) {
   return (
     <div className="mb-9 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 md:mb-12">
       <div className="flex min-w-0 items-end gap-4">
         <span className="numeral mb-1 hidden sm:inline-grid" aria-hidden="true">
-          {ARM_NUMERALS[n]}
+          {nums[n]}
         </span>
         <div>
           <p className="kicker">Little Joe</p>
@@ -374,7 +375,7 @@ function SectionHead({ n, id, title, href, cta }: { n: number; id: string; title
 }
 
 /** Round gold seal with circular lettering. */
-function Seal({ className = "" }: { className?: string }) {
+function Seal({ text, className = "" }: { text: string; className?: string }) {
   return (
     <svg viewBox="0 0 120 120" className={`spin-slow ${className}`} aria-hidden="true">
       <defs>
@@ -383,8 +384,11 @@ function Seal({ className = "" }: { className?: string }) {
       <circle cx="60" cy="60" r="58" fill="#ffffff" />
       <circle cx="60" cy="60" r="54" fill="none" stroke="#7fb4e3" strokeWidth="0.8" />
       <circle cx="60" cy="60" r="33" fill="none" stroke="#7fb4e3" strokeWidth="0.8" />
-      <text fontSize="10.5" letterSpacing="3.2" fill="#0068b8" fontFamily="var(--font-serif)" fontWeight="600">
-        <textPath href="#seal-circle">LITTLE JOE · ՀԱՅԱՍՏԱՆ · YEREVAN ·</textPath>
+      <text fontSize="10" fill="#0068b8" fontFamily="var(--font-serif)" fontWeight="600">
+        {/* Spread the lettering evenly around the circle whatever its length. */}
+        <textPath href="#seal-circle" textLength="272" lengthAdjust="spacing">
+          {text}
+        </textPath>
       </text>
       <g transform="translate(48 47)" fill="#0068b8">
         <path d="M9 3.5 10.2 5.6 12 3.8 13.8 5.6 15 3.5 15.3 6.4A8 8 0 1 1 8.7 6.4Z" transform="scale(1.05)" />

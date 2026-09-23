@@ -3,6 +3,11 @@
 import type { Messages } from "@/i18n/messages";
 
 export const it = {
+  brand: {
+    country: "Armenia",
+    seal: "LITTLE JOE · YEREVAN · ARMENIA ·",
+    breadcrumb: "Percorso di navigazione",
+  },
   meta: {
     siteDescription:
       "Profumatori Little Joe per auto e casa in Armenia. Scegli la tua fragranza, paga in AMD, consegna in tutta l'Armenia.",

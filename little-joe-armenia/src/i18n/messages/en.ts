@@ -4,6 +4,11 @@
 // rejects empty strings and mismatched {placeholders}.
 
 export const en = {
+  brand: {
+    country: "Armenia",
+    seal: "LITTLE JOE · YEREVAN · ARMENIA ·",
+    breadcrumb: "Breadcrumb",
+  },
   meta: {
     siteDescription:
       "Little Joe car and home fragrances in Armenia. Choose your scent, pay in AMD, delivery across Armenia.",

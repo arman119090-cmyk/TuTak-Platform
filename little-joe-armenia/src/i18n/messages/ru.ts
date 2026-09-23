@@ -3,6 +3,11 @@
 import type { Messages } from "@/i18n/messages";
 
 export const ru = {
+  brand: {
+    country: "Армения",
+    seal: "LITTLE JOE · ЕРЕВАН · АРМЕНИЯ ·",
+    breadcrumb: "Навигационная цепочка",
+  },
   meta: {
     siteDescription:
       "Ароматизаторы Little Joe для автомобиля и дома в Армении. Выберите свой аромат, оплата в драмах, доставка по всей Армении.",

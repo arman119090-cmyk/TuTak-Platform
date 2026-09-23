@@ -11,8 +11,6 @@ import { MobileMenu } from "@/components/layout/mobile-menu";
 import { Wordmark } from "@/components/layout/wordmark";
 import { NavLinks } from "@/components/layout/nav-links";
 
-export const BRAND_TAGLINE = "Put a smile in the air!";
-const HEADER_TAGLINE = "Armenia";
 
 export async function SiteHeader({ locale }: { locale: Locale }) {
   const m = getMessages(locale);
@@ -26,7 +24,7 @@ export async function SiteHeader({ locale }: { locale: Locale }) {
     <header className="sticky top-0 z-40 border-b border-line/70 bg-paper/90 backdrop-blur-xl supports-[backdrop-filter]:bg-paper/75">
       <div className="container-lj flex h-16 items-center gap-2 md:h-[4.5rem]">
         <Link href={paths.home(locale)} className="tap flex items-center" aria-label={env().STORE_NAME}>
-          <Wordmark tagline={HEADER_TAGLINE} />
+          <Wordmark tagline={m.brand.country} />
         </Link>
         <nav aria-label={m.nav.menu} className="ml-10 hidden lg:block">
           <NavLinks items={nav} />

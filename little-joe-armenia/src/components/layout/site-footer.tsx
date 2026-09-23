@@ -62,7 +62,7 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
       <Ararat tone="night" className="pointer-events-none absolute bottom-0 right-0 h-36 w-full opacity-50 md:h-52 md:w-[70%]" id="footer-ararat" />
       <div className="container-lj relative grid gap-10 pt-16 pb-12 md:grid-cols-[1.3fr_repeat(3,1fr)]">
         <div>
-          <Wordmark tagline="Put a smile in the air!" light />
+          <Wordmark tagline={m.brand.country} light />
           <p className="mt-5 max-w-xs text-sm leading-relaxed text-[#ffffff]/55">{authorised ? m.footer.officialPartner : m.footer.notOfficial}</p>
           {contacts.phone || contacts.email ? (
             <address className="mt-4 space-y-1 text-sm not-italic">

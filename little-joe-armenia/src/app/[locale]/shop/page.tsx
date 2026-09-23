@@ -56,7 +56,7 @@ export default async function ShopPage({ params, searchParams }: Props) {
         <Ararat className="pointer-events-none absolute bottom-0 right-0 h-[70%] w-full opacity-80 md:w-[60%]" id="shop-ararat" />
         <div className="relative flex min-h-36 items-center justify-between gap-4 px-6 py-7 md:min-h-48 md:px-12">
           <div>
-            <nav aria-label="Breadcrumb" className="text-[0.72rem] tracking-[0.04em] text-muted">
+            <nav aria-label={m.brand.breadcrumb} className="text-[0.72rem] tracking-[0.04em] text-muted">
               <Link href={paths.home(locale)} className="hover:text-ink">
                 {m.nav.home}
               </Link>{" "}

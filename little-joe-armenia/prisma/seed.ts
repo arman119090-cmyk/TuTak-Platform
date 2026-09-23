@@ -358,8 +358,20 @@ async function disableDemoLeftovers() {
   if (count) console.info(`[seed] deactivated ${count} demo promo code(s)`);
 }
 
+/**
+ * Early seeds put the Armenian tax-ID abbreviation into the ru/it/en legal
+ * placeholders («[ИНН / ՀՎՀՀ]»). Fix only that exact placeholder text; pages
+ * the owner has already rewritten are left alone.
+ */
+async function fixMixedLegalPlaceholders() {
+  const rows = await db.pageTranslation.findMany({ where: { locale: { not: "hy" }, body: { contains: " / ՀՎՀՀ]" } }, select: { id: true, body: true } });
+  for (const r of rows) await db.pageTranslation.update({ where: { id: r.id }, data: { body: r.body.replaceAll(" / ՀՎՀՀ]", "]") } });
+  if (rows.length) console.info(`[seed] fixed ${rows.length} legal placeholder(s)`);
+}
+
 async function main() {
   await reference();
+  await fixMixedLegalPlaceholders();
   if (demo) await demoCatalog();
   else await disableDemoLeftovers();
   await bootstrapAdmin();

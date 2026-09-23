@@ -96,7 +96,7 @@ export default async function ProductPage({ params }: Props) {
         params={{ currency: "AMD", value: v?.priceAmd ?? 0, items: [{ item_id: product.slug, item_name: product.name, price: v?.priceAmd ?? 0, item_category: product.collection.name }] }}
       />
       <div className="container-lj pt-4 md:pt-8">
-        <nav aria-label="Breadcrumb" className="text-sm text-muted">
+        <nav aria-label={m.brand.breadcrumb} className="text-sm text-muted">
           <ol className="flex flex-wrap items-center gap-1">
             <li>
               <Link href={paths.home(locale)} className="hover:text-ink">

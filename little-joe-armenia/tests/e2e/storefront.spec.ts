@@ -146,3 +146,29 @@ test.describe("storefront", () => {
     expect(h["x-content-type-options"]).toBe("nosniff");
   });
 });
+
+test.describe("no mixed languages", () => {
+  // Each locale shows only its own script (language names in the switcher
+  // carry their own lang attribute and are allowed).
+  const foreign: Record<string, RegExp> = { hy: /[А-Яа-яЁё]/, ru: /[Ա-ֆ]/, it: /[А-Яа-яЁёԱ-ֆ]/, en: /[А-Яа-яЁёԱ-ֆ]/ };
+  for (const locale of Object.keys(foreign)) {
+    test(`${locale}: home, shop and product use one language`, async ({ page }) => {
+      for (const path of ["", "/shop", "/p/little-joe-new-car", "/info/contact"]) {
+        await page.goto(`/${locale}${path}`);
+        const hits = await page.evaluate((src) => {
+          const r = new RegExp(src);
+          const out: string[] = [];
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          for (let n = w.nextNode(); n; n = w.nextNode()) {
+            const t = n.textContent?.trim() ?? "";
+            const el = n.parentElement;
+            if (t && el && !el.closest("script,style,[lang]:not(html)") && r.test(t)) out.push(t);
+          }
+          for (const t of document.querySelectorAll("svg text")) if (r.test(t.textContent ?? "")) out.push(t.textContent ?? "");
+          return out;
+        }, foreign[locale]!.source);
+        expect(hits, `${locale}${path}`).toEqual([]);
+      }
+    });
+  }
+});

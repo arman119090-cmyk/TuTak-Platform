@@ -3,6 +3,11 @@
 import type { Messages } from "@/i18n/messages";
 
 export const hy = {
+  brand: {
+    country: "Հայաստան",
+    seal: "LITTLE JOE · ԵՐԵՎԱՆ · ՀԱՅԱՍՏԱՆ ·",
+    breadcrumb: "Նավիգացիոն ուղի",
+  },
   meta: {
     siteDescription:
       "Little Joe բուրավետիչներ մեքենայի և տան համար Հայաստանում։ Ընտրեք Ձեր բույրը, վճարեք դրամով, առաքում ամբողջ Հայաստանով։",

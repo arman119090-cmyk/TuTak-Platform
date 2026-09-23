@@ -93,6 +93,66 @@
   font-weight: 400;
   font-display: swap;
 }
+/* Premium display serif ("LJ Serif"): Cormorant Garamond for Latin and
+   Cyrillic, Noto Serif Armenian for Armenian — picked per glyph. */
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/cormorant-garamond-latin-600-normal.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/cormorant-garamond-latin-500-normal.woff2") format("woff2");
+  font-weight: 400 500;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/cormorant-garamond-latin-500-italic.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/cormorant-garamond-cyrillic-600-normal.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/cormorant-garamond-cyrillic-500-normal.woff2") format("woff2");
+  font-weight: 400 500;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/cormorant-garamond-cyrillic-500-italic.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/noto-serif-armenian-armenian-600-normal.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+  unicode-range: U+0530-058F, U+2010, U+2024, U+25CC, U+FB13-FB17;
+}
+@font-face {
+  font-family: "LJ Serif";
+  src: url("/fonts/noto-serif-armenian-armenian-500-normal.woff2") format("woff2");
+  font-weight: 400 500;
+  font-display: swap;
+  unicode-range: U+0530-058F, U+2010, U+2024, U+25CC, U+FB13-FB17;
+}
 /* Metric-adjusted fallback keeps layout stable while fonts load (no CLS). */
 @font-face {
   font-family: "LJ Fallback";
@@ -106,47 +166,59 @@
 /* ───────────── Design tokens (see docs/DESIGN.md) ───────────── */
 @theme {
   --font-sans: "LJ Sans", "LJ Fallback", system-ui, sans-serif;
-  --font-hand: "LJ Hand", "LJ Sans", system-ui, sans-serif;
-  --font-logo: "LJ Logo", "LJ Sans", system-ui, sans-serif;
+  --font-serif: "LJ Serif", "Noto Serif Armenian", Georgia, "Times New Roman", serif;
+  /* Former hand-lettered headlines now use the premium serif. */
+  --font-hand: var(--font-serif);
+  --font-logo: var(--font-serif);
 
-  --color-brand: #1463e6;
-  --color-brand-600: #0f55cc;
-  --color-brand-50: #eaf2fe;
-  --color-sky: #e8f2fc;
-  --color-sky-2: #f4f8fd;
+  /* "Yerevan" palette: ivory paper, pink tuff stone (the city's volcanic
+     building stone), pomegranate and apricot, Ararat-night for dark
+     surfaces. `brand` stays the name used across components. */
+  --color-brand: #8a1c2c;
+  --color-brand-600: #6f1523;
+  --color-brand-50: #f6e9e6;
+  --color-sky: #f1e7dc;
+  --color-sky-2: #f8f2ea;
 
-  --color-paper: #f7f9fc;
-  --color-card: #ffffff;
-  --color-ink: #111111;
-  --color-ink-2: #3d3d3a;
-  --color-muted: #6b6a65;
-  --color-line: #e8e7e2;
-  --color-line-strong: #d4d2cb;
-  --color-mist: #f3f2ee;
-  --color-ok: #1e7a4a;
+  --color-paper: #f8f3ec;
+  --color-card: #fffdf9;
+  --color-ink: #1d1714;
+  --color-ink-2: #4a3f38;
+  --color-muted: #7d7067;
+  --color-line: #e8ddd1;
+  --color-line-strong: #d6c7b8;
+  --color-mist: #f1e9df;
+  --color-ok: #2f6b45;
   --color-warn: #9a5b00;
-  --color-bad: #b3261e;
-  --color-focus: #2457ff;
+  --color-bad: #a3262b;
+  --color-focus: #8a1c2c;
+
+  --color-tuff: #ecd6c6;
+  --color-tuff-2: #e2c1ab;
+  --color-tuff-deep: #b9876c;
+  --color-apricot: #d98c4a;
+  --color-gold: #b08a57;
+  --color-pomegranate: #8a1c2c;
 
   --radius-card: 1.25rem;
   --radius-pill: 999px;
 
-  --text-display: clamp(2.4rem, 1.4rem + 4.2vw, 4.75rem);
+  --text-display: clamp(2.6rem, 1.5rem + 4.6vw, 5.4rem);
   --text-display--line-height: 1.02;
-  --text-display--letter-spacing: -0.035em;
-  --text-h1: clamp(1.9rem, 1.4rem + 2vw, 3rem);
-  --text-h1--line-height: 1.08;
-  --text-h1--letter-spacing: -0.025em;
-  --text-h2: clamp(1.45rem, 1.2rem + 1vw, 2.1rem);
-  --text-h2--line-height: 1.15;
-  --text-h2--letter-spacing: -0.02em;
+  --text-display--letter-spacing: -0.01em;
+  --text-h1: clamp(2rem, 1.5rem + 2.2vw, 3.3rem);
+  --text-h1--line-height: 1.06;
+  --text-h1--letter-spacing: -0.005em;
+  --text-h2: clamp(1.6rem, 1.3rem + 1.2vw, 2.4rem);
+  --text-h2--line-height: 1.12;
+  --text-h2--letter-spacing: 0;
 
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
-  --shadow-float: 0 1px 2px rgb(17 17 17 / 0.04), 0 12px 32px -12px rgb(17 17 17 / 0.18);
-  --shadow-card: 0 1px 2px rgb(20 50 100 / 0.05), 0 8px 24px -10px rgb(20 50 100 / 0.16);
-  --shadow-lift: 0 2px 4px rgb(20 50 100 / 0.05), 0 22px 44px -16px rgb(20 50 100 / 0.28);
-  --color-navy: #0c1a33;
-  --color-navy-2: #13254a;
+  --shadow-float: 0 1px 2px rgb(40 22 12 / 0.05), 0 16px 36px -14px rgb(40 22 12 / 0.22);
+  --shadow-card: 0 1px 1px rgb(40 22 12 / 0.04), 0 10px 30px -18px rgb(40 22 12 / 0.28);
+  --shadow-lift: 0 2px 4px rgb(40 22 12 / 0.05), 0 26px 50px -22px rgb(40 22 12 / 0.38);
+  --color-navy: #17141a;
+  --color-navy-2: #221d24;
 }
 
 :root {
@@ -239,11 +311,12 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    min-height: 3rem;
+    min-height: 2.875rem;
     padding-inline: 1.5rem;
     border-radius: var(--radius-pill);
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.01em;
     line-height: 1;
     transition:
       transform 160ms var(--ease-out-soft),
@@ -262,8 +335,8 @@ body {
   }
   .btn-primary {
     background: var(--color-brand);
-    color: white;
-    box-shadow: 0 6px 16px -8px rgb(20 99 230 / 0.7);
+    color: #fff8f1;
+    box-shadow: 0 10px 22px -14px rgb(138 28 44 / 0.9);
   }
   .btn-primary:hover:not(:disabled) {
     background: var(--color-brand-600);
@@ -277,25 +350,47 @@ body {
     color: var(--accent-ink);
   }
   .btn-ghost {
-    background: white;
-    color: var(--color-brand);
-    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-brand) 45%, white);
+    background: transparent;
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
   }
   .btn-ghost:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1.5px var(--color-brand);
+    box-shadow: inset 0 0 0 1px var(--color-ink);
+  }
+  /* Quiet text link with an arrow — the premium alternative to a button. */
+  .link-arrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-ink);
+    text-decoration: underline;
+    text-decoration-color: var(--color-gold);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 6px;
+    transition: color 200ms, text-underline-offset 200ms;
+  }
+  .link-arrow:hover {
+    color: var(--color-brand);
+    text-underline-offset: 8px;
   }
   .card {
-    background: white;
+    background: var(--color-card);
     border-radius: 1.25rem;
     box-shadow: var(--shadow-card);
   }
-  .hand {
-    font-family: var(--font-hand);
-    font-weight: 700;
-    letter-spacing: -0.01em;
+  .hand,
+  .serif {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.005em;
   }
-  :lang(hy) .hand {
-    letter-spacing: -0.02em;
+  :lang(hy) .hand,
+  :lang(hy) .serif {
+    letter-spacing: 0;
+    font-weight: 600;
   }
   .chip {
     display: inline-flex;
@@ -316,8 +411,8 @@ body {
   .chip[aria-pressed="true"],
   .chip[aria-checked="true"],
   .chip[data-active="true"] {
-    background: var(--color-brand);
-    color: white;
+    background: var(--color-ink);
+    color: #fff8f1;
     box-shadow: none;
   }
   .field {
@@ -419,19 +514,69 @@ dialog[open]::backdrop { animation: lj-fade 300ms ease-out; }
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--color-brand);
+  color: var(--color-gold);
 }
 .kicker::before {
   content: "";
-  width: 1.5rem;
-  height: 2px;
-  border-radius: 2px;
+  width: 1.75rem;
+  height: 1px;
   background: currentColor;
 }
 :lang(hy) .kicker { letter-spacing: 0.06em; }
 h1, h2, h3 { text-wrap: balance; }
 /* Armenian has no hand-lettered face here (falls back to Noto Sans Armenian
    Bold, which is much wider): scale hand headlines down so whole words fit. */
-:lang(hy) h1.hand { font-size: clamp(1.9rem, 1.1rem + 3.4vw, 3.9rem) !important; line-height: 1.08 !important; letter-spacing: -0.02em; }
-:lang(hy) h2.hand { font-size: clamp(1.6rem, 1.1rem + 2vw, 2.8rem) !important; line-height: 1.12 !important; }
-:lang(hy) p.hand { font-size: clamp(0.95rem, 0.8rem + 0.6vw, 1.3rem) !important; }
+:lang(hy) h1.hand { font-size: clamp(2rem, 1.2rem + 3.4vw, 4.1rem) !important; line-height: 1.1 !important; }
+:lang(hy) h2.hand { font-size: clamp(1.6rem, 1.15rem + 2vw, 2.8rem) !important; line-height: 1.15 !important; }
+:lang(hy) p.hand { font-size: clamp(1rem, 0.85rem + 0.6vw, 1.35rem) !important; }
+
+/* ───────────── Yerevan details ───────────── */
+/* Paper grain: an almost invisible noise so large ivory areas feel like
+   paper, not a flat screen colour. */
+body {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.22 0 0 0 0 0.12 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* Arch frame — the round-headed arch of Armenian church architecture. */
+.arch {
+  border-radius: 999px 999px 1.25rem 1.25rem;
+  overflow: hidden;
+}
+.arch-soft {
+  border-radius: 12rem 12rem 1rem 1rem;
+  overflow: hidden;
+}
+/* Pink tuff stone wash (Yerevan's building stone), tinted by the product. */
+.tuff {
+  background:
+    radial-gradient(120% 80% at 50% 100%, color-mix(in oklab, var(--tint, var(--color-tuff)) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, #f5e6da 0%, var(--color-tuff) 100%);
+}
+/* Armenian letter used as a section numeral (Ա = 1, Բ = 2 …). */
+.numeral {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--color-gold) 70%, transparent);
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-gold);
+}
+.rule-gold {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+}
+@keyframes lj-spin { to { transform: rotate(360deg); } }
+.spin-slow { animation: lj-spin 40s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .spin-slow { animation: none; }
+}
+/* Armenian hero headline: keep long words whole («տրամադրություն»). */
+:lang(hy) .hero-title {
+  font-size: clamp(2.1rem, 1.2rem + 3.1vw, 4rem) !important;
+  line-height: 1.04 !important;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}

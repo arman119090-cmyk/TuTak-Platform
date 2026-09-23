@@ -30,10 +30,10 @@ export function MobileMenu({ locale, items }: { locale: Locale; items: { href: s
                 <Link
                   href={i.href}
                   onClick={() => setOpen(false)}
-                  className="flex min-h-14 items-center justify-between rounded-2xl px-3 text-lg font-semibold hover:bg-mist"
+                  className="flex min-h-14 items-center justify-between border-b border-line px-3 font-[family-name:var(--font-serif)] text-[1.4rem] font-semibold hover:text-brand"
                 >
                   {i.label}
-                  <IconChevron className="text-muted" />
+                  <IconChevron className="text-[var(--color-gold)]" />
                 </Link>
               </li>
             ))}

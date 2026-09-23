@@ -8,6 +8,7 @@ import { getSetting } from "@/lib/settings";
 import { visibleCollections } from "@/lib/catalog";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { Wordmark } from "@/components/layout/wordmark";
+import { Ararat, Braid } from "@/components/ui/armenia";
 
 export async function SiteFooter({ locale }: { locale: Locale }) {
   const m = getMessages(locale);
@@ -56,11 +57,13 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
   ];
 
   return (
-    <footer className="mt-24 bg-navy pb-[var(--safe-bottom)] text-white">
-      <div className="container-lj grid gap-10 py-14 md:grid-cols-[1.3fr_repeat(3,1fr)]">
+    <footer className="relative mt-24 overflow-hidden bg-navy pb-[var(--safe-bottom)] text-[#fff8f1]">
+      <Braid className="absolute inset-x-0 top-0 text-[var(--color-gold)] opacity-40" id="footer-braid" />
+      <Ararat tone="night" className="pointer-events-none absolute bottom-0 right-0 h-36 w-full opacity-50 md:h-52 md:w-[70%]" id="footer-ararat" />
+      <div className="container-lj relative grid gap-10 pt-16 pb-12 md:grid-cols-[1.3fr_repeat(3,1fr)]">
         <div>
           <Wordmark tagline="Put a smile in the air!" light />
-          <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">{authorised ? m.footer.officialPartner : m.footer.notOfficial}</p>
+          <p className="mt-5 max-w-xs text-sm leading-relaxed text-[#fff8f1]/55">{authorised ? m.footer.officialPartner : m.footer.notOfficial}</p>
           {contacts.phone || contacts.email ? (
             <address className="mt-4 space-y-1 text-sm not-italic">
               {contacts.phone ? (
@@ -78,11 +81,11 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
         </div>
         {cols.map((c) => (
           <nav key={c.title} aria-label={c.title}>
-            <h2 className="mb-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white/45">{c.title}</h2>
+            <h2 className="mb-3 text-[0.62rem] font-semibold uppercase tracking-[0.24em] text-[var(--color-gold)]">{c.title}</h2>
             <ul className="space-y-0.5">
               {c.links.map((l) => (
                 <li key={l.href}>
-                  <Link href={l.href} className="inline-flex min-h-10 items-center text-[0.95rem] text-white/80 transition-colors hover:text-white">
+                  <Link href={l.href} className="inline-flex min-h-10 items-center text-[0.9rem] text-[#fff8f1]/75 transition-colors hover:text-[#fff8f1]">
                     {l.label}
                   </Link>
                 </li>
@@ -91,20 +94,20 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
           </nav>
         ))}
       </div>
-      <div className="container-lj flex flex-col gap-6 border-t border-white/10 py-8 md:flex-row md:items-center md:justify-between">
-        <div className="max-w-md">
-          <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white/45">{m.nav.language}</p>
+      <div className="container-lj relative flex flex-col gap-5 border-t border-[#fff8f1]/10 py-7 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="sr-only">{m.nav.language}</span>
           <Suspense fallback={null}>
-            <LanguageSwitcher locale={locale} variant="list" />
+            <LanguageSwitcher locale={locale} variant="list" tone="light" />
           </Suspense>
         </div>
         {socialLinks.length > 0 ? (
           <div>
-            <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white/45">{m.footer.social}</p>
+            <p className="mb-2 text-[0.62rem] font-semibold uppercase tracking-[0.24em] text-[var(--color-gold)]">{m.footer.social}</p>
             <ul className="flex gap-2">
               {socialLinks.map((s) => (
                 <li key={s.label}>
-                  <a href={s.href} rel="noopener noreferrer me" target="_blank" className="chip">
+                  <a href={s.href} rel="noopener noreferrer me" target="_blank" className="inline-flex min-h-10 items-center text-sm text-[#fff8f1]/75 underline decoration-[var(--color-gold)] underline-offset-4 hover:text-[#fff8f1]">
                     {s.label}
                   </a>
                 </li>
@@ -112,7 +115,7 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
             </ul>
           </div>
         ) : null}
-        <p className="text-xs text-white/50">
+        <p className="text-[0.72rem] text-[#fff8f1]/45">
           © {new Date().getFullYear()} {business.legalName || env().STORE_NAME}. {m.footer.rights} {m.footer.currencyNote}
         </p>
       </div>

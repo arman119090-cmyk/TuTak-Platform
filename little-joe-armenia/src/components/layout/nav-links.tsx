@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** Desktop nav with the active section underlined in brand blue (as in the mockup). */
+/** Desktop nav: quiet links, the active one underlined with a gold hairline. */
 export function NavLinks({ items }: { items: { href: string; label: string }[] }) {
   const pathname = usePathname();
   return (
@@ -15,7 +15,7 @@ export function NavLinks({ items }: { items: { href: string; label: string }[] }
             <Link
               href={n.href}
               aria-current={active ? "page" : undefined}
-              className="tap relative inline-flex items-center px-3 text-[0.9rem] font-medium text-ink-2 hover:text-brand aria-[current=page]:text-brand aria-[current=page]:after:absolute aria-[current=page]:after:inset-x-3 aria-[current=page]:after:bottom-1.5 aria-[current=page]:after:h-0.5 aria-[current=page]:after:rounded-full aria-[current=page]:after:bg-brand"
+              className="tap relative inline-flex items-center px-3 text-[0.85rem] font-medium tracking-[0.01em] text-ink-2 transition-colors hover:text-ink aria-[current=page]:text-ink aria-[current=page]:after:absolute aria-[current=page]:after:inset-x-3 aria-[current=page]:after:bottom-2 aria-[current=page]:after:h-px aria-[current=page]:after:bg-[var(--color-gold)]"
             >
               {n.label}
             </Link>

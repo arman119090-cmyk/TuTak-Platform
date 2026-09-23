@@ -107,7 +107,7 @@ export function BuyBox({ variants, name, slug, collection }: { variants: Variant
       {!soldOut ? (
         <div
           aria-hidden={!showSticky}
-          className={`fixed inset-x-0 bottom-[calc(3.5rem+var(--safe-bottom))] z-20 border-t border-line bg-white/95 px-4 py-3 backdrop-blur transition-[transform,opacity] duration-300 md:hidden ${showSticky ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+          className={`fixed inset-x-0 bottom-[calc(3.5rem+var(--safe-bottom))] z-20 border-t border-line bg-paper/95 px-4 py-3 backdrop-blur transition-[transform,opacity] duration-300 md:hidden ${showSticky ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
         >
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">

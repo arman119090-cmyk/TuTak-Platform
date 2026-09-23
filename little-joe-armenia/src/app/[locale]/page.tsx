@@ -11,9 +11,9 @@ import { favoriteIds } from "@/lib/domain/favorites";
 import { ProductGrid } from "@/components/product/product-grid";
 import { ProductImage } from "@/components/product/product-image";
 import { Stars } from "@/components/product/stars";
-import { SkyScene } from "@/components/ui/sky-scene";
+import { ARM_NUMERALS, Ararat, Braid, Rosette } from "@/components/ui/armenia";
 import { BRAND_TAGLINE } from "@/components/layout/site-header";
-import { IconArrow, IconCar, IconCard, IconChat, IconClock, IconHeart, IconSparkle, IconTruck, IconUser } from "@/components/ui/icons";
+import { IconArrow } from "@/components/ui/icons";
 
 type Props = { params: Promise<{ locale: string }> };
 
@@ -69,124 +69,113 @@ export default async function HomePage({ params }: Props) {
 
   return (
     <>
-      {/* ── Hero ── */}
+      {/* ── Hero: serif headline, the character in an arch before Ararat ── */}
       <section className="relative overflow-hidden">
-        <SkyScene className="absolute inset-0 h-full w-full" id="hero-sky" horizon={0.78} />
-        <div className="absolute inset-y-0 left-0 hidden w-[58%] bg-gradient-to-r from-white/90 via-white/60 to-transparent md:block" aria-hidden="true" />
-        <div className="container-lj relative grid grid-cols-[minmax(0,1fr)] items-center gap-2 pt-8 pb-10 md:min-h-[34rem] md:grid-cols-[1.05fr_1fr] md:py-14">
-          <div className="relative z-[1] min-w-0 max-w-xl">
-            <h1 className="hand text-[clamp(2.6rem,1.6rem+4.6vw,5.2rem)] leading-[0.95]">
+        <div
+          className="pointer-events-none absolute right-[-20%] top-[-10%] h-[80%] w-[80%] rounded-full opacity-70 blur-3xl md:right-[-5%] md:w-[55%]"
+          style={{ background: "radial-gradient(closest-side, rgb(233 170 110 / 0.35), rgb(233 170 110 / 0))" }}
+          aria-hidden="true"
+        />
+        <Ararat className="pointer-events-none absolute bottom-0 right-0 h-[34%] w-full opacity-70 md:h-[46%] md:w-[62%]" id="hero-ararat" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-line" aria-hidden="true" />
+        <div className="container-lj relative grid grid-cols-[minmax(0,1fr)] items-center gap-10 pt-10 pb-16 md:min-h-[40rem] md:grid-cols-[1.1fr_0.9fr] md:gap-8 md:pt-16 md:pb-24">
+          <div className="relative z-[1] min-w-0 max-w-2xl">
+            <p className="kicker">{m.home.heroEyebrow}</p>
+            <h1 className="serif hero-title mt-5 text-[clamp(2.7rem,1.5rem+5vw,5.8rem)] leading-[0.98]">
               <span className="block">{line1}</span>
-              {line2 ? <span className="block text-brand">{line2}</span> : null}
+              {line2 ? <span className="block italic text-brand">{line2}</span> : null}
             </h1>
-            <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-2">{home.hero?.body ?? m.home.heroSub}</p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link href={paths.shop(locale)} className="btn btn-primary">
+            <p className="mt-6 max-w-md text-[1.05rem] leading-relaxed text-ink-2">{home.hero?.body ?? m.home.heroSub}</p>
+            <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
+              <Link href={paths.shop(locale)} className="btn btn-primary px-7">
                 {m.home.goShop}
-                <IconArrow width={18} height={18} />
+                <IconArrow width={17} height={17} />
               </Link>
-              <Link href={paths.finder(locale)} className="btn btn-ghost">
-                <IconSparkle width={18} height={18} />
+              <Link href={paths.finder(locale)} className="link-arrow">
                 {m.home.ctaFind}
               </Link>
             </div>
-            <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-2">
-              {madeInItaly ? (
-                <li className="flex items-center gap-2">
-                  <ItalyFlag />
-                  {m.home.perkItaly}
-                </li>
-              ) : null}
+            <ul className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.8rem] text-muted">
+              {madeInItaly ? <li>{m.home.perkItaly}</li> : null}
               <li className="flex items-center gap-2">
-                <IconHeart width={18} height={18} className="text-bad" />
+                <Rosette size={14} className="text-[var(--color-gold)]" />
                 {m.home.perkFavorite}
               </li>
               <li className="flex items-center gap-2">
-                <IconCar width={18} height={18} className="text-brand" />
+                <Rosette size={14} className="text-[var(--color-gold)]" />
                 {m.home.perkTrips}
               </li>
             </ul>
           </div>
 
           {heroProduct?.image ? (
-            <Link href={paths.product(locale, heroProduct.slug)} className="group relative mx-auto block w-full max-w-[16rem] sm:max-w-[22rem] md:max-w-[30rem]" aria-label={heroProduct.name}>
-              <div className="relative aspect-[5/6]">
-                <div className="halo absolute inset-[-6%]" aria-hidden="true" />
-                {sidekicks.map((s, i) => (
-                  <div
-                    key={s.id}
-                    aria-hidden="true"
-                    className={`${i === 0 ? "float-slower left-[-14%] bottom-[6%] w-[30%] [--r:-8deg]" : "float-slow right-[-10%] bottom-[2%] w-[27%] [--r:7deg]"} absolute hidden aspect-[4/5] drop-shadow-[0_14px_18px_rgba(20,60,120,0.2)] sm:block`}
-                  >
-                    <ProductImage media={s.image} accent="transparent" fit="contain" sizes="160px" />
-                  </div>
-                ))}
-                <div className="float-slow absolute inset-[4%] transition-transform duration-700 group-hover:-translate-y-2 motion-reduce:transform-none">
-                  <ProductImage media={heroProduct.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 38vw, 80vw" priority className="drop-shadow-[0_24px_30px_rgba(20,60,120,0.25)]" />
+            <Link href={paths.product(locale, heroProduct.slug)} className="group relative mx-auto block w-[78%] max-w-[26rem] md:w-full" aria-label={heroProduct.name}>
+              <div className="arch tuff relative aspect-[4/5] shadow-[var(--shadow-lift)] ring-1 ring-[var(--color-tuff-2)]" style={{ ["--tint" as string]: heroProduct.accent }}>
+                <Ararat className="absolute inset-x-0 bottom-0 h-[38%] w-full opacity-80" id="arch-ararat" />
+                <div className="float-slow absolute inset-x-[14%] bottom-[10%] top-[14%] transition-transform duration-700 group-hover:-translate-y-2 motion-reduce:transform-none">
+                  <ProductImage
+                    media={heroProduct.image}
+                    accent="transparent"
+                    fit="contain"
+                    sizes="(min-width: 768px) 34vw, 78vw"
+                    priority
+                    className="drop-shadow-[0_28px_30px_rgba(60,30,15,0.3)]"
+                  />
                 </div>
-                <p className="hand absolute right-0 top-[38%] rotate-[-8deg] text-[clamp(1.4rem,1rem+1.5vw,2.2rem)] leading-tight text-ink" aria-hidden="true">
-                  Put a smile
-                  <br />
-                  in the air!
-                  <IconHeart width={26} height={26} filled className="ml-1 inline text-bad" />
-                </p>
-                {madeInItaly ? (
-                  <span className="absolute bottom-[8%] right-[4%] grid place-items-center rounded-2xl bg-white px-3 py-2 text-center text-[0.65rem] font-extrabold leading-tight shadow-[var(--shadow-card)]">
-                    <ItalyFlag big />
-                    MADE
-                    <br />
-                    IN ITALY
-                  </span>
-                ) : null}
               </div>
+              {/* Inner hairline arch, like a carved stone frame */}
+              <div className="arch pointer-events-none absolute inset-2.5 ring-1 ring-[#fff8f1]/70" aria-hidden="true" />
+              {sidekicks.map((s, i) => (
+                <div
+                  key={s.id}
+                  aria-hidden="true"
+                  className={`${i === 0 ? "float-slower -left-[16%] bottom-[-2%] w-[34%] [--r:-6deg]" : "float-slow -right-[12%] bottom-[-4%] w-[30%] [--r:6deg]"} absolute aspect-[4/5] drop-shadow-[0_16px_18px_rgba(60,30,15,0.25)]`}
+                >
+                  <ProductImage media={s.image} accent="transparent" fit="contain" sizes="160px" />
+                </div>
+              ))}
+              <Seal className="absolute -right-4 -top-4 size-24 md:-right-8 md:-top-6 md:size-28" />
               <span className="sr-only">{BRAND_TAGLINE}</span>
             </Link>
           ) : null}
         </div>
       </section>
 
-      {/* ── Trust strip ── */}
-      <section className="container-lj relative z-[1] -mt-6 md:-mt-10">
-        <ul className="card grid grid-cols-2 gap-4 p-4 md:grid-cols-4 md:p-6">
-          <Trust icon={<IconTruck />} title={m.home.trustDeliveryTitle} body={m.home.trustDeliveryBody} href={paths.page(locale, "delivery")} />
-          <Trust icon={<IconCard />} title={m.home.trustPaymentTitle} body={m.home.trustPaymentBody} href={paths.page(locale, "payment")} />
-          <Trust icon={<IconSparkle />} title={m.home.trustFinderTitle} body={m.home.trustFinderBody} href={paths.finder(locale)} />
-          <Trust icon={<IconChat />} title={m.home.trustSupportTitle} body={m.home.trustSupportBody} href={paths.page(locale, "contact")} />
+      {/* ── Promise: four points numbered with Armenian letters ── */}
+      <section className="border-y border-line bg-card/60">
+        <ul className="container-lj grid grid-cols-2 md:grid-cols-4">
+          <Trust n={0} title={m.home.trustDeliveryTitle} body={m.home.trustDeliveryBody} href={paths.page(locale, "delivery")} />
+          <Trust n={1} title={m.home.trustPaymentTitle} body={m.home.trustPaymentBody} href={paths.page(locale, "payment")} />
+          <Trust n={2} title={m.home.trustFinderTitle} body={m.home.trustFinderBody} href={paths.finder(locale)} />
+          <Trust n={3} title={m.home.trustSupportTitle} body={m.home.trustSupportBody} href={paths.page(locale, "contact")} />
         </ul>
       </section>
 
       {/* ── Popular scents ── */}
       {popular.length > 0 ? (
-        <section className="container-lj py-12 md:py-16" aria-labelledby="popular-title">
-          <SectionHead id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
+        <section className="container-lj py-16 md:py-24" aria-labelledby="popular-title">
+          <SectionHead n={0} id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
           <ProductGrid products={popular} locale={locale} favorites={favorites} listName="popular" columns="six" priorityCount={2} />
         </section>
       ) : null}
 
-      {/* ── The family: one tall tile per character collection ── */}
+      {/* ── The family: one arch per character collection ── */}
       {collectionTiles.length > 1 ? (
-        <section className="container-lj pb-14 md:pb-20" aria-labelledby="family-tiles-title">
-          <p className="kicker">Little Joe</p>
-          <h2 id="family-tiles-title" className="mt-2 mb-7 text-[clamp(1.7rem,1.3rem+1.4vw,2.5rem)] font-extrabold tracking-[-0.02em]">
-            {m.home.familyTitle}
-          </h2>
-          <ul className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-5 md:overflow-visible md:px-0">
+        <section className="container-lj pb-16 md:pb-24" aria-labelledby="family-tiles-title">
+          <SectionHead n={1} id="family-tiles-title" title={m.home.familyTitle} />
+          <ul className="no-scrollbar -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-5 md:gap-5 md:overflow-visible md:px-0">
             {collectionTiles.map((c) => (
-              <li key={c.collectionSlug} className="w-[62vw] max-w-[16rem] shrink-0 snap-start md:w-auto md:max-w-none">
-                <Link
-                  href={paths.collection(locale, c.collectionSlug)}
-                  className="group relative flex aspect-[3/4] flex-col overflow-hidden rounded-[1.75rem] p-5 shadow-[var(--shadow-card)] transition-[transform,box-shadow] duration-500 ease-[var(--ease-out-soft)] hover:-translate-y-1.5 hover:shadow-[var(--shadow-lift)] motion-reduce:transform-none"
-                  style={{
-                    background: `linear-gradient(165deg, color-mix(in oklab, ${c.accent} 38%, white) 0%, color-mix(in oklab, ${c.accent} 12%, #f6faff) 55%, #ffffff 100%)`,
-                  }}
-                >
-                  <span className="text-xl font-extrabold tracking-[-0.02em]">{c.collectionName}</span>
-                  <div className="absolute inset-x-[12%] bottom-[10%] top-[30%] transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:scale-[1.04] motion-reduce:transform-none">
-                    <ProductImage media={c.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 18vw, 55vw" className="drop-shadow-[0_18px_22px_rgba(20,50,100,0.22)]" />
+              <li key={c.collectionSlug} className="w-[58vw] max-w-[15rem] shrink-0 snap-start md:w-auto md:max-w-none">
+                <Link href={paths.collection(locale, c.collectionSlug)} className="group block">
+                  <div className="arch tuff relative aspect-[3/4] ring-1 ring-[var(--color-tuff-2)]/60 transition-shadow duration-500 group-hover:shadow-[var(--shadow-lift)]" style={{ ["--tint" as string]: c.accent }}>
+                    <div className="absolute inset-x-[14%] bottom-[8%] top-[18%] transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:scale-[1.04] motion-reduce:transform-none">
+                      <ProductImage media={c.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 18vw, 55vw" className="drop-shadow-[0_18px_20px_rgba(60,30,15,0.25)]" />
+                    </div>
                   </div>
-                  <span className="absolute bottom-4 right-4 grid size-10 place-items-center rounded-full bg-white/90 text-ink shadow-sm transition group-hover:bg-brand group-hover:text-white">
-                    <IconArrow width={18} height={18} />
-                  </span>
+                  <div className="mt-3 flex items-center justify-between px-1">
+                    <span className="serif text-[1.3rem]">{c.collectionName}</span>
+                    <IconArrow width={16} height={16} className="text-[var(--color-gold)] transition-transform group-hover:translate-x-1" />
+                  </div>
                 </Link>
               </li>
             ))}
@@ -194,71 +183,72 @@ export default async function HomePage({ params }: Props) {
         </section>
       ) : null}
 
-      {/* ── Scent quiz banner ── */}
-      <section className="container-lj pb-12 md:pb-16">
-        <div className="relative overflow-hidden rounded-[2rem] shadow-[var(--shadow-card)]">
-          <SkyScene className="absolute inset-0 h-full w-full" id="quiz-sky" horizon={0.82} />
-          <div className="relative grid items-center gap-4 px-6 py-10 md:grid-cols-[1.3fr_1fr] md:px-14 md:py-12">
+      {/* ── Scent finder: Ararat at night ── */}
+      <section className="container-lj pb-16 md:pb-24">
+        <div className="relative overflow-hidden rounded-[2rem] bg-navy text-[#fff8f1] shadow-[var(--shadow-lift)]">
+          <div className="absolute inset-0" style={{ background: "radial-gradient(90% 70% at 70% 100%, rgb(217 140 74 / 0.35), transparent 60%), radial-gradient(60% 50% at 15% 0%, rgb(138 28 44 / 0.35), transparent 70%)" }} aria-hidden="true" />
+          <Ararat tone="night" className="absolute bottom-0 right-0 h-[48%] w-full md:w-[85%]" id="quiz-ararat" />
+          <StarField />
+          <div className="relative grid items-center gap-6 px-6 py-12 md:grid-cols-[1.25fr_1fr] md:px-16 md:py-16">
             <div className="text-center md:text-left">
-              <h2 className="hand text-[clamp(2.2rem,1.5rem+2.6vw,3.6rem)] leading-none">{m.home.quizTitle}</h2>
-              <p className="mx-auto mt-3 max-w-md text-ink-2 md:mx-0">{m.home.quizBody}</p>
-              <Link href={paths.finder(locale)} className="btn btn-primary mt-6">
+              <p className="kicker justify-center md:justify-start">{m.nav.scentFinder}</p>
+              <h2 className="serif mt-4 text-[clamp(2.2rem,1.5rem+2.8vw,3.8rem)] leading-[1.02]">{m.home.quizTitle}</h2>
+              <p className="mx-auto mt-4 max-w-md text-[#fff8f1]/70 md:mx-0">{m.home.quizBody}</p>
+              <Link href={paths.finder(locale)} className="btn mt-8 bg-[#fff8f1] px-7 text-ink hover:bg-white">
                 {m.home.quizCta}
-                <IconArrow width={18} height={18} />
+                <IconArrow width={17} height={17} />
               </Link>
-              <ul className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-medium text-ink-2 md:justify-start">
-                <li className="flex items-center gap-1.5">
-                  <IconClock width={16} height={16} className="text-brand" />
-                  {m.home.quizPoint1}
-                </li>
-                <li className="flex items-center gap-1.5">
-                  <IconUser width={16} height={16} className="text-brand" />
-                  {m.home.quizPoint2}
-                </li>
-                <li className="flex items-center gap-1.5">
-                  <IconHeart width={16} height={16} className="text-brand" />
-                  {m.home.quizPoint3}
-                </li>
+              <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[0.75rem] text-[#fff8f1]/60 md:justify-start">
+                {[m.home.quizPoint1, m.home.quizPoint2, m.home.quizPoint3].map((t, i) => (
+                  <li key={t} className="flex items-center gap-2">
+                    <span className="font-[family-name:var(--font-serif)] text-[var(--color-apricot)]">{ARM_NUMERALS[i]}</span>
+                    {t}
+                  </li>
+                ))}
               </ul>
             </div>
             {quizProduct?.image ? (
-              <div className="relative mx-auto aspect-square w-full max-w-[20rem]">
-                <ProductImage media={quizProduct.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 25vw, 70vw" className="drop-shadow-[0_18px_24px_rgba(120,20,20,0.25)]" />
-                <p className="hand absolute -right-2 top-0 max-w-[9rem] rotate-[8deg] text-xl leading-tight md:-right-8 md:text-2xl" aria-hidden="true">
-                  {m.home.quizBubble}
-                </p>
+              <div className="relative mx-auto aspect-square w-[70%] max-w-[20rem] md:w-full">
+                <div className="absolute inset-[10%] rounded-full bg-[rgb(217_140_74/0.25)] blur-2xl" aria-hidden="true" />
+                <div className="float-slow absolute inset-0">
+                  <ProductImage media={quizProduct.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 25vw, 70vw" className="drop-shadow-[0_24px_28px_rgba(0,0,0,0.45)]" />
+                </div>
               </div>
             ) : null}
           </div>
         </div>
       </section>
 
-      {/* ── Family / brand banner ── */}
+      {/* ── Family / brand banner: the whole line-up on a stone ledge ── */}
       {family.length > 0 ? (
-        <section className="container-lj pb-12 md:pb-16" aria-labelledby="family-title" id="family">
-          <div className="relative overflow-hidden rounded-[2rem] shadow-[var(--shadow-card)]">
-            <SkyScene className="absolute inset-0 h-full w-full" id="family-sky" horizon={0.9} />
-            <div className="relative grid items-end gap-6 px-6 pt-10 md:grid-cols-[1.4fr_1fr] md:px-12">
-              <ul className="flex items-end justify-center gap-1 md:justify-start" aria-label={m.home.familyTitle}>
-                {[...joeColours, ...family.filter((f) => f.collectionSlug !== "little-joe")].slice(0, 8).map((p, i) => (
-                  <li key={p.id} className={i % 2 ? "w-[16%] max-w-[7rem] pb-2" : "w-[18%] max-w-[8rem]"}>
-                    <Link href={paths.product(locale, p.slug)} className="block transition-transform duration-300 hover:-translate-y-2 motion-reduce:transform-none" title={p.name}>
-                      <div className="aspect-[4/5]">
-                        <ProductImage media={p.image} accent="transparent" fit="contain" sizes="120px" />
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              <div className="pb-10 text-center md:text-left">
-                <h2 id="family-title" className="hand text-[clamp(2rem,1.4rem+2.4vw,3.2rem)] leading-none">
+        <section className="container-lj pb-16 md:pb-24" aria-labelledby="family-title" id="family">
+          <div className="tuff relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-tuff-2)]">
+            <Braid className="absolute inset-x-0 top-5 text-[var(--color-gold)] opacity-60" id="family-braid" />
+            <div className="relative grid items-end gap-8 px-6 pt-14 md:grid-cols-[1fr_1.3fr] md:px-14">
+              <div className="pb-4 text-center md:pb-14 md:text-left">
+                <h2 id="family-title" className="serif text-[clamp(2rem,1.4rem+2.4vw,3.4rem)] leading-[1.02]">
                   {m.home.familyBannerTitle}
                 </h2>
-                <p className="mt-3 text-ink-2">{m.home.familyBannerBody}</p>
-                <Link href={paths.shop(locale)} className="btn btn-primary mt-6">
+                <p className="mx-auto mt-4 max-w-md text-ink-2 md:mx-0">{m.home.familyBannerBody}</p>
+                <Link href={paths.shop(locale)} className="link-arrow mt-5">
                   {m.home.goShop}
-                  <IconArrow width={18} height={18} />
+                  <IconArrow width={16} height={16} />
                 </Link>
+              </div>
+              <div className="relative">
+                <ul className="relative z-[1] flex items-end justify-center gap-0.5 md:justify-end" aria-label={m.home.familyTitle}>
+                  {[...joeColours, ...family.filter((f) => f.collectionSlug !== "little-joe")].slice(0, 8).map((p, i) => (
+                    <li key={p.id} className={i % 2 ? "w-[15%] max-w-[6.5rem] pb-1" : "w-[17%] max-w-[7.5rem]"}>
+                      <Link href={paths.product(locale, p.slug)} className="block transition-transform duration-300 hover:-translate-y-2 motion-reduce:transform-none" title={p.name}>
+                        <div className="aspect-[4/5] drop-shadow-[0_12px_12px_rgba(60,30,15,0.25)]">
+                          <ProductImage media={p.image} accent="transparent" fit="contain" sizes="120px" />
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                {/* Stone ledge */}
+                <div className="h-6 rounded-t-md bg-gradient-to-b from-[var(--color-tuff-2)] to-[var(--color-tuff-deep)]/60" aria-hidden="true" />
               </div>
             </div>
           </div>
@@ -272,10 +262,10 @@ export default async function HomePage({ params }: Props) {
             <Link
               key={c.id}
               href={c.href && c.href.startsWith("/") ? `/${locale}${c.href}` : paths.shop(locale)}
-              className="rounded-[2rem] p-8 shadow-[var(--shadow-card)] md:p-12"
-              style={{ background: c.accent ?? "var(--color-brand-50)" }}
+              className="tuff arch-soft p-8 ring-1 ring-[var(--color-tuff-2)] md:p-12"
+              style={{ ["--tint" as string]: c.accent ?? "var(--color-tuff)" }}
             >
-              <h2 className="hand text-4xl">{c.title}</h2>
+              <h2 className="serif text-4xl">{c.title}</h2>
               {c.body ? <p className="mt-3 max-w-md">{c.body}</p> : null}
             </Link>
           ))}
@@ -285,12 +275,12 @@ export default async function HomePage({ params }: Props) {
       {/* ── Brand facts: only claims verified in the admin ── */}
       {claims.length > 0 ? (
         <section className="container-lj pb-12" aria-labelledby="story-title">
-          <h2 id="story-title" className="mb-6 text-h2 font-extrabold">
+          <h2 id="story-title" className="serif mb-8 text-h2">
             {m.home.storyTitle}
           </h2>
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {claims.map((c) => (
-              <li key={c.key} className="card p-5">
+              <li key={c.key} className="border-t border-[var(--color-gold)]/50 pt-5">
                 <p className="font-bold">{c.title}</p>
                 {c.body ? <p className="mt-2 text-sm text-ink-2">{c.body}</p> : null}
               </li>
@@ -302,14 +292,14 @@ export default async function HomePage({ params }: Props) {
       {/* ── Reviews: real, approved ones only ── */}
       {reviews.length > 0 ? (
         <section className="container-lj pb-12" aria-labelledby="reviews-title">
-          <h2 id="reviews-title" className="mb-6 text-h2 font-extrabold">
+          <h2 id="reviews-title" className="serif mb-8 text-h2">
             {m.home.reviewsTitle}
           </h2>
           <ul className="grid gap-4 md:grid-cols-3">
             {reviews.map((r) => (
-              <li key={r.id} className="card p-6">
+              <li key={r.id} className="rounded-[1.5rem] bg-card p-7 ring-1 ring-line">
                 <Stars value={r.rating} label={`${r.rating}/5`} />
-                <p className="mt-3 line-clamp-5 text-ink-2">{r.body}</p>
+                <p className="serif mt-4 line-clamp-5 text-[1.2rem] font-medium italic leading-snug text-ink">«{r.body}»</p>
                 <p className="mt-4 text-sm font-semibold">
                   {r.authorName}
                   <span className="font-normal text-muted"> · {pickT(r.product.translations, locale)?.name}</span>
@@ -323,12 +313,12 @@ export default async function HomePage({ params }: Props) {
       {/* ── Lifestyle imagery (authorised assets only) ── */}
       {lifestyle.length > 0 ? (
         <section className="container-lj pb-12" aria-labelledby="social-title">
-          <h2 id="social-title" className="mb-6 text-h2 font-extrabold">
+          <h2 id="social-title" className="serif mb-8 text-h2">
             {m.home.socialTitle}
           </h2>
           <ul className="grid grid-cols-2 gap-3 md:grid-cols-3">
             {lifestyle.map((img) => (
-              <li key={img.id} className="aspect-square overflow-hidden rounded-[var(--radius-card)]">
+              <li key={img.id} className="arch aspect-[4/5]">
                 <ProductImage
                   media={{ url: img.url, width: img.width, height: img.height, alt: img.alt, kind: "LIFESTYLE", isPlaceholder: false }}
                   accent="#E9E7E1"
@@ -343,31 +333,38 @@ export default async function HomePage({ params }: Props) {
   );
 }
 
-function Trust({ icon, title, body, href }: { icon: React.ReactNode; title: string; body: string; href: string }) {
+function Trust({ n, title, body, href }: { n: number; title: string; body: string; href: string }) {
   return (
-    <li>
-      <Link href={href} className="flex items-center gap-3 rounded-2xl p-1 hover:bg-sky-2">
-        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-50 text-brand">{icon}</span>
+    <li className="min-w-0 border-line [&:nth-child(2n)]:border-l md:border-l md:first:border-l-0 [&:nth-child(n+3)]:border-t md:[&:nth-child(n+3)]:border-t-0">
+      <Link href={href} className="group flex h-full items-start gap-2.5 px-2 py-6 [hyphens:auto] sm:gap-3 sm:px-3 md:px-6 md:py-8">
+        <span className="numeral shrink-0 !size-7 !text-[0.9rem] transition-colors group-hover:border-brand group-hover:text-brand sm:!size-9 sm:!text-[1.05rem]" aria-hidden="true">
+          {ARM_NUMERALS[n]}
+        </span>
         <span className="min-w-0">
-          <span className="block text-sm font-bold leading-tight">{title}</span>
-          <span className="block text-xs text-muted">{body}</span>
+          <span className="block text-[0.84rem] font-semibold leading-tight [overflow-wrap:anywhere] sm:text-[0.9rem]">{title}</span>
+          <span className="mt-1 block text-[0.78rem] leading-snug text-muted">{body}</span>
         </span>
       </Link>
     </li>
   );
 }
 
-function SectionHead({ id, title, href, cta }: { id: string; title: string; href?: string; cta?: string }) {
+function SectionHead({ n, id, title, href, cta }: { n: number; id: string; title: string; href?: string; cta?: string }) {
   return (
-    <div className="mb-7 flex items-end justify-between gap-4">
-      <div>
-        <p className="kicker">Little Joe</p>
-        <h2 id={id} className="mt-2 text-[clamp(1.7rem,1.3rem+1.4vw,2.5rem)] font-extrabold tracking-[-0.02em]">
-          {title}
-        </h2>
+    <div className="mb-9 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 md:mb-12">
+      <div className="flex min-w-0 items-end gap-4">
+        <span className="numeral mb-1 hidden sm:inline-grid" aria-hidden="true">
+          {ARM_NUMERALS[n]}
+        </span>
+        <div>
+          <p className="kicker">Little Joe</p>
+          <h2 id={id} className="serif mt-2 text-[clamp(1.9rem,1.4rem+1.8vw,3rem)] leading-[1.05]">
+            {title}
+          </h2>
+        </div>
       </div>
       {href && cta ? (
-        <Link href={href} className="tap inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline">
+        <Link href={href} className="link-arrow">
           {cta}
           <IconArrow width={16} height={16} />
         </Link>
@@ -376,12 +373,36 @@ function SectionHead({ id, title, href, cta }: { id: string; title: string; href
   );
 }
 
-function ItalyFlag({ big }: { big?: boolean }) {
+/** Round gold seal with circular lettering. */
+function Seal({ className = "" }: { className?: string }) {
   return (
-    <svg width={big ? 28 : 18} height={big ? 20 : 13} viewBox="0 0 3 2" aria-hidden="true" className={big ? "mb-1 rounded-[3px]" : "rounded-[2px]"}>
-      <rect width="1" height="2" fill="#009246" />
-      <rect x="1" width="1" height="2" fill="#fff" />
-      <rect x="2" width="1" height="2" fill="#ce2b37" />
+    <svg viewBox="0 0 120 120" className={`spin-slow ${className}`} aria-hidden="true">
+      <defs>
+        <path id="seal-circle" d="M60 60 m-44 0 a44 44 0 1 1 88 0 a44 44 0 1 1 -88 0" />
+      </defs>
+      <circle cx="60" cy="60" r="58" fill="#fff8f1" />
+      <circle cx="60" cy="60" r="54" fill="none" stroke="#b08a57" strokeWidth="0.8" />
+      <circle cx="60" cy="60" r="33" fill="none" stroke="#b08a57" strokeWidth="0.8" />
+      <text fontSize="10.5" letterSpacing="3.2" fill="#8a1c2c" fontFamily="var(--font-serif)" fontWeight="600">
+        <textPath href="#seal-circle">LITTLE JOE · ՀԱՅԱՍՏԱՆ · YEREVAN ·</textPath>
+      </text>
+      <g transform="translate(48 47)" fill="#8a1c2c">
+        <path d="M9 3.5 10.2 5.6 12 3.8 13.8 5.6 15 3.5 15.3 6.4A8 8 0 1 1 8.7 6.4Z" transform="scale(1.05)" />
+      </g>
+    </svg>
+  );
+}
+
+/** A few faint stars over the night Ararat. */
+function StarField() {
+  const stars = [
+    [8, 14], [18, 30], [27, 10], [36, 22], [44, 8], [58, 18], [66, 6], [74, 26], [83, 12], [92, 22], [12, 42], [50, 36], [88, 40],
+  ];
+  return (
+    <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true">
+      {stars.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r={i % 3 ? 0.18 : 0.28} fill="#fff8f1" opacity={i % 2 ? 0.5 : 0.8} />
+      ))}
     </svg>
   );
 }

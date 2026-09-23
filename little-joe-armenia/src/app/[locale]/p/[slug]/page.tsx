@@ -122,7 +122,7 @@ export default async function ProductPage({ params }: Props) {
               {product.collection.name}
             </Link>
             <div className="mt-2 flex items-start justify-between gap-4">
-              <h1 className="text-h1 font-extrabold text-balance">{product.name}</h1>
+              <h1 className="serif text-h1 text-balance">{product.name}</h1>
               <FavoriteButton productId={product.id} initial={favorites.has(product.id)} variant="inline" />
             </div>
             {product.rating ? (
@@ -149,14 +149,14 @@ export default async function ProductPage({ params }: Props) {
             </div>
 
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-              <li className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)]">
-                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand">
+              <li className="flex items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-line">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-gold)]/50 text-[var(--color-gold)]">
                   <IconTruck width={20} height={20} />
                 </span>
                 <span className="text-sm font-semibold">{m.product.perkDelivery}</span>
               </li>
-              <li className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)]">
-                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand">
+              <li className="flex items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-line">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-gold)]/50 text-[var(--color-gold)]">
                   <IconCard width={20} height={20} />
                 </span>
                 <span className="text-sm font-semibold">{m.product.perkPayment}</span>
@@ -254,7 +254,7 @@ export default async function ProductPage({ params }: Props) {
 
       {similar.length > 0 ? (
         <section className="container-lj mt-20" aria-labelledby="similar-h">
-          <h2 id="similar-h" className="mb-8 text-h2 font-extrabold">
+          <h2 id="similar-h" className="serif mb-8 text-h2">
             {m.product.similarScents}
           </h2>
           <ProductGrid products={similar} locale={locale} favorites={favorites} listName="similar" />
@@ -262,7 +262,7 @@ export default async function ProductPage({ params }: Props) {
       ) : null}
       {more.length > 0 ? (
         <section className="container-lj mt-20" aria-labelledby="more-h">
-          <h2 id="more-h" className="mb-8 text-h2 font-extrabold">
+          <h2 id="more-h" className="serif mb-8 text-h2">
             {similar.length > 0 ? fmt(m.product.fromFamily, { collection: product.collection.name }) : m.product.youMayLike}
           </h2>
           <ProductGrid products={more} locale={locale} favorites={favorites} listName="same-collection" />

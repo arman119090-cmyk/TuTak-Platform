@@ -4,13 +4,22 @@ This page describes what the code does today. The sources of truth are `src/app/
 
 ## Direction
 
-- **Premium and playful, not automotive.** The page is near-white (`--color-paper: #fbfbf9`) with near-black text. There is no dark theme and no carbon or chrome look. `color-scheme: light` is fixed in `globals.css`.
-- **The product and its scent colour take up most of the screen.** Cards, gallery and hero use the product's accent colour as a full-bleed background with the product image on top. Text on a card is limited to collection, name, one descriptor and price (`src/components/product/product-card.tsx`).
-- **Large dark surfaces are rare.** The home page has one: the scent-finder call-to-action block (`bg-ink`, `src/app/[locale]/page.tsx`).
+- **"Yerevan": premium and calm, with Armenian references.** The page is warm ivory paper (`--color-paper: #f8f3ec`, with a faint paper grain) and near-black warm ink. There is no dark theme; `color-scheme: light` is fixed in `globals.css`.
+- **Armenian motifs, used as decoration only** (`src/components/ui/armenia.tsx`, all `aria-hidden`):
+  - **Arches:** products stand in round-headed arches (`.arch`, `.arch-soft`), as in Armenian church architecture.
+  - **Pink tuff:** arches are washed in pink tuff (`.tuff`), Yerevan's volcanic building stone, tinted by the product colour through `--tint`.
+  - **Ararat:** Masis and Sis (`<Ararat>`) appear in the hero, catalogue banner, gallery, the night-time scent-finder block and the footer.
+  - **Braid:** a braided band in the spirit of khachkar carving (`<Braid>`) is used as a divider.
+  - **Rosette:** an eight-point rosette (`<Rosette>`) is used for small accents.
+  - **Armenian letters as numerals:** Ա Բ Գ Դ (`.numeral`, `ARM_NUMERALS`) number sections and promises.
+- **Accents: pomegranate and apricot, with gold hairlines.** Primary buttons are pomegranate. Secondary actions are quiet underlined text links (`.link-arrow`), not second buttons.
+- **The product still takes most of the screen,** in its arch. Cards show collection, name in the serif, price and a round "+" (`QuickAdd compact`).
+- **Language choice is quiet.** It is a small `Հայ ▾` dropdown in the header, and inline text links in the footer and mobile menu.
 
 ## Typography
 
 - **The fonts are self-hosted and licensed under OFL.** The licence files are `public/fonts/OFL-*.txt`. Nothing is loaded from Google Fonts. The CSP `font-src 'self'` would block that anyway.
+- **Display serif `LJ Serif`:** Cormorant Garamond 500/600 (plus italic) covers Latin and Cyrillic, and Noto Serif Armenian 500/600 covers Armenian, picked per glyph through `unicode-range`. It is used by `.serif` and by the legacy `.hand` class, and `--font-hand` / `--font-logo` point to it. In `hy`, the hero title (`.hero-title`) is sized so long words such as «տրամադրություն» stay whole.
 - **One family name, `LJ Sans`, combines two fonts through `unicode-range`:**
   - Manrope variable (weights 200–800): the Latin, Latin-ext, Cyrillic and Cyrillic-ext subsets. It covers `en`, `it` and `ru`.
   - Noto Sans Armenian: static 400/500/600/700 files. The 700 file is also mapped to 800. It covers `U+0530-058F` and a few punctuation marks.
@@ -41,18 +50,18 @@ Form fields use `font-size: 1rem` so iOS does not zoom on focus.
 
 | Token | Value | Use |
 |---|---|---|
-| `paper` | `#fbfbf9` | Page background, sheets |
-| `card` | `#ffffff` | Cards, fields, footer |
-| `ink` | `#111111` | Text, primary button |
-| `ink-2` | `#3d3d3a` | Secondary text |
-| `muted` | `#6b6a65` | Captions, eyebrow |
-| `line` | `#e8e7e2` | Hairlines |
-| `line-strong` | `#d4d2cb` | Field and ghost-button outlines |
-| `mist` | `#f3f2ee` | Neutral fills (empty states, bars) |
-| `ok` | `#1e7a4a` | In stock, verified purchase |
-| `warn` | `#9a5b00` | Low stock, DEMO price label |
-| `bad` | `#b3261e` | Errors, sold out |
-| `focus` | `#2457ff` | Focus ring |
+| `paper` | `#f8f3ec` | Page background (ivory) |
+| `card` | `#fffdf9` | Cards, fields |
+| `ink` | `#1d1714` | Text, "+" buttons, active chips |
+| `ink-2` | `#4a3f38` | Secondary text |
+| `muted` | `#7d7067` | Captions |
+| `line` / `line-strong` | `#e8ddd1` / `#d6c7b8` | Hairlines, outlines |
+| `brand` (pomegranate) | `#8a1c2c` | Primary buttons, emphasis, focus ring |
+| `tuff` / `tuff-2` / `tuff-deep` | `#ecd6c6` / `#e2c1ab` / `#b9876c` | Arches, banners |
+| `apricot` | `#d98c4a` | Small accents, night-block numerals |
+| `gold` | `#b08a57` | Hairlines, kickers, numerals |
+| `navy` (Ararat night) | `#17141a` | Footer, scent-finder block |
+| `ok` / `warn` / `bad` | `#2f6b45` / `#9a5b00` / `#a3262b` | Status |
 
 ### Radii, easing, shadow
 

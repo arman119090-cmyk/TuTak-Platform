@@ -5,9 +5,20 @@ import { addToCartAction } from "@/app/actions/cart";
 import { useI18n } from "@/i18n/provider";
 import { track, type AnalyticsItem } from "@/components/analytics/track";
 import { useCartUI } from "@/components/cart/cart-ui";
-import { IconCheck } from "@/components/ui/icons";
+import { IconCheck, IconPlus } from "@/components/ui/icons";
 
-export function QuickAdd({ variantId, item, listName }: { variantId: string; item: AnalyticsItem; listName?: string }) {
+export function QuickAdd({
+  variantId,
+  item,
+  listName,
+  compact,
+}: {
+  variantId: string;
+  item: AnalyticsItem;
+  listName?: string;
+  /** Round "+" button (product cards); the label stays available to screen readers. */
+  compact?: boolean;
+}) {
   const { m } = useI18n();
   const ui = useCartUI();
   const [pending, start] = useTransition();
@@ -37,10 +48,22 @@ export function QuickAdd({ variantId, item, listName }: { variantId: string; ite
           }
         })
       }
-      className="btn btn-primary min-h-10 w-full rounded-xl px-3 text-sm"
+      aria-label={compact ? (state === "added" ? m.product.added : state === "error" ? m.product.unavailable : m.product.addToCart) : undefined}
+      title={compact ? m.product.addToCart : undefined}
+      className={
+        compact
+          ? "grid size-11 shrink-0 place-items-center rounded-full bg-ink text-[#fff8f1] shadow-[0_8px_18px_-10px_rgb(29_23_20/0.8)] transition-[background-color,transform] duration-300 hover:bg-brand active:scale-95 disabled:opacity-50"
+          : "btn btn-primary min-h-10 w-full rounded-xl px-3 text-sm"
+      }
     >
-      {state === "added" ? <IconCheck width={18} height={18} /> : null}
-      <span>{state === "added" ? m.product.added : state === "error" ? m.product.unavailable : m.product.addToCart}</span>
+      {compact ? (
+        state === "added" ? <IconCheck width={18} height={18} /> : <IconPlus width={18} height={18} />
+      ) : (
+        <>
+          {state === "added" ? <IconCheck width={18} height={18} /> : null}
+          <span>{state === "added" ? m.product.added : state === "error" ? m.product.unavailable : m.product.addToCart}</span>
+        </>
+      )}
     </button>
   );
 }

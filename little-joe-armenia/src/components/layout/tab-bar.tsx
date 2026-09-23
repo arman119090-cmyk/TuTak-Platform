@@ -28,7 +28,7 @@ export function TabBar() {
   return (
     <nav
       aria-label={m.nav.menu}
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-[var(--safe-bottom)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 pb-[var(--safe-bottom)] backdrop-blur-xl md:hidden"
       data-testid="tab-bar"
     >
       <ul className="grid grid-cols-5">
@@ -39,9 +39,9 @@ export function TabBar() {
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-[0.66rem] font-medium text-muted aria-[current=page]:text-brand"
+                className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-[0.62rem] font-medium text-muted aria-[current=page]:text-ink"
               >
-                <Icon width={22} height={22} />
+                <Icon width={21} height={21} strokeWidth={1.5} />
                 <span className="max-w-full truncate px-1">{label}</span>
               </Link>
             </li>

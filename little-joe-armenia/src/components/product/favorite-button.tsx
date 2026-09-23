@@ -31,11 +31,11 @@ export function FavoriteButton({ productId, initial, variant = "floating" }: { p
       }
       className={
         variant === "floating"
-          ? "tap inline-flex items-center justify-center rounded-full bg-white/80 backdrop-blur transition hover:bg-white"
+          ? "tap inline-flex items-center justify-center rounded-full bg-[#fff8f1]/70 text-ink-2 backdrop-blur transition hover:bg-[#fff8f1] hover:text-brand"
           : "btn btn-ghost aspect-square px-0"
       }
     >
-      <IconHeart filled={optimistic} className={optimistic ? "text-bad" : ""} />
+      <IconHeart filled={optimistic} className={optimistic ? "text-brand" : ""} width={20} height={20} />
     </button>
   );
 }

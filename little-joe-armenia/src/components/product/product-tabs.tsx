@@ -13,7 +13,7 @@ export function ProductTabs({ tabs }: { tabs: { id: string; label: string; conte
   };
   return (
     <div className="card overflow-hidden">
-      <div role="tablist" className="no-scrollbar flex gap-1 overflow-x-auto bg-sky-2 p-1.5">
+      <div role="tablist" className="no-scrollbar flex gap-1 overflow-x-auto border-b border-line bg-transparent p-1.5">
         {tabs.map((t, i) => (
           <button
             key={t.id}
@@ -28,7 +28,7 @@ export function ProductTabs({ tabs }: { tabs: { id: string; label: string; conte
               if (e.key === "ArrowRight") focusTab(i + 1);
               if (e.key === "ArrowLeft") focusTab(i - 1);
             }}
-            className="min-h-12 flex-1 whitespace-nowrap rounded-xl px-4 text-sm font-semibold text-ink-2 transition aria-selected:bg-white aria-selected:text-ink aria-selected:shadow-sm"
+            className="relative min-h-12 flex-1 whitespace-nowrap px-4 text-sm font-medium text-muted transition aria-selected:text-ink aria-selected:after:absolute aria-selected:after:inset-x-4 aria-selected:after:bottom-0 aria-selected:after:h-px aria-selected:after:bg-[var(--color-gold)]"
           >
             {t.label}
           </button>

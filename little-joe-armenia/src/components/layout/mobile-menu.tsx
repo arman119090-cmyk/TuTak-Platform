@@ -33,7 +33,7 @@ export function MobileMenu({ locale, items }: { locale: Locale; items: { href: s
                   className="flex min-h-14 items-center justify-between border-b border-line px-3 font-[family-name:var(--font-serif)] text-[1.4rem] font-semibold hover:text-brand"
                 >
                   {i.label}
-                  <IconChevron className="text-[var(--color-gold)]" />
+                  <IconChevron className="text-[var(--color-hairline)]" />
                 </Link>
               </li>
             ))}

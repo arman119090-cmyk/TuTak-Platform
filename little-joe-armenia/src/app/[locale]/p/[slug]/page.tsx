@@ -150,13 +150,13 @@ export default async function ProductPage({ params }: Props) {
 
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               <li className="flex items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-line">
-                <span className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-gold)]/50 text-[var(--color-gold)]">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-hairline)]/50 text-[var(--color-hairline)]">
                   <IconTruck width={20} height={20} />
                 </span>
                 <span className="text-sm font-semibold">{m.product.perkDelivery}</span>
               </li>
               <li className="flex items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-line">
-                <span className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-gold)]/50 text-[var(--color-gold)]">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-hairline)]/50 text-[var(--color-hairline)]">
                   <IconCard width={20} height={20} />
                 </span>
                 <span className="text-sm font-semibold">{m.product.perkPayment}</span>

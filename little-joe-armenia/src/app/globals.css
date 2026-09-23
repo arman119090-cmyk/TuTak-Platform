@@ -171,34 +171,37 @@
   --font-hand: var(--font-serif);
   --font-logo: var(--font-serif);
 
-  /* "Yerevan" palette: ivory paper, pink tuff stone (the city's volcanic
-     building stone), pomegranate and apricot, Ararat-night for dark
-     surfaces. `brand` stays the name used across components. */
-  --color-brand: #8a1c2c;
-  --color-brand-600: #6f1523;
-  --color-brand-50: #f6e9e6;
-  --color-sky: #f1e7dc;
-  --color-sky-2: #f8f2ea;
+  /* Little Joe blue palette, taken from the brand's own characters:
+     Joe azure (#008adf), Pup indigo, Dog sky, Joya lavender — on white and
+     ice, with deep navy for premium dark surfaces. `brand` is the button
+     blue (a deeper azure so white text passes WCAG AA). */
+  --color-brand: #0068b8;
+  --color-brand-600: #00569a;
+  --color-brand-50: #e7f3fc;
+  --color-sky: #eaf4fc;
+  --color-sky-2: #f4f9fd;
 
-  --color-paper: #f8f3ec;
-  --color-card: #fffdf9;
-  --color-ink: #1d1714;
-  --color-ink-2: #4a3f38;
-  --color-muted: #7d7067;
-  --color-line: #e8ddd1;
-  --color-line-strong: #d6c7b8;
-  --color-mist: #f1e9df;
-  --color-ok: #2f6b45;
+  --color-paper: #f6f9fc;
+  --color-card: #ffffff;
+  --color-ink: #0b1d36;
+  --color-ink-2: #3b4d66;
+  --color-muted: #6a7b92;
+  --color-line: #e0e9f2;
+  --color-line-strong: #c8d6e5;
+  --color-mist: #eef4f9;
+  --color-ok: #1e7a4a;
   --color-warn: #9a5b00;
-  --color-bad: #a3262b;
-  --color-focus: #8a1c2c;
+  --color-bad: #c0262d;
+  --color-focus: #008adf;
 
-  --color-tuff: #ecd6c6;
-  --color-tuff-2: #e2c1ab;
-  --color-tuff-deep: #b9876c;
-  --color-apricot: #d98c4a;
-  --color-gold: #b08a57;
-  --color-pomegranate: #8a1c2c;
+  --color-wash: #dcedfa;
+  --color-wash-2: #c5e0f5;
+  --color-wash-deep: #6fa7d6;
+  --color-azure: #008adf;
+  --color-hairline: #7fb4e3;
+  --color-indigo: #476db3;
+  --color-lavender: #a188b4;
+  --color-pomegranate: #c0262d;
 
   --radius-card: 1.25rem;
   --radius-pill: 999px;
@@ -214,11 +217,11 @@
   --text-h2--letter-spacing: 0;
 
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
-  --shadow-float: 0 1px 2px rgb(40 22 12 / 0.05), 0 16px 36px -14px rgb(40 22 12 / 0.22);
-  --shadow-card: 0 1px 1px rgb(40 22 12 / 0.04), 0 10px 30px -18px rgb(40 22 12 / 0.28);
-  --shadow-lift: 0 2px 4px rgb(40 22 12 / 0.05), 0 26px 50px -22px rgb(40 22 12 / 0.38);
-  --color-navy: #17141a;
-  --color-navy-2: #221d24;
+  --shadow-float: 0 1px 2px rgb(8 40 90 / 0.05), 0 16px 36px -14px rgb(8 40 90 / 0.22);
+  --shadow-card: 0 1px 1px rgb(8 40 90 / 0.04), 0 10px 30px -18px rgb(8 40 90 / 0.28);
+  --shadow-lift: 0 2px 4px rgb(8 40 90 / 0.05), 0 26px 50px -22px rgb(8 40 90 / 0.4);
+  --color-navy: #061a36;
+  --color-navy-2: #0b2a55;
 }
 
 :root {
@@ -335,8 +338,8 @@ body {
   }
   .btn-primary {
     background: var(--color-brand);
-    color: #fff8f1;
-    box-shadow: 0 10px 22px -14px rgb(138 28 44 / 0.9);
+    color: #ffffff;
+    box-shadow: 0 12px 24px -14px rgb(0 104 184 / 0.85);
   }
   .btn-primary:hover:not(:disabled) {
     background: var(--color-brand-600);
@@ -367,7 +370,7 @@ body {
     font-weight: 600;
     color: var(--color-ink);
     text-decoration: underline;
-    text-decoration-color: var(--color-gold);
+    text-decoration-color: var(--color-hairline);
     text-decoration-thickness: 1px;
     text-underline-offset: 6px;
     transition: color 200ms, text-underline-offset 200ms;
@@ -411,8 +414,8 @@ body {
   .chip[aria-pressed="true"],
   .chip[aria-checked="true"],
   .chip[data-active="true"] {
-    background: var(--color-ink);
-    color: #fff8f1;
+    background: var(--color-brand);
+    color: #ffffff;
     box-shadow: none;
   }
   .field {
@@ -514,7 +517,7 @@ dialog[open]::backdrop { animation: lj-fade 300ms ease-out; }
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--color-gold);
+  color: var(--color-brand);
 }
 .kicker::before {
   content: "";
@@ -534,7 +537,7 @@ h1, h2, h3 { text-wrap: balance; }
 /* Paper grain: an almost invisible noise so large ivory areas feel like
    paper, not a flat screen colour. */
 body {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.22 0 0 0 0 0.12 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.05 0 0 0 0 0.16 0 0 0 0 0.35 0 0 0 .04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 /* Arch frame — the round-headed arch of Armenian church architecture. */
 .arch {
@@ -545,11 +548,11 @@ body {
   border-radius: 12rem 12rem 1rem 1rem;
   overflow: hidden;
 }
-/* Pink tuff stone wash (Yerevan's building stone), tinted by the product. */
-.tuff {
+/* Sky wash behind products, tinted by the product colour. */
+.wash {
   background:
-    radial-gradient(120% 80% at 50% 100%, color-mix(in oklab, var(--tint, var(--color-tuff)) 30%, transparent), transparent 70%),
-    linear-gradient(180deg, #f5e6da 0%, var(--color-tuff) 100%);
+    radial-gradient(120% 80% at 50% 100%, color-mix(in oklab, var(--tint, var(--color-wash)) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, #f2f8fe 0%, var(--color-wash) 100%);
 }
 /* Armenian letter used as a section numeral (Ա = 1, Բ = 2 …). */
 .numeral {
@@ -558,15 +561,15 @@ body {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in oklab, var(--color-gold) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-hairline) 70%, transparent);
   font-family: var(--font-serif);
   font-size: 1.05rem;
   font-weight: 600;
-  color: var(--color-gold);
+  color: var(--color-hairline);
 }
 .rule-gold {
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+  background: linear-gradient(90deg, transparent, var(--color-hairline), transparent);
 }
 @keyframes lj-spin { to { transform: rotate(360deg); } }
 .spin-slow { animation: lj-spin 40s linear infinite; }

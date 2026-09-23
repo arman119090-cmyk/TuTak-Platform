@@ -70,39 +70,39 @@ export default async function HomePage({ params }: Props) {
   return (
     <>
       {/* ── Hero: serif headline, the character in an arch before Ararat ── */}
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-hidden bg-navy text-white" style={{ background: "linear-gradient(160deg, #0b2a55 0%, #061a36 55%, #04142b 100%)" }}>
         <div
-          className="pointer-events-none absolute right-[-20%] top-[-10%] h-[80%] w-[80%] rounded-full opacity-70 blur-3xl md:right-[-5%] md:w-[55%]"
-          style={{ background: "radial-gradient(closest-side, rgb(233 170 110 / 0.35), rgb(233 170 110 / 0))" }}
+          className="pointer-events-none absolute right-[-25%] top-[5%] h-[85%] w-[90%] rounded-full blur-3xl md:right-[-6%] md:w-[60%]"
+          style={{ background: "radial-gradient(closest-side, rgb(0 138 223 / 0.55), rgb(0 138 223 / 0))" }}
           aria-hidden="true"
         />
-        <Ararat className="pointer-events-none absolute bottom-0 right-0 h-[34%] w-full opacity-70 md:h-[46%] md:w-[62%]" id="hero-ararat" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-line" aria-hidden="true" />
+        <HeroStars />
+        <Ararat tone="night" className="pointer-events-none absolute bottom-0 right-0 h-[18%] w-full md:h-[42%] md:w-[66%]" id="hero-ararat" />
         <div className="container-lj relative grid grid-cols-[minmax(0,1fr)] items-center gap-10 pt-10 pb-16 md:min-h-[40rem] md:grid-cols-[1.1fr_0.9fr] md:gap-8 md:pt-16 md:pb-24">
           <div className="relative z-[1] min-w-0 max-w-2xl">
-            <p className="kicker">{m.home.heroEyebrow}</p>
+            <p className="kicker !text-[#7fc4f5]">{m.home.heroEyebrow}</p>
             <h1 className="serif hero-title mt-5 text-[clamp(2.7rem,1.5rem+5vw,5.8rem)] leading-[0.98]">
               <span className="block">{line1}</span>
-              {line2 ? <span className="block italic text-brand">{line2}</span> : null}
+              {line2 ? <span className="block italic text-[#6cc6ff]">{line2}</span> : null}
             </h1>
-            <p className="mt-6 max-w-md text-[1.05rem] leading-relaxed text-ink-2">{home.hero?.body ?? m.home.heroSub}</p>
+            <p className="mt-6 max-w-md text-[1.05rem] leading-relaxed text-white/70">{home.hero?.body ?? m.home.heroSub}</p>
             <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
-              <Link href={paths.shop(locale)} className="btn btn-primary px-7">
+              <Link href={paths.shop(locale)} className="btn bg-white px-7 text-ink shadow-[0_14px_30px_-16px_rgb(0_138_223/0.9)] hover:bg-[var(--color-sky)]">
                 {m.home.goShop}
                 <IconArrow width={17} height={17} />
               </Link>
-              <Link href={paths.finder(locale)} className="link-arrow">
+              <Link href={paths.finder(locale)} className="link-arrow !text-white hover:!text-[#6cc6ff]">
                 {m.home.ctaFind}
               </Link>
             </div>
-            <ul className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.8rem] text-muted">
+            <ul className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.8rem] text-white/55">
               {madeInItaly ? <li>{m.home.perkItaly}</li> : null}
               <li className="flex items-center gap-2">
-                <Rosette size={14} className="text-[var(--color-gold)]" />
+                <Rosette size={14} className="text-[var(--color-hairline)]" />
                 {m.home.perkFavorite}
               </li>
               <li className="flex items-center gap-2">
-                <Rosette size={14} className="text-[var(--color-gold)]" />
+                <Rosette size={14} className="text-[var(--color-hairline)]" />
                 {m.home.perkTrips}
               </li>
             </ul>
@@ -110,8 +110,8 @@ export default async function HomePage({ params }: Props) {
 
           {heroProduct?.image ? (
             <Link href={paths.product(locale, heroProduct.slug)} className="group relative mx-auto block w-[78%] max-w-[26rem] md:w-full" aria-label={heroProduct.name}>
-              <div className="arch tuff relative aspect-[4/5] shadow-[var(--shadow-lift)] ring-1 ring-[var(--color-tuff-2)]" style={{ ["--tint" as string]: heroProduct.accent }}>
-                <Ararat className="absolute inset-x-0 bottom-0 h-[38%] w-full opacity-80" id="arch-ararat" />
+              <div className="arch wash relative aspect-[4/5] shadow-[0_40px_80px_-30px_rgb(0_138_223/0.65)] ring-1 ring-white/30" style={{ ["--tint" as string]: heroProduct.accent }}>
+                <Ararat className="absolute inset-x-0 bottom-0 h-[38%] w-full opacity-90" id="arch-ararat" />
                 <div className="float-slow absolute inset-x-[14%] bottom-[10%] top-[14%] transition-transform duration-700 group-hover:-translate-y-2 motion-reduce:transform-none">
                   <ProductImage
                     media={heroProduct.image}
@@ -119,17 +119,17 @@ export default async function HomePage({ params }: Props) {
                     fit="contain"
                     sizes="(min-width: 768px) 34vw, 78vw"
                     priority
-                    className="drop-shadow-[0_28px_30px_rgba(60,30,15,0.3)]"
+                    className="drop-shadow-[0_28px_30px_rgba(8,40,90,0.3)]"
                   />
                 </div>
               </div>
               {/* Inner hairline arch, like a carved stone frame */}
-              <div className="arch pointer-events-none absolute inset-2.5 ring-1 ring-[#fff8f1]/70" aria-hidden="true" />
+              <div className="arch pointer-events-none absolute inset-2.5 ring-1 ring-[#ffffff]/70" aria-hidden="true" />
               {sidekicks.map((s, i) => (
                 <div
                   key={s.id}
                   aria-hidden="true"
-                  className={`${i === 0 ? "float-slower -left-[16%] bottom-[-2%] w-[34%] [--r:-6deg]" : "float-slow -right-[12%] bottom-[-4%] w-[30%] [--r:6deg]"} absolute aspect-[4/5] drop-shadow-[0_16px_18px_rgba(60,30,15,0.25)]`}
+                  className={`${i === 0 ? "float-slower -left-[16%] bottom-[-2%] w-[34%] [--r:-6deg]" : "float-slow -right-[12%] bottom-[-4%] w-[30%] [--r:6deg]"} absolute aspect-[4/5] drop-shadow-[0_16px_18px_rgba(8,40,90,0.25)]`}
                 >
                   <ProductImage media={s.image} accent="transparent" fit="contain" sizes="160px" />
                 </div>
@@ -167,14 +167,14 @@ export default async function HomePage({ params }: Props) {
             {collectionTiles.map((c) => (
               <li key={c.collectionSlug} className="w-[58vw] max-w-[15rem] shrink-0 snap-start md:w-auto md:max-w-none">
                 <Link href={paths.collection(locale, c.collectionSlug)} className="group block">
-                  <div className="arch tuff relative aspect-[3/4] ring-1 ring-[var(--color-tuff-2)]/60 transition-shadow duration-500 group-hover:shadow-[var(--shadow-lift)]" style={{ ["--tint" as string]: c.accent }}>
+                  <div className="arch wash relative aspect-[3/4] ring-1 ring-[var(--color-wash-2)]/60 transition-shadow duration-500 group-hover:shadow-[var(--shadow-lift)]" style={{ ["--tint" as string]: c.accent }}>
                     <div className="absolute inset-x-[14%] bottom-[8%] top-[18%] transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:scale-[1.04] motion-reduce:transform-none">
-                      <ProductImage media={c.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 18vw, 55vw" className="drop-shadow-[0_18px_20px_rgba(60,30,15,0.25)]" />
+                      <ProductImage media={c.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 18vw, 55vw" className="drop-shadow-[0_18px_20px_rgba(8,40,90,0.25)]" />
                     </div>
                   </div>
                   <div className="mt-3 flex items-center justify-between px-1">
                     <span className="serif text-[1.3rem]">{c.collectionName}</span>
-                    <IconArrow width={16} height={16} className="text-[var(--color-gold)] transition-transform group-hover:translate-x-1" />
+                    <IconArrow width={16} height={16} className="text-[var(--color-hairline)] transition-transform group-hover:translate-x-1" />
                   </div>
                 </Link>
               </li>
@@ -185,23 +185,23 @@ export default async function HomePage({ params }: Props) {
 
       {/* ── Scent finder: Ararat at night ── */}
       <section className="container-lj pb-16 md:pb-24">
-        <div className="relative overflow-hidden rounded-[2rem] bg-navy text-[#fff8f1] shadow-[var(--shadow-lift)]">
-          <div className="absolute inset-0" style={{ background: "radial-gradient(90% 70% at 70% 100%, rgb(217 140 74 / 0.35), transparent 60%), radial-gradient(60% 50% at 15% 0%, rgb(138 28 44 / 0.35), transparent 70%)" }} aria-hidden="true" />
-          <Ararat tone="night" className="absolute bottom-0 right-0 h-[48%] w-full md:w-[85%]" id="quiz-ararat" />
+        <div className="relative overflow-hidden rounded-[2rem] text-white shadow-[var(--shadow-lift)]" style={{ background: "linear-gradient(135deg, #008adf 0%, #0068b8 45%, #2b3f8f 100%)" }}>
+          <div className="absolute inset-0" style={{ background: "radial-gradient(70% 60% at 75% 40%, rgb(255 255 255 / 0.22), transparent 65%)" }} aria-hidden="true" />
+          <Ararat tone="night" className="absolute bottom-0 right-0 h-[22%] w-full md:h-[48%] md:w-[85%]" id="quiz-ararat" />
           <StarField />
           <div className="relative grid items-center gap-6 px-6 py-12 md:grid-cols-[1.25fr_1fr] md:px-16 md:py-16">
             <div className="text-center md:text-left">
-              <p className="kicker justify-center md:justify-start">{m.nav.scentFinder}</p>
+              <p className="kicker justify-center !text-white/80 md:justify-start">{m.nav.scentFinder}</p>
               <h2 className="serif mt-4 text-[clamp(2.2rem,1.5rem+2.8vw,3.8rem)] leading-[1.02]">{m.home.quizTitle}</h2>
-              <p className="mx-auto mt-4 max-w-md text-[#fff8f1]/70 md:mx-0">{m.home.quizBody}</p>
-              <Link href={paths.finder(locale)} className="btn mt-8 bg-[#fff8f1] px-7 text-ink hover:bg-white">
+              <p className="mx-auto mt-4 max-w-md text-white/80 md:mx-0">{m.home.quizBody}</p>
+              <Link href={paths.finder(locale)} className="btn mt-8 bg-[#ffffff] px-7 text-ink hover:bg-white">
                 {m.home.quizCta}
                 <IconArrow width={17} height={17} />
               </Link>
-              <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[0.75rem] text-[#fff8f1]/60 md:justify-start">
+              <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[0.75rem] text-white/75 md:justify-start">
                 {[m.home.quizPoint1, m.home.quizPoint2, m.home.quizPoint3].map((t, i) => (
                   <li key={t} className="flex items-center gap-2">
-                    <span className="font-[family-name:var(--font-serif)] text-[var(--color-apricot)]">{ARM_NUMERALS[i]}</span>
+                    <span className="font-[family-name:var(--font-serif)] text-white">{ARM_NUMERALS[i]}</span>
                     {t}
                   </li>
                 ))}
@@ -209,7 +209,7 @@ export default async function HomePage({ params }: Props) {
             </div>
             {quizProduct?.image ? (
               <div className="relative mx-auto aspect-square w-[70%] max-w-[20rem] md:w-full">
-                <div className="absolute inset-[10%] rounded-full bg-[rgb(217_140_74/0.25)] blur-2xl" aria-hidden="true" />
+                <div className="absolute inset-[10%] rounded-full bg-white/25 blur-2xl" aria-hidden="true" />
                 <div className="float-slow absolute inset-0">
                   <ProductImage media={quizProduct.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 25vw, 70vw" className="drop-shadow-[0_24px_28px_rgba(0,0,0,0.45)]" />
                 </div>
@@ -222,8 +222,8 @@ export default async function HomePage({ params }: Props) {
       {/* ── Family / brand banner: the whole line-up on a stone ledge ── */}
       {family.length > 0 ? (
         <section className="container-lj pb-16 md:pb-24" aria-labelledby="family-title" id="family">
-          <div className="tuff relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-tuff-2)]">
-            <Braid className="absolute inset-x-0 top-5 text-[var(--color-gold)] opacity-60" id="family-braid" />
+          <div className="wash relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-wash-2)]">
+            <Braid className="absolute inset-x-0 top-5 text-[var(--color-hairline)] opacity-60" id="family-braid" />
             <div className="relative grid items-end gap-8 px-6 pt-14 md:grid-cols-[1fr_1.3fr] md:px-14">
               <div className="pb-4 text-center md:pb-14 md:text-left">
                 <h2 id="family-title" className="serif text-[clamp(2rem,1.4rem+2.4vw,3.4rem)] leading-[1.02]">
@@ -240,7 +240,7 @@ export default async function HomePage({ params }: Props) {
                   {[...joeColours, ...family.filter((f) => f.collectionSlug !== "little-joe")].slice(0, 8).map((p, i) => (
                     <li key={p.id} className={i % 2 ? "w-[15%] max-w-[6.5rem] pb-1" : "w-[17%] max-w-[7.5rem]"}>
                       <Link href={paths.product(locale, p.slug)} className="block transition-transform duration-300 hover:-translate-y-2 motion-reduce:transform-none" title={p.name}>
-                        <div className="aspect-[4/5] drop-shadow-[0_12px_12px_rgba(60,30,15,0.25)]">
+                        <div className="aspect-[4/5] drop-shadow-[0_12px_12px_rgba(8,40,90,0.25)]">
                           <ProductImage media={p.image} accent="transparent" fit="contain" sizes="120px" />
                         </div>
                       </Link>
@@ -248,7 +248,7 @@ export default async function HomePage({ params }: Props) {
                   ))}
                 </ul>
                 {/* Stone ledge */}
-                <div className="h-6 rounded-t-md bg-gradient-to-b from-[var(--color-tuff-2)] to-[var(--color-tuff-deep)]/60" aria-hidden="true" />
+                <div className="h-6 rounded-t-md bg-gradient-to-b from-[var(--color-wash-2)] to-[var(--color-wash-deep)]/60" aria-hidden="true" />
               </div>
             </div>
           </div>
@@ -262,8 +262,8 @@ export default async function HomePage({ params }: Props) {
             <Link
               key={c.id}
               href={c.href && c.href.startsWith("/") ? `/${locale}${c.href}` : paths.shop(locale)}
-              className="tuff arch-soft p-8 ring-1 ring-[var(--color-tuff-2)] md:p-12"
-              style={{ ["--tint" as string]: c.accent ?? "var(--color-tuff)" }}
+              className="wash arch-soft p-8 ring-1 ring-[var(--color-wash-2)] md:p-12"
+              style={{ ["--tint" as string]: c.accent ?? "var(--color-wash)" }}
             >
               <h2 className="serif text-4xl">{c.title}</h2>
               {c.body ? <p className="mt-3 max-w-md">{c.body}</p> : null}
@@ -280,7 +280,7 @@ export default async function HomePage({ params }: Props) {
           </h2>
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {claims.map((c) => (
-              <li key={c.key} className="border-t border-[var(--color-gold)]/50 pt-5">
+              <li key={c.key} className="border-t border-[var(--color-hairline)]/50 pt-5">
                 <p className="font-bold">{c.title}</p>
                 {c.body ? <p className="mt-2 text-sm text-ink-2">{c.body}</p> : null}
               </li>
@@ -380,15 +380,29 @@ function Seal({ className = "" }: { className?: string }) {
       <defs>
         <path id="seal-circle" d="M60 60 m-44 0 a44 44 0 1 1 88 0 a44 44 0 1 1 -88 0" />
       </defs>
-      <circle cx="60" cy="60" r="58" fill="#fff8f1" />
-      <circle cx="60" cy="60" r="54" fill="none" stroke="#b08a57" strokeWidth="0.8" />
-      <circle cx="60" cy="60" r="33" fill="none" stroke="#b08a57" strokeWidth="0.8" />
-      <text fontSize="10.5" letterSpacing="3.2" fill="#8a1c2c" fontFamily="var(--font-serif)" fontWeight="600">
+      <circle cx="60" cy="60" r="58" fill="#ffffff" />
+      <circle cx="60" cy="60" r="54" fill="none" stroke="#7fb4e3" strokeWidth="0.8" />
+      <circle cx="60" cy="60" r="33" fill="none" stroke="#7fb4e3" strokeWidth="0.8" />
+      <text fontSize="10.5" letterSpacing="3.2" fill="#0068b8" fontFamily="var(--font-serif)" fontWeight="600">
         <textPath href="#seal-circle">LITTLE JOE · ՀԱՅԱՍՏԱՆ · YEREVAN ·</textPath>
       </text>
-      <g transform="translate(48 47)" fill="#8a1c2c">
+      <g transform="translate(48 47)" fill="#0068b8">
         <path d="M9 3.5 10.2 5.6 12 3.8 13.8 5.6 15 3.5 15.3 6.4A8 8 0 1 1 8.7 6.4Z" transform="scale(1.05)" />
       </g>
+    </svg>
+  );
+}
+
+/** Faint stars in the hero sky. */
+function HeroStars() {
+  const stars = [
+    [6, 10], [14, 24], [22, 8], [31, 18], [40, 6], [47, 28], [55, 12], [63, 22], [71, 7], [79, 16], [88, 9], [94, 26], [10, 40], [36, 36], [60, 34], [84, 38],
+  ];
+  return (
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true">
+      {stars.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r={i % 3 ? 0.14 : 0.22} fill="#ffffff" opacity={i % 2 ? 0.35 : 0.7} />
+      ))}
     </svg>
   );
 }
@@ -401,7 +415,7 @@ function StarField() {
   return (
     <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true">
       {stars.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={i % 3 ? 0.18 : 0.28} fill="#fff8f1" opacity={i % 2 ? 0.5 : 0.8} />
+        <circle key={i} cx={x} cy={y} r={i % 3 ? 0.18 : 0.28} fill="#ffffff" opacity={i % 2 ? 0.5 : 0.8} />
       ))}
     </svg>
   );

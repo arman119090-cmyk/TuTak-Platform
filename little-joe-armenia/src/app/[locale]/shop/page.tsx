@@ -52,7 +52,7 @@ export default async function ShopPage({ params, searchParams }: Props) {
         params={{ item_list_name: "catalog", items: products.slice(0, 20).map((p) => ({ item_id: p.slug, item_name: p.name, price: p.priceAmd ?? 0 })) }}
       />
       {/* Catalogue banner: breadcrumb, serif title, a character in an arch before Ararat. */}
-      <header className="tuff relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-tuff-2)]">
+      <header className="wash relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-wash-2)]">
         <Ararat className="pointer-events-none absolute bottom-0 right-0 h-[70%] w-full opacity-80 md:w-[60%]" id="shop-ararat" />
         <div className="relative flex min-h-36 items-center justify-between gap-4 px-6 py-7 md:min-h-48 md:px-12">
           <div>
@@ -66,7 +66,7 @@ export default async function ShopPage({ params, searchParams }: Props) {
           </div>
           {bannerImage ? (
             <div className="relative hidden h-36 w-32 shrink-0 sm:block md:h-44 md:w-40">
-              <ProductImage media={bannerImage} accent="transparent" fit="contain" sizes="160px" priority className="drop-shadow-[0_16px_18px_rgba(60,30,15,0.3)]" />
+              <ProductImage media={bannerImage} accent="transparent" fit="contain" sizes="160px" priority className="drop-shadow-[0_16px_18px_rgba(8,40,90,0.3)]" />
             </div>
           ) : null}
         </div>

@@ -9,7 +9,7 @@ import { QuickAdd } from "@/components/product/quick-add";
 import { FavoriteButton } from "@/components/product/favorite-button";
 
 // Premium card: the character stands in a round-headed arch (Armenian
-// church architecture) washed in pink tuff and tinted by the scent colour.
+// church architecture) washed in pink wash and tinted by the scent colour.
 // Below: collection, name in the display serif, price and a round "+".
 // Ratings only appear when real reviews exist.
 
@@ -31,7 +31,7 @@ export function ProductCard({
   const name = p.collectionSlug === "little-joe" ? p.name.replace(/^Little Joe\s+/, "") : p.name;
   return (
     <article className="group relative flex h-full flex-col" data-testid="product-card" data-slug={p.slug}>
-      <div className="arch tuff relative aspect-[4/5] ring-1 ring-[var(--color-tuff-2)]/60" style={{ ["--tint" as string]: p.accent }}>
+      <div className="arch wash relative aspect-[4/5] ring-1 ring-[var(--color-wash-2)]/60" style={{ ["--tint" as string]: p.accent }}>
         <Link href={paths.product(locale, p.slug)} className="absolute inset-0 z-[1]" aria-label={p.name} tabIndex={-1} />
         <div className="absolute inset-x-[12%] bottom-[9%] top-[16%] transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-1.5 group-hover:scale-[1.035] motion-reduce:transform-none">
           <ProductImage
@@ -40,11 +40,11 @@ export function ProductCard({
             fit="contain"
             sizes="(min-width: 1280px) 16vw, (min-width: 768px) 24vw, 46vw"
             priority={priority}
-            className="drop-shadow-[0_18px_18px_rgba(60,30,15,0.22)]"
+            className="drop-shadow-[0_18px_18px_rgba(8,40,90,0.22)]"
           />
         </div>
         {/* Soft floor shadow */}
-        <div className="absolute inset-x-[22%] bottom-[7%] h-[5%] rounded-[50%] bg-[rgb(60_30_15/0.16)] blur-md" aria-hidden="true" />
+        <div className="absolute inset-x-[22%] bottom-[7%] h-[5%] rounded-[50%] bg-[rgb(8_40_90/0.16)] blur-md" aria-hidden="true" />
         <div className="absolute inset-x-0 top-[13%] z-[2] flex justify-center gap-1">
           {p.isNew ? <Badge>{m.catalog.new}</Badge> : null}
           {soldOut ? <Badge tone="dark">{m.product.soldOut}</Badge> : null}
@@ -82,7 +82,7 @@ function Badge({ children, tone = "light" }: { children: React.ReactNode; tone?:
   return (
     <span
       className={`rounded-full px-2.5 py-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] ${
-        tone === "dark" ? "bg-ink text-[#fff8f1]" : "bg-[#fff8f1]/90 text-brand ring-1 ring-brand/15"
+        tone === "dark" ? "bg-ink text-[#ffffff]" : "bg-[#ffffff]/90 text-brand ring-1 ring-brand/15"
       }`}
     >
       {children}

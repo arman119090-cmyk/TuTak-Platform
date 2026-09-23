@@ -28,7 +28,7 @@ export function ProductTabs({ tabs }: { tabs: { id: string; label: string; conte
               if (e.key === "ArrowRight") focusTab(i + 1);
               if (e.key === "ArrowLeft") focusTab(i - 1);
             }}
-            className="relative min-h-12 flex-1 whitespace-nowrap px-4 text-sm font-medium text-muted transition aria-selected:text-ink aria-selected:after:absolute aria-selected:after:inset-x-4 aria-selected:after:bottom-0 aria-selected:after:h-px aria-selected:after:bg-[var(--color-gold)]"
+            className="relative min-h-12 flex-1 whitespace-nowrap px-4 text-sm font-medium text-muted transition aria-selected:text-ink aria-selected:after:absolute aria-selected:after:inset-x-4 aria-selected:after:bottom-0 aria-selected:after:h-px aria-selected:after:bg-[var(--color-hairline)]"
           >
             {t.label}
           </button>

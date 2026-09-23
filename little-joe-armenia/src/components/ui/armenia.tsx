@@ -10,12 +10,12 @@ export function Ararat({ className = "", tone = "light", id = "ararat" }: { clas
     <svg viewBox="0 0 1200 360" preserveAspectRatio="none" className={className} aria-hidden="true">
       <defs>
         <linearGradient id={`${id}-masis`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={night ? "#3a2f3a" : "#e9d3c3"} />
-          <stop offset="1" stopColor={night ? "#1f1a21" : "#f3e6db"} />
+          <stop offset="0" stopColor={night ? "#12396b" : "#cfe3f5"} />
+          <stop offset="1" stopColor={night ? "#061a36" : "#eef6fd"} />
         </linearGradient>
         <linearGradient id={`${id}-sis`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={night ? "#332a34" : "#e4c9b6"} />
-          <stop offset="1" stopColor={night ? "#1d181f" : "#f2e3d7"} />
+          <stop offset="0" stopColor={night ? "#0f3160" : "#c3dbf1"} />
+          <stop offset="1" stopColor={night ? "#061a36" : "#ecf4fc"} />
         </linearGradient>
       </defs>
       {/* Sis (Little Ararat) */}
@@ -28,19 +28,19 @@ export function Ararat({ className = "", tone = "light", id = "ararat" }: { clas
       {/* Snow caps */}
       <path
         d="M420 92 C445 70 465 55 480 52 C500 47 515 50 530 58 C555 72 580 95 600 118 L585 112 L566 124 L548 106 L530 122 L510 100 L490 118 L470 101 L448 116 Z"
-        fill={night ? "#e9dcd0" : "#fffaf5"}
+        fill={night ? "#e8f3fd" : "#ffffff"}
         opacity={night ? 0.85 : 1}
       />
-      <path d="M893 162 L905 150 Q915 140 925 150 L938 160 L928 166 L918 158 L908 168 Z" fill={night ? "#e9dcd0" : "#fffaf5"} opacity={night ? 0.8 : 1} />
+      <path d="M893 162 L905 150 Q915 140 925 150 L938 160 L928 166 L918 158 L908 168 Z" fill={night ? "#e8f3fd" : "#ffffff"} opacity={night ? 0.8 : 1} />
       {/* Gold ridge line */}
       <path
         d="M0 330 C120 300 250 220 380 120 C420 90 450 60 480 52 C500 47 515 50 530 58 C590 90 640 150 720 210 C800 270 900 320 1000 360"
         fill="none"
-        stroke="#b08a57"
+        stroke="#7fb4e3"
         strokeWidth="1.25"
         opacity={night ? 0.55 : 0.45}
       />
-      <path d="M760 300 L905 150 Q915 140 925 150 L1200 330" fill="none" stroke="#b08a57" strokeWidth="1" opacity={night ? 0.45 : 0.35} />
+      <path d="M760 300 L905 150 Q915 140 925 150 L1200 330" fill="none" stroke="#7fb4e3" strokeWidth="1" opacity={night ? 0.45 : 0.35} />
     </svg>
   );
 }
@@ -78,9 +78,9 @@ export function Pomegranate({ className = "", size = 20 }: { className?: string;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden="true">
       <path d="M9 3.5 10.2 5.6 12 3.8 13.8 5.6 15 3.5 15.3 6.4A8 8 0 1 1 8.7 6.4Z" fill="currentColor" />
-      <circle cx="10" cy="13" r="1" fill="#fff8f1" opacity=".7" />
-      <circle cx="13.5" cy="12" r="1" fill="#fff8f1" opacity=".7" />
-      <circle cx="12" cy="15.5" r="1" fill="#fff8f1" opacity=".7" />
+      <circle cx="10" cy="13" r="1" fill="#ffffff" opacity=".7" />
+      <circle cx="13.5" cy="12" r="1" fill="#ffffff" opacity=".7" />
+      <circle cx="12" cy="15.5" r="1" fill="#ffffff" opacity=".7" />
     </svg>
   );
 }

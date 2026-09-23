@@ -52,7 +52,7 @@ export function QuickAdd({
       title={compact ? m.product.addToCart : undefined}
       className={
         compact
-          ? "grid size-11 shrink-0 place-items-center rounded-full bg-ink text-[#fff8f1] shadow-[0_8px_18px_-10px_rgb(29_23_20/0.8)] transition-[background-color,transform] duration-300 hover:bg-brand active:scale-95 disabled:opacity-50"
+          ? "grid size-11 shrink-0 place-items-center rounded-full bg-brand text-white shadow-[0_10px_20px_-10px_rgb(0_104_184/0.9)] transition-[background-color,transform] duration-300 hover:bg-brand-600 active:scale-95 disabled:opacity-50"
           : "btn btn-primary min-h-10 w-full rounded-xl px-3 text-sm"
       }
     >

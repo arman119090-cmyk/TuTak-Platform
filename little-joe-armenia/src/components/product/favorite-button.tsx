@@ -31,7 +31,7 @@ export function FavoriteButton({ productId, initial, variant = "floating" }: { p
       }
       className={
         variant === "floating"
-          ? "tap inline-flex items-center justify-center rounded-full bg-[#fff8f1]/70 text-ink-2 backdrop-blur transition hover:bg-[#fff8f1] hover:text-brand"
+          ? "tap inline-flex items-center justify-center rounded-full bg-[#ffffff]/70 text-ink-2 backdrop-blur transition hover:bg-[#ffffff] hover:text-brand"
           : "btn btn-ghost aspect-square px-0"
       }
     >

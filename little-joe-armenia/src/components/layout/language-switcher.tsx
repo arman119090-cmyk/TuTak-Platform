@@ -26,15 +26,15 @@ export function LanguageSwitcher({ locale, variant = "compact", tone = "dark" }:
         {locales.map((l, i) => (
           <li key={l} className="flex items-center">
             {i > 0 ? (
-              <span className={`mx-1.5 size-[3px] rounded-full ${light ? "bg-[#fff8f1]/30" : "bg-line-strong"}`} aria-hidden="true" />
+              <span className={`mx-1.5 size-[3px] rounded-full ${light ? "bg-[#ffffff]/30" : "bg-line-strong"}`} aria-hidden="true" />
             ) : null}
             <a
               href={localizedHref(pathname, search, l)}
               hrefLang={l}
               lang={l}
               aria-current={l === locale ? "true" : undefined}
-              className={`inline-flex min-h-10 items-center text-[0.85rem] transition-colors aria-[current=true]:font-semibold aria-[current=true]:underline aria-[current=true]:decoration-[var(--color-gold)] aria-[current=true]:underline-offset-[6px] ${
-                light ? "text-[#fff8f1]/60 hover:text-[#fff8f1] aria-[current=true]:text-[#fff8f1]" : "text-ink-2 hover:text-ink aria-[current=true]:text-ink"
+              className={`inline-flex min-h-10 items-center text-[0.85rem] transition-colors aria-[current=true]:font-semibold aria-[current=true]:underline aria-[current=true]:decoration-[var(--color-hairline)] aria-[current=true]:underline-offset-[6px] ${
+                light ? "text-[#ffffff]/60 hover:text-[#ffffff] aria-[current=true]:text-[#ffffff]" : "text-ink-2 hover:text-ink aria-[current=true]:text-ink"
               }`}
             >
               {localeNames[l]}

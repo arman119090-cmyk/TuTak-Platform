@@ -4,16 +4,15 @@ This page describes what the code does today. The sources of truth are `src/app/
 
 ## Direction
 
-- **"Yerevan": premium and calm, with Armenian references.** The page is warm ivory paper (`--color-paper: #f8f3ec`, with a faint paper grain) and near-black warm ink. There is no dark theme; `color-scheme: light` is fixed in `globals.css`.
+- **Little Joe blue, premium.** Colours come from the brand's own characters: Joe azure `#008adf`, Pup indigo `#476db3`, Dog sky `#7acced`, Joya lavender `#a188b4`. The page is cool white paper (`--color-paper: #f6f9fc`) with navy ink `#0b1d36`. The hero and the footer are deep navy (`#061a36`) with a night sky. The scent-finder block is an azure-to-indigo gradient. `color-scheme: light` is fixed.
+- **Why the button blue differs.** Buttons use `--color-brand: #0068b8`, a deeper azure, so that white text meets WCAG AA. Pure `#008adf` (`--color-azure`) is used for accents, focus and glows.
 - **Armenian motifs, used as decoration only** (`src/components/ui/armenia.tsx`, all `aria-hidden`):
-  - **Arches:** products stand in round-headed arches (`.arch`, `.arch-soft`), as in Armenian church architecture.
-  - **Pink tuff:** arches are washed in pink tuff (`.tuff`), Yerevan's volcanic building stone, tinted by the product colour through `--tint`.
-  - **Ararat:** Masis and Sis (`<Ararat>`) appear in the hero, catalogue banner, gallery, the night-time scent-finder block and the footer.
-  - **Braid:** a braided band in the spirit of khachkar carving (`<Braid>`) is used as a divider.
-  - **Rosette:** an eight-point rosette (`<Rosette>`) is used for small accents.
-  - **Armenian letters as numerals:** Ա Բ Գ Դ (`.numeral`, `ARM_NUMERALS`) number sections and promises.
-- **Accents: pomegranate and apricot, with gold hairlines.** Primary buttons are pomegranate. Secondary actions are quiet underlined text links (`.link-arrow`), not second buttons.
-- **The product still takes most of the screen,** in its arch. Cards show collection, name in the serif, price and a round "+" (`QuickAdd compact`).
+  - **Arches:** products stand in round-headed arches (`.arch`, `.arch-soft`), as in Armenian church architecture, on a sky wash (`.wash`) tinted by the product colour through `--tint`.
+  - **Ararat:** Masis and Sis (`<Ararat>`) appear in the hero, catalogue banner, gallery, the scent-finder block and the footer.
+  - **Braid:** a khachkar-style band (`<Braid>`).
+  - **Rosette:** an eight-point rosette (`<Rosette>`).
+  - **Armenian letters as numerals:** Ա Բ Գ Դ (`.numeral`, `ARM_NUMERALS`).
+- **Actions stay quiet.** There is one primary button per block; secondary actions are underlined text links (`.link-arrow`). Cards have a round blue "+" (`QuickAdd compact`).
 - **Language choice is quiet.** It is a small `Հայ ▾` dropdown in the header, and inline text links in the footer and mobile menu.
 
 ## Typography
@@ -50,18 +49,16 @@ Form fields use `font-size: 1rem` so iOS does not zoom on focus.
 
 | Token | Value | Use |
 |---|---|---|
-| `paper` | `#f8f3ec` | Page background (ivory) |
-| `card` | `#fffdf9` | Cards, fields |
-| `ink` | `#1d1714` | Text, "+" buttons, active chips |
-| `ink-2` | `#4a3f38` | Secondary text |
-| `muted` | `#7d7067` | Captions |
-| `line` / `line-strong` | `#e8ddd1` / `#d6c7b8` | Hairlines, outlines |
-| `brand` (pomegranate) | `#8a1c2c` | Primary buttons, emphasis, focus ring |
-| `tuff` / `tuff-2` / `tuff-deep` | `#ecd6c6` / `#e2c1ab` / `#b9876c` | Arches, banners |
-| `apricot` | `#d98c4a` | Small accents, night-block numerals |
-| `gold` | `#b08a57` | Hairlines, kickers, numerals |
-| `navy` (Ararat night) | `#17141a` | Footer, scent-finder block |
-| `ok` / `warn` / `bad` | `#2f6b45` / `#9a5b00` / `#a3262b` | Status |
+| `brand` | `#0068b8` | Buttons, wordmark, active chips, links |
+| `azure` | `#008adf` | Joe blue: accents, focus ring, glows |
+| `navy` / `navy-2` | `#061a36` / `#0b2a55` | Hero, footer, demo banner |
+| `paper` / `card` | `#f6f9fc` / `#ffffff` | Page, cards |
+| `ink` / `ink-2` / `muted` | `#0b1d36` / `#3b4d66` / `#6a7b92` | Text |
+| `line` / `line-strong` | `#e0e9f2` / `#c8d6e5` | Hairlines, outlines |
+| `wash` / `wash-2` / `wash-deep` | `#dcedfa` / `#c5e0f5` / `#6fa7d6` | Arches, banners |
+| `hairline` | `#7fb4e3` | Kickers, numerals, fine rules |
+| `indigo` / `lavender` | `#476db3` / `#a188b4` | Pup / Joya accents |
+| `ok` / `warn` / `bad` | `#1e7a4a` / `#9a5b00` / `#c0262d` | Status |
 
 ### Radii, easing, shadow
 

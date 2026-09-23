@@ -1,0 +1,334 @@
+@import "tailwindcss";
+
+/* ───────────── Fonts (self-hosted, OFL) ─────────────
+   Manrope covers Latin, Italian and Cyrillic; Noto Sans Armenian covers
+   Armenian. The browser picks per glyph through unicode-range, so mixed
+   text (e.g. "Little Joe" inside an Armenian sentence) renders correctly. */
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/manrope-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/manrope-latin-ext-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/manrope-cyrillic-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/manrope-cyrillic-ext-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/noto-sans-armenian-armenian-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0530-058F, U+2010, U+2024, U+25CC, U+FB13-FB17;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/noto-sans-armenian-armenian-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+  unicode-range: U+0530-058F, U+2010, U+2024, U+25CC, U+FB13-FB17;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/noto-sans-armenian-armenian-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+0530-058F, U+2010, U+2024, U+25CC, U+FB13-FB17;
+}
+@font-face {
+  font-family: "LJ Sans";
+  src: url("/fonts/noto-sans-armenian-armenian-700-normal.woff2") format("woff2");
+  font-weight: 700 800;
+  font-display: swap;
+  unicode-range: U+0530-058F, U+2010, U+2024, U+25CC, U+FB13-FB17;
+}
+/* Metric-adjusted fallback keeps layout stable while fonts load (no CLS). */
+@font-face {
+  font-family: "LJ Fallback";
+  src: local("Arial");
+  size-adjust: 104%;
+  ascent-override: 96%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+
+/* ───────────── Design tokens (see docs/DESIGN.md) ───────────── */
+@theme {
+  --font-sans: "LJ Sans", "LJ Fallback", system-ui, sans-serif;
+
+  --color-paper: #fbfbf9;
+  --color-card: #ffffff;
+  --color-ink: #111111;
+  --color-ink-2: #3d3d3a;
+  --color-muted: #6b6a65;
+  --color-line: #e8e7e2;
+  --color-line-strong: #d4d2cb;
+  --color-mist: #f3f2ee;
+  --color-ok: #1e7a4a;
+  --color-warn: #9a5b00;
+  --color-bad: #b3261e;
+  --color-focus: #2457ff;
+
+  --radius-card: 1.25rem;
+  --radius-pill: 999px;
+
+  --text-display: clamp(2.4rem, 1.4rem + 4.2vw, 4.75rem);
+  --text-display--line-height: 1.02;
+  --text-display--letter-spacing: -0.035em;
+  --text-h1: clamp(1.9rem, 1.4rem + 2vw, 3rem);
+  --text-h1--line-height: 1.08;
+  --text-h1--letter-spacing: -0.025em;
+  --text-h2: clamp(1.45rem, 1.2rem + 1vw, 2.1rem);
+  --text-h2--line-height: 1.15;
+  --text-h2--letter-spacing: -0.02em;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-float: 0 1px 2px rgb(17 17 17 / 0.04), 0 12px 32px -12px rgb(17 17 17 / 0.18);
+}
+
+:root {
+  /* Dynamic accent: overridden per product / scent from database colours. */
+  --accent: #e9e7e1;
+  --accent-ink: #111111;
+  --accent-soft: color-mix(in oklab, var(--accent) 22%, white);
+  --accent-wash: color-mix(in oklab, var(--accent) 9%, var(--color-paper));
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: clip;
+}
+
+/* Armenian script sits slightly larger in the same box; tighten nothing. */
+:lang(hy) {
+  letter-spacing: 0;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+/* Armenian words are long (e.g. «տրամադրություն»): a slightly smaller
+   display size keeps whole words on a 320–390px line. */
+:lang(hy) .text-display {
+  font-size: clamp(1.95rem, 1.1rem + 3.9vw, 4.25rem);
+  letter-spacing: -0.02em;
+}
+:lang(hy) .text-h1 {
+  font-size: clamp(1.7rem, 1.25rem + 1.9vw, 2.75rem);
+}
+
+:focus-visible {
+  outline: 2.5px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 55%, white);
+  color: var(--color-ink);
+}
+
+@utility container-lj {
+  width: 100%;
+  max-width: 88rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @media (width >= 48rem) {
+    padding-inline: 2rem;
+  }
+  @media (width >= 90rem) {
+    padding-inline: 3rem;
+  }
+}
+
+@utility tap {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+@utility accent-transition {
+  transition:
+    background-color 600ms var(--ease-out-soft),
+    color 600ms var(--ease-out-soft),
+    border-color 600ms var(--ease-out-soft);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding-inline: 1.5rem;
+    border-radius: var(--radius-pill);
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1;
+    transition:
+      transform 160ms var(--ease-out-soft),
+      background-color 200ms,
+      color 200ms,
+      box-shadow 200ms;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--color-ink);
+    color: white;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #2a2a28;
+  }
+  .btn-accent {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1.5px var(--color-line-strong);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1.5px var(--color-ink);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.75rem;
+    padding-inline: 1rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-card);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition:
+      background-color 200ms,
+      box-shadow 200ms;
+  }
+  .chip[aria-pressed="true"],
+  .chip[aria-checked="true"],
+  .chip[data-active="true"] {
+    background: var(--color-ink);
+    color: white;
+    box-shadow: none;
+  }
+  .field {
+    width: 100%;
+    min-height: 3rem;
+    border-radius: 0.875rem;
+    background: var(--color-card);
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
+    padding: 0.75rem 1rem;
+    font-size: 1rem; /* ≥16px prevents iOS zoom */
+    transition: box-shadow 150ms;
+  }
+  .field:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-ink);
+  }
+  .field[aria-invalid="true"] {
+    box-shadow: inset 0 0 0 2px var(--color-bad);
+  }
+  .label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-ink-2);
+    margin-bottom: 0.375rem;
+  }
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  :lang(hy) .eyebrow {
+    letter-spacing: 0.04em;
+  }
+  .prose-lj h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+  }
+  .prose-lj p {
+    margin-block: 0.875rem;
+    line-height: 1.7;
+    color: var(--color-ink-2);
+  }
+  .prose-lj ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+    color: var(--color-ink-2);
+    line-height: 1.7;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Sheet entrance (native <dialog>). Exit is instant, which keeps focus
+   handling simple; reduced-motion users get no animation at all. */
+@keyframes lj-in-right { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes lj-in-left { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes lj-in-bottom { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes lj-fade { from { opacity: 0; } to { opacity: 1; } }
+dialog.sheet-right[open] { animation: lj-in-right 380ms var(--ease-out-soft); }
+dialog.sheet-left[open] { animation: lj-in-left 380ms var(--ease-out-soft); }
+dialog.sheet-bottom[open] { animation: lj-in-bottom 420ms var(--ease-out-soft); }
+dialog[open]::backdrop { animation: lj-fade 300ms ease-out; }

@@ -1,0 +1,852 @@
+// Little Joe Armenia — database schema.
+//
+// Conventions
+// - Money is stored as integer AMD (dram has no minor unit in retail use).
+// - Every customer-facing text lives in a *Translation table keyed by
+//   (entity, locale). Locales: hy (default), ru, it, en.
+// - Manufacturer facts live on Product and are traced per field through
+//   ProductFact (source, verification). Armenia commercial data (price,
+//   stock, flags) lives on Product/Variant and is never mixed with facts.
+// - Stock invariants are enforced by CHECK constraints added in the
+//   migration SQL (see prisma/migrations/*_init/migration.sql).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Locale {
+  hy
+  ru
+  it
+  en
+}
+
+// ─────────────────────────────── Catalog ───────────────────────────────
+
+enum PublishStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum SourceType {
+  MANUFACTURER_WEBSITE
+  MANUFACTURER_CATALOG_PDF
+  MANUFACTURER_PRICE_LIST
+  DISTRIBUTOR_DOCUMENT
+  PACKAGING
+  RETAILER_LISTING
+  TASK_BRIEF
+  INTERNAL
+}
+
+enum ProductFormat {
+  VENT_CLIP
+  HANGING
+  BOTTLE
+  PAPER
+  OTHER
+}
+
+enum FactField {
+  NAME
+  COLLECTION
+  FRAGRANCE
+  COLOR
+  ARTICLE_NUMBER
+  EAN
+  DURATION
+  DIMENSIONS
+  OFFICIAL_DESCRIPTION
+  SCENT_PROFILE
+  FORMAT
+}
+
+model Collection {
+  id           String                  @id @default(cuid())
+  slug         String                  @unique
+  sortOrder    Int                     @default(0)
+  isVisible    Boolean                 @default(true)
+  // UI accent. Chosen by the shop admin, not a manufacturer fact.
+  accentColor  String?
+  verification VerificationStatus      @default(UNVERIFIED)
+  sourceUrl    String?
+  sourceType   SourceType?
+  verifiedAt   DateTime?
+  translations CollectionTranslation[]
+  products     Product[]
+  promotions   PromotionCollection[]
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+}
+
+model CollectionTranslation {
+  id             String     @id @default(cuid())
+  collectionId   String
+  collection     Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  locale         Locale
+  name           String
+  description    String?
+  seoTitle       String?
+  seoDescription String?
+
+  @@unique([collectionId, locale])
+}
+
+model FragranceFamily {
+  id           String                       @id @default(cuid())
+  slug         String                       @unique
+  sortOrder    Int                          @default(0)
+  accentColor  String?
+  translations FragranceFamilyTranslation[]
+  products     Product[]
+}
+
+model FragranceFamilyTranslation {
+  id          String          @id @default(cuid())
+  familyId    String
+  family      FragranceFamily @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  locale      Locale
+  name        String
+  description String?
+
+  @@unique([familyId, locale])
+}
+
+model ScentTag {
+  id           String                @id @default(cuid())
+  slug         String                @unique
+  translations ScentTagTranslation[]
+  products     ProductScentTag[]
+}
+
+model ScentTagTranslation {
+  id     String   @id @default(cuid())
+  tagId  String
+  tag    ScentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  locale Locale
+  name   String
+
+  @@unique([tagId, locale])
+}
+
+model ProductScentTag {
+  productId String
+  tagId     String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag       ScentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, tagId])
+}
+
+model Product {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  status       PublishStatus @default(DRAFT)
+  collectionId String
+  collection   Collection    @relation(fields: [collectionId], references: [id])
+
+  // ── Manufacturer facts (traced in ProductFact; null until confirmed) ──
+  articleNumber String?
+  ean           String?
+  durationDays  Int?
+  dimensions    String?
+  colorName     String?
+  format        ProductFormat?
+
+  // ── Scent metadata (null = not confirmed; never guessed) ──
+  familyId   String?
+  family     FragranceFamily?  @relation(fields: [familyId], references: [id])
+  scentTags  ProductScentTag[]
+  intensity  Int? // 1..5
+  sweetness  Int? // 0..5
+  freshness  Int? // 0..5
+  woodiness  Int? // 0..5
+  fruity     Int? // 0..5
+  floral     Int? // 0..5
+
+  // ── UI colour set by the admin. Not a manufacturer fact. ──
+  accentColor String?
+  accentInk   String?
+
+  // ── Armenia commercial flags ──
+  isFeatured   Boolean @default(false)
+  isBestseller Boolean @default(false)
+  isNew        Boolean @default(false)
+  isGift       Boolean @default(false)
+  sortOrder    Int     @default(0)
+  // Demo records are only shown when DEMO_MODE=true.
+  isDemo       Boolean @default(false)
+
+  translations  ProductTranslation[]
+  variants      Variant[]
+  media         MediaAsset[]
+  facts         ProductFact[]
+  reviews       Review[]
+  favorites     Favorite[]
+  promotions    PromotionProduct[]
+  homeFeatures  HomeFeaturedProduct[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([status, collectionId])
+  @@index([familyId])
+}
+
+model ProductTranslation {
+  id                 String   @id @default(cuid())
+  productId          String
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locale             Locale
+  name               String
+  // Short one-line scent descriptor for cards. Only from confirmed facts.
+  scentDescriptor    String?
+  profileDescription String?
+  officialDescription String?
+  usage              String?
+  seoTitle           String?
+  seoDescription     String?
+
+  @@unique([productId, locale])
+}
+
+// One row per (product, field): where the value came from and whether it
+// was confirmed. Imports never overwrite a VERIFIED fact silently — they
+// create an ImportReview row instead.
+model ProductFact {
+  id           String             @id @default(cuid())
+  productId    String
+  product      Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  field        FactField
+  value        String?
+  sourceUrl    String?
+  sourceType   SourceType
+  verification VerificationStatus @default(UNVERIFIED)
+  verifiedAt   DateTime?
+  verifiedBy   String?
+  note         String?
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([productId, field])
+}
+
+model Variant {
+  id           String   @id @default(cuid())
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku          String   @unique
+  // Pack label etc. Localised label lives in the product name for single-variant products.
+  label        String?
+  priceAmd     Int?
+  compareAtAmd Int?
+  // Demo prices are placeholders and are shown with a DEMO label.
+  priceIsDemo  Boolean  @default(false)
+  // Invariants (CHECK in SQL): stockOnHand >= 0, reserved >= 0, reserved <= stockOnHand
+  stockOnHand  Int      @default(0)
+  reserved     Int      @default(0)
+  lowStockAt   Int      @default(3)
+  isDefault    Boolean  @default(true)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  movements  InventoryMovement[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([productId])
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  SALE
+  RESERVE
+  RELEASE
+  CANCEL_RETURN
+  MANUAL_ADJUSTMENT
+  REFUND
+  RETURN_TO_STOCK
+}
+
+model InventoryMovement {
+  id             String                @id @default(cuid())
+  variantId      String
+  variant        Variant               @relation(fields: [variantId], references: [id])
+  type           InventoryMovementType
+  // Change applied to stockOnHand / reserved respectively.
+  onHandDelta    Int                   @default(0)
+  reservedDelta  Int                   @default(0)
+  onHandAfter    Int
+  reservedAfter  Int
+  orderId        String?
+  actor          String
+  note           String?
+  createdAt      DateTime              @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([orderId])
+}
+
+enum MediaKind {
+  PRODUCT
+  PACKAGING
+  INSTALLED
+  DETAIL
+  LIFESTYLE
+  HERO
+}
+
+enum MediaRights {
+  PLACEHOLDER
+  AUTHORIZED
+  UNCONFIRMED
+}
+
+model MediaAsset {
+  id         String      @id @default(cuid())
+  productId  String?
+  product    Product?    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  kind       MediaKind
+  // Storage key; url is derived by the storage driver.
+  storageKey String
+  url        String
+  width      Int
+  height     Int
+  altHy      String?
+  altRu      String?
+  altIt      String?
+  altEn      String?
+  rights     MediaRights @default(PLACEHOLDER)
+  rightsNote String?
+  sortOrder  Int         @default(0)
+  createdAt  DateTime    @default(now())
+
+  @@index([productId, sortOrder])
+}
+
+// Brand claims (Made in Italy, Swiss company, …). Only VERIFIED rows are
+// rendered on the public site.
+model BrandClaim {
+  id           String             @id @default(cuid())
+  key          String             @unique
+  sortOrder    Int                @default(0)
+  sourceUrl    String?
+  sourceType   SourceType
+  verification VerificationStatus @default(UNVERIFIED)
+  verifiedAt   DateTime?
+  titleHy      String
+  titleRu      String
+  titleIt      String
+  titleEn      String
+  bodyHy       String?
+  bodyRu       String?
+  bodyIt       String?
+  bodyEn       String?
+}
+
+enum ImportReviewStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+}
+
+model ImportReview {
+  id         String             @id @default(cuid())
+  batch      String
+  entity     String
+  entityKey  String
+  field      String
+  current    String?
+  proposed   String?
+  sourceUrl  String?
+  sourceType SourceType
+  reason     String
+  status     ImportReviewStatus @default(OPEN)
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt  DateTime           @default(now())
+
+  @@index([status])
+}
+
+// ─────────────────────────────── Customers ───────────────────────────────
+
+model Customer {
+  id          String     @id @default(cuid())
+  email       String?    @unique
+  phone       String?    @unique
+  name        String?
+  locale      Locale     @default(hy)
+  createdAt   DateTime   @default(now())
+  sessions    CustomerSession[]
+  addresses   Address[]
+  orders      Order[]
+  favorites   Favorite[]
+  carts       Cart[]
+  reviews     Review[]
+}
+
+model CustomerSession {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+enum AuthChannel {
+  EMAIL
+  PHONE
+}
+
+// Magic link / OTP. Only the hash is stored.
+model AuthChallenge {
+  id         String      @id @default(cuid())
+  channel    AuthChannel
+  target     String
+  codeHash   String
+  attempts   Int         @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([target, createdAt])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String?
+  region     String
+  city       String
+  street     String
+  building   String
+  apartment  String?
+  entrance   String?
+  floor      String?
+  comment    String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+// Guest identity: random token in an httpOnly cookie; only its hash is stored.
+model Guest {
+  id        String     @id @default(cuid())
+  tokenHash String     @unique
+  createdAt DateTime   @default(now())
+  lastSeen  DateTime   @default(now())
+  carts     Cart[]
+  favorites Favorite[]
+}
+
+model Favorite {
+  id         String    @id @default(cuid())
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  guestId    String?
+  guest      Guest?    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([customerId, productId])
+  @@unique([guestId, productId])
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  customerId String?    @unique
+  customer   Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  guestId    String?    @unique
+  guest      Guest?     @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  promoCode  String?
+  items      CartItem[]
+  updatedAt  DateTime   @updatedAt
+  createdAt  DateTime   @default(now())
+}
+
+model CartItem {
+  id            String   @id @default(cuid())
+  cartId        String
+  cart          Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId     String
+  variant       Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity      Int
+  savedForLater Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@unique([cartId, variantId])
+}
+
+// ─────────────────────────────── Orders ───────────────────────────────
+
+enum OrderStatus {
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  PAYMENT_FAILED
+  CONFIRMED
+  PACKING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProviderCode {
+  CASH_ON_DELIVERY
+  IDRAM
+  TELCELL
+  BANK_CARD
+}
+
+enum PaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model Order {
+  id              String              @id @default(cuid())
+  number          String              @unique
+  // Unguessable token for guest order lookup (hash stored).
+  accessTokenHash String
+  // Client-generated key; resubmitting the same checkout returns the same order.
+  idempotencyKey  String              @unique
+  status          OrderStatus         @default(PENDING)
+  paymentProvider PaymentProviderCode
+  paymentStatus   PaymentStatus       @default(PENDING)
+  // Stock reservation state: RESERVED → COMMITTED (sold) or RELEASED.
+  stockState      String              @default("RESERVED")
+  reservationExpiresAt DateTime?
+  customerId      String?
+  customer        Customer?           @relation(fields: [customerId], references: [id])
+  locale          Locale
+  // Snapshot of customer + address at order time.
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  region          String
+  city            String
+  street          String
+  building        String
+  apartment       String?
+  entrance        String?
+  floor           String?
+  comment         String?
+  deliveryMethodCode String
+  deliveryMethodName String
+  subtotalAmd     Int
+  discountAmd     Int                 @default(0)
+  deliveryAmd     Int
+  totalAmd        Int
+  promoCode       String?
+  promotionId     String?
+  purchaseTrackedAt DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  items     OrderItem[]
+  history   OrderStatusHistory[]
+  notes     OrderNote[]
+  payments  Payment[]
+  redemption PromotionRedemption?
+
+  @@index([status, createdAt])
+  @@index([customerId])
+  @@index([customerPhone])
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     Variant @relation(fields: [variantId], references: [id])
+  productSlug String
+  name        String
+  sku         String
+  unitAmd     Int
+  quantity    Int
+  lineAmd     Int
+}
+
+model OrderStatusHistory {
+  id        String       @id @default(cuid())
+  orderId   String
+  order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  from      OrderStatus?
+  to        OrderStatus
+  actor     String
+  note      String?
+  createdAt DateTime     @default(now())
+}
+
+model OrderNote {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  author    String
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model Payment {
+  id          String              @id @default(cuid())
+  orderId     String
+  order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider    PaymentProviderCode
+  // Which adapter handled it: "mock", "idram", …
+  adapter     String
+  status      PaymentStatus       @default(PENDING)
+  amountAmd   Int
+  providerRef String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  events      PaymentEvent[]
+
+  @@index([orderId])
+}
+
+// Every callback is stored. (adapter, eventId) is unique, so a duplicate
+// delivery can never be processed twice.
+model PaymentEvent {
+  id             String   @id @default(cuid())
+  adapter        String
+  eventId        String
+  paymentId      String?
+  payment        Payment? @relation(fields: [paymentId], references: [id])
+  signatureValid Boolean
+  outcome        String
+  payload        Json
+  receivedAt     DateTime @default(now())
+
+  @@unique([adapter, eventId])
+}
+
+// ─────────────────────────────── Promotions ───────────────────────────────
+
+enum PromotionType {
+  PERCENT
+  FIXED
+}
+
+model Promotion {
+  id            String                @id @default(cuid())
+  code          String?               @unique
+  name          String
+  type          PromotionType
+  // PERCENT: 1..100, FIXED: AMD
+  value         Int
+  startsAt      DateTime?
+  endsAt        DateTime?
+  minSubtotalAmd Int?
+  usageLimit    Int?
+  usedCount     Int                   @default(0)
+  isActive      Boolean               @default(true)
+  products      PromotionProduct[]
+  collections   PromotionCollection[]
+  redemptions   PromotionRedemption[]
+  createdAt     DateTime              @default(now())
+}
+
+model PromotionProduct {
+  promotionId String
+  productId   String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, productId])
+}
+
+model PromotionCollection {
+  promotionId  String
+  collectionId String
+  promotion    Promotion  @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, collectionId])
+}
+
+model PromotionRedemption {
+  id          String    @id @default(cuid())
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id])
+  orderId     String    @unique
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+}
+
+// ─────────────────────────────── Reviews ───────────────────────────────
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Review {
+  id         String       @id @default(cuid())
+  productId  String
+  product    Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerId String?
+  customer   Customer?    @relation(fields: [customerId], references: [id])
+  authorName String
+  rating     Int
+  body       String
+  locale     Locale
+  status     ReviewStatus @default(PENDING)
+  verifiedPurchase Boolean @default(false)
+  createdAt  DateTime     @default(now())
+  moderatedAt DateTime?
+  moderatedBy String?
+
+  @@index([productId, status])
+}
+
+// ─────────────────────────────── Delivery / payments settings ─────────────
+
+model DeliveryMethod {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  priceAmd    Int
+  freeFromAmd Int?
+  // Region codes (see src/lib/armenia.ts). Empty = every region.
+  regions     String[]
+  nameHy      String
+  nameRu      String
+  nameIt      String
+  nameEn      String
+  etaHy       String?
+  etaRu       String?
+  etaIt       String?
+  etaEn       String?
+}
+
+model PaymentMethodSetting {
+  provider  PaymentProviderCode @id
+  isEnabled Boolean             @default(false)
+  sortOrder Int                 @default(0)
+}
+
+// ─────────────────────────────── CMS ───────────────────────────────
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Page {
+  id                  String            @id @default(cuid())
+  slug                String            @unique
+  legalReviewRequired Boolean           @default(true)
+  translations        PageTranslation[]
+  updatedAt           DateTime          @updatedAt
+}
+
+model PageTranslation {
+  id             String @id @default(cuid())
+  pageId         String
+  page           Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  locale         Locale
+  title          String
+  // Plain text with blank-line paragraphs and "## " headings. Never HTML.
+  body           String
+  seoDescription String?
+
+  @@unique([pageId, locale])
+}
+
+model HomeBlock {
+  id        String   @id @default(cuid())
+  // HERO | CAMPAIGN
+  kind      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  href      String?
+  accentColor String?
+  titleHy   String
+  titleRu   String
+  titleIt   String
+  titleEn   String
+  bodyHy    String?
+  bodyRu    String?
+  bodyIt    String?
+  bodyEn    String?
+}
+
+model HomeFeaturedProduct {
+  productId String  @id
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sortOrder Int     @default(0)
+}
+
+// ─────────────────────────────── Admin / security ───────────────────────
+
+enum AdminRole {
+  OWNER
+  MANAGER
+  CONTENT
+}
+
+model AdminUser {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  name         String
+  passwordHash String
+  role         AdminRole      @default(MANAGER)
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  lastLoginAt  DateTime?
+  sessions     AdminSession[]
+}
+
+model AdminSession {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  adminId   String
+  admin     AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  entity    String
+  entityId  String?
+  data      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+// Fixed-window counters. Postgres-backed so limits hold across instances
+// without Redis.
+model RateLimit {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+}

@@ -1,0 +1,66 @@
+# Little Joe Armenia — Render Blueprint, FREE plan only.
+#
+# Create it in the Render dashboard: New → Blueprint → this repository,
+# Blueprint file path: little-joe-armenia/render.yaml
+#
+# Free-tier facts that shape this file (see docs/DEPLOYMENT.md):
+# - Free web services sleep after ~15 min idle; first request wakes them (~1 min).
+# - Free Postgres expires 30 days after creation unless upgraded — export data before.
+# - No pre-deploy command and no cron on free: migrations + idempotent seed run
+#   in the start command; stock-reservation expiry runs lazily on checkout.
+# - The filesystem is ephemeral: product images must use S3/R2 (STORAGE_DRIVER=s3)
+#   or external URLs; local uploads vanish on redeploy.
+
+databases:
+  - name: little-joe-db
+    databaseName: little_joe
+    user: little_joe
+    plan: free
+    ipAllowList: []
+
+services:
+  - type: web
+    name: little-joe-armenia
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: little-joe-armenia
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build
+    startCommand: pnpm start:render
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: little-joe-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MOCK_PAYMENT_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      # Demo deployment: demo catalog visible, sandbox payments, sign-in codes
+      # shown on screen, robots.txt disallows everything. Set all four to
+      # false/live/resend/false for a real launch (docs/DEPLOYMENT.md).
+      - key: DEMO_MODE
+        value: "true"
+      - key: SEED_DEMO
+        value: "true"
+      - key: PAYMENTS_MODE
+        value: mock
+      - key: AUTH_CODE_DELIVERY
+        value: screen
+      - key: BRAND_AUTHORIZED
+        value: "false"
+      # First admin (created once by the seed). Set in the dashboard.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Optional / later: APP_URL (custom domain), IDRAM_*, TELCELL_*,
+      # CARD_ACQUIRER_*, RESEND_API_KEY, EMAIL_FROM, S3_*, GOOGLE_SITE_VERIFICATION.

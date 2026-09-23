@@ -1,0 +1,12 @@
+node_modules
+.next
+.env
+.env.*
+!.env.example
+test-results
+playwright-report
+coverage
+public/uploads
+src/generated
+AGENTS.md
+CLAUDE.md

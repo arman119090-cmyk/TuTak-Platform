@@ -1,0 +1,18 @@
+{
+  "batch": "example-2026-10",
+  "products": [
+    {
+      "slug": "example-product-slug",
+      "collection": "little-joe",
+      "manufacturer": {
+        "name": {
+          "value": { "hy": "EXAMPLE — replace", "ru": "EXAMPLE — replace", "it": "EXAMPLE — replace", "en": "EXAMPLE — replace" },
+          "source": { "type": "MANUFACTURER_CATALOG_PDF", "url": "https://example.invalid/official-catalog.pdf", "verified": false }
+        },
+        "ean": { "value": "4006381333931", "source": { "type": "PACKAGING", "url": null, "verified": false } },
+        "format": { "value": "VENT_CLIP", "source": { "type": "MANUFACTURER_WEBSITE", "url": "https://example.invalid/product", "verified": false } }
+      },
+      "armenia": { "sku": "EXAMPLE-SKU-1", "priceAmd": null, "stock": 0 }
+    }
+  ]
+}

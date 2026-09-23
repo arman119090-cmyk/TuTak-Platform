@@ -190,3 +190,17 @@
 .adm-cell-ok {
   color: var(--color-ok);
 }
+
+/* Phones: grid/flex items and fieldsets default to min-width: min-content,
+   so one wide table or long value widened whole pages past the screen.
+   Let them shrink; wide tables scroll inside .adm-table-wrap instead. */
+.adm-card,
+.adm fieldset,
+.adm-fieldset,
+.adm main .grid > *,
+.adm main details {
+  min-width: 0;
+}
+.adm-card {
+  overflow-wrap: anywhere;
+}

@@ -45,19 +45,63 @@ test.describe("admin authorization", () => {
   });
 });
 
+async function login(page: import("@playwright/test").Page) {
+  await page.goto("/admin/login");
+  await page.getByLabel(/email/i).fill(EMAIL);
+  await page.getByLabel(/пароль/i).fill(PASSWORD);
+  await page.getByRole("button", { name: /войти/i }).click();
+  await expect(page).toHaveURL(/\/admin\/?$/);
+}
+
 test.describe("admin photo manager", () => {
-  test("owner uploads a photo and it becomes the main storefront image", async ({ page, isMobile }) => {
-    test.skip(isMobile, "desktop admin flow");
-    await page.goto("/admin/login");
-    await page.getByLabel(/email/i).fill(EMAIL);
-    await page.getByLabel(/пароль/i).fill(PASSWORD);
-    await page.getByRole("button", { name: /войти/i }).click();
-    await expect(page).toHaveURL(/\/admin\/?$/);
+  test("add several photos, make one main, reorder and delete", async ({ page, isMobile }) => {
+    // Each project edits its own product: the two projects share one database.
+    const product = isMobile ? "Little Cat" : "Little Dog";
+    const slug = isMobile ? "little-cat" : "little-dog";
+    await login(page);
     await page.goto("/admin/photos");
-    const tile = page.locator("li", { hasText: "Little Dog" }).first();
-    await tile.locator("input[type=file]").setInputFiles("public/brand/char_dog.webp");
-    await expect(tile.getByRole("status")).toContainText("Главное фото обновлено");
-    await page.goto("/en/p/little-dog");
+    const card = page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: product, exact: true }) });
+    const status = card.locator("[role=status], [role=alert]");
+    const thumbs = card.getByRole("list").getByRole("button");
+    const before = Math.max(1, await thumbs.count());
+
+    await card.locator("input[type=file]").setInputFiles(["public/brand/char_dog.webp", "public/brand/char_pup.webp"]);
+    await expect(status).toContainText("Добавлено фото: 2");
+    await expect(thumbs).toHaveCount(before + 2);
+    await expect(card.getByText("★ Главное фото")).toBeVisible();
+
+    await thumbs.nth(1).click();
+    await card.getByRole("button", { name: "★ Сделать главным" }).click();
+    await expect(status).toContainText("Теперь это главное фото");
+
+    await thumbs.nth(0).click();
+    await card.getByRole("button", { name: "Сдвинуть вправо" }).click();
+    await expect(status).toContainText("Порядок изменён");
+
+    await thumbs.last().click();
+    page.once("dialog", (d) => d.accept());
+    await card.getByRole("button", { name: "Удалить" }).click();
+    await expect(status).toContainText("Фото удалено");
+    await expect(thumbs).toHaveCount(before + 1);
+
+    await page.goto(`/en/p/${slug}`);
     await expect(page.locator("main img").first()).toHaveAttribute("src", /media%2Fblob|\/media\/blob\//);
+  });
+
+  test("admin pages fit a phone screen and the menu closes after navigating", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "phone layout");
+    await login(page);
+    await page.goto("/admin/products");
+    const product = await page.locator('a[href^="/admin/products/c"]').first().getAttribute("href");
+    for (const path of ["/admin", "/admin/photos", "/admin/products", product!, "/admin/settings", "/admin/translations", "/admin/orders"]) {
+      await page.goto(path);
+      const [sw, cw] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+      expect(sw, `${path} is wider than the screen`).toBeLessThanOrEqual(cw);
+    }
+    const menu = page.locator("details", { hasText: "Меню" });
+    await menu.locator("summary").click();
+    await menu.getByRole("link", { name: "Фото товаров" }).click();
+    await expect(page).toHaveURL(/\/admin\/photos/);
+    await expect(menu).not.toHaveAttribute("open", "");
   });
 });

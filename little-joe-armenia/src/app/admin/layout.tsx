@@ -6,6 +6,7 @@ import { currentAdmin } from "@/lib/security/session";
 import { navFor } from "@/lib/admin/nav";
 import { ROLE_LABEL } from "@/lib/admin/format";
 import { AdminNav } from "@/components/admin/nav";
+import { MobileMenu } from "@/components/admin/mobile-menu";
 import { logoutAction } from "./login/actions";
 
 // Root layout of the back office (separate from the storefront's
@@ -63,16 +64,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             </div>
           </aside>
           {/* Mobile: collapsible menu */}
-          <details className="border-b border-line bg-card md:hidden">
-            <summary className="flex min-h-12 cursor-pointer items-center justify-between px-4 font-semibold">
-              <span>Little Joe · Админка</span>
-              <span className="text-sm text-muted">Меню</span>
-            </summary>
-            <div className="px-3 pb-4">
-              <AdminNav items={items} />
-              {account}
-            </div>
-          </details>
+          <MobileMenu>
+            <AdminNav items={items} />
+            {account}
+          </MobileMenu>
           <main id="adm-main" className="min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7">
             <div className="mx-auto max-w-6xl">{children}</div>
           </main>

@@ -13,21 +13,20 @@ export default async function PhotosPage() {
     include: {
       translations: true,
       collection: { include: { translations: true } },
-      media: { orderBy: { sortOrder: "asc" }, select: { url: true } },
+      media: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true, url: true } },
     },
   });
 
   return (
     <div>
-      <header className="mb-6">
+      <header className="mb-5">
         <h1 className="text-2xl font-bold">Фото товаров</h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-600">
-          Нажмите «Загрузить фото» или «Заменить фото» у товара и выберите файл с компьютера или телефона. Новое фото сразу становится главным
-          на сайте (в карточках, на главной и первым в галерее). Сервер сам развернёт фото, уменьшит до 1800 px и сожмёт. Лучше всего смотрятся
-          квадратные фото товара на прозрачном или светлом фоне. Старые фото остаются в галерее — удалить или поменять порядок можно в «Все фото».
+          «Добавить фото» — выберите одно или несколько фото с телефона или компьютера; первое станет главным. Нажмите на миниатюру, чтобы
+          выбрать фото, и затем «Сделать главным», стрелками поменяйте порядок или удалите его. Всё сразу видно на сайте.
         </p>
       </header>
-      <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+      <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {products.map((p) => (
           <PhotoTile
             key={p.id}
@@ -35,7 +34,7 @@ export default async function PhotosPage() {
             name={pickT(p.translations, "ru")?.name ?? p.slug}
             collection={pickT(p.collection.translations, "ru")?.name ?? p.collection.slug}
             accent={p.accentColor ?? p.collection.accentColor ?? "#dfe7f2"}
-            photo={p.media[0] ? { url: p.media[0].url, count: p.media.length } : null}
+            photos={p.media}
             editHref={`/admin/products/${p.id}#media`}
           />
         ))}

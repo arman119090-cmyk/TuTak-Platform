@@ -5,6 +5,7 @@ import { PaymentsController } from '../src/modules/payments/payments.controller'
 import { PayoutsController } from '../src/modules/payouts/payouts.controller';
 import { ReconciliationController } from '../src/modules/reconciliation/reconciliation.controller';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
+import { ROLE_PERMISSIONS } from '../src/scripts/role-permissions';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 
@@ -220,6 +221,19 @@ describe('Financial endpoint authorization (integration)', () => {
       const controller = harness.app.get(ReconciliationController);
       expect(permissionsOn(controller, 'clearBlock')).toContain(PermissionName.PAYOUT_MANAGE);
       expect(permissionsOn(controller, 'clearBlock')).not.toContain(PermissionName.LEDGER_READ);
+    });
+
+    it('keeps a partner’s balance, payouts, collections and settlements to its owner', () => {
+      // Owner's decision (role-permissions.ts): on the partner side only
+      // PARTNER_OWNER holds SETTLEMENT_READ. These four reads checked only
+      // *which* partner, so a cashier passed — the same hole the
+      // /partner/settlements routes had, on the older controller.
+      for (const method of ['balance', 'listCollections', 'settlements', 'list']) {
+        expect(permissionsOn(payoutsController, method)).toContain(PermissionName.SETTLEMENT_READ);
+      }
+      expect(ROLE_PERMISSIONS[RoleName.PARTNER_STAFF]).not.toContain(PermissionName.SETTLEMENT_READ);
+      expect(ROLE_PERMISSIONS[RoleName.PARTNER_MANAGER]).not.toContain(PermissionName.SETTLEMENT_READ);
+      expect(ROLE_PERMISSIONS[RoleName.PARTNER_OWNER]).toContain(PermissionName.SETTLEMENT_READ);
     });
 
     it('leaves capturing a payment open to any authenticated customer', () => {

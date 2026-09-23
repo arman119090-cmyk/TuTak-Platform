@@ -193,3 +193,33 @@ describe('EarningsPage when the server has not answered', () => {
     expect(screen.queryByText('failed')).toBeNull();
   });
 });
+
+/**
+ * What TuTak owes the organisation is the owner's to read. The API refuses a
+ * cashier with 403 now; the page must say so once, not draw five failures.
+ */
+describe('EarningsPage for somebody who is not the owner', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useAuthStore.setState({
+      user: buildUser({
+        roles: [Role.PARTNER_STAFF],
+        partnerScopes: { PARTNER_STAFF: ['partner-1'] },
+      }),
+    });
+    const refused = Object.assign(new Error('Forbidden'), { response: { status: 403 } });
+    mockedFinance.balance.mockRejectedValue(refused);
+    mockedFinance.settlements.mockRejectedValue(refused);
+    mockedFinance.payouts.mockRejectedValue(refused);
+    mockedFinance.collections.mockRejectedValue(refused);
+    mockedFinance.dailyActivity.mockResolvedValue([]);
+  });
+
+  it('says the figures are the owner’s instead of showing load errors', async () => {
+    renderPage();
+    expect(
+      await screen.findByText(/Only the business owner can see what TuTak owes the organisation/),
+    ).toBeTruthy();
+    expect(screen.queryByText('Available to pay out')).toBeNull();
+  });
+});

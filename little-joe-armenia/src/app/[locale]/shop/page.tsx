@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { fmt, getMessages } from "@/i18n/messages";
 import { resolveLocale } from "@/i18n/server";
 import { paths } from "@/lib/paths";
@@ -49,7 +48,6 @@ export default async function ShopPage({ params, searchParams }: Props) {
         params={{ item_list_name: "catalog", items: products.slice(0, 20).map((p) => ({ item_id: p.slug, item_name: p.name, price: p.priceAmd ?? 0 })) }}
       />
       <h1 className="text-h1 font-extrabold">{filters.q ? `“${filters.q}”` : m.catalog.title}</h1>
-      <Suspense fallback={<div className="mt-6 h-12 rounded-full bg-mist" />}>
         <div className="mt-6 grid gap-6 lg:grid-cols-[16rem_1fr] lg:gap-10">
           <DesktopFilters facets={facets} />
           <div>
@@ -75,7 +73,6 @@ export default async function ShopPage({ params, searchParams }: Props) {
             )}
           </div>
         </div>
-      </Suspense>
     </div>
   );
 }

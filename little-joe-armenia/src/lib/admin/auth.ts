@@ -26,6 +26,8 @@ export const AREA_ROLES = {
   reviews: ALL_ROLES,
   collections: ["OWNER", "CONTENT"],
   cms: ["OWNER", "CONTENT"],
+  // Fragrance families and scent tags (catalog vocabulary).
+  scent: ALL_ROLES,
   imports: ALL_ROLES,
   translations: ALL_ROLES,
   settings: ["OWNER"],

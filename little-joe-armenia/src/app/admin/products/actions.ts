@@ -8,7 +8,7 @@ import { audit } from "@/lib/audit";
 import { adjust, InsufficientStockError } from "@/lib/domain/inventory";
 import { adminAction, parse } from "@/lib/admin/action";
 import { requireAdmin } from "@/lib/admin/auth";
-import { publishBlockers } from "@/lib/admin/catalog";
+import { publishBlockers, TEXT_FACT_FIELDS, TEXT_FACT_LABEL } from "@/lib/admin/catalog";
 import {
   b,
   fail,
@@ -278,6 +278,38 @@ const factSource = z.object({
   note: optText(500),
 });
 
+type FactSource = z.output<typeof factSource> & { sourceType: NonNullable<z.output<typeof factSource>["sourceType"]> };
+
+/** Upsert one ProductFact; VERIFIED stamps verifiedAt/By unless nothing changed. */
+async function writeFact(
+  tx: Tx,
+  productId: string,
+  field: FactField,
+  value: string | null,
+  src: FactSource,
+  prev: { verification: string; value: string | null; sourceType: string; sourceUrl: string | null; verifiedAt: Date | null; verifiedBy: string | null } | undefined,
+  actor: string,
+) {
+  const keepStamp =
+    src.verification === "VERIFIED" &&
+    prev?.verification === "VERIFIED" &&
+    prev.value === value &&
+    prev.sourceType === src.sourceType &&
+    prev.sourceUrl === src.sourceUrl;
+  const stamp =
+    src.verification !== "VERIFIED"
+      ? { verifiedAt: null, verifiedBy: null }
+      : keepStamp
+        ? { verifiedAt: prev!.verifiedAt, verifiedBy: prev!.verifiedBy }
+        : { verifiedAt: new Date(), verifiedBy: actor };
+  const row = { value, sourceType: src.sourceType, sourceUrl: src.sourceUrl, verification: src.verification, note: src.note, ...stamp };
+  await tx.productFact.upsert({
+    where: { productId_field: { productId, field } },
+    create: { productId, field, ...row },
+    update: row,
+  });
+}
+
 export async function saveProductFacts(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return adminAction("products", async (admin) => {
     const productId = s(fd, "productId");
@@ -313,24 +345,8 @@ export async function saveProductFacts(_prev: ActionState, fd: FormData): Promis
           if (prev) await tx.productFact.delete({ where: { id: prev.id } });
           continue;
         }
-        const keepStamp =
-          src.verification === "VERIFIED" &&
-          prev?.verification === "VERIFIED" &&
-          prev.value === value &&
-          prev.sourceType === src.sourceType &&
-          prev.sourceUrl === src.sourceUrl;
-        const stamp =
-          src.verification !== "VERIFIED"
-            ? { verifiedAt: null, verifiedBy: null }
-            : keepStamp
-              ? { verifiedAt: prev!.verifiedAt, verifiedBy: prev!.verifiedBy }
-              : { verifiedAt: new Date(), verifiedBy: admin.email };
-        const row = { value, sourceType: src.sourceType, sourceUrl: src.sourceUrl, verification: src.verification, note: src.note, ...stamp };
-        await tx.productFact.upsert({
-          where: { productId_field: { productId, field: f.field } },
-          create: { productId, field: f.field, ...row },
-          update: row,
-        });
+        const sourced = { ...src, sourceType: src.sourceType };
+        await writeFact(tx, productId, f.field, value, sourced, prev, admin.email);
       }
       await audit(
         { actor: admin.email, action: "product.facts", entity: "Product", entityId: productId, data: { values: v.data as Prisma.InputJsonValue, sources } },
@@ -339,6 +355,48 @@ export async function saveProductFacts(_prev: ActionState, fd: FormData): Promis
     });
     revalidateStore();
     return ok("Факты производителя сохранены");
+  });
+}
+
+/**
+ * Source/verification of facts whose value lives elsewhere (translations,
+ * collection, scent profile). The storefront shows officialDescription only
+ * when OFFICIAL_DESCRIPTION is VERIFIED and marks the scent profile
+ * "not confirmed" unless SCENT_PROFILE is VERIFIED.
+ */
+
+export async function saveProductTextFacts(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return adminAction("products", async (admin) => {
+    const productId = s(fd, "productId");
+    if (!productId || productId.length > 40) return fail("Нет товара");
+    const rows: { field: (typeof TEXT_FACT_FIELDS)[number]; value: string | null; src: z.output<typeof factSource> }[] = [];
+    for (const field of TEXT_FACT_FIELDS) {
+      const r = parse(factSource.extend({ value: optText(500) }), {
+        value: s(fd, `${field}_value`),
+        sourceType: s(fd, `${field}_sourceType`),
+        sourceUrl: s(fd, `${field}_sourceUrl`),
+        verification: s(fd, `${field}_verification`) ?? "UNVERIFIED",
+        note: s(fd, `${field}_note`),
+      });
+      if (r.error) return fail(`${TEXT_FACT_LABEL[field]}: ${r.error.message}`);
+      if (r.data.verification === "VERIFIED" && !r.data.sourceType) return fail(`${TEXT_FACT_LABEL[field]}: для статуса «Подтверждено» нужен источник`);
+      const { value, ...src } = r.data;
+      rows.push({ field, value, src });
+    }
+    await db.$transaction(async (tx) => {
+      const existing = await tx.productFact.findMany({ where: { productId, field: { in: [...TEXT_FACT_FIELDS] } } });
+      for (const r of rows) {
+        const prev = existing.find((e) => e.field === r.field);
+        if (!r.src.sourceType) {
+          if (prev) await tx.productFact.delete({ where: { id: prev.id } });
+          continue;
+        }
+        await writeFact(tx, productId, r.field, r.value, { ...r.src, sourceType: r.src.sourceType }, prev, admin.email);
+      }
+      await audit({ actor: admin.email, action: "product.text_facts", entity: "Product", entityId: productId, data: { rows } }, tx);
+    });
+    revalidateStore();
+    return ok("Источники сохранены");
   });
 }
 
@@ -411,8 +469,8 @@ const variantSchema = z
       .max(60)
       .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "SKU: латиница, цифры, точка, дефис, подчёркивание"),
     label: optText(80),
-    priceAmd: optInt(0, 10_000_000),
-    compareAtAmd: optInt(0, 10_000_000),
+    priceAmd: optInt(undefined, 10_000_000).refine((v) => v === null || v > 0, "Цена должна быть больше 0 (или пусто — «цена не задана»)"),
+    compareAtAmd: optInt(undefined, 10_000_000).refine((v) => v === null || v > 0, "Старая цена должна быть больше 0"),
     priceIsDemo: z.boolean(),
     isActive: z.boolean(),
     isDefault: z.boolean(),
@@ -535,6 +593,13 @@ export async function addMedia(_prev: ActionState, fd: FormData): Promise<Action
           .string({ error: "Ссылка обязательна" })
           .max(500)
           .refine((u) => /^https:\/\/[^\s]+$/.test(u) || /^\/(?!\/)[^\s]*$/.test(u), "Ссылка: https://… или путь от корня сайта /…"),
+        // Set only for files uploaded through /api/admin/upload.
+        storageKey: z
+          .string()
+          .max(300)
+          .regex(/^products\/[A-Za-z0-9/._-]+$/, "Некорректный ключ хранилища")
+          .refine((k) => !k.includes(".."), "Некорректный ключ хранилища")
+          .nullable(),
         width: reqInt(1, 10000),
         height: reqInt(1, 10000),
         kind: mediaKind,
@@ -545,6 +610,7 @@ export async function addMedia(_prev: ActionState, fd: FormData): Promise<Action
       {
         productId: s(fd, "productId"),
         url: s(fd, "url"),
+        storageKey: s(fd, "storageKey"),
         width: s(fd, "width"),
         height: s(fd, "height"),
         kind: s(fd, "kind"),
@@ -557,7 +623,7 @@ export async function addMedia(_prev: ActionState, fd: FormData): Promise<Action
     await db.$transaction(async (tx) => {
       const last = await tx.mediaAsset.aggregate({ where: { productId: data.productId }, _max: { sortOrder: true } });
       const m = await tx.mediaAsset.create({
-        data: { ...data, storageKey: data.url, sortOrder: (last._max.sortOrder ?? -1) + 1 },
+        data: { ...data, storageKey: data.storageKey ?? data.url, sortOrder: (last._max.sortOrder ?? -1) + 1 },
       });
       await audit({ actor: admin.email, action: "media.create", entity: "MediaAsset", entityId: m.id, data }, tx);
     });

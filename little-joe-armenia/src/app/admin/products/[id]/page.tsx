@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { canAccess, requireAdmin } from "@/lib/admin/auth";
-import { publishBlockers } from "@/lib/admin/catalog";
+import { publishBlockers, TEXT_FACT_FIELDS, TEXT_FACT_HINT, TEXT_FACT_LABEL } from "@/lib/admin/catalog";
 import {
   amd,
   dt,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin/format";
 import { pickT } from "@/lib/catalog";
 import { ActionForm, SubmitButton } from "@/components/admin/action-form";
+import { MediaUpload } from "@/components/admin/media-upload";
 import { Badge, Card, Check, Empty, Field, Hidden, PageHeader, Select, TextArea } from "@/components/admin/ui";
 import {
   addMedia,
@@ -30,6 +31,7 @@ import {
   saveProductBasics,
   saveProductFacts,
   saveProductScent,
+  saveProductTextFacts,
   saveProductTranslations,
   saveVariant,
   setProductStatus,
@@ -86,8 +88,6 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
   const name = pickT(product.translations, "ru")?.name ?? product.slug;
   const blockers = publishBlockers(product);
   const tagSet = new Set(product.scentTags.map((t) => t.tagId));
-  const editedFields = new Set<string>(FACT_ROWS.map((f) => f.field));
-  const otherFacts = product.facts.filter((f) => !editedFields.has(f.field));
   const orderIds = [...new Set(movements.map((m) => m.orderId).filter((x): x is string => Boolean(x)))];
   const orders = orderIds.length ? await db.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, number: true } }) : [];
   const orderNo = new Map(orders.map((o) => [o.id, o.number]));
@@ -282,39 +282,43 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
               <SubmitButton>Сохранить факты</SubmitButton>
             </div>
           </ActionForm>
-          {otherFacts.length ? (
-            <div className="mt-4">
-              <h3 className="mb-1 text-sm font-semibold">Другие записи об источниках (только просмотр)</h3>
-              <p className="mb-2 text-xs text-muted">Название, коллекция, аромат, описание — их значения редактируются в переводах/профиле; здесь видно, откуда они.</p>
-              <div className="adm-table-wrap">
-                <table className="adm-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Поле</th>
-                      <th scope="col">Значение</th>
-                      <th scope="col">Источник</th>
-                      <th scope="col">Проверка</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {otherFacts.map((f) => (
-                      <tr key={f.id}>
-                        <td className="font-mono text-xs">{f.field}</td>
-                        <td>{f.value ?? "—"}</td>
-                        <td className="text-xs">
-                          {SOURCE_TYPE_LABEL[f.sourceType]}
-                          {f.sourceUrl ? <div className="max-w-64 truncate">{f.sourceUrl}</div> : null}
-                        </td>
-                        <td>
-                          <Badge status={f.verification}>{VERIFICATION_LABEL[f.verification]}</Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <h3 className="mt-5 mb-1 text-sm font-semibold">Источники текстовых фактов</h3>
+          <p className="mb-2 text-xs text-muted">
+            Сами тексты (название, описание) редактируются в переводах и профиле аромата. Здесь — откуда они и подтверждены ли. В поле «Что
+            подтверждено» кратко запишите, что именно сверено с источником.
+          </p>
+          <ActionForm action={saveProductTextFacts}>
+            <Hidden name="productId" value={product.id} />
+            <div className="grid gap-3">
+              {TEXT_FACT_FIELDS.map((field) => {
+                const fact = product.facts.find((x) => x.field === field);
+                return (
+                  <fieldset key={field} className="adm-fieldset">
+                    <legend>
+                      {TEXT_FACT_LABEL[field]}{" "}
+                      {fact ? <Badge status={fact.verification}>{VERIFICATION_LABEL[fact.verification]}</Badge> : <Badge>без источника</Badge>}
+                    </legend>
+                    {TEXT_FACT_HINT[field] ? <p className="mb-2 text-xs text-muted">{TEXT_FACT_HINT[field]}</p> : null}
+                    <div className="adm-grid">
+                      <Field label="Что подтверждено" name={`${field}_value`} defaultValue={fact?.value} maxLength={500} />
+                      <Select label="Источник" name={`${field}_sourceType`} defaultValue={fact?.sourceType} options={SOURCE_TYPE_LABEL} empty="— нет —" />
+                      <Field label="Ссылка на источник" name={`${field}_sourceUrl`} defaultValue={fact?.sourceUrl} type="url" />
+                      <Select label="Проверка" name={`${field}_verification`} defaultValue={fact?.verification ?? "UNVERIFIED"} options={VERIFICATION_LABEL} />
+                      <Field label="Заметка" name={`${field}_note`} defaultValue={fact?.note} maxLength={500} />
+                    </div>
+                    {fact?.verifiedAt ? (
+                      <p className="mt-2 text-xs text-muted">
+                        Подтверждено {dt(fact.verifiedAt)} · {fact.verifiedBy}
+                      </p>
+                    ) : null}
+                  </fieldset>
+                );
+              })}
             </div>
-          ) : null}
+            <div>
+              <SubmitButton>Сохранить источники</SubmitButton>
+            </div>
+          </ActionForm>
         </Card>
 
         {/* ───── Scent ───── */}
@@ -577,6 +581,10 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
                 </div>
               </div>
             ))}
+            <details className="adm-fieldset" open>
+              <summary className="flex min-h-11 cursor-pointer items-center font-semibold">↑ Загрузить файл</summary>
+              <MediaUpload productId={product.id} addMedia={addMedia} />
+            </details>
             <details className="adm-fieldset">
               <summary className="flex min-h-11 cursor-pointer items-center font-semibold">+ Добавить по ссылке</summary>
               <ActionForm action={addMedia} resetOnSuccess>

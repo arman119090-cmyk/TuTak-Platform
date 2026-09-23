@@ -36,3 +36,23 @@ export function publishBlockers(p: {
   }
   return out;
 }
+
+/** Facts whose value lives in translations/collection/profile; admin sets only source + verification. */
+export const TEXT_FACT_FIELDS = ["NAME", "COLLECTION", "FRAGRANCE", "OFFICIAL_DESCRIPTION", "SCENT_PROFILE"] as const;
+export type TextFactField = (typeof TEXT_FACT_FIELDS)[number];
+
+export const TEXT_FACT_LABEL: Record<TextFactField, string> = {
+  NAME: "Название",
+  COLLECTION: "Коллекция",
+  FRAGRANCE: "Аромат (название запаха)",
+  OFFICIAL_DESCRIPTION: "Официальное описание",
+  SCENT_PROFILE: "Профиль аромата",
+};
+
+export const TEXT_FACT_HINT: Record<TextFactField, string> = {
+  NAME: "",
+  COLLECTION: "",
+  FRAGRANCE: "",
+  OFFICIAL_DESCRIPTION: "На сайте официальное описание показывается только при статусе «Подтверждено».",
+  SCENT_PROFILE: "Без статуса «Подтверждено» профиль аромата на сайте помечен как «не подтверждено».",
+};

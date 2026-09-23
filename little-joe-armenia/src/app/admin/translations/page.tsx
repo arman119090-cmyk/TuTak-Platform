@@ -23,14 +23,16 @@ function missing<T extends { locale: string }>(rows: T[], locale: string, fields
 const PRODUCT_FIELDS = ["name", "scentDescriptor", "profileDescription", "officialDescription", "usage", "seoTitle", "seoDescription"] as const;
 const COLLECTION_FIELDS = ["name", "description", "seoTitle", "seoDescription"] as const;
 const FAMILY_FIELDS = ["name", "description"] as const;
+const TAG_FIELDS = ["name"] as const;
 const PAGE_FIELDS = ["title", "body", "seoDescription"] as const;
 
 export default async function TranslationsPage() {
   const admin = await requireAdmin("translations");
-  const [products, collections, families, pages] = await Promise.all([
+  const [products, collections, families, tags, pages] = await Promise.all([
     db.product.findMany({ where: { status: { not: "ARCHIVED" } }, orderBy: { slug: "asc" }, include: { translations: true } }),
     db.collection.findMany({ orderBy: { sortOrder: "asc" }, include: { translations: true } }),
     db.fragranceFamily.findMany({ orderBy: { sortOrder: "asc" }, include: { translations: true } }),
+    db.scentTag.findMany({ orderBy: { slug: "asc" }, include: { translations: true } }),
     db.page.findMany({ orderBy: { slug: "asc" }, include: { translations: true } }),
   ]);
   const canCms = admin.role !== "MANAGER";
@@ -60,8 +62,19 @@ export default async function TranslationsPage() {
       fields: FAMILY_FIELDS,
       rows: families.map((f) => ({
         key: f.id,
+        href: "/admin/scent#families",
         label: pickT(f.translations, "ru")?.name ?? f.slug,
         cells: Object.fromEntries(LOCALES.map((l) => [l, missing(f.translations, l, [...FAMILY_FIELDS])])),
+      })),
+    },
+    {
+      title: "Теги ароматов",
+      fields: TAG_FIELDS,
+      rows: tags.map((tg) => ({
+        key: tg.id,
+        href: "/admin/scent#tags",
+        label: pickT(tg.translations, "ru")?.name ?? tg.slug,
+        cells: Object.fromEntries(LOCALES.map((l) => [l, missing(tg.translations, l, [...TAG_FIELDS])])),
       })),
     },
     {
@@ -80,7 +93,7 @@ export default async function TranslationsPage() {
     <>
       <PageHeader
         title="Переводы"
-        subtitle="Красное — перевода нет; жёлтое — перевод есть, но перечисленные поля пустые; зелёное — всё заполнено. Семейства ароматов редактируются через сид/разработчика."
+        subtitle="Красное — перевода нет; жёлтое — перевод есть, но перечисленные поля пустые; зелёное — всё заполнено."
       />
       <div className="grid gap-5">
         {sections.map((s) => {

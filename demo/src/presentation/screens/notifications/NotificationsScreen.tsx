@@ -7,7 +7,30 @@ import { Screen } from '../../components/Screen';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { notificationsApi } from '../../../data/api/notificationsApi';
-import { formatDateTime } from '../../utils/format';
+import { formatAmd, formatDateTime } from '../../utils/format';
+
+/**
+ * The stored parameters, as a person reads them.
+ *
+ * A payment notification is stored with the raw figures — `type:
+ * "QR_PAYMENT"`, `amount: "1500.0000"` — so the app can re-render it in any
+ * language. Passed straight into the sentence they printed exactly that:
+ * "Операция QR_PAYMENT на сумму 1500.0000 выполнена." The type gets the same
+ * label the history screen uses, and the amount the same formatting.
+ */
+export function readableParams(
+  params: Record<string, unknown> | null | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...(params ?? {}) };
+  if (typeof out.type === 'string') {
+    out.type = t(`transactionType.${out.type}`, { defaultValue: out.type });
+  }
+  if (typeof out.amount === 'string' || typeof out.amount === 'number') {
+    out.amount = formatAmd(String(out.amount));
+  }
+  return out;
+}
 
 export function NotificationsScreen() {
   const { t } = useTranslation();
@@ -82,7 +105,7 @@ export function NotificationsScreen() {
                   style={[text.bodySm, { color: color.textSecondary, marginTop: space[1] }]}
                   numberOfLines={2}
                 >
-                  {t(n.bodyKey, { ...(n.params ?? {}), defaultValue: n.bodyKey })}
+                  {t(n.bodyKey, { ...readableParams(n.params, t), defaultValue: n.bodyKey })}
                 </Text>
                 <Text style={[text.caption, { color: color.textTertiary, marginTop: space[2] }]}>
                   {formatDateTime(n.createdAt)}

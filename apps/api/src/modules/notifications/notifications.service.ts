@@ -5,6 +5,7 @@ import { CursorPaginationQueryDto } from '../../common/dto/pagination.dto';
 import { LegalConsentPurpose } from '@prisma/client';
 import { LegalConsentService } from '../legal/legal-consent.service';
 import { PushDispatchService } from './push-dispatch.service';
+import { pushLocale, type PushLocale } from './push-text';
 
 /**
  * Parameter names a notification may never carry.
@@ -64,6 +65,12 @@ export class NotificationsService {
     private readonly pushDispatch: PushDispatchService,
     private readonly legalConsent: LegalConsentService,
   ) {}
+
+  /** The language this person reads the app in, for text the server writes once. */
+  async localeOf(userId: string): Promise<PushLocale> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { locale: true } });
+    return pushLocale(user?.locale);
+  }
 
   /**
    * Records the notification and, when the caller supplied push text,

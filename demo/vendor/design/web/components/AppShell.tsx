@@ -110,6 +110,9 @@ export function AppShell({
     if (!menuOpen) return undefined;
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    // The menu button lives in the header and is never unmounted while the
+    // drawer is open, so the node read now is the node to return focus to.
+    const trigger = triggerRef.current;
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
 
@@ -146,7 +149,7 @@ export function AppShell({
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = overflow;
-      (triggerRef.current ?? previouslyFocused)?.focus();
+      (trigger ?? previouslyFocused)?.focus();
     };
   }, [menuOpen]);
 

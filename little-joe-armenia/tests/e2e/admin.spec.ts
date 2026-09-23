@@ -44,3 +44,20 @@ test.describe("admin authorization", () => {
     expect(res.status()).toBe(401);
   });
 });
+
+test.describe("admin photo manager", () => {
+  test("owner uploads a photo and it becomes the main storefront image", async ({ page, isMobile }) => {
+    test.skip(isMobile, "desktop admin flow");
+    await page.goto("/admin/login");
+    await page.getByLabel(/email/i).fill(EMAIL);
+    await page.getByLabel(/пароль/i).fill(PASSWORD);
+    await page.getByRole("button", { name: /войти/i }).click();
+    await expect(page).toHaveURL(/\/admin\/?$/);
+    await page.goto("/admin/photos");
+    const tile = page.locator("li", { hasText: "Little Dog" }).first();
+    await tile.locator("input[type=file]").setInputFiles("public/brand/char_dog.webp");
+    await expect(tile.getByRole("status")).toContainText("Главное фото обновлено");
+    await page.goto("/en/p/little-dog");
+    await expect(page.locator("main img").first()).toHaveAttribute("src", /media%2Fblob|\/media\/blob\//);
+  });
+});

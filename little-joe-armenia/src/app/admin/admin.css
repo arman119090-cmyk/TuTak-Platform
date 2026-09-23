@@ -161,11 +161,13 @@
   color: var(--color-ink-2);
 }
 .adm-nav a:hover {
-  background: var(--color-mist);
+  background: var(--color-brand-50);
+  color: var(--color-brand);
 }
 .adm-nav a[aria-current="page"] {
-  background: var(--color-ink);
+  background: var(--color-brand);
   color: white;
+  box-shadow: 0 6px 16px -8px rgb(20 99 230 / 0.7);
 }
 .adm-fieldset {
   border: 1px solid var(--color-line);

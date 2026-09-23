@@ -57,7 +57,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           {/* Desktop sidebar */}
           <aside className="hidden md:block md:w-60 md:shrink-0 md:border-r md:border-line md:bg-card">
             <div className="sticky top-0 flex max-h-dvh flex-col overflow-y-auto p-4">
-              <div className="mb-4 px-3 text-sm font-bold tracking-tight">Little Joe · Админка</div>
+              <div className="mb-5 px-3 leading-none"><span className="block font-[family-name:var(--font-logo)] text-[1.6rem]">Little Joe</span><span className="mt-1 block text-[0.65rem] font-bold uppercase tracking-[0.18em] text-muted">Админ-панель</span></div>
               <AdminNav items={items} />
               {account}
             </div>

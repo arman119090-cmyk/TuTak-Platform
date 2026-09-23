@@ -850,3 +850,14 @@ model RateLimit {
   windowStart DateTime
   count       Int
 }
+
+// Uploaded image bytes. Used by the "db" storage driver so photos persist
+// on hosts without a persistent disk (Render free). Served by
+// /media/blob/[...key] with immutable caching.
+model MediaBlob {
+  key         String   @id
+  contentType String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+}

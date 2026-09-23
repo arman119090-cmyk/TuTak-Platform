@@ -47,7 +47,8 @@ const schema = z
     CARD_ACQUIRER_USERNAME: optional,
     CARD_ACQUIRER_PASSWORD: optional,
 
-    STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+    // db: photos stored in Postgres (no disk needed) · s3: bucket · local: dev only
+    STORAGE_DRIVER: z.enum(["db", "local", "s3"]).default("db"),
     S3_ENDPOINT: optional,
     S3_REGION: z.string().default("auto"),
     S3_BUCKET: optional,

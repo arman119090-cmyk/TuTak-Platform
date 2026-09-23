@@ -55,7 +55,7 @@ export function MediaUpload({ productId, addMedia }: { productId: string; addMed
     const data = new FormData(form);
     const file = data.get("file");
     if (!(file instanceof File) || file.size === 0) return setState({ ok: false, message: "Выберите файл" });
-    if (file.size > 5 * 1024 * 1024) return setState({ ok: false, message: "Файл больше 5 МБ" });
+    if (file.size > 15 * 1024 * 1024) return setState({ ok: false, message: "Файл больше 15 МБ" });
     let size: { width: number; height: number };
     try {
       size = await naturalSize(file);
@@ -68,10 +68,12 @@ export function MediaUpload({ productId, addMedia }: { productId: string; addMed
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
       const reason =
-        res.status === 401 ? "сессия истекла, войдите снова" : res.status === 413 ? "файл больше 5 МБ" : res.status === 415 ? "только JPEG, PNG, WebP или AVIF" : res.status === 429 ? "слишком много загрузок, подождите" : (body?.error ?? `ошибка ${res.status}`);
+        res.status === 401 ? "сессия истекла, войдите снова" : res.status === 413 ? "файл больше 15 МБ" : res.status === 415 ? "только JPEG, PNG, WebP или AVIF" : res.status === 429 ? "слишком много загрузок, подождите" : (body?.error ?? `ошибка ${res.status}`);
       return setState({ ok: false, message: `Загрузка не удалась: ${reason}` });
     }
-    const { url, storageKey } = (await res.json()) as { url: string; storageKey: string };
+    const { url, storageKey, width, height } = (await res.json()) as { url: string; storageKey: string; width: number; height: number };
+    // The server rotates/resizes the photo; use its final dimensions.
+    size = { width, height };
     const fd = new FormData();
     fd.set("productId", productId);
     fd.set("url", url);
@@ -96,7 +98,7 @@ export function MediaUpload({ productId, addMedia }: { productId: string; addMed
     >
       <div>
         <label htmlFor="media-file" className="label">
-          Файл (JPEG, PNG, WebP, AVIF; до 5 МБ) *
+          Файл (JPEG, PNG, WebP, AVIF; до 15 МБ — сервер сам уменьшит и сожмёт) *
         </label>
         <input id="media-file" name="file" type="file" required accept="image/jpeg,image/png,image/webp,image/avif" className="field" />
       </div>

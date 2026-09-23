@@ -2,21 +2,37 @@ import "server-only";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AwsClient } from "aws4fetch";
+import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 
 // Media storage abstraction. MediaAsset rows store `storageKey` + `url`;
-// swapping drivers (local → S3/R2/Cloudinary-compatible S3) or replacing
-// placeholder art with authorised photos never touches page code.
+// swapping drivers or replacing photos never touches page code.
+//
+//   db    (default) bytes in the MediaBlob table, served by /media/blob/…
+//         Works on hosts without a persistent disk (Render free).
+//   s3    any S3-compatible bucket (Cloudflare R2, AWS S3, Backblaze…).
+//   local public/uploads — development only (ephemeral on Render).
 
 export interface StorageDriver {
   readonly name: string;
   put(key: string, body: Uint8Array, contentType: string): Promise<{ url: string }>;
 }
 
+const dbDriver: StorageDriver = {
+  name: "db",
+  async put(key, body, contentType) {
+    const data = new Uint8Array(body);
+    await db.mediaBlob.upsert({
+      where: { key },
+      create: { key, contentType, size: data.byteLength, data },
+      update: { contentType, size: data.byteLength, data },
+    });
+    return { url: `/media/blob/${key}` };
+  },
+};
+
 const localDriver: StorageDriver = {
   name: "local",
-  // Development only: public/uploads is served by Next. Render's disk is
-  // ephemeral, so production must use S3-compatible storage.
   async put(key, body) {
     const file = path.join(process.cwd(), "public", "uploads", key);
     await mkdir(path.dirname(file), { recursive: true });
@@ -47,7 +63,8 @@ function s3Driver(): StorageDriver {
 }
 
 export function storage(): StorageDriver {
-  return env().STORAGE_DRIVER === "s3" ? s3Driver() : localDriver;
+  const d = env().STORAGE_DRIVER;
+  return d === "s3" ? s3Driver() : d === "local" ? localDriver : dbDriver;
 }
 
 export const ALLOWED_IMAGE_TYPES: Record<string, string> = {

@@ -6,9 +6,9 @@
 // be reached from the build environment, and no approved Armenia assortment
 // matrix was supplied. Therefore:
 //
-// * `referenceData` (fragrance families) is the SHOP'S OWN taxonomy — not a
+// * `families` (fragrance families) is the SHOP'S OWN taxonomy — not a
 //   manufacturer claim.
-// * `demoCatalog` is DEMO ONLY (Product.isDemo = true, hidden unless
+// * `demoProducts` are DEMO ONLY (Product.isDemo = true, hidden unless
 //   DEMO_MODE=true). Every product fact is UNVERIFIED and carries the source
 //   it came from (task brief or a third-party retailer listing). Prices are
 //   placeholders (priceIsDemo). Stock numbers are arbitrary demo values.

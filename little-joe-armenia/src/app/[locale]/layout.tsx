@@ -45,6 +45,8 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     },
     twitter: { card: "summary_large_image" },
     verification: e.GOOGLE_SITE_VERIFICATION ? { google: e.GOOGLE_SITE_VERIFICATION } : undefined,
+    // A demo deployment is never indexed (robots.txt also disallows all).
+    robots: e.DEMO_MODE ? { index: false, follow: false } : undefined,
     formatDetection: { telephone: false },
   };
 }

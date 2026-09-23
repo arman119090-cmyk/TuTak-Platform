@@ -17,7 +17,16 @@ export const RULES = {
   review: { limit: 5, windowMs: 60 * 60_000 },
   webhook: { limit: 120, windowMs: 60_000 },
   cart: { limit: 120, windowMs: 60_000 },
+  upload: { limit: 60, windowMs: 60 * 60_000 },
 } satisfies Record<string, RateLimitRule>;
+
+let lastSweep = 0;
+/** Deletes counters whose window ended long ago (at most every 10 minutes per instance). */
+async function sweep() {
+  if (Date.now() - lastSweep < 10 * 60_000) return;
+  lastSweep = Date.now();
+  await db.$executeRaw`DELETE FROM "RateLimit" WHERE "windowStart" < now() - interval '1 day'`.catch(() => undefined);
+}
 
 export type RateLimitResult = { ok: boolean; remaining: number; retryAfterSec: number };
 
@@ -33,6 +42,7 @@ export async function rateLimit(bucket: keyof typeof RULES, identity: string): P
                      THEN now() ELSE "RateLimit"."windowStart" END
     RETURNING "count", "windowStart"`;
   const row = rows[0]!;
+  void sweep();
   const resetAt = row.windowStart.getTime() + rule.windowMs;
   return {
     ok: row.count <= rule.limit,

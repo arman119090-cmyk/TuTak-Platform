@@ -107,7 +107,19 @@ On `Product`, all nullable. `null` means "not confirmed" and is never treated as
 
 ## Import review
 
-`ImportReview` rows hold `batch, entity, entityKey, field, current, proposed, sourceUrl, sourceType, reason, status (OPEN/ACCEPTED/REJECTED), resolvedBy/At`. They are created by the seed (see [PRODUCT_DATA_SOURCES.md](PRODUCT_DATA_SOURCES.md)). Resolving a row in `/admin/imports` only records the decision, and the admin applies any value manually in the product editor. The rule is that no import silently overwrites a VERIFIED fact. **There is no importer yet:** `pnpm catalog:import` points to a missing `scripts/import-catalog.ts`.
+`ImportReview` rows hold `batch, entity, entityKey, field, current, proposed, sourceUrl, sourceType, reason, status (OPEN/ACCEPTED/REJECTED), resolvedBy/At`.
+
+Two things create them:
+- **The seed** (see [PRODUCT_DATA_SOURCES.md](PRODUCT_DATA_SOURCES.md)).
+- **The catalogue importer** `pnpm catalog:import -- file.json [--dry-run]` (`scripts/import-catalog.ts`, template `prisma/seed-data/import-template.json`). It keeps two blocks per product:
+  - `manufacturer`: name in four locales, article number, EAN (checksum-validated), duration, dimensions, colour and format, each with `source {type, url, verified}`;
+  - `armenia`: SKU, price, stock, flags.
+
+  New products are created as `DRAFT`. When an incoming fact value **differs** from a VERIFIED one, it becomes an `ImportReview` row instead of being written. Stock changes go through the same guarded `UPDATE` and ledger as the admin.
+
+Resolving a row in `/admin/imports` only records the decision, and the admin applies any value manually in the product editor.
+
+Importer caveat: when the incoming value is **equal** to a VERIFIED value but the file marks it `verified: false`, the upsert rewrites the row as `UNVERIFIED`. That is a silent downgrade.
 
 ## Translations
 

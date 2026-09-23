@@ -80,7 +80,8 @@ The `ProductFact` rows written per demo product are all `UNVERIFIED`:
    The form covers article number, EAN, duration, dimensions, colour and format. There is no control yet for official description or scent profile verification (see [PRODUCT_MODEL.md](PRODUCT_MODEL.md#productfact-per-field-provenance)).
 3. **Brand claims:** `/admin/claims/{id}` → set VERIFIED. A source URL is required. The claim then appears in the home brand-story block.
 4. **Import-review rows:** `/admin/imports` → Accept or Reject. Accepting **does not** apply the value; enter it in the product editor as in step 2.
-5. **Replace the demo catalogue** with real products created in admin (not `isDemo`). The demo rows are hidden automatically once `DEMO_MODE=false`.
+5. **Bulk data:** fill a JSON file following `prisma/seed-data/import-template.json`, check it with `pnpm catalog:import -- file.json --dry-run`, then run it without `--dry-run`. Products arrive as DRAFT, and they are published in admin.
+6. **Replace the demo catalogue** with real products created in admin or by import (not `isDemo`). The demo rows are hidden automatically once `DEMO_MODE=false`.
 
 ## What the owner must supply
 

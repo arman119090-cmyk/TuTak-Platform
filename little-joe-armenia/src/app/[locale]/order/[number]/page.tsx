@@ -2,13 +2,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { fmt, getMessages } from "@/i18n/messages";
 import { resolveLocale } from "@/i18n/server";
-import { db } from "@/lib/db";
 import { formatAmd } from "@/lib/money";
 import { paths } from "@/lib/paths";
 import { shopper } from "@/lib/security/session";
 import { findOrderForViewer } from "@/lib/domain/checkout";
 import { canRetryPayment } from "@/lib/payments/service";
-import { TrackOnMount } from "@/components/analytics/track-on-mount";
+import { TrackPurchase } from "@/components/analytics/track-purchase";
 import { OrderRefresh, RetryPayment } from "@/components/checkout/order-actions";
 
 type Props = { params: Promise<{ locale: string; number: string }>; searchParams: Promise<{ t?: string }> };
@@ -40,14 +39,6 @@ export default async function OrderPage({ params, searchParams }: Props) {
     );
   }
 
-  // Fire `purchase` exactly once per order: an atomic claim on
-  // purchaseTrackedAt means reloads and second tabs never re-fire it.
-  let firePurchase = false;
-  if (PURCHASE_STATUSES.has(order.status) && !order.purchaseTrackedAt) {
-    const claimed = await db.order.updateMany({ where: { id: order.id, purchaseTrackedAt: null }, data: { purchaseTrackedAt: new Date() } });
-    firePurchase = claimed.count === 1;
-  }
-
   const cod = order.paymentProvider === "CASH_ON_DELIVERY";
   const statusMessage =
     order.status === "AWAITING_PAYMENT"
@@ -60,10 +51,10 @@ export default async function OrderPage({ params, searchParams }: Props) {
 
   return (
     <div className="container-lj max-w-3xl py-10 md:py-14">
-      {firePurchase ? (
-        <TrackOnMount
-          event="purchase"
-          onceKey={`lj_purchase_${order.number}`}
+      {PURCHASE_STATUSES.has(order.status) && !order.purchaseTrackedAt ? (
+        <TrackPurchase
+          number={order.number}
+          token={t ?? ""}
           params={{
             transaction_id: order.number,
             currency: "AMD",

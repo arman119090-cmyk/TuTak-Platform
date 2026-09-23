@@ -21,6 +21,10 @@ Steps:
 3. Enter the `sync: false` values when prompted: `ADMIN_EMAIL` and `ADMIN_PASSWORD` (12 characters or more). The seed creates this OWNER on first boot.
 4. Deploy. The first request after deploy (or after sleep) can take about a minute.
 
+### Alternative: an ephemeral demo in one container
+
+`Dockerfile.render-demo` + `scripts/render-demo-start.sh` run PostgreSQL **inside** the app container. On start the script runs initdb, migrates, seeds the demo catalogue and starts Next. Use it only when no free managed Postgres slot is available. **All data is lost on every restart or sleep**, so it must never take real orders. To use it, create a Render Web Service with runtime Docker, Dockerfile path `little-joe-armenia/Dockerfile.render-demo` and root directory `little-joe-armenia`, and set the env from the demo block below. `SESSION_SECRET` must be set manually because there is no blueprint here.
+
 ## Free-tier constraints and how the app handles them
 
 | Constraint | Consequence | Handling in this project |

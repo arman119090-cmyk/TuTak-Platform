@@ -55,6 +55,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             ) : (
               <ActionForm action={transitionOrderAction} resetOnSuccess>
                 <Hidden name="orderId" value={order.id} />
+                {/* Disabled default button: Enter in the comment field must not trigger the first transition. */}
+                <button type="submit" disabled hidden aria-hidden="true" tabIndex={-1} />
                 <Field label="Комментарий к переходу (необязательно)" name="note" maxLength={500} />
                 <div className="flex flex-wrap gap-2">
                   {next.map((s) => (

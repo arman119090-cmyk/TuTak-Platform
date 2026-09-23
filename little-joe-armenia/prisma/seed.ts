@@ -305,9 +305,20 @@ async function bootstrapAdmin() {
   console.info(`[seed] admin ${email} created`);
 }
 
+/**
+ * Running the seed WITHOUT demo on a database that once had demo data:
+ * switch off the demo promo codes (they must never work in production).
+ * Demo products stay hidden anyway (isDemo + DEMO_MODE=false).
+ */
+async function disableDemoLeftovers() {
+  const { count } = await db.promotion.updateMany({ where: { code: { in: ["WELCOME10", "MINUS500"] }, isActive: true }, data: { isActive: false } });
+  if (count) console.info(`[seed] deactivated ${count} demo promo code(s)`);
+}
+
 async function main() {
   await reference();
   if (demo) await demoCatalog();
+  else await disableDemoLeftovers();
   await bootstrapAdmin();
   console.info(`[seed] done (demo=${demo})`);
 }

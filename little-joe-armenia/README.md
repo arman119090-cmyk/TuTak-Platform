@@ -69,7 +69,7 @@ ADMIN_PASSWORD='new-long-password' pnpm admin:create -- --email owner@example.co
 | `pnpm db:seed` | Reference data + first admin (production-safe; with `SEED_DEMO=true` it also seeds the demo catalogue) |
 | `pnpm db:seed:demo` | Same, with `SEED_DEMO=true` |
 | `pnpm admin:create` | Create or re-activate a back-office user (`scripts/create-admin.ts`) |
-| `pnpm catalog:import` | **Broken:** it points to `scripts/import-catalog.ts`, which does not exist yet |
+| `pnpm catalog:import -- file.json [--dry-run]` | JSON catalogue import (`scripts/import-catalog.ts`; format in `prisma/seed-data/import-template.json`). New products are created as DRAFT. A value that differs from a VERIFIED fact goes to the import-review queue instead of being written |
 
 ## Tests
 

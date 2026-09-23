@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   agentRules: false,
   reactStrictMode: true,
+  // Public (not secret): lets ProductImage know which host next/image may optimise.
+  env: { NEXT_PUBLIC_S3_PUBLIC_BASE_URL: process.env.S3_PUBLIC_BASE_URL ?? "" },
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 480, 640, 828, 1080, 1440, 1920],

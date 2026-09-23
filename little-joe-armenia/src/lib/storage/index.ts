@@ -37,7 +37,7 @@ function s3Driver(): StorageDriver {
       const url = `${e.S3_ENDPOINT!.replace(/\/$/, "")}/${e.S3_BUCKET}/${key}`;
       const res = await client.fetch(url, {
         method: "PUT",
-        body,
+        body: new Blob([body as BlobPart]),
         headers: { "content-type": contentType, "cache-control": "public, max-age=31536000, immutable" },
       });
       if (!res.ok) throw new Error(`S3 upload failed: ${res.status}`);

@@ -6,6 +6,8 @@ import type { MediaDTO } from "@/lib/catalog";
 // replacing them with authorised photos is a data change only — the slot
 // keeps its aspect ratio, so layout never shifts.
 
+const OPTIMISED_HOSTS = ["https://res.cloudinary.com/", process.env.NEXT_PUBLIC_S3_PUBLIC_BASE_URL].filter((h): h is string => Boolean(h));
+
 export function ProductImage({
   media,
   accent,
@@ -23,9 +25,13 @@ export function ProductImage({
     return <div className={`aspect-square w-full ${className}`} style={{ background: accent }} aria-hidden="true" />;
   }
   const isSvg = media.url.endsWith(".svg") || media.url.includes(".svg?");
-  if (isSvg) {
+  // next/image only optimises local files and hosts allowed in next.config
+  // (Cloudinary, S3_PUBLIC_BASE_URL). Any other absolute URL added in the
+  // admin is rendered as a plain lazy <img> instead of failing.
+  const optimisable = media.url.startsWith("/") || OPTIMISED_HOSTS.some((h) => media.url.startsWith(h));
+  if (isSvg || !optimisable) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- SVG placeholders need no optimisation
+      // eslint-disable-next-line @next/next/no-img-element -- SVG placeholders / non-whitelisted hosts
       <img
         src={media.url}
         alt={media.alt}

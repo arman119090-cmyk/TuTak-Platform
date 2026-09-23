@@ -1,12 +1,12 @@
-/* Translation gate (runs in CI and `pnpm build:check`).
+/* Translation gate (`pnpm i18n:check`; run it in CI before deploy).
  *
  * 1. UI dictionaries: every locale has exactly the English key set, no empty
  *    strings, identical {placeholder} sets. (Missing keys also fail
  *    `tsc` through the `Messages` type.)
  * 2. Database content (when DATABASE_URL is reachable): every ACTIVE,
  *    non-demo product, visible collection, fragrance family and page must
- *    have a non-empty name/title in hy, ru, it and en. Reported, and exits
- *    non-zero with --strict.
+ *    have a non-empty name/title in hy, ru, it and en. Any problem exits
+ *    non-zero.
  */
 import "dotenv/config";
 import { en } from "../src/i18n/messages/en";

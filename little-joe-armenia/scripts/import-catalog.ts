@@ -124,6 +124,9 @@ async function main() {
       for (const [field, value, src, column] of fields) {
         if (!src || value === null) continue;
         const existing = product.facts.find((f) => f.field === field);
+        // Same value as an already VERIFIED fact: keep the verification as is
+        // (an unverified re-import must never downgrade it).
+        if (existing?.verification === "VERIFIED" && existing.value === value) continue;
         if (existing?.verification === "VERIFIED" && existing.value !== value) {
           await db.importReview.create({
             data: {

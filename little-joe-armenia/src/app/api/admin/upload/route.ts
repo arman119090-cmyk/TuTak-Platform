@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { audit } from "@/lib/audit";
 import { isSameOrigin } from "@/lib/security/request";
+import { rateLimit } from "@/lib/security/rate-limit";
 import { currentAdmin } from "@/lib/security/session";
 import { ALLOWED_IMAGE_TYPES, sniffImage, storage } from "@/lib/storage";
 
@@ -10,6 +11,8 @@ export async function POST(request: Request) {
   if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
   const admin = await currentAdmin();
   if (!admin) return new Response("Unauthorized", { status: 401 });
+  const limit = await rateLimit("upload", admin.id);
+  if (!limit.ok) return new Response("Too many uploads", { status: 429, headers: { "retry-after": String(limit.retryAfterSec) } });
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return Response.json({ error: "file required" }, { status: 400 });

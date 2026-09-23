@@ -1,0 +1,22 @@
+# Production image for Railway. PostgreSQL is a separate Railway service
+# with a persistent volume (DATABASE_URL = ${{Postgres.DATABASE_URL}}), so
+# orders and photos uploaded in the admin survive restarts and redeploys.
+FROM node:22-bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates openssl \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+RUN corepack enable && pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+
+ENV NODE_ENV=production
+# Migrations are forward-only; the seed only creates missing rows (never
+# overwrites admin edits), so both are safe on every start.
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node_modules/.bin/tsx prisma/seed.ts && exec node_modules/.bin/next start -p ${PORT:-3000}"]

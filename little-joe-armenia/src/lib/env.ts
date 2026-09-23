@@ -15,9 +15,15 @@ const schema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     DATABASE_URL: z.string().min(1),
-    // Render sets RENDER_EXTERNAL_URL automatically; an explicit APP_URL
-    // (custom domain) wins.
-    APP_URL: z.string().url().default(process.env.RENDER_EXTERNAL_URL ?? "http://localhost:3000"),
+    // Render sets RENDER_EXTERNAL_URL, Railway sets RAILWAY_PUBLIC_DOMAIN
+    // (host only); an explicit APP_URL (custom domain) wins.
+    APP_URL: z
+      .string()
+      .url()
+      .default(
+        process.env.RENDER_EXTERNAL_URL ??
+          (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : "http://localhost:3000"),
+      ),
 
     // Shown as the store name. Never hard-coded as "official".
     STORE_NAME: z.string().default("Little Joe Armenia"),

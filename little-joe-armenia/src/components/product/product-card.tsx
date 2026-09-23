@@ -28,7 +28,11 @@ export function ProductCard({
   const m = getMessages(locale);
   const soldOut = p.available <= 0;
   return (
-    <article className="card group relative flex h-full flex-col p-2.5 sm:p-3" data-testid="product-card" data-slug={p.slug}>
+    <article
+      className="card group relative flex h-full flex-col p-2.5 ring-1 ring-black/[0.03] transition-[transform,box-shadow] duration-500 ease-[var(--ease-out-soft)] hover:-translate-y-1 hover:shadow-[var(--shadow-lift)] motion-reduce:transform-none sm:p-3"
+      data-testid="product-card"
+      data-slug={p.slug}
+    >
       <div
         className="relative aspect-square overflow-hidden rounded-[1rem]"
         style={{ background: `radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, ${p.accent} 26%, white) 0%, #f3f8fe 62%, #ffffff 100%)` }}
@@ -46,20 +50,19 @@ export function ProductCard({
         </div>
       </div>
       <div className="flex flex-1 flex-col px-1 pt-3">
-        <h3 className="text-[0.95rem] font-bold leading-snug">
-          <Link href={paths.product(locale, p.slug)} className="hover:text-brand">
-            {p.name.replace(/^Little Joe\s+/, "")}
+        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-muted">{p.collectionName}</p>
+        <h3 className="mt-1 text-[1rem] font-semibold leading-snug tracking-[-0.01em]">
+          <Link href={paths.product(locale, p.slug)} className="transition-colors hover:text-brand">
+            {p.collectionSlug === "little-joe" ? p.name.replace(/^Little Joe\s+/, "") : p.name}
           </Link>
         </h3>
-        <p className="mt-0.5 truncate text-xs text-muted">{p.descriptor ?? p.collectionName}</p>
-        <div className="mt-2 flex items-baseline justify-between gap-2">
-          {p.priceAmd !== null ? (
-            <p className="font-extrabold tabular-nums" data-testid="card-price">
-              {formatAmd(p.priceAmd, locale)}
-            </p>
-          ) : null}
-          {p.priceIsDemo ? <span className="text-[0.62rem] font-bold uppercase tracking-wide text-warn">{m.common.demoPrice}</span> : null}
-        </div>
+        {p.descriptor ? <p className="mt-0.5 truncate text-xs text-muted">{p.descriptor}</p> : null}
+        {/* The global demo banner already says prices are placeholders; no per-card label. */}
+        {p.priceAmd !== null ? (
+          <p className="mt-2 text-[1.05rem] font-bold tabular-nums" data-testid="card-price">
+            {formatAmd(p.priceAmd, locale)}
+          </p>
+        ) : null}
         {p.lowStock && !soldOut ? <p className="mt-0.5 text-xs font-medium text-warn">{fmt(m.product.lowStock, { count: p.available })}</p> : null}
         <div className="mt-auto pt-3">
           {!soldOut && p.variantId ? (

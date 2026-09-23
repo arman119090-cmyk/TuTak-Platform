@@ -61,6 +61,9 @@ export default async function HomePage({ params }: Props) {
   const family: ProductCardDTO[] = [];
   for (const p of all) if (p.image && !family.some((f) => f.collectionSlug === p.collectionSlug)) family.push(p);
   const joeColours = all.filter((p) => p.collectionSlug === "little-joe" && p.image).slice(0, 4);
+  const sidekicks = family.filter((f) => f.collectionSlug !== "little-joe").slice(0, 2);
+  // Collection tiles: a representative character per collection.
+  const collectionTiles = family;
   const heroTitle = home.hero?.title ?? `${m.home.heroLine1} ${m.home.heroLine2}`;
   const [line1, line2] = home.hero ? splitHeadline(heroTitle) : [m.home.heroLine1, m.home.heroLine2];
 
@@ -70,8 +73,8 @@ export default async function HomePage({ params }: Props) {
       <section className="relative overflow-hidden">
         <SkyScene className="absolute inset-0 h-full w-full" id="hero-sky" horizon={0.78} />
         <div className="absolute inset-y-0 left-0 hidden w-[58%] bg-gradient-to-r from-white/90 via-white/60 to-transparent md:block" aria-hidden="true" />
-        <div className="container-lj relative grid items-center gap-2 pt-8 pb-10 md:min-h-[34rem] md:grid-cols-[1.05fr_1fr] md:py-14">
-          <div className="relative z-[1] max-w-xl">
+        <div className="container-lj relative grid grid-cols-[minmax(0,1fr)] items-center gap-2 pt-8 pb-10 md:min-h-[34rem] md:grid-cols-[1.05fr_1fr] md:py-14">
+          <div className="relative z-[1] min-w-0 max-w-xl">
             <h1 className="hand text-[clamp(2.6rem,1.6rem+4.6vw,5.2rem)] leading-[0.95]">
               <span className="block">{line1}</span>
               {line2 ? <span className="block text-brand">{line2}</span> : null}
@@ -108,7 +111,17 @@ export default async function HomePage({ params }: Props) {
           {heroProduct?.image ? (
             <Link href={paths.product(locale, heroProduct.slug)} className="group relative mx-auto block w-full max-w-[16rem] sm:max-w-[22rem] md:max-w-[30rem]" aria-label={heroProduct.name}>
               <div className="relative aspect-[5/6]">
-                <div className="absolute inset-[4%] transition-transform duration-700 group-hover:-translate-y-2 motion-reduce:transform-none">
+                <div className="halo absolute inset-[-6%]" aria-hidden="true" />
+                {sidekicks.map((s, i) => (
+                  <div
+                    key={s.id}
+                    aria-hidden="true"
+                    className={`${i === 0 ? "float-slower left-[-14%] bottom-[6%] w-[30%] [--r:-8deg]" : "float-slow right-[-10%] bottom-[2%] w-[27%] [--r:7deg]"} absolute hidden aspect-[4/5] drop-shadow-[0_14px_18px_rgba(20,60,120,0.2)] sm:block`}
+                  >
+                    <ProductImage media={s.image} accent="transparent" fit="contain" sizes="160px" />
+                  </div>
+                ))}
+                <div className="float-slow absolute inset-[4%] transition-transform duration-700 group-hover:-translate-y-2 motion-reduce:transform-none">
                   <ProductImage media={heroProduct.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 38vw, 80vw" priority className="drop-shadow-[0_24px_30px_rgba(20,60,120,0.25)]" />
                 </div>
                 <p className="hand absolute right-0 top-[38%] rotate-[-8deg] text-[clamp(1.4rem,1rem+1.5vw,2.2rem)] leading-tight text-ink" aria-hidden="true">
@@ -147,6 +160,37 @@ export default async function HomePage({ params }: Props) {
         <section className="container-lj py-12 md:py-16" aria-labelledby="popular-title">
           <SectionHead id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
           <ProductGrid products={popular} locale={locale} favorites={favorites} listName="popular" columns="six" priorityCount={2} />
+        </section>
+      ) : null}
+
+      {/* ── The family: one tall tile per character collection ── */}
+      {collectionTiles.length > 1 ? (
+        <section className="container-lj pb-14 md:pb-20" aria-labelledby="family-tiles-title">
+          <p className="kicker">Little Joe</p>
+          <h2 id="family-tiles-title" className="mt-2 mb-7 text-[clamp(1.7rem,1.3rem+1.4vw,2.5rem)] font-extrabold tracking-[-0.02em]">
+            {m.home.familyTitle}
+          </h2>
+          <ul className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-5 md:overflow-visible md:px-0">
+            {collectionTiles.map((c) => (
+              <li key={c.collectionSlug} className="w-[62vw] max-w-[16rem] shrink-0 snap-start md:w-auto md:max-w-none">
+                <Link
+                  href={paths.collection(locale, c.collectionSlug)}
+                  className="group relative flex aspect-[3/4] flex-col overflow-hidden rounded-[1.75rem] p-5 shadow-[var(--shadow-card)] transition-[transform,box-shadow] duration-500 ease-[var(--ease-out-soft)] hover:-translate-y-1.5 hover:shadow-[var(--shadow-lift)] motion-reduce:transform-none"
+                  style={{
+                    background: `linear-gradient(165deg, color-mix(in oklab, ${c.accent} 38%, white) 0%, color-mix(in oklab, ${c.accent} 12%, #f6faff) 55%, #ffffff 100%)`,
+                  }}
+                >
+                  <span className="text-xl font-extrabold tracking-[-0.02em]">{c.collectionName}</span>
+                  <div className="absolute inset-x-[12%] bottom-[10%] top-[30%] transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:scale-[1.04] motion-reduce:transform-none">
+                    <ProductImage media={c.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 18vw, 55vw" className="drop-shadow-[0_18px_22px_rgba(20,50,100,0.22)]" />
+                  </div>
+                  <span className="absolute bottom-4 right-4 grid size-10 place-items-center rounded-full bg-white/90 text-ink shadow-sm transition group-hover:bg-brand group-hover:text-white">
+                    <IconArrow width={18} height={18} />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
@@ -211,15 +255,10 @@ export default async function HomePage({ params }: Props) {
                   {m.home.familyBannerTitle}
                 </h2>
                 <p className="mt-3 text-ink-2">{m.home.familyBannerBody}</p>
-                <ul className="mt-5 flex flex-wrap justify-center gap-2 md:justify-start">
-                  {family.map((f) => (
-                    <li key={f.collectionSlug}>
-                      <Link href={paths.collection(locale, f.collectionSlug)} className="chip bg-white/80">
-                        {f.collectionName}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                <Link href={paths.shop(locale)} className="btn btn-primary mt-6">
+                  {m.home.goShop}
+                  <IconArrow width={18} height={18} />
+                </Link>
               </div>
             </div>
           </div>
@@ -320,10 +359,13 @@ function Trust({ icon, title, body, href }: { icon: React.ReactNode; title: stri
 
 function SectionHead({ id, title, href, cta }: { id: string; title: string; href?: string; cta?: string }) {
   return (
-    <div className="mb-6 flex items-end justify-between gap-4">
-      <h2 id={id} className="text-h2 font-extrabold">
-        {title}
-      </h2>
+    <div className="mb-7 flex items-end justify-between gap-4">
+      <div>
+        <p className="kicker">Little Joe</p>
+        <h2 id={id} className="mt-2 text-[clamp(1.7rem,1.3rem+1.4vw,2.5rem)] font-extrabold tracking-[-0.02em]">
+          {title}
+        </h2>
+      </div>
       {href && cta ? (
         <Link href={href} className="tap inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline">
           {cta}

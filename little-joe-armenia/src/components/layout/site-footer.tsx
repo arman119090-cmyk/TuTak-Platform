@@ -56,11 +56,11 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
   ];
 
   return (
-    <footer className="mt-24 border-t border-line bg-card pb-[var(--safe-bottom)]">
+    <footer className="mt-24 bg-navy pb-[var(--safe-bottom)] text-white">
       <div className="container-lj grid gap-10 py-14 md:grid-cols-[1.3fr_repeat(3,1fr)]">
         <div>
-          <Wordmark />
-          <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">{authorised ? m.footer.officialPartner : m.footer.notOfficial}</p>
+          <Wordmark tagline="Put a smile in the air!" light />
+          <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">{authorised ? m.footer.officialPartner : m.footer.notOfficial}</p>
           {contacts.phone || contacts.email ? (
             <address className="mt-4 space-y-1 text-sm not-italic">
               {contacts.phone ? (
@@ -78,11 +78,11 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
         </div>
         {cols.map((c) => (
           <nav key={c.title} aria-label={c.title}>
-            <h2 className="eyebrow mb-3">{c.title}</h2>
+            <h2 className="mb-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white/45">{c.title}</h2>
             <ul className="space-y-0.5">
               {c.links.map((l) => (
                 <li key={l.href}>
-                  <Link href={l.href} className="inline-flex min-h-10 items-center text-[0.95rem] text-ink-2 hover:text-ink">
+                  <Link href={l.href} className="inline-flex min-h-10 items-center text-[0.95rem] text-white/80 transition-colors hover:text-white">
                     {l.label}
                   </Link>
                 </li>
@@ -91,16 +91,16 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
           </nav>
         ))}
       </div>
-      <div className="container-lj flex flex-col gap-6 border-t border-line py-8 md:flex-row md:items-center md:justify-between">
+      <div className="container-lj flex flex-col gap-6 border-t border-white/10 py-8 md:flex-row md:items-center md:justify-between">
         <div className="max-w-md">
-          <p className="eyebrow mb-3">{m.nav.language}</p>
+          <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white/45">{m.nav.language}</p>
           <Suspense fallback={null}>
             <LanguageSwitcher locale={locale} variant="list" />
           </Suspense>
         </div>
         {socialLinks.length > 0 ? (
           <div>
-            <p className="eyebrow mb-3">{m.footer.social}</p>
+            <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white/45">{m.footer.social}</p>
             <ul className="flex gap-2">
               {socialLinks.map((s) => (
                 <li key={s.label}>
@@ -112,7 +112,7 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
             </ul>
           </div>
         ) : null}
-        <p className="text-xs text-muted">
+        <p className="text-xs text-white/50">
           © {new Date().getFullYear()} {business.legalName || env().STORE_NAME}. {m.footer.rights} {m.footer.currencyNote}
         </p>
       </div>

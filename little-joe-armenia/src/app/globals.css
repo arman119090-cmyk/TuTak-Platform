@@ -144,6 +144,9 @@
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --shadow-float: 0 1px 2px rgb(17 17 17 / 0.04), 0 12px 32px -12px rgb(17 17 17 / 0.18);
   --shadow-card: 0 1px 2px rgb(20 50 100 / 0.05), 0 8px 24px -10px rgb(20 50 100 / 0.16);
+  --shadow-lift: 0 2px 4px rgb(20 50 100 / 0.05), 0 22px 44px -16px rgb(20 50 100 / 0.28);
+  --color-navy: #0c1a33;
+  --color-navy-2: #13254a;
 }
 
 :root {
@@ -302,6 +305,7 @@ body {
     padding-inline: 1rem;
     border-radius: var(--radius-pill);
     background: var(--color-card);
+    color: var(--color-ink);
     box-shadow: inset 0 0 0 1px var(--color-line);
     font-size: 0.875rem;
     font-weight: 500;
@@ -390,3 +394,44 @@ dialog.sheet-right[open] { animation: lj-in-right 380ms var(--ease-out-soft); }
 dialog.sheet-left[open] { animation: lj-in-left 380ms var(--ease-out-soft); }
 dialog.sheet-bottom[open] { animation: lj-in-bottom 420ms var(--ease-out-soft); }
 dialog[open]::backdrop { animation: lj-fade 300ms ease-out; }
+
+/* ───────────── Premium details ───────────── */
+/* Gentle float for hero characters (off for reduced motion via the global rule). */
+@keyframes lj-float {
+  0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--r, 0deg)); }
+}
+.float-slow { animation: lj-float 7s ease-in-out infinite; }
+.float-slower { animation: lj-float 9s ease-in-out infinite; animation-delay: -3s; }
+@media (prefers-reduced-motion: reduce) {
+  .float-slow, .float-slower { animation: none; }
+}
+/* Soft halo behind hero products. */
+.halo {
+  background: radial-gradient(closest-side, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0) 70%);
+}
+/* Section eyebrow with a short brand rule. */
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+}
+.kicker::before {
+  content: "";
+  width: 1.5rem;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+:lang(hy) .kicker { letter-spacing: 0.06em; }
+h1, h2, h3 { text-wrap: balance; }
+/* Armenian has no hand-lettered face here (falls back to Noto Sans Armenian
+   Bold, which is much wider): scale hand headlines down so whole words fit. */
+:lang(hy) h1.hand { font-size: clamp(1.9rem, 1.1rem + 3.4vw, 3.9rem) !important; line-height: 1.08 !important; letter-spacing: -0.02em; }
+:lang(hy) h2.hand { font-size: clamp(1.6rem, 1.1rem + 2vw, 2.8rem) !important; line-height: 1.12 !important; }
+:lang(hy) p.hand { font-size: clamp(0.95rem, 0.8rem + 0.6vw, 1.3rem) !important; }

@@ -4,9 +4,8 @@ import { resolveLocale } from "@/i18n/server";
 import { paths } from "@/lib/paths";
 import { alternates, breadcrumbLd } from "@/lib/seo/jsonld";
 import Link from "next/link";
-import { allVisibleCards, getFacets, isFiltered, listProducts, parseFilters } from "@/lib/catalog";
-import { ProductImage } from "@/components/product/product-image";
-import { Ararat } from "@/components/ui/armenia";
+import { getFacets, isFiltered, listProducts, parseFilters } from "@/lib/catalog";
+import Image from "next/image";
 import { favoriteIds } from "@/lib/domain/favorites";
 import { ProductGrid } from "@/components/product/product-grid";
 import { DesktopFilters, MobileFilters, SearchBox, SortSelect } from "@/components/catalog/filters";
@@ -36,8 +35,7 @@ export default async function ShopPage({ params, searchParams }: Props) {
   const locale = await resolveLocale(params);
   const m = getMessages(locale);
   const filters = parseFilters(await searchParams);
-  const [products, facets, favorites, all] = await Promise.all([listProducts(filters, locale), getFacets(locale), favoriteIds(), allVisibleCards(locale)]);
-  const bannerImage = (all.find((p) => p.slug.includes("vanilla")) ?? all[0])?.image ?? null;
+  const [products, facets, favorites] = await Promise.all([listProducts(filters, locale), getFacets(locale), favoriteIds()]);
 
   return (
     <div className="container-lj py-8 md:py-12">
@@ -51,9 +49,9 @@ export default async function ShopPage({ params, searchParams }: Props) {
         event="view_item_list"
         params={{ item_list_name: "catalog", items: products.slice(0, 20).map((p) => ({ item_id: p.slug, item_name: p.name, price: p.priceAmd ?? 0 })) }}
       />
-      {/* Catalogue banner: breadcrumb, serif title, a character in an arch before Ararat. */}
-      <header className="wash relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-wash-2)]">
-        <Ararat className="pointer-events-none absolute bottom-0 right-0 h-[70%] w-full opacity-80 md:w-[60%]" id="shop-ararat" />
+      {/* Catalogue banner in the brand-book sky, with the mascot trio. */}
+      <header className="relative overflow-hidden rounded-[2rem] ring-1 ring-line" style={{ background: "linear-gradient(135deg, #d9edfc 0%, #eef7fe 55%, #ffffff 100%)" }}>
+        <Image src="/brand/home/trio-dog.webp" alt="" width={1017} height={614} sizes="360px" priority className="pointer-events-none absolute -bottom-2 right-2 hidden w-[22rem] mix-blend-multiply md:block" />
         <div className="relative flex min-h-36 items-center justify-between gap-4 px-6 py-7 md:min-h-48 md:px-12">
           <div>
             <nav aria-label={m.brand.breadcrumb} className="text-[0.72rem] tracking-[0.04em] text-muted">
@@ -62,13 +60,8 @@ export default async function ShopPage({ params, searchParams }: Props) {
               </Link>{" "}
               / {m.nav.shop}
             </nav>
-            <h1 className="serif mt-3 text-[clamp(2.2rem,1.6rem+2.4vw,3.8rem)] leading-none">{filters.q ? `“${filters.q}”` : m.catalog.pageTitle}</h1>
+            <h1 className="display mt-3 text-[clamp(2.2rem,1.6rem+2.4vw,3.8rem)] leading-none">{filters.q ? `“${filters.q}”` : m.catalog.pageTitle}</h1>
           </div>
-          {bannerImage ? (
-            <div className="relative hidden h-36 w-32 shrink-0 sm:block md:h-44 md:w-40">
-              <ProductImage media={bannerImage} accent="transparent" fit="contain" sizes="160px" priority className="drop-shadow-[0_16px_18px_rgba(8,40,90,0.3)]" />
-            </div>
-          ) : null}
         </div>
       </header>
 

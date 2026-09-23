@@ -56,8 +56,8 @@ async function login(page: import("@playwright/test").Page) {
 test.describe("admin photo manager", () => {
   test("add several photos, make one main, reorder and delete", async ({ page, isMobile }) => {
     // Each project edits its own product: the two projects share one database.
-    const product = isMobile ? "Little Cat" : "Little Dog";
-    const slug = isMobile ? "little-cat" : "little-dog";
+    const product = isMobile ? "Little Cat New Car" : "Little Dog Vanilla";
+    const slug = isMobile ? "little-cat-new-car" : "little-dog-vanilla";
     await login(page);
     await page.goto("/admin/photos");
     const card = page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: product, exact: true }) });

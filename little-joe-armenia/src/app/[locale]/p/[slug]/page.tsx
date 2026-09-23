@@ -122,7 +122,7 @@ export default async function ProductPage({ params }: Props) {
               {product.collection.name}
             </Link>
             <div className="mt-2 flex items-start justify-between gap-4">
-              <h1 className="serif text-h1 text-balance">{product.name}</h1>
+              <h1 className="display text-h1 text-balance">{product.name}</h1>
               <FavoriteButton productId={product.id} initial={favorites.has(product.id)} variant="inline" />
             </div>
             {product.rating ? (
@@ -254,7 +254,7 @@ export default async function ProductPage({ params }: Props) {
 
       {similar.length > 0 ? (
         <section className="container-lj mt-20" aria-labelledby="similar-h">
-          <h2 id="similar-h" className="serif mb-8 text-h2">
+          <h2 id="similar-h" className="display mb-8 text-h2">
             {m.product.similarScents}
           </h2>
           <ProductGrid products={similar} locale={locale} favorites={favorites} listName="similar" />
@@ -262,7 +262,7 @@ export default async function ProductPage({ params }: Props) {
       ) : null}
       {more.length > 0 ? (
         <section className="container-lj mt-20" aria-labelledby="more-h">
-          <h2 id="more-h" className="serif mb-8 text-h2">
+          <h2 id="more-h" className="display mb-8 text-h2">
             {similar.length > 0 ? fmt(m.product.fromFamily, { collection: product.collection.name }) : m.product.youMayLike}
           </h2>
           <ProductGrid products={more} locale={locale} favorites={favorites} listName="same-collection" />

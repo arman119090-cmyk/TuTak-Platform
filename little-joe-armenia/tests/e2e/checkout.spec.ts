@@ -78,7 +78,7 @@ test.describe("cart and checkout", () => {
   });
 
   test("network failure during add to cart shows an error, not a crash", async ({ page }) => {
-    await page.goto("/en/p/little-joe-green-apple");
+    await page.goto("/en/p/little-joe-apple");
     await page.route("**/*", (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
     await page.getByTestId("add-to-cart").click();
     await expect(page.getByText(/Connection problem/)).toBeVisible();

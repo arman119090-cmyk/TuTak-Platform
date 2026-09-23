@@ -7,6 +7,17 @@ export const ru = {
     country: "Армения",
     seal: "LITTLE JOE · ЕРЕВАН · АРМЕНИЯ ·",
     breadcrumb: "Навигационная цепочка",
+    slogan: "Наполни воздух улыбкой!",
+    linesTitle: "Наши линейки",
+    linesAll: "Все линейки",
+    originalTitle: "Оригинал.",
+    originalBody: "Little Joe® — больше, чем ароматизатор. Это оригинальный персонаж, который превратил автомобильный аромат в бренд, который сразу узнают и любят.",
+    factSwiss: "Разработан в Швейцарии",
+    factItaly: "Произведён в Италии",
+    factCountries: "Более 80 стран",
+    factIfra: "Стандарты IFRA и REACH",
+    charactersTitle: "Знакомьтесь с персонажами",
+    lineProducts: "{count} товаров",
   },
   meta: {
     siteDescription:

@@ -11,8 +11,10 @@ import { favoriteIds } from "@/lib/domain/favorites";
 import { ProductGrid } from "@/components/product/product-grid";
 import { ProductImage } from "@/components/product/product-image";
 import { Stars } from "@/components/product/stars";
-import { ARM_NUMERALS, Ararat, Braid, Rosette } from "@/components/ui/armenia";
-import { IconArrow } from "@/components/ui/icons";
+import Image from "next/image";
+import { lineMeta, type LineMeta } from "@/lib/lines";
+import { visibleCollections } from "@/lib/catalog";
+import { IconArrow, IconCard, IconChat, IconSparkle, IconTruck, IconCheck } from "@/components/ui/icons";
 
 type Props = { params: Promise<{ locale: string }> };
 
@@ -37,7 +39,7 @@ function splitHeadline(title: string): [string, string] {
 export default async function HomePage({ params }: Props) {
   const locale = await resolveLocale(params);
   const m = getMessages(locale);
-  const [home, bestsellers, all, claims, reviews, lifestyle, favorites] = await Promise.all([
+  const [home, bestsellers, all, claims, reviews, lifestyle, favorites, collections] = await Promise.all([
     homeContent(locale),
     highlighted("bestseller", locale, 6),
     allVisibleCards(locale),
@@ -45,216 +47,171 @@ export default async function HomePage({ params }: Props) {
     latestReviews(6),
     lifestyleMedia(locale),
     favoriteIds(),
+    visibleCollections(locale),
   ]);
 
-  const madeInItaly = claims.some((c) => c.key === "made-in-italy");
-  const heroProduct = home.featured[0] ?? bestsellers[0] ?? all[0] ?? null;
   // Popular row: bestsellers first, topped up with featured/other in-stock items to six.
   const popular: ProductCardDTO[] = [...bestsellers];
   for (const p of [...home.featured, ...all]) {
     if (popular.length >= 6) break;
     if (!popular.some((x) => x.id === p.id) && p.available > 0) popular.push(p);
   }
-  const quizProduct = all.find((p) => p.slug.includes("cherry")) ?? all.find((p) => p.id !== heroProduct?.id) ?? null;
-  // One character per collection for the family banner.
-  const family: ProductCardDTO[] = [];
-  for (const p of all) if (p.image && !family.some((f) => f.collectionSlug === p.collectionSlug)) family.push(p);
-  const joeColours = all.filter((p) => p.collectionSlug === "little-joe" && p.image).slice(0, 4);
-  const sidekicks = family.filter((f) => f.collectionSlug !== "little-joe").slice(0, 2);
-  // Collection tiles: a representative character per collection.
-  const collectionTiles = family;
-  // Armenian letters serve as numerals on the Armenian site; other
-  // languages get plain figures so no foreign script appears on the page.
-  const nums: readonly string[] = locale === "hy" ? ARM_NUMERALS : ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+  // Product lines with their brand-book art; the five characters get their own row.
+  const CHARACTERS = ["little-joya", "little-dog", "little-pup", "little-cat", "little-duck"];
+  const lines = collections.map((c) => ({ ...c, meta: lineMeta(c.slug, locale) })).filter((c) => c.meta?.hero);
+  const mainLines = lines.filter((c) => !CHARACTERS.includes(c.slug));
+  const characters = lines.filter((c) => CHARACTERS.includes(c.slug));
   const heroTitle = home.hero?.title ?? `${m.home.heroLine1} ${m.home.heroLine2}`;
   const [line1, line2] = home.hero ? splitHeadline(heroTitle) : [m.home.heroLine1, m.home.heroLine2];
+  const facts = [m.brand.factSwiss, m.brand.factItaly, m.brand.factCountries, m.brand.factIfra];
 
   return (
     <>
-      {/* ── Hero: serif headline, the character in an arch before Ararat ── */}
-      <section className="relative overflow-hidden bg-navy text-white" style={{ background: "linear-gradient(160deg, #0b2a55 0%, #061a36 55%, #04142b 100%)" }}>
-        <div
-          className="pointer-events-none absolute right-[-25%] top-[5%] h-[85%] w-[90%] rounded-full blur-3xl md:right-[-6%] md:w-[60%]"
-          style={{ background: "radial-gradient(closest-side, rgb(0 138 223 / 0.55), rgb(0 138 223 / 0))" }}
-          aria-hidden="true"
-        />
-        <HeroStars />
-        <Ararat tone="night" className="pointer-events-none absolute bottom-0 right-0 h-[18%] w-full md:h-[42%] md:w-[66%]" id="hero-ararat" />
-        <div className="container-lj relative grid grid-cols-[minmax(0,1fr)] items-center gap-10 pt-10 pb-16 md:min-h-[40rem] md:grid-cols-[1.1fr_0.9fr] md:gap-8 md:pt-16 md:pb-24">
-          <div className="relative z-[1] min-w-0 max-w-2xl">
-            <p className="kicker !text-[#7fc4f5]">{m.home.heroEyebrow}</p>
-            <h1 className="serif hero-title mt-5 text-[clamp(2.7rem,1.5rem+5vw,5.8rem)] leading-[0.98]">
+      {/* ── Hero: sky, clouds, the brand mascot with the original pack ── */}
+      <section className="relative overflow-hidden" style={{ background: "linear-gradient(180deg, #d9edfc 0%, #eef7fe 45%, #ffffff 100%)" }}>
+        <Clouds />
+        <div className="container-lj relative grid grid-cols-[minmax(0,1fr)] items-center gap-6 pt-10 md:min-h-[40rem] md:grid-cols-[1fr_1fr] md:gap-4 md:pt-14">
+          <div className="relative z-[1] min-w-0 max-w-2xl pb-2 md:pb-16">
+            <p className="display text-[0.8rem] uppercase tracking-[0.08em] text-brand">
+              Little Joe® · {m.brand.country}
+            </p>
+            <h1 className="display hero-title mt-4 text-[clamp(2.5rem,1.4rem+4.6vw,5.2rem)] leading-[0.98]">
               <span className="block">{line1}</span>
-              {line2 ? <span className="block italic text-[#6cc6ff]">{line2}</span> : null}
+              {line2 ? <span className="block text-brand">{line2}</span> : null}
             </h1>
-            <p className="mt-6 max-w-md text-[1.05rem] leading-relaxed text-white/70">{home.hero?.body ?? m.home.heroSub}</p>
+            <p className="hand mt-4 -rotate-2 text-[clamp(1.6rem,1.2rem+1.4vw,2.4rem)] leading-none text-ink">{m.brand.slogan}</p>
+            <p className="mt-5 max-w-md text-[1.05rem] leading-relaxed text-ink-2">{home.hero?.body ?? m.home.heroSub}</p>
             <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
-              <Link href={paths.shop(locale)} className="btn bg-white px-7 text-ink shadow-[0_14px_30px_-16px_rgb(0_138_223/0.9)] hover:bg-[var(--color-sky)]">
+              <Link href={paths.shop(locale)} className="btn btn-primary px-7">
                 {m.home.goShop}
                 <IconArrow width={17} height={17} />
               </Link>
-              <Link href={paths.finder(locale)} className="link-arrow !text-white hover:!text-[#6cc6ff]">
+              <Link href={paths.finder(locale)} className="link-arrow">
                 {m.home.ctaFind}
               </Link>
             </div>
-            <ul className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.8rem] text-white/55">
-              {madeInItaly ? <li>{m.home.perkItaly}</li> : null}
-              <li className="flex items-center gap-2">
-                <Rosette size={14} className="text-[var(--color-hairline)]" />
-                {m.home.perkFavorite}
-              </li>
-              <li className="flex items-center gap-2">
-                <Rosette size={14} className="text-[var(--color-hairline)]" />
-                {m.home.perkTrips}
-              </li>
-            </ul>
           </div>
-
-          {heroProduct?.image ? (
-            <Link href={paths.product(locale, heroProduct.slug)} className="group relative mx-auto block w-[78%] max-w-[26rem] md:w-full" aria-label={heroProduct.name}>
-              <div className="arch wash relative aspect-[4/5] shadow-[0_40px_80px_-30px_rgb(0_138_223/0.65)] ring-1 ring-white/30" style={{ ["--tint" as string]: heroProduct.accent }}>
-                <Ararat className="absolute inset-x-0 bottom-0 h-[38%] w-full opacity-90" id="arch-ararat" />
-                <div className="float-slow absolute inset-x-[14%] bottom-[10%] top-[14%] transition-transform duration-700 group-hover:-translate-y-2 motion-reduce:transform-none">
-                  <ProductImage
-                    media={heroProduct.image}
-                    accent="transparent"
-                    fit="contain"
-                    sizes="(min-width: 768px) 34vw, 78vw"
-                    priority
-                    className="drop-shadow-[0_28px_30px_rgba(8,40,90,0.3)]"
-                  />
-                </div>
-              </div>
-              {/* Inner hairline arch, like a carved stone frame */}
-              <div className="arch pointer-events-none absolute inset-2.5 ring-1 ring-[#ffffff]/70" aria-hidden="true" />
-              {sidekicks.map((s, i) => (
-                <div
-                  key={s.id}
-                  aria-hidden="true"
-                  className={`${i === 0 ? "float-slower -left-[16%] bottom-[-2%] w-[34%] [--r:-6deg]" : "float-slow -right-[12%] bottom-[-4%] w-[30%] [--r:6deg]"} absolute aspect-[4/5] drop-shadow-[0_16px_18px_rgba(8,40,90,0.25)]`}
-                >
-                  <ProductImage media={s.image} accent="transparent" fit="contain" sizes="160px" />
-                </div>
-              ))}
-              <Seal text={m.brand.seal} className="absolute -right-4 -top-4 size-24 md:-right-8 md:-top-6 md:size-28" />
-            </Link>
-          ) : null}
+          <div className="relative mx-auto w-full max-w-[34rem] self-end">
+            {/* The brand-book art has a white background; multiply lets the sky show through. */}
+            <Image src="/brand/lines/little-joe.webp" alt="" width={960} height={1212} priority sizes="(min-width: 768px) 45vw, 92vw" className="h-auto w-full mix-blend-multiply" />
+            <Image
+              src="/brand/home/trio-joe.webp"
+              alt=""
+              width={1017}
+              height={649}
+              sizes="220px"
+              className="float-slow absolute -right-2 top-[6%] hidden w-[44%] mix-blend-multiply md:block"
+            />
+          </div>
         </div>
       </section>
 
-      {/* ── Promise: four points numbered with Armenian letters ── */}
-      <section className="border-y border-line bg-card/60">
+      {/* ── Service promise ── */}
+      <section className="border-y border-line bg-white">
         <ul className="container-lj grid grid-cols-2 md:grid-cols-4">
-          <Trust nums={nums} n={0} title={m.home.trustDeliveryTitle} body={m.home.trustDeliveryBody} href={paths.page(locale, "delivery")} />
-          <Trust nums={nums} n={1} title={m.home.trustPaymentTitle} body={m.home.trustPaymentBody} href={paths.page(locale, "payment")} />
-          <Trust nums={nums} n={2} title={m.home.trustFinderTitle} body={m.home.trustFinderBody} href={paths.finder(locale)} />
-          <Trust nums={nums} n={3} title={m.home.trustSupportTitle} body={m.home.trustSupportBody} href={paths.page(locale, "contact")} />
+          <Trust icon={<IconTruck />} title={m.home.trustDeliveryTitle} body={m.home.trustDeliveryBody} href={paths.page(locale, "delivery")} />
+          <Trust icon={<IconCard />} title={m.home.trustPaymentTitle} body={m.home.trustPaymentBody} href={paths.page(locale, "payment")} />
+          <Trust icon={<IconSparkle />} title={m.home.trustFinderTitle} body={m.home.trustFinderBody} href={paths.finder(locale)} />
+          <Trust icon={<IconChat />} title={m.home.trustSupportTitle} body={m.home.trustSupportBody} href={paths.page(locale, "contact")} />
         </ul>
       </section>
 
-      {/* ── Popular scents ── */}
-      {popular.length > 0 ? (
-        <section className="container-lj py-16 md:py-24" aria-labelledby="popular-title">
-          <SectionHead nums={nums} n={0} id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
-          <ProductGrid products={popular} locale={locale} favorites={favorites} listName="popular" columns="six" priorityCount={2} />
+      {/* ── Product lines ── */}
+      {mainLines.length > 0 ? (
+        <section className="container-lj py-16 md:py-24" aria-labelledby="lines-title">
+          <SectionHead id="lines-title" title={m.brand.linesTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
+          <ul className="no-scrollbar -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-4 md:gap-5 md:overflow-visible md:px-0">
+            {mainLines.slice(0, 8).map((c) => (
+              <li key={c.slug} className="w-[64vw] max-w-[17rem] shrink-0 snap-start md:w-auto md:max-w-none">
+                <LineTile c={c} href={paths.collection(locale, c.slug)} count={m.brand.lineProducts.replace("{count}", String(c.count))} />
+              </li>
+            ))}
+          </ul>
+          {mainLines.length > 8 ? (
+            <ul className="mt-8 flex flex-wrap gap-2">
+              {mainLines.slice(8).map((c) => (
+                <li key={c.slug}>
+                  <Link href={paths.collection(locale, c.slug)} className="chip">
+                    <span className="size-2.5 rounded-full" style={{ background: c.accent }} aria-hidden="true" />
+                    {c.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
       ) : null}
 
-      {/* ── The family: one arch per character collection ── */}
-      {collectionTiles.length > 1 ? (
-        <section className="container-lj pb-16 md:pb-24" aria-labelledby="family-tiles-title">
-          <SectionHead nums={nums} n={1} id="family-tiles-title" title={m.home.familyTitle} />
+      {/* ── Popular scents ── */}
+      {popular.length > 0 ? (
+        <section className="bg-[linear-gradient(180deg,#f4f9fe,#ffffff)] py-16 md:py-24" aria-labelledby="popular-title">
+          <div className="container-lj">
+            <SectionHead id="popular-title" title={m.home.popularTitle} href={paths.shop(locale)} cta={m.common.seeAll} />
+            <ProductGrid products={popular} locale={locale} favorites={favorites} listName="popular" columns="six" priorityCount={2} />
+          </div>
+        </section>
+      ) : null}
+
+      {/* ── The original: the brand-book world spread with the facts ── */}
+      <section className="container-lj py-16 md:py-24" aria-labelledby="original-title">
+        <div className="relative overflow-hidden rounded-[2rem] bg-white ring-1 ring-line shadow-[var(--shadow-card)]">
+          <Image src="/brand/home/world.webp" alt="" width={2000} height={1216} sizes="(min-width: 1400px) 1300px, 100vw" className="h-auto w-full" />
+          <div className="p-6 md:absolute md:bottom-8 md:right-8 md:max-w-md md:rounded-[1.5rem] md:bg-white/90 md:p-8 md:shadow-[var(--shadow-float)] md:backdrop-blur">
+            <h2 id="original-title" className="display text-[clamp(2rem,1.5rem+2vw,3.2rem)] leading-none">
+              {m.brand.originalTitle}
+            </h2>
+            <p className="mt-4 text-ink-2">{m.brand.originalBody}</p>
+            <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-2 text-sm font-semibold">
+              {facts.map((f) => (
+                <li key={f} className="flex items-start gap-2">
+                  <IconCheck width={18} height={18} className="mt-0.5 shrink-0 text-brand" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Characters ── */}
+      {characters.length > 0 ? (
+        <section className="container-lj pb-16 md:pb-24" aria-labelledby="characters-title">
+          <SectionHead id="characters-title" title={m.brand.charactersTitle} />
           <ul className="no-scrollbar -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-5 md:gap-5 md:overflow-visible md:px-0">
-            {collectionTiles.map((c) => (
-              <li key={c.collectionSlug} className="w-[58vw] max-w-[15rem] shrink-0 snap-start md:w-auto md:max-w-none">
-                <Link href={paths.collection(locale, c.collectionSlug)} className="group block">
-                  <div className="arch wash relative aspect-[3/4] ring-1 ring-[var(--color-wash-2)]/60 transition-shadow duration-500 group-hover:shadow-[var(--shadow-lift)]" style={{ ["--tint" as string]: c.accent }}>
-                    <div className="absolute inset-x-[14%] bottom-[8%] top-[18%] transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:scale-[1.04] motion-reduce:transform-none">
-                      <ProductImage media={c.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 18vw, 55vw" className="drop-shadow-[0_18px_20px_rgba(8,40,90,0.25)]" />
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between px-1">
-                    <span className="serif text-[1.3rem]">{c.collectionName}</span>
-                    <IconArrow width={16} height={16} className="text-[var(--color-hairline)] transition-transform group-hover:translate-x-1" />
-                  </div>
-                </Link>
+            {characters.map((c) => (
+              <li key={c.slug} className="w-[60vw] max-w-[15rem] shrink-0 snap-start md:w-auto md:max-w-none">
+                <LineTile c={c} href={paths.collection(locale, c.slug)} count={m.brand.lineProducts.replace("{count}", String(c.count))} />
               </li>
             ))}
           </ul>
         </section>
       ) : null}
 
-      {/* ── Scent finder: Ararat at night ── */}
+      {/* ── Scent finder ── */}
       <section className="container-lj pb-16 md:pb-24">
-        <div className="relative overflow-hidden rounded-[2rem] text-white shadow-[var(--shadow-lift)]" style={{ background: "linear-gradient(135deg, #008adf 0%, #0068b8 45%, #2b3f8f 100%)" }}>
-          <div className="absolute inset-0" style={{ background: "radial-gradient(70% 60% at 75% 40%, rgb(255 255 255 / 0.22), transparent 65%)" }} aria-hidden="true" />
-          <Ararat tone="night" className="absolute bottom-0 right-0 h-[22%] w-full md:h-[48%] md:w-[85%]" id="quiz-ararat" />
-          <StarField />
-          <div className="relative grid items-center gap-6 px-6 py-12 md:grid-cols-[1.25fr_1fr] md:px-16 md:py-16">
+        <div className="relative overflow-hidden rounded-[2rem]" style={{ background: "linear-gradient(135deg, #d9edfc 0%, #eef7fe 50%, #ffffff 100%)" }}>
+          <Clouds />
+          <div className="relative grid items-center gap-6 px-6 py-12 md:grid-cols-[1.1fr_1fr] md:px-14 md:py-14">
             <div className="text-center md:text-left">
-              <p className="kicker justify-center !text-white/80 md:justify-start">{m.nav.scentFinder}</p>
-              <h2 className="serif mt-4 text-[clamp(2.2rem,1.5rem+2.8vw,3.8rem)] leading-[1.02]">{m.home.quizTitle}</h2>
-              <p className="mx-auto mt-4 max-w-md text-white/80 md:mx-0">{m.home.quizBody}</p>
-              <Link href={paths.finder(locale)} className="btn mt-8 bg-[#ffffff] px-7 text-ink hover:bg-white">
+              <h2 className="display text-[clamp(2.2rem,1.5rem+2.8vw,3.8rem)] leading-[1.02]">{m.home.quizTitle}</h2>
+              <p className="mx-auto mt-4 max-w-md text-ink-2 md:mx-0">{m.home.quizBody}</p>
+              <Link href={paths.finder(locale)} className="btn btn-primary mt-8 px-7">
                 {m.home.quizCta}
                 <IconArrow width={17} height={17} />
               </Link>
-              <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[0.75rem] text-white/75 md:justify-start">
-                {[m.home.quizPoint1, m.home.quizPoint2, m.home.quizPoint3].map((t, i) => (
-                  <li key={t} className="flex items-center gap-2">
-                    <span className="font-[family-name:var(--font-serif)] text-white">{nums[i]}</span>
+              <ul className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[0.8rem] font-semibold text-ink-2 md:justify-start">
+                {[m.home.quizPoint1, m.home.quizPoint2, m.home.quizPoint3].map((t) => (
+                  <li key={t} className="flex items-center gap-1.5">
+                    <IconCheck width={16} height={16} className="text-brand" />
                     {t}
                   </li>
                 ))}
               </ul>
             </div>
-            {quizProduct?.image ? (
-              <div className="relative mx-auto aspect-square w-[70%] max-w-[20rem] md:w-full">
-                <div className="absolute inset-[10%] rounded-full bg-white/25 blur-2xl" aria-hidden="true" />
-                <div className="float-slow absolute inset-0">
-                  <ProductImage media={quizProduct.image} accent="transparent" fit="contain" sizes="(min-width: 768px) 25vw, 70vw" className="drop-shadow-[0_24px_28px_rgba(0,0,0,0.45)]" />
-                </div>
-              </div>
-            ) : null}
+            <Image src="/brand/home/trio-thumbs.webp" alt="" width={1017} height={649} sizes="(min-width: 768px) 40vw, 90vw" className="float-slow mx-auto h-auto w-full max-w-[30rem] mix-blend-multiply" />
           </div>
         </div>
       </section>
-
-      {/* ── Family / brand banner: the whole line-up on a stone ledge ── */}
-      {family.length > 0 ? (
-        <section className="container-lj pb-16 md:pb-24" aria-labelledby="family-title" id="family">
-          <div className="wash relative overflow-hidden rounded-[2rem] ring-1 ring-[var(--color-wash-2)]">
-            <Braid className="absolute inset-x-0 top-5 text-[var(--color-hairline)] opacity-60" id="family-braid" />
-            <div className="relative grid items-end gap-8 px-6 pt-14 md:grid-cols-[1fr_1.3fr] md:px-14">
-              <div className="pb-4 text-center md:pb-14 md:text-left">
-                <h2 id="family-title" className="serif text-[clamp(2rem,1.4rem+2.4vw,3.4rem)] leading-[1.02]">
-                  {m.home.familyBannerTitle}
-                </h2>
-                <p className="mx-auto mt-4 max-w-md text-ink-2 md:mx-0">{m.home.familyBannerBody}</p>
-                <Link href={paths.shop(locale)} className="link-arrow mt-5">
-                  {m.home.goShop}
-                  <IconArrow width={16} height={16} />
-                </Link>
-              </div>
-              <div className="relative">
-                <ul className="relative z-[1] flex items-end justify-center gap-0.5 md:justify-end" aria-label={m.home.familyTitle}>
-                  {[...joeColours, ...family.filter((f) => f.collectionSlug !== "little-joe")].slice(0, 8).map((p, i) => (
-                    <li key={p.id} className={i % 2 ? "w-[15%] max-w-[6.5rem] pb-1" : "w-[17%] max-w-[7.5rem]"}>
-                      <Link href={paths.product(locale, p.slug)} className="block transition-transform duration-300 hover:-translate-y-2 motion-reduce:transform-none" title={p.name}>
-                        <div className="aspect-[4/5] drop-shadow-[0_12px_12px_rgba(8,40,90,0.25)]">
-                          <ProductImage media={p.image} accent="transparent" fit="contain" sizes="120px" />
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-                {/* Stone ledge */}
-                <div className="h-6 rounded-t-md bg-gradient-to-b from-[var(--color-wash-2)] to-[var(--color-wash-deep)]/60" aria-hidden="true" />
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
 
       {/* ── Campaign blocks (CMS) ── */}
       {home.campaigns.length > 0 ? (
@@ -263,10 +220,10 @@ export default async function HomePage({ params }: Props) {
             <Link
               key={c.id}
               href={c.href && c.href.startsWith("/") ? `/${locale}${c.href}` : paths.shop(locale)}
-              className="wash arch-soft p-8 ring-1 ring-[var(--color-wash-2)] md:p-12"
+              className="rounded-[2rem] p-8 ring-1 ring-line md:p-12"
               style={{ ["--tint" as string]: c.accent ?? "var(--color-wash)" }}
             >
-              <h2 className="serif text-4xl">{c.title}</h2>
+              <h2 className="display text-4xl">{c.title}</h2>
               {c.body ? <p className="mt-3 max-w-md">{c.body}</p> : null}
             </Link>
           ))}
@@ -276,7 +233,7 @@ export default async function HomePage({ params }: Props) {
       {/* ── Brand facts: only claims verified in the admin ── */}
       {claims.length > 0 ? (
         <section className="container-lj pb-12" aria-labelledby="story-title">
-          <h2 id="story-title" className="serif mb-8 text-h2">
+          <h2 id="story-title" className="display mb-8 text-h2">
             {m.home.storyTitle}
           </h2>
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -293,14 +250,14 @@ export default async function HomePage({ params }: Props) {
       {/* ── Reviews: real, approved ones only ── */}
       {reviews.length > 0 ? (
         <section className="container-lj pb-12" aria-labelledby="reviews-title">
-          <h2 id="reviews-title" className="serif mb-8 text-h2">
+          <h2 id="reviews-title" className="display mb-8 text-h2">
             {m.home.reviewsTitle}
           </h2>
           <ul className="grid gap-4 md:grid-cols-3">
             {reviews.map((r) => (
               <li key={r.id} className="rounded-[1.5rem] bg-card p-7 ring-1 ring-line">
                 <Stars value={r.rating} label={`${r.rating}/5`} />
-                <p className="serif mt-4 line-clamp-5 text-[1.2rem] font-medium italic leading-snug text-ink">«{r.body}»</p>
+                <p className="display mt-4 line-clamp-5 text-[1.2rem] font-medium italic leading-snug text-ink">«{r.body}»</p>
                 <p className="mt-4 text-sm font-semibold">
                   {r.authorName}
                   <span className="font-normal text-muted"> · {pickT(r.product.translations, locale)?.name}</span>
@@ -314,12 +271,12 @@ export default async function HomePage({ params }: Props) {
       {/* ── Lifestyle imagery (authorised assets only) ── */}
       {lifestyle.length > 0 ? (
         <section className="container-lj pb-12" aria-labelledby="social-title">
-          <h2 id="social-title" className="serif mb-8 text-h2">
+          <h2 id="social-title" className="display mb-8 text-h2">
             {m.home.socialTitle}
           </h2>
           <ul className="grid grid-cols-2 gap-3 md:grid-cols-3">
             {lifestyle.map((img) => (
-              <li key={img.id} className="arch aspect-[4/5]">
+              <li key={img.id} className="aspect-square overflow-hidden rounded-[1.5rem]">
                 <ProductImage
                   media={{ url: img.url, width: img.width, height: img.height, alt: img.alt, kind: "LIFESTYLE", isPlaceholder: false }}
                   accent="#E9E7E1"
@@ -334,15 +291,15 @@ export default async function HomePage({ params }: Props) {
   );
 }
 
-function Trust({ nums, n, title, body, href }: { nums: readonly string[]; n: number; title: string; body: string; href: string }) {
+function Trust({ icon, title, body, href }: { icon: React.ReactNode; title: string; body: string; href: string }) {
   return (
     <li className="min-w-0 border-line [&:nth-child(2n)]:border-l md:border-l md:first:border-l-0 [&:nth-child(n+3)]:border-t md:[&:nth-child(n+3)]:border-t-0">
-      <Link href={href} className="group flex h-full items-start gap-2.5 px-2 py-6 [hyphens:auto] sm:gap-3 sm:px-3 md:px-6 md:py-8">
-        <span className="numeral shrink-0 !size-7 !text-[0.9rem] transition-colors group-hover:border-brand group-hover:text-brand sm:!size-9 sm:!text-[1.05rem]" aria-hidden="true">
-          {nums[n]}
+      <Link href={href} className="group flex h-full items-start gap-3 px-3 py-6 md:px-6 md:py-7">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand transition-colors group-hover:bg-brand group-hover:text-white" aria-hidden="true">
+          {icon}
         </span>
         <span className="min-w-0">
-          <span className="block text-[0.84rem] font-semibold leading-tight [overflow-wrap:anywhere] sm:text-[0.9rem]">{title}</span>
+          <span className="block text-[0.88rem] font-bold leading-tight [overflow-wrap:anywhere]">{title}</span>
           <span className="mt-1 block text-[0.78rem] leading-snug text-muted">{body}</span>
         </span>
       </Link>
@@ -350,19 +307,14 @@ function Trust({ nums, n, title, body, href }: { nums: readonly string[]; n: num
   );
 }
 
-function SectionHead({ nums, n, id, title, href, cta }: { nums: readonly string[]; n: number; id: string; title: string; href?: string; cta?: string }) {
+function SectionHead({ id, title, href, cta }: { id: string; title: string; href?: string; cta?: string }) {
   return (
-    <div className="mb-9 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 md:mb-12">
-      <div className="flex min-w-0 items-end gap-4">
-        <span className="numeral mb-1 hidden sm:inline-grid" aria-hidden="true">
-          {nums[n]}
-        </span>
-        <div>
-          <p className="kicker">Little Joe</p>
-          <h2 id={id} className="serif mt-2 text-[clamp(1.9rem,1.4rem+1.8vw,3rem)] leading-[1.05]">
-            {title}
-          </h2>
-        </div>
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 md:mb-10">
+      <div className="min-w-0">
+        <p className="display text-[0.75rem] uppercase tracking-[0.08em] text-brand">Little Joe®</p>
+        <h2 id={id} className="display mt-2 text-[clamp(1.9rem,1.4rem+1.8vw,3rem)] leading-[1.02]">
+          {title}
+        </h2>
       </div>
       {href && cta ? (
         <Link href={href} className="link-arrow">
@@ -374,53 +326,51 @@ function SectionHead({ nums, n, id, title, href, cta }: { nums: readonly string[
   );
 }
 
-/** Round gold seal with circular lettering. */
-function Seal({ text, className = "" }: { text: string; className?: string }) {
+type Tile = { slug: string; name: string; accent: string; meta: LineMeta | null };
+
+/** Product line tile: the line's brand-book art on its colour, name and tagline. */
+function LineTile({ c, href, count }: { c: Tile; href: string; count: string }) {
   return (
-    <svg viewBox="0 0 120 120" className={`spin-slow ${className}`} aria-hidden="true">
+    <Link href={href} className="group block">
+      <div
+        className="relative aspect-[4/5] overflow-hidden rounded-[1.75rem] ring-1 ring-line transition-shadow duration-500 group-hover:shadow-[var(--shadow-lift)]"
+        style={{ background: `color-mix(in oklab, ${c.accent} 16%, white)` }}
+      >
+        {c.meta?.hero ? (
+          <Image
+            src={c.meta.hero.url}
+            alt=""
+            width={c.meta.hero.width}
+            height={c.meta.hero.height}
+            sizes="(min-width: 768px) 24vw, 64vw"
+            className="h-full w-full object-cover object-top mix-blend-multiply transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:scale-[1.04] motion-reduce:transform-none"
+          />
+        ) : null}
+      </div>
+      <div className="mt-3 px-1">
+        <p className="display text-[1.15rem] leading-tight">{c.name}</p>
+        {c.meta?.tagline ? <p className="mt-1 line-clamp-2 text-[0.82rem] text-ink-2">{c.meta.tagline}</p> : null}
+        <p className="mt-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-muted">{count}</p>
+      </div>
+    </Link>
+  );
+}
+
+/** Soft brand-book clouds (decorative). */
+function Clouds() {
+  return (
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
-        <path id="seal-circle" d="M60 60 m-44 0 a44 44 0 1 1 88 0 a44 44 0 1 1 -88 0" />
+        <filter id="cloud-soft" x="-20%" y="-20%" width="140%" height="160%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#7fb4e3" floodOpacity="0.25" />
+        </filter>
       </defs>
-      <circle cx="60" cy="60" r="58" fill="#ffffff" />
-      <circle cx="60" cy="60" r="54" fill="none" stroke="#7fb4e3" strokeWidth="0.8" />
-      <circle cx="60" cy="60" r="33" fill="none" stroke="#7fb4e3" strokeWidth="0.8" />
-      <text fontSize="10" fill="#0068b8" fontFamily="var(--font-serif)" fontWeight="600">
-        {/* Spread the lettering evenly around the circle whatever its length. */}
-        <textPath href="#seal-circle" textLength="272" lengthAdjust="spacing">
-          {text}
-        </textPath>
-      </text>
-      <g transform="translate(48 47)" fill="#0068b8">
-        <path d="M9 3.5 10.2 5.6 12 3.8 13.8 5.6 15 3.5 15.3 6.4A8 8 0 1 1 8.7 6.4Z" transform="scale(1.05)" />
+      <g fill="#ffffff" filter="url(#cloud-soft)" opacity="0.95">
+        <path d="M120 120c0-22 18-40 40-40 8-20 28-32 50-30 22 2 38 18 42 38 18 2 32 16 32 34 0 19-15 34-34 34H154c-19 0-34-16-34-36z" />
+        <path d="M880 80c0-16 13-29 29-29 6-15 21-24 37-22 16 2 28 13 31 28 13 1 23 12 23 25 0 14-11 25-25 25h-70c-14 0-25-12-25-27z" />
+        <path d="M1010 300c0-12 10-22 22-22 5-11 16-18 28-17 12 1 21 10 23 21 10 1 18 9 18 19 0 11-9 19-19 19h-53c-11 0-19-9-19-20z" />
+        <path d="M430 60c0-10 8-18 18-18 4-9 13-14 22-13 10 1 17 8 19 17 8 1 14 7 14 15 0 9-7 15-15 15h-43c-8 0-15-7-15-16z" />
       </g>
-    </svg>
-  );
-}
-
-/** Faint stars in the hero sky. */
-function HeroStars() {
-  const stars = [
-    [6, 10], [14, 24], [22, 8], [31, 18], [40, 6], [47, 28], [55, 12], [63, 22], [71, 7], [79, 16], [88, 9], [94, 26], [10, 40], [36, 36], [60, 34], [84, 38],
-  ];
-  return (
-    <svg className="pointer-events-none absolute inset-0 h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true">
-      {stars.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={i % 3 ? 0.14 : 0.22} fill="#ffffff" opacity={i % 2 ? 0.35 : 0.7} />
-      ))}
-    </svg>
-  );
-}
-
-/** A few faint stars over the night Ararat. */
-function StarField() {
-  const stars = [
-    [8, 14], [18, 30], [27, 10], [36, 22], [44, 8], [58, 18], [66, 6], [74, 26], [83, 12], [92, 22], [12, 42], [50, 36], [88, 40],
-  ];
-  return (
-    <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true">
-      {stars.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={i % 3 ? 0.18 : 0.28} fill="#ffffff" opacity={i % 2 ? 0.5 : 0.8} />
-      ))}
     </svg>
   );
 }

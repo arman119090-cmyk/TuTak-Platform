@@ -13,6 +13,8 @@ import { hashPassword } from "../src/lib/security/password";
 import { brandClaims, collections, demoProducts, families, importReviewItems, productImages } from "./seed-data/catalog";
 import { pages } from "./seed-data/pages";
 
+import { brandbookCatalog } from "./brandbook-seed";
+
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const LOCALES: Locale[] = ["hy", "ru", "it", "en"];
 const demo = process.env.SEED_DEMO === "true";
@@ -374,6 +376,9 @@ async function main() {
   await fixMixedLegalPlaceholders();
   if (demo) await demoCatalog();
   else await disableDemoLeftovers();
+  // Real catalogue from the manufacturer's brand book; converts/archives the
+  // old demo products, so it runs after demoCatalog().
+  await brandbookCatalog(db);
   await bootstrapAdmin();
   console.info(`[seed] done (demo=${demo})`);
 }

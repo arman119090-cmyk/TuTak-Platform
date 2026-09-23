@@ -8,6 +8,17 @@ export const en = {
     country: "Armenia",
     seal: "LITTLE JOE · YEREVAN · ARMENIA ·",
     breadcrumb: "Breadcrumb",
+    slogan: "Put a smile in the air!",
+    linesTitle: "Our lines",
+    linesAll: "All lines",
+    originalTitle: "The original.",
+    originalBody: "Little Joe® is more than an air freshener. It is the original character that transformed automotive fragrance into a brand people instantly recognise and love.",
+    factSwiss: "Designed in Switzerland",
+    factItaly: "Manufactured in Italy",
+    factCountries: "In more than 80 countries",
+    factIfra: "IFRA & REACH compliant",
+    charactersTitle: "Meet the characters",
+    lineProducts: "{count} products",
   },
   meta: {
     siteDescription:

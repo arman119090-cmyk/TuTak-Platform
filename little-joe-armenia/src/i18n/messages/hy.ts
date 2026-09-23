@@ -7,6 +7,17 @@ export const hy = {
     country: "Հայաստան",
     seal: "LITTLE JOE · ԵՐԵՎԱՆ · ՀԱՅԱՍՏԱՆ ·",
     breadcrumb: "Նավիգացիոն ուղի",
+    slogan: "Թող ժպիտը լցնի օդը։",
+    linesTitle: "Մեր շարքերը",
+    linesAll: "Բոլոր շարքերը",
+    originalTitle: "Բնօրինակը։",
+    originalBody: "Little Joe®-ն ավելին է, քան բուրավետիչը։ Դա օրիգինալ կերպարն է, որը մեքենայի բույրը դարձրեց բրենդ, որին միանգամից ճանաչում և սիրում են։",
+    factSwiss: "Նախագծված է Շվեյցարիայում",
+    factItaly: "Արտադրված է Իտալիայում",
+    factCountries: "Ավելի քան 80 երկրում",
+    factIfra: "IFRA և REACH ստանդարտներ",
+    charactersTitle: "Ծանոթացեք կերպարներին",
+    lineProducts: "{count} ապրանք",
   },
   meta: {
     siteDescription:

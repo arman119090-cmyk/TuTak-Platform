@@ -1,5 +1,30 @@
 # Product data sources
 
+## Update 2026-09-23: manufacturer brand book
+
+**The catalogue now comes from the manufacturer.** The store owner supplied Drive Int. AG's **"Brand Book & Product Collection 2027"** as a PDF (48 pages). Since then:
+
+- **Where the data lives:**
+  - `prisma/seed-data/brandbook-lines.ts`: 23 consumer product lines, with the brand book's own taglines and descriptions in English. The hy/ru/it texts are the store's translations.
+  - `prisma/seed-data/brandbook-items.ts`: 160 articles, generated from the PDF. Each has the scent name as printed, the article number, the EAN and a packshot.
+- **Import rules** (`prisma/brandbook-seed.ts`):
+  - It runs on every seed and is idempotent.
+  - Facts are stored with source `MANUFACTURER_CATALOG_PDF` and `VERIFIED`: name, collection, article number, EAN, official description and dimensions.
+  - "45 days" is printed on the packaging shown in the book. It is stored as `DURATION`, source `PACKAGING`, only for the lines where it appears.
+  - An EAN that fails its checksum, or is printed for two different articles, is stored as `PENDING_REVIEW` and is not shown. This happens once in the book: Best Dad `EF1016` and Paper Triopack Vanilla `CT0101` both carry `7640186845373`.
+  - Old demo products with a matching slug are converted in place. The remaining demo products are archived.
+- **Not in the brand book, still placeholders:**
+  - Prices are demo prices (`priceIsDemo`); there is no price list.
+  - Stock numbers are demo values.
+- **Left out on purpose:**
+  - Articles without an article number, such as Duopack, the Hockey country variants, I LOVE… countries and Electric Diffuser.
+  - Articles without a packshot: Juicy Wash, 2in1 Spray&Clean, Stationery Tin, Stickers, Eraser, Gift Bag, Key Chain and Banner.
+  - B2B sections: Corporate, OEM/ODM and Displays.
+- **Fragrance families** remain the shop's taxonomy. A family is assigned only where the scent name itself names the note (e.g. "Vanilla" → sweet). Fanciful names stay unclassified.
+- **Brand facts on the home page** are quoted from the book (p. 2–6): designed in Switzerland, manufactured in Italy, more than 80 countries, IFRA/REACH.
+
+The text below describes the earlier demo seed and is kept for history.
+
 **Summary: every product value in this repository is unverified.** The catalogue is a demo that exercises the store. It is not the Armenia assortment.
 
 ## What happened

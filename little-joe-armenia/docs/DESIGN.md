@@ -4,21 +4,26 @@ This page describes what the code does today. The sources of truth are `src/app/
 
 ## Direction
 
-- **Little Joe blue, premium.** Colours come from the brand's own characters: Joe azure `#008adf`, Pup indigo `#476db3`, Dog sky `#7acced`, Joya lavender `#a188b4`. The page is cool white paper (`--color-paper: #f6f9fc`) with navy ink `#0b1d36`. The hero and the footer are deep navy (`#061a36`) with a night sky. The scent-finder block is an azure-to-indigo gradient. `color-scheme: light` is fixed.
-- **Why the button blue differs.** Buttons use `--color-brand: #0068b8`, a deeper azure, so that white text meets WCAG AA. Pure `#008adf` (`--color-azure`) is used for accents, focus and glows.
-- **Armenian motifs, used as decoration only** (`src/components/ui/armenia.tsx`, all `aria-hidden`):
-  - **Arches:** products stand in round-headed arches (`.arch`, `.arch-soft`), as in Armenian church architecture, on a sky wash (`.wash`) tinted by the product colour through `--tint`.
-  - **Ararat:** Masis and Sis (`<Ararat>`) appear in the hero, catalogue banner, gallery, the scent-finder block and the footer.
-  - **Braid:** a khachkar-style band (`<Braid>`).
-  - **Rosette:** an eight-point rosette (`<Rosette>`).
-  - **Armenian letters as numerals:** Ա Բ Գ Դ (`.numeral`, `ARM_NUMERALS`).
-- **Actions stay quiet.** There is one primary button per block; secondary actions are underlined text links (`.link-arrow`). Cards have a round blue "+" (`QuickAdd compact`).
-- **Language choice is quiet.** It is a small `Հայ ▾` dropdown in the header, and inline text links in the footer and mobile menu.
+- **The manufacturer's brand book, done premium.** The source is "Brand Book & Product Collection 2027" by Drive Int. AG, supplied by the owner as a PDF. The visual language comes from it:
+  - sky gradients with soft clouds (`Clouds` in `src/app/[locale]/page.tsx`);
+  - the line-art mascot and product art from the book;
+  - heavy italic headings like "LITTLE JOE® - Standard" (`.display`);
+  - the handwritten slogan (`.hand`).
+
+  The premium part is generous white space, large imagery, restrained colour (Little Joe blue on white), soft shadows and one primary button per block.
+- **Imagery comes from the brand book** (`public/brand/`):
+  - `p/<article>.webp`: 163 manufacturer packshots, one per article.
+  - `lines/<slug>.webp`: 22 line illustrations (mascot + pack), 960×1212, cropped from the book's page art. They have white backgrounds, so they are shown with `mix-blend-multiply` over coloured or sky backgrounds.
+  - `home/*.webp`: the world-map spread and figure trios.
+- **Line data outside the database:** taglines and hero art come from `prisma/seed-data/brandbook-lines.ts` through `src/lib/lines.ts`.
+- **Colours:** Little Joe blue (`brand #0068b8`, `azure #008adf`) on white and sky (`#d9edfc` → `#ffffff`). Each line has its own accent from its brand-book pages, used for tile and banner tints. The footer is navy.
+- **Language choice is quiet:** a small `Հայ ▾` dropdown in the header, and inline links in the footer and mobile menu.
+- **Earlier Armenian motifs were removed** in favour of the brand book (Ararat, arches, Armenian numerals). "Հայաստան / Армения / Armenia" stays under the wordmark, in the page language.
 
 ## Typography
 
 - **The fonts are self-hosted and licensed under OFL.** The licence files are `public/fonts/OFL-*.txt`. Nothing is loaded from Google Fonts. The CSP `font-src 'self'` would block that anyway.
-- **Display serif `LJ Serif`:** Cormorant Garamond 500/600 (plus italic) covers Latin and Cyrillic, and Noto Serif Armenian 500/600 covers Armenian, picked per glyph through `unicode-range`. It is used by `.serif` and by the legacy `.hand` class, and `--font-hand` / `--font-logo` point to it. In `hy`, the hero title (`.hero-title`) is sized so long words such as «տրամադրություն» stay whole.
+- **Display face `LJ Display`:** Montserrat 800 italic covers Latin and Cyrillic, and Noto Sans Armenian 700 covers Armenian (slanted by the browser). It is used by `.display`. `.hand` (Caveat) is used for slogans, and `LJ Logo` (Chewy) for the wordmark.
 - **One family name, `LJ Sans`, combines two fonts through `unicode-range`:**
   - Manrope variable (weights 200–800): the Latin, Latin-ext, Cyrillic and Cyrillic-ext subsets. It covers `en`, `it` and `ru`.
   - Noto Sans Armenian: static 400/500/600/700 files. The 700 file is also mapped to 800. It covers `U+0530-058F` and a few punctuation marks.

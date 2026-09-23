@@ -17,13 +17,10 @@ importers:
       '@fontsource/chewy':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/cormorant-garamond':
+      '@fontsource/montserrat':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/noto-sans-armenian':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/noto-serif-armenian':
         specifier: ^5.3.0
         version: 5.3.0
       '@hookform/resolvers':
@@ -502,14 +499,11 @@ packages:
   '@fontsource/chewy@5.3.0':
     resolution: {integrity: sha512-9p1c7sTqudOEP3RFbcI0h4r3Mq5+Atr6VBF70LGFegU0FAOt63asVt5ufBlojPF5+YFbSqq5iXjRdNt+k2l+2A==}
 
-  '@fontsource/cormorant-garamond@5.3.0':
-    resolution: {integrity: sha512-weuGsCirGVWBWqpt6YUp0yLThTe4G8YO45noq8wxeJCRvEpq5lFrxNMFSTxcyOyV5k5otzJ8guDzYegdYlcLMQ==}
+  '@fontsource/montserrat@5.3.0':
+    resolution: {integrity: sha512-iQPDtZOnmM5ih4JBGaMSXisRap0ixb9bAUw2hDtY7EjVfaqiiNlKtVuJl9XclxUwtwMMHNcWXfQR6zI9x05+Tg==}
 
   '@fontsource/noto-sans-armenian@5.3.0':
     resolution: {integrity: sha512-ot9KkRsd2hDXGIMZQeRSvtsw1uoFIBIS+yL7ZLDHY8GpT2LJz7FaCxGT07Iudu0yNTlSEYNLLAbKcy2ZUIjzUA==}
-
-  '@fontsource/noto-serif-armenian@5.3.0':
-    resolution: {integrity: sha512-kWKEd1YgIlWjOHPsfO0XO+O222TFwXI1Lz3szGyMcF6W+isCafE9xsItG1dTr2zqIw+2b2JL5VylGUsMMTT/XQ==}
 
   '@hookform/resolvers@5.9.1':
     resolution: {integrity: sha512-7b7vsbraJxKgjVSA1Nur9tLwj539WGJUBLA7QNvXnFoT2pM5Z7G+6rlukk4B2/QrTZy6huRtH6wKeESPKuIr6w==}
@@ -3922,11 +3916,9 @@ snapshots:
 
   '@fontsource/chewy@5.3.0': {}
 
-  '@fontsource/cormorant-garamond@5.3.0': {}
+  '@fontsource/montserrat@5.3.0': {}
 
   '@fontsource/noto-sans-armenian@5.3.0': {}
-
-  '@fontsource/noto-serif-armenian@5.3.0': {}
 
   '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(effect@3.20.0)(react-hook-form@7.88.0(react@19.3.0))(valibot@1.4.2(typescript@6.0.3))(zod@4.6.5)':
     dependencies:

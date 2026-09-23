@@ -51,9 +51,9 @@ test.describe("storefront", () => {
 
   test("search and filters are reflected in the URL and noindexed", async ({ page }) => {
     await page.goto("/en/shop");
-    await page.getByRole("searchbox").fill("cherry");
+    await page.getByRole("searchbox").fill("litchi");
     await page.getByRole("searchbox").press("Enter");
-    await expect(page).toHaveURL(/q=cherry/);
+    await expect(page).toHaveURL(/q=litchi/);
     await expect(page.getByTestId("product-card")).toHaveCount(1);
     // Crawlers load the URL fresh: check the server-rendered robots meta.
     const html = await (await page.request.get(page.url())).text();
@@ -87,8 +87,11 @@ test.describe("storefront", () => {
     expect(product.offers.priceCurrency).toBe("AMD");
     // No reviews exist → no AggregateRating may be emitted.
     expect(product.aggregateRating).toBeUndefined();
-    // Demo product → never indexed.
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    // Brand-book facts: EAN and article number of Little Joe New Car (EF0202).
+    expect(product.gtin13).toBe("7640125380118");
+    expect(product.mpn).toBe("EF0202");
+    // A real (non-demo) product page is indexable.
+    await expect(page.locator('meta[name="robots"][content*="noindex"]')).toHaveCount(0);
   });
 
   test("sold-out product cannot be added", async ({ page }) => {
@@ -134,8 +137,9 @@ test.describe("storefront", () => {
     expect(sitemap.ok()).toBeTruthy();
     const xml = await sitemap.text();
     expect(xml).toContain("hreflang");
-    // Demo products are never listed.
-    expect(xml).not.toContain("/p/little-joe-");
+    // Real (brand-book) products are listed; archived demo ones are not.
+    expect(xml).toContain("/p/little-joe-vanilla");
+    expect(xml).not.toContain("/p/little-joe-green-apple");
   });
 
   test("security headers and CSP nonce are present", async ({ request }) => {

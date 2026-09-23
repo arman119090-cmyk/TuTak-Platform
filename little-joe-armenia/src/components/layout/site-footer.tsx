@@ -8,7 +8,6 @@ import { getSetting } from "@/lib/settings";
 import { visibleCollections } from "@/lib/catalog";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { Wordmark } from "@/components/layout/wordmark";
-import { Ararat, Braid } from "@/components/ui/armenia";
 
 export async function SiteFooter({ locale }: { locale: Locale }) {
   const m = getMessages(locale);
@@ -58,8 +57,7 @@ export async function SiteFooter({ locale }: { locale: Locale }) {
 
   return (
     <footer className="relative mt-24 overflow-hidden bg-navy pb-[var(--safe-bottom)] text-[#ffffff]">
-      <Braid className="absolute inset-x-0 top-0 text-[var(--color-hairline)] opacity-40" id="footer-braid" />
-      <Ararat tone="night" className="pointer-events-none absolute bottom-0 right-0 h-36 w-full opacity-50 md:h-52 md:w-[70%]" id="footer-ararat" />
+      <p className="hand pointer-events-none absolute -right-4 bottom-24 hidden -rotate-6 text-[5rem] leading-none text-white/[0.06] md:block" aria-hidden="true">{m.brand.slogan}</p>
       <div className="container-lj relative grid gap-10 pt-16 pb-12 md:grid-cols-[1.3fr_repeat(3,1fr)]">
         <div>
           <Wordmark tagline={m.brand.country} light />

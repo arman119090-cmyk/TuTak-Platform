@@ -7,6 +7,17 @@ export const it = {
     country: "Armenia",
     seal: "LITTLE JOE · YEREVAN · ARMENIA ·",
     breadcrumb: "Percorso di navigazione",
+    slogan: "Metti un sorriso nell'aria!",
+    linesTitle: "Le nostre linee",
+    linesAll: "Tutte le linee",
+    originalTitle: "L'originale.",
+    originalBody: "Little Joe® è più di un deodorante per auto: è il personaggio originale che ha trasformato la fragranza per auto in un marchio che tutti riconoscono e amano.",
+    factSwiss: "Progettato in Svizzera",
+    factItaly: "Prodotto in Italia",
+    factCountries: "In oltre 80 paesi",
+    factIfra: "Standard IFRA e REACH",
+    charactersTitle: "Conosci i personaggi",
+    lineProducts: "{count} prodotti",
   },
   meta: {
     siteDescription:

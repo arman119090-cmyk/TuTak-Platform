@@ -11,6 +11,12 @@ importers:
       '@fontsource-variable/manrope':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource/caveat':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/chewy':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/noto-sans-armenian':
         specifier: ^5.3.0
         version: 5.3.0
@@ -480,6 +486,12 @@ packages:
 
   '@fontsource-variable/manrope@5.3.0':
     resolution: {integrity: sha512-6D5dgokHsWDDMtmXHznKa0hK229NN+1a4BLPmUCLqcO1Pw5EEhWY5RFt0AcXnVRAljFFPfRtLkJePQj6LSsV6g==}
+
+  '@fontsource/caveat@5.3.0':
+    resolution: {integrity: sha512-eHTfzQxFSW9ABERRLNruHoNJmKed2J7pqTUc5lp4a4POMgXGKpxmWj3d9Hz10kmAg6iuTTLe6UagbA4bnsmfQw==}
+
+  '@fontsource/chewy@5.3.0':
+    resolution: {integrity: sha512-9p1c7sTqudOEP3RFbcI0h4r3Mq5+Atr6VBF70LGFegU0FAOt63asVt5ufBlojPF5+YFbSqq5iXjRdNt+k2l+2A==}
 
   '@fontsource/noto-sans-armenian@5.3.0':
     resolution: {integrity: sha512-ot9KkRsd2hDXGIMZQeRSvtsw1uoFIBIS+yL7ZLDHY8GpT2LJz7FaCxGT07Iudu0yNTlSEYNLLAbKcy2ZUIjzUA==}
@@ -3890,6 +3902,10 @@ snapshots:
   '@exodus/bytes@1.16.0': {}
 
   '@fontsource-variable/manrope@5.3.0': {}
+
+  '@fontsource/caveat@5.3.0': {}
+
+  '@fontsource/chewy@5.3.0': {}
 
   '@fontsource/noto-sans-armenian@5.3.0': {}
 

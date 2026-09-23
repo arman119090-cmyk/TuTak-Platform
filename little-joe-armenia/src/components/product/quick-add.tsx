@@ -5,7 +5,7 @@ import { addToCartAction } from "@/app/actions/cart";
 import { useI18n } from "@/i18n/provider";
 import { track, type AnalyticsItem } from "@/components/analytics/track";
 import { useCartUI } from "@/components/cart/cart-ui";
-import { IconCheck, IconPlus } from "@/components/ui/icons";
+import { IconCheck } from "@/components/ui/icons";
 
 export function QuickAdd({ variantId, item, listName }: { variantId: string; item: AnalyticsItem; listName?: string }) {
   const { m } = useI18n();
@@ -37,10 +37,10 @@ export function QuickAdd({ variantId, item, listName }: { variantId: string; ite
           }
         })
       }
-      className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-white/90 text-sm font-semibold text-ink shadow-sm backdrop-blur transition-all duration-300 hover:bg-white md:translate-y-2 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:focus-visible:translate-y-0 md:focus-visible:opacity-100"
+      className="btn btn-primary min-h-10 w-full rounded-xl px-3 text-sm"
     >
-      {state === "added" ? <IconCheck width={18} height={18} /> : <IconPlus width={18} height={18} />}
-      <span>{state === "added" ? m.product.added : state === "error" ? m.product.unavailable : m.product.quickAdd}</span>
+      {state === "added" ? <IconCheck width={18} height={18} /> : null}
+      <span>{state === "added" ? m.product.added : state === "error" ? m.product.unavailable : m.product.addToCart}</span>
     </button>
   );
 }

@@ -244,7 +244,7 @@ export function DesktopFilters({ facets }: { facets: Facets }) {
   const f = useFilterUrl();
   return (
     <aside className="hidden lg:block" aria-label={m.catalog.filters}>
-      <div className="sticky top-24">
+      <div className="card sticky top-24 p-5">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-bold">{m.catalog.filters}</h2>
           {f.activeCount > 0 ? (

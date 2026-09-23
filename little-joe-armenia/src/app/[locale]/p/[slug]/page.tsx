@@ -17,7 +17,8 @@ import { ReviewForm } from "@/components/product/review-form";
 import { Stars } from "@/components/product/stars";
 import { TrackOnMount } from "@/components/analytics/track-on-mount";
 import { JsonLd } from "@/components/ui/json-ld";
-import { IconChevron } from "@/components/ui/icons";
+import { IconCard, IconChevron, IconTruck } from "@/components/ui/icons";
+import { ProductTabs } from "@/components/product/product-tabs";
 
 type Props = { params: Promise<{ locale: string; slug: string }> };
 
@@ -147,77 +148,108 @@ export default async function ProductPage({ params }: Props) {
               <CompareToggle productId={product.id} />
             </div>
 
-            <ScentProfile product={product} m={m} />
-
-            <div className="mt-8 divide-y divide-line border-y border-line">
-              <Details title={m.product.facts} open>
-                <FactsTable product={product} m={m} />
-              </Details>
-              {product.t?.usage ? (
-                <Details title={m.product.howToUse}>
-                  <p className="whitespace-pre-line leading-relaxed text-ink-2">{product.t.usage}</p>
-                </Details>
-              ) : null}
-              {product.verified.officialDescription ? (
-                <Details title={m.product.fragrance}>
-                  <p className="whitespace-pre-line leading-relaxed text-ink-2">{product.verified.officialDescription}</p>
-                </Details>
-              ) : null}
-              <Details title={m.product.deliveryInfo}>
-                <p className="text-ink-2">{m.product.deliveryInfoBody}</p>
-                <Link href={paths.page(locale, "delivery")} className="mt-2 inline-block font-semibold underline underline-offset-4">
-                  {m.pages.delivery}
-                </Link>
-              </Details>
-              <Details title={m.product.returnsInfo}>
-                <p className="text-ink-2">{m.product.returnsInfoBody}</p>
-                <Link href={paths.page(locale, "returns")} className="mt-2 inline-block font-semibold underline underline-offset-4">
-                  {m.pages.returns}
-                </Link>
-              </Details>
-              <Details title={m.product.faq}>
-                <Link href={paths.page(locale, "faq")} className="font-semibold underline underline-offset-4">
-                  {m.pages.faq}
-                </Link>
-              </Details>
-            </div>
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+              <li className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)]">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand">
+                  <IconTruck width={20} height={20} />
+                </span>
+                <span className="text-sm font-semibold">{m.product.perkDelivery}</span>
+              </li>
+              <li className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[var(--shadow-card)]">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand">
+                  <IconCard width={20} height={20} />
+                </span>
+                <span className="text-sm font-semibold">{m.product.perkPayment}</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
 
-      <section id="reviews" className="container-lj mt-20 grid gap-10 md:grid-cols-[1fr_1.3fr]" aria-labelledby="reviews-h">
-        <div>
-          <h2 id="reviews-h" className="text-h2 font-extrabold">
-            {m.product.reviews}
-          </h2>
-          {product.rating ? (
-            <p className="mt-2 text-ink-2">
-              {fmt(m.reviews.average, { rating: product.rating.average.toFixed(1) })} · {fmt(m.reviews.count, { count: product.rating.count })}
-            </p>
-          ) : null}
-          <div className="mt-6">
-            <h3 className="mb-4 font-bold">{m.product.writeReview}</h3>
-            <ReviewForm productId={product.id} />
-          </div>
-        </div>
-        <div>
-          {product.reviews.length === 0 ? (
-            <p className="text-ink-2">{m.product.noReviews}</p>
-          ) : (
-            <ul className="space-y-6">
-              {product.reviews.map((r) => (
-                <li key={r.id} className="border-b border-line pb-6">
-                  <Stars value={r.rating} label={`${r.rating}/5`} />
-                  <p className="mt-2 whitespace-pre-line leading-relaxed">{r.body}</p>
-                  <p className="mt-3 text-sm font-semibold">
-                    {r.authorName}
-                    {r.verifiedPurchase ? <span className="ml-2 font-normal text-ok">{m.reviews.verifiedPurchase}</span> : null}
+      <section id="reviews" className="container-lj mt-12" aria-label={m.product.facts}>
+        <ProductTabs
+          tabs={[
+            {
+              id: "description",
+              label: m.product.tabDescription,
+              content: (
+                <div className="max-w-3xl space-y-4">
+                  {product.verified.officialDescription ? (
+                    <p className="whitespace-pre-line leading-relaxed text-ink-2">{product.verified.officialDescription}</p>
+                  ) : product.t?.profileDescription ? null : (
+                    <p className="text-ink-2">{m.product.noDescription}</p>
+                  )}
+                  {product.t?.usage ? (
+                    <div>
+                      <h3 className="mb-1 font-bold">{m.product.howToUse}</h3>
+                      <p className="whitespace-pre-line leading-relaxed text-ink-2">{product.t.usage}</p>
+                    </div>
+                  ) : null}
+                  <ScentProfile product={product} m={m} />
+                </div>
+              ),
+            },
+            { id: "specs", label: m.product.tabSpecs, content: <FactsTable product={product} m={m} /> },
+            {
+              id: "delivery",
+              label: m.product.tabDelivery,
+              content: (
+                <div className="max-w-3xl space-y-3 text-ink-2">
+                  <p>{m.product.deliveryInfoBody}</p>
+                  <p className="flex flex-wrap gap-x-5 gap-y-2">
+                    <Link href={paths.page(locale, "delivery")} className="font-semibold text-brand underline-offset-4 hover:underline">
+                      {m.pages.delivery}
+                    </Link>
+                    <Link href={paths.page(locale, "payment")} className="font-semibold text-brand underline-offset-4 hover:underline">
+                      {m.pages.payment}
+                    </Link>
+                    <Link href={paths.page(locale, "returns")} className="font-semibold text-brand underline-offset-4 hover:underline">
+                      {m.pages.returns}
+                    </Link>
+                    <Link href={paths.page(locale, "faq")} className="font-semibold text-brand underline-offset-4 hover:underline">
+                      {m.pages.faq}
+                    </Link>
                   </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                </div>
+              ),
+            },
+            {
+              id: "reviews",
+              label: product.rating ? `${m.product.reviews} (${product.rating.count})` : m.product.reviews,
+              content: (
+                <div className="grid gap-10 md:grid-cols-[1fr_1.3fr]">
+                  <div>
+                    {product.rating ? (
+                      <p className="mb-4 text-ink-2">
+                        {fmt(m.reviews.average, { rating: product.rating.average.toFixed(1) })} · {fmt(m.reviews.count, { count: product.rating.count })}
+                      </p>
+                    ) : null}
+                    <h3 className="mb-4 font-bold">{m.product.writeReview}</h3>
+                    <ReviewForm productId={product.id} />
+                  </div>
+                  <div>
+                    {product.reviews.length === 0 ? (
+                      <p className="text-ink-2">{m.product.noReviews}</p>
+                    ) : (
+                      <ul className="space-y-6">
+                        {product.reviews.map((r) => (
+                          <li key={r.id} className="border-b border-line pb-6">
+                            <Stars value={r.rating} label={`${r.rating}/5`} />
+                            <p className="mt-2 whitespace-pre-line leading-relaxed">{r.body}</p>
+                            <p className="mt-3 text-sm font-semibold">
+                              {r.authorName}
+                              {r.verifiedPurchase ? <span className="ml-2 font-normal text-ok">{m.reviews.verifiedPurchase}</span> : null}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ),
+            },
+          ]}
+        />
       </section>
 
       {similar.length > 0 ? (
@@ -240,17 +272,6 @@ export default async function ProductPage({ params }: Props) {
   );
 }
 
-function Details({ title, open, children }: { title: string; open?: boolean; children: React.ReactNode }) {
-  return (
-    <details className="group" open={open}>
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between font-semibold [&::-webkit-details-marker]:hidden">
-        {title}
-        <IconChevron className="rotate-90 transition-transform group-open:-rotate-90" width={18} height={18} />
-      </summary>
-      <div className="pb-5">{children}</div>
-    </details>
-  );
-}
 
 function ScentProfile({ product, m }: { product: ProductDetail; m: Messages }) {
   const s = product.scent;

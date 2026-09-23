@@ -10,7 +10,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type Locale } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/security/password";
-import { brandClaims, collections, demoProducts, families, importReviewItems } from "./seed-data/catalog";
+import { brandClaims, collections, demoProducts, families, importReviewItems, productImages } from "./seed-data/catalog";
 import { pages } from "./seed-data/pages";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
@@ -135,14 +135,14 @@ async function reference() {
       data: {
         kind: "HERO",
         sortOrder: 0,
-        titleHy: "Փոքրիկ կերպար։ Ամբողջ տրամադրություն ձեր մեքենայի համար։",
-        titleRu: "Маленький персонаж. Целое настроение для вашей машины.",
-        titleIt: "Un piccolo personaggio. Tutto un mood per la tua auto.",
-        titleEn: "A small character. A whole mood for your car.",
-        bodyHy: "Գտեք ձեր ճանապարհին համապատասխան բույրը՝ առաքմամբ Հայաստանում։",
-        bodyRu: "Найдите аромат под свой стиль вождения — с доставкой по Армении.",
-        bodyIt: "Trova la fragranza giusta per i tuoi viaggi, con consegna in Armenia.",
-        bodyEn: "Find the fragrance that fits your drive — delivered in Armenia.",
+        titleHy: "Փոքրիկ ընկեր, մեծ տրամադրություն։",
+        titleRu: "Маленький друг, большое настроение!",
+        titleIt: "Un piccolo amico, un grande buonumore!",
+        titleEn: "A little friend, a big mood!",
+        bodyHy: "Little Joe բույրերը ձեր մեքենան լցնում են դրական էներգիայով։",
+        bodyRu: "Ароматы Little Joe наполняют ваш автомобиль позитивом.",
+        bodyIt: "Le fragranze Little Joe portano un sorriso nella tua auto.",
+        bodyEn: "Little Joe fragrances bring a smile to your car.",
       },
     });
   }
@@ -167,15 +167,47 @@ async function reference() {
   }
 }
 
+const IMAGE_RIGHTS_NOTE =
+  "Supplied by the store owner on 2026-09-23 (design mockup / product photos), background removed and recoloured. Usage rights not yet documented.";
+
+function brandMedia(img: { file: string; width: number; height: number }) {
+  return {
+    kind: "PRODUCT" as const,
+    storageKey: `brand/${img.file}`,
+    url: `/brand/${img.file}`,
+    width: img.width,
+    height: img.height,
+    rights: "UNCONFIRMED" as const,
+    rightsNote: IMAGE_RIGHTS_NOTE,
+    sortOrder: 0,
+  };
+}
+
+/** Existing demo product still on generated placeholders → swap in the brand image. */
+async function upgradePlaceholderMedia(productId: string, slug: string, media: { storageKey: string }[]) {
+  const img = productImages[slug];
+  if (!img) return;
+  const onlyPlaceholders = media.length > 0 && media.every((m) => m.storageKey.startsWith("placeholder/"));
+  if (!onlyPlaceholders) return;
+  await db.$transaction([
+    db.mediaAsset.deleteMany({ where: { productId } }),
+    db.mediaAsset.create({ data: { ...brandMedia(img), productId } }),
+  ]);
+}
+
 async function demoCatalog() {
-  const main = await db.collection.findUniqueOrThrow({ where: { slug: "little-joe" } });
   for (const [i, p] of demoProducts.entries()) {
-    const exists = await db.product.findUnique({ where: { slug: p.slug } });
-    if (exists) continue;
+    const exists = await db.product.findUnique({ where: { slug: p.slug }, include: { media: true } });
+    if (exists) {
+      await upgradePlaceholderMedia(exists.id, p.slug, exists.media);
+      continue;
+    }
+    const main = await db.collection.findUniqueOrThrow({ where: { slug: p.collection ?? "little-joe" } });
     const family = p.family ? await db.fragranceFamily.findUnique({ where: { slug: p.family } }) : null;
     const hex = p.accent.slice(1);
     const ink = p.ink.slice(1);
-    const name = `Little Joe ${p.scentName}`;
+    const name = p.displayName ?? `Little Joe ${p.scentName}`;
+    const img = productImages[p.slug];
     await db.product.create({
       data: {
         slug: p.slug,
@@ -204,16 +236,18 @@ async function demoCatalog() {
           },
         },
         media: {
-          create: (["product", "packaging", "installed", "detail"] as const).map((kind, idx) => ({
-            kind: kind.toUpperCase() as "PRODUCT" | "PACKAGING" | "INSTALLED" | "DETAIL",
-            storageKey: `placeholder/${kind}`,
-            url: `/media/placeholder/${kind}.svg?c=${hex}&i=${ink === "FFFFFF" ? "111111" : ink}`,
-            width: 800,
-            height: 800,
-            rights: "PLACEHOLDER",
-            rightsNote: "Generated illustration. Replace with authorised photography.",
-            sortOrder: idx,
-          })),
+          create: img
+            ? [brandMedia(img)]
+            : (["product", "packaging", "installed", "detail"] as const).map((kind, idx) => ({
+                kind: kind.toUpperCase() as "PRODUCT" | "PACKAGING" | "INSTALLED" | "DETAIL",
+                storageKey: `placeholder/${kind}`,
+                url: `/media/placeholder/${kind}.svg?c=${hex}&i=${ink === "FFFFFF" ? "111111" : ink}`,
+                width: 800,
+                height: 800,
+                rights: "PLACEHOLDER" as const,
+                rightsNote: "Generated illustration. Replace with authorised photography.",
+                sortOrder: idx,
+              })),
         },
         facts: {
           create: [
@@ -227,7 +261,7 @@ async function demoCatalog() {
             },
             {
               field: "COLLECTION",
-              value: "Little Joe",
+              value: main.slug,
               sourceType: "RETAILER_LISTING",
               sourceUrl: RETAILER_FOR_COLLECTION,
               verification: "UNVERIFIED",

@@ -14,13 +14,17 @@ export function ProductImage({
   sizes,
   priority,
   className = "",
+  fit = "cover",
 }: {
   media: MediaDTO | null;
   accent: string;
   sizes: string;
   priority?: boolean;
   className?: string;
+  /** "contain" for cut-out product shots on a coloured/sky backdrop. */
+  fit?: "cover" | "contain";
 }) {
+  className = `${fit === "contain" ? "!object-contain" : ""} ${className}`;
   if (!media) {
     return <div className={`aspect-square w-full ${className}`} style={{ background: accent }} aria-hidden="true" />;
   }

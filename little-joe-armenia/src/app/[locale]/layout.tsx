@@ -15,6 +15,7 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { DemoBanner } from "@/components/layout/demo-banner";
 import { CartUIProvider } from "@/components/cart/cart-ui";
 import { CartDrawer } from "@/components/cart/cart-drawer";
+import { TabBar } from "@/components/layout/tab-bar";
 import { Analytics } from "@/components/analytics/analytics";
 import { JsonLd } from "@/components/ui/json-ld";
 import { organizationLd, websiteLd } from "@/lib/seo/jsonld";
@@ -71,7 +72,7 @@ export default async function LocaleLayout({
 
   return (
     <html lang={localeTags[locale]} dir="ltr">
-      <body className="min-h-dvh flex flex-col">
+      <body className="flex min-h-dvh flex-col pb-[calc(3.5rem+var(--safe-bottom))] md:pb-0">
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-full focus:bg-ink focus:px-4 focus:py-3 focus:text-white"
@@ -86,6 +87,7 @@ export default async function LocaleLayout({
               {children}
             </main>
             <SiteFooter locale={locale} />
+            <TabBar />
             <CartDrawer />
           </CartUIProvider>
           <Analytics

@@ -15,12 +15,12 @@ export function ProductGrid({
   favorites: Set<string>;
   listName?: string;
   priorityCount?: number;
-  columns?: "default" | "wide";
+  columns?: "default" | "wide" | "six";
 }) {
   return (
     <ul
-      className={`grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-5 ${
-        columns === "wide" ? "md:grid-cols-3 xl:grid-cols-4" : "md:grid-cols-3 lg:grid-cols-4"
+      className={`grid grid-cols-2 gap-3 sm:gap-4 ${
+        columns === "wide" ? "md:grid-cols-3 xl:grid-cols-4" : columns === "six" ? "md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "md:grid-cols-3 lg:grid-cols-4"
       }`}
     >
       {products.map((p, i) => (

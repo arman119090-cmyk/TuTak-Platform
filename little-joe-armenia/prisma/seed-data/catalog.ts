@@ -127,6 +127,22 @@ export const collections: {
     name: { hy: "Little Pup", ru: "Little Pup", it: "Little Pup", en: "Little Pup" },
   },
   {
+    slug: "little-cat",
+    sortOrder: 4,
+    accentColor: "#E9E4DC",
+    sourceType: "INTERNAL",
+    sourceUrl: null,
+    name: { hy: "Little Cat", ru: "Little Cat", it: "Little Cat", en: "Little Cat" },
+  },
+  {
+    slug: "little-dog",
+    sortOrder: 5,
+    accentColor: "#7FCBF0",
+    sourceType: "INTERNAL",
+    sourceUrl: null,
+    name: { hy: "Little Dog", ru: "Little Dog", it: "Little Dog", en: "Little Dog" },
+  },
+  {
     slug: "little-duck",
     sortOrder: 4,
     accentColor: "#F2C94C",
@@ -138,6 +154,10 @@ export const collections: {
 
 export type DemoProduct = {
   slug: string;
+  /** Collection slug (default little-joe). */
+  collection?: string;
+  /** Full product name; default "Little Joe <scentName>". */
+  displayName?: string;
   scentName: string;
   nameSource: { type: SourceType; url: string | null };
   // UI accent chosen for the demo (brief gives blue/cream/red/graphite/green
@@ -162,7 +182,36 @@ export const demoProducts: DemoProduct[] = [
   { slug: "little-joe-blue-raspberry", scentName: "Blue Raspberry", nameSource: { type: "RETAILER_LISTING", url: RETAILER_STONER }, accent: "#3F5BD9", ink: "#FFFFFF", accentSource: "INTERNAL", family: "fruity", demoPriceAmd: 2500, demoStock: 12, flags: { isNew: true } },
   { slug: "little-joe-orange-creamsicle", scentName: "Orange Creamsicle", nameSource: { type: "RETAILER_LISTING", url: RETAILER_STONER }, accent: "#F7A35C", ink: "#3A1D05", accentSource: "INTERNAL", family: "sweet", demoPriceAmd: 2500, demoStock: 9, flags: { gift: true } },
   { slug: "little-joe-green-apple", scentName: "Green Apple", nameSource: { type: "RETAILER_LISTING", url: RETAILER_STONER }, accent: "#8CC63F", ink: "#1B2B06", accentSource: "INTERNAL", family: "fruity", demoPriceAmd: 2500, demoStock: 22, flags: {} },
+  // Other characters of the family, from photos the store owner supplied on
+  // 2026-09-23. Scent names are unknown, so the product is named after the
+  // character only; family stays null (not guessed).
+  { slug: "little-joya", collection: "little-joya", displayName: "Little Joya", scentName: "Little Joya", nameSource: { type: "INTERNAL", url: null }, accent: "#B79BE3", ink: "#2C1D4A", accentSource: "INTERNAL", family: null, demoPriceAmd: 2900, demoStock: 14, flags: { isNew: true, featured: true, gift: true } },
+  { slug: "little-pup", collection: "little-pup", displayName: "Little Pup", scentName: "Little Pup", nameSource: { type: "INTERNAL", url: null }, accent: "#3F68CF", ink: "#FFFFFF", accentSource: "INTERNAL", family: null, demoPriceAmd: 2900, demoStock: 11, flags: { isNew: true, featured: true } },
+  { slug: "little-cat", collection: "little-cat", displayName: "Little Cat", scentName: "Little Cat", nameSource: { type: "INTERNAL", url: null }, accent: "#E9E4DC", ink: "#2B2723", accentSource: "INTERNAL", family: null, demoPriceAmd: 2900, demoStock: 9, flags: { isNew: true, gift: true } },
+  { slug: "little-dog", collection: "little-dog", displayName: "Little Dog", scentName: "Little Dog", nameSource: { type: "INTERNAL", url: null }, accent: "#7FCBF0", ink: "#0B2F42", accentSource: "INTERNAL", family: null, demoPriceAmd: 2900, demoStock: 16, flags: { isNew: true, featured: true } },
 ];
+
+/**
+ * Product images (public/brand). Little Joe colours are cut from the
+ * owner's design mockup and recoloured per scent; the other characters are
+ * cut from the owner's photos. Rights: supplied by the store owner — kept
+ * UNCONFIRMED until usage rights are documented (docs/ASSETS.md).
+ */
+export const productImages: Record<string, { file: string; width: number; height: number }> = {
+  "little-joe-new-car": { file: "joe_new-car.webp", width: 626, height: 759 },
+  "little-joe-vanilla": { file: "joe_vanilla.webp", width: 626, height: 759 },
+  "little-joe-cherry": { file: "joe_cherry.webp", width: 626, height: 759 },
+  "little-joe-black-velvet": { file: "joe_black-velvet.webp", width: 626, height: 759 },
+  "little-joe-fresh-mint": { file: "joe_fresh-mint.webp", width: 626, height: 759 },
+  "little-joe-ocean-splash": { file: "joe_ocean-splash.webp", width: 626, height: 759 },
+  "little-joe-blue-raspberry": { file: "joe_blue-raspberry.webp", width: 626, height: 759 },
+  "little-joe-orange-creamsicle": { file: "joe_orange-creamsicle.webp", width: 626, height: 759 },
+  "little-joe-green-apple": { file: "joe_green-apple.webp", width: 626, height: 759 },
+  "little-joya": { file: "char_joya.webp", width: 612, height: 727 },
+  "little-pup": { file: "char_pup.webp", width: 557, height: 800 },
+  "little-cat": { file: "char_cat.webp", width: 571, height: 800 },
+  "little-dog": { file: "char_dog.webp", width: 726, height: 706 },
+};
 
 /** Claims seen on third-party pages. Stored UNVERIFIED; never rendered until verified in admin. */
 export const brandClaims = [

@@ -92,7 +92,9 @@ export function toMedia(
     height: m.height,
     alt: altFor(m, locale, fallbackAlt),
     kind: m.kind,
-    isPlaceholder: m.rights !== "AUTHORIZED",
+    // Only generated illustrations are captioned as placeholders; supplied
+    // photos whose rights are still UNCONFIRMED are tracked in the admin.
+    isPlaceholder: m.rights === "PLACEHOLDER",
   };
 }
 

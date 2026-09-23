@@ -104,3 +104,41 @@ export const IconGlobe = (p: P) => (
     <path d="M3.5 12h17M12 3.5c2.5 2.7 2.5 14.3 0 17M12 3.5c-2.5 2.7-2.5 14.3 0 17" />
   </svg>
 );
+export const IconTruck = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 7h11v9H3zM14 10h4l3 3v3h-7" />
+    <circle cx="7" cy="17.5" r="1.8" />
+    <circle cx="17" cy="17.5" r="1.8" />
+  </svg>
+);
+export const IconCard = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
+    <path d="M3 10h18M7 15h4" />
+  </svg>
+);
+export const IconSparkle = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3.5 13.8 9l5.7 1.9-5.7 1.9L12 18.5l-1.8-5.7-5.7-1.9L10.2 9 12 3.5Z" />
+  </svg>
+);
+export const IconChat = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4.5 3.5V16H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
+    <path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01" />
+  </svg>
+);
+export const IconCar = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 15v-3l2-4.5A2 2 0 0 1 7.8 6h8.4a2 2 0 0 1 1.8 1.5L20 12v3" />
+    <path d="M3 15h18v2.5a1 1 0 0 1-1 1h-1.5M5.5 18.5H4a1 1 0 0 1-1-1V15" />
+    <circle cx="7.5" cy="18" r="1.6" />
+    <circle cx="16.5" cy="18" r="1.6" />
+  </svg>
+);
+export const IconClock = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </svg>
+);

@@ -44,7 +44,7 @@ export function Analytics({
         <div
           role="region"
           aria-label={m.consent.text}
-          className="fixed inset-x-3 bottom-[calc(0.75rem+var(--safe-bottom))] z-50 mx-auto flex max-w-xl flex-col gap-3 rounded-3xl bg-card p-4 shadow-[var(--shadow-float)] ring-1 ring-line sm:flex-row sm:items-center"
+          className="fixed inset-x-3 bottom-[calc(4.25rem+var(--safe-bottom))] z-50 md:bottom-4 mx-auto flex max-w-xl flex-col gap-3 rounded-3xl bg-card p-4 shadow-[var(--shadow-float)] ring-1 ring-line sm:flex-row sm:items-center"
         >
           <p className="flex-1 text-sm text-ink-2">{m.consent.text}</p>
           <div className="flex gap-2">

@@ -24,10 +24,10 @@ export function Gallery({ media, accent, name }: { media: MediaDTO[]; accent: st
           type="button"
           onClick={() => setZoom(true)}
           className="block aspect-square w-full cursor-zoom-in overflow-hidden rounded-[1.75rem] accent-transition"
-          style={{ background: accent }}
+          style={{ background: `radial-gradient(110% 80% at 50% 100%, color-mix(in oklab, ${accent} 30%, white) 0%, #e6f1fc 55%, #f6faff 100%)` }}
           aria-label={`${m.product.zoom}: ${current?.alt ?? name}`}
         >
-          <ProductImage media={current} accent={accent} sizes="(min-width: 768px) 50vw, 100vw" priority />
+          <div className="h-full w-full p-[9%]"><ProductImage media={current} accent="transparent" fit="contain" sizes="(min-width: 768px) 45vw, 90vw" priority className="drop-shadow-[0_24px_28px_rgba(20,60,120,0.22)]" /></div>
         </button>
         {current?.isPlaceholder ? (
           <p className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-white/80 px-3 py-1 text-[0.72rem] font-medium text-ink-2 backdrop-blur">
@@ -45,9 +45,9 @@ export function Gallery({ media, accent, name }: { media: MediaDTO[]; accent: st
                 aria-current={i === index}
                 aria-label={fmt(m.product.imageOf, { n: i + 1, total: media.length })}
                 className={`block size-16 overflow-hidden rounded-xl ring-2 transition sm:size-20 ${i === index ? "ring-ink" : "ring-transparent opacity-80 hover:opacity-100"}`}
-                style={{ background: accent }}
+                style={{ background: `radial-gradient(110% 80% at 50% 100%, color-mix(in oklab, ${accent} 30%, white) 0%, #e6f1fc 55%, #f6faff 100%)` }}
               >
-                <ProductImage media={img} accent={accent} sizes="80px" />
+                <div className="h-full w-full p-1.5"><ProductImage media={img} accent="transparent" fit="contain" sizes="80px" /></div>
               </button>
             </li>
           ))}
@@ -56,14 +56,14 @@ export function Gallery({ media, accent, name }: { media: MediaDTO[]; accent: st
       <Sheet open={zoom} onClose={() => setZoom(false)} label={name} side="bottom" closeLabel={m.common.close}>
         <div
           className="relative aspect-square w-full touch-pan-y overflow-hidden md:mx-auto md:max-w-[80dvh]"
-          style={{ background: accent }}
+          style={{ background: `radial-gradient(110% 80% at 50% 100%, color-mix(in oklab, ${accent} 30%, white) 0%, #e6f1fc 55%, #f6faff 100%)` }}
           onPointerMove={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             setOrigin(`${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`);
           }}
         >
           <div className="h-full w-full scale-[2] transition-transform duration-150 motion-reduce:scale-100" style={{ transformOrigin: origin }}>
-            <ProductImage media={current} accent={accent} sizes="100vw" />
+            <div className="h-full w-full p-[8%]"><ProductImage media={current} accent="transparent" fit="contain" sizes="100vw" /></div>
           </div>
         </div>
       </Sheet>

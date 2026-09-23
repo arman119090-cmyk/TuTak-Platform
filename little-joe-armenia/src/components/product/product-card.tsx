@@ -8,8 +8,9 @@ import { ProductImage } from "@/components/product/product-image";
 import { QuickAdd } from "@/components/product/quick-add";
 import { FavoriteButton } from "@/components/product/favorite-button";
 
-// Colour and product dominate: the card is the product's accent colour with
-// the image on top; text is kept to name, collection, one descriptor, price.
+// Card from the brand mockup: white card, the character on a soft sky
+// tinted with the scent colour, heart top-right, name, price and a full
+// width blue "Add to cart". Ratings only appear when real reviews exist.
 
 export function ProductCard({
   p,
@@ -27,63 +28,56 @@ export function ProductCard({
   const m = getMessages(locale);
   const soldOut = p.available <= 0;
   return (
-    <article className="group relative flex flex-col" data-testid="product-card" data-slug={p.slug}>
+    <article className="card group relative flex h-full flex-col p-2.5 sm:p-3" data-testid="product-card" data-slug={p.slug}>
       <div
-        className="relative aspect-[4/5] overflow-hidden rounded-[var(--radius-card)] accent-transition"
-        style={{ background: p.accent }}
+        className="relative aspect-square overflow-hidden rounded-[1rem]"
+        style={{ background: `radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, ${p.accent} 26%, white) 0%, #f3f8fe 62%, #ffffff 100%)` }}
       >
         <Link href={paths.product(locale, p.slug)} className="absolute inset-0 z-[1]" aria-label={p.name} tabIndex={-1} />
-        <div className="absolute inset-0 transition-transform duration-700 ease-[var(--ease-out-soft)] group-hover:scale-[1.035] motion-reduce:transform-none">
-          <ProductImage media={p.image} accent={p.accent} sizes="(min-width: 1280px) 22vw, (min-width: 768px) 30vw, 48vw" priority={priority} />
+        <div className="absolute inset-[8%] transition-transform duration-500 ease-[var(--ease-out-soft)] group-hover:-translate-y-1 group-hover:scale-[1.04] motion-reduce:transform-none">
+          <ProductImage media={p.image} accent="transparent" fit="contain" sizes="(min-width: 1280px) 16vw, (min-width: 768px) 24vw, 46vw" priority={priority} />
         </div>
-        <div className="absolute left-3 top-3 z-[2] flex flex-wrap gap-1.5">
+        <div className="absolute left-2 top-2 z-[2] flex flex-wrap gap-1">
           {p.isNew ? <Badge>{m.catalog.new}</Badge> : null}
-          {p.isBestseller ? <Badge>{m.catalog.bestseller}</Badge> : null}
           {soldOut ? <Badge tone="dark">{m.product.soldOut}</Badge> : null}
         </div>
-        <div className="absolute right-2 top-2 z-[2]">
+        <div className="absolute right-1 top-1 z-[2]">
           <FavoriteButton productId={p.id} initial={favorite} />
         </div>
-        {!soldOut && p.variantId ? (
-          <div className="absolute inset-x-3 bottom-3 z-[2]">
-            <QuickAdd variantId={p.variantId} item={{ item_id: p.slug, item_name: p.name, price: p.priceAmd ?? 0, item_category: p.collectionName }} listName={listName} />
-          </div>
-        ) : null}
       </div>
-      <div className="mt-3 flex items-start justify-between gap-3 px-0.5">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-muted">{p.collectionName}</p>
-          <h3 className="mt-0.5 text-[1rem] font-semibold leading-snug">
-            <Link href={paths.product(locale, p.slug)} className="hover:underline underline-offset-4">
-              {p.name}
-            </Link>
-          </h3>
-          {p.descriptor ? <p className="mt-0.5 line-clamp-1 text-sm text-muted">{p.descriptor}</p> : null}
-        </div>
-        <div className="shrink-0 text-right">
+      <div className="flex flex-1 flex-col px-1 pt-3">
+        <h3 className="text-[0.95rem] font-bold leading-snug">
+          <Link href={paths.product(locale, p.slug)} className="hover:text-brand">
+            {p.name.replace(/^Little Joe\s+/, "")}
+          </Link>
+        </h3>
+        <p className="mt-0.5 truncate text-xs text-muted">{p.descriptor ?? p.collectionName}</p>
+        <div className="mt-2 flex items-baseline justify-between gap-2">
           {p.priceAmd !== null ? (
-            <p className="font-semibold tabular-nums" data-testid="card-price">
+            <p className="font-extrabold tabular-nums" data-testid="card-price">
               {formatAmd(p.priceAmd, locale)}
             </p>
           ) : null}
-          {p.compareAtAmd && p.priceAmd && p.compareAtAmd > p.priceAmd ? (
-            <p className="text-xs text-muted line-through tabular-nums">{formatAmd(p.compareAtAmd, locale)}</p>
-          ) : null}
-          {p.priceIsDemo ? <p className="text-[0.68rem] font-semibold uppercase tracking-wide text-warn">{m.common.demoPrice}</p> : null}
+          {p.priceIsDemo ? <span className="text-[0.62rem] font-bold uppercase tracking-wide text-warn">{m.common.demoPrice}</span> : null}
+        </div>
+        {p.lowStock && !soldOut ? <p className="mt-0.5 text-xs font-medium text-warn">{fmt(m.product.lowStock, { count: p.available })}</p> : null}
+        <div className="mt-auto pt-3">
+          {!soldOut && p.variantId ? (
+            <QuickAdd variantId={p.variantId} item={{ item_id: p.slug, item_name: p.name, price: p.priceAmd ?? 0, item_category: p.collectionName }} listName={listName} />
+          ) : (
+            <button type="button" disabled className="btn w-full min-h-10 bg-mist text-sm text-muted">
+              {m.product.soldOut}
+            </button>
+          )}
         </div>
       </div>
-      {p.lowStock && !soldOut ? <p className="mt-1 px-0.5 text-xs font-medium text-warn">{fmt(m.product.lowStock, { count: p.available })}</p> : null}
     </article>
   );
 }
 
 function Badge({ children, tone = "light" }: { children: React.ReactNode; tone?: "light" | "dark" }) {
   return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-[0.7rem] font-bold uppercase tracking-wide ${
-        tone === "dark" ? "bg-ink text-white" : "bg-white/85 text-ink backdrop-blur"
-      }`}
-    >
+    <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${tone === "dark" ? "bg-ink text-white" : "bg-brand text-white"}`}>
       {children}
     </span>
   );

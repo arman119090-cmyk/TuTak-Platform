@@ -69,7 +69,10 @@ export function BuyBox({ variants, name, slug, collection }: { variants: Variant
         {v.compareAtAmd && v.compareAtAmd > v.priceAmd ? <p className="text-muted line-through tabular-nums">{formatAmd(v.compareAtAmd, locale)}</p> : null}
         {v.priceIsDemo ? <span className="rounded-full bg-warn/10 px-2.5 py-1 text-xs font-bold uppercase text-warn">{m.common.demoPrice}</span> : null}
       </div>
-      <p className={`mt-2 text-sm font-semibold ${soldOut ? "text-bad" : v.available <= 3 ? "text-warn" : "text-ok"}`} data-testid="stock-status">
+      <p
+        className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ${soldOut ? "bg-bad/10 text-bad" : v.available <= 3 ? "bg-warn/10 text-warn" : "bg-ok/10 text-ok"}`}
+        data-testid="stock-status"
+      >
         {soldOut ? m.product.soldOut : v.available <= 3 ? fmt(m.product.lowStock, { count: v.available }) : m.product.inStock}
       </p>
 
@@ -104,7 +107,7 @@ export function BuyBox({ variants, name, slug, collection }: { variants: Variant
       {!soldOut ? (
         <div
           aria-hidden={!showSticky}
-          className={`fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[calc(0.75rem+var(--safe-bottom))] backdrop-blur transition-transform duration-300 md:hidden ${showSticky ? "translate-y-0" : "translate-y-full"}`}
+          className={`fixed inset-x-0 bottom-[calc(3.5rem+var(--safe-bottom))] z-20 border-t border-line bg-white/95 px-4 py-3 backdrop-blur transition-[transform,opacity] duration-300 md:hidden ${showSticky ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
         >
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">

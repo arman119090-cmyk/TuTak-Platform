@@ -27,6 +27,8 @@
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource/caveat": "^5.3.0",
+    "@fontsource/chewy": "^5.3.0",
     "@fontsource/noto-sans-armenian": "^5.3.0",
     "@hookform/resolvers": "^5.9.1",
     "@prisma/adapter-pg": "7.10.0",

@@ -65,9 +65,15 @@ export function InteriorPreview({
             <Image src={image.src} width={image.width} height={image.height} alt={image.alt} sizes="(max-width: 720px) 80vw, 360px" />
           </div>
           <p className="interior__note">{labels.placeholder}</p>
-          <Link href={enquireHref} className="button button--solid">
-            {labels.cta}
-          </Link>
+          {/^https?:/.test(enquireHref) ? (
+            <a href={enquireHref} target="_blank" rel="noopener noreferrer" className="button button--solid">
+              {labels.cta}
+            </a>
+          ) : (
+            <Link href={enquireHref} className="button button--solid">
+              {labels.cta}
+            </Link>
+          )}
         </div>
       </dialog>
     </>

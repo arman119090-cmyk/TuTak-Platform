@@ -95,6 +95,8 @@ export const en = {
     count: plural({ one: 'piece', other: 'pieces' }),
   },
   artwork: {
+    enquireInstagram: 'Enquire via Instagram',
+    instagramNote: 'Please mention the title of the work in your message.',
     priceOnRequest: 'Price on request',
     enquire: 'Enquire about this piece',
     privateViewing: 'Request private viewing',
@@ -207,6 +209,10 @@ export const en = {
     cta: 'Speak with an Art Advisor',
   },
   enquiry: {
+    instagramTitle: 'Write to us on Instagram',
+    instagramText: 'Online enquiries are handled through our Instagram account for now. Send us a direct message — we reply personally.',
+    instagramCta: 'Message @{handle}',
+    instagramMention: 'Please mention: {title}',
     eyebrow: 'Private enquiry',
     title: 'Private Enquiry',
     intro: 'Tell us what you are looking for. We reply personally.',
@@ -268,6 +274,7 @@ export const en = {
     language: 'Language',
     rights: 'All rights reserved.',
   },
+  // LEGAL REVIEW REQUIRED — draft privacy/terms copy, not legally reviewed.
   legal: {
     placeholder:
       'This page is a placeholder. The final text will be published once it has been prepared and reviewed by the owner.',

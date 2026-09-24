@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeEnquiry, validateEnquiry } from '@/lib/enquiry';
-import { createRateLimiter } from '@/lib/rate-limit';
 
 const valid = {
   name: 'Anna',
@@ -31,20 +30,5 @@ describe('enquiry validation', () => {
     expect(n.reason).toBe('');
     expect(n.consent).toBe(false);
     expect(normalizeEnquiry(null).name).toBe('');
-  });
-});
-
-describe('rate limiter', () => {
-  it('allows `limit` hits per window, then blocks until reset', () => {
-    let t = 0;
-    const rl = createRateLimiter({ limit: 2, windowMs: 1000, now: () => t });
-    expect(rl.hit('a').allowed).toBe(true);
-    expect(rl.hit('a').allowed).toBe(true);
-    const third = rl.hit('a');
-    expect(third.allowed).toBe(false);
-    expect(third.retryAfterMs).toBe(1000);
-    expect(rl.hit('b').allowed).toBe(true);
-    t = 1000;
-    expect(rl.hit('a').allowed).toBe(true);
   });
 });

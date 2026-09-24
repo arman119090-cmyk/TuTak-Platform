@@ -11,12 +11,12 @@ until supplied.
 - [ ] Confirm the five private-client audiences may be shown (all on; worded as invitations, not as services).
 
 ## Enquiries
-- [ ] Destination for enquiries: email / CRM / messenger → configure `ENQUIRY_TRANSPORT` + webhook.
+- [ ] Destination for enquiries: email / CRM → an endpoint for `NEXT_PUBLIC_ENQUIRY_ENDPOINT` (until then enquiries go to Instagram).
 - [ ] Final production domain for `NEXT_PUBLIC_SITE_URL`.
 
 ## Legal
-- [ ] Privacy notice text (placeholder, `noindex`).
-- [ ] Terms of use text (placeholder, `noindex`).
+- [ ] Privacy notice text — LEGAL REVIEW REQUIRED (draft, `noindex`).
+- [ ] Terms of use text — LEGAL REVIEW REQUIRED (draft, `noindex`).
 
 ## Catalog (`src/content/catalog.ts`) — per artwork
 - [ ] Material (none confirmed — titles say "Bronze" for three pieces, but the field stays empty).

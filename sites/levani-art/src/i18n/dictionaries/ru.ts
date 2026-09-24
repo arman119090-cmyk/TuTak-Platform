@@ -94,6 +94,8 @@ export const ru: Dictionary = {
     count: plural({ one: 'работа', few: 'работы', many: 'работ', other: 'работы' }),
   },
   artwork: {
+    enquireInstagram: 'Запрос через Instagram',
+    instagramNote: 'Пожалуйста, укажите в сообщении название работы.',
     priceOnRequest: 'Цена по запросу',
     enquire: 'Запросить об этой работе',
     privateViewing: 'Частный показ',
@@ -206,6 +208,10 @@ export const ru: Dictionary = {
     cta: 'Связаться с арт-консультантом',
   },
   enquiry: {
+    instagramTitle: 'Напишите нам в Instagram',
+    instagramText: 'Пока запросы принимаются через наш Instagram. Отправьте нам личное сообщение — мы ответим лично.',
+    instagramCta: 'Написать @{handle}',
+    instagramMention: 'Пожалуйста, укажите: {title}',
     eyebrow: 'Частный запрос',
     title: 'Частный запрос',
     intro: 'Расскажите, что вы ищете. Мы ответим лично.',
@@ -268,6 +274,7 @@ export const ru: Dictionary = {
     language: 'Язык',
     rights: 'Все права защищены.',
   },
+  // LEGAL REVIEW REQUIRED — draft privacy/terms copy, not legally reviewed.
   legal: {
     placeholder:
       'Это временная страница. Окончательный текст будет опубликован после подготовки и согласования владельцем.',

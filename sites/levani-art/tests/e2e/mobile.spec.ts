@@ -11,7 +11,7 @@ test.describe('mobile', () => {
     const box = await panel.boundingBox();
     expect(Math.round(box!.y + box!.height)).toBeGreaterThanOrEqual(840); // anchored to the bottom
     await page.getByRole('menuitemradio', { name: 'Italiano' }).tap();
-    await expect(page).toHaveURL(/\/it$/);
+    await expect(page).toHaveURL(/\/it\/?$/);
   });
 
   test('the sheet stays anchored to the screen after scrolling', async ({ page }) => {
@@ -31,7 +31,7 @@ test.describe('mobile', () => {
     await expect(menu.getByRole('link', { name: /Private Clients/ })).toBeVisible();
     await expect(menu.locator('.mobile-menu__langs a')).toHaveCount(6);
     await menu.getByRole('link', { name: /About/ }).tap();
-    await expect(page).toHaveURL(/\/en\/about$/);
+    await expect(page).toHaveURL(/\/en\/about\/?$/);
   });
 
   for (const path of ['/hy', '/de/collection', '/ru/artworks/royal-dominion', '/fr/enquire', '/it/private-clients']) {

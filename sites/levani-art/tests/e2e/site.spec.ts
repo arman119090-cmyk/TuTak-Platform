@@ -1,9 +1,5 @@
 import { expect, test } from '@playwright/test';
 
-// The API rate-limits per client IP in server memory. A unique address per
-// test and run keeps reruns against the same server independent.
-const ip = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
-
 const PRICE = /(\$|€|£|֏|₽)\s?\d|\d[\d\s.,]*\s?(USD|EUR|AMD|RUB|GBP|֏|₽|€|\$)/;
 
 test('every sitemap URL answers 200 and shows no numerical price', async ({ request }) => {
@@ -40,10 +36,16 @@ test('images are static files that actually load — no runtime optimizer', asyn
   expect(optimizer).toEqual([]);
 });
 
+test('home header starts transparent over the hero', async ({ page }) => {
+  await page.goto('/en/');
+  await expect(page.locator('header.site-header')).toHaveAttribute('data-over-hero', 'true');
+});
+
 test('unknown paths 404 in the right language', async ({ page }) => {
   const res = await page.goto('/fr/nope');
   expect(res?.status()).toBe(404);
   await expect(page.getByRole('heading', { level: 1 })).toContainText('ne fait pas partie');
+  await expect(page.getByRole('link', { name: 'Retour à la collection' })).toHaveAttribute('href', '/fr/collection/');
 });
 
 test('artwork page renders only known facts', async ({ page }) => {
@@ -84,68 +86,35 @@ test('collection filters are links with their own URLs', async ({ page }) => {
   await page.goto('/en/collection');
   await expect(page.locator('.gallery > li')).toHaveCount(18);
   await page.locator('.filters').getByRole('link', { name: /Paintings/ }).click();
-  await expect(page).toHaveURL(/\/en\/collection\/paintings$/);
+  await expect(page).toHaveURL(/\/en\/collection\/paintings\/?$/);
   await expect(page.locator('.gallery > li')).toHaveCount(6);
 });
 
-test.describe('enquiry', () => {
-  test('artwork and reason arrive preselected', async ({ page }) => {
-    await page.goto('/en/artworks/royal-dominion');
-    await page.getByRole('link', { name: 'Request private viewing' }).click();
-    await expect(page).toHaveURL(/artwork=royal-dominion&reason=viewing/);
-    await expect(page.getByLabel('Artwork')).toHaveValue('royal-dominion');
-    await expect(page.getByLabel('Private viewing')).toBeChecked();
+test.describe('enquiry via Instagram (no enquiry endpoint configured)', () => {
+  test('artwork page offers Instagram, opening in a new tab', async ({ page }) => {
+    await page.goto('/en/artworks/royal-dominion/');
+    const cta = page.getByRole('link', { name: /Enquire via Instagram/ });
+    await expect(cta).toHaveAttribute('href', 'https://www.instagram.com/levani__art/');
+    await expect(cta).toHaveAttribute('target', '_blank');
+    await expect(page.getByText('Please mention the title of the work')).toBeVisible();
+    await expect(page.getByText('Price on request')).toBeVisible();
   });
 
-  test('validates in the visitor language', async ({ page }) => {
-    await page.goto('/de/enquire');
-    await page.getByRole('button', { name: 'Anfrage senden' }).click();
-    await expect(page.getByText('Bitte füllen Sie dieses Feld aus.').first()).toBeVisible();
-    await expect(page.getByLabel('Name')).toBeFocused();
-    await page.getByLabel('E-Mail').fill('not-an-email');
-    await page.getByRole('button', { name: 'Anfrage senden' }).click();
-    await expect(page.getByText('Bitte geben Sie eine gültige E-Mail-Adresse ein.')).toBeVisible();
+  test('CTA is localized', async ({ page }) => {
+    await page.goto('/ru/artworks/aknuni/');
+    await expect(page.getByRole('link', { name: /Запрос через Instagram/ })).toBeVisible();
   });
 
-  test('without a configured transport it says so instead of pretending', async ({ page }) => {
-    await page.setExtraHTTPHeaders({ 'x-forwarded-for': ip() });
-    await page.goto('/en/enquire?artwork=aknuni');
-    await page.getByLabel('Name').fill('Test Visitor');
-    await page.getByLabel('Email').fill('visitor@example.com');
-    await page.getByLabel('Message').fill('A question about this painting.');
-    await page.locator('input[name="consent"]').check();
-    await page.waitForTimeout(2600); // the form rejects sub-human fill times
-    await page.getByRole('button', { name: 'Send enquiry' }).click();
-    await expect(page.locator('.enquiry__error')).toContainText('not connected yet');
-  });
-});
-
-test.describe('api', () => {
-  test('rejects invalid payloads with field errors', async ({ request }) => {
-    const res = await request.post('/api/enquiry', {
-      data: { name: '', email: 'x', startedAt: 0 },
-      headers: { 'x-forwarded-for': ip() },
-    });
-    expect(res.status()).toBe(422);
-    expect((await res.json()).fields).toMatchObject({ name: 'required', email: 'email' });
+  test('enquire page shows the Instagram channel and no form that could pretend to send', async ({ page }) => {
+    await page.goto('/de/enquire/?artwork=sacred-heights-tatev');
+    await expect(page.getByRole('heading', { name: 'Schreiben Sie uns auf Instagram' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /@levani__art/ })).toHaveAttribute('href', 'https://www.instagram.com/levani__art/');
+    await expect(page.getByText('Bitte nennen Sie: Sacred Heights — Tatev Monastery Painting')).toBeVisible();
+    await expect(page.locator('form')).toHaveCount(0);
   });
 
-  test('a filled honeypot is quietly accepted and dropped', async ({ request }) => {
-    const res = await request.post('/api/enquiry', {
-      data: { website: 'spam.example', name: 'x' },
-      headers: { 'x-forwarded-for': ip() },
-    });
-    expect(res.status()).toBe(200);
-  });
-
-  test('rate limits a burst from one address', async ({ request }) => {
-    const addr = ip();
-    const statuses: number[] = [];
-    for (let i = 0; i < 7; i++) {
-      const res = await request.post('/api/enquiry', { data: {}, headers: { 'x-forwarded-for': addr } });
-      statuses.push(res.status());
-    }
-    expect(statuses.slice(0, 5).every((s) => s === 422)).toBe(true);
-    expect(statuses.slice(5)).toEqual([429, 429]);
+  test('footer links Instagram', async ({ page }) => {
+    await page.goto('/hy/');
+    await expect(page.locator('footer a[href="https://www.instagram.com/levani__art/"]')).toHaveCount(1);
   });
 });

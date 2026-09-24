@@ -97,6 +97,8 @@ export const it: Dictionary = {
     count: plural({ one: 'opera', other: 'opere' }),
   },
   artwork: {
+    enquireInstagram: 'Richiedi via Instagram',
+    instagramNote: 'Indichi nel messaggio il titolo dell’opera.',
     priceOnRequest: 'Prezzo su richiesta',
     enquire: 'Informazioni su quest’opera',
     privateViewing: 'Richiedi una visione privata',
@@ -209,6 +211,10 @@ export const it: Dictionary = {
     cta: 'Parla con un consulente d’arte',
   },
   enquiry: {
+    instagramTitle: 'Ci scriva su Instagram',
+    instagramText: 'Per ora le richieste sono gestite tramite il nostro account Instagram. Ci invii un messaggio diretto: rispondiamo personalmente.',
+    instagramCta: 'Scrivi a @{handle}',
+    instagramMention: 'Indichi: {title}',
     eyebrow: 'Richiesta privata',
     title: 'Richiesta privata',
     intro: 'Ci dica che cosa sta cercando. Rispondiamo personalmente.',
@@ -273,6 +279,7 @@ export const it: Dictionary = {
     language: 'Lingua',
     rights: 'Tutti i diritti riservati.',
   },
+  // LEGAL REVIEW REQUIRED — draft privacy/terms copy, not legally reviewed.
   legal: {
     placeholder:
       'Questa pagina è provvisoria. Il testo definitivo sarà pubblicato dopo essere stato redatto e approvato dal titolare.',

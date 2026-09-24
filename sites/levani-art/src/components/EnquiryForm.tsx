@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useRef, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/dictionaries';
 import {
   enquiryReasons,
   HONEYPOT_FIELD,
+  MIN_FILL_MS,
   normalizeEnquiry,
   STARTED_AT_FIELD,
   validateEnquiry,
@@ -21,15 +23,22 @@ export function EnquiryForm({
   locale,
   labels: t,
   artworks,
-  initialArtwork,
-  initialReason,
+  endpoint,
 }: {
   locale: Locale;
   labels: Labels;
   artworks: { slug: string; title: string }[];
-  initialArtwork: string;
-  initialReason: EnquiryReason | '';
+  /** External URL that accepts the enquiry as a JSON POST. */
+  endpoint: string;
 }) {
+  // The page is static, so the preselection is read in the browser.
+  const params = useSearchParams();
+  const slugParam = params.get('artwork') ?? '';
+  const initialArtwork = artworks.some((a) => a.slug === slugParam) ? slugParam : '';
+  const reasonParam = params.get('reason') ?? '';
+  const initialReason = (enquiryReasons as readonly string[]).includes(reasonParam)
+    ? (reasonParam as EnquiryReason)
+    : '';
   const [state, setState] = useState<State>('idle');
   const [errors, setErrors] = useState<EnquiryErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -58,11 +67,20 @@ export function EnquiryForm({
       formRef.current?.querySelector<HTMLElement>(`[name="${firstInvalid}"]`)?.focus();
       return;
     }
+    // No server of our own to filter bots, so the traps are checked here:
+    // a filled honeypot or a sub-human fill time is dropped silently.
+    const bot =
+      String(fd.get(HONEYPOT_FIELD) ?? '').length > 0 ||
+      Date.now() - (startedAt.current || Date.now()) < MIN_FILL_MS;
+    if (bot) {
+      setState('sent');
+      return;
+    }
     setState('sending');
     try {
-      const res = await fetch('/api/enquiry', {
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({
           ...input,
           [HONEYPOT_FIELD]: fd.get(HONEYPOT_FIELD) ?? '',
@@ -76,13 +94,7 @@ export function EnquiryForm({
       }
       const body = (await res.json().catch(() => ({}))) as { error?: string; fields?: EnquiryErrors };
       if (body.fields) setErrors(body.fields);
-      setFormError(
-        body.error === 'rate_limited'
-          ? t.errors.rateLimited
-          : body.error === 'not_configured'
-            ? t.errors.notConfigured
-            : t.errors.generic,
-      );
+      setFormError(res.status === 429 ? t.errors.rateLimited : t.errors.generic);
     } catch {
       setFormError(t.errors.generic);
     }
@@ -115,7 +127,7 @@ export function EnquiryForm({
     <form ref={formRef} className="enquiry" noValidate onSubmit={onSubmit} onFocus={markStarted}>
       <div className="field field--wide">
         <label htmlFor="artwork">{t.artwork}</label>
-        <select id="artwork" name="artwork" defaultValue={initialArtwork}>
+        <select id="artwork" name="artwork" defaultValue={initialArtwork} key={initialArtwork}>
           <option value="">{t.generalEnquiry}</option>
           {artworks.map((a) => (
             <option key={a.slug} value={a.slug}>
@@ -132,7 +144,7 @@ export function EnquiryForm({
         <div className="reasons__options">
           {enquiryReasons.map((r) => (
             <label key={r} className="reason">
-              <input type="radio" name="reason" value={r} defaultChecked={initialReason === r} />
+              <input type="radio" name="reason" value={r} defaultChecked={initialReason === r} key={`${r}-${initialReason}`} />
               <span>{t.reasons[r]}</span>
             </label>
           ))}

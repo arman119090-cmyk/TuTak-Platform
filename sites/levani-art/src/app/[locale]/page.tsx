@@ -7,7 +7,7 @@ import { getArtworks, getArtworksByCategory, getFeatured, getPopulatedCategories
 import { site } from '@/content/site';
 import { formatCount } from '@/i18n/plural';
 import { resolveLocale } from '@/lib/page';
-import { siteUrl } from '@/lib/site-url';
+import { pageUrl } from '@/lib/site-url';
 
 export default async function Home({ params }: PageProps<'/[locale]'>) {
   const { locale, dict } = await resolveLocale(params);
@@ -29,7 +29,7 @@ export default async function Home({ params }: PageProps<'/[locale]'>) {
           '@type': 'ArtGallery',
           name: site.brandName,
           slogan: site.tagline,
-          url: `${siteUrl()}/${locale}`,
+          url: pageUrl(locale, ''),
         }}
       />
 

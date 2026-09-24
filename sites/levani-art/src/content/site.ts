@@ -17,7 +17,7 @@ export const site = {
   social: {
     // The handle levani__art is the account the owner's own screenshots
     // (and the logo source) come from.
-    instagram: 'https://www.instagram.com/levani__art/' as string | null,
+    instagram: 'https://www.instagram.com/levani__art/' as string | null, // = enquiry.instagramUrl
     facebook: null as string | null,
   },
 
@@ -54,6 +54,21 @@ export const site = {
     international: false,
   },
 } as const;
+
+/**
+ * How visitors reach the owner.
+ *
+ * The site is static, so an online form needs an external endpoint that
+ * accepts a JSON POST (Formspree, a CRM inbound hook, a serverless function…).
+ * Set NEXT_PUBLIC_ENQUIRY_ENDPOINT at build time to switch the form on.
+ * Without it, every "enquire" action leads to Instagram — the owner's only
+ * confirmed channel — and no form pretends to send anything.
+ */
+export const enquiry = {
+  endpoint: process.env.NEXT_PUBLIC_ENQUIRY_ENDPOINT || null,
+  instagramHandle: 'levani__art',
+  instagramUrl: 'https://www.instagram.com/levani__art/',
+};
 
 export type AudienceKey = keyof typeof site.audiences;
 export type AdvisoryKey = keyof typeof site.advisory;

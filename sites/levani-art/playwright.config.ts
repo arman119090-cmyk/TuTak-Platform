@@ -7,12 +7,11 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [['list']],
   use: { baseURL: `http://localhost:${PORT}` },
-  // Runs against a production build: `pnpm build` first.
+  // Runs against the static export (out/) served like a CDN: `pnpm build` first.
   webServer: {
     command: `pnpm start -p ${PORT}`,
     port: PORT,
     reuseExistingServer: true,
-    env: { ENQUIRY_TRANSPORT: '' },
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },

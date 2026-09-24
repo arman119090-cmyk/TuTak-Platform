@@ -4,15 +4,17 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { artworkAlt, ArtworkCard } from '@/components/ArtworkCard';
 import { ArrowLeft } from '@/components/Icons';
+import { InstagramLink } from '@/components/InstagramLink';
 import { InteriorPreview } from '@/components/InteriorPreview';
 import { JsonLd } from '@/components/JsonLd';
 import { getArtist } from '@/content/artists';
 import { getArtwork, getArtworks, isLargeObject } from '@/content/catalog';
 import { formatPrice, localized } from '@/content/localize';
+import { enquiry } from '@/content/site';
 import { locales } from '@/i18n/config';
 import { resolveLocale } from '@/lib/page';
 import { pageMetadata } from '@/lib/seo';
-import { siteUrl } from '@/lib/site-url';
+import { pageUrl, siteUrl } from '@/lib/site-url';
 
 export const dynamicParams = false;
 
@@ -88,7 +90,7 @@ export default async function ArtworkPage({ params }: PageProps<'/[locale]/artwo
           '@type': 'VisualArtwork',
           name: artwork.title,
           image: `${siteUrl()}${artwork.image.src}`,
-          url: `${siteUrl()}/${locale}/artworks/${artwork.slug}`,
+          url: pageUrl(locale, `/artworks/${artwork.slug}`),
           artform: dict.categories[artwork.category],
           ...(artist ? { creator: { '@type': 'Person', name: artist.name } } : {}),
           ...(artwork.year ? { dateCreated: artwork.year } : {}),
@@ -130,20 +132,28 @@ export default async function ArtworkPage({ params }: PageProps<'/[locale]/artwo
             {artwork.price ? formatPrice(artwork.price, locale) : a.priceOnRequest}
           </p>
 
-          <div className="artwork__actions">
-            <Link href={enquire('purchase')} className="button button--solid">
-              {a.enquire}
-            </Link>
-            <Link href={enquire('viewing')} className="button button--ghost">
-              {a.privateViewing}
-            </Link>
-          </div>
+          {enquiry.endpoint ? (
+            <div className="artwork__actions">
+              <Link href={enquire('purchase')} className="button button--solid">
+                {a.enquire}
+              </Link>
+              <Link href={enquire('viewing')} className="button button--ghost">
+                {a.privateViewing}
+              </Link>
+            </div>
+          ) : (
+            // Until an enquiry endpoint exists, Instagram is the channel.
+            <div className="artwork__actions">
+              <InstagramLink newTabLabel={dict.a11y.externalLink}>{a.enquireInstagram}</InstagramLink>
+              <p className="artwork__ig-note">{a.instagramNote}</p>
+            </div>
+          )}
 
           {artwork.category === 'paintings' ? (
             <InteriorPreview
               image={{ ...artwork.image, alt }}
               title={artwork.title}
-              enquireHref={enquire('viewing')}
+              enquireHref={enquiry.endpoint ? enquire('viewing') : enquiry.instagramUrl}
               labels={{
                 open: a.viewInInterior,
                 title: a.interiorTitle,

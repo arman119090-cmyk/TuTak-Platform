@@ -11,8 +11,8 @@
   "scripts": {
     "images": "node scripts/build-images.mjs",
     "dev": "node scripts/build-images.mjs && next dev",
-    "build": "node scripts/build-images.mjs && next build",
-    "start": "next start",
+    "build": "node scripts/build-images.mjs && next build && node scripts/finalize-export.mjs",
+    "start": "node scripts/serve-static.mjs",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",

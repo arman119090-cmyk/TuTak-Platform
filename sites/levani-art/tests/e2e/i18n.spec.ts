@@ -7,15 +7,15 @@ test.describe('locale routing', () => {
     const ctx = await browser.newContext({ locale: 'ru-RU' });
     const page = await ctx.newPage();
     await page.goto('/');
-    await expect(page).toHaveURL(/\/ru$/);
+    await expect(page).toHaveURL(/\/ru\/?$/);
     await ctx.close();
   });
 
   test('unsupported browser language falls back to English', async ({ browser }) => {
     const ctx = await browser.newContext({ locale: 'ja-JP' });
     const page = await ctx.newPage();
-    await page.goto('/collection');
-    await expect(page).toHaveURL(/\/en\/collection$/);
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/en\/?$/);
     await ctx.close();
   });
 
@@ -24,7 +24,7 @@ test.describe('locale routing', () => {
     await ctx.addCookies([{ name: 'LEVANI_LOCALE', value: 'hy', url: baseURL! }]);
     const page = await ctx.newPage();
     await page.goto('/');
-    await expect(page).toHaveURL(/\/hy$/);
+    await expect(page).toHaveURL(/\/hy\/?$/);
     await ctx.close();
   });
 
@@ -32,7 +32,7 @@ test.describe('locale routing', () => {
     test(`${l}: lang, canonical and hreflang`, async ({ page }) => {
       await page.goto(`/${l}/collection`);
       await expect(page.locator('html')).toHaveAttribute('lang', l);
-      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', new RegExp(`/${l}/collection$`));
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', new RegExp(`/${l}/collection/$`));
       const alternates = await page.locator('link[rel="alternate"][hreflang]').evaluateAll((els) =>
         els.map((e) => e.getAttribute('hreflang')),
       );
@@ -93,7 +93,7 @@ test.describe('language selector', () => {
     await page.goto('/en/artworks/aknuni');
     await page.locator('.lang__trigger').click();
     await page.getByRole('menuitemradio', { name: 'Deutsch' }).click();
-    await expect(page).toHaveURL(/\/de\/artworks\/aknuni$/);
+    await expect(page).toHaveURL(/\/de\/artworks\/aknuni\/?$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
     const cookie = (await context.cookies()).find((c) => c.name === 'LEVANI_LOCALE');
     expect(cookie?.value).toBe('de');

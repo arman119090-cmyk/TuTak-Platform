@@ -42,7 +42,8 @@ export function Header({
   labels: HeaderLabels;
   searchIndex: SearchEntry[];
 }) {
-  const pathname = usePathname() || `/${locale}`;
+  // Static export uses trailing slashes (/en/about/); compare without them.
+  const pathname = (usePathname() || `/${locale}`).replace(/(.)\/+$/, '$1');
   const overHero = pathname === `/${locale}`;
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);

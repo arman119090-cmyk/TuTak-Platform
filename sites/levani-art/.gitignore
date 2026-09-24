@@ -10,3 +10,4 @@ playwright-report/
 
 # Pre-rendered image widths (scripts/build-images.mjs)
 public/artworks/_w/
+out/

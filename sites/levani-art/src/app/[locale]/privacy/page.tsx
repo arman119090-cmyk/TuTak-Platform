@@ -1,3 +1,6 @@
+// LEGAL REVIEW REQUIRED — draft text for the technical launch. The final
+// privacy notice / terms must be written or approved by the owner's lawyer
+// before this page is relied upon. Text lives in i18n dictionaries → `legal`.
 import type { Metadata } from 'next';
 import { PageIntro } from '@/components/PageIntro';
 import { resolveLocale } from '@/lib/page';

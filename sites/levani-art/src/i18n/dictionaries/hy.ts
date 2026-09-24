@@ -98,6 +98,8 @@ export const hy: Dictionary = {
     count: plural({ one: 'աշխատանք', other: 'աշխատանք' }),
   },
   artwork: {
+    enquireInstagram: 'Հարցում Instagram-ով',
+    instagramNote: 'Խնդրում ենք հաղորդագրության մեջ նշել աշխատանքի անվանումը։',
     priceOnRequest: 'Գինը՝ հարցմամբ',
     enquire: 'Հարցում այս աշխատանքի մասին',
     privateViewing: 'Մասնավոր դիտում',
@@ -210,6 +212,10 @@ export const hy: Dictionary = {
     cta: 'Խոսել արվեստի խորհրդատուի հետ',
   },
   enquiry: {
+    instagramTitle: 'Գրեք մեզ Instagram-ում',
+    instagramText: 'Առայժմ հարցումներն ընդունվում են մեր Instagram էջի միջոցով։ Ուղարկեք մեզ անձնական հաղորդագրություն՝ մենք կպատասխանենք անձամբ։',
+    instagramCta: 'Գրել @{handle}',
+    instagramMention: 'Խնդրում ենք նշել՝ {title}',
     eyebrow: 'Մասնավոր հարցում',
     title: 'Մասնավոր հարցում',
     intro: 'Պատմեք, թե ինչ եք փնտրում։ Մենք կպատասխանենք անձամբ։',
@@ -272,6 +278,7 @@ export const hy: Dictionary = {
     language: 'Լեզու',
     rights: 'Բոլոր իրավունքները պաշտպանված են։',
   },
+  // LEGAL REVIEW REQUIRED — draft privacy/terms copy, not legally reviewed.
   legal: {
     placeholder:
       'Սա ժամանակավոր էջ է։ Վերջնական տեքստը կհրապարակվի սեփականատիրոջ կողմից պատրաստվելուց և հաստատվելուց հետո։',

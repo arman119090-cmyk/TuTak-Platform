@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import { i18nConfig, localeMeta, locales, type Locale } from '@/i18n/config';
 import { site } from '@/content/site';
-import { siteUrl } from './site-url';
+import { pageUrl, siteUrl } from './site-url';
 
 /** `path` is locale-less and starts with `/` (or is '' for home). */
 export function localizedAlternates(locale: Locale, path: string): Metadata['alternates'] {
   const languages: Record<string, string> = {};
-  for (const l of locales) languages[localeMeta[l].htmlLang] = `${siteUrl()}/${l}${path}`;
-  languages['x-default'] = `${siteUrl()}/${i18nConfig.defaultLocale}${path}`;
-  return { canonical: `${siteUrl()}/${locale}${path}`, languages };
+  for (const l of locales) languages[localeMeta[l].htmlLang] = pageUrl(l, path);
+  languages['x-default'] = pageUrl(i18nConfig.defaultLocale, path);
+  return { canonical: pageUrl(locale, path), languages };
 }
 
 export function pageMetadata(args: {
@@ -32,7 +32,7 @@ export function pageMetadata(args: {
       siteName: site.brandName,
       title: fullTitle,
       description,
-      url: `${siteUrl()}/${locale}${path}`,
+      url: pageUrl(locale, path),
       locale: localeMeta[locale].ogLocale,
       alternateLocale: locales.filter((l) => l !== locale).map((l) => localeMeta[l].ogLocale),
       images,

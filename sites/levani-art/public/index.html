@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b0a09">
+<title>LEVANI ART</title>
+<link rel="icon" href="/icon.svg">
+<script>
+  // Locale choice for "/" on a static host (replaces the server-side proxy):
+  // remembered manual choice → browser language → English. Keep in sync with
+  // src/i18n/config.ts. Also rescues locale-less paths served via this file.
+  (function () {
+    var locales = ['hy', 'ru', 'it', 'de', 'fr', 'en'];
+    var pick = 'en';
+    var m = document.cookie.match(/(?:^|;\s*)LEVANI_LOCALE=([a-z]{2})/);
+    if (m && locales.indexOf(m[1]) >= 0) pick = m[1];
+    else {
+      var langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ''];
+      for (var i = 0; i < langs.length; i++) {
+        var l = String(langs[i]).toLowerCase().split('-')[0];
+        if (locales.indexOf(l) >= 0) { pick = l; break; }
+      }
+    }
+    location.replace('/' + pick + '/');
+  })();
+</script>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0a09;color:#f2ece2;font:16px/1.6 Georgia,serif}
+  nav{text-align:center} a{color:#d6bf93;margin:0 10px;text-decoration:none} p{letter-spacing:.24em}
+</style>
+</head>
+<body>
+<nav>
+  <p>LEVANI ART</p>
+  <a href="/hy/" lang="hy">Հայերեն</a><a href="/ru/" lang="ru">Русский</a><a href="/it/" lang="it">Italiano</a><a href="/de/" lang="de">Deutsch</a><a href="/fr/" lang="fr">Français</a><a href="/en/" lang="en">English</a>
+</nav>
+</body>
+</html>

@@ -4,8 +4,8 @@ Private art gallery site for **LEVANI ART** (ART · ELEGANCE · DECOR):
 paintings, sculpture, fountains and decorative objects, in six languages.
 
 Next.js 16 (App Router) · TypeScript · plain CSS · no UI framework.
-Every public page is statically generated; only the enquiry page and its API
-run on the server.
+Built as a **fully static export** (`out/`, `output: 'export'`) and served by
+a CDN — no Node server at runtime.
 
 This folder is a self-contained project that happens to live in the TuTak
 repository. It has its own `package.json`, lockfile and `pnpm-workspace.yaml`,
@@ -30,12 +30,12 @@ pnpm typecheck     # tsc --noEmit
 pnpm lint          # eslint
 pnpm test          # vitest: locale negotiation, enquiry validation, rate limit,
                    # catalog integrity (no invented facts), dictionaries, search
-pnpm build         # image variants + production build (185 static pages)
+pnpm build         # image variants + static export to out/ + branded 404
 pnpm e2e           # Playwright against the production build, desktop 1440 + phone 390
 ```
 
-`pnpm e2e` starts `pnpm start` itself (or reuses a server on :3100). Run
-`pnpm build` first.
+`pnpm e2e` starts `pnpm start` itself (or reuses a server on :3100). It tests
+the static export, so run `pnpm build` first.
 
 ## Structure
 
@@ -43,9 +43,7 @@ pnpm e2e           # Playwright against the production build, desktop 1440 + pho
 src/
   app/[locale]/…          routes: home, collection(/[category]), artworks/[slug],
                           artists, about, private-clients, enquire, privacy, terms
-  app/api/enquiry         enquiry endpoint (validation, honeypot, rate limit)
   app/sitemap.ts, robots.ts
-  proxy.ts                locale redirect (cookie → Accept-Language → English)
   i18n/config.ts          ← the one place for locale behaviour
   i18n/dictionaries/*.ts  all interface text, typed: a missing key is a type error
   content/                data layer — catalog, artists, site facts & switches
@@ -87,33 +85,40 @@ Coat of Arms of the United Kingdom. See `components/Emblem.tsx`.
 
 ## Enquiries
 
-The form posts to `/api/enquiry`, which validates, applies a honeypot, a
-minimum fill time and a per-IP rate limit (5 per 10 min, in memory), then
-hands the enquiry to `deliverEnquiry()` in `src/lib/enquiry-transport.ts` —
-**the single integration point**. Set `ENQUIRY_TRANSPORT=webhook` and
-`ENQUIRY_WEBHOOK_URL` to deliver to a CRM, Zapier/Make or an email relay.
-Until then the API answers 503 and the form tells the visitor online
-enquiries are not connected — it never pretends to have sent.
+The site is static, so it has no API of its own. Two modes, chosen at build
+time (`src/content/site.ts` → `enquiry`):
 
-Notes for production:
-- The rate limiter is per process; with several instances use Redis/KV.
-- The client IP comes from `x-forwarded-for`. Behind a proxy that does not
-  overwrite that header, a client can spoof it.
-- A captcha can be added in `verifyCaptcha()` (Turnstile/hCaptcha).
+- **Instagram (current).** `NEXT_PUBLIC_ENQUIRY_ENDPOINT` unset. Every
+  enquiry action — the artwork page button, the enquire page, "View in an
+  Interior" — opens `instagram.com/levani__art` in a new tab, localized
+  ("Enquire via Instagram", «Запрос через Instagram»…). No form is shown, so
+  nothing can claim a message was sent.
+- **Form.** Set `NEXT_PUBLIC_ENQUIRY_ENDPOINT` to any URL that accepts a JSON
+  POST (Formspree, a CRM inbound hook, a serverless function) and rebuild. The
+  form validates in the browser (`src/lib/enquiry.ts`), drops bots via a
+  honeypot and a minimum fill time, and shows success only on a 2xx answer.
+  Rate limiting and captcha then belong to the endpoint.
 
 ## Deployment
 
-Any Node host that runs `next start` (Render, Railway, Vercel, a VPS):
+Live on **Render Static Site** (free, global CDN, never sleeps):
 
 ```
-root directory:  sites/levani-art
-build command:   pnpm install --frozen-lockfile && pnpm build
-start command:   pnpm start          # honours $PORT
-env:             NEXT_PUBLIC_SITE_URL, ENQUIRY_TRANSPORT, ENQUIRY_WEBHOOK_URL
+service:         levani-art (static site)
+branch:          claude/new-session-xjpidi, auto-deploy on push
+build command:   cd sites/levani-art && corepack enable && pnpm install --frozen-lockfile && pnpm build
+publish path:    sites/levani-art/out
+env:             NEXT_PUBLIC_SITE_URL=https://<service>.onrender.com   (read at build time)
+                 NODE_VERSION=22
 ```
 
-`NEXT_PUBLIC_SITE_URL` is read at build time for canonical/hreflang/sitemap —
-rebuild after changing it.
+`pnpm build` = image variants → `next build` (static export) → branded
+`404.html` (`scripts/finalize-export.mjs`). `pnpm start` serves `out/` the way
+a CDN does (`scripts/serve-static.mjs`); that is what `pnpm e2e` tests.
+
+`/` is `public/index.html`: a tiny script sends the visitor to the remembered
+language (cookie `LEVANI_LOCALE`), else the browser language, else English.
+Any static host works; pages resolve as `/{locale}/…/index.html`.
 
 ## Images
 

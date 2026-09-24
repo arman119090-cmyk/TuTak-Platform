@@ -180,7 +180,9 @@ export function Header({
                     setMenuOpen(false);
                   }}
                 >
-                  <Emblem id={localeMeta[l].emblem} size={18} />
+                  <span className="emblem-box emblem-box--mobile">
+                    <Emblem id={localeMeta[l].emblem} size={26} />
+                  </span>
                   {localeMeta[l].nativeName}
                 </Link>
               </li>

@@ -35,8 +35,8 @@ until supplied.
 - [ ] Confirm the brand spelling "LEVANI ART" (as on the emblem).
 
 ## Language emblems — decision needed
-- [ ] The language selector uses stylised heraldic shields (Armenia, Russia, Italy, Germany, France, UK royal arms) as the brief requires. Several countries restrict commercial use of state arms (the UK Royal Arms in particular). Confirm with a lawyer, or approve replacing them with neutral heraldic devices.
-- [ ] France has no official coat of arms; the selector uses the historic fleurs-de-lis shield. Confirm, or choose another French emblem.
+- [ ] The language selector shows the official state arms of Armenia, Russia, Italy (emblem), Germany, France (de facto emblem — France has no coat of arms) and the Royal Coat of Arms of the UK. Several countries restrict commercial use of state arms (the UK Royal Arms in particular). Confirm with a lawyer before launch.
+- [ ] Russia: the file shows the golden double-headed eagle without the red heraldic shield behind it (a widely used official form). Confirm, or ask for the version on the red shield.
 
 ## Translations
 - [ ] Native review of Armenian (`hy.ts`) before launch; ideally also ru/it/de/fr.

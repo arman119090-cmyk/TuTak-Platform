@@ -6,7 +6,6 @@ import '@fontsource-variable/noto-sans-armenian';
 import '../globals.css';
 
 import type { Metadata, Viewport } from 'next';
-import { EmblemDefs } from '@/components/Emblem';
 import { Footer } from '@/components/Footer';
 import { Header } from '@/components/Header';
 import { RevealObserver } from '@/components/RevealObserver';
@@ -48,7 +47,6 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
         <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
       </head>
       <body>
-        <EmblemDefs />
         <a href="#main" className="skip-link">
           {dict.nav.skipToContent}
         </a>

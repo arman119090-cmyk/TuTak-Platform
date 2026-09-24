@@ -42,14 +42,31 @@ test.describe('locale routing', () => {
 });
 
 test.describe('language selector', () => {
-  test('closed state is an emblem and a caret — no text, no native select', async ({ page }) => {
+  test('closed state is the coat of arms and a caret — no text, no native select', async ({ page }) => {
     await page.goto('/en');
     const trigger = page.locator('.lang__trigger');
-    await expect(trigger.locator('svg')).toHaveCount(2);
+    await expect(trigger.locator('img.emblem')).toHaveAttribute('src', '/emblems/gb.webp');
+    await expect(trigger.locator('.lang__caret svg')).toHaveCount(1);
+    // The arms image must actually load (not a broken image).
+    const loaded = await trigger.locator('img.emblem').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0);
+    expect(loaded).toBe(true);
     const nameWidth = await trigger.locator('.lang__name').evaluate((el) => el.getBoundingClientRect().width);
     expect(nameWidth).toBe(0);
     await expect(page.locator('header select')).toHaveCount(0);
     await expect(page.locator('img[src*="flag"], [class*="flag"]')).toHaveCount(0);
+  });
+
+  test('every language shows its own official arms', async ({ page }) => {
+    await page.goto('/en/about');
+    await page.locator('.lang__trigger').click();
+    const expected: Record<string, string> = {
+      'Հայերեն': 'am', 'Русский': 'ru', 'Italiano': 'it', 'Deutsch': 'de', 'Français': 'fr', 'English': 'gb',
+    };
+    for (const [name, code] of Object.entries(expected)) {
+      const img = page.getByRole('menuitemradio', { name }).locator('img.emblem');
+      await expect(img).toHaveAttribute('src', `/emblems/${code}.webp`);
+      await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+    }
   });
 
   test('keyboard: open, move, Escape returns focus', async ({ page }) => {

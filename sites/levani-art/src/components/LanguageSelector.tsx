@@ -84,7 +84,7 @@ export function LanguageSelector({
           }
         }}
       >
-        <Emblem id={current.emblem} size={20} />
+        <Emblem id={current.emblem} size={28} eager />
         <span className="lang__name" aria-hidden="true">
           {current.nativeName}
         </span>
@@ -126,7 +126,9 @@ export function LanguageSelector({
                 setOpen(false);
               }}
             >
-              <Emblem id={meta.emblem} size={22} />
+              <span className="emblem-box emblem-box--menu">
+                <Emblem id={meta.emblem} size={32} />
+              </span>
               <span>{meta.nativeName}</span>
               {selected ? <span className="lang__dot" aria-hidden="true" /> : null}
             </Link>

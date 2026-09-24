@@ -73,7 +73,9 @@ export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
                 hrefLang={localeMeta[l].htmlLang}
                 aria-current={l === locale ? 'true' : undefined}
               >
-                <Emblem id={localeMeta[l].emblem} size={14} />
+                <span className="emblem-box emblem-box--footer">
+                  <Emblem id={localeMeta[l].emblem} size={20} />
+                </span>
                 {localeMeta[l].nativeName}
               </Link>
             </li>

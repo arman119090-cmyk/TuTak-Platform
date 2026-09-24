@@ -442,9 +442,35 @@ main {
   cursor: pointer;
   color: var(--ivory-dim);
 }
-.lang__trigger svg:first-child {
-  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+.emblem {
+  display: block;
+  flex: none;
+  max-width: none;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55));
+  user-select: none;
+}
+/* Arms differ in width (Germany is narrow, the UK wide); a fixed box keeps
+   the language names aligned in lists. */
+.emblem-box {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.emblem-box--menu {
+  width: 38px;
+}
+.emblem-box--mobile {
+  width: 30px;
+}
+.emblem-box--footer {
+  width: 24px;
+}
+.lang__trigger .emblem {
   transition: transform 0.25s var(--ease);
+}
+.lang__trigger:hover .emblem {
+  transform: scale(1.06);
 }
 /* The native name slides out beside the emblem on hover/focus only. */
 .lang__name {

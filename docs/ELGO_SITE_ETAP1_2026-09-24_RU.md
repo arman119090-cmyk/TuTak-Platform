@@ -220,3 +220,52 @@ pnpm-воркспейс и CI TuTak не входит). В TuTak изменён 
 **Вопросы владельцу**
 1. Откройте https://elgo-site.onrender.com — всё ли отображается?
 2. Telegram-бот: создадите сами (инструкция в README) или помочь?
+
+## 9. Дополнение: деплой на Railway (24.09.2026)
+
+**Задание:** «Ты не можешь сделать сайт на рейловей?» — развернуть на Railway.
+
+**Что сделано**
+- Через подключённый Railway создан проект `elgo-site` (workspace
+  «arman119090-cmyk's Projects»), сервис `elgo-site` из репозитория, ветка
+  `claude/elgo-construction-site-mavmlm`, Root Directory `/sites/elgo`,
+  Watch Paths `/sites/elgo/**`, Build `npm run build`, Start `npm start`,
+  Healthcheck `/hy/`, restart ON_FAILURE, переменные `HOST`, `SITE_URL`,
+  `RAILPACK_NODE_VERSION=22`.
+- Бесплатный домен: **https://elgo-site-production.up.railway.app**.
+- `sites/elgo/railway.json` удалён: Railway отверг его как устаревший
+  (Config as Code deprecated). README переписан: раздел «Где сайт сейчас»
+  и «Деплой на Railway» — настройки через панель.
+
+**Чем доказано**
+- Деплой `d5f005f7-a507-43b8-93ad-090c979960ed` на коммите `22ebd66`:
+  статус **SUCCESS**; в логах `Server listening … :8080` и
+  `[1/1] Healthcheck succeeded!` по пути `/hy/` — то есть Railway получил
+  200 от армянской главной.
+
+**Что НЕ сделано / ошибки по ходу**
+- **Первые две сборки упали — обе по моей вине:**
+  1. `create-deployment` взял ветку `main`, хотя я передал нашу ветку, —
+     собрался корень TuTak. Надо было сразу проверить источник; перевёл
+     сервис на нужную ветку через `connect-service-source`.
+  2. В команде сборки был `npm ci && npm run build` (перенёс из render.yaml).
+     Railpack сам ставит зависимости и монтирует кэш в
+     `node_modules/.astro` — `npm ci` падает с `EBUSY`. Исправил на
+     `npm run build`.
+- **Регион не перенесён.** Railway по умолчанию поставил US West (sfo).
+  Перенос в EU West (Amsterdam) подготовлен агентом Railway (staged), но
+  `accept-deploy` дважды упал по таймауту 60 с. Изменение висит в панели —
+  нужно нажать «Apply changes» (или «Deploy») в проекте `elgo-site`. Пока сайт
+  отдаётся из США: для Армении это лишние ~150–200 мс на запрос.
+- Снаружи сайт мной не открыт: `*.up.railway.app` заблокирован сетевой
+  политикой сессии так же, как onrender.com. Подтверждение — только
+  healthcheck самого Railway.
+- Render-сервис `elgo-site` оставлен работать — удалять без вашего слова не
+  стал. Два хостинга одного сайта — это два адреса в поиске; лишний стоит
+  удалить.
+- Бесплатный план Railway ограничен кредитами; если их исчерпать, сервис
+  остановится. Лимиты аккаунта я не смотрел — UNVERIFIED.
+
+**Вопросы владельцу**
+1. Нажмите «Apply changes» в Railway — или разрешите мне повторить позже.
+2. Удалить сервис на Render (`elgo-site.onrender.com`)?

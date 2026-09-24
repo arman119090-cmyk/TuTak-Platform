@@ -170,20 +170,26 @@ order: 1                     # 1 — большая карточка; на гл�
 ## Где сайт сейчас
 
 Решение владельца (24.09.2026): **пока без своего домена**, на бесплатном
-поддомене Render.
+поддомене платформы. Основной хостинг — **Railway**.
 
-- Адрес: https://elgo-site.onrender.com (`/` → `/hy/`)
-- Сервис Render `elgo-site` (free, Frankfurt), ветка
-  `claude/elgo-construction-site-mavmlm`, автодеплой по коммиту.
-- Создан без Blueprint, поэтому настройки задаются в панели, а не в
-  `render.yaml`: Root Directory пустой, Build
-  `cd sites/elgo && npm ci && npm run build`, Start `cd sites/elgo && npm start`,
-  переменные `NODE_VERSION=22.22.2`, `HOST=0.0.0.0`,
-  `SITE_URL=https://elgo-site.onrender.com`.
-- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` **не заданы** — форма пока
-  отвечает посетителю ошибкой и просит позвонить.
-- Тариф free засыпает после ~15 минут без посещений: первое открытие
-  после простоя — 30–50 секунд.
+**Railway (основной)** — https://elgo-site-production.up.railway.app
+- Проект `elgo-site`, сервис `elgo-site`, окружение `production`.
+- Source: ветка `claude/elgo-construction-site-mavmlm`, Root Directory
+  `/sites/elgo`, Watch Paths `/sites/elgo/**` — пересборка на каждый коммит
+  в `sites/elgo`.
+- Build `npm run build` (зависимости Railpack ставит сам; `npm ci` в команде
+  сборки ломается о его кэш — `EBUSY`), Start `npm start`, Healthcheck `/hy/`.
+- Переменные: `HOST=0.0.0.0`, `SITE_URL=https://elgo-site-production.up.railway.app`,
+  `RAILPACK_NODE_VERSION=22`.
+- Регион: переезд из US West (sfo) в EU West (Amsterdam) подготовлен, но
+  **не применён** — в панели Railway висит «Apply changes».
+
+**Render (запасной)** — https://elgo-site.onrender.com, сервис `elgo-site`
+(free, Frankfurt), Build `cd sites/elgo && npm ci && npm run build`,
+Start `cd sites/elgo && npm start`. Если не нужен — удалить в панели Render.
+
+На обоих `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` **не заданы** — форма
+пока отвечает посетителю ошибкой и просит позвонить.
 
 Когда появится домен — см. «Как подключить домен» и поменять `SITE_URL`.
 

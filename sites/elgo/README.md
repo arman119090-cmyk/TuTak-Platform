@@ -167,6 +167,26 @@ order: 1                     # 1 — большая карточка; на гл�
 
 ---
 
+## Где сайт сейчас
+
+Решение владельца (24.09.2026): **пока без своего домена**, на бесплатном
+поддомене Render.
+
+- Адрес: https://elgo-site.onrender.com (`/` → `/hy/`)
+- Сервис Render `elgo-site` (free, Frankfurt), ветка
+  `claude/elgo-construction-site-mavmlm`, автодеплой по коммиту.
+- Создан без Blueprint, поэтому настройки задаются в панели, а не в
+  `render.yaml`: Root Directory пустой, Build
+  `cd sites/elgo && npm ci && npm run build`, Start `cd sites/elgo && npm start`,
+  переменные `NODE_VERSION=22.22.2`, `HOST=0.0.0.0`,
+  `SITE_URL=https://elgo-site.onrender.com`.
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` **не заданы** — форма пока
+  отвечает посетителю ошибкой и просит позвонить.
+- Тариф free засыпает после ~15 минут без посещений: первое открытие
+  после простоя — 30–50 секунд.
+
+Когда появится домен — см. «Как подключить домен» и поменять `SITE_URL`.
+
 ## Деплой на Render
 
 1. Render → **New → Blueprint** → выбрать репозиторий.

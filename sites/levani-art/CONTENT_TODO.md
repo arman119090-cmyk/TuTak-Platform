@@ -35,10 +35,8 @@ until supplied.
 - [ ] Vector (SVG) or transparent PNG logo — the current files are raster crops from a social-media screenshot.
 - [ ] Confirm the brand spelling "LEVANI ART" (as on the emblem).
 
-## Language emblems — decision needed
-- [ ] The language selector shows the official state arms of Armenia, Russia, Italy (emblem), Germany, France (de facto emblem — France has no coat of arms) and the Royal Coat of Arms of the UK. Several countries restrict commercial use of state arms (the UK Royal Arms in particular). Confirm with a lawyer before launch.
-- [x] Russia: kept the golden double-headed eagle without the red shield behind it (decided 24.09; at 28–32 px the eagle alone reads better).
-- [x] France: the de facto state emblem (fasces) is used (decided 24.09).
+## Language flags
+- [x] 24.09: the owner asked to replace the coats of arms with flags. The selector shows flags only (Armenia, Russia, Italy, Germany, France, United Kingdom for English).
 
 ## Translations
 - [ ] Native review of Armenian (`hy.ts`) before launch; ideally also ru/it/de/fr.

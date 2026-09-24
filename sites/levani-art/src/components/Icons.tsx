@@ -21,7 +21,7 @@ export const CloseIcon = ({ size = 18 }: { size?: number }) => (
   </svg>
 );
 
-/** The small caret beside the language emblem. */
+/** The small caret beside the language flag. */
 export const Chevron = ({ size = 8 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 10 10" {...base} strokeWidth={1.3}>
     <path d="M2 3.8 5 6.6 8 3.8" />

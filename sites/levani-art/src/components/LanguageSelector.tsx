@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { i18nConfig, localeMeta, locales, type Locale } from '@/i18n/config';
 import { swapLocaleInPath } from '@/i18n/negotiate';
 import { fill } from '@/i18n/plural';
-import { Emblem } from './Emblem';
+import { Flag } from './Flag';
 import { Chevron } from './Icons';
 
 export function rememberLocale(locale: Locale) {
@@ -15,7 +15,7 @@ export function rememberLocale(locale: Locale) {
 }
 
 /**
- * Closed: the current emblem and a small caret. Hover or keyboard focus
+ * Closed: the current language's flag and a small caret. Hover or keyboard focus
  * reveals the native language name; click or tap opens the list.
  */
 export function LanguageSelector({
@@ -84,7 +84,7 @@ export function LanguageSelector({
           }
         }}
       >
-        <Emblem id={current.emblem} size={28} eager />
+        <Flag id={current.flag} size={16} eager />
         <span className="lang__name" aria-hidden="true">
           {current.nativeName}
         </span>
@@ -126,9 +126,7 @@ export function LanguageSelector({
                 setOpen(false);
               }}
             >
-              <span className="emblem-box emblem-box--menu">
-                <Emblem id={meta.emblem} size={32} />
-              </span>
+              <Flag id={meta.flag} size={18} />
               <span>{meta.nativeName}</span>
               {selected ? <span className="lang__dot" aria-hidden="true" /> : null}
             </Link>

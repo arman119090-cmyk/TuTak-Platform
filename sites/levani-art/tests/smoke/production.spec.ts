@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import source from '../../src/content/catalog.source.json';
 
 const LOCALES = ['hy', 'ru', 'it', 'de', 'fr', 'en'] as const;
-const EMBLEM: Record<string, string> = { hy: 'am', ru: 'ru', it: 'it', de: 'de', fr: 'fr', en: 'gb' };
+const FLAG: Record<string, string> = { hy: 'am', ru: 'ru', it: 'it', de: 'de', fr: 'fr', en: 'gb' };
 const NAMES: Record<string, string> = {
   hy: 'Հայերեն', ru: 'Русский', it: 'Italiano', de: 'Deutsch', fr: 'Français', en: 'English',
 };
@@ -79,7 +79,7 @@ test('root / sends the visitor to a language', async ({ page }) => {
 });
 
 for (const l of LOCALES) {
-  test(`${l}: home — lang, SEO, emblem, images, no overflow, no /_next/image`, async ({ page }) => {
+  test(`${l}: home — lang, SEO, flag, images, no overflow, no /_next/image`, async ({ page }) => {
     const hits = watchOptimizer(page);
     const res = await page.goto(`/${l}/`);
     expect(res?.status()).toBe(200);
@@ -95,8 +95,9 @@ for (const l of LOCALES) {
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /LEVANI ART/);
     await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', `${base}/${l}/`);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
-    const emblem = page.locator('.lang__trigger img.emblem');
-    await expect(emblem).toHaveAttribute('src', `/emblems/${EMBLEM[l]}.webp`);
+    const flag = page.locator('.lang__trigger img.flag');
+    await expect(flag).toHaveAttribute('src', `/flags/${FLAG[l]}.svg`);
+    await expect(page.locator('img[src*="/emblems/"]')).toHaveCount(0);
     await scrollThrough(page);
     await expect.poll(() => brokenImages(page)).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -105,7 +106,7 @@ for (const l of LOCALES) {
     expect(hits).toEqual([]);
   });
 
-  test(`${l}: language selector — arms only, caret, 6 languages, switching works`, async ({ page }) => {
+  test(`${l}: language selector — flags only, caret, 6 languages, switching works`, async ({ page }) => {
     await page.goto(`/${l}/collection/`);
     const trigger = page.locator('.lang__trigger');
     await expect(page.locator('header select')).toHaveCount(0);
@@ -124,8 +125,8 @@ for (const l of LOCALES) {
     await expect(menu).toBeVisible();
     for (const o of LOCALES) {
       const item = page.getByRole('menuitemradio', { name: NAMES[o] });
-      const img = item.locator('img.emblem');
-      await expect(img).toHaveAttribute('src', `/emblems/${EMBLEM[o]}.webp`);
+      const img = item.locator('img.flag');
+      await expect(img).toHaveAttribute('src', `/flags/${FLAG[o]}.svg`);
       await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
     }
     if (!isDesktop(page)) {

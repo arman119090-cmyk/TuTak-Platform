@@ -76,12 +76,11 @@ browser language, otherwise English; a manual choice is remembered in the
 `LEVANI_LOCALE` cookie. Switch detection or persistence off in
 `src/i18n/config.ts`.
 
-The selector shows a heraldic emblem and a small caret; hover or keyboard
-focus reveals the native language name; click/tap opens the list (bottom sheet
-on phones). The emblems are the official state arms (`public/emblems/*.webp`,
-rendered from the SVGs of the `coat-of-arms` npm package, MIT); France, which
-has no coat of arms, uses its de facto state emblem, English uses the Royal
-Coat of Arms of the United Kingdom. See `components/Emblem.tsx`.
+The selector shows the current language's **flag** and a small caret; hover
+or keyboard focus reveals the native language name; click/tap opens the list
+(bottom sheet on phones). Flags are 4:3 SVGs in `public/flags/` (flag-icons,
+via the `coat-of-arms` npm package, MIT); English uses the flag of the United
+Kingdom. See `components/Flag.tsx`.
 
 ## Enquiries
 

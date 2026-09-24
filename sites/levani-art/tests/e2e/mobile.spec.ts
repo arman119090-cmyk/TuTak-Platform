@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('mobile', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) > 500, 'phone-only behaviour');
 
-  test('tapping the emblem opens the language sheet', async ({ page }) => {
+  test('tapping the flag opens the language sheet', async ({ page }) => {
     await page.goto('/ru');
     await page.locator('.lang__trigger').tap();
     const panel = page.getByRole('menu');

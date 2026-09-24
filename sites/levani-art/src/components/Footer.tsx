@@ -4,7 +4,7 @@ import type { Dictionary } from '@/i18n/dictionaries';
 import { site } from '@/content/site';
 import { LogoPlate } from './Brand';
 import { ContactChannels } from './ContactChannels';
-import { Emblem } from './Emblem';
+import { Flag } from './Flag';
 
 export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const f = dict.footer;
@@ -73,9 +73,7 @@ export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
                 hrefLang={localeMeta[l].htmlLang}
                 aria-current={l === locale ? 'true' : undefined}
               >
-                <span className="emblem-box emblem-box--footer">
-                  <Emblem id={localeMeta[l].emblem} size={20} />
-                </span>
+                <Flag id={localeMeta[l].flag} size={12} />
                 {localeMeta[l].nativeName}
               </Link>
             </li>

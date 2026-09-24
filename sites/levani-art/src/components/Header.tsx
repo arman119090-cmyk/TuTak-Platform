@@ -7,7 +7,7 @@ import { localeMeta, locales, type Locale } from '@/i18n/config';
 import { swapLocaleInPath } from '@/i18n/negotiate';
 import type { SearchEntry } from '@/lib/search';
 import { Wordmark } from './Brand';
-import { Emblem } from './Emblem';
+import { Flag } from './Flag';
 import { CloseIcon, SearchIcon } from './Icons';
 import { LanguageSelector, rememberLocale } from './LanguageSelector';
 import { SearchOverlay, type SearchLabels } from './SearchOverlay';
@@ -181,9 +181,7 @@ export function Header({
                     setMenuOpen(false);
                   }}
                 >
-                  <span className="emblem-box emblem-box--mobile">
-                    <Emblem id={localeMeta[l].emblem} size={26} />
-                  </span>
+                  <Flag id={localeMeta[l].flag} size={15} />
                   {localeMeta[l].nativeName}
                 </Link>
               </li>

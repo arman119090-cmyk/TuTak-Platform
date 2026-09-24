@@ -16,18 +16,19 @@ export const i18nConfig = {
   cookieMaxAgeSeconds: 60 * 60 * 24 * 365,
 } as const;
 
-export type EmblemId = 'AM' | 'RU' | 'IT' | 'DE' | 'FR' | 'GB';
+/** File name in public/flags; English uses the United Kingdom's flag. */
+export type FlagId = 'am' | 'ru' | 'it' | 'de' | 'fr' | 'gb';
 
 export const localeMeta: Record<
   Locale,
-  { nativeName: string; emblem: EmblemId; htmlLang: string; ogLocale: string }
+  { nativeName: string; flag: FlagId; htmlLang: string; ogLocale: string }
 > = {
-  hy: { nativeName: 'Հայերեն', emblem: 'AM', htmlLang: 'hy', ogLocale: 'hy_AM' },
-  ru: { nativeName: 'Русский', emblem: 'RU', htmlLang: 'ru', ogLocale: 'ru_RU' },
-  it: { nativeName: 'Italiano', emblem: 'IT', htmlLang: 'it', ogLocale: 'it_IT' },
-  de: { nativeName: 'Deutsch', emblem: 'DE', htmlLang: 'de', ogLocale: 'de_DE' },
-  fr: { nativeName: 'Français', emblem: 'FR', htmlLang: 'fr', ogLocale: 'fr_FR' },
-  en: { nativeName: 'English', emblem: 'GB', htmlLang: 'en', ogLocale: 'en_GB' },
+  hy: { nativeName: 'Հայերեն', flag: 'am', htmlLang: 'hy', ogLocale: 'hy_AM' },
+  ru: { nativeName: 'Русский', flag: 'ru', htmlLang: 'ru', ogLocale: 'ru_RU' },
+  it: { nativeName: 'Italiano', flag: 'it', htmlLang: 'it', ogLocale: 'it_IT' },
+  de: { nativeName: 'Deutsch', flag: 'de', htmlLang: 'de', ogLocale: 'de_DE' },
+  fr: { nativeName: 'Français', flag: 'fr', htmlLang: 'fr', ogLocale: 'fr_FR' },
+  en: { nativeName: 'English', flag: 'gb', htmlLang: 'en', ogLocale: 'en_GB' },
 };
 
 export function isLocale(value: string | undefined | null): value is Locale {

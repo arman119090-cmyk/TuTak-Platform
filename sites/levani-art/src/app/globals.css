@@ -442,37 +442,25 @@ main {
   cursor: pointer;
   color: var(--ivory-dim);
 }
-.emblem {
+.flag {
   display: block;
   flex: none;
   max-width: none;
-  object-fit: contain;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55));
+  border-radius: 2px;
+  /* A hairline edge keeps white stripes (Russia, France, Italy) legible on
+     the dark ground. */
+  box-shadow:
+    0 0 0 1px rgb(242 236 226 / 0.22),
+    0 1px 3px rgb(0 0 0 / 0.5);
   user-select: none;
 }
-/* Arms differ in width (Germany is narrow, the UK wide); a fixed box keeps
-   the language names aligned in lists. */
-.emblem-box {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-}
-.emblem-box--menu {
-  width: 38px;
-}
-.emblem-box--mobile {
-  width: 30px;
-}
-.emblem-box--footer {
-  width: 24px;
-}
-.lang__trigger .emblem {
+.lang__trigger .flag {
   transition: transform 0.25s var(--ease);
 }
-.lang__trigger:hover .emblem {
-  transform: scale(1.06);
+.lang__trigger:hover .flag {
+  transform: translateY(-1px);
 }
-/* The native name slides out beside the emblem on hover/focus only. */
+/* The native name slides out beside the flag on hover/focus only. */
 .lang__name {
   display: inline-block;
   max-width: 0;

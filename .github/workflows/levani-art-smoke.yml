@@ -1,0 +1,46 @@
+# Smoke test of the PUBLIC LEVANI ART site (Render Static Site).
+# Runs on demand and after pushes that touch the site; waits for the new
+# commit to be live before testing. Touches nothing outside sites/levani-art.
+name: levani-art smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Public URL to test
+        default: https://levani-art.onrender.com
+  push:
+    branches: [claude/new-session-xjpidi]
+    paths: ['sites/levani-art/**', '.github/workflows/levani-art-smoke.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: sites/levani-art
+    env:
+      SMOKE_URL: ${{ github.event.inputs.url || 'https://levani-art.onrender.com' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - name: Wait for the deployed build to be live
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SMOKE_URL/en/")
+            echo "attempt $i: $code"
+            [ "$code" = 200 ] && break
+            sleep 15
+          done
+          # Give Render time to publish the build of this very commit.
+          sleep 120
+      - name: Smoke test
+        run: npx playwright test -c playwright.smoke.config.ts

@@ -24,7 +24,12 @@
     "eyebrow": "Yerevan · Armenia",
     "title": "We build to last for decades",
     "lead": "Residential and commercial buildings, turnkey renovation, roads and infrastructure. One contractor from estimate to handover.",
-    "imageAlt": "[Temporary image: a photo of a project will be provided by the client]"
+    "imageAlt": "[Temporary image: a photo of a project will be provided by the client]",
+    "call": "Call us"
+  },
+  "manifesto": {
+    "eyebrow": "Principle",
+    "text": "One contractor, one estimate, one point of responsibility — from the first site visit to the signed acceptance certificate."
   },
   "directions": {
     "eyebrow": "Services",

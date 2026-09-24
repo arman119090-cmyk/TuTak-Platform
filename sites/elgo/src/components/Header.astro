@@ -1,4 +1,5 @@
 ---
+import { getCollection } from 'astro:content';
 import { company } from '../config';
 import { locales, localeLabels, t, type Locale } from '../i18n';
 
@@ -13,9 +14,11 @@ interface Props {
 const { locale, path, overlay = false } = Astro.props;
 const d = t(locale);
 const base = path === '/' ? '' : `/${locale}/`;
+// «Проекты» в меню — только когда секция есть на странице (реальные featured-проекты).
+const hasProjects = (await getCollection('projects', (p) => p.data.featured && !p.data.placeholder)).length > 0;
 const links = [
   { id: 'directions', label: d.nav.directions },
-  { id: 'projects', label: d.nav.projects },
+  ...(hasProjects ? [{ id: 'projects', label: d.nav.projects }] : []),
   { id: 'about', label: d.nav.about },
   { id: 'contact', label: d.nav.contacts },
 ];

@@ -13,8 +13,7 @@
     "preview": "astro preview",
     "start": "node ./dist/server/entry.mjs",
     "check": "astro check",
-    "test": "node --test tests/*.test.mjs",
-    "images:placeholders": "node scripts/make-placeholders.mjs"
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.6",

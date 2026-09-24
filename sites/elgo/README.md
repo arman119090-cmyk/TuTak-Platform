@@ -49,10 +49,10 @@ BASE=http://127.0.0.1:4321 OUT=./shots node tests/browser-check.mjs
 
 | Что | Сейчас на сайте | Где менять |
 |---|---|---|
-| Фото объекта для первого экрана (горизонтальное, ≥ 2400 px) | серая заглушка, alt «[Временное изображение…]» | `src/assets/photos/placeholder-hero.jpg` → см. «Как заменить фото» |
-| 4 фото для направлений | заглушки | `src/assets/photos/placeholder-dir-*.jpg` |
-| Фото команды или техники для «О компании» | заглушка | `src/assets/photos/placeholder-about.jpg` |
-| Реальные проекты: фото, название, район, год, площадь | 3 карточки «[Название объекта N]» | `src/content/projects/placeholder-*.md` — удалить, добавить реальные |
+| Фото объекта для первого экрана (горизонтальное, ≥ 2400 px) | типографский первый экран без фото | положить `src/assets/photos/hero.jpg` — см. «Как добавить фото» |
+| 4 фото для направлений | крупные номера вместо фото | `src/assets/photos/direction-*.jpg` (показываются, когда есть все 4) |
+| Фото команды или техники для «О компании» | текстовый вариант | `src/assets/photos/about.jpg` |
+| Реальные проекты: фото, название, район, год, площадь | секция и пункт меню **скрыты** | `src/content/projects/*.md` — см. «Как добавить проект» |
 | Текст «О компании», 2–3 предложения | «[2–3 предложения о компании от заказчика]» | `about.text` в `src/i18n/*.json` |
 | Срок гарантии | «[срок]» в шаге «Сдача» | `process.steps[4].text` в `src/i18n/*.json` |
 | Часы работы | «[уточнить]» в подвале | `footer.hoursValue` в `src/i18n/*.json` |
@@ -81,9 +81,9 @@ BASE=http://127.0.0.1:4321 OUT=./shots node tests/browser-check.mjs
 - [ ] Английский текст просмотрен (тоже перевод ИИ).
 - [ ] Политика конфиденциальности проверена юристом (Закон РА «О защите
       персональных данных»), плейсхолдеры в ней заполнены, дата редакции стоит.
-- [ ] Все заглушки-фото заменены реальными фото заказчика
-      (`src/assets/photos/placeholder-*`), у каждого — осмысленный `alt`.
-- [ ] Файлы-заглушки проектов `src/content/projects/placeholder-*.md` удалены,
+- [ ] Реальные фото лежат в `src/assets/photos/` (требования —
+      `docs/ELGO_PHOTO_BRIEF_RU.md`), у каждого — осмысленный `alt`.
+- [ ] Реальные проекты добавлены в `src/content/projects/`,
       добавлены реальные проекты.
 - [ ] Поиск по `[` в `src/i18n/*.json` и `src/content/` — не осталось
       плейсхолдеров, которые не должны быть видны.
@@ -153,17 +153,20 @@ order: 1                     # 1 — большая карточка; на гл�
 первые три `featured` по `order`. `gallery` пока не выводится — пригодится на
 странице проекта (этап 2). Ошибку в полях покажет `npm run build`.
 
-## Как заменить фото
+## Как добавить фото
 
-Проще всего — положить реальное фото под тем же именем
-(`src/assets/photos/placeholder-hero.jpg` и т.д.) и поменять `alt` в словарях
-(`hero.imageAlt`, `directions.items[].alt`, `about.imageAlt`). Аккуратнее —
-положить файл под своим именем и поменять импорт в компоненте
-(`src/components/Hero.astro`, `Directions.astro`, `About.astro`), затем
-удалить заглушку.
+Положить файл в `src/assets/photos/` под именем «слота» — секция сама
+переключится с варианта без фото на вариант с фото:
 
-Заглушки сгенерированы `npm run images:placeholders` — это плоские тона с
-линиями, не фото и не сток, чужих прав на них нет.
+| Файл | Где |
+|---|---|
+| `hero.jpg` | первый экран |
+| `direction-residential.jpg`, `direction-commercial.jpg`, `direction-renovation.jpg`, `direction-infrastructure.jpg` | «Направления» — показываются, только когда есть все четыре |
+| `about.jpg` | «О компании» |
+
+Подходят `.jpg/.jpeg/.png/.webp`. Затем поправить `alt` в словарях
+(`hero.imageAlt`, `directions.items[].alt`, `about.imageAlt`) — сейчас там
+«[Временное изображение…]». Что снимать и как — `docs/ELGO_PHOTO_BRIEF_RU.md`.
 
 ---
 
@@ -264,7 +267,7 @@ src/
   i18n/{hy,ru,en}.json   все тексты
   content.config.ts      схема проектов
   content/projects/      проекты, один .md = один проект
-  assets/photos/         фото (заглушки placeholder-*)
+  assets/photos/         фото по «слотам»: hero, direction-*, about
   components/            секции главной
   layouts/Base.astro     <head>: SEO, hreflang, OG, JSON-LD, шрифты
   lib/lead.ts            форма: валидация, антиспам, Telegram (покрыто тестами)
@@ -272,7 +275,7 @@ src/
   pages/api/lead.ts      POST /api/lead
   pages/index.astro      / → 301 → /hy/
 public/                  favicon, OG-картинка, логотип
-scripts/                 генерация заглушек и логотипа/OG
+scripts/                 генерация логотипа, favicon и OG
 tests/                   юнит-тесты формы, браузерная проверка
 ```
 

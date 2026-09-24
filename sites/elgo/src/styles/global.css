@@ -142,7 +142,7 @@ p {
 }
 
 :lang(hy) .h2 {
-  font-size: clamp(30px, 3.6vw, 50px);
+  font-size: clamp(27px, 3.6vw, 50px);
 }
 
 .muted {

@@ -11,7 +11,7 @@ interface Props {
 const { locale } = Astro.props;
 const d = t(locale);
 
-const featured = (await getCollection('projects', (p) => p.data.featured))
+const featured = (await getCollection('projects', (p) => p.data.featured && !p.data.placeholder))
   .sort((a, b) => a.data.order - b.data.order)
   .slice(0, 3);
 

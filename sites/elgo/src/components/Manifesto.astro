@@ -1,0 +1,51 @@
+---
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+---
+
+<section class="section manifesto" aria-label={d.manifesto.eyebrow}>
+  <div class="container inner" data-reveal>
+    <span class="eyebrow">{d.manifesto.eyebrow}</span>
+    <p class="text">{d.manifesto.text}</p>
+  </div>
+</section>
+
+<style>
+  .manifesto {
+    padding-block: calc(var(--section-y) * 1.1);
+  }
+
+  .inner {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    gap: 48px;
+    align-items: baseline;
+  }
+
+  .text {
+    font-family: var(--font-head);
+    font-weight: 500;
+    font-size: clamp(30px, 3.8vw, 56px);
+    line-height: 1.18;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  :global(:lang(hy)) .text {
+    font-size: clamp(24px, 2.8vw, 40px);
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+
+  @media (max-width: 1023px) {
+    .inner {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+  }
+</style>

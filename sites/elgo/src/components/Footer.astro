@@ -1,5 +1,6 @@
 ---
 import { company } from '../config';
+import logoSvg from '../../public/logo.svg?raw';
 import { t, type Locale } from '../i18n';
 
 interface Props {
@@ -7,6 +8,8 @@ interface Props {
 }
 const { locale } = Astro.props;
 const d = t(locale);
+// Контуры логотипа — декоративная «подпись» в подвале (картинка, не текст).
+const wordmark = logoSvg.replace(/<title>.*?<\/title>/, '').replace(/fill="[^"]+"/, 'fill="currentColor"').replace(/ width="\d+" height="\d+"/, '');
 ---
 
 <footer class="footer">
@@ -40,6 +43,7 @@ const d = t(locale);
       </div>
     </dl>
   </div>
+  <div class="container wordmark" aria-hidden="true" set:html={wordmark} />
   <div class="container bottom">
     <p>{d.footer.rights}</p>
     <a href={`/${locale}/privacy/`}>{d.footer.privacy}</a>
@@ -105,12 +109,25 @@ const d = t(locale);
     border-bottom-color: var(--brass);
   }
 
+  .wordmark {
+    margin-top: 72px;
+    color: #1f1f24;
+    user-select: none;
+  }
+
+  .wordmark :global(svg) {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: auto;
+  }
+
   .bottom {
     display: flex;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 16px;
-    margin-top: 80px;
+    margin-top: 32px;
     padding-top: 28px;
     border-top: 1px solid var(--line-dark);
     font-size: 14px;

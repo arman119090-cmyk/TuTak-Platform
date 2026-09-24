@@ -1,6 +1,6 @@
 ---
 import { Picture } from 'astro:assets';
-import aboutImage from '../assets/photos/placeholder-about.jpg';
+import { photo } from '../lib/photos';
 import { company } from '../config';
 import { t, type Locale } from '../i18n';
 
@@ -9,6 +9,7 @@ interface Props {
 }
 const { locale } = Astro.props;
 const d = t(locale);
+const aboutImage = photo('about');
 const isPlaceholder = (s: string) => /^\[.*\]$/.test(s.trim());
 
 // Реквизиты. ՀՎՀՀ и лицензия — только когда подтверждены (не null).
@@ -28,21 +29,33 @@ const rows = [
 ---
 
 <section class="section section--dark" id="about" aria-labelledby="about-title">
-  <div class="container grid">
-    <div class="media" data-reveal>
-      <Picture
-        src={aboutImage}
-        alt={d.about.imageAlt}
-        formats={['avif', 'webp']}
-        widths={[480, 800, 1200]}
-        sizes="(min-width: 1024px) 45vw, 100vw"
-        class="img"
-      />
-    </div>
+  <div class:list={['container grid', { 'grid--text': !aboutImage }]}>
+    {aboutImage ? (
+      <div class="media" data-reveal>
+        <Picture
+          src={aboutImage}
+          alt={d.about.imageAlt}
+          formats={['avif', 'webp']}
+          widths={[480, 800, 1200]}
+          sizes="(min-width: 1024px) 45vw, 100vw"
+          class="img"
+        />
+      </div>
+    ) : (
+      <div class="lead-col" data-reveal>
+        <span class="eyebrow">{d.about.eyebrow}</span>
+        <h2 class="h2" id="about-title">{d.about.title}</h2>
+        <p class:list={['text', { placeholder: isPlaceholder(d.about.text) }]}>{d.about.text}</p>
+      </div>
+    )}
     <div class="body" data-reveal>
-      <span class="eyebrow">{d.about.eyebrow}</span>
-      <h2 class="h2" id="about-title">{d.about.title}</h2>
-      <p class:list={['text', { placeholder: isPlaceholder(d.about.text) }]}>{d.about.text}</p>
+      {aboutImage && (
+        <>
+          <span class="eyebrow">{d.about.eyebrow}</span>
+          <h2 class="h2" id="about-title">{d.about.title}</h2>
+          <p class:list={['text', { placeholder: isPlaceholder(d.about.text) }]}>{d.about.text}</p>
+        </>
+      )}
 
       <h3 class="req-title">{d.about.requisites}</h3>
       <dl class="req">
@@ -77,6 +90,14 @@ const rows = [
     font-size: 19px;
     color: var(--muted-dark);
     max-width: 560px;
+  }
+
+  .grid--text .body {
+    padding-top: 8px;
+  }
+
+  .grid--text .req-title {
+    margin-top: 0;
   }
 
   .req-title {

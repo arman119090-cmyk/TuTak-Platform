@@ -61,7 +61,6 @@ export const it: Dictionary = {
   home: {
     heroLine: 'Arte, scultura e oggetti senza tempo, scelti per interni d’eccezione.',
     exploreCta: 'Scopri la collezione',
-    privateCta: 'Richiesta privata',
     featuredEyebrow: 'Dalla collezione',
     featuredTitle: 'Opere con cui vivere',
     featuredText:
@@ -70,6 +69,7 @@ export const it: Dictionary = {
     momentTitle: 'Pensato per spazi architettonici',
     momentText:
       'Sculture e fontane di grande formato per corti, giardini e interni di rappresentanza, dove un oggetto deve misurarsi con la pietra e la luce.',
+    indexTitle: 'Sezioni della collezione',
     categoriesEyebrow: 'La collezione',
     philosophyEyebrow: 'Sul collezionare',
     philosophyTitle: 'Gli oggetti sopravvivono alle stanze.',
@@ -80,7 +80,6 @@ export const it: Dictionary = {
     privateText:
       'Collezionisti privati, interior designer, architetti, hotel e ristoranti, sviluppatori di residenze — ogni richiesta è seguita personalmente e con discrezione.',
     advisorCta: 'Fai una richiesta privata',
-    viewAll: 'Tutta la collezione',
     pieces: plural({ one: 'opera', other: 'opere' }),
   },
   collection: {
@@ -165,7 +164,6 @@ export const it: Dictionary = {
       { title: 'Scultura', text: 'Figure e animali, dal tavolo al giardino.' },
       { title: 'Oggetti decorativi', text: 'Orologi, colonne e fontane.' },
     ],
-    cta: 'Scopri la collezione',
   },
   privateClients: {
     eyebrow: 'Clienti privati',

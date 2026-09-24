@@ -61,7 +61,6 @@ export const fr: Dictionary = {
   home: {
     heroLine: 'Art, sculpture et objets intemporels, choisis pour des intérieurs d’exception.',
     exploreCta: 'Découvrir la collection',
-    privateCta: 'Demande privée',
     featuredEyebrow: 'Dans la collection',
     featuredTitle: 'Des œuvres pour vivre avec',
     featuredText:
@@ -70,6 +69,7 @@ export const fr: Dictionary = {
     momentTitle: 'Conçu pour les espaces architecturaux',
     momentText:
       'Sculptures et fontaines de grande échelle pour cours, jardins et grands intérieurs, là où un objet doit répondre à la pierre et à la lumière.',
+    indexTitle: 'Parcourir par catégorie',
     categoriesEyebrow: 'La collection',
     philosophyEyebrow: 'Collectionner',
     philosophyTitle: 'Les objets survivent aux pièces.',
@@ -80,7 +80,6 @@ export const fr: Dictionary = {
     privateText:
       'Collectionneurs privés, architectes d’intérieur, architectes, hôtels et restaurants, promoteurs de résidences — chaque demande est traitée personnellement et en toute discrétion.',
     advisorCta: 'Faire une demande privée',
-    viewAll: 'Voir toute la collection',
     pieces: plural({ one: 'œuvre', other: 'œuvres' }),
   },
   collection: {
@@ -165,7 +164,6 @@ export const fr: Dictionary = {
       { title: 'Sculpture', text: 'Figures et animaux, de la table au jardin.' },
       { title: 'Objets décoratifs', text: 'Pendules, colonnes et fontaines.' },
     ],
-    cta: 'Découvrir la collection',
   },
   privateClients: {
     eyebrow: 'Clients privés',

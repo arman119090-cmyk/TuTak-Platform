@@ -61,7 +61,6 @@ export const de: Dictionary = {
   home: {
     heroLine: 'Kuratierte Kunst, Skulptur und zeitlose Objekte für außergewöhnliche Interieurs.',
     exploreCta: 'Sammlung entdecken',
-    privateCta: 'Private Anfrage',
     featuredEyebrow: 'Aus der Sammlung',
     featuredTitle: 'Werke, mit denen man lebt',
     featuredText:
@@ -70,6 +69,7 @@ export const de: Dictionary = {
     momentTitle: 'Geschaffen für architektonische Räume',
     momentText:
       'Großformatige Skulpturen und Brunnen für Höfe, Gärten und repräsentative Interieurs — dort, wo ein Objekt vor Stein und Licht bestehen muss.',
+    indexTitle: 'Nach Kategorien',
     categoriesEyebrow: 'Die Sammlung',
     philosophyEyebrow: 'Über das Sammeln',
     philosophyTitle: 'Objekte überdauern Räume.',
@@ -80,7 +80,6 @@ export const de: Dictionary = {
     privateText:
       'Privatsammler, Innenarchitekten, Architekten, Hotels und Restaurants, Entwickler von Residenzen — jede Anfrage wird persönlich und diskret betreut.',
     advisorCta: 'Private Anfrage stellen',
-    viewAll: 'Die gesamte Sammlung',
     pieces: plural({ one: 'Werk', other: 'Werke' }),
   },
   collection: {
@@ -165,7 +164,6 @@ export const de: Dictionary = {
       { title: 'Skulptur', text: 'Figuren und Tiere, vom Tisch bis in den Garten.' },
       { title: 'Dekorative Objekte', text: 'Uhren, Säulen und Brunnen.' },
     ],
-    cta: 'Sammlung entdecken',
   },
   privateClients: {
     eyebrow: 'Privatkunden',

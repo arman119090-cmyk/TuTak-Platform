@@ -43,7 +43,7 @@ export default async function ArtistsPage({ params }: PageProps<'/[locale]/artis
             <ul className="artist__works">
               {own.map((w) => (
                 <li key={w.slug}>
-                  <ArtworkCard artwork={w} locale={locale} dict={dict} sizes="(max-width: 720px) 92vw, 30vw" />
+                  <ArtworkCard artwork={w} locale={locale} dict={dict} showArtist={false} sizes="(max-width: 720px) 92vw, 30vw" />
                 </li>
               ))}
             </ul>

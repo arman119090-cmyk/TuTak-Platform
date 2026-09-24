@@ -108,3 +108,20 @@ test.describe('language selector', () => {
     await expect(page.getByRole('menu')).toBeHidden();
   });
 });
+
+test.describe('header layout', () => {
+  // Found in the design audit: at 1200 px de/ru/it overflowed; Armenian
+  // was collapsed at 1440 while every other language showed the full nav.
+  for (const [locale, width] of [['de', 1280], ['ru', 1280], ['it', 1280], ['fr', 1280], ['en', 1280], ['hy', 1440]] as const) {
+    test(`${locale} at ${width}px: full nav shown and nothing overflows`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/${locale}/collection/`);
+      await expect(page.locator('.site-nav')).toBeVisible();
+      await expect(page.locator('.site-header__enquire')).toBeVisible();
+      expect(await page.locator('.site-nav ul').evaluate((u) => u.scrollWidth - u.clientWidth)).toBeLessThanOrEqual(0);
+      const nav = (await page.locator('.site-nav ul').boundingBox())!;
+      const tools = (await page.locator('.site-header__tools').boundingBox())!;
+      expect(nav.x + nav.width).toBeLessThan(tools.x);
+    });
+  }
+});

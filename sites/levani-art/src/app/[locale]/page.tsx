@@ -45,7 +45,7 @@ export default async function Home({ params }: PageProps<'/[locale]'>) {
               {h.exploreCta}
             </Link>
             <Link href={`${base}/enquire`} className="button button--ghost">
-              {h.privateCta}
+              {h.advisorCta}
             </Link>
           </div>
         </div>
@@ -145,7 +145,7 @@ export default async function Home({ params }: PageProps<'/[locale]'>) {
       <section className="section index">
         <header className="section-head reveal">
           <p className="eyebrow">{h.categoriesEyebrow}</p>
-          <h2 className="section-title">{dict.meta.collection}</h2>
+          <h2 className="section-title">{h.indexTitle}</h2>
         </header>
         <ol className="index__list">
           {cats.map((c, i) => {
@@ -188,7 +188,7 @@ export default async function Home({ params }: PageProps<'/[locale]'>) {
               {h.advisorCta}
             </Link>
             <Link href={`${base}/collection`} className="button button--ghost">
-              {h.viewAll}
+              {h.exploreCta}
             </Link>
           </div>
         </div>

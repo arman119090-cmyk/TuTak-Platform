@@ -60,7 +60,6 @@ export const en = {
   home: {
     heroLine: 'Curated art, sculpture and timeless objects for exceptional interiors.',
     exploreCta: 'Explore Collection',
-    privateCta: 'Private Enquiry',
     featuredEyebrow: 'From the collection',
     featuredTitle: 'Works chosen to be lived with',
     featuredText:
@@ -69,6 +68,7 @@ export const en = {
     momentTitle: 'Designed for architectural spaces',
     momentText:
       'Large-scale sculpture and fountains for courtyards, gardens and grand interiors, where an object has to answer to stone and light.',
+    indexTitle: 'Browse by category',
     categoriesEyebrow: 'The collection',
     philosophyEyebrow: 'On collecting',
     philosophyTitle: 'Objects outlast rooms.',
@@ -79,7 +79,6 @@ export const en = {
     privateText:
       'Private collectors, interior designers, architects, hotels and restaurants, developers of residences — enquiries are handled personally and discreetly.',
     advisorCta: 'Make a Private Enquiry',
-    viewAll: 'View the full collection',
     pieces: plural({ one: 'piece', other: 'pieces' }),
   },
   collection: {
@@ -163,7 +162,6 @@ export const en = {
       { title: 'Sculpture', text: 'Figures and animals, from the table to the garden.' },
       { title: 'Decorative objects', text: 'Clocks, pedestals and fountains.' },
     ],
-    cta: 'Explore the collection',
   },
   privateClients: {
     eyebrow: 'Private Clients',

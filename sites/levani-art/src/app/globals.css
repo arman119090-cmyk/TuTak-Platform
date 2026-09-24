@@ -405,7 +405,15 @@ main {
   border-bottom: 1px solid currentColor;
 }
 
-@media (max-width: 1180px) {
+/* Laptop widths: a fixed, tighter step between nav items, so the longest
+   languages (fr, en) still fit at 1280 px. */
+@media (max-width: 1439px) {
+  .site-nav ul {
+    gap: 18px;
+  }
+}
+/* Below 1280 px the seven nav items no longer fit. */
+@media (max-width: 1279px) {
   .site-nav,
   .site-header__enquire {
     display: none;
@@ -878,8 +886,10 @@ main {
 .hero__media {
   position: relative;
   justify-self: end;
-  width: 100%;
+  /* The bronze frame sits 14 px outside the photo: keep it inside the grid. */
+  width: calc(100% - 28px);
   max-width: 600px;
+  margin-right: 14px;
   animation: settle 1.8s var(--ease) 0.15s both;
 }
 .hero__media img {
@@ -917,14 +927,17 @@ main {
 @media (max-width: 900px) {
   .hero {
     grid-template-columns: 1fr;
-    gap: 56px;
+    /* Room for the absolutely placed caption under the image. */
+    gap: 80px;
     min-height: 0;
     padding-top: calc(var(--header-h) + 16px);
   }
   .hero__media {
     order: -1;
     justify-self: center;
+    width: calc(100% - 16px);
     max-width: 560px;
+    margin: 0 8px;
   }
   .hero__media::after {
     inset: -8px;
@@ -1318,6 +1331,25 @@ main {
   padding: 0 var(--gutter);
   border-bottom: 1px solid var(--line);
 }
+@media (max-width: 720px) {
+  .filters {
+    position: relative;
+  }
+  /* The filter row scrolls sideways: fade the edge so it reads as more. */
+  .filters::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 1px;
+    width: 56px;
+    background: linear-gradient(90deg, transparent, var(--ink));
+    pointer-events: none;
+  }
+  .filters ul {
+    padding-right: 48px;
+  }
+}
 .filters ul {
   display: flex;
   gap: clamp(18px, 3vw, 44px);
@@ -1708,12 +1740,24 @@ main {
   padding: 0 var(--gutter);
   align-items: start;
 }
-.pillar:nth-child(2) {
-  margin-top: clamp(0px, 6vw, 90px);
-}
 .pillar__img {
-  display: block;
+  display: grid;
+  place-items: center;
+  /* Equal frames: the three photographs differ in proportion, the titles
+     below must still line up. The photo is fitted, never cropped. */
+  aspect-ratio: 4 / 5;
+  padding: clamp(14px, 2vw, 28px);
+  background:
+    radial-gradient(80% 70% at 50% 40%, rgb(176 141 87 / 0.1), transparent 70%),
+    var(--charcoal);
+  border: 1px solid var(--line);
   overflow: hidden;
+}
+.pillar__img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  box-shadow: none;
 }
 .pillar__title {
   margin-top: 22px;
@@ -2061,7 +2105,6 @@ main {
   font-size: 22px;
   letter-spacing: 0.08em;
   color: var(--ivory);
-  text-align: center;
 }
 .channels--sm .channel {
   padding: 12px 4px 10px;
@@ -2076,7 +2119,6 @@ main {
 }
 .channels--sm .channels__number {
   font-size: 19px;
-  text-align: left;
 }
 .artwork__contact {
   margin-top: 26px;
@@ -2085,10 +2127,9 @@ main {
   margin-bottom: 14px;
 }
 .contact-note {
-  margin-top: 12px;
+  margin-top: 6px;
   font-size: 12.5px;
   color: var(--stone);
-  text-align: center;
 }
 .also-instagram {
   display: inline-flex;
@@ -2110,9 +2151,6 @@ main {
 .enquiry-contact .channels {
   max-width: 520px;
   margin-top: 32px;
-}
-.enquiry-contact .channels__number {
-  text-align: left;
 }
 
 .button .ig-glyph {
@@ -2257,13 +2295,13 @@ main {
 /* ---------- Armenian --------------------------------------------------
    Armenian capitals are wide; tracked-out caps that suit Latin turn into a
    ribbon of letters. Tighter tracking, and the full nav collapses into the
-   menu earlier. */
+   menu earlier (the Armenian nav needs 1440 px). */
 
 html[lang='hy'] :is(.eyebrow, .site-nav a, .button, .text-link, .filters a, .card__meta, .facts dt,
     .field > label:not(.consent), .reasons legend, .site-header__enquire, .hero__tagline, .index__count) {
   letter-spacing: 0.06em;
 }
-@media (max-width: 1560px) {
+@media (max-width: 1439px) {
   html[lang='hy'] .site-nav,
   html[lang='hy'] .site-header__enquire {
     display: none;

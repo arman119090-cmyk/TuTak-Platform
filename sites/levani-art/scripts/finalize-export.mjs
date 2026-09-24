@@ -1,7 +1,7 @@
 /**
  * Post-build step for the static export (out/):
- * replaces Next's generic English 404.html with a branded page that answers
- * in the language of the requested path (/fr/… → French), falling back to
+ * replaces Next's generic English 404.html with a page in the site's own
+ * stylesheet and components that answers in the language of the requested path (/fr/… → French), falling back to
  * the browser language, then English. The static host serves it for any
  * unknown URL. Copy comes from src/i18n/not-found-strings.json.
  */
@@ -10,8 +10,15 @@ import { readFile, writeFile } from 'node:fs/promises';
 const root = new URL('../', import.meta.url);
 const strings = JSON.parse(await readFile(new URL('src/i18n/not-found-strings.json', root), 'utf8'));
 const locales = ['hy', 'ru', 'it', 'de', 'fr', 'en'];
+const flags = { hy: 'am', ru: 'ru', it: 'it', de: 'de', fr: 'fr', en: 'gb' };
 const names = { hy: 'Հայերեն', ru: 'Русский', it: 'Italiano', de: 'Deutsch', fr: 'Français', en: 'English' };
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+// Reuse the site's own stylesheet (fonts, buttons, header, footer), so the
+// 404 page is set in the same type and components as every other page.
+const home = await readFile(new URL('out/en/index.html', root), 'utf8');
+const styles = [...home.matchAll(/<link rel="stylesheet"[^>]*>/g)].map((m) => m[0]).join('\n');
+if (!styles) throw new Error('finalize-export: no stylesheet link found in out/en/index.html');
 
 const html = `<!doctype html>
 <html lang="en">
@@ -22,32 +29,32 @@ const html = `<!doctype html>
 <meta name="theme-color" content="#0b0a09">
 <title>404 — LEVANI ART</title>
 <link rel="icon" href="/icon.svg">
-<style>
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:#0b0a09;color:#f2ece2;
-    font:16px/1.7 system-ui,-apple-system,'Segoe UI',sans-serif}
-  header{padding:24px clamp(16px,4vw,64px);border-bottom:1px solid rgb(242 236 226/.12)}
-  header a{font:500 20px Georgia,'Times New Roman',serif;letter-spacing:.24em;color:#f2ece2;text-decoration:none}
-  main{flex:1;padding:clamp(64px,12vw,160px) clamp(16px,4vw,64px);max-width:1100px}
-  .eyebrow{font-size:11px;letter-spacing:.22em;color:#b08d57}
-  h1{margin:18px 0 0;font:400 clamp(38px,6vw,84px)/1.05 Georgia,'Times New Roman',serif}
-  p.text{max-width:34em;color:#d8d0c3;margin-top:22px}
-  a.button{display:inline-flex;align-items:center;min-height:50px;margin-top:36px;padding:0 30px;
-    border:1px solid rgb(242 236 226/.24);color:#f2ece2;text-decoration:none;font-size:11.5px;letter-spacing:.2em;text-transform:uppercase}
-  a.button:hover{border-color:#b08d57;color:#d6bf93}
-  nav{padding:22px clamp(16px,4vw,64px);border-top:1px solid rgb(242 236 226/.12);display:flex;flex-wrap:wrap;gap:10px 28px}
-  nav a{color:#a89e90;text-decoration:none;font-size:13px}
-</style>
+${styles}
 </head>
 <body>
-<header><a href="/" id="home">LEVANI ART</a></header>
+<header class="site-header">
+  <div class="site-header__inner">
+    <a href="/" id="home" class="site-header__brand"><span class="wordmark wordmark--md"><span class="wordmark__name">LEVANI ART</span></span></a>
+  </div>
+</header>
 <main>
-  <p class="eyebrow">404</p>
-  <h1 id="t">${esc(strings.en.title)}</h1>
-  <p class="text" id="x">${esc(strings.en.text)}</p>
-  <a class="button" id="b" href="/en/collection/">${esc(strings.en.back)}</a>
+  <div class="not-found">
+    <p class="eyebrow">404</p>
+    <h1 class="page-intro__title" id="t">${esc(strings.en.title)}</h1>
+    <p class="section-text" id="x">${esc(strings.en.text)}</p>
+    <a class="button button--ghost" id="b" href="/en/collection/">${esc(strings.en.back)}</a>
+  </div>
 </main>
-<nav>${locales.map((l) => `<a href="/${l}/" lang="${l}">${names[l]}</a>`).join('')}</nav>
+<footer class="site-footer">
+  <div class="site-footer__langs">
+    <ul>${locales
+      .map(
+        (l) =>
+          `<li><a href="/${l}/" lang="${l}"><img class="flag" src="/flags/${flags[l]}.svg" width="16" height="12" alt="">${names[l]}</a></li>`,
+      )
+      .join('')}</ul>
+  </div>
+</footer>
 <script>
 (function () {
   var S = ${JSON.stringify(strings)};
@@ -69,6 +76,8 @@ const html = `<!doctype html>
   b.textContent = s.back;
   b.href = '/' + loc + '/collection/';
   document.getElementById('home').href = '/' + loc + '/';
+  var cur = document.querySelector('.site-footer__langs a[lang="' + loc + '"]');
+  if (cur) cur.setAttribute('aria-current', 'true');
 })();
 </script>
 </body>

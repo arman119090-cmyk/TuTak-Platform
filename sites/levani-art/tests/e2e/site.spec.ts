@@ -46,6 +46,10 @@ test('unknown paths 404 in the right language', async ({ page }) => {
   expect(res?.status()).toBe(404);
   await expect(page.getByRole('heading', { level: 1 })).toContainText('ne fait pas partie');
   await expect(page.getByRole('link', { name: 'Retour à la collection' })).toHaveAttribute('href', '/fr/collection/');
+  // Same stylesheet and components as the rest of the site (design audit).
+  expect(await page.locator('link[rel="stylesheet"]').count()).toBeGreaterThan(0);
+  expect(await page.locator('h1').evaluate((h) => getComputedStyle(h).fontFamily)).toContain('Cormorant');
+  await expect(page.locator('.site-footer__langs img.flag')).toHaveCount(6);
 });
 
 test('artwork page renders only known facts', async ({ page }) => {

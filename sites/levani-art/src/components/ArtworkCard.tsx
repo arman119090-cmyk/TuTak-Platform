@@ -17,6 +17,7 @@ export function ArtworkCard({
   sizes = '(max-width: 720px) 92vw, (max-width: 1200px) 45vw, 30vw',
   priority = false,
   showMeta = true,
+  showArtist = true,
   showTitle = true,
 }: {
   artwork: Artwork;
@@ -25,10 +26,12 @@ export function ArtworkCard({
   sizes?: string;
   priority?: boolean;
   showMeta?: boolean;
+  /** Off where the artist is already the heading (artists page). */
+  showArtist?: boolean;
   showTitle?: boolean;
 }) {
   const artist = getArtist(artwork.artistSlug);
-  const meta = [artist?.name, dict.categories[artwork.category], artwork.dimensions].filter(Boolean);
+  const meta = [showArtist ? artist?.name : null, dict.categories[artwork.category], artwork.dimensions].filter(Boolean);
   return (
     <Link href={`/${locale}/artworks/${artwork.slug}`} className="card">
       <span className="card__frame">

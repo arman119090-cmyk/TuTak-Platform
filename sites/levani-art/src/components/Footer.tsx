@@ -36,7 +36,7 @@ export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
           <ul>
             <li><Link href={`${base}/about`}>{n.about}</Link></li>
             <li><Link href={`${base}/private-clients`}>{n.privateClients}</Link></li>
-            <li><Link href={`${base}/enquire`}>{n.enquire}</Link></li>
+            <li><Link href={`${base}/enquire`}>{n.contact}</Link></li>
           </ul>
         </nav>
 

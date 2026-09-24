@@ -48,7 +48,7 @@ export default async function AboutPage({ params }: PageProps<'/[locale]/about'>
         })}
       </ul>
       <div className="about__cta">
-        <Link href={`/${locale}/collection`} className="button button--solid">{t.cta}</Link>
+        <Link href={`/${locale}/collection`} className="button button--solid">{dict.home.exploreCta}</Link>
       </div>
     </div>
   );

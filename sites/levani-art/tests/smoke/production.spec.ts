@@ -153,8 +153,14 @@ for (const l of LOCALES) {
       const res = await page.goto(`/${l}/artworks/${a.slug}/`);
       expect(res?.status(), a.slug).toBe(200);
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(a.title);
-      await expect(page.locator('.artwork__frame img')).toHaveJSProperty('complete', true);
-      expect(await page.locator('.artwork__frame img').evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
+      // Name the work and the file if its photograph fails to load.
+      const photo = page.locator('.artwork__frame img');
+      await expect
+        .poll(
+          () => photo.evaluate((i: HTMLImageElement) => (i.complete ? i.naturalWidth : -1)),
+          { message: `${l}/${a.slug}: photo ${await photo.evaluate((i: HTMLImageElement) => i.currentSrc || i.src)}` },
+        )
+        .toBeGreaterThan(0);
       // WhatsApp opens with a message naming this very work.
       await expectMessengers(page.locator('.artwork__contact'), a.title);
       await expect(page.locator(`.artwork__contact a[href="${IG}"]`)).toHaveCount(1);

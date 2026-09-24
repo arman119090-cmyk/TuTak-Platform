@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { localeMeta, locales, type Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/dictionaries';
-import { site } from '@/content/site';
+import { enquiry, site } from '@/content/site';
 import { LogoPlate } from './Brand';
 import { Emblem } from './Emblem';
 
@@ -45,7 +45,22 @@ export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
           {contacts.length ? (
             <ul>{contacts.map((c) => <li key={c}>{c}</li>)}</ul>
           ) : (
-            <p className="site-footer__muted">{f.contactPending}</p>
+            <p className="site-footer__muted">
+              {/* "{instagram}" in the copy becomes the link, in every language. */}
+              {f.contactPending.split('{instagram}').map((part, i) =>
+                i === 0 ? (
+                  part
+                ) : (
+                  <span key={i}>
+                    <a href={enquiry.instagramUrl} target="_blank" rel="noopener noreferrer">
+                      Instagram
+                      <span className="visually-hidden"> ({dict.a11y.externalLink})</span>
+                    </a>
+                    {part}
+                  </span>
+                ),
+              )}
+            </p>
           )}
           <h2 className="eyebrow site-footer__sub">{f.follow}</h2>
           {socials.length ? (

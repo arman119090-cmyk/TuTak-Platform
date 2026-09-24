@@ -18,7 +18,7 @@ export const de: Dictionary = {
     privateClientsDescription:
       'Für Privatsammler, Innenarchitekten, Architekten, Hotels und Residenzen.',
     enquire: 'Private Anfrage',
-    enquireDescription: 'Anfrage zu einem Werk oder einer privaten Besichtigung.',
+    enquireDescription: 'Anfrage zu einem Werk der Sammlung.',
     privacy: 'Datenschutz',
     terms: 'Nutzungsbedingungen',
     notFound: 'Seite nicht gefunden',
@@ -79,7 +79,7 @@ export const de: Dictionary = {
     privateTitle: 'Für Sammler und für jene, die Räume gestalten',
     privateText:
       'Privatsammler, Innenarchitekten, Architekten, Hotels und Restaurants, Entwickler von Residenzen — jede Anfrage wird persönlich und diskret betreut.',
-    advisorCta: 'Mit einem Kunstberater sprechen',
+    advisorCta: 'Private Anfrage stellen',
     viewAll: 'Die gesamte Sammlung',
     pieces: plural({ one: 'Werk', other: 'Werke' }),
   },
@@ -135,12 +135,10 @@ export const de: Dictionary = {
     detailsNote: 'Weitere Angaben auf Anfrage.',
     architecturalEyebrow: 'Maßstab & Ort',
     architecturalTitle: 'Geschaffen für architektonische Räume',
-    architecturalText:
-      'Bei großen Objekten besprechen wir Standort, Zugang und Installation, bevor etwas vereinbart wird. Erzählen Sie uns von dem Ort, den Sie im Sinn haben.',
+    architecturalText: 'Weitere Angaben zum Werk erhalten Sie auf Anfrage.',
     interiorTitle: 'Im Interieur ansehen',
-    interiorPlaceholder:
-      'Interieur-Ansichten für dieses Werk sind in Vorbereitung. Wir zeigen Gemälde nur in echten, getreuen Umgebungen — niemals mit verändertem Bild.',
-    interiorCta: 'Interieur-Ansicht anfragen',
+    interiorPlaceholder: 'Für dieses Werk gibt es noch keine Interieur-Ansichten. Gezeigt wird das unveränderte Originalfoto.',
+    interiorCta: 'Anfrage über Instagram',
     close: 'Schließen',
     imageAlt: '{title} — {category}',
   },
@@ -208,16 +206,16 @@ export const de: Dictionary = {
       delivery: { title: 'Lieferkoordination', text: 'Handling, Transport und Planung der Installation.' },
       international: { title: 'Internationale Anfragen', text: 'Anfragen aus dem Ausland.' },
     },
-    cta: 'Mit einem Kunstberater sprechen',
+    cta: 'Private Anfrage stellen',
   },
   enquiry: {
     instagramTitle: 'Schreiben Sie uns auf Instagram',
-    instagramText: 'Anfragen nehmen wir derzeit über unser Instagram-Konto entgegen. Senden Sie uns eine Direktnachricht – wir antworten persönlich.',
+    instagramText: 'Anfragen nehmen wir derzeit über unser Instagram-Konto entgegen. Bitte senden Sie uns dort eine Direktnachricht.',
     instagramCta: '@{handle} schreiben',
     instagramMention: 'Bitte nennen Sie: {title}',
     eyebrow: 'Private Anfrage',
     title: 'Private Anfrage',
-    intro: 'Sagen Sie uns, wonach Sie suchen. Wir antworten persönlich.',
+    intro: 'Sagen Sie uns, wonach Sie suchen.',
     artwork: 'Werk',
     generalEnquiry: 'Allgemeine Anfrage',
     name: 'Name',
@@ -249,8 +247,6 @@ export const de: Dictionary = {
       tooLong: 'Dieser Text ist zu lang.',
       generic: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es gleich noch einmal.',
       rateLimited: 'Zu viele Versuche. Bitte warten Sie einige Minuten.',
-      notConfigured:
-        'Online-Anfragen sind noch nicht angebunden. Bitte versuchen Sie es später erneut — das Formular wird in Kürze freigeschaltet.',
     },
   },
   search: {
@@ -269,8 +265,7 @@ export const de: Dictionary = {
     explore: 'Entdecken',
     house: 'Das Haus',
     contact: 'Kontakt',
-    contactPending:
-      'Kontaktdaten werden in Kürze veröffentlicht. Bis dahin nutzen Sie bitte das Anfrageformular.',
+    contactPending: 'Kontaktdaten werden in Kürze veröffentlicht. Bis dahin erreichen Sie uns über {instagram}.',
     follow: 'Folgen',
     socialPending: 'Soziale Kanäle folgen.',
     legal: 'Rechtliches',
@@ -284,8 +279,7 @@ export const de: Dictionary = {
     placeholder:
       'Dies ist eine vorläufige Seite. Der endgültige Text wird veröffentlicht, sobald er vom Inhaber erstellt und geprüft wurde.',
     privacyTitle: 'Datenschutzerklärung',
-    privacyBody:
-      'Angaben, die Sie über das Anfrageformular senden — Name, Kontaktdaten, Land und Nachricht — werden ausschließlich zur Beantwortung Ihrer Anfrage verwendet.',
+    privacyBody: 'Diese Website hat keine Formulare und fragt keine personenbezogenen Daten ab. Sie speichert ein einziges Cookie, LEVANI_LOCALE, nur um die gewählte Sprache zu merken. Wenn Sie uns über Instagram schreiben, verarbeitet Instagram Ihre Nachricht nach seiner eigenen Datenschutzrichtlinie. Die Website wird bei Render gehostet; dort können übliche technische Zugriffsprotokolle anfallen.',
     termsTitle: 'Nutzungsbedingungen',
     termsBody:
       'Bilder und Texte dieser Website gehören ihren jeweiligen Rechteinhabern und dürfen ohne Erlaubnis nicht vervielfältigt werden.',

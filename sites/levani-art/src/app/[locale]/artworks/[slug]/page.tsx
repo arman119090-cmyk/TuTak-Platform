@@ -175,7 +175,8 @@ export default async function ArtworkPage({ params }: PageProps<'/[locale]/artwo
               <strong>{a.fields.installation}.</strong> {installation}
             </p>
           ) : null}
-          <p className="artwork__muted">{a.detailsNote}</p>
+          {/* Large objects say the same thing in the section below. */}
+          {isLargeObject(artwork) ? null : <p className="artwork__muted">{a.detailsNote}</p>}
         </aside>
       </div>
 

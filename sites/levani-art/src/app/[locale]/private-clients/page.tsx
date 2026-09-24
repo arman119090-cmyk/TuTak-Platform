@@ -20,7 +20,7 @@ export default async function PrivateClientsPage({ params }: PageProps<'/[locale
   const t = dict.privateClients;
   const audiences = (Object.keys(site.audiences) as AudienceKey[]).filter((k) => site.audiences[k]);
   const advisory = (Object.keys(site.advisory) as AdvisoryKey[]).filter((k) => site.advisory[k]);
-  const cta = `/${locale}/enquire?reason=trade`;
+  const cta = `/${locale}/enquire`;
   return (
     <div className="private">
       <PageIntro eyebrow={t.eyebrow} title={t.title} intro={t.intro}>

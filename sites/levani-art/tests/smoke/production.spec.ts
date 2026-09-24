@@ -14,8 +14,16 @@ const PRICE_ON_REQUEST: Record<string, string> = {
   hy: 'Գինը՝ հարցմամբ', ru: 'Цена по запросу', it: 'Prezzo su richiesta',
   de: 'Preis auf Anfrage', fr: 'Prix sur demande', en: 'Price on request',
 };
-const IG = 'https://www.instagram.com/levani__art/';
+const IG = 'https://instagram.com/levani__art';
 const PRICE = /(\$|€|£|֏|₽)\s?\d|\d[\d\s.,]*\s?(USD|EUR|AMD|RUB|GBP|֏|₽|€|\$)/;
+// Copy that would suggest a form or an unconfirmed service (all 6 languages).
+const NO_FORM_OR_SERVICE =
+  /enquiry form|contact form|send enquiry|Art Advisor|Kunstberater|арт-консультант|conseiller artistique|consulente d.arte|արվեստի խորհրդատու|placement, access|installation before|in preparation|in Vorbereitung|готовятся|en préparation|in preparazione|Anfrageformular|формой запроса|formulaire de demande|modulo di richiesta|հարցման ձև|private viewing|частный показ|Private Besichtigung|visite privée|visione privata|մասնավոր դիտում/i;
+const FOOTER_IG: Record<string, string> = {
+  hy: 'Առայժմ խնդրում ենք կապվել մեզ հետ', ru: 'Пока, пожалуйста, связывайтесь с нами через',
+  it: 'Nel frattempo, ci contatti tramite', de: 'Bis dahin erreichen Sie uns über',
+  fr: 'En attendant, contactez-nous via', en: 'For now, please contact us through',
+};
 const isDesktop = (p: Page) => (p.viewportSize()?.width ?? 0) > 500;
 
 /** Collects every request to the old runtime optimizer, per page. */
@@ -75,7 +83,9 @@ for (const l of LOCALES) {
     await scrollThrough(page);
     await expect.poll(() => brokenImages(page)).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    await expect(page.locator(`footer a[href="${IG}"]`)).toHaveCount(1);
+    const pending = page.locator('footer .site-footer__muted').first();
+    await expect(pending).toContainText(FOOTER_IG[l]!);
+    await expect(pending.locator(`a[href="${IG}"]`)).toHaveCount(1);
     expect(hits).toEqual([]);
   });
 
@@ -154,6 +164,8 @@ test('every sitemap URL is live; no broken internal links', async ({ request, pa
     const res = await request.get(path);
     expect(res.status(), path).toBe(200);
     const html = await res.text();
+    expect(html, `${path}: form/service copy`).not.toMatch(NO_FORM_OR_SERVICE);
+    expect(html, `${path}: <form>`).not.toContain('<form');
     for (const m of html.matchAll(/href="(\/[^"#?]*)/g)) links.add(m[1]!);
     for (const m of html.matchAll(/src="(\/[^"?]*)/g)) links.add(m[1]!);
   }

@@ -183,7 +183,7 @@ export default async function Home({ params }: PageProps<'/[locale]'>) {
           <h2 className="section-title">{h.privateTitle}</h2>
           <p className="section-text">{h.privateText}</p>
           <div className="hero__actions">
-            <Link href={`${base}/private-clients`} className="button button--solid">
+            <Link href={`${base}/enquire`} className="button button--solid">
               {h.advisorCta}
             </Link>
             <Link href={`${base}/collection`} className="button button--ghost">

@@ -9,7 +9,7 @@ import { CloseIcon } from './Icons';
  * "View in an Interior" — v1 entry point.
  *
  * No trustworthy interior composites exist yet, so the dialog shows the
- * unaltered photograph and says plainly that previews are in preparation.
+ * unaltered photograph and says plainly that no interior views exist yet.
  * When real composites exist, add them as `scenes` and render them here; the
  * artwork image itself is never edited.
  */

@@ -68,7 +68,7 @@ test('interior preview opens as a dialog and closes on Escape', async ({ page })
   await page.getByRole('button', { name: 'View in an Interior' }).click();
   const dialog = page.locator('dialog.interior');
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('in preparation');
+  await expect(dialog).toContainText('No interior views');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
@@ -94,7 +94,7 @@ test.describe('enquiry via Instagram (no enquiry endpoint configured)', () => {
   test('artwork page offers Instagram, opening in a new tab', async ({ page }) => {
     await page.goto('/en/artworks/royal-dominion/');
     const cta = page.getByRole('link', { name: /Enquire via Instagram/ });
-    await expect(cta).toHaveAttribute('href', 'https://www.instagram.com/levani__art/');
+    await expect(cta).toHaveAttribute('href', 'https://instagram.com/levani__art');
     await expect(cta).toHaveAttribute('target', '_blank');
     await expect(page.getByText('Please mention the title of the work')).toBeVisible();
     await expect(page.getByText('Price on request')).toBeVisible();
@@ -108,13 +108,15 @@ test.describe('enquiry via Instagram (no enquiry endpoint configured)', () => {
   test('enquire page shows the Instagram channel and no form that could pretend to send', async ({ page }) => {
     await page.goto('/de/enquire/?artwork=sacred-heights-tatev');
     await expect(page.getByRole('heading', { name: 'Schreiben Sie uns auf Instagram' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /@levani__art/ })).toHaveAttribute('href', 'https://www.instagram.com/levani__art/');
+    await expect(page.getByRole('link', { name: /@levani__art/ })).toHaveAttribute('href', 'https://instagram.com/levani__art');
     await expect(page.getByText('Bitte nennen Sie: Sacred Heights — Tatev Monastery Painting')).toBeVisible();
     await expect(page.locator('form')).toHaveCount(0);
   });
 
   test('footer links Instagram', async ({ page }) => {
     await page.goto('/hy/');
-    await expect(page.locator('footer a[href="https://www.instagram.com/levani__art/"]')).toHaveCount(1);
+    // Once in the "contact details pending" line, once under "Follow".
+    await expect(page.locator('footer a[href="https://instagram.com/levani__art"]')).toHaveCount(2);
+    await expect(page.locator('footer .site-footer__muted').first()).toContainText('Առայժմ խնդրում ենք կապվել մեզ հետ');
   });
 });

@@ -17,7 +17,7 @@ export const site = {
   social: {
     // The handle levani__art is the account the owner's own screenshots
     // (and the logo source) come from.
-    instagram: 'https://www.instagram.com/levani__art/' as string | null, // = enquiry.instagramUrl
+    instagram: 'https://instagram.com/levani__art' as string | null, // = enquiry.instagramUrl
     facebook: null as string | null,
   },
 
@@ -67,7 +67,7 @@ export const site = {
 export const enquiry = {
   endpoint: process.env.NEXT_PUBLIC_ENQUIRY_ENDPOINT || null,
   instagramHandle: 'levani__art',
-  instagramUrl: 'https://www.instagram.com/levani__art/',
+  instagramUrl: 'https://instagram.com/levani__art',
 };
 
 export type AudienceKey = keyof typeof site.audiences;

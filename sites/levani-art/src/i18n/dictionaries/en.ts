@@ -17,7 +17,7 @@ export const en = {
     privateClientsDescription:
       'For private collectors, interior designers, architects, hotels and residences.',
     enquire: 'Private Enquiry',
-    enquireDescription: 'Enquire about a piece or arrange a private viewing.',
+    enquireDescription: 'Enquire about a piece from the collection.',
     privacy: 'Privacy',
     terms: 'Terms',
     notFound: 'Page not found',
@@ -78,7 +78,7 @@ export const en = {
     privateTitle: 'For collectors and the people who build rooms',
     privateText:
       'Private collectors, interior designers, architects, hotels and restaurants, developers of residences — enquiries are handled personally and discreetly.',
-    advisorCta: 'Speak with an Art Advisor',
+    advisorCta: 'Make a Private Enquiry',
     viewAll: 'View the full collection',
     pieces: plural({ one: 'piece', other: 'pieces' }),
   },
@@ -133,12 +133,10 @@ export const en = {
     detailsNote: 'Further details are shared on request.',
     architecturalEyebrow: 'Scale & setting',
     architecturalTitle: 'Designed for architectural spaces',
-    architecturalText:
-      'For large objects we discuss placement, access and installation before anything is arranged. Ask us about the setting you have in mind.',
+    architecturalText: 'Further details about the work are available on request.',
     interiorTitle: 'View in an Interior',
-    interiorPlaceholder:
-      'Interior previews for this work are in preparation. We present each painting only in real, faithful settings — never with an altered image.',
-    interiorCta: 'Ask for an interior preview',
+    interiorPlaceholder: 'No interior views of this work are available yet. The photograph shown is the original, unaltered.',
+    interiorCta: 'Enquire via Instagram',
     close: 'Close',
     imageAlt: '{title} — {category}',
   },
@@ -206,16 +204,16 @@ export const en = {
       delivery: { title: 'Delivery coordination', text: 'Handling, transport and installation planning.' },
       international: { title: 'International enquiries', text: 'Enquiries from outside the country.' },
     },
-    cta: 'Speak with an Art Advisor',
+    cta: 'Make a Private Enquiry',
   },
   enquiry: {
     instagramTitle: 'Write to us on Instagram',
-    instagramText: 'Online enquiries are handled through our Instagram account for now. Send us a direct message — we reply personally.',
+    instagramText: 'For now, enquiries are received through our Instagram account. Please send us a direct message there.',
     instagramCta: 'Message @{handle}',
     instagramMention: 'Please mention: {title}',
     eyebrow: 'Private enquiry',
     title: 'Private Enquiry',
-    intro: 'Tell us what you are looking for. We reply personally.',
+    intro: 'Tell us what you are looking for.',
     artwork: 'Artwork',
     generalEnquiry: 'General enquiry',
     name: 'Name',
@@ -246,8 +244,6 @@ export const en = {
       tooLong: 'This is too long.',
       generic: 'Something went wrong. Please try again in a moment.',
       rateLimited: 'Too many attempts. Please wait a few minutes and try again.',
-      notConfigured:
-        'Online enquiries are not connected yet. Please try again later — this form will be enabled shortly.',
     },
   },
   search: {
@@ -265,7 +261,7 @@ export const en = {
     explore: 'Explore',
     house: 'The house',
     contact: 'Contact',
-    contactPending: 'Contact details will be published shortly. Meanwhile, please use the enquiry form.',
+    contactPending: 'Contact details will be published shortly. For now, please contact us through {instagram}.',
     follow: 'Follow',
     socialPending: 'Social channels to follow.',
     legal: 'Legal',
@@ -279,8 +275,7 @@ export const en = {
     placeholder:
       'This page is a placeholder. The final text will be published once it has been prepared and reviewed by the owner.',
     privacyTitle: 'Privacy Notice',
-    privacyBody:
-      'Information you send through the enquiry form — your name, contact details, country and message — is used only to reply to your enquiry.',
+    privacyBody: 'This website has no forms and does not ask for your personal data. It stores one cookie, LEVANI_LOCALE, only to remember the language you choose. If you write to us on Instagram, your message is handled by Instagram under its own privacy policy. The site is hosted by Render, which may keep standard technical request logs.',
     termsTitle: 'Terms of Use',
     termsBody:
       'Images and texts on this site belong to their respective owners and may not be reproduced without permission.',

@@ -18,7 +18,7 @@ export const fr: Dictionary = {
     privateClientsDescription:
       'Pour les collectionneurs privés, architectes d’intérieur, architectes, hôtels et résidences.',
     enquire: 'Demande privée',
-    enquireDescription: 'Se renseigner sur une œuvre ou organiser une visite privée.',
+    enquireDescription: 'Se renseigner sur une œuvre de la collection.',
     privacy: 'Confidentialité',
     terms: 'Conditions',
     notFound: 'Page introuvable',
@@ -79,7 +79,7 @@ export const fr: Dictionary = {
     privateTitle: 'Pour les collectionneurs et ceux qui bâtissent les lieux',
     privateText:
       'Collectionneurs privés, architectes d’intérieur, architectes, hôtels et restaurants, promoteurs de résidences — chaque demande est traitée personnellement et en toute discrétion.',
-    advisorCta: 'Parler à un conseiller artistique',
+    advisorCta: 'Faire une demande privée',
     viewAll: 'Voir toute la collection',
     pieces: plural({ one: 'œuvre', other: 'œuvres' }),
   },
@@ -135,12 +135,10 @@ export const fr: Dictionary = {
     detailsNote: 'Informations complémentaires sur demande.',
     architecturalEyebrow: 'Échelle & lieu',
     architecturalTitle: 'Conçu pour les espaces architecturaux',
-    architecturalText:
-      'Pour les grands objets, nous étudions l’emplacement, l’accès et l’installation avant tout engagement. Parlez-nous du lieu que vous imaginez.',
+    architecturalText: 'Des informations complémentaires sur l’œuvre sont disponibles sur demande.',
     interiorTitle: 'Voir dans un intérieur',
-    interiorPlaceholder:
-      'Les vues en intérieur de cette œuvre sont en préparation. Nous ne présentons une peinture que dans des décors réels et fidèles — jamais avec une image modifiée.',
-    interiorCta: 'Demander une vue en intérieur',
+    interiorPlaceholder: 'Aucune vue en intérieur de cette œuvre n’est encore disponible. La photographie présentée est l’originale, sans retouche.',
+    interiorCta: 'Se renseigner via Instagram',
     close: 'Fermer',
     imageAlt: '{title} — {category}',
   },
@@ -208,16 +206,16 @@ export const fr: Dictionary = {
       delivery: { title: 'Coordination de livraison', text: 'Manutention, transport et installation.' },
       international: { title: 'Demandes internationales', text: 'Demandes depuis l’étranger.' },
     },
-    cta: 'Parler à un conseiller artistique',
+    cta: 'Faire une demande privée',
   },
   enquiry: {
     instagramTitle: 'Écrivez-nous sur Instagram',
-    instagramText: 'Pour le moment, les demandes sont traitées via notre compte Instagram. Envoyez-nous un message privé : nous répondons personnellement.',
+    instagramText: 'Pour le moment, les demandes sont reçues via notre compte Instagram. Merci de nous y envoyer un message privé.',
     instagramCta: 'Écrire à @{handle}',
     instagramMention: 'Merci d’indiquer : {title}',
     eyebrow: 'Demande privée',
     title: 'Demande privée',
-    intro: 'Dites-nous ce que vous recherchez. Nous répondons personnellement.',
+    intro: 'Dites-nous ce que vous recherchez.',
     artwork: 'Œuvre',
     generalEnquiry: 'Demande générale',
     name: 'Nom',
@@ -249,8 +247,6 @@ export const fr: Dictionary = {
       tooLong: 'Ce texte est trop long.',
       generic: 'Une erreur est survenue. Veuillez réessayer dans un instant.',
       rateLimited: 'Trop de tentatives. Veuillez patienter quelques minutes.',
-      notConfigured:
-        'Les demandes en ligne ne sont pas encore raccordées. Veuillez réessayer plus tard — le formulaire sera bientôt activé.',
     },
   },
   search: {
@@ -269,8 +265,7 @@ export const fr: Dictionary = {
     explore: 'Explorer',
     house: 'La maison',
     contact: 'Contact',
-    contactPending:
-      'Les coordonnées seront publiées prochainement. En attendant, merci d’utiliser le formulaire de demande.',
+    contactPending: 'Les coordonnées seront publiées prochainement. En attendant, contactez-nous via {instagram}.',
     follow: 'Suivre',
     socialPending: 'Réseaux à venir.',
     legal: 'Mentions',
@@ -284,8 +279,7 @@ export const fr: Dictionary = {
     placeholder:
       'Cette page est provisoire. Le texte définitif sera publié une fois rédigé et validé par le propriétaire.',
     privacyTitle: 'Politique de confidentialité',
-    privacyBody:
-      'Les informations envoyées via le formulaire — nom, coordonnées, pays et message — servent uniquement à répondre à votre demande.',
+    privacyBody: 'Ce site ne comporte aucun formulaire et ne demande aucune donnée personnelle. Il enregistre un seul cookie, LEVANI_LOCALE, uniquement pour mémoriser la langue choisie. Si vous nous écrivez sur Instagram, votre message est traité par Instagram selon sa propre politique de confidentialité. Le site est hébergé par Render, qui peut conserver des journaux techniques de requêtes standard.',
     termsTitle: 'Conditions d’utilisation',
     termsBody:
       'Les images et textes de ce site appartiennent à leurs ayants droit et ne peuvent être reproduits sans autorisation.',

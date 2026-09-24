@@ -186,7 +186,8 @@ order: 1                     # 1 — большая карточка; на гл�
 
 **Render (запасной)** — https://elgo-site.onrender.com, сервис `elgo-site`
 (free, Frankfurt), Build `cd sites/elgo && npm ci && npm run build`,
-Start `cd sites/elgo && npm start`. Если не нужен — удалить в панели Render.
+Start `cd sites/elgo && npm start`. **Решено удалить** (24.09.2026) — удаляется
+вручную: Settings → Delete Web Service (у инструментов Claude нет удаления).
 
 На обоих `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` **не заданы** — форма
 пока отвечает посетителю ошибкой и просит позвонить.

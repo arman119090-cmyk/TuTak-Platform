@@ -1,0 +1,292 @@
+import { notFoundStrings } from '../not-found-strings';
+import { plural } from '../plural';
+import type { Dictionary } from './en';
+
+export const fr: Dictionary = {
+  meta: {
+    siteDescription:
+      'LEVANI ART — une collection choisie de peintures, sculptures et objets décoratifs pour les collections privées et les intérieurs d’exception.',
+    collection: 'Collection',
+    collectionDescription:
+      'Peintures, sculptures, fontaines et objets décoratifs de la collection LEVANI ART.',
+    artists: 'Artistes',
+    artistsDescription: 'Les artistes représentés dans la collection LEVANI ART.',
+    about: 'À propos',
+    aboutDescription:
+      'LEVANI ART — une collection choisie de peintures, sculptures et objets décoratifs.',
+    privateClients: 'Clients privés',
+    privateClientsDescription:
+      'Pour les collectionneurs privés, architectes d’intérieur, architectes, hôtels et résidences.',
+    enquire: 'Demande privée',
+    enquireDescription: 'Se renseigner sur une œuvre ou organiser une visite privée.',
+    privacy: 'Confidentialité',
+    terms: 'Conditions',
+    notFound: 'Page introuvable',
+  },
+  nav: {
+    home: 'LEVANI ART — accueil',
+    collection: 'Collection',
+    paintings: 'Peinture',
+    sculpture: 'Sculpture',
+    decorativeArts: 'Arts décoratifs',
+    privateClients: 'Clients privés',
+    artists: 'Artistes',
+    about: 'À propos',
+    contact: 'Contact',
+    enquire: 'Demande',
+    search: 'Recherche',
+    menu: 'Menu',
+    close: 'Fermer',
+    skipToContent: 'Aller au contenu',
+    primary: 'Navigation principale',
+  },
+  language: {
+    label: 'Langue',
+    current: 'Langue : {name}. Changer de langue',
+  },
+  categories: {
+    paintings: 'Peinture',
+    sculpture: 'Sculpture',
+    'fountains-garden': 'Fontaines & jardin',
+    'decorative-arts': 'Arts décoratifs',
+    collectibles: 'Objets de collection',
+  },
+  categoryIntro: {
+    paintings: 'Paysage, figure et ville — des toiles choisies pour habiter une pièce.',
+    sculpture: 'Figures et animaux en ronde-bosse, de la cheminée au grand salon.',
+    'fountains-garden': 'Fontaines et sculptures de jardin pour cours, terrasses et bassins.',
+    'decorative-arts': 'Pendules, colonnes et objets qui achèvent un intérieur.',
+    collectibles: 'Objets de plus petite taille pour le cabinet du collectionneur.',
+  },
+  home: {
+    heroLine: 'Art, sculpture et objets intemporels, choisis pour des intérieurs d’exception.',
+    exploreCta: 'Découvrir la collection',
+    privateCta: 'Demande privée',
+    featuredEyebrow: 'Dans la collection',
+    featuredTitle: 'Des œuvres pour vivre avec',
+    featuredText:
+      'Chaque pièce est présentée comme dans une maison privée — avec de l’espace autour, et le temps de regarder.',
+    momentEyebrow: 'Sculpture & fontaines',
+    momentTitle: 'Conçu pour les espaces architecturaux',
+    momentText:
+      'Sculptures et fontaines de grande échelle pour cours, jardins et grands intérieurs, là où un objet doit répondre à la pierre et à la lumière.',
+    categoriesEyebrow: 'La collection',
+    philosophyEyebrow: 'Collectionner',
+    philosophyTitle: 'Les objets survivent aux pièces.',
+    philosophyText:
+      'Les intérieurs changent. Une peinture vraiment regardée, une sculpture qui saisit la lumière du soir — elles demeurent. Nous réunissons des œuvres pour le temps long.',
+    privateEyebrow: 'Clients privés',
+    privateTitle: 'Pour les collectionneurs et ceux qui bâtissent les lieux',
+    privateText:
+      'Collectionneurs privés, architectes d’intérieur, architectes, hôtels et restaurants, promoteurs de résidences — chaque demande est traitée personnellement et en toute discrétion.',
+    advisorCta: 'Parler à un conseiller artistique',
+    viewAll: 'Voir toute la collection',
+    pieces: plural({ one: 'œuvre', other: 'œuvres' }),
+  },
+  collection: {
+    eyebrow: 'Collection',
+    title: 'La Collection',
+    intro:
+      'Peintures, sculptures, fontaines et objets décoratifs. Prix et disponibilité communiqués sur demande.',
+    filterLabel: 'Filtrer la collection',
+    all: 'Tout',
+    viewArtwork: 'Voir l’œuvre',
+    emptyTitle: 'Rien pour l’instant',
+    emptyText:
+      'De nouvelles pièces sont en cours de catalogage. Revenez bientôt, ou écrivez-nous directement.',
+    count: plural({ one: 'œuvre', other: 'œuvres' }),
+  },
+  artwork: {
+    priceOnRequest: 'Prix sur demande',
+    enquire: 'Se renseigner sur cette œuvre',
+    privateViewing: 'Demander une visite privée',
+    viewInInterior: 'Voir dans un intérieur',
+    back: 'Retour à la collection',
+    related: 'Également dans la collection',
+    by: 'par {artist}',
+    fields: {
+      artist: 'Artiste',
+      dimensions: 'Dimensions',
+      category: 'Catégorie',
+      material: 'Matériau',
+      year: 'Année',
+      origin: 'Origine',
+      provenance: 'Provenance',
+      condition: 'État',
+      status: 'Disponibilité',
+      placement: 'Emplacement',
+      description: 'Description',
+      delivery: 'Livraison',
+      installation: 'Installation',
+    },
+    status: {
+      available: 'Disponible',
+      'on-request': 'Sur demande',
+      reserved: 'Réservé',
+      sold: 'Vendu',
+    },
+    placement: {
+      indoor: 'Intérieur',
+      outdoor: 'Extérieur',
+      'indoor-outdoor': 'Intérieur ou extérieur',
+    },
+    detailsNote: 'Informations complémentaires sur demande.',
+    architecturalEyebrow: 'Échelle & lieu',
+    architecturalTitle: 'Conçu pour les espaces architecturaux',
+    architecturalText:
+      'Pour les grands objets, nous étudions l’emplacement, l’accès et l’installation avant tout engagement. Parlez-nous du lieu que vous imaginez.',
+    interiorTitle: 'Voir dans un intérieur',
+    interiorPlaceholder:
+      'Les vues en intérieur de cette œuvre sont en préparation. Nous ne présentons une peinture que dans des décors réels et fidèles — jamais avec une image modifiée.',
+    interiorCta: 'Demander une vue en intérieur',
+    close: 'Fermer',
+    imageAlt: '{title} — {category}',
+  },
+  artists: {
+    eyebrow: 'Artistes',
+    title: 'Les artistes de la collection',
+    intro:
+      'Les artistes dont les œuvres figurent dans la collection. Les notices biographiques ne sont publiées qu’une fois documentées.',
+    works: 'Œuvres dans la collection',
+    unattributedTitle: 'Œuvres sans attribution confirmée',
+    unattributedText:
+      'De nombreuses pièces sont présentées sans nom d’artiste, faute d’attribution documentée. Nous préférons dire moins que dire incertain.',
+  },
+  about: {
+    eyebrow: 'À propos',
+    title: 'Une collection au-delà du décor',
+    lead:
+      'LEVANI ART est une collection choisie de peintures, sculptures et objets décoratifs pour les collections privées et les intérieurs d’exception.',
+    body: [
+      'Nous recherchons des œuvres qui ont de la présence : des toiles qui changent la température d’une pièce, des sculptures qui tiennent face à l’architecture, des objets faits pour être transmis.',
+      'Chaque pièce n’est présentée qu’avec les informations que nous pouvons garantir. Lorsque des éléments sont encore en cours de documentation, nous le disons et les communiquons sur demande.',
+    ],
+    pillars: [
+      { title: 'Peinture', text: 'Paysage, figure et ville sur toile.' },
+      { title: 'Sculpture', text: 'Figures et animaux, de la table au jardin.' },
+      { title: 'Objets décoratifs', text: 'Pendules, colonnes et fontaines.' },
+    ],
+    cta: 'Découvrir la collection',
+  },
+  privateClients: {
+    eyebrow: 'Clients privés',
+    title: 'Clients privés',
+    intro:
+      'Nous accueillons les demandes de ceux qui collectionnent et de ceux qui construisent : chaque échange est personnel et confidentiel.',
+    audiences: {
+      collectors: {
+        title: 'Collectionneurs privés',
+        text: 'Pour enrichir une collection d’une peinture, d’une sculpture ou d’un objet de caractère.',
+      },
+      designers: {
+        title: 'Architectes d’intérieur',
+        text: 'Pour trouver la pièce maîtresse d’une résidence ou d’une seule pièce.',
+      },
+      architects: {
+        title: 'Architectes',
+        text: 'Pour les projets où la sculpture et l’eau font partie de l’architecture dès l’origine.',
+      },
+      hospitality: {
+        title: 'Hôtels & restaurants',
+        text: 'Pour les halls, salles et terrasses qui appellent des œuvres de présence.',
+      },
+      developers: {
+        title: 'Promoteurs & résidences',
+        text: 'Pour les résidences, cours et jardins pensés comme un tout.',
+      },
+    },
+    advisoryEyebrow: 'Conseil artistique',
+    advisoryTitle: 'Conseil',
+    advisory: {
+      sourcing: { title: 'Recherche d’œuvres', text: 'Trouver une œuvre précise ou un type de pièce.' },
+      placement: { title: 'Mise en place', text: 'Choisir où et comment accrocher ou poser une œuvre.' },
+      acquisition: { title: 'Acquisition privée', text: 'Une acquisition discrète en votre nom.' },
+      largeScale: { title: 'Sculpture monumentale', text: 'Des œuvres de grande échelle pour l’architecture.' },
+      exterior: { title: 'Jardin & extérieur', text: 'Fontaines et sculptures pour les espaces extérieurs.' },
+      delivery: { title: 'Coordination de livraison', text: 'Manutention, transport et installation.' },
+      international: { title: 'Demandes internationales', text: 'Demandes depuis l’étranger.' },
+    },
+    cta: 'Parler à un conseiller artistique',
+  },
+  enquiry: {
+    eyebrow: 'Demande privée',
+    title: 'Demande privée',
+    intro: 'Dites-nous ce que vous recherchez. Nous répondons personnellement.',
+    artwork: 'Œuvre',
+    generalEnquiry: 'Demande générale',
+    name: 'Nom',
+    email: 'E-mail',
+    phone: 'Téléphone ou WhatsApp',
+    country: 'Pays',
+    message: 'Message',
+    reason: 'Objet de la demande',
+    reasons: {
+      purchase: 'Achat',
+      viewing: 'Visite privée',
+      delivery: 'Livraison',
+      trade: 'Professionnel',
+    },
+    optional: 'facultatif',
+    consentBefore:
+      'J’accepte que mes données soient utilisées pour répondre à cette demande, comme décrit dans la ',
+    consentLink: 'politique de confidentialité',
+    consentAfter: '.',
+    submit: 'Envoyer la demande',
+    sending: 'Envoi…',
+    successTitle: 'Merci',
+    successText: 'Votre demande a bien été reçue. Nous vous répondrons personnellement.',
+    another: 'Envoyer une autre demande',
+    errors: {
+      required: 'Veuillez remplir ce champ.',
+      email: 'Veuillez saisir une adresse e-mail valide.',
+      consent: 'Veuillez confirmer pour continuer.',
+      tooLong: 'Ce texte est trop long.',
+      generic: 'Une erreur est survenue. Veuillez réessayer dans un instant.',
+      rateLimited: 'Trop de tentatives. Veuillez patienter quelques minutes.',
+      notConfigured:
+        'Les demandes en ligne ne sont pas encore raccordées. Veuillez réessayer plus tard — le formulaire sera bientôt activé.',
+    },
+  },
+  search: {
+    open: 'Rechercher dans la collection',
+    title: 'Rechercher dans les archives',
+    label: 'Rechercher par titre, artiste ou catégorie',
+    placeholder: 'Titre, artiste, catégorie…',
+    hint: 'Essayez « Bronze », « Tatev » ou « Fountain ».',
+    noResults: 'Aucune œuvre ne correspond à « {query} ».',
+    results: plural({ one: 'résultat', other: 'résultats' }),
+    close: 'Fermer la recherche',
+  },
+  footer: {
+    statement:
+      'Peintures, sculptures et objets décoratifs pour les collections privées et les intérieurs d’exception.',
+    explore: 'Explorer',
+    house: 'La maison',
+    contact: 'Contact',
+    contactPending:
+      'Les coordonnées seront publiées prochainement. En attendant, merci d’utiliser le formulaire de demande.',
+    follow: 'Suivre',
+    socialPending: 'Réseaux à venir.',
+    legal: 'Mentions',
+    privacy: 'Politique de confidentialité',
+    terms: 'Conditions d’utilisation',
+    language: 'Langue',
+    rights: 'Tous droits réservés.',
+  },
+  legal: {
+    placeholder:
+      'Cette page est provisoire. Le texte définitif sera publié une fois rédigé et validé par le propriétaire.',
+    privacyTitle: 'Politique de confidentialité',
+    privacyBody:
+      'Les informations envoyées via le formulaire — nom, coordonnées, pays et message — servent uniquement à répondre à votre demande.',
+    termsTitle: 'Conditions d’utilisation',
+    termsBody:
+      'Les images et textes de ce site appartiennent à leurs ayants droit et ne peuvent être reproduits sans autorisation.',
+  },
+  notFound: notFoundStrings.fr,
+  a11y: {
+    openMenu: 'Ouvrir le menu',
+    closeMenu: 'Fermer le menu',
+    externalLink: 's’ouvre dans un nouvel onglet',
+  },
+};

@@ -37,6 +37,9 @@ export default tseslint.config(
       // a rule this config has never heard of. Two configs disagreeing about
       // one file is not a finding, and the original is already covered.
       'demo/**',
+      // sites/levani-art is a separate project (its own package.json,
+      // lockfile and eslint config) that only shares this repository.
+      'sites/**',
     ],
   },
   {

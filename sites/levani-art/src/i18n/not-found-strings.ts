@@ -1,0 +1,39 @@
+import type { Locale } from './config';
+
+/**
+ * 404 copy lives apart from the main dictionaries so the (client-side)
+ * not-found page can import it without shipping every dictionary to the
+ * browser. The dictionaries re-export these entries.
+ */
+export const notFoundStrings: Record<Locale, { title: string; text: string; back: string }> = {
+  hy: {
+    title: 'Այս էջը հավաքածուում չէ',
+    text: 'Հնարավոր է՝ հասցեն փոխվել է, կամ աշխատանքն այլևս ներկայացված չէ։',
+    back: 'Վերադառնալ հավաքածու',
+  },
+  ru: {
+    title: 'Этой страницы нет в коллекции',
+    text: 'Возможно, адрес изменился или работа больше не представлена.',
+    back: 'Вернуться в коллекцию',
+  },
+  it: {
+    title: 'Questa pagina non è nella collezione',
+    text: 'L’indirizzo potrebbe essere cambiato, oppure l’opera non è più presentata.',
+    back: 'Torna alla collezione',
+  },
+  de: {
+    title: 'Diese Seite ist nicht in der Sammlung',
+    text: 'Die Adresse hat sich möglicherweise geändert, oder das Werk wird nicht mehr gezeigt.',
+    back: 'Zurück zur Sammlung',
+  },
+  fr: {
+    title: 'Cette page ne fait pas partie de la collection',
+    text: 'L’adresse a peut-être changé, ou l’œuvre n’est plus présentée.',
+    back: 'Retour à la collection',
+  },
+  en: {
+    title: 'This page is not in the collection',
+    text: 'The address may have changed, or the work is no longer listed.',
+    back: 'Return to the collection',
+  },
+};

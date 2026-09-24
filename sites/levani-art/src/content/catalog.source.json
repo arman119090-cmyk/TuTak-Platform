@@ -1,0 +1,20 @@
+[
+  {"slug":"majestic-elephant","title":"Majestic Elephant Sculpture","category":"sculpture","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/01-majestic-elephant.webp"},
+  {"slug":"imperial-malachite-pedestal","title":"Imperial Malachite Pedestal","category":"decorative-arts","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/02-imperial-malachite-pedestal.webp"},
+  {"slug":"timeless-elegance-clock","title":"Timeless Elegance Clock","category":"decorative-arts","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/03-timeless-elegance-clock.webp"},
+  {"slug":"egyptian-queen","title":"Egyptian Queen Sculpture","category":"sculpture","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/04-egyptian-queen.webp"},
+  {"slug":"sea-turtle-fountain","title":"Sea Turtle Fountain Sculpture","category":"fountains-garden","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/05-sea-turtle-fountain.webp"},
+  {"slug":"lion-serpent","title":"Lion & Serpent Sculpture","category":"sculpture","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/06-lion-serpent.webp"},
+  {"slug":"golden-city-bridge","title":"Golden City Bridge — Elegance Reflected in Light","category":"paintings","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/07-golden-city-bridge.webp"},
+  {"slug":"bronze-bear-cub","title":"Bronze Bear & Cub Sculpture","category":"sculpture","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/08-bronze-bear-cub.webp"},
+  {"slug":"old-town-street","title":"Old Town Street Painting — Timeless European Charm","category":"paintings","artist":null,"dimensions":null,"price":null,"image":"/assets/products/webp/09-old-town-street.webp"},
+  {"slug":"imperial-wild-boar","title":"Imperial Wild Boar — Bronze Sculpture","category":"sculpture","artist":null,"dimensions":"60 × 100 cm","price":null,"image":"/assets/products/webp/10-imperial-wild-boar.webp"},
+  {"slug":"ethereal-grace","title":"Ethereal Grace — Classical Nude Painting","category":"paintings","artist":null,"dimensions":"77 × 30 cm","price":null,"image":"/assets/products/webp/11-ethereal-grace-nude.webp"},
+  {"slug":"grace-in-bronze-crane","title":"Grace in Bronze — Crane Sculpture","category":"sculpture","artist":null,"dimensions":"120 cm","price":null,"image":"/assets/products/webp/12-grace-in-bronze-crane.webp"},
+  {"slug":"aknuni","title":"Aknuni / Ակնունի","category":"paintings","artist":null,"dimensions":"17 × 24 cm","price":null,"image":"/assets/products/webp/13-aknuni.webp"},
+  {"slug":"royal-dominion","title":"Royal Dominion — Lion Fountain Sculpture","category":"fountains-garden","artist":null,"dimensions":"210 × 130 cm","price":null,"image":"/assets/products/webp/14-royal-dominion-lion-fountain.webp"},
+  {"slug":"david-davidyan","title":"David Davidyan","category":"paintings","artist":"David Davidyan","dimensions":"60 × 45 cm","price":null,"image":"/assets/products/webp/15-david-davidyan.webp"},
+  {"slug":"eternal-harmony","title":"Eternal Harmony — Classical Fountain Sculpture","category":"fountains-garden","artist":null,"dimensions":"120 cm","price":null,"image":"/assets/products/webp/16-eternal-harmony-fountain.webp"},
+  {"slug":"sacred-heights-tatev","title":"Sacred Heights — Tatev Monastery Painting","category":"paintings","artist":null,"dimensions":"120 × 93 cm","price":null,"image":"/assets/products/webp/17-sacred-heights-tatev.webp"},
+  {"slug":"edouard-delabriere-hunter","title":"Hunter with Dogs Sculpture","category":"sculpture","artist":"Édouard Delabrière","dimensions":"53 × 65 cm","price":null,"image":"/assets/products/webp/18-edouard-delabriere-hunter.webp"}
+]

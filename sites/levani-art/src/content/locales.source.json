@@ -1,0 +1,20 @@
+{
+  "defaultFallback": "en",
+  "detectBrowserLanguage": true,
+  "persistManualSelection": true,
+  "selector": {
+    "closedState": "coat-of-arms-only-plus-small-down-chevron",
+    "desktopHover": "reveal-native-language-name",
+    "mobile": "tap-opens-premium-popover",
+    "useConsistentSvgCoatsOfArms": true,
+    "forbidden": ["country-flags", "emoji-flags", "native-select-ui"]
+  },
+  "locales": [
+    {"code":"hy","name":"Հայերեն","country":"Armenia","emblemType":"coat_of_arms","emblem":"AM_COA"},
+    {"code":"ru","name":"Русский","country":"Russia","emblemType":"coat_of_arms","emblem":"RU_COA"},
+    {"code":"it","name":"Italiano","country":"Italy","emblemType":"coat_of_arms","emblem":"IT_COA"},
+    {"code":"de","name":"Deutsch","country":"Germany","emblemType":"coat_of_arms","emblem":"DE_COA"},
+    {"code":"fr","name":"Français","country":"France","emblemType":"coat_of_arms","emblem":"FR_COA"},
+    {"code":"en","name":"English","country":"United Kingdom","emblemType":"royal_coat_of_arms","emblem":"GB_ROYAL_COA"}
+  ]
+}

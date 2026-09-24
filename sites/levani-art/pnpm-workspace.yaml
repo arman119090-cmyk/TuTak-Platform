@@ -1,0 +1,3 @@
+# LEVANI ART is its own project. This file makes the folder a workspace root,
+# so `pnpm install` here never merges into the TuTak monorepo lockfile above.
+packages: []

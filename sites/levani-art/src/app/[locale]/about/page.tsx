@@ -21,10 +21,10 @@ export default async function AboutPage({ params }: PageProps<'/[locale]/about'>
   return (
     <div className="about">
       <section className="about__hero">
-        <div className="about__plate reveal">
+        <div className="about__plate">
           <LogoPlate width={260} priority />
         </div>
-        <div className="about__intro reveal">
+        <div className="about__intro">
           <p className="eyebrow">{t.eyebrow}</p>
           <h1 className="page-intro__title">{t.title}</h1>
           <p className="about__lead">{t.lead}</p>

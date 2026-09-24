@@ -61,7 +61,8 @@ export function CollectionView({
       {items.length ? (
         <ul className="gallery">
           {items.map((a, i) => (
-            <li key={a.slug} className="reveal">
+            // The first row is on screen at load: no reveal, so it paints at once.
+            <li key={a.slug} className={i < 3 ? undefined : 'reveal'}>
               <ArtworkCard artwork={a} locale={locale} dict={dict} priority={i < 3} />
             </li>
           ))}

@@ -12,7 +12,7 @@
   --ivory: #f2ece2;
   --ivory-dim: #d8d0c3;
   --stone: #a89e90;
-  --stone-dim: #7c7367;
+  --stone-dim: #8e8578; /* ≥4.5:1 on every dark surface, incl. walnut */
   --bronze: #b08d57;
   --champagne: #d6bf93;
   --line: rgb(242 236 226 / 0.12);
@@ -914,15 +914,15 @@ main {
   text-transform: uppercase;
   color: var(--stone);
 }
+/* Above-the-fold motion moves but never starts invisible: an element at
+   opacity 0 does not count as painted, which delays LCP by the animation. */
 @keyframes rise {
   from {
-    opacity: 0;
     transform: translateY(22px);
   }
 }
 @keyframes settle {
   from {
-    opacity: 0;
     transform: scale(1.03);
   }
 }

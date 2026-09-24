@@ -52,7 +52,10 @@ export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
             <ul>
               {socials.map(([name, url]) => (
                 <li key={name}>
-                  <a href={url} rel="noopener noreferrer" target="_blank">{name}</a>
+                  <a href={url} rel="noopener noreferrer" target="_blank">
+                    {name === 'instagram' ? 'Instagram' : name === 'facebook' ? 'Facebook' : name}
+                    <span className="visually-hidden"> ({dict.a11y.externalLink})</span>
+                  </a>
                 </li>
               ))}
             </ul>

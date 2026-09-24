@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
 
+// The API rate-limits per client IP in server memory. A unique address per
+// test and run keeps reruns against the same server independent.
+const ip = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+
 const PRICE = /(\$|€|£|֏|₽)\s?\d|\d[\d\s.,]*\s?(USD|EUR|AMD|RUB|GBP|֏|₽|€|\$)/;
 
 test('every sitemap URL answers 200 and shows no numerical price', async ({ request }) => {
@@ -12,6 +16,28 @@ test('every sitemap URL answers 200 and shows no numerical price', async ({ requ
     const text = (await res.text()).replace(/<script[\s\S]*?<\/script>/g, '');
     expect(text, path).not.toMatch(PRICE);
   }
+});
+
+test('images are static files that actually load — no runtime optimizer', async ({ page }) => {
+  const optimizer: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/_next/image')) optimizer.push(r.url());
+  });
+  await page.goto('/en/collection');
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 500) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+  });
+  const imgs = page.locator('.gallery img');
+  await expect(imgs).toHaveCount(18);
+  await expect
+    .poll(() => imgs.evaluateAll((els) => els.filter((i) => !(i as HTMLImageElement).complete || !(i as HTMLImageElement).naturalWidth).length))
+    .toBe(0);
+  const srcs = await imgs.evaluateAll((els) => els.map((i) => (i as HTMLImageElement).currentSrc));
+  expect(srcs.every((s) => /\/artworks\/_w\/\d+\//.test(s))).toBe(true);
+  expect(optimizer).toEqual([]);
 });
 
 test('unknown paths 404 in the right language', async ({ page }) => {
@@ -82,6 +108,7 @@ test.describe('enquiry', () => {
   });
 
   test('without a configured transport it says so instead of pretending', async ({ page }) => {
+    await page.setExtraHTTPHeaders({ 'x-forwarded-for': ip() });
     await page.goto('/en/enquire?artwork=aknuni');
     await page.getByLabel('Name').fill('Test Visitor');
     await page.getByLabel('Email').fill('visitor@example.com');
@@ -97,7 +124,7 @@ test.describe('api', () => {
   test('rejects invalid payloads with field errors', async ({ request }) => {
     const res = await request.post('/api/enquiry', {
       data: { name: '', email: 'x', startedAt: 0 },
-      headers: { 'x-forwarded-for': '10.0.0.1' },
+      headers: { 'x-forwarded-for': ip() },
     });
     expect(res.status()).toBe(422);
     expect((await res.json()).fields).toMatchObject({ name: 'required', email: 'email' });
@@ -106,16 +133,16 @@ test.describe('api', () => {
   test('a filled honeypot is quietly accepted and dropped', async ({ request }) => {
     const res = await request.post('/api/enquiry', {
       data: { website: 'spam.example', name: 'x' },
-      headers: { 'x-forwarded-for': '10.0.0.2' },
+      headers: { 'x-forwarded-for': ip() },
     });
     expect(res.status()).toBe(200);
   });
 
-  test('rate limits a burst from one address', async ({ request }, info) => {
-    const ip = `10.0.1.${info.project.name.length}`; // one address per project
+  test('rate limits a burst from one address', async ({ request }) => {
+    const addr = ip();
     const statuses: number[] = [];
     for (let i = 0; i < 7; i++) {
-      const res = await request.post('/api/enquiry', { data: {}, headers: { 'x-forwarded-for': ip } });
+      const res = await request.post('/api/enquiry', { data: {}, headers: { 'x-forwarded-for': addr } });
       statuses.push(res.status());
     }
     expect(statuses.slice(0, 5).every((s) => s === 422)).toBe(true);

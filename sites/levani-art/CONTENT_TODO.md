@@ -5,7 +5,7 @@ until supplied.
 
 ## Business facts (`src/content/site.ts`)
 - [ ] Email, phone, WhatsApp, address (footer shows "details will be published shortly").
-- [ ] Instagram profile URL to link (screenshots show `levani__art` — confirm).
+- [x] Instagram: linked to https://www.instagram.com/levani__art/ (the account the supplied screenshots come from). Remove in `site.ts` if wrong.
 - [ ] Legal name, registration number, year founded (About page makes no claim).
 - [ ] Which advisory services are actually offered (all switched off).
 - [ ] Confirm the five private-client audiences may be shown (all on; worded as invitations, not as services).
@@ -36,7 +36,8 @@ until supplied.
 
 ## Language emblems — decision needed
 - [ ] The language selector shows the official state arms of Armenia, Russia, Italy (emblem), Germany, France (de facto emblem — France has no coat of arms) and the Royal Coat of Arms of the UK. Several countries restrict commercial use of state arms (the UK Royal Arms in particular). Confirm with a lawyer before launch.
-- [ ] Russia: the file shows the golden double-headed eagle without the red heraldic shield behind it (a widely used official form). Confirm, or ask for the version on the red shield.
+- [x] Russia: kept the golden double-headed eagle without the red shield behind it (decided 24.09; at 28–32 px the eagle alone reads better).
+- [x] France: the de facto state emblem (fasces) is used (decided 24.09).
 
 ## Translations
 - [ ] Native review of Armenian (`hy.ts`) before launch; ideally also ru/it/de/fr.

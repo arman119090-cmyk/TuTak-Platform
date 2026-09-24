@@ -7,3 +7,6 @@ test-results/
 playwright-report/
 .env
 .env.local
+
+# Pre-rendered image widths (scripts/build-images.mjs)
+public/artworks/_w/

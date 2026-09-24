@@ -15,9 +15,9 @@ export const site = {
   },
 
   social: {
-    // The source screenshots show the handle levani__art. The profile URL is
-    // left off until the owner confirms it is the account to link.
-    instagram: null as string | null,
+    // The handle levani__art is the account the owner's own screenshots
+    // (and the logo source) come from.
+    instagram: 'https://www.instagram.com/levani__art/' as string | null,
     facebook: null as string | null,
   },
 

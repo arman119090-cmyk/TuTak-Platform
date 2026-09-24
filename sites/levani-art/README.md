@@ -30,7 +30,7 @@ pnpm typecheck     # tsc --noEmit
 pnpm lint          # eslint
 pnpm test          # vitest: locale negotiation, enquiry validation, rate limit,
                    # catalog integrity (no invented facts), dictionaries, search
-pnpm build         # production build (185 static pages)
+pnpm build         # image variants + production build (185 static pages)
 pnpm e2e           # Playwright against the production build, desktop 1440 + phone 390
 ```
 
@@ -118,6 +118,16 @@ rebuild after changing it.
 ## Images
 
 Photography is ~709 px wide (crops from Instagram screenshots). Layouts never
-stretch it beyond roughly its native size; replace files in `public/artworks`
-with higher-resolution originals (same names) and update the sizes in
-`catalog.ts` — `pnpm test` checks they match.
+stretch it beyond roughly its native size.
+
+There is **no runtime image optimizer**. `pnpm build` (and `pnpm dev`) first
+runs `scripts/build-images.mjs`, which writes every width next/image can ask
+for to `public/artworks/_w/<width>/` (git-ignored); a custom loader
+(`src/lib/image-loader.ts`) points `srcset` at those static files. Reason: in
+Next 16.3.6 a request aborted while the built-in `/_next/image` optimizer is
+cold leaves that URL hanging for all later visitors until a restart
+(reproduced; see `docs/OTCHET_2026-09-24_LEVANI_ART_GOTOVNOST.md` in the
+repository root).
+
+To replace a photograph: overwrite the file in `public/artworks` (same name),
+update its size in `catalog.ts` (`pnpm test` checks it), rebuild.

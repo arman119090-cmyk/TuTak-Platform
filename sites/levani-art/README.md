@@ -88,11 +88,14 @@ Coat of Arms of the United Kingdom. See `components/Emblem.tsx`.
 The site is static, so it has no API of its own. Two modes, chosen at build
 time (`src/content/site.ts` → `enquiry`):
 
-- **Instagram (current).** `NEXT_PUBLIC_ENQUIRY_ENDPOINT` unset. Every
-  enquiry action — the artwork page button, the enquire page, "View in an
-  Interior" — opens `instagram.com/levani__art` in a new tab, localized
-  ("Enquire via Instagram", «Запрос через Instagram»…). No form is shown, so
-  nothing can claim a message was sent.
+- **Messengers (current).** `NEXT_PUBLIC_ENQUIRY_ENDPOINT` unset. The
+  owner's number **+374 33 228 733** on WhatsApp, Viber and Telegram
+  (`src/content/site.ts` → `enquiry.messengers`, component
+  `ContactChannels`) is the main channel: artwork pages, the enquire page,
+  the footer and "View in an Interior". WhatsApp opens with a prepared,
+  localized message naming the work; Viber/Telegram links cannot carry text,
+  so the page asks to mention the title. Instagram `levani__art` stays as a
+  secondary link. No form is shown, so nothing can claim a message was sent.
 - **Form.** Set `NEXT_PUBLIC_ENQUIRY_ENDPOINT` to any URL that accepts a JSON
   POST (Formspree, a CRM inbound hook, a serverless function) and rebuild. The
   form validates in the browser (`src/lib/enquiry.ts`), drops bots via a

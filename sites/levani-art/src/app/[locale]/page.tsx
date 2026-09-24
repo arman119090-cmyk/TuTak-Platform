@@ -29,6 +29,7 @@ export default async function Home({ params }: PageProps<'/[locale]'>) {
           '@type': 'ArtGallery',
           name: site.brandName,
           slogan: site.tagline,
+          telephone: site.contact.phone,
           url: pageUrl(locale, ''),
         }}
       />

@@ -90,33 +90,50 @@ test('collection filters are links with their own URLs', async ({ page }) => {
   await expect(page.locator('.gallery > li')).toHaveCount(6);
 });
 
-test.describe('enquiry via Instagram (no enquiry endpoint configured)', () => {
-  test('artwork page offers Instagram, opening in a new tab', async ({ page }) => {
+test.describe('enquiry via messengers (no enquiry endpoint configured)', () => {
+  const WA = 'https://wa.me/37433228733';
+
+  test('artwork page: WhatsApp, Viber, Telegram, number, Instagram as secondary', async ({ page }) => {
     await page.goto('/en/artworks/royal-dominion/');
-    const cta = page.getByRole('link', { name: /Enquire via Instagram/ });
-    await expect(cta).toHaveAttribute('href', 'https://instagram.com/levani__art');
-    await expect(cta).toHaveAttribute('target', '_blank');
-    await expect(page.getByText('Please mention the title of the work')).toBeVisible();
+    const box = page.locator('.artwork__contact');
+    const wa = box.getByRole('link', { name: 'Write to us on WhatsApp' });
+    const href = (await wa.getAttribute('href'))!;
+    expect(href.startsWith(`${WA}?text=`)).toBe(true);
+    expect(new URL(href).searchParams.get('text')).toContain('Royal Dominion — Lion Fountain Sculpture');
+    await expect(wa).toHaveAttribute('target', '_blank');
+    await expect(box.getByRole('link', { name: 'Write to us on Viber' })).toHaveAttribute('href', 'viber://chat?number=%2B37433228733');
+    await expect(box.getByRole('link', { name: 'Write to us on Telegram' })).toHaveAttribute('href', 'https://t.me/+37433228733');
+    await expect(box.getByText('+374 33 228 733')).toBeVisible();
+    await expect(box.locator('a[href="https://instagram.com/levani__art"]')).toHaveCount(1);
     await expect(page.getByText('Price on request')).toBeVisible();
   });
 
-  test('CTA is localized', async ({ page }) => {
+  test('WhatsApp message and labels are localized', async ({ page }) => {
     await page.goto('/ru/artworks/aknuni/');
-    await expect(page.getByRole('link', { name: /Запрос через Instagram/ })).toBeVisible();
+    const href = (await page.locator('.artwork__contact a[href^="https://wa.me/"]').getAttribute('href'))!;
+    expect(new URL(href).searchParams.get('text')).toBe('Здравствуйте! Меня интересует работа «Aknuni / Ակնունի» из коллекции LEVANI ART.');
+    await expect(page.locator('.artwork__contact').getByRole('link', { name: 'Написать нам в Telegram' })).toBeVisible();
   });
 
-  test('enquire page shows the Instagram channel and no form that could pretend to send', async ({ page }) => {
+  test('enquire page shows the messengers and no form that could pretend to send', async ({ page }) => {
     await page.goto('/de/enquire/?artwork=sacred-heights-tatev');
-    await expect(page.getByRole('heading', { name: 'Schreiben Sie uns auf Instagram' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /@levani__art/ })).toHaveAttribute('href', 'https://instagram.com/levani__art');
+    await expect(page.getByRole('heading', { name: 'Schreiben Sie uns' })).toBeVisible();
+    await expect(page.locator('.enquiry-contact a[href^="https://wa.me/37433228733"]')).toHaveCount(1);
     await expect(page.getByText('Bitte nennen Sie: Sacred Heights — Tatev Monastery Painting')).toBeVisible();
     await expect(page.locator('form')).toHaveCount(0);
   });
 
-  test('footer links Instagram', async ({ page }) => {
+  test('footer: messengers and number; Instagram under Follow', async ({ page }) => {
     await page.goto('/hy/');
-    // Once in the "contact details pending" line, once under "Follow".
-    await expect(page.locator('footer a[href="https://instagram.com/levani__art"]')).toHaveCount(2);
-    await expect(page.locator('footer .site-footer__muted').first()).toContainText('Առայժմ խնդրում ենք կապվել մեզ հետ');
+    const footer = page.locator('footer');
+    await expect(footer.getByText('Գրեք մեզ WhatsApp-ով, Viber-ով կամ Telegram-ով։')).toBeVisible();
+    await expect(footer.locator('.channel')).toHaveCount(3);
+    await expect(footer.getByText('+374 33 228 733')).toBeVisible();
+    await expect(footer.locator('a[href="https://instagram.com/levani__art"]')).toHaveCount(1);
+  });
+
+  test('the Delabrière work is titled Deer Hunt', async ({ page }) => {
+    await page.goto('/en/');
+    await expect(page.locator('.hero__caption')).toHaveText('Deer Hunt');
   });
 });

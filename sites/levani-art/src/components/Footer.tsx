@@ -1,15 +1,15 @@
 import Link from 'next/link';
 import { localeMeta, locales, type Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/dictionaries';
-import { enquiry, site } from '@/content/site';
+import { site } from '@/content/site';
 import { LogoPlate } from './Brand';
+import { ContactChannels } from './ContactChannels';
 import { Emblem } from './Emblem';
 
 export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const f = dict.footer;
   const n = dict.nav;
   const base = `/${locale}`;
-  const contacts = [site.contact.email, site.contact.phone, site.contact.address].filter(Boolean);
   const socials = Object.entries(site.social).filter(([, url]) => url) as [string, string][];
 
   return (
@@ -42,26 +42,8 @@ export function Footer({ locale, dict }: { locale: Locale; dict: Dictionary }) {
 
         <div>
           <h2 className="eyebrow">{f.contact}</h2>
-          {contacts.length ? (
-            <ul>{contacts.map((c) => <li key={c}>{c}</li>)}</ul>
-          ) : (
-            <p className="site-footer__muted">
-              {/* "{instagram}" in the copy becomes the link, in every language. */}
-              {f.contactPending.split('{instagram}').map((part, i) =>
-                i === 0 ? (
-                  part
-                ) : (
-                  <span key={i}>
-                    <a href={enquiry.instagramUrl} target="_blank" rel="noopener noreferrer">
-                      Instagram
-                      <span className="visually-hidden"> ({dict.a11y.externalLink})</span>
-                    </a>
-                    {part}
-                  </span>
-                ),
-              )}
-            </p>
-          )}
+          <p className="site-footer__muted">{dict.contact.lead}</p>
+          <ContactChannels dict={dict} prefill={dict.contact.whatsappGeneral} size="sm" />
           <h2 className="eyebrow site-footer__sub">{f.follow}</h2>
           {socials.length ? (
             <ul>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { artworkAlt, ArtworkCard } from '@/components/ArtworkCard';
 import { ArrowLeft } from '@/components/Icons';
+import { ContactChannels } from '@/components/ContactChannels';
 import { InstagramLink } from '@/components/InstagramLink';
 import { InteriorPreview } from '@/components/InteriorPreview';
 import { JsonLd } from '@/components/JsonLd';
@@ -12,6 +13,7 @@ import { getArtwork, getArtworks, isLargeObject } from '@/content/catalog';
 import { formatPrice, localized } from '@/content/localize';
 import { enquiry } from '@/content/site';
 import { locales } from '@/i18n/config';
+import { fill } from '@/i18n/plural';
 import { resolveLocale } from '@/lib/page';
 import { pageMetadata } from '@/lib/seo';
 import { pageUrl, siteUrl } from '@/lib/site-url';
@@ -56,6 +58,7 @@ export default async function ArtworkPage({ params }: PageProps<'/[locale]/artwo
   const base = `/${locale}`;
   const artist = getArtist(artwork.artistSlug);
   const alt = artworkAlt(artwork, dict);
+  const whatsappText = fill(dict.contact.whatsappPiece, { title: artwork.title });
   const enquire = (reason: string) => `${base}/enquire?artwork=${artwork.slug}&reason=${reason}`;
 
   // Only facts that exist are rendered; a null field leaves no trace.
@@ -142,10 +145,14 @@ export default async function ArtworkPage({ params }: PageProps<'/[locale]/artwo
               </Link>
             </div>
           ) : (
-            // Until an enquiry endpoint exists, Instagram is the channel.
-            <div className="artwork__actions">
-              <InstagramLink newTabLabel={dict.a11y.externalLink}>{a.enquireInstagram}</InstagramLink>
-              <p className="artwork__ig-note">{a.instagramNote}</p>
+            // The owner's messengers are the channel; Instagram is secondary.
+            <div className="artwork__contact">
+              <p className="eyebrow">{a.enquire}</p>
+              <ContactChannels dict={dict} prefill={whatsappText} />
+              <p className="contact-note">{a.mentionTitle}</p>
+              <InstagramLink className="also-instagram" newTabLabel={dict.a11y.externalLink}>
+                {dict.contact.alsoInstagram}
+              </InstagramLink>
             </div>
           )}
 
@@ -153,7 +160,7 @@ export default async function ArtworkPage({ params }: PageProps<'/[locale]/artwo
             <InteriorPreview
               image={{ ...artwork.image, alt }}
               title={artwork.title}
-              enquireHref={enquiry.endpoint ? enquire('viewing') : enquiry.instagramUrl}
+              enquireHref={enquiry.endpoint ? enquire('viewing') : enquiry.messengers.whatsapp(whatsappText)}
               labels={{
                 open: a.viewInInterior,
                 title: a.interiorTitle,

@@ -4,7 +4,8 @@ Nothing below is invented on the site; each item is `null` or a placeholder
 until supplied.
 
 ## Business facts (`src/content/site.ts`)
-- [ ] Email, phone, WhatsApp, address (footer shows "details will be published shortly").
+- [x] Phone for WhatsApp / Viber / Telegram: +374 33 228 733 (given 24.09 as 033228733; Armenian format assumed).
+- [ ] Email, address.
 - [x] Instagram: linked to https://www.instagram.com/levani__art/ (the account the supplied screenshots come from). Remove in `site.ts` if wrong.
 - [ ] Legal name, registration number, year founded (About page makes no claim).
 - [ ] Which advisory services are actually offered (all switched off).

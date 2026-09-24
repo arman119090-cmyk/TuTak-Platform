@@ -9,8 +9,10 @@ export const site = {
 
   contact: {
     email: null as string | null,
-    phone: null as string | null,
-    whatsapp: null as string | null,
+    // Owner's number (Armenia, +374 33 228 733), confirmed 24.09 for
+    // WhatsApp, Viber and Telegram. Messaging only: no call link is offered.
+    phone: '+374 33 228 733' as string | null,
+    whatsapp: '+374 33 228 733' as string | null,
     address: null as string | null,
   },
 
@@ -61,11 +63,20 @@ export const site = {
  * The site is static, so an online form needs an external endpoint that
  * accepts a JSON POST (Formspree, a CRM inbound hook, a serverless function…).
  * Set NEXT_PUBLIC_ENQUIRY_ENDPOINT at build time to switch the form on.
- * Without it, every "enquire" action leads to Instagram — the owner's only
- * confirmed channel — and no form pretends to send anything.
+ * Without it, "enquire" actions lead to the owner's messengers (WhatsApp,
+ * Viber, Telegram — one number), with Instagram as a secondary channel, and
+ * no form pretends to send anything.
  */
 export const enquiry = {
   endpoint: process.env.NEXT_PUBLIC_ENQUIRY_ENDPOINT || null,
+  /** Main channel: one number on WhatsApp, Viber and Telegram. */
+  messengers: {
+    display: '+374 33 228 733',
+    whatsapp: (text?: string) =>
+      `https://wa.me/37433228733${text ? `?text=${encodeURIComponent(text)}` : ''}`,
+    viber: 'viber://chat?number=%2B37433228733',
+    telegram: 'https://t.me/+37433228733',
+  },
   instagramHandle: 'levani__art',
   instagramUrl: 'https://instagram.com/levani__art',
 };

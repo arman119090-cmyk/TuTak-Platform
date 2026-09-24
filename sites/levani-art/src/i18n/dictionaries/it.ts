@@ -97,8 +97,7 @@ export const it: Dictionary = {
     count: plural({ one: 'opera', other: 'opere' }),
   },
   artwork: {
-    enquireInstagram: 'Richiedi via Instagram',
-    instagramNote: 'Indichi nel messaggio il titolo dell’opera.',
+    mentionTitle: 'Indichi nel messaggio il titolo dell’opera.',
     priceOnRequest: 'Prezzo su richiesta',
     enquire: 'Informazioni su quest’opera',
     privateViewing: 'Richiedi una visione privata',
@@ -138,7 +137,7 @@ export const it: Dictionary = {
     architecturalText: 'Ulteriori dettagli sull’opera sono disponibili su richiesta.',
     interiorTitle: 'Vedi in un interno',
     interiorPlaceholder: 'Non sono ancora disponibili vedute in interno di quest’opera. La fotografia mostrata è l’originale, non modificata.',
-    interiorCta: 'Richiedi via Instagram',
+    interiorCta: 'Richiedi su WhatsApp',
     close: 'Chiudi',
     imageAlt: '{title} — {category}',
   },
@@ -209,10 +208,8 @@ export const it: Dictionary = {
     cta: 'Fai una richiesta privata',
   },
   enquiry: {
-    instagramTitle: 'Ci scriva su Instagram',
-    instagramText: 'Per ora le richieste si ricevono tramite il nostro account Instagram. Ci invii un messaggio diretto.',
-    instagramCta: 'Scrivi a @{handle}',
-    instagramMention: 'Indichi: {title}',
+    writeTitle: 'Ci scriva',
+    mention: 'Indichi: {title}',
     eyebrow: 'Richiesta privata',
     title: 'Richiesta privata',
     intro: 'Ci dica che cosa sta cercando.',
@@ -259,13 +256,19 @@ export const it: Dictionary = {
     results: plural({ one: 'risultato', other: 'risultati' }),
     close: 'Chiudi la ricerca',
   },
+  contact: {
+    lead: 'Ci scriva su WhatsApp, Viber o Telegram.',
+    writeOn: 'Scrivici su {channel}',
+    whatsappPiece: 'Buongiorno! Mi interessa l’opera «{title}» della collezione LEVANI ART.',
+    whatsappGeneral: 'Buongiorno! Ho una domanda sulla collezione LEVANI ART.',
+    alsoInstagram: 'Anche su Instagram',
+  },
   footer: {
     statement:
       'Dipinti, sculture e oggetti decorativi per collezioni private e interni d’eccezione.',
     explore: 'Esplora',
     house: 'La casa',
     contact: 'Contatti',
-    contactPending: 'I recapiti saranno pubblicati a breve. Nel frattempo, ci contatti tramite {instagram}.',
     follow: 'Seguici',
     socialPending: 'Canali social in arrivo.',
     legal: 'Note legali',
@@ -279,7 +282,7 @@ export const it: Dictionary = {
     placeholder:
       'Questa pagina è provvisoria. Il testo definitivo sarà pubblicato dopo essere stato redatto e approvato dal titolare.',
     privacyTitle: 'Informativa sulla privacy',
-    privacyBody: 'Questo sito non ha moduli e non chiede i suoi dati personali. Memorizza un solo cookie, LEVANI_LOCALE, esclusivamente per ricordare la lingua scelta. Se ci scrive su Instagram, il messaggio è trattato da Instagram secondo la propria informativa sulla privacy. Il sito è ospitato da Render, che può conservare i normali log tecnici delle richieste.',
+    privacyBody: 'Questo sito non ha moduli e non chiede i suoi dati personali. Memorizza un solo cookie, LEVANI_LOCALE, esclusivamente per ricordare la lingua scelta. Se ci scrive su WhatsApp, Viber, Telegram o Instagram, il messaggio è trattato dal rispettivo servizio secondo la propria informativa sulla privacy. Il sito è ospitato da Render, che può conservare i normali log tecnici delle richieste.',
     termsTitle: 'Condizioni d’uso',
     termsBody:
       'Immagini e testi di questo sito appartengono ai rispettivi titolari e non possono essere riprodotti senza autorizzazione.',

@@ -6,10 +6,24 @@ const EMBLEM: Record<string, string> = { hy: 'am', ru: 'ru', it: 'it', de: 'de',
 const NAMES: Record<string, string> = {
   hy: 'Հայերեն', ru: 'Русский', it: 'Italiano', de: 'Deutsch', fr: 'Français', en: 'English',
 };
-const IG_CTA: Record<string, string> = {
-  hy: 'Հարցում Instagram-ով', ru: 'Запрос через Instagram', it: 'Richiedi via Instagram',
-  de: 'Anfrage über Instagram', fr: 'Se renseigner via Instagram', en: 'Enquire via Instagram',
-};
+// The owner's messengers — one number (+374 33 228 733).
+const WA = 'https://wa.me/37433228733';
+const VIBER = 'viber://chat?number=%2B37433228733';
+const TELEGRAM = 'https://t.me/+37433228733';
+const NUMBER = '+374 33 228 733';
+
+/** WhatsApp, Viber and Telegram links inside `scope`, with the number shown. */
+async function expectMessengers(scope: ReturnType<Page['locator']>, whatsappMustMention?: string) {
+  const wa = scope.locator(`a[href^="${WA}"]`).first();
+  await expect(wa).toHaveCount(1);
+  if (whatsappMustMention) {
+    const text = new URL((await wa.getAttribute('href'))!).searchParams.get('text') ?? '';
+    expect(text).toContain(whatsappMustMention);
+  }
+  await expect(scope.locator(`a[href="${VIBER}"]`).first()).toHaveCount(1);
+  await expect(scope.locator(`a[href="${TELEGRAM}"]`).first()).toHaveCount(1);
+  await expect(scope.getByText(NUMBER, { exact: true }).first()).toBeVisible();
+}
 const PRICE_ON_REQUEST: Record<string, string> = {
   hy: 'Գինը՝ հարցմամբ', ru: 'Цена по запросу', it: 'Prezzo su richiesta',
   de: 'Preis auf Anfrage', fr: 'Prix sur demande', en: 'Price on request',
@@ -19,11 +33,6 @@ const PRICE = /(\$|€|£|֏|₽)\s?\d|\d[\d\s.,]*\s?(USD|EUR|AMD|RUB|GBP|֏|₽
 // Copy that would suggest a form or an unconfirmed service (all 6 languages).
 const NO_FORM_OR_SERVICE =
   /enquiry form|contact form|send enquiry|Art Advisor|Kunstberater|арт-консультант|conseiller artistique|consulente d.arte|արվեստի խորհրդատու|placement, access|installation before|in preparation|in Vorbereitung|готовятся|en préparation|in preparazione|Anfrageformular|формой запроса|formulaire de demande|modulo di richiesta|հարցման ձև|private viewing|частный показ|Private Besichtigung|visite privée|visione privata|մասնավոր դիտում/i;
-const FOOTER_IG: Record<string, string> = {
-  hy: 'Առայժմ խնդրում ենք կապվել մեզ հետ', ru: 'Пока, пожалуйста, связывайтесь с нами через',
-  it: 'Nel frattempo, ci contatti tramite', de: 'Bis dahin erreichen Sie uns über',
-  fr: 'En attendant, contactez-nous via', en: 'For now, please contact us through',
-};
 const isDesktop = (p: Page) => (p.viewportSize()?.width ?? 0) > 500;
 
 /** Collects every request to the old runtime optimizer, per page. */
@@ -56,6 +65,14 @@ async function brokenImages(page: Page) {
   );
 }
 
+test('Delabrière work is titled "Deer Hunt" everywhere', async ({ page }) => {
+  await page.goto('/en/artworks/edouard-delabriere-hunter/');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Deer Hunt');
+  await page.goto('/ru/');
+  await expect(page.locator('.hero__caption')).toHaveText('Deer Hunt');
+  expect(await page.content()).not.toContain('Hunter with Dogs');
+});
+
 test('root / sends the visitor to a language', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/(hy|ru|it|de|fr|en)\/$/);
@@ -83,9 +100,8 @@ for (const l of LOCALES) {
     await scrollThrough(page);
     await expect.poll(() => brokenImages(page)).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    const pending = page.locator('footer .site-footer__muted').first();
-    await expect(pending).toContainText(FOOTER_IG[l]!);
-    await expect(pending.locator(`a[href="${IG}"]`)).toHaveCount(1);
+    await expectMessengers(page.locator('footer'));
+    await expect(page.locator(`footer a[href="${IG}"]`)).toHaveCount(1);
     expect(hits).toEqual([]);
   });
 
@@ -139,8 +155,9 @@ for (const l of LOCALES) {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(a.title);
       await expect(page.locator('.artwork__frame img')).toHaveJSProperty('complete', true);
       expect(await page.locator('.artwork__frame img').evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
-      const cta = page.getByRole('link', { name: new RegExp(IG_CTA[l]!) });
-      await expect(cta).toHaveAttribute('href', IG);
+      // WhatsApp opens with a message naming this very work.
+      await expectMessengers(page.locator('.artwork__contact'), a.title);
+      await expect(page.locator(`.artwork__contact a[href="${IG}"]`)).toHaveCount(1);
       await expect(page.getByText(PRICE_ON_REQUEST[l]!, { exact: true })).toBeVisible();
       await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /\/artworks\//);
       const ld = await page.locator('script[type="application/ld+json"]').first().textContent();
@@ -188,9 +205,10 @@ test('unknown URL → branded 404 in the path language', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('nicht in der Sammlung');
 });
 
-test('enquire page: Instagram channel, no form', async ({ page }) => {
+test('enquire page: messengers + Instagram, no form', async ({ page }) => {
   await page.goto('/hy/enquire/?artwork=aknuni');
   await expect(page.locator('form')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /@levani__art/ })).toHaveAttribute('href', IG);
+  await expectMessengers(page.locator('.enquiry-contact'));
+  await expect(page.locator(`.enquiry-contact a[href="${IG}"]`)).toHaveCount(1);
   await expect(page.getByText('Aknuni / Ակնունի').first()).toBeVisible();
 });

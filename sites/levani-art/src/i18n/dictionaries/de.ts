@@ -97,8 +97,7 @@ export const de: Dictionary = {
     count: plural({ one: 'Werk', other: 'Werke' }),
   },
   artwork: {
-    enquireInstagram: 'Anfrage über Instagram',
-    instagramNote: 'Bitte nennen Sie in Ihrer Nachricht den Titel des Werks.',
+    mentionTitle: 'Bitte nennen Sie in Ihrer Nachricht den Titel des Werks.',
     priceOnRequest: 'Preis auf Anfrage',
     enquire: 'Anfrage zu diesem Werk',
     privateViewing: 'Private Besichtigung anfragen',
@@ -138,7 +137,7 @@ export const de: Dictionary = {
     architecturalText: 'Weitere Angaben zum Werk erhalten Sie auf Anfrage.',
     interiorTitle: 'Im Interieur ansehen',
     interiorPlaceholder: 'Für dieses Werk gibt es noch keine Interieur-Ansichten. Gezeigt wird das unveränderte Originalfoto.',
-    interiorCta: 'Anfrage über Instagram',
+    interiorCta: 'Anfrage über WhatsApp',
     close: 'Schließen',
     imageAlt: '{title} — {category}',
   },
@@ -209,10 +208,8 @@ export const de: Dictionary = {
     cta: 'Private Anfrage stellen',
   },
   enquiry: {
-    instagramTitle: 'Schreiben Sie uns auf Instagram',
-    instagramText: 'Anfragen nehmen wir derzeit über unser Instagram-Konto entgegen. Bitte senden Sie uns dort eine Direktnachricht.',
-    instagramCta: '@{handle} schreiben',
-    instagramMention: 'Bitte nennen Sie: {title}',
+    writeTitle: 'Schreiben Sie uns',
+    mention: 'Bitte nennen Sie: {title}',
     eyebrow: 'Private Anfrage',
     title: 'Private Anfrage',
     intro: 'Sagen Sie uns, wonach Sie suchen.',
@@ -259,13 +256,19 @@ export const de: Dictionary = {
     results: plural({ one: 'Ergebnis', other: 'Ergebnisse' }),
     close: 'Suche schließen',
   },
+  contact: {
+    lead: 'Schreiben Sie uns über WhatsApp, Viber oder Telegram.',
+    writeOn: 'Schreiben Sie uns über {channel}',
+    whatsappPiece: 'Guten Tag! Ich interessiere mich für das Werk „{title}“ aus der Sammlung LEVANI ART.',
+    whatsappGeneral: 'Guten Tag! Ich habe eine Frage zur Sammlung LEVANI ART.',
+    alsoInstagram: 'Auch auf Instagram',
+  },
   footer: {
     statement:
       'Gemälde, Skulpturen und dekorative Objekte für Privatsammlungen und außergewöhnliche Interieurs.',
     explore: 'Entdecken',
     house: 'Das Haus',
     contact: 'Kontakt',
-    contactPending: 'Kontaktdaten werden in Kürze veröffentlicht. Bis dahin erreichen Sie uns über {instagram}.',
     follow: 'Folgen',
     socialPending: 'Soziale Kanäle folgen.',
     legal: 'Rechtliches',
@@ -279,7 +282,7 @@ export const de: Dictionary = {
     placeholder:
       'Dies ist eine vorläufige Seite. Der endgültige Text wird veröffentlicht, sobald er vom Inhaber erstellt und geprüft wurde.',
     privacyTitle: 'Datenschutzerklärung',
-    privacyBody: 'Diese Website hat keine Formulare und fragt keine personenbezogenen Daten ab. Sie speichert ein einziges Cookie, LEVANI_LOCALE, nur um die gewählte Sprache zu merken. Wenn Sie uns über Instagram schreiben, verarbeitet Instagram Ihre Nachricht nach seiner eigenen Datenschutzrichtlinie. Die Website wird bei Render gehostet; dort können übliche technische Zugriffsprotokolle anfallen.',
+    privacyBody: 'Diese Website hat keine Formulare und fragt keine personenbezogenen Daten ab. Sie speichert ein einziges Cookie, LEVANI_LOCALE, nur um die gewählte Sprache zu merken. Wenn Sie uns über WhatsApp, Viber, Telegram oder Instagram schreiben, verarbeitet der jeweilige Dienst Ihre Nachricht nach seiner eigenen Datenschutzrichtlinie. Die Website wird bei Render gehostet; dort können übliche technische Zugriffsprotokolle anfallen.',
     termsTitle: 'Nutzungsbedingungen',
     termsBody:
       'Bilder und Texte dieser Website gehören ihren jeweiligen Rechteinhabern und dürfen ohne Erlaubnis nicht vervielfältigt werden.',

@@ -2016,6 +2016,117 @@ main {
   }
 }
 
+/* ---------- Messenger channels ------------------------------------------ */
+
+.channels__list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.channels .channel {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 18px 8px 16px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, rgb(176 141 87 / 0.06), transparent 70%);
+  color: var(--champagne);
+  transition: border-color 0.3s var(--ease), color 0.3s var(--ease), background-color 0.3s var(--ease);
+}
+/* A hairline inset frame, as on a mount. */
+.channel::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgb(176 141 87 / 0.14);
+  pointer-events: none;
+  transition: border-color 0.3s var(--ease);
+}
+.channels .channel:hover,
+.channels .channel:focus-visible {
+  border-color: var(--bronze);
+  color: var(--ivory);
+  background-color: rgb(176 141 87 / 0.07);
+}
+.channel:hover::before,
+.channel:focus-visible::before {
+  border-color: rgb(176 141 87 / 0.4);
+}
+.channel__glyph {
+  display: block;
+}
+.channel__name {
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ivory-dim);
+}
+.channel:hover .channel__name {
+  color: var(--ivory);
+}
+.channels__number {
+  margin-top: 16px;
+  font-family: var(--serif);
+  /* Lining figures: a phone number must read evenly. */
+  font-variant-numeric: lining-nums;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  color: var(--ivory);
+  text-align: center;
+}
+.channels--sm .channel {
+  padding: 12px 4px 10px;
+  gap: 7px;
+}
+.channels--sm .channel__name {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+}
+.site-footer .channels {
+  margin-top: 16px;
+}
+.channels--sm .channels__number {
+  font-size: 19px;
+  text-align: left;
+}
+.artwork__contact {
+  margin-top: 26px;
+}
+.artwork__contact .eyebrow {
+  margin-bottom: 14px;
+}
+.contact-note {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--stone);
+  text-align: center;
+}
+.also-instagram {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--stone);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 3px;
+  transition: color 0.25s, border-color 0.25s;
+}
+.also-instagram:hover {
+  color: var(--champagne);
+  border-color: var(--bronze);
+}
+.enquiry-contact .channels {
+  max-width: 520px;
+  margin-top: 32px;
+}
+.enquiry-contact .channels__number {
+  text-align: left;
+}
+
 .button .ig-glyph {
   margin-right: 12px;
   flex: none;
@@ -2025,16 +2136,13 @@ main {
   font-size: 12.5px;
   color: var(--stone);
 }
-.enquiry-instagram {
+.enquiry-contact {
   align-self: start;
   margin-top: clamp(0px, 9vw, 130px);
   padding: 0 var(--gutter);
 }
-.enquiry-instagram .button {
-  margin-top: 32px;
-}
 @media (max-width: 900px) {
-  .enquiry-instagram {
+  .enquiry-contact {
     margin-top: 40px;
   }
 }

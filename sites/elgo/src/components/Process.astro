@@ -1,0 +1,93 @@
+---
+import { t, type Locale } from '../i18n';
+import { markPlaceholders } from '../lib/placeholder';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+---
+
+<section class="section section--alt" id="process" aria-labelledby="process-title">
+  <div class="container">
+    <div data-reveal>
+      <span class="eyebrow">{d.process.eyebrow}</span>
+      <h2 class="h2" id="process-title">{d.process.title}</h2>
+    </div>
+    <ol class="steps">
+      {d.process.steps.map((step, i) => (
+        <li class="step" data-reveal style={`transition-delay: ${i * 70}ms`}>
+          <span class="num">{String(i + 1).padStart(2, '0')}</span>
+          <h3 class="title">{step.title}</h3>
+          <p class="text muted" set:html={markPlaceholders(step.text)} />
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    list-style: none;
+    margin: 72px 0 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .step {
+    padding: 32px 24px 0 0;
+  }
+
+  .step + .step {
+    padding-left: 24px;
+    border-left: 1px solid var(--line);
+  }
+
+  .num {
+    display: block;
+    font-family: var(--font-head);
+    font-size: 44px;
+    line-height: 1;
+    color: var(--brass-dark);
+    margin-bottom: 28px;
+  }
+
+  .title {
+    font-size: 24px;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  :global(:lang(hy)) .title {
+    font-size: 19px;
+    line-height: 1.35;
+  }
+
+  .text {
+    font-size: 15px;
+  }
+
+  @media (max-width: 1023px) {
+    .steps {
+      grid-template-columns: 1fr;
+      margin-top: 48px;
+    }
+    .step,
+    .step + .step {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      column-gap: 16px;
+      padding: 28px 0;
+      border-left: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .num {
+      grid-row: span 2;
+      font-size: 36px;
+      margin: 0;
+    }
+  }
+</style>

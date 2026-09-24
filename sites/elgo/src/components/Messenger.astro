@@ -1,0 +1,49 @@
+---
+import { flags } from '../config';
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+const m = flags.messenger;
+// Мессенджер ещё не выбран заказчиком — пока flags.messenger === null, кнопки нет.
+const link = !m
+  ? null
+  : m.kind === 'whatsapp'
+    ? { href: `https://wa.me/${m.number}`, label: d.messenger.whatsapp, short: 'WA' }
+    : { href: `https://t.me/${m.username}`, label: d.messenger.telegram, short: 'TG' };
+---
+
+{link && (
+  <a class="messenger" href={link.href} target="_blank" rel="noopener" aria-label={link.label}>
+    {link.short}
+  </a>
+)}
+
+<style>
+  .messenger {
+    display: none;
+  }
+  @media (max-width: 767px) {
+    .messenger {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 40;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 56px;
+      height: 56px;
+      background: var(--brass);
+      color: var(--graphite);
+      border-radius: 2px;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-decoration: none;
+    }
+  }
+</style>

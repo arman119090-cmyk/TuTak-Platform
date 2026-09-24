@@ -1,0 +1,417 @@
+---
+import { company } from '../config';
+import { locales, localeLabels, t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+  /** Путь без префикса языка — для переключателя языков. */
+  path: string;
+  /** На главной шапка лежит поверх первого экрана; на прочих — сразу тёмная. */
+  overlay?: boolean;
+}
+
+const { locale, path, overlay = false } = Astro.props;
+const d = t(locale);
+const base = path === '/' ? '' : `/${locale}/`;
+const links = [
+  { id: 'directions', label: d.nav.directions },
+  { id: 'projects', label: d.nav.projects },
+  { id: 'about', label: d.nav.about },
+  { id: 'contact', label: d.nav.contacts },
+];
+const langLinks = locales.map((l) => ({
+  locale: l,
+  href: `/${l}${path}`,
+  ...localeLabels[l],
+}));
+---
+
+<header class:list={['site-header', { 'is-solid': !overlay }]} data-header>
+  <div class="container header-inner">
+    <a class="logo" href={`/${locale}/`}>
+      <span class="logo-mark" lang="en">ElGo</span>
+      <span class="logo-tag">{d.nav.tagline}</span>
+    </a>
+
+    <nav id="site-nav" class="nav" aria-label={d.nav.mainNav} data-nav>
+      <ul class="nav-list">
+        {links.map((l) => (
+          <li>
+            <a href={`${base}#${l.id}`} data-nav-link>{l.label}</a>
+          </li>
+        ))}
+      </ul>
+      <div class="nav-mobile-extra">
+        <ul class="lang" aria-label={d.nav.langLabel}>
+          {langLinks.map((l) => (
+            <li>
+              <a
+                href={l.href}
+                lang={l.locale}
+                hreflang={l.locale}
+                aria-current={l.locale === locale ? 'true' : undefined}
+                aria-label={`${l.short} — ${l.name}`}
+                data-lang-link
+              >
+                {l.short}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <a class="nav-phone" href={company.phoneHref}>{company.phone}</a>
+        <a class="btn" href={`${base}#contact`} data-nav-link>{d.nav.cta}</a>
+      </div>
+    </nav>
+
+    <div class="header-actions">
+      <ul class="lang lang--desktop" aria-label={d.nav.langLabel}>
+        {langLinks.map((l) => (
+          <li>
+            <a
+              href={l.href}
+              lang={l.locale}
+              hreflang={l.locale}
+              aria-current={l.locale === locale ? 'true' : undefined}
+              aria-label={`${l.short} — ${l.name}`}
+              data-lang-link
+            >
+              {l.short}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <a class="header-phone" href={company.phoneHref}>{company.phone}</a>
+      <a class="btn header-cta" href={`${base}#contact`}>{d.nav.cta}</a>
+      <a class="icon-btn header-call" href={company.phoneHref} aria-label={d.nav.call}>
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"></path>
+        </svg>
+      </a>
+      <button
+        class="icon-btn burger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="site-nav"
+        aria-label={d.nav.menuOpen}
+        data-label-open={d.nav.menuOpen}
+        data-label-close={d.nav.menuClose}
+        data-burger
+      >
+        <span class="burger-lines" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<script>
+  const header = document.querySelector<HTMLElement>('[data-header]');
+  const burger = document.querySelector<HTMLButtonElement>('[data-burger]');
+  const nav = document.querySelector<HTMLElement>('[data-nav]');
+
+  if (header) {
+    const onScroll = () => header.classList.toggle('is-scrolled', window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  const setMenu = (open: boolean) => {
+    if (!burger || !nav || !header) return;
+    burger.setAttribute('aria-expanded', String(open));
+    burger.setAttribute('aria-label', (open ? burger.dataset.labelClose : burger.dataset.labelOpen) ?? '');
+    header.classList.toggle('menu-open', open);
+    document.documentElement.classList.toggle('no-scroll', open);
+  };
+
+  burger?.addEventListener('click', () => setMenu(burger.getAttribute('aria-expanded') !== 'true'));
+  nav?.querySelectorAll('[data-nav-link]').forEach((a) => a.addEventListener('click', () => setMenu(false)));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && burger?.getAttribute('aria-expanded') === 'true') {
+      setMenu(false);
+      burger.focus();
+    }
+  });
+  window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => e.matches && setMenu(false));
+
+  // Переключатель языка сохраняет раздел страницы: добавляем к ссылке якорь
+  // секции, которая сейчас на экране.
+  const currentSectionId = (): string | null => {
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('main section[id]'));
+    const probe = window.innerHeight * 0.35;
+    let current: string | null = null;
+    for (const s of sections) {
+      if (s.getBoundingClientRect().top <= probe) current = s.id;
+    }
+    return current;
+  };
+
+  document.querySelectorAll<HTMLAnchorElement>('[data-lang-link]').forEach((a) => {
+    a.addEventListener('click', () => {
+      const url = new URL(a.href);
+      const id = currentSectionId();
+      url.hash = id && id !== 'top' ? id : '';
+      a.href = url.pathname + url.search + url.hash;
+    });
+  });
+</script>
+
+<style>
+  .site-header {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 50;
+    color: var(--stone);
+    border-bottom: 1px solid transparent;
+    transition:
+      background-color 0.3s var(--ease),
+      border-color 0.3s var(--ease);
+  }
+
+  .site-header.is-scrolled,
+  .site-header.is-solid,
+  .site-header.menu-open {
+    background: var(--graphite);
+    border-bottom-color: var(--line-dark);
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: var(--header-h);
+  }
+
+  .logo {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    line-height: 1;
+    margin-right: auto;
+  }
+
+  .logo-mark {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    font-size: 32px;
+    letter-spacing: 0.01em;
+  }
+
+  .logo-tag {
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--muted-dark);
+  }
+
+  .nav-list {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .nav-list a,
+  .header-phone {
+    font-size: 15px;
+    text-decoration: none;
+    color: var(--stone);
+    padding-block: 8px;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s var(--ease);
+  }
+
+  .nav-list a:hover,
+  .header-phone:hover {
+    border-bottom-color: var(--brass);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .lang {
+    display: flex;
+    gap: 4px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .lang a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-decoration: none;
+    color: var(--muted-dark);
+  }
+
+  .lang a[lang='hy'] {
+    font-family: 'Noto Sans Armenian', sans-serif;
+  }
+
+  .lang a[aria-current='true'] {
+    color: var(--brass);
+  }
+
+  .lang a:hover {
+    color: var(--stone);
+  }
+
+  .header-cta {
+    min-height: 48px;
+    padding: 0 22px;
+  }
+
+  .icon-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background: transparent;
+    border: 1px solid var(--line-dark);
+    border-radius: 2px;
+    color: var(--stone);
+    cursor: pointer;
+  }
+
+  .burger-lines,
+  .burger-lines::before,
+  .burger-lines::after {
+    display: block;
+    width: 20px;
+    height: 1px;
+    background: currentColor;
+    transition: transform 0.25s var(--ease);
+  }
+
+  .burger-lines {
+    position: relative;
+  }
+
+  .burger-lines::before,
+  .burger-lines::after {
+    content: '';
+    position: absolute;
+    left: 0;
+  }
+
+  .burger-lines::before {
+    top: -6px;
+  }
+
+  .burger-lines::after {
+    top: 6px;
+  }
+
+  .menu-open .burger-lines {
+    background: transparent;
+  }
+
+  .menu-open .burger-lines::before {
+    transform: translateY(6px) rotate(45deg);
+  }
+
+  .menu-open .burger-lines::after {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  .nav-mobile-extra {
+    display: none;
+  }
+
+  /* Промежуточная ширина: телефон в шапке убираем первым. */
+  @media (max-width: 1279px) {
+    .header-phone {
+      display: none;
+    }
+    .nav-list {
+      gap: 24px;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .header-inner {
+      gap: 12px;
+    }
+
+    .icon-btn {
+      display: inline-flex;
+    }
+
+    .lang--desktop,
+    .header-cta {
+      display: none;
+    }
+
+    .nav {
+      position: fixed;
+      inset: var(--header-h) 0 0 0;
+      background: var(--graphite);
+      padding: 32px var(--gutter) 48px;
+      overflow-y: auto;
+      display: none;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .menu-open .nav {
+      display: flex;
+    }
+
+    .nav-list {
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .nav-list a {
+      display: block;
+      padding: 18px 0;
+      font-family: var(--font-head);
+      font-size: 30px;
+      border-bottom: 1px solid var(--line-dark);
+    }
+
+    .nav-mobile-extra {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 24px;
+    }
+
+    .nav-phone {
+      font-size: 22px;
+      text-decoration: none;
+    }
+
+    .nav-mobile-extra .btn {
+      width: 100%;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .logo-mark {
+      font-size: 26px;
+    }
+    .logo-tag {
+      font-size: 9px;
+      letter-spacing: 2px;
+    }
+  }
+
+  :global(html.no-scroll) {
+    overflow: hidden;
+  }
+</style>

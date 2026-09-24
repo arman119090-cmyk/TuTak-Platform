@@ -1,0 +1,80 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import { locales, t, type Locale } from '../../i18n';
+import { markPlaceholders } from '../../lib/placeholder';
+
+export function getStaticPaths() {
+  return locales.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const d = t(locale);
+const p = d.privacy;
+---
+
+<Base locale={locale} path="/privacy/" title={`${p.title} — ElGo`} description={p.metaDescription}>
+  <Header locale={locale} path="/privacy/" />
+  <main id="main" class="page">
+    <div class="container narrow">
+      <a class="back" href={`/${locale}/`}>{p.back}</a>
+      <h1 class="title">{p.title}</h1>
+      <p class="draft" role="note">{p.draft}</p>
+      <p class="updated muted" set:html={markPlaceholders(p.updated)} />
+      {p.sections.map((s) => (
+        <section class="block">
+          <h2>{s.title}</h2>
+          {s.body.map((para) => <p set:html={markPlaceholders(para)} />)}
+        </section>
+      ))}
+    </div>
+  </main>
+  <Footer locale={locale} />
+</Base>
+
+<style>
+  .page {
+    padding: calc(var(--header-h) + 80px) 0 var(--section-y);
+  }
+  .narrow {
+    max-width: 880px;
+  }
+  .back {
+    font-size: 15px;
+    color: var(--brass-dark);
+    text-decoration: none;
+  }
+  .title {
+    margin-top: 32px;
+    font-size: clamp(40px, 5vw, 72px);
+  }
+  :global(:lang(hy)) .title {
+    font-size: clamp(32px, 4vw, 54px);
+  }
+  .draft {
+    margin-top: 32px;
+    padding: 16px 20px;
+    border: 1px solid var(--brass-dark);
+    font-size: 15px;
+  }
+  .updated {
+    margin-top: 16px;
+    font-size: 14px;
+  }
+  .block {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--line);
+  }
+  .block h2 {
+    font-size: clamp(26px, 2.6vw, 34px);
+    margin-bottom: 16px;
+  }
+  :global(:lang(hy)) .block h2 {
+    font-size: clamp(21px, 2vw, 26px);
+  }
+  .block p + p {
+    margin-top: 12px;
+  }
+</style>

@@ -1,0 +1,68 @@
+---
+import { flags, stats } from '../config';
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+// Секция выключена, пока нет реальных цифр (BRIEF.md, п. 6).
+---
+
+{flags.showStats && (
+  <section class="section section--dark" id="stats" aria-labelledby="stats-title">
+    <div class="container">
+      <span class="eyebrow">{d.stats.eyebrow}</span>
+      <h2 class="h2 visually-hidden" id="stats-title">{d.stats.title}</h2>
+      <dl class="grid">
+        {stats.map((s) => (
+          <div class="item" data-reveal>
+            <dt class="label muted">{d.stats.items[s.key]}</dt>
+            <dd class="value">{s.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  </section>
+)}
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin: 0;
+    border-top: 1px solid var(--line-dark);
+  }
+  .item {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    padding: 40px 24px 0;
+  }
+  .item + .item {
+    border-left: 1px solid var(--line-dark);
+  }
+  .item:first-child {
+    padding-left: 0;
+  }
+  .value {
+    margin: 0 0 12px;
+    font-family: var(--font-head);
+    font-size: clamp(48px, 6vw, 88px);
+    line-height: 1;
+    color: var(--stone);
+  }
+  .label {
+    font-size: 15px;
+  }
+  @media (max-width: 767px) {
+    .grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .item:nth-child(3) {
+      border-left: 0;
+      padding-left: 0;
+    }
+  }
+</style>

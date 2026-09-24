@@ -1,0 +1,298 @@
+---
+import { company } from '../config';
+import { OBJECT_TYPES } from '../lib/lead';
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+---
+
+<section class="section section--alt" id="contact" aria-labelledby="contact-title">
+  <div class="container grid">
+    <div class="intro" data-reveal>
+      <span class="eyebrow">{d.lead.eyebrow}</span>
+      <h2 class="h2" id="contact-title">{d.lead.title}</h2>
+      <p class="text muted">{d.lead.text}</p>
+      <p class="phone-label muted">{d.lead.phoneLabel}</p>
+      <a class="phone" href={company.phoneHref}>{company.phone}</a>
+    </div>
+
+    <form
+      class="form"
+      action="/api/lead"
+      method="post"
+      novalidate
+      data-lead-form
+      data-messages={JSON.stringify(d.lead.messages)}
+      data-sending={d.lead.sending}
+      data-reveal
+    >
+      <input type="hidden" name="locale" value={locale} />
+
+      <div class="field">
+        <label for="lead-name">{d.lead.name}</label>
+        <input id="lead-name" name="name" type="text" autocomplete="name" required minlength="2" maxlength="80" />
+      </div>
+
+      <div class="field">
+        <label for="lead-phone">{d.lead.phone}</label>
+        <input
+          id="lead-phone"
+          name="phone"
+          type="tel"
+          inputmode="tel"
+          autocomplete="tel"
+          placeholder={d.lead.phonePlaceholder}
+          required
+          maxlength="24"
+        />
+      </div>
+
+      <div class="field">
+        <label for="lead-type">{d.lead.type}</label>
+        <select id="lead-type" name="type" required>
+          <option value="" disabled selected>{d.lead.typePlaceholder}</option>
+          {OBJECT_TYPES.map((value, i) => <option value={value}>{d.directions.items[i]!.title}</option>)}
+        </select>
+      </div>
+
+      {/* Ловушка для ботов: человек это поле не видит и не заполняет. */}
+      <div class="hp" aria-hidden="true">
+        <label for="lead-website">{d.lead.honeypot}</label>
+        <input id="lead-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+      </div>
+
+      <div class="consent">
+        <input id="lead-consent" name="consent" type="checkbox" required />
+        <label for="lead-consent">
+          {d.lead.consentBefore}<a href={`/${locale}/privacy/`}>{d.lead.consentLink}</a>{d.lead.consentAfter}
+        </label>
+      </div>
+
+      <button class="btn submit" type="submit" data-submit>{d.lead.submit}</button>
+      <p class="status" role="status" aria-live="polite" data-status></p>
+    </form>
+  </div>
+</section>
+
+<script>
+  type Msgs = Record<string, string>;
+  const form = document.querySelector<HTMLFormElement>('[data-lead-form]');
+
+  if (form) {
+    const messages: Msgs = JSON.parse(form.dataset.messages ?? '{}');
+    const status = form.querySelector<HTMLElement>('[data-status]')!;
+    const submit = form.querySelector<HTMLButtonElement>('[data-submit]')!;
+    const submitLabel = submit.textContent ?? '';
+    const fieldFor: Record<string, string> = {
+      invalid_name: 'name',
+      invalid_phone: 'phone',
+      invalid_type: 'type',
+      no_consent: 'consent',
+    };
+
+    const show = (code: string) => {
+      status.textContent = messages[code] ?? messages.server_error ?? '';
+      status.dataset.kind = code === 'ok' ? 'ok' : 'error';
+      form.querySelectorAll('[aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
+      const name = fieldFor[code];
+      if (name) {
+        const el = form.elements.namedItem(name) as HTMLElement | null;
+        el?.setAttribute('aria-invalid', 'true');
+        el?.setAttribute('aria-describedby', 'lead-status');
+        el?.focus();
+      }
+    };
+    status.id = 'lead-status';
+
+    // Быстрые проверки до сервера — те же правила, окончательно решает сервер.
+    const precheck = (): string | null => {
+      const data = new FormData(form);
+      const name = String(data.get('name') ?? '').trim();
+      if (name.length < 2 || name.length > 80) return 'invalid_name';
+      const digits = String(data.get('phone') ?? '').replace(/\D/g, '');
+      if (!(digits.length === 11 && digits.startsWith('374')) && !(digits.length === 9 && digits.startsWith('0'))) {
+        return 'invalid_phone';
+      }
+      if (!data.get('type')) return 'invalid_type';
+      if (!data.get('consent')) return 'no_consent';
+      return null;
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const early = precheck();
+      if (early) return show(early);
+
+      submit.disabled = true;
+      submit.textContent = form.dataset.sending ?? submitLabel;
+      status.textContent = '';
+      try {
+        const data = Object.fromEntries(new FormData(form).entries());
+        const res = await fetch(form.action, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const json = (await res.json().catch(() => ({}))) as { code?: string };
+        const code = json.code ?? (res.ok ? 'ok' : 'server_error');
+        show(code);
+        if (code === 'ok') form.reset();
+      } catch {
+        show('server_error');
+      } finally {
+        submit.disabled = false;
+        submit.textContent = submitLabel;
+      }
+    });
+  }
+</script>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 96px;
+    align-items: start;
+  }
+
+  .text {
+    margin-top: 28px;
+    max-width: 480px;
+  }
+
+  .phone-label {
+    margin-top: 56px;
+    font-size: 14px;
+  }
+
+  .phone {
+    display: inline-block;
+    margin-top: 8px;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(36px, 4vw, 56px);
+    font-weight: 500;
+    line-height: 1.1;
+    text-decoration: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .phone:hover {
+    border-bottom-color: var(--brass-dark);
+  }
+
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .field label {
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  input[type='text'],
+  input[type='tel'],
+  select {
+    width: 100%;
+    min-height: 56px;
+    padding: 0 16px;
+    font: inherit;
+    font-size: 17px;
+    color: var(--graphite);
+    background: var(--stone);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    appearance: none;
+  }
+
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2316161A' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-position: calc(100% - 18px) 50%;
+    background-repeat: no-repeat;
+    padding-right: 44px;
+  }
+
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--brass-dark);
+    outline-offset: 0;
+    border-color: var(--brass-dark);
+  }
+
+  [aria-invalid='true'] {
+    border-color: #9b2c1f !important;
+  }
+
+  .hp {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .consent {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 14px;
+    align-items: start;
+    font-size: 15px;
+    color: var(--muted);
+  }
+
+  .consent input {
+    width: 22px;
+    height: 22px;
+    margin: 2px 0 0;
+    accent-color: var(--brass-dark);
+  }
+
+  .consent a {
+    color: var(--brass-dark);
+  }
+
+  .submit {
+    align-self: flex-start;
+    min-width: 260px;
+  }
+
+  .status {
+    min-height: 1.6em;
+    font-size: 15px;
+  }
+
+  .status[data-kind='ok'] {
+    color: #2f5d34;
+  }
+
+  .status[data-kind='error'] {
+    color: #9b2c1f;
+  }
+
+  @media (max-width: 1023px) {
+    .grid {
+      grid-template-columns: 1fr;
+      gap: 56px;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .submit {
+      align-self: stretch;
+      min-width: 0;
+    }
+  }
+</style>

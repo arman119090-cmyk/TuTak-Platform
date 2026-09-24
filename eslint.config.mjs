@@ -26,6 +26,9 @@ export default tseslint.config(
       '**/*.d.ts',
       'apps/api/prisma/migrations/**',
       'docs/**',
+      // sites/elgo — отдельный Astro-проект со своим package.json и проверками
+      // (astro check, npm test); к TuTak не относится.
+      'sites/**',
       // esbuild output for the screenshot harness — a generated bundle, not
       // source anyone edits.
       'tools/preview/mobile/bundle.js',

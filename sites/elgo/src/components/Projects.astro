@@ -1,0 +1,157 @@
+---
+import { getCollection } from 'astro:content';
+import { Picture } from 'astro:assets';
+import { flags } from '../config';
+import { t, type Locale } from '../i18n';
+import { markPlaceholders as bracket } from '../lib/placeholder';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+
+const featured = (await getCollection('projects', (p) => p.data.featured))
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 3);
+
+---
+
+{featured.length > 0 && (
+  <section class="section" id="projects" aria-labelledby="projects-title">
+    <div class="container">
+      <div class="head" data-reveal>
+        <div>
+          <span class="eyebrow">{d.projects.eyebrow}</span>
+          <h2 class="h2" id="projects-title">{d.projects.title}</h2>
+        </div>
+        {flags.showAllProjectsLink && (
+          <a class="all" href={`/${locale}/projects/`}>{d.projects.all} →</a>
+        )}
+      </div>
+
+      <ul class="grid">
+        {featured.map((p, i) => (
+          <li class:list={['card', { 'card--big': i === 0 }]} data-reveal>
+            <Picture
+              src={p.data.cover}
+              alt={p.data.cover_alt[locale]}
+              formats={['avif', 'webp']}
+              widths={i === 0 ? [640, 960, 1280, 1600] : [480, 720, 960]}
+              sizes={i === 0 ? '(min-width: 1024px) 60vw, 100vw' : '(min-width: 1024px) 34vw, 100vw'}
+              class="img"
+            />
+            <div class="meta">
+              <span class="cat">{d.projects.categories[p.data.category]}</span>
+              <h3 class="title" set:html={bracket(p.data.title[locale])} />
+              <p class="facts muted">
+                <span set:html={bracket(p.data.district[locale])} />
+                <span aria-hidden="true"> · </span>
+                <span set:html={bracket(String(p.data.year))} />
+                <span aria-hidden="true"> · </span>
+                <span set:html={bracket(`${p.data.area_m2} ${d.projects.areaUnit}`)} />
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+)}
+
+<style>
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 32px;
+    margin-bottom: 72px;
+  }
+
+  .all {
+    font-size: 15px;
+    text-decoration: none;
+    border-bottom: 1px solid var(--brass-dark);
+    padding-bottom: 4px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.75fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 48px 32px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .card--big {
+    grid-row: span 2;
+  }
+
+  .card :global(.img) {
+    width: 100%;
+    aspect-ratio: 3 / 2;
+    object-fit: cover;
+  }
+
+  .card--big :global(.img) {
+    aspect-ratio: 4 / 3.4;
+  }
+
+  .meta {
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    margin-top: 20px;
+  }
+
+  .cat {
+    display: block;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--brass-dark);
+    margin-bottom: 10px;
+  }
+
+  .title {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .card--big .title {
+    font-size: 36px;
+  }
+
+  :global(:lang(hy)) .title {
+    font-size: 22px;
+    line-height: 1.3;
+  }
+
+  .facts {
+    margin-top: 8px;
+    font-size: 15px;
+  }
+
+  @media (max-width: 1023px) {
+    .grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .card--big {
+      grid-column: 1 / -1;
+      grid-row: auto;
+    }
+    .card--big :global(.img) {
+      aspect-ratio: 3 / 2;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .head {
+      margin-bottom: 40px;
+    }
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

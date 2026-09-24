@@ -1,0 +1,214 @@
+{
+  "meta": {
+    "htmlLang": "en",
+    "title": "ElGo — construction company in Yerevan",
+    "description": "Residential and commercial buildings, turnkey renovation, roads and infrastructure in Yerevan and across Armenia. One contractor from estimate to handover.",
+    "ogAlt": "ElGo — construction company, Yerevan"
+  },
+  "nav": {
+    "skip": "Skip to content",
+    "home": "ElGo — home",
+    "tagline": "Construction company",
+    "directions": "Services",
+    "projects": "Projects",
+    "about": "About",
+    "contacts": "Contact",
+    "cta": "Discuss a project",
+    "call": "Call +374 43 357 007",
+    "menuOpen": "Open menu",
+    "menuClose": "Close menu",
+    "langLabel": "Site language",
+    "mainNav": "Main navigation"
+  },
+  "hero": {
+    "eyebrow": "Yerevan · Armenia",
+    "title": "We build to last for decades",
+    "lead": "Residential and commercial buildings, turnkey renovation, roads and infrastructure. One contractor from estimate to handover.",
+    "imageAlt": "[Temporary image: a photo of a project will be provided by the client]"
+  },
+  "directions": {
+    "eyebrow": "Services",
+    "title": "Four disciplines, one point of responsibility",
+    "intro": "Every project has a single accountable contractor — from the first estimate to the signed acceptance certificate. You don't have to coordinate several firms.",
+    "items": [
+      {
+        "title": "Residential construction",
+        "text": "Private houses and apartment buildings, from foundations to handover.",
+        "alt": "[Temporary image: residential construction]"
+      },
+      {
+        "title": "Commercial and industrial",
+        "text": "Offices, warehouses, production and retail buildings designed around the needs of the business.",
+        "alt": "[Temporary image: commercial building]"
+      },
+      {
+        "title": "Turnkey renovation and fit-out",
+        "text": "Apartments, houses and premises: rough and finishing works, building services, interior finishes.",
+        "alt": "[Temporary image: renovation and fit-out]"
+      },
+      {
+        "title": "Roads and infrastructure",
+        "text": "Earthworks, road bases, access roads and site landscaping.",
+        "alt": "[Temporary image: roads and infrastructure]"
+      }
+    ]
+  },
+  "process": {
+    "eyebrow": "Process",
+    "title": "How we work",
+    "steps": [
+      {
+        "title": "Enquiry and site visit",
+        "text": "We discuss the task and visit the site to see the conditions first-hand."
+      },
+      {
+        "title": "Estimate and contract",
+        "text": "We prepare a detailed estimate and fix scope, timeline and price in the contract."
+      },
+      {
+        "title": "Design",
+        "text": "We prepare or coordinate the design documentation for your project."
+      },
+      {
+        "title": "Construction",
+        "text": "We work to the agreed schedule and send regular photo reports."
+      },
+      {
+        "title": "Handover",
+        "text": "Acceptance inspection and a warranty of [term]."
+      }
+    ]
+  },
+  "projects": {
+    "eyebrow": "Projects",
+    "title": "Selected work",
+    "all": "All projects",
+    "areaUnit": "m²",
+    "categories": {
+      "residential": "Residential",
+      "commercial": "Commercial",
+      "renovation": "Renovation",
+      "infrastructure": "Infrastructure"
+    }
+  },
+  "stats": {
+    "eyebrow": "In numbers",
+    "title": "Track record",
+    "items": {
+      "objects": "projects completed",
+      "area": "m² built",
+      "machinery": "machines in the fleet",
+      "staff": "specialists"
+    }
+  },
+  "about": {
+    "eyebrow": "About",
+    "title": "ElGo is a construction company based in Yerevan",
+    "text": "[2–3 sentences about the company, to be provided by the client]",
+    "imageAlt": "[Temporary image: a photo of the team or machinery will be provided by the client]",
+    "requisites": "Company details",
+    "legalName": "Legal name",
+    "director": "Director",
+    "registration": "State registration",
+    "taxId": "Tax ID (ՀՎՀՀ)",
+    "license": "License",
+    "paymentNote": "Payment details are provided only in person and under a signed contract. We never send invoices on behalf of the company from other numbers or addresses.",
+    "registrationValue": "{number} of {date}"
+  },
+  "lead": {
+    "eyebrow": "Enquiry",
+    "title": "Tell us about your project — we'll prepare an estimate",
+    "text": "Leave your phone number — we'll call back, clarify the task and arrange a site visit.",
+    "phoneLabel": "Or call us",
+    "name": "Name",
+    "phone": "Phone",
+    "phonePlaceholder": "+374 __ ___ ___",
+    "type": "Project type",
+    "typePlaceholder": "Choose a service",
+    "consentBefore": "I consent to the processing of my personal data in accordance with the ",
+    "consentLink": "privacy policy",
+    "consentAfter": ".",
+    "honeypot": "Leave this field empty",
+    "submit": "Send enquiry",
+    "sending": "Sending…",
+    "messages": {
+      "ok": "Thank you! Your enquiry has been sent — we will get back to you shortly.",
+      "invalid_name": "Please enter a name between 2 and 80 characters.",
+      "invalid_phone": "Please enter an Armenian phone number, e.g. +374 43 357 007.",
+      "invalid_type": "Please choose a project type.",
+      "no_consent": "We can't accept the enquiry without your consent to data processing.",
+      "rate_limited": "Too many enquiries in a row. Please try again in a few minutes or call us.",
+      "server_error": "The enquiry could not be sent. Please try again or call us: +374 43 357 007."
+    }
+  },
+  "footer": {
+    "address": "Address",
+    "phone": "Phone",
+    "email": "Email",
+    "hours": "Working hours",
+    "hoursValue": "[to be confirmed]",
+    "rights": "© 2026 ElGo LLC («ԷԼԳՕ» ՍՊԸ)",
+    "privacy": "Privacy policy"
+  },
+  "messenger": {
+    "whatsapp": "Message us on WhatsApp",
+    "telegram": "Message us on Telegram"
+  },
+  "privacy": {
+    "title": "Privacy policy",
+    "metaDescription": "What personal data the ElGo website collects, why, and how to request deletion.",
+    "back": "← Back to home",
+    "draft": "Draft. To be reviewed by a lawyer for compliance with the RA Law on Protection of Personal Data.",
+    "updated": "Version of [approval date]",
+    "sections": [
+      {
+        "title": "1. Who processes the data",
+        "body": [
+          "The data controller is ElGo LLC («ԷԼԳՕ» ՍՊԸ), state registration 273.110.1441879 of 27.02.2025. Address: 76 Nork 2nd Lane, Nork-Marash, Yerevan. Phone: +374 43 357 007."
+        ]
+      },
+      {
+        "title": "2. What data we collect",
+        "body": [
+          "Through the enquiry form we receive only what you enter yourself: your name, phone number and the selected project type.",
+          "To protect against spam, the server temporarily keeps track of the IP address an enquiry was sent from. The IP address is not stored with the enquiry and is removed from the server's memory within 10 minutes."
+        ]
+      },
+      {
+        "title": "3. Why",
+        "body": [
+          "The only purpose is to contact you about your enquiry: to clarify the task, arrange a site visit and prepare an estimate. We do not use this data for mailings and do not share it with third parties for marketing."
+        ]
+      },
+      {
+        "title": "4. Where the data is stored",
+        "body": [
+          "The enquiry is delivered to the company's private work chat in Telegram, accessible only to the staff handling enquiries. Enquiries are not stored on the website server.",
+          "[To be confirmed: how long enquiries are kept in the work chat and who has access to it.]"
+        ]
+      },
+      {
+        "title": "5. Your rights",
+        "body": [
+          "You can ask at any time what data we hold about you, request its correction or deletion. Call +374 43 357 007 or write to [email]. We will respond within [N] business days."
+        ]
+      },
+      {
+        "title": "6. Cookies and analytics",
+        "body": [
+          "The website does not use advertising cookies or third-party analytics."
+        ]
+      },
+      {
+        "title": "7. Changes",
+        "body": [
+          "The current version of this policy is always published on this page."
+        ]
+      }
+    ]
+  },
+  "notFound": {
+    "title": "Page not found",
+    "back": "Back to home"
+  }
+}

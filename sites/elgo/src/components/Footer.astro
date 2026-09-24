@@ -1,0 +1,145 @@
+---
+import { company } from '../config';
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+---
+
+<footer class="footer">
+  <div class="container grid">
+    <div class="brand">
+      <a class="logo" href={`/${locale}/`} aria-label={d.nav.home}><span lang="en">ElGo</span></a>
+      <p class="tag">{d.nav.tagline}</p>
+    </div>
+    <dl class="contacts">
+      <div>
+        <dt>{d.footer.address}</dt>
+        <dd>{company.address[locale]}</dd>
+      </div>
+      <div>
+        <dt>{d.footer.phone}</dt>
+        <dd><a href={company.phoneHref}>{company.phone}</a></dd>
+      </div>
+      <div>
+        <dt>{d.footer.email}</dt>
+        <dd>
+          {company.emailConfirmed ? (
+            <a href={`mailto:${company.email}`}>{company.email}</a>
+          ) : (
+            <span class="placeholder">[{company.email}]</span>
+          )}
+        </dd>
+      </div>
+      <div>
+        <dt>{d.footer.hours}</dt>
+        <dd><span class="placeholder">{d.footer.hoursValue}</span></dd>
+      </div>
+    </dl>
+  </div>
+  <div class="container bottom">
+    <p>{d.footer.rights}</p>
+    <a href={`/${locale}/privacy/`}>{d.footer.privacy}</a>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    background: var(--graphite-2);
+    color: var(--stone);
+    padding: 96px 0 40px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 64px;
+  }
+
+  .logo {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    font-size: 48px;
+    line-height: 1;
+    text-decoration: none;
+  }
+
+  .tag {
+    margin-top: 12px;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted-dark);
+  }
+
+  .contacts {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 32px 48px;
+    margin: 0;
+  }
+
+  dt {
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 8px;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 16px;
+    color: var(--stone);
+  }
+
+  dd a {
+    text-decoration: none;
+    border-bottom: 1px solid var(--line-dark);
+  }
+
+  dd a:hover {
+    border-bottom-color: var(--brass);
+  }
+
+  .bottom {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 80px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line-dark);
+    font-size: 14px;
+    color: var(--muted-dark);
+  }
+
+  .bottom a {
+    color: var(--muted-dark);
+  }
+
+  .bottom a:hover {
+    color: var(--stone);
+  }
+
+  @media (max-width: 767px) {
+    .footer {
+      padding-top: 64px;
+    }
+    .grid {
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+    .contacts {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .bottom {
+      margin-top: 56px;
+      flex-direction: column;
+    }
+  }
+</style>

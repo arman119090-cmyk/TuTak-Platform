@@ -1,0 +1,33 @@
+{
+  "name": "elgo-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ElGo — сайт строительной компании (Ереван). Этап 1: главная hy/ru/en, политика, форма заявки.",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "start": "node ./dist/server/entry.mjs",
+    "check": "astro check",
+    "test": "node --test tests/*.test.mjs",
+    "images:placeholders": "node scripts/make-placeholders.mjs"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.6",
+    "@astrojs/sitemap": "^3.7.4",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/noto-sans-armenian": "^5.3.0",
+    "@fontsource/noto-serif-armenian": "^5.3.0",
+    "@fontsource/onest": "^5.3.1",
+    "astro": "^7.3.4"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "playwright-core": "^1.56.1",
+    "typescript": "^6.0.3"
+  }
+}

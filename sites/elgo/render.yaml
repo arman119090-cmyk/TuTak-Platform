@@ -1,0 +1,32 @@
+# ElGo — сайт на Render (Web Service, Node).
+#
+# Этот файл лежит НЕ в корне репозитория (в корне — render.yaml другого
+# проекта), поэтому при создании Blueprint укажите путь к нему:
+#   Render → New → Blueprint → репозиторий → Blueprint Path: sites/elgo/render.yaml
+# Подробно — README.md, раздел «Деплой на Render».
+services:
+  - type: web
+    name: elgo-site
+    runtime: node
+    plan: free # для продакшена — starter: на free сервис засыпает, первая заявка ждёт ~30–50 с
+    region: frankfurt
+    rootDir: sites/elgo
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /hy/
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - sites/elgo/**
+    envVars:
+      - key: NODE_VERSION
+        value: '22.22.2'
+      - key: HOST
+        value: 0.0.0.0
+      - key: SITE_URL
+        value: https://elgo.am # до подключения домена — https://elgo-site.onrender.com
+      # Секреты — только в панели Render, sync: false = значение не в репозитории.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

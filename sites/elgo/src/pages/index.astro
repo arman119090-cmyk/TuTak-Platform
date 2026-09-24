@@ -1,0 +1,5 @@
+---
+// `/` → `/hy/` (армянский — язык по умолчанию). На сервере — настоящий 301.
+export const prerender = false;
+return Astro.redirect('/hy/', 301);
+---

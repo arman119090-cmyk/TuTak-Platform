@@ -1,0 +1,102 @@
+---
+import '@fontsource/cormorant-garamond/500.css';
+import '@fontsource/cormorant-garamond/600.css';
+import '@fontsource/onest/400.css';
+import '@fontsource/onest/500.css';
+import '@fontsource/noto-serif-armenian/500.css';
+import '@fontsource/noto-serif-armenian/600.css';
+import '@fontsource/noto-sans-armenian/400.css';
+import '@fontsource/noto-sans-armenian/500.css';
+import '../styles/global.css';
+
+import { company } from '../config';
+import { locales, localeTags, t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+  /** Путь без префикса языка: '/' или '/privacy/'. */
+  path: string;
+  title: string;
+  description: string;
+  /** JSON-LD организации — только на главной. */
+  withOrgSchema?: boolean;
+  noindex?: boolean;
+}
+
+const { locale, path, title, description, withOrgSchema = false, noindex = false } = Astro.props;
+const d = t(locale);
+const site = Astro.site ?? new URL('https://elgo.am');
+const urlFor = (l: Locale) => new URL(`/${l}${path}`, site).href;
+const canonical = urlFor(locale);
+const ogImage = new URL('/og.png', site).href;
+
+const orgSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'GeneralContractor',
+  '@id': new URL('/#organization', site).href,
+  name: company.brand,
+  legalName: company.legalName.en,
+  alternateName: [company.legalName.hy, company.legalName.ru],
+  url: urlFor(locale),
+  logo: new URL('/logo.png', site).href,
+  image: ogImage,
+  telephone: company.phone.replace(/\s/g, ''),
+  ...(company.emailConfirmed ? { email: company.email } : {}),
+  ...(company.taxId ? { taxID: company.taxId } : {}),
+  foundingDate: '2025-02-27',
+  address: {
+    '@type': 'PostalAddress',
+    ...company.postal,
+  },
+  areaServed: { '@type': 'Country', name: 'Armenia' },
+  knowsLanguage: ['hy', 'ru', 'en'],
+  availableLanguage: ['Armenian', 'Russian', 'English'],
+  description: d.meta.description,
+};
+---
+
+<!doctype html>
+<html lang={d.meta.htmlLang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    {locales.map((l) => <link rel="alternate" hreflang={localeTags[l].hreflang} href={urlFor(l)} />)}
+    <link rel="alternate" hreflang="x-default" href={urlFor('hy')} />
+
+    <meta name="theme-color" content="#16161A" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ElGo" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={localeTags[locale].og} />
+    {locales.filter((l) => l !== locale).map((l) => <meta property="og:locale:alternate" content={localeTags[l].og} />)}
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={d.meta.ogAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={d.meta.ogAlt} />
+
+    {withOrgSchema && <script type="application/ld+json" set:html={JSON.stringify(orgSchema)} />}
+
+    <script is:inline>document.documentElement.classList.add('js');</script>
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{d.nav.skip}</a>
+    <slot />
+  </body>
+</html>

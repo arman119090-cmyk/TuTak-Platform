@@ -1,0 +1,153 @@
+---
+import { Picture } from 'astro:assets';
+import residential from '../assets/photos/placeholder-dir-residential.jpg';
+import commercial from '../assets/photos/placeholder-dir-commercial.jpg';
+import renovation from '../assets/photos/placeholder-dir-renovation.jpg';
+import infrastructure from '../assets/photos/placeholder-dir-infrastructure.jpg';
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const d = t(locale);
+// Порядок совпадает с d.directions.items и BRIEF.md, п. 3.
+const images = [residential, commercial, renovation, infrastructure];
+---
+
+<section class="section" id="directions" aria-labelledby="directions-title">
+  <div class="container">
+    <div class="head" data-reveal>
+      <div>
+        <span class="eyebrow">{d.directions.eyebrow}</span>
+        <h2 class="h2" id="directions-title">{d.directions.title}</h2>
+      </div>
+      <p class="intro muted">{d.directions.intro}</p>
+    </div>
+
+    <ol class="grid">
+      {d.directions.items.map((item, i) => (
+        <li class="item" data-reveal style={`transition-delay: ${i * 80}ms`}>
+          <Picture
+            src={images[i]!}
+            alt={item.alt}
+            formats={['avif', 'webp']}
+            widths={[360, 540, 720]}
+            sizes="(min-width: 1024px) 25vw, (min-width: 768px) 50vw, 100vw"
+            class="img"
+          />
+          <span class="num">{String(i + 1).padStart(2, '0')}</span>
+          <h3 class="title">{item.title}</h3>
+          <p class="text muted">{item.text}</p>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .head {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 64px;
+    align-items: end;
+    margin-bottom: 80px;
+  }
+
+  .intro {
+    max-width: 460px;
+    justify-self: end;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .item {
+    padding: 32px 24px 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .item:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .item:last-child {
+    padding-right: 0;
+  }
+
+  .item :global(.img) {
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    margin-bottom: 28px;
+  }
+
+  .num {
+    display: block;
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: var(--brass-dark);
+    margin-bottom: 12px;
+  }
+
+  .title {
+    font-size: 28px;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+
+  :global(:lang(hy)) .title {
+    font-size: 22px;
+    line-height: 1.3;
+  }
+
+  .text {
+    font-size: 16px;
+  }
+
+  @media (max-width: 1023px) {
+    .head {
+      grid-template-columns: 1fr;
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+    .intro {
+      justify-self: start;
+    }
+    .grid {
+      grid-template-columns: repeat(2, 1fr);
+      row-gap: 48px;
+    }
+    .item:nth-child(3) {
+      border-left: 0;
+      padding-left: 0;
+    }
+    .item:nth-child(2) {
+      padding-right: 0;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .grid {
+      grid-template-columns: 1fr;
+      border-top: 0;
+    }
+    .item,
+    .item:nth-child(n) {
+      border-left: 0;
+      padding: 32px 0 0;
+      border-top: 1px solid var(--line);
+    }
+    .item :global(.img) {
+      aspect-ratio: 3 / 2;
+    }
+  }
+</style>

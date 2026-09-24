@@ -1,0 +1,38 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import Hero from '../../components/Hero.astro';
+import Directions from '../../components/Directions.astro';
+import Process from '../../components/Process.astro';
+import Projects from '../../components/Projects.astro';
+import Stats from '../../components/Stats.astro';
+import About from '../../components/About.astro';
+import Lead from '../../components/Lead.astro';
+import Footer from '../../components/Footer.astro';
+import Messenger from '../../components/Messenger.astro';
+import Reveal from '../../components/Reveal.astro';
+import { locales, t, type Locale } from '../../i18n';
+
+export function getStaticPaths() {
+  return locales.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const d = t(locale);
+---
+
+<Base locale={locale} path="/" title={d.meta.title} description={d.meta.description} withOrgSchema>
+  <Header locale={locale} path="/" overlay />
+  <main id="main">
+    <Hero locale={locale} />
+    <Directions locale={locale} />
+    <Process locale={locale} />
+    <Projects locale={locale} />
+    <Stats locale={locale} />
+    <About locale={locale} />
+    <Lead locale={locale} />
+  </main>
+  <Footer locale={locale} />
+  <Messenger locale={locale} />
+  <Reveal />
+</Base>

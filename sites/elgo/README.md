@@ -205,11 +205,18 @@ Build `npm ci && npm run build`, Start `npm start`, переменные `HOST=0
 
 ## Деплой на Railway
 
+Настройки задаются в панели сервиса (файл `railway.json` Railway больше не
+поддерживает — Config as Code объявлен устаревшим).
+
 1. New Project → Deploy from GitHub repo → этот репозиторий.
-2. Settings → **Root Directory**: `sites/elgo` (подхватится `railway.json`).
-3. Variables: `SITE_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `HOST=0.0.0.0`.
-   `PORT` Railway задаёт сам.
-4. Settings → Networking → Generate Domain.
+2. Settings → Source: **Branch** — нужная ветка (по умолчанию Railway берёт
+   `main`!), **Root Directory** `/sites/elgo`, Watch Paths `/sites/elgo/**`.
+3. Settings → Build: Custom Build Command `npm ci && npm run build`.
+   Deploy: Custom Start Command `npm start`, Healthcheck Path `/hy/`,
+   Region — Европа (ближе к Армении).
+4. Variables: `HOST=0.0.0.0`, `SITE_URL`, `TELEGRAM_BOT_TOKEN`,
+   `TELEGRAM_CHAT_ID`. `PORT` Railway задаёт сам.
+5. Settings → Networking → Generate Domain.
 
 ## Telegram-бот для заявок
 

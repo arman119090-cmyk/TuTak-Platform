@@ -52,4 +52,11 @@ export type RootStackParamList = {
       `EvSession` receives its session — it re-polls for the authoritative
       status either way. */
   PurchaseIntentStatus: { intent: PurchaseIntentDto };
+  /** Spec §5-6: TuTak Checkout for a Partner Commerce order — opened from a
+      partner website's `tutak://checkout/<orderId>` deep link, or from
+      `MyOrders` for an order still needing the customer's attention. */
+  Checkout: { orderId: string };
+  /** Spec §18: "Мои заказы" — every order the customer has placed through
+      a partner's website via TuTak Checkout. */
+  MyOrders: undefined;
 };

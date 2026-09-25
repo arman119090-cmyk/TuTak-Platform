@@ -70,6 +70,10 @@ describe('Sweeps (integration)', () => {
   const partnerSettlement = {
     checkOverdueSettlements: jest.fn(record('partner-settlement.biweekly-check')),
   };
+  const partnerOrderSla = {
+    sweepNotSeen: jest.fn(record('partner-order.not-seen-alert')),
+    sweepStockNotConfirmed: jest.fn(record('partner-order.stock-not-confirmed-alert')),
+  };
   const refunds = {
     reconcilePendingRefunds: jest.fn(record('payments.reconcile-pending-refunds')),
   };
@@ -111,6 +115,7 @@ describe('Sweeps (integration)', () => {
             deferredBonusLots,
             purchaseIntents,
             partnerSettlement,
+            partnerOrderSla,
             refunds,
           },
         },
@@ -208,6 +213,8 @@ describe('Sweeps (integration)', () => {
       expect(outbox.drain).toHaveBeenCalledTimes(1);
       expect(reconciliation.reconcile).toHaveBeenCalledTimes(1);
       expect(partnerSettlement.checkOverdueSettlements).toHaveBeenCalledTimes(1);
+      expect(partnerOrderSla.sweepNotSeen).toHaveBeenCalledTimes(1);
+      expect(partnerOrderSla.sweepStockNotConfirmed).toHaveBeenCalledTimes(1);
     });
 
     it('reconciles yesterday, not today', async () => {

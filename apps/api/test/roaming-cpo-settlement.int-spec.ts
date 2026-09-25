@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { RoamingCpoSettlementService } from '../src/modules/roaming-cpo/roaming-cpo-settlement.service';
 import { RoamingCpoStationsService } from '../src/modules/roaming-cpo/roaming-cpo-stations.service';
 import { RoamingCpoCustomersService } from '../src/modules/roaming-cpo/roaming-cpo-customers.service';
-import { PartnerApiKeyService } from '../src/modules/roaming-cpo/partner-api-key.service';
+import { PartnerApiKeyService } from '../src/modules/partners/partner-api-key.service';
 import { RoamingCpoApiKeyGuard } from '../src/modules/roaming-cpo/roaming-cpo-api-key.guard';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { OutboxService } from '../src/modules/ledger/outbox.service';

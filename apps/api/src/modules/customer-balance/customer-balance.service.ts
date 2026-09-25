@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
-import { BalanceTopUp, BalanceTopUpStatus, Currency, LedgerAccountType, PostingDirection } from '@prisma/client';
+import {
+  BalanceTopUp,
+  BalanceTopUpStatus,
+  Currency,
+  LedgerAccountType,
+  PostingDirection,
+  Prisma,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -223,13 +230,13 @@ export class CustomerBalanceService {
    * safe to call from outside the settlement's own atomic transaction — see
    * the call site's own reasoning for why it deliberately is.
    *
-   * This is the *only* place anything ever debits `CUSTOMER_PREPAID_BALANCE`
-   * — a closed-loop business decision (2026-08-29): this money pays for
-   * roaming-CPO charging and nothing else, deliberately with no conversion
-   * into bonus/wallet points, which are spendable anywhere a purchase
-   * accepts them. Do not add a second caller of this method, or any other
-   * way to spend this account, without revisiting that decision explicitly
-   * — see `CUSTOMER_PREPAID_BALANCE`'s own schema docblock.
+   * This used to be the *only* place anything debited `CUSTOMER_PREPAID_BALANCE`
+   * (closed-loop business decision, 2026-08-29). Revised 2026-09-25 for
+   * Partner Commerce — see `debitForPartnerOrder` below and
+   * `CUSTOMER_PREPAID_BALANCE`'s own schema docblock for the explicit
+   * decision that added it as a second, named spender. What did not change:
+   * there is still no conversion into bonus/wallet points, and a third
+   * spender still needs the same explicit decision these two got.
    */
   async collectFromBalance(
     userId: string,
@@ -294,5 +301,124 @@ export class CustomerBalanceService {
       );
       return true;
     });
+  }
+
+  /**
+   * Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md), spec §6: captures
+   * a `PartnerOrder`'s total from the customer's prepaid balance into the
+   * per-partner `PARTNER_ORDER_ESCROW` account — see that account type's own
+   * schema docblock for why escrow rather than a real authorize/capture hold.
+   * Same claim-then-post shape as `collectFromBalance`, this method's own
+   * sibling spender of this balance — see that method's docblock for the
+   * "second named spender" decision this one is.
+   *
+   * All-or-nothing, same reasoning as `collectFromBalance`: `PartnerOrder`
+   * checkout has no partial-payment product requirement either.
+   */
+  async debitForPartnerOrder(
+    userId: string,
+    amount: Decimal,
+    currency: Currency,
+    partnerId: string,
+    /**
+     * The `LedgerTransaction.sourceType`/`sourceId` this capture is
+     * deduplicated on — the order itself for the initial checkout capture
+     * (`'PartnerOrder'`, the order id), or the adjustment for a price-increase
+     * top-up (`'PartnerOrderAdjustment'`, the adjustment id). Must be unique
+     * per *capture event*: reusing the order's own id for a second capture
+     * would make this method see the first capture as "already done" and
+     * silently skip collecting the top-up.
+     */
+    source: { type: string; id: string },
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ collected: boolean; ledgerTransactionId?: string }> {
+    if (amount.lessThanOrEqualTo(0)) return { collected: false };
+
+    const run = async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.ledgerTransaction.findFirst({
+        where: { kind: 'partner_order.capture', sourceType: source.type, sourceId: source.id },
+        select: { id: true },
+      });
+      if (existing) return { collected: true, ledgerTransactionId: existing.id };
+
+      const balanceAccount = await this.ledger.accountFor(
+        { type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId, currency },
+        tx,
+      );
+
+      // Same claim idiom as `collectFromBalance` — see that method's own
+      // comment for why a conditional `updateMany`, not a `SELECT ... FOR
+      // UPDATE`, and why `balance <= -amount` reads as "at least `amount`
+      // available" for this negative-when-funded account.
+      const claimed = await tx.ledgerAccount.updateMany({
+        where: { id: balanceAccount.id, balance: { lte: amount.negated() } },
+        data: { version: { increment: 1 } },
+      });
+      if (claimed.count === 0) return { collected: false };
+
+      const escrowAccount = await this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId, currency },
+        tx,
+      );
+
+      const ledgerTransaction = await this.ledger.post(
+        {
+          kind: 'partner_order.capture',
+          sourceType: source.type,
+          sourceId: source.id,
+          currency,
+          postings: [
+            { accountId: balanceAccount.id, direction: PostingDirection.DEBIT, amount },
+            { accountId: escrowAccount.id, direction: PostingDirection.CREDIT, amount },
+          ],
+        },
+        tx,
+      );
+      return { collected: true, ledgerTransactionId: ledgerTransaction.id };
+    };
+    return tx ? run(tx) : this.prisma.$transaction(run);
+  }
+
+  /**
+   * The refund counterpart to `debitForPartnerOrder` — moves money back out
+   * of `PARTNER_ORDER_ESCROW` into the customer's prepaid balance. Used both
+   * for a full refund (out-of-stock, sourcing failed/disabled) and a partial
+   * one (spec §15's price-decrease case) — `amount` is whatever the caller
+   * has already decided is owed back; this method only moves it.
+   */
+  async creditFromPartnerOrderEscrow(
+    userId: string,
+    amount: Decimal,
+    currency: Currency,
+    partnerId: string,
+    sourceOrderId: string,
+    kind: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const run = async (client: Prisma.TransactionClient) => {
+      const balanceAccount = await this.ledger.accountFor(
+        { type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId, currency },
+        client,
+      );
+      const escrowAccount = await this.ledger.accountFor(
+        { type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId, currency },
+        client,
+      );
+      const ledgerTransaction = await this.ledger.post(
+        {
+          kind,
+          sourceType: 'PartnerOrder',
+          sourceId: sourceOrderId,
+          currency,
+          postings: [
+            { accountId: escrowAccount.id, direction: PostingDirection.DEBIT, amount },
+            { accountId: balanceAccount.id, direction: PostingDirection.CREDIT, amount },
+          ],
+        },
+        client,
+      );
+      return ledgerTransaction.id;
+    };
+    return tx ? run(tx) : this.prisma.$transaction(run);
   }
 }

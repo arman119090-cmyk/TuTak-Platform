@@ -7,6 +7,7 @@ import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
+import type { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
@@ -52,6 +53,7 @@ export interface SweepDependencies {
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
   partnerSettlement: PartnerSettlementCheckService;
+  partnerOrderSla: PartnerOrderSlaSweepService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -252,6 +254,26 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 26 * 60 * 60_000,
     lockTtlMs: 10 * 60_000,
     run: ({ partnerSettlement }) => partnerSettlement.checkOverdueSettlements(),
+  },
+  {
+    name: 'partner-order.not-seen-alert',
+    why: "Spec §8: an order the partner has not acknowledged within 5 minutes needs to surface to TuTak admin, and nothing else in the running process checks `partnerSeenAt` against a clock — without this sweep a silently-ignored order just sits there.",
+    // Sub-minute cadence against a 5-minute deadline, same ratio
+    // `purchase-intent.expire` uses against its 3-minute one — the alert
+    // should fire within roughly the same minute the deadline passes, not
+    // whenever the next slow tick happens to notice.
+    repeat: { every: 30_000 },
+    maxSilenceMs: 5 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepNotSeen(),
+  },
+  {
+    name: 'partner-order.stock-not-confirmed-alert',
+    why: 'Spec §9: 30 minutes since creation with stock neither confirmed nor rejected is a critical problem, and it must keep re-alerting every 5 minutes after that until claimed or resolved — nothing else in the running process re-checks this on a clock.',
+    repeat: { every: 60_000 },
+    maxSilenceMs: 10 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepStockNotConfirmed(),
   },
   {
     name: 'reconciliation.nightly',

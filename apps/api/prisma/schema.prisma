@@ -62,6 +62,11 @@ enum PermissionName {
   /// cashier) does this as their ordinary job, while only PARTNER_MANAGE
   /// reaches the negotiated rate and the bonus-payment cap.
   PURCHASE_INTENT_CONFIRM
+  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md): mark a
+  /// PartnerOrder seen, confirm/reject stock. Same population and same
+  /// reasoning as PURCHASE_INTENT_CONFIRM — every tier of staff does this as
+  /// ordinary work.
+  PARTNER_ORDER_MANAGE
 }
 
 model Role {
@@ -204,6 +209,7 @@ model User {
   phoneVerifications        PhoneVerificationToken[]
   payments                  Payment[]
   balanceTopUps             BalanceTopUp[]
+  partnerOrders             PartnerOrder[]
 
   avatarAsset         MediaAsset?  @relation("UserAvatarAsset", fields: [avatarAssetId], references: [id])
   mediaAssets         MediaAsset[] @relation("MediaAssetSubjectUser")
@@ -829,6 +835,399 @@ model PurchaseIntentRefund {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Partner Commerce — docs/PARTNER_COMMERCE_2026-09-25.md
+//
+// A partner's own public website ("Купить через TuTak") creates an order
+// server-to-server, the customer pays through TuTak's own checkout, and the
+// order is handed to the partner to fulfil. Deliberately one universal
+// `PartnerOrder` model rather than a per-partner-site entity (spec §4) —
+// same reasoning `PurchaseIntent` already follows for the QR/branch flow,
+// which this reuses as its structural template: a commercial snapshot frozen
+// at creation, a claim-then-act state transition pattern, and immutable
+// money-movement rows rather than in-place edits.
+//
+// The partner's own website authenticates through the existing
+// `PartnerIntegration(type: WEBSITE)` / `PartnerApiKey` extension point
+// (spec §3) rather than a new credential system — that seam was already
+// built for exactly this (see `PartnerIntegrationType.WEBSITE`'s own
+// docblock). No request-signing scheme is layered on top: the threat this
+// guards against is a customer's browser forging a price, and the browser
+// never holds the partner's API secret — only the partner's own backend
+// does, over TLS, hashed at rest, timing-safe compared — the same bar
+// `PartnerApiKeyService` already clears for roaming-CPO M2M calls.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum PartnerOrderPaymentStatus {
+  PAYMENT_PENDING
+  PAID
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+/// Spec §11-16's fulfilment state machine. `CREATED` is the brief window
+/// between the partner's website calling the create API and the customer
+/// actually paying in TuTak Checkout — nothing partner-facing happens until
+/// `PAID`. `OUT_OF_STOCK`/`SOURCING_REQUIRED`/`SOURCING_IN_PROGRESS`/
+/// `CUSTOMER_DECISION_REQUIRED` are the detour spec §12-15 describes;
+/// `CANCELLED`/`REFUNDED` are reachable from most non-terminal states.
+enum PartnerOrderStatus {
+  CREATED
+  PAID
+  PARTNER_SEEN
+  STOCK_CONFIRMED
+  OUT_OF_STOCK
+  SOURCING_REQUIRED
+  SOURCING_IN_PROGRESS
+  CUSTOMER_DECISION_REQUIRED
+  ACCEPTED
+  PREPARING
+  READY
+  SHIPPED
+  PICKUP_READY
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+model PartnerOrder {
+  id          String @id @default(uuid())
+  /// Spec §4/§10's human-facing "#18472" — a real Postgres sequence, not a
+  /// random token, so it reads and sorts the way a receipt number should.
+  /// Formatted as `#<orderNumber>` at every display surface.
+  orderNumber Int    @unique @default(autoincrement())
+
+  /// Null until claimed — see the model's own top comment. Set atomically
+  /// with `paymentStatus: PAID`/`paidAt` inside `pay()`, conditional on
+  /// still being null, so the first authenticated customer to actually pay
+  /// is the one the order belongs to. Unset (never set at creation): the
+  /// partner's website knows the cart, not who on TuTak is buying it.
+  customerId      String?
+  partnerId       String
+  /// The `PartnerIntegration(type: WEBSITE)` this order was created through
+  /// — scopes `externalOrderId` uniqueness to one partner site rather than
+  /// the whole partner, and is how the create-order guard resolves which
+  /// `PartnerApiKey`s are allowed to write orders here.
+  integrationId   String
+  /// The partner site's own order id, for the partner's own reconciliation.
+  /// Unique per integration — see `@@unique` below — which is also this
+  /// endpoint's create-time idempotency key: a retried create call with the
+  /// same `externalOrderId` returns the existing order rather than making a
+  /// second one.
+  externalOrderId String
+
+  currency    Currency @default(AMD)
+  /// Sum of `PartnerOrderItem.totalPrice`. Spec §20: for a service-fee-only
+  /// order (Euro Import's vehicle purchases), the partner's website simply
+  /// never includes the vehicle price in the items it sends — TuTak has no
+  /// special "vehicle" concept and never needs one, because the boundary of
+  /// what "goes through TuTak" is exactly the boundary of what the partner's
+  /// own site put in the order.
+  subtotal    Decimal  @db.Decimal(18, 4)
+  /// Equal to `subtotal` today (no shipping/tax modelled yet) — kept as its
+  /// own column because spec §4 asks for both, and a future shipping/tax leg
+  /// should not require renaming `subtotal` out from under existing reads.
+  totalAmount Decimal  @db.Decimal(18, 4)
+
+  /// Commercial snapshot, frozen at creation — same discipline as
+  /// `PurchaseIntent.negotiatedRateBps`. A later change to the partner's
+  /// `CommissionRule` never touches an order already created.
+  commissionRuleId  String?
+  commissionRateBps Int
+  commissionAmount  Decimal @db.Decimal(18, 4)
+  /// = totalAmount - commissionAmount. What actually reaches
+  /// `PARTNER_PAYABLE` when this order settles.
+  partnerAmount     Decimal @db.Decimal(18, 4)
+
+  paymentStatus PartnerOrderPaymentStatus @default(PAYMENT_PENDING)
+  orderStatus   PartnerOrderStatus        @default(CREATED)
+
+  /// Snapshot of `Partner.allowExternalSourcing` at creation (spec §14) — a
+  /// partner changing this setting mid-flight never changes what happens to
+  /// an order already in progress.
+  sourcingAllowed Boolean
+
+  /// Running total refunded against this order (spec §15's price-decrease
+  /// case, or a full refund) — guarded by a conditional UPDATE against
+  /// `totalAmount`, the same pattern `PurchaseIntent.refundedAmount` and
+  /// `Payment.refundedAmount` already use.
+  refundedAmount Decimal @default(0) @db.Decimal(18, 4)
+
+  /// DEBIT CUSTOMER_PREPAID_BALANCE / CREDIT PARTNER_ORDER_ESCROW, for
+  /// `totalAmount`, posted by `pay()`.
+  captureLedgerTransactionId    String? @unique
+  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT PARTNER_PAYABLE(partnerAmount) +
+  /// PLATFORM_REVENUE(commissionAmount), posted when `stockConfirmedAt` is
+  /// set. Mutually exclusive with `refundLedgerTransactionId` — an order is
+  /// settled to the partner XOR refunded to the customer, never both.
+  settlementLedgerTransactionId String? @unique
+  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT CUSTOMER_PREPAID_BALANCE, for the
+  /// full captured amount — posted when the order is refunded outright
+  /// (sourcing disabled, sourcing failed, product not found) rather than
+  /// settled to the partner. See `PartnerOrderAdjustment` for a *partial*
+  /// refund (spec §15's price-decrease case), which posts its own
+  /// transaction rather than this one.
+  refundLedgerTransactionId     String? @unique
+
+  /// Individual staff identity — spec §25/§33 discipline, same as
+  /// `PurchaseIntent.confirmedByUserId`. Plain actor references (no FK
+  /// relation), matching `AuditLog.actorUserId` — these exist for
+  /// "who did this", not for referential integrity a foreign key would add
+  /// little to.
+  partnerSeenByUserId    String?
+  stockConfirmedByUserId String?
+  stockRejectedByUserId  String?
+  rejectionReason        String?
+  cancelledReason        String?
+
+  /// SLA bookkeeping (spec §8-9). `notSeenAlertSentAt` is set the first (and
+  /// only) time the 5-minute "not seen" alert fires. `stockAlertLastSentAt`
+  /// tracks the *repeating* 30-then-every-5-minutes "stock not confirmed"
+  /// alert so the sweep knows whether it is due for another tick — both are
+  /// mirrored into `OrderEscalation` rows for the admin queue/claim
+  /// mechanism; these columns exist so the sweep can answer "is one already
+  /// due" with an indexed query over `PartnerOrder` itself, without joining
+  /// out to escalations on every tick.
+  notSeenAlertSentAt   DateTime?
+  stockAlertLastSentAt DateTime?
+
+  createdAt        DateTime  @default(now())
+  paidAt           DateTime?
+  partnerSeenAt    DateTime?
+  stockConfirmedAt DateTime?
+  stockRejectedAt  DateTime?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  refundedAt       DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  customer       User?              @relation(fields: [customerId], references: [id])
+  partner        Partner            @relation(fields: [partnerId], references: [id])
+  integration    PartnerIntegration @relation(fields: [integrationId], references: [id])
+  commissionRule CommissionRule?    @relation(fields: [commissionRuleId], references: [id])
+
+  captureLedgerTransaction    LedgerTransaction? @relation("PartnerOrderCapture", fields: [captureLedgerTransactionId], references: [id])
+  settlementLedgerTransaction LedgerTransaction? @relation("PartnerOrderSettlement", fields: [settlementLedgerTransactionId], references: [id])
+  refundLedgerTransaction     LedgerTransaction? @relation("PartnerOrderRefund", fields: [refundLedgerTransactionId], references: [id])
+
+  items        PartnerOrderItem[]
+  adjustments  PartnerOrderAdjustment[]
+  sourcingTask SourcingTask?
+  escalations  OrderEscalation[]
+
+  @@unique([integrationId, externalOrderId])
+  @@index([partnerId, orderStatus])
+  @@index([customerId, createdAt])
+  @@index([orderStatus, createdAt])
+  @@map("partner_orders")
+}
+
+model PartnerOrderItem {
+  id                String  @id @default(uuid())
+  orderId           String
+  /// The partner site's own product id, if it has one — opaque to TuTak.
+  externalProductId String?
+  name              String
+  sku               String?
+  /// Auto-parts OEM number (spec §4/§13, Euro Import) — optional, only
+  /// meaningful for that category, never validated/interpreted by TuTak.
+  oemNumber         String?
+  quantity          Int
+  unitPrice         Decimal @db.Decimal(18, 4)
+  totalPrice        Decimal @db.Decimal(18, 4)
+  imageUrl          String?
+  description       String?
+  /// Free-form partner-supplied product metadata (color, size, VIN, ...) —
+  /// never interpreted by TuTak, only ever displayed back.
+  metadata          Json?
+
+  order PartnerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("partner_order_items")
+}
+
+/// A partner-scoped (or, with `partnerId` null, platform-default) commission
+/// rate — spec §19's explicit "do not hardcode Little Joe = 15 / Euro Import
+/// = 5" requirement. Resolution precedence (see `CommissionRuleService
+/// .resolve`): the most specific active rule matching `partnerId` +
+/// `category` wins; falls back to a partner-only rule (`category: null`),
+/// then to `purchasePolicy.partnerOrderDefaultCommissionBps` if the partner
+/// has configured nothing at all — so an unconfigured partner still works
+/// rather than failing order creation.
+model CommissionRule {
+  id              String   @id @default(uuid())
+  /// Null = platform-wide default rule, manageable only by a platform admin.
+  partnerId       String?
+  /// Optional finer-grained scope (spec §19: "по типу товара/услуги... по
+  /// необходимости по категории") — free text matched against whatever the
+  /// partner's site tags its own catalogue with; null means "this partner,
+  /// any category".
+  category        String?
+  name            String
+  rateBps         Int
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  partner Partner?       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  orders  PartnerOrder[]
+
+  @@index([partnerId, category, isActive])
+  @@map("commission_rules")
+}
+
+enum PartnerOrderAdjustmentType {
+  /// Spec §15: sourcing found the same item for less. Customer sees the
+  /// difference and the order proceeds; the difference is refunded.
+  PRICE_DECREASE
+  /// Spec §15: sourcing found the same item for more. Requires explicit
+  /// customer acceptance and a second, additional checkout for the delta.
+  PRICE_INCREASE
+  /// Spec §15: sourcing found a different product entirely. Always requires
+  /// explicit customer confirmation, whatever the price difference.
+  ALTERNATE_PRODUCT
+  /// Spec §16: sourcing could not find the item anywhere. Full refund, no
+  /// customer decision to make.
+  SOURCING_FAILED_REFUND
+  /// Spec §14: sourcing is disabled for this partner/order and the item is
+  /// simply unavailable. Full refund, no customer decision to make.
+  OUT_OF_STOCK_REFUND
+}
+
+enum PartnerOrderAdjustmentStatus {
+  /// PRICE_INCREASE / ALTERNATE_PRODUCT only — waiting on the customer.
+  PENDING_CUSTOMER
+  CUSTOMER_ACCEPTED
+  CUSTOMER_DECLINED
+  /// The adjustment's financial effect (refund posted, or additional
+  /// payment captured) has actually happened. PRICE_DECREASE/
+  /// SOURCING_FAILED_REFUND/OUT_OF_STOCK_REFUND go straight from creation to
+  /// `APPLIED` — they need no customer decision, only the money to move.
+  APPLIED
+}
+
+/// One price/product change against an order already placed — spec §15-16.
+/// Deliberately its own row rather than fields bolted onto `PartnerOrder`:
+/// this is a distinct event with its own money movement and (for two of its
+/// five types) its own customer-facing decision, and a future order could in
+/// principle need more than one over its life.
+model PartnerOrderAdjustment {
+  id                      String                       @id @default(uuid())
+  orderId                 String
+  type                    PartnerOrderAdjustmentType
+  status                  PartnerOrderAdjustmentStatus @default(PENDING_CUSTOMER)
+  previousTotalAmount     Decimal                      @db.Decimal(18, 4)
+  newTotalAmount          Decimal                      @db.Decimal(18, 4)
+  /// newTotalAmount - previousTotalAmount. Negative for PRICE_DECREASE,
+  /// positive for PRICE_INCREASE, zero for a same-price ALTERNATE_PRODUCT.
+  deltaAmount             Decimal                      @db.Decimal(18, 4)
+  description             String?
+  reason                  String?
+  customerRespondedAt     DateTime?
+  /// PRICE_INCREASE only — the additional checkout's own payment lifecycle,
+  /// separate from the order's own `paymentStatus`.
+  additionalPaymentStatus PartnerOrderPaymentStatus?
+  /// The refund or additional-capture transaction this adjustment's
+  /// financial effect posted.
+  ledgerTransactionId     String?                      @unique
+  /// Scoped to the order, matching this codebase's other adjustment-style
+  /// idempotency keys (e.g. `PurchaseIntentRefund`'s `actorId` scope) — a
+  /// retried create for the same order+reason is a lookup, not a second row.
+  idempotencyKey          String?                      @unique
+  createdAt               DateTime                     @default(now())
+  appliedAt               DateTime?
+
+  order             PartnerOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@index([orderId])
+  @@map("partner_order_adjustments")
+}
+
+enum SourcingTaskStatus {
+  OPEN
+  SEARCHING
+  FOUND_EXACT
+  FOUND_ALTERNATE
+  NOT_FOUND
+  RESOLVED
+}
+
+enum SourcingResultSourceType {
+  /// Found among TuTak's own partner network (spec §13 step 1).
+  OTHER_TUTAK_PARTNER
+  /// Found via an external source, e.g. List.am (spec §13 step 2) — manual
+  /// for now, no scraper built (spec explicitly says not to build one yet).
+  EXTERNAL
+}
+
+/// TuTak staff's internal "find this item elsewhere" queue — spec §13.
+/// One-to-one with the order it searches for; `status` drives the admin
+/// queue the same way `FraudSignal`'s open/resolved split does, plus a
+/// `claim` step `FraudSignal` has no precedent for (spec's own "взял в
+/// работу" requirement, §9).
+model SourcingTask {
+  id                    String                    @id @default(uuid())
+  orderId               String                    @unique
+  status                SourcingTaskStatus        @default(OPEN)
+  assignedToUserId      String?
+  claimedAt             DateTime?
+  resultSourceType      SourcingResultSourceType?
+  /// Set only when `resultSourceType` is `OTHER_TUTAK_PARTNER`.
+  resultSourcePartnerId String?
+  resultProductName     String?
+  resultDescription     String?
+  resultImageUrl        String?
+  resultPrice           Decimal?                  @db.Decimal(18, 4)
+  resultNotes           String?
+  createdAt             DateTime                  @default(now())
+  resolvedAt            DateTime?
+
+  order               PartnerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  resultSourcePartner Partner?     @relation(fields: [resultSourcePartnerId], references: [id])
+
+  @@index([status, createdAt])
+  @@map("sourcing_tasks")
+}
+
+enum OrderEscalationType {
+  /// Spec §8: 5 minutes since createdAt, `partnerSeenAt` still null.
+  NOT_SEEN_5MIN
+  /// Spec §9: 30 minutes since createdAt (never from `partnerSeenAt`),
+  /// neither `stockConfirmedAt` nor `stockRejectedAt` set.
+  STOCK_NOT_CONFIRMED_30MIN
+  /// Spec §9: the repeat alert every 5 minutes after the first, until
+  /// resolved. One row per tick, so the admin history shows exactly how long
+  /// this has been unresolved and how many times it has re-alerted.
+  STOCK_NOT_CONFIRMED_REPEAT
+}
+
+/// TuTak's own internal "needs attention" record — spec §8/§9/§21. Never
+/// customer-visible (spec §17). Modelled as its own append-only trail rather
+/// than mutable fields on `PartnerOrder`, so the admin queue is a plain
+/// `resolvedAt: null` query (`FraudSignal`'s own pattern) and "взял в
+/// работу" (claim) can silence further *pushes* for this specific problem
+/// without hiding the order from anyone else still watching the queue.
+model OrderEscalation {
+  id               String              @id @default(uuid())
+  orderId          String
+  type             OrderEscalationType
+  createdAt        DateTime            @default(now())
+  claimedByUserId  String?
+  claimedAt        DateTime?
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  metadata         Json?
+
+  order PartnerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, type])
+  @@index([resolvedAt, createdAt])
+  @@map("order_escalations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Partners
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -897,6 +1296,16 @@ model Partner {
   evMarginReferralCapPerKwh Decimal       @default(20.00) @db.Decimal(10, 2)
   status                    PartnerStatus @default(ACTIVE)
   isActive                  Boolean       @default(true)
+  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md): whether an
+  /// OUT_OF_STOCK order for this partner may be routed to TuTak's internal
+  /// sourcing queue (spec §13) for an employee to look for the same item
+  /// elsewhere. Spec §14's example is a toy shop that would rather refund an
+  /// unavailable item outright than have a TuTak employee substitute a
+  /// different vendor's version of it — deliberately a per-partner flag
+  /// rather than a name check, so the exception is not hardcoded to any one
+  /// partner. Defaults to true: most goods/parts categories do want sourcing
+  /// attempted before refunding.
+  allowExternalSourcing     Boolean       @default(true)
   /// Set by reconciliation when this partner's ledger balance disagrees with
   /// the bank statement. Blocks payouts until a human clears it — paying out
   /// against a balance known to be wrong is the one thing worse than not
@@ -971,6 +1380,9 @@ model Partner {
   offerings              PartnerOfferingItem[]
   apiKeys                PartnerApiKey[]
   roamingCustomerLinks   RoamingCustomerLink[]
+  partnerOrders          PartnerOrder[]
+  commissionRules        CommissionRule[]
+  sourcingTasksFulfilled SourcingTask[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
   referralCode           ReferralCode?
@@ -1025,6 +1437,8 @@ model PartnerIntegration {
   partner Partner         @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   branch  PartnerBranch?  @relation(fields: [partnerBranchId], references: [id], onDelete: SetNull)
   apiKeys PartnerApiKey[]
+  /// Only meaningful for `type: WEBSITE` — see `PartnerOrder`.
+  orders  PartnerOrder[]
 
   @@index([partnerId])
   @@map("partner_integrations")
@@ -2080,18 +2494,40 @@ enum LedgerAccountType {
   /// when the balance can cover it in full — see `collectFromBalance`'s own
   /// docblock for why a partial collection is deliberately not attempted.
   ///
-  /// Closed-loop by design (business decision, 2026-08-29): this money pays
-  /// for roaming-CPO charging and nothing else. `CustomerBalanceService
-  /// .collectFromBalance` is the *only* place anything ever debits this
-  /// account — there is deliberately no conversion into `BonusEntryType`
-  /// wallet points or any other spendable form. Bonus points are usable
-  /// anywhere a purchase accepts them (QR, PurchaseIntent, internal EV);
-  /// funding them from this account would launder money out of the
-  /// "charging only" restriction the same step it claimed to respect. If a
-  /// future change adds a second way to spend this balance, it must still
-  /// be charging-only, or this restriction needs a new, explicit decision —
-  /// not a quiet side effect of adding a generic "spend my balance" helper.
+  /// Closed-loop by design (business decision, 2026-08-29) — revised
+  /// 2026-09-25 (Arman, Partner Commerce task: "с помощью IDRAM других
+  /// банковских карт можем заряжать TuTak" — funding this balance is meant
+  /// to become general-purpose, not roaming-only). Two callers now debit
+  /// this account: `CustomerBalanceService.collectFromBalance` (roaming-CPO
+  /// charging, CREDIT `EV_ROAMING_RECEIVABLE`) and
+  /// `CustomerBalanceService.debitForPartnerOrder` (Partner Commerce
+  /// checkout, CREDIT `PARTNER_ORDER_ESCROW`) — both go through
+  /// `CustomerBalanceService`, both use the same claim-then-post shape, and
+  /// neither is a generic "spend my balance anywhere" helper. What is still
+  /// explicitly true, and unchanged by this revision: there is no
+  /// conversion into `BonusEntryType` wallet points or any other spendable
+  /// form — bonus points are usable anywhere a purchase accepts them (QR,
+  /// PurchaseIntent, internal EV), and funding them from this account would
+  /// still launder money out of every restriction this balance's specific,
+  /// named spenders enforce. A third spender needs the same explicit
+  /// decision this one got, not a quiet side effect of a generic helper.
   CUSTOMER_PREPAID_BALANCE
+  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md), spec §6: money
+  /// captured from a customer's `CUSTOMER_PREPAID_BALANCE` at `PartnerOrder`
+  /// payment time, before the partner has confirmed the item is actually in
+  /// stock. There is no real authorize/capture-hold primitive in this ledger
+  /// (see `LedgerService.post`'s own docblock) and building one was judged
+  /// out of scope for this feature (Arman, 2026-09-25) — so instead of a
+  /// fake hold, the money is captured for real into this per-partner escrow
+  /// account and only moves on to `PARTNER_PAYABLE` (minus the commission
+  /// leg, to `PLATFORM_REVENUE`) once `stockConfirmedAt` is set. If the
+  /// partner instead rejects stock and the order is refunded (no sourcing,
+  /// sourcing disabled, or sourcing failed), the same captured amount moves
+  /// back to `CUSTOMER_PREPAID_BALANCE` — the money never reaches
+  /// `PARTNER_PAYABLE` until the partner has actually confirmed they can
+  /// fulfil the order. Per-partner (`partnerId` set, `userId` null), like
+  /// `PARTNER_PAYABLE` itself.
+  PARTNER_ORDER_ESCROW
 }
 
 enum PostingDirection {
@@ -2137,15 +2573,19 @@ model LedgerTransaction {
   reversesId String?  @unique
   postedAt   DateTime @default(now())
 
-  postings             LedgerPosting[]
-  payment              Payment?
-  refund               Refund?
-  purchaseIntentRefund PurchaseIntentRefund?
-  payoutRequested      Payout?               @relation("PayoutRequested")
-  payoutSettled        Payout?               @relation("PayoutSettled")
-  acquirerSettlement   AcquirerSettlement?
-  partnerCollection    PartnerCollection?
-  balanceTopUp         BalanceTopUp?
+  postings               LedgerPosting[]
+  payment                Payment?
+  refund                 Refund?
+  purchaseIntentRefund   PurchaseIntentRefund?
+  payoutRequested        Payout?                 @relation("PayoutRequested")
+  payoutSettled          Payout?                 @relation("PayoutSettled")
+  acquirerSettlement     AcquirerSettlement?
+  partnerCollection      PartnerCollection?
+  balanceTopUp           BalanceTopUp?
+  partnerOrderCapture    PartnerOrder?           @relation("PartnerOrderCapture")
+  partnerOrderSettlement PartnerOrder?           @relation("PartnerOrderSettlement")
+  partnerOrderRefund     PartnerOrder?           @relation("PartnerOrderRefund")
+  partnerOrderAdjustment PartnerOrderAdjustment?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -2764,6 +3204,26 @@ enum AuditAction {
   /// (revoke + issue, recorded as both). See `PartnerBranchQrCode`.
   BRANCH_QR_ISSUED
   BRANCH_QR_REVOKED
+  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md) — every step of a
+  /// PartnerOrder's life is independently auditable, same discipline as
+  /// PURCHASE_INTENT_* above.
+  PARTNER_ORDER_CREATED
+  PARTNER_ORDER_PAID
+  PARTNER_ORDER_SEEN
+  PARTNER_ORDER_STOCK_CONFIRMED
+  PARTNER_ORDER_STOCK_REJECTED
+  PARTNER_ORDER_SOURCING_TASK_CLAIMED
+  PARTNER_ORDER_SOURCING_RESULT_RECORDED
+  PARTNER_ORDER_ADJUSTMENT_CUSTOMER_RESPONDED
+  PARTNER_ORDER_ADDITIONAL_PAYMENT_PAID
+  PARTNER_ORDER_REFUNDED
+  PARTNER_ORDER_COMPLETED
+  PARTNER_ORDER_CANCELLED
+  PARTNER_ORDER_ESCALATION_RAISED
+  PARTNER_ORDER_ESCALATION_CLAIMED
+  PARTNER_ORDER_ESCALATION_RESOLVED
+  COMMISSION_RULE_CREATED
+  COMMISSION_RULE_UPDATED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

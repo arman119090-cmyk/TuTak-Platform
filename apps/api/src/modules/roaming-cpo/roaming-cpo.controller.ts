@@ -16,7 +16,7 @@ import { UpdateStationTariffDto } from './dto/update-station-tariff.dto';
 import { RoamingCpoStationsService } from './roaming-cpo-stations.service';
 import { RoamingCpoSettlementService } from './roaming-cpo-settlement.service';
 import { RoamingCpoCustomersService } from './roaming-cpo-customers.service';
-import { PartnerApiKeyService } from './partner-api-key.service';
+import { PartnerApiKeyService } from '../partners/partner-api-key.service';
 
 /**
  * The inbound half of the roaming-CPO adapter boundary — see

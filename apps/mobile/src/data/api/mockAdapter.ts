@@ -1,5 +1,5 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type { PartnerOrderDto, PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
@@ -231,6 +231,12 @@ function handle(
     // ── History ─────────────────────────────────────────────────────────
     case 'GET /transactions/me':
       return envelope(paged(state.transactions));
+
+    // ── Partner Commerce ────────────────────────────────────────────────
+    case 'GET /balance/me':
+      return envelope(state.balance);
+    case 'GET /partner-orders/mine':
+      return envelope(state.partnerOrders);
 
     // ── Referrals ───────────────────────────────────────────────────────
     case 'GET /referral/me/code':
@@ -552,6 +558,98 @@ function handle(
           createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
         };
     return envelope(partner);
+  }
+
+  // Partner Commerce: falls back to a synthesized order rather than
+  // 404ing, same reasoning as `getPurchaseIntent` above — the checkout
+  // screen always passes an id this adapter itself issued, and the only
+  // caller of an id it never created is the route-completeness test.
+  const synthesizedOrder = (id: string): PartnerOrderDto => ({
+    id,
+    orderNumber: 1000,
+    customerId: null,
+    partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+    externalOrderId: `demo-${id}`,
+    currency: 'AMD',
+    subtotal: '5000.0000',
+    totalAmount: '5000.0000',
+    commissionAmount: '250.0000',
+    partnerAmount: '4750.0000',
+    paymentStatus: 'PAYMENT_PENDING' as never,
+    orderStatus: 'CREATED' as never,
+    sourcingAllowed: true,
+    refundedAmount: '0.0000',
+    rejectionReason: null,
+    createdAt: new Date().toISOString(),
+    paidAt: null,
+    partnerSeenAt: null,
+    stockConfirmedAt: null,
+    stockRejectedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    refundedAt: null,
+    items: [
+      {
+        id: `${id}-item-1`,
+        externalProductId: null,
+        name: 'Demo item',
+        sku: null,
+        oemNumber: null,
+        quantity: 1,
+        unitPrice: '5000.0000',
+        totalPrice: '5000.0000',
+        imageUrl: null,
+        description: null,
+      },
+    ],
+  });
+
+  const getCheckout = /^\/partner-orders\/([^/]+)\/checkout$/.exec(path);
+  if (method === 'GET' && getCheckout) {
+    const id = getCheckout[1]!;
+    const existing = state.partnerOrders.find((o) => o.id === id);
+    return envelope(existing ?? synthesizedOrder(id));
+  }
+
+  const payOrder = /^\/partner-orders\/([^/]+)\/pay$/.exec(path);
+  if (method === 'POST' && payOrder) {
+    const id = payOrder[1]!;
+    const existing = state.partnerOrders.find((o) => o.id === id) ?? synthesizedOrder(id);
+    const paid: PartnerOrderDto = {
+      ...existing,
+      customerId: MOCK_USER.id,
+      paymentStatus: 'PAID' as never,
+      orderStatus: 'PAID' as never,
+      paidAt: new Date().toISOString(),
+    };
+    state.partnerOrders = state.partnerOrders.some((o) => o.id === id)
+      ? state.partnerOrders.map((o) => (o.id === id ? paid : o))
+      : [paid, ...state.partnerOrders];
+    return envelope({ order: paid, insufficientBalance: false });
+  }
+
+  const adjustmentAction = /^\/partner-orders\/adjustments\/([^/]+)\/(accept|decline|pay-additional)$/.exec(
+    path,
+  );
+  if (method === 'POST' && adjustmentAction) {
+    const [, id, action] = adjustmentAction;
+    const adjustment = {
+      id,
+      orderId: 'demo-order',
+      type: 'PRICE_INCREASE' as never,
+      status: action === 'decline' ? ('CUSTOMER_DECLINED' as never) : ('APPLIED' as never),
+      previousTotalAmount: '5000.0000',
+      newTotalAmount: '5500.0000',
+      deltaAmount: '500.0000',
+      description: null,
+      reason: null,
+      additionalPaymentStatus: null,
+      createdAt: new Date().toISOString(),
+      appliedAt: new Date().toISOString(),
+    };
+    return envelope(
+      action === 'pay-additional' ? { adjustment, insufficientBalance: false } : adjustment,
+    );
   }
 
   // Fuel-station branches task: the preview has no real branch/QR state to

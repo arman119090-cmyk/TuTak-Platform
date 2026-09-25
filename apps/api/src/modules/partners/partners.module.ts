@@ -10,6 +10,7 @@ import { PartnerBranchStaffController, PartnerStaffController } from './partner-
 import { PartnerBranchStaffService } from './partner-branch-staff.service';
 import { PartnerBranchQrController, PartnerBranchQrResolveController } from './partner-branch-qr.controller';
 import { PartnerBranchQrService } from './partner-branch-qr.service';
+import { PartnerApiKeyService } from './partner-api-key.service';
 
 @Module({
   imports: [AuditModule, MediaModule, TransactionsModule],
@@ -21,7 +22,13 @@ import { PartnerBranchQrService } from './partner-branch-qr.service';
     PartnerBranchQrController,
     PartnerBranchQrResolveController,
   ],
-  providers: [PartnersService, PartnerIntegrationsService, PartnerBranchStaffService, PartnerBranchQrService],
-  exports: [PartnersService],
+  providers: [
+    PartnersService,
+    PartnerIntegrationsService,
+    PartnerBranchStaffService,
+    PartnerBranchQrService,
+    PartnerApiKeyService,
+  ],
+  exports: [PartnersService, PartnerIntegrationsService, PartnerApiKeyService],
 })
 export class PartnersModule {}

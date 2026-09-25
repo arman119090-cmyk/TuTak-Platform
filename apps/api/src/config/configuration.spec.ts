@@ -1,4 +1,4 @@
-import { AppConfig, assertPoolSplitSums } from './configuration';
+import { AppConfig, assertPartnerOrderPolicy, assertPoolSplitSums } from './configuration';
 
 /**
  * 2026-08-22 3-level referral rework: the pool split grew from four legs
@@ -77,5 +77,36 @@ describe('assertPoolSplitSums', () => {
     policy.poolReferrerL3Bps = 0;
     policy.poolTutakBps = 5000; // 2000 + 3000 + 0 + 0 + 0 + 5000 = 10000
     expect(() => assertPoolSplitSums(policy)).not.toThrow();
+  });
+});
+
+describe('assertPartnerOrderPolicy', () => {
+  const validPolicy = (): AppConfig['partnerOrderPolicy'] => ({
+    defaultCommissionBps: 500,
+    notSeenAlertMinutes: 5,
+    stockConfirmDeadlineMinutes: 30,
+    stockAlertRepeatMinutes: 5,
+  });
+
+  it('accepts the default policy', () => {
+    expect(() => assertPartnerOrderPolicy(validPolicy())).not.toThrow();
+  });
+
+  it('rejects a commission rate outside 0-10000', () => {
+    const policy = validPolicy();
+    policy.defaultCommissionBps = 10_001;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/defaultCommissionBps/);
+  });
+
+  it('rejects a non-integer commission rate', () => {
+    const policy = validPolicy();
+    policy.defaultCommissionBps = 500.5;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/defaultCommissionBps/);
+  });
+
+  it('rejects a zero or negative SLA minute value', () => {
+    const policy = validPolicy();
+    policy.stockConfirmDeadlineMinutes = 0;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/stockConfirmDeadlineMinutes/);
   });
 });

@@ -6,6 +6,7 @@ import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { PayoutsModule } from '../payouts/payouts.module';
+import { PartnerOrdersModule } from '../partner-orders/partner-orders.module';
 import { PurchaseIntentsModule } from '../purchase-intents/purchase-intents.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { RetentionModule } from '../retention/retention.module';
@@ -17,6 +18,7 @@ import { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import { OutboxService } from '../ledger/outbox.service';
 import { RefundEngineService } from '../payments/refund-engine.service';
 import { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
+import { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
 import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { RetentionService } from '../retention/retention.service';
@@ -60,6 +62,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     LedgerModule,
     ...(cardPaymentsEnabled ? [PaymentsModule] : []),
     PayoutsModule,
+    PartnerOrdersModule,
     PurchaseIntentsModule,
     ReconciliationModule,
     RetentionModule,
@@ -83,6 +86,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         DeferredBonusLotService,
         PurchaseIntentsService,
         PartnerSettlementCheckService,
+        PartnerOrderSlaSweepService,
         // Only resolvable when PaymentsModule was actually imported above —
         // Nest calls useFactory with exactly as many arguments as `inject`
         // has entries, so `refunds` below is simply never passed (and stays
@@ -102,6 +106,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         deferredBonusLots: DeferredBonusLotService,
         purchaseIntents: PurchaseIntentsService,
         partnerSettlement: PartnerSettlementCheckService,
+        partnerOrderSla: PartnerOrderSlaSweepService,
         refunds?: RefundEngineService,
       ): SweepDependencies => ({
         bonus,
@@ -115,6 +120,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         deferredBonusLots,
         purchaseIntents,
         partnerSettlement,
+        partnerOrderSla,
         refunds,
       }),
     },

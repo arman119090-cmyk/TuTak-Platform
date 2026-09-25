@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useMemo, useState } from 'react';
-import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
@@ -35,6 +35,30 @@ const queryClient = new QueryClient({
     mutations: { retry: 0 },
   },
 });
+
+/**
+ * Partner Commerce (spec §5): a partner's own website redirects here with
+ * `tutak://checkout/<orderId>` once its server has created the order — see
+ * `PartnerOrdersService.create`. `app.config.js`'s `scheme: 'tutak'`
+ * registers the OS-level URL with each platform; this is what actually
+ * consumes an incoming one once the app is running.
+ *
+ * Only resolves while `RootNavigator` (a signed-in session) is mounted —
+ * `AuthNavigator` declares no `Checkout` route. A link that arrives before
+ * sign-in is not queued or replayed once login completes; the customer
+ * would need to open the link again from `MyOrdersScreen` or a repeated tap
+ * of the same partner-site link. Documented as a known gap rather than
+ * built silently around, since queuing correctly (surviving a cold start,
+ * not replaying a stale/already-paid order) is more than this pass covers.
+ */
+const linking: LinkingOptions<Record<string, object | undefined>> = {
+  prefixes: ['tutak://'],
+  config: {
+    screens: {
+      Checkout: 'checkout/:orderId',
+    },
+  },
+};
 
 function Root() {
   const theme = useTheme();
@@ -103,7 +127,7 @@ function Root() {
   }
 
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer theme={navigationTheme} linking={linking}>
       {/* Light content (white icons/clock) reads on the dark ground; dark
           content is what the light theme's white ground needs instead — a
           fixed "light" style here left the status bar unreadable against a

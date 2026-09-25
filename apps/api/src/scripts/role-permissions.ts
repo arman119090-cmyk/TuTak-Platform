@@ -18,6 +18,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
     PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.PARTNER_ORDER_MANAGE,
   ],
   // The manager tier: broader day-to-day operational reach than STAFF, but
   // — like STAFF — still no PARTNER_MANAGE. "Operational access appropriate
@@ -27,6 +28,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
     PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.PARTNER_ORDER_MANAGE,
     PermissionName.EV_STATION_MANAGE,
     PermissionName.ANALYTICS_READ,
   ],
@@ -34,6 +36,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
     PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.PARTNER_ORDER_MANAGE,
     PermissionName.PARTNER_MANAGE,
     PermissionName.EV_STATION_MANAGE,
     PermissionName.ANALYTICS_READ,

@@ -37,6 +37,7 @@ import { AuditModule } from '../../src/modules/audit/audit.module';
 import { EvChargingModule } from '../../src/modules/ev-charging/ev-charging.module';
 import { RoamingCpoModule } from '../../src/modules/roaming-cpo/roaming-cpo.module';
 import { CustomerBalanceModule } from '../../src/modules/customer-balance/customer-balance.module';
+import { PartnerOrdersModule } from '../../src/modules/partner-orders/partner-orders.module';
 import { QrPaymentsModule } from '../../src/modules/qr-payments/qr-payments.module';
 import { ReferralModule } from '../../src/modules/referral/referral.module';
 import { TransactionsModule } from '../../src/modules/transactions/transactions.module';
@@ -166,6 +167,7 @@ function domainTestingModuleBuilder(
       EvChargingModule,
       RoamingCpoModule,
       CustomerBalanceModule,
+      PartnerOrdersModule,
       AuditModule,
       UsersModule,
       AdminModule,

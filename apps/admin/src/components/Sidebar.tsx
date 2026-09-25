@@ -18,6 +18,8 @@ const NAV: NavItem[] = [
   { href: '/ledger', label: 'Ledger', icon: <NavIcon d="M4 4h13l3 3v13H4zM8 9h8M8 13h8M8 17h5" /> },
   { href: '/reconciliation', label: 'Reconciliation', icon: <NavIcon d="M4 7h10M4 7l3-3M4 7l3 3M20 17H10m10 0-3-3m3 3-3 3" /> },
   { href: '/fraud-signals', label: 'Fraud signals', icon: <NavIcon d="M12 3 4 6.5v5c0 4.6 3.2 8.7 8 9.5 4.8-.8 8-4.9 8-9.5v-5L12 3ZM12 9v4M12 16.5h.01" /> },
+  { href: '/partner-order-escalations', label: 'Order escalations', icon: <NavIcon d="M12 9v4M12 16.5h.01M10.3 3.9 2.5 18a1.5 1.5 0 0 0 1.3 2.2h16.4a1.5 1.5 0 0 0 1.3-2.2L13.7 3.9a1.5 1.5 0 0 0-2.6 0Z" /> },
+  { href: '/partner-order-sourcing', label: 'Sourcing queue', icon: <NavIcon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.3-4.3" /> },
   { href: '/audit-logs', label: 'Audit log', icon: <NavIcon d="M8 3h8l4 4v14H4V3h4ZM15 3v5h5M8.5 13h7M8.5 17h4" /> },
 ];
 

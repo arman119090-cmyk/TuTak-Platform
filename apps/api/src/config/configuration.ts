@@ -240,6 +240,30 @@ export interface AppConfig {
     /** Spec §18. "First 3 qualified friends" — this is the 3. */
     challengeSlotLimit: number;
   };
+  /**
+   * Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md). Read by
+   * `CommissionRuleService` and the SLA sweeps in `sweeps.jobs.ts` —
+   * nowhere else should hardcode one of these values.
+   */
+  partnerOrderPolicy: {
+    /**
+     * Spec §19: the commission rate used when a partner has no
+     * `CommissionRule` of their own configured — so an unconfigured partner
+     * still works rather than failing order creation. Never applied
+     * directly; `CommissionRuleService.resolve` always prefers a real,
+     * partner-specific rule first.
+     */
+    defaultCommissionBps: number;
+    /** Spec §8. Minutes since `createdAt` before the "not seen" alert fires. */
+    notSeenAlertMinutes: number;
+    /**
+     * Spec §9. Minutes since `createdAt` — deliberately not `partnerSeenAt`
+     * — before the "stock not confirmed" alert first fires.
+     */
+    stockConfirmDeadlineMinutes: number;
+    /** Spec §9. How often the alert repeats after it first fires. */
+    stockAlertRepeatMinutes: number;
+  };
 }
 
 /**
@@ -276,9 +300,32 @@ export function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
   }
 }
 
+/**
+ * Same "fail loudly at boot" discipline as `assertPoolSplitSums` above, for
+ * the one Partner Commerce figure a bad env var could put out of range.
+ */
+export function assertPartnerOrderPolicy(policy: AppConfig['partnerOrderPolicy']): void {
+  const { defaultCommissionBps } = policy;
+  if (!Number.isInteger(defaultCommissionBps) || defaultCommissionBps < 0 || defaultCommissionBps > 10_000) {
+    throw new Error(
+      `partnerOrderPolicy.defaultCommissionBps must be an integer between 0 and 10000, got ${defaultCommissionBps}`,
+    );
+  }
+  for (const [name, minutes] of [
+    ['notSeenAlertMinutes', policy.notSeenAlertMinutes],
+    ['stockConfirmDeadlineMinutes', policy.stockConfirmDeadlineMinutes],
+    ['stockAlertRepeatMinutes', policy.stockAlertRepeatMinutes],
+  ] as const) {
+    if (!Number.isInteger(minutes) || minutes <= 0) {
+      throw new Error(`partnerOrderPolicy.${name} must be a positive integer, got ${minutes}`);
+    }
+  }
+}
+
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
+  assertPartnerOrderPolicy(config.partnerOrderPolicy);
   return config;
 };
 
@@ -487,5 +534,24 @@ const buildConfig = (): AppConfig => ({
     challengeRewardAmount: process.env.REFERRAL_CHALLENGE_REWARD_AMOUNT ?? '1000',
     // First 3 qualified friends, per spec §18.
     challengeSlotLimit: parseInt(process.env.REFERRAL_CHALLENGE_SLOT_LIMIT ?? '3', 10),
+  },
+  partnerOrderPolicy: {
+    // 5%, a reasonable platform-wide starting point until a partner
+    // configures their own CommissionRule — spec §19.
+    defaultCommissionBps: parseInt(
+      process.env.PARTNER_ORDER_DEFAULT_COMMISSION_BPS ?? '500',
+      10,
+    ),
+    // Spec §8.
+    notSeenAlertMinutes: parseInt(process.env.PARTNER_ORDER_NOT_SEEN_ALERT_MINUTES ?? '5', 10),
+    // Spec §9.
+    stockConfirmDeadlineMinutes: parseInt(
+      process.env.PARTNER_ORDER_STOCK_CONFIRM_DEADLINE_MINUTES ?? '30',
+      10,
+    ),
+    stockAlertRepeatMinutes: parseInt(
+      process.env.PARTNER_ORDER_STOCK_ALERT_REPEAT_MINUTES ?? '5',
+      10,
+    ),
   },
 });

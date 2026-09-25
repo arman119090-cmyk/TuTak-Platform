@@ -1,466 +1,442 @@
 <title>EVA Import</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Display&family=Hanken+Grotesk:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&family=Jost:wght@300;400;500&display=swap">
 <style>
   :root {
-    color-scheme: light;
-    --ink: #000000;
-    --graphite: #1b1c1e;
-    --paper: #ffffff;
-    --mist: #f4f5f6;
-    --steel: #6b7075;
-    --line: #dfe1e4;
-    --blue: #0078d6;
-    --blue-dark: #0063b3;
-    --red: #e3321e;
-    --on-dark: #ffffff;
-    --on-dark-soft: #a9adb2;
-    --serif: "Libre Caslon Display", "Didot", "Bodoni 72", Georgia, serif;
-    --sans: "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
-    --wrap: 1280px;
-    --gutter: clamp(16px, 4vw, 48px);
+    color-scheme: dark;
+    --ink: #0a0a0b;
+    --deep: #111113;
+    --char: #1a1a1d;
+    --ivory: #eeebe5;
+    --ivory-ink: #16161a;
+    --text: #ecebe8;
+    --mute: #8d8c89;
+    --line: rgba(255, 255, 255, 0.12);
+    --line-dark: rgba(22, 22, 26, 0.14);
+    --champagne: #b8a07a;
+    --serif: "Bodoni Moda", "Didot", "Bodoni 72", "Times New Roman", serif;
+    --sans: "Jost", "Futura", "Century Gothic", "Helvetica Neue", sans-serif;
+    --gutter: clamp(16px, 5vw, 80px);
+    --ease: cubic-bezier(.2, .7, .1, 1);
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
-    margin: 0;
-    background: var(--paper);
-    color: var(--ink);
-    font: 400 16px/1.6 var(--sans);
+    margin: 0; background: var(--ink); color: var(--text);
+    font: 300 17px/1.7 var(--sans); letter-spacing: 0.01em;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: inherit; }
+  a { color: inherit; text-decoration: none; }
   img { max-width: 100%; display: block; }
-  :focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
-  .wrap { max-width: var(--wrap); margin-inline: auto; padding-inline: var(--gutter); }
-  h1, h2, h3 { font-family: var(--serif); font-weight: 400; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
-  .eyebrow { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--steel); margin: 0; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 1px solid var(--champagne); outline-offset: 4px; }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 400; margin: 0; text-wrap: balance; }
+  .label {
+    font: 400 11px/1 var(--sans); letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--mute); margin: 0;
+  }
+  .gut { padding-inline: var(--gutter); }
 
-  /* Top bar */
-  .topbar {
-    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
-    background: var(--ink); color: var(--on-dark);
+  /* Header */
+  header {
+    position: absolute; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding-block: 28px;
   }
-  .topbar .wrap {
-    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-    height: 72px;
-  }
-  .nav { display: flex; gap: 28px; font-size: 14px; }
-  .nav a { text-decoration: none; color: var(--on-dark-soft); transition: color .2s; }
-  .nav a:hover { color: var(--on-dark); }
-  .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; }
-  .logo-mark { background: var(--paper); padding: 5px 7px; line-height: 0; }
-  .logo-mark img { height: 30px; width: auto; }
-  .top-right { display: flex; justify-content: flex-end; align-items: center; gap: 20px; font-size: 14px; }
-  .lang { display: flex; gap: 10px; color: var(--on-dark-soft); }
-  .lang b { color: var(--on-dark); font-weight: 500; }
-  .phone { color: var(--on-dark); text-decoration: none; font-variant-numeric: tabular-nums; }
-  .menu-btn { display: none; }
+  .mark { display: flex; align-items: baseline; gap: 14px; }
+  .mark b { font: 500 15px/1 var(--sans); letter-spacing: 0.5em; }
+  .mark i { width: 22px; height: 1px; background: var(--champagne); display: inline-block; transform: translateY(-4px); }
+  .mark span { font: 300 15px/1 var(--sans); letter-spacing: 0.5em; color: var(--mute); }
+  .menu { display: flex; gap: 40px; font: 400 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; }
+  .menu a { color: var(--mute); transition: color .4s; }
+  .menu a:hover { color: var(--text); }
 
   /* Hero */
-  .hero { position: relative; background: var(--ink); color: var(--on-dark); }
-  .hero img { width: 100%; height: clamp(360px, 62vw, 720px); object-fit: cover; opacity: .92; }
-  .hero::after {
-    content: ""; position: absolute; inset: 0;
-    background: linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,.78) 100%);
+  .hero { display: grid; grid-template-columns: 1fr 1fr; min-height: 100svh; max-height: 1100px; background: var(--ink); }
+  .hero-text { display: flex; flex-direction: column; justify-content: flex-end; gap: 40px; padding-block: 140px 72px; }
+  .hero h1 { font-size: clamp(52px, 7.4vw, 124px); line-height: .95; letter-spacing: -0.02em; }
+  .hero h1 em { font-style: italic; color: var(--champagne); }
+  .hero p.lead { margin: 0; max-width: 36ch; color: var(--mute); font-size: 17px; }
+  .hero-img { position: relative; overflow: hidden; }
+  .hero-img img { width: 100%; height: 100%; object-fit: cover; object-position: 30% 50%; animation: settle 2.4s var(--ease) both; }
+  .hero-img::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--ink) 0%, rgba(10,10,11,0) 28%); }
+  .hero-foot { display: flex; gap: 48px; align-items: center; flex-wrap: wrap; }
+  .hero-meta { display: flex; gap: 40px; font-size: 13px; color: var(--mute); }
+  .hero-meta b { display: block; font: 400 26px/1.1 var(--serif); color: var(--text); }
+  @keyframes settle { from { transform: scale(1.06); } to { transform: scale(1); } }
+
+  .link {
+    display: inline-flex; align-items: center; gap: 16px;
+    font: 400 12px/1 var(--sans); letter-spacing: 0.28em; text-transform: uppercase;
+    padding-block: 12px; border-bottom: 1px solid var(--text); transition: gap .5s var(--ease), color .4s, border-color .4s;
   }
-  .hero-copy { position: absolute; inset: auto 0 0 0; z-index: 1; padding-block: clamp(28px, 5vw, 64px); }
-  .hero-copy .wrap { display: grid; gap: 18px; }
-  .hero h1 { font-size: clamp(36px, 5.2vw, 72px); line-height: 1.02; max-width: 16ch; }
-  .hero p { margin: 0; max-width: 46ch; color: #d9dcdf; font-size: clamp(15px, 1.4vw, 18px); }
-  .btns { display: flex; gap: 12px; flex-wrap: wrap; }
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-height: 48px; padding: 0 28px; border: 1px solid transparent;
-    font: 500 15px/1 var(--sans); text-decoration: none; cursor: pointer;
-    border-radius: 4px; transition: background .2s, color .2s, border-color .2s;
+  .link::after { content: "→"; letter-spacing: 0; font-size: 14px; }
+  .link:hover { gap: 26px; color: var(--champagne); border-color: var(--champagne); }
+
+  /* Statement */
+  .statement { padding-block: clamp(96px, 14vw, 200px); display: grid; grid-template-columns: 1fr 2fr; gap: 40px; border-top: 1px solid var(--line); }
+  .statement p.big {
+    margin: 0; font: 400 clamp(28px, 3.3vw, 50px)/1.28 var(--serif); letter-spacing: -0.01em; max-width: 26ch;
   }
-  .btn-primary { background: var(--blue); color: #fff; }
-  .btn-primary:hover { background: var(--blue-dark); }
-  .btn-ghost { border-color: rgba(255,255,255,.7); color: #fff; background: transparent; }
-  .btn-ghost:hover { background: #fff; color: var(--ink); }
-  .btn-dark { background: var(--ink); color: #fff; }
-  .btn-dark:hover { background: var(--graphite); }
+  .statement p.big em { color: var(--mute); }
 
-  /* Origins strip */
-  .origins { border-bottom: 1px solid var(--line); }
-  .origins .wrap { display: grid; grid-template-columns: repeat(3, 1fr); }
-  .origin { padding-block: 26px; display: grid; gap: 4px; border-left: 1px solid var(--line); padding-inline: 24px; }
-  .origin:first-child { border-left: 0; padding-left: 0; }
-  .origin strong { font-family: var(--serif); font-weight: 400; font-size: 26px; }
-  .origin span { color: var(--steel); font-size: 14px; }
-
-  /* Sections */
-  section.block { padding-block: clamp(56px, 8vw, 112px); }
-  .head { display: flex; justify-content: space-between; align-items: end; gap: 24px; flex-wrap: wrap; margin-bottom: 36px; }
-  .head h2 { font-size: clamp(32px, 4vw, 52px); line-height: 1.08; margin-top: 10px; }
-
-  /* Model range tabs */
-  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); overflow-x: auto; margin-bottom: 36px; }
-  .tab {
-    background: none; border: 0; border-bottom: 2px solid transparent;
-    padding: 14px 20px; font: 500 15px var(--sans); color: var(--steel); cursor: pointer; white-space: nowrap;
+  /* Collection */
+  .collection { padding-bottom: clamp(96px, 12vw, 180px); }
+  .col-head { display: flex; justify-content: space-between; align-items: end; gap: 32px; flex-wrap: wrap; margin-bottom: 56px; }
+  .col-head h2 { font-size: clamp(40px, 5vw, 80px); line-height: 1; margin-top: 22px; letter-spacing: -0.02em; }
+  .filters { display: flex; gap: 32px; flex-wrap: wrap; }
+  .filter { background: none; border: 0; padding: 6px 0; cursor: pointer; font: 400 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: var(--mute); border-bottom: 1px solid transparent; transition: color .3s; }
+  .filter[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--champagne); }
+  .rail {
+    display: grid; grid-auto-flow: column; grid-auto-columns: clamp(280px, 30vw, 520px); gap: 28px;
+    overflow-x: auto; scroll-snap-type: x mandatory; padding-inline: var(--gutter); scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
   }
-  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
-  .tab .n { color: var(--steel); font-weight: 400; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .rail::-webkit-scrollbar { display: none; }
+  .car { scroll-snap-align: start; display: grid; gap: 22px; align-content: start; }
+  .car-img { aspect-ratio: 4 / 5; overflow: hidden; background: var(--char); max-width: 100%; }
+  .car-img img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.8) contrast(1.06) brightness(.94); transition: transform 1.4s var(--ease), filter .8s; }
+  .car:hover .car-img img { transform: scale(1.045); filter: saturate(.95) contrast(1.06) brightness(1); }
+  .car-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; border-top: 1px solid var(--line); padding-top: 18px; }
+  .car h3 { font-size: clamp(22px, 1.9vw, 30px); line-height: 1.15; }
+  .car .price { font: 400 15px/1 var(--sans); letter-spacing: 0.06em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .car .spec { margin: 0; font-size: 14px; color: var(--mute); }
+  .car .origin { color: var(--champagne); letter-spacing: 0.24em; text-transform: uppercase; font-size: 11px; }
+  .rail-ctrl { display: flex; justify-content: space-between; align-items: center; margin-top: 44px; }
+  .count { font: 400 13px/1 var(--sans); letter-spacing: 0.2em; color: var(--mute); font-variant-numeric: tabular-nums; }
+  .count b { color: var(--text); font-weight: 400; }
+  .arrows { display: flex; gap: 12px; }
+  .arrow { width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--line); background: none; cursor: pointer; font-size: 16px; transition: border-color .4s, background .4s; }
+  .arrow:hover { border-color: var(--text); }
 
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px 24px; }
-  .car { display: grid; gap: 14px; align-content: start; }
-  .car-img { aspect-ratio: 4 / 3; overflow: hidden; background: var(--mist); max-width: 100%; }
-  .car-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s ease; }
-  .car:hover .car-img img { transform: scale(1.04); }
-  .car-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-  .car h3 { font-size: 26px; line-height: 1.15; }
-  .flag { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--steel); white-space: nowrap; }
-  .specs { margin: 0; color: var(--steel); font-size: 14px; }
-  .price { font-size: 15px; margin: 0; }
-  .price b { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 18px; }
-  .car-link { font-size: 15px; font-weight: 500; color: var(--blue); text-decoration: none; justify-self: start; }
-  .car-link:hover { text-decoration: underline; }
-  .car-link::after { content: " ›"; }
+  /* Feature */
+  .feature { display: grid; grid-template-columns: 1.15fr 1fr; background: var(--deep); }
+  .feature-img { overflow: hidden; }
+  .feature-img img { width: 100%; height: 100%; object-fit: cover; min-height: 520px; }
+  .feature-body { display: flex; flex-direction: column; justify-content: center; gap: 36px; padding-block: clamp(64px, 9vw, 140px); }
+  .feature h2 { font-size: clamp(40px, 4.6vw, 76px); line-height: 1; letter-spacing: -0.02em; }
+  .feature h2 em { font-style: italic; color: var(--champagne); }
+  .feature p { margin: 0; color: var(--mute); max-width: 40ch; }
+  .figures { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 0 56px; }
+  .figures div { display: grid; gap: 8px; }
+  .figures b { font: 400 clamp(40px, 4vw, 64px)/1 var(--serif); font-variant-numeric: lining-nums tabular-nums; }
+  .figures span { font-size: 11px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--mute); }
 
-  /* Feature split */
-  .feature { background: var(--ink); color: var(--on-dark); }
-  .feature .wrap { display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(32px, 6vw, 96px); align-items: center; padding-block: clamp(56px, 8vw, 112px); }
-  .feature img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; max-width: 100%; }
-  .feature h2 { font-size: clamp(34px, 4.4vw, 60px); line-height: 1.05; margin-block: 14px 20px; }
-  .feature p { color: var(--on-dark-soft); margin: 0 0 28px; max-width: 44ch; }
-  .feature .eyebrow { color: var(--on-dark-soft); }
-  .spec-row { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #33353a; margin-bottom: 32px; }
-  .spec-row div { padding: 18px 16px 0 0; display: grid; gap: 2px; }
-  .spec-row b { font-family: var(--serif); font-weight: 400; font-size: 30px; font-variant-numeric: tabular-nums; }
-  .spec-row span { font-size: 13px; color: var(--on-dark-soft); }
+  /* Details strip */
+  .details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--ink); }
+  .details figure { margin: 0; position: relative; aspect-ratio: 3 / 4; overflow: hidden; max-width: 100%; }
+  .details img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.75) contrast(1.08); }
+  .details figcaption { position: absolute; left: 24px; bottom: 22px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text); }
 
-  /* Process */
-  .process { background: var(--mist); }
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
-  .step { background: var(--paper); padding: 30px 28px 34px; display: grid; gap: 10px; align-content: start; }
-  .step .num { font-family: var(--serif); font-size: 42px; line-height: 1; color: var(--line); }
-  .step h3 { font-size: 24px; }
-  .step .sub { margin: 0; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--steel); }
-  .step p { margin: 0; color: #3d4146; font-size: 15px; }
+  /* Journey (light section) */
+  .journey { background: var(--ivory); color: var(--ivory-ink); padding-block: clamp(96px, 12vw, 180px); }
+  .journey .label { color: #6f6c66; }
+  .journey-grid { display: grid; grid-template-columns: 1fr 1.6fr; gap: clamp(40px, 8vw, 140px); }
+  .journey h2 { font-size: clamp(40px, 4.6vw, 72px); line-height: 1.02; letter-spacing: -0.02em; margin-top: 22px; position: sticky; top: 48px; }
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 80px 1fr; gap: 24px; padding-block: 32px; border-top: 1px solid var(--line-dark); }
+  .steps li:last-child { border-bottom: 1px solid var(--line-dark); }
+  .steps li::before { content: counter(s, decimal-leading-zero); font: italic 400 22px/1.3 var(--serif); color: #8a7550; }
+  .steps h3 { font-size: clamp(24px, 2.2vw, 32px); line-height: 1.2; margin-bottom: 8px; }
+  .steps p { margin: 0; color: #55524c; max-width: 52ch; }
 
-  /* Transit + stats */
-  .facts .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px, 6vw, 96px); }
-  .transit { width: 100%; border-collapse: collapse; }
-  .transit th, .transit td { text-align: left; padding: 18px 0; border-bottom: 1px solid var(--line); font-weight: 400; }
-  .transit th { font-family: var(--serif); font-size: 24px; }
-  .transit td { text-align: right; font-variant-numeric: tabular-nums; font-size: 18px; }
-  .transit td small { display: block; color: var(--steel); font-size: 13px; }
-  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); align-self: start; }
-  .stat { background: var(--paper); padding: 28px 24px; }
-  .stat b { display: block; font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 4.5vw, 60px); line-height: 1; font-variant-numeric: tabular-nums; }
-  .stat span { color: var(--steel); font-size: 14px; }
+  /* Origins */
+  .origins { padding-block: clamp(96px, 12vw, 180px); }
+  .origins-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 56px; border-top: 1px solid var(--line); }
+  .o { padding: 40px 32px 0 0; display: grid; gap: 14px; border-right: 1px solid var(--line); }
+  .o + .o { padding-left: 32px; }
+  .o:last-child { border-right: 0; }
+  .o b { font: 400 clamp(56px, 6.5vw, 104px)/1 var(--serif); letter-spacing: -0.03em; font-variant-numeric: lining-nums; }
+  .o b small { font: 300 16px var(--sans); letter-spacing: 0.1em; color: var(--mute); margin-left: 8px; }
+  .o h3 { font: 400 12px/1 var(--sans); letter-spacing: 0.32em; text-transform: uppercase; }
+  .o p { margin: 0; color: var(--mute); font-size: 15px; max-width: 30ch; }
+  .trust { display: flex; gap: clamp(32px, 6vw, 96px); flex-wrap: wrap; margin-top: 88px; padding-top: 40px; border-top: 1px solid var(--line); }
+  .trust div { display: grid; gap: 6px; }
+  .trust b { font: 400 36px/1 var(--serif); font-variant-numeric: lining-nums; }
+  .trust span { font-size: 13px; color: var(--mute); }
 
-  /* Services */
-  .services { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
-  .service { border-top: 1px solid var(--ink); padding-top: 18px; display: grid; gap: 8px; align-content: start; }
-  .service h3 { font-size: 22px; }
-  .service p { margin: 0; color: var(--steel); font-size: 15px; }
-
-  /* Contact */
-  .contact { background: var(--graphite); color: var(--on-dark); }
-  .contact .wrap { display: grid; grid-template-columns: 1fr 1.2fr; gap: clamp(32px, 6vw, 96px); padding-block: clamp(56px, 8vw, 112px); }
-  .contact h2 { font-size: clamp(34px, 4.4vw, 56px); line-height: 1.06; margin-block: 14px 20px; }
-  .contact .eyebrow { color: var(--on-dark-soft); }
-  .contact p { color: var(--on-dark-soft); margin: 0 0 24px; max-width: 42ch; }
-  .direct { display: grid; gap: 18px; }
-  .direct div { display: grid; gap: 2px; }
-  .direct span { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--on-dark-soft); }
-  .direct strong { font-weight: 400; font-size: 22px; font-variant-numeric: tabular-nums; user-select: all; }
-  form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .field { display: grid; gap: 6px; }
-  .field.full { grid-column: 1 / -1; }
-  label { font-size: 13px; color: var(--on-dark-soft); }
+  /* Private request */
+  .request { display: grid; grid-template-columns: 1fr 1fr; background: var(--deep); }
+  .request-img { overflow: hidden; }
+  .request-img img { width: 100%; height: 100%; object-fit: cover; min-height: 480px; filter: saturate(.7) brightness(.8); }
+  .request-body { padding-block: clamp(64px, 9vw, 140px); display: grid; gap: 40px; align-content: center; }
+  .request h2 { font-size: clamp(40px, 4.4vw, 70px); line-height: 1.02; letter-spacing: -0.02em; margin-top: 22px; }
+  .request p.sub { margin: 0; color: var(--mute); max-width: 40ch; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 32px; }
+  .f { display: grid; gap: 4px; }
+  .f.wide { grid-column: 1 / -1; }
+  label { font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--mute); }
   input, select, textarea {
-    width: 100%; background: transparent; color: var(--on-dark);
-    border: 0; border-bottom: 1px solid #55595f; border-radius: 0;
-    padding: 10px 0; font: 400 16px var(--sans);
+    width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+    padding: 12px 0; color: var(--text); font: 300 18px/1.4 var(--sans);
+    transition: border-color .4s;
   }
-  select option { color: #000; }
-  textarea { resize: vertical; min-height: 88px; }
-  input:focus, select:focus, textarea:focus { outline: none; border-bottom-color: var(--on-dark); }
-  .form-foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 8px; }
-  .note { font-size: 13px; color: var(--on-dark-soft); margin: 0; }
-  .ok { grid-column: 1 / -1; border-left: 2px solid var(--blue); padding: 12px 16px; background: #24262a; margin: 0; }
+  select option { background: var(--deep); }
+  textarea { resize: vertical; min-height: 60px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-bottom-color: var(--champagne); }
+  .submit-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
+  .btn-solid {
+    background: var(--text); color: var(--ink); border: 0; cursor: pointer;
+    padding: 22px 44px; font: 500 12px/1 var(--sans); letter-spacing: 0.3em; text-transform: uppercase;
+    transition: background .4s;
+  }
+  .btn-solid:hover { background: var(--champagne); }
+  .fine { font-size: 13px; color: var(--mute); margin: 0; }
+  .ok { grid-column: 1 / -1; margin: 0; padding: 18px 0; border-top: 1px solid var(--champagne); color: var(--text); }
+  .contact-line { display: flex; gap: 48px; flex-wrap: wrap; padding-top: 32px; border-top: 1px solid var(--line); }
+  .contact-line div { display: grid; gap: 6px; }
+  .contact-line strong { font: 400 22px/1.2 var(--serif); font-variant-numeric: lining-nums; user-select: all; }
 
-  /* Footer */
-  footer { background: var(--ink); color: var(--on-dark-soft); font-size: 14px; }
-  footer .wrap { padding-block: 56px 32px; display: grid; gap: 40px; }
-  .foot-cols { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px; }
-  .foot-cols h4 { margin: 0 0 14px; color: var(--on-dark); font: 500 14px var(--sans); }
-  .foot-cols ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  .foot-cols a { text-decoration: none; }
-  .foot-cols a:hover { color: var(--on-dark); }
-  .foot-bottom { border-top: 1px solid #2a2c30; padding-top: 20px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 13px; }
+  footer { padding-block: 72px 40px; display: grid; gap: 64px; }
+  .foot-top { display: flex; justify-content: space-between; align-items: end; gap: 40px; flex-wrap: wrap; }
+  .foot-word { font: 400 clamp(56px, 12vw, 200px)/.85 var(--serif); letter-spacing: -0.04em; color: var(--char); user-select: none; }
+  .foot-nav { display: flex; gap: 40px; flex-wrap: wrap; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--mute); }
+  .foot-nav a:hover { color: var(--text); }
+  .foot-bot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-size: 13px; color: var(--mute); border-top: 1px solid var(--line); padding-top: 28px; }
 
   @media (max-width: 960px) {
-    .nav { display: none; }
-    .topbar .wrap { grid-template-columns: auto 1fr; }
-    .logo { order: -1; }
-    .grid { grid-template-columns: repeat(2, 1fr); }
-    .feature .wrap, .facts .wrap, .contact .wrap { grid-template-columns: 1fr; }
-    .feature img { aspect-ratio: 4 / 3; }
-    .steps { grid-template-columns: repeat(2, 1fr); }
-    .services { grid-template-columns: repeat(2, 1fr); }
-    .foot-cols { grid-template-columns: 1fr 1fr; }
+    .menu { display: none; }
+    .hero { grid-template-columns: 1fr; max-height: none; min-height: 0; }
+    .hero-img { order: -1; height: 72vh; min-height: 420px; }
+    .hero-img::after { background: linear-gradient(0deg, var(--ink) 0%, rgba(10,10,11,0) 40%); }
+    .hero-text { padding-block: 8px 72px; }
+    .statement, .journey-grid, .feature, .request { grid-template-columns: 1fr; }
+    .journey h2 { position: static; }
+    .rail { grid-auto-columns: 62vw; }
+    .origins-grid { grid-template-columns: 1fr; }
+    .o, .o + .o { padding: 32px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+    .details { grid-template-columns: 1fr 1fr; }
+    .details figure:last-child { display: none; }
   }
   @media (max-width: 600px) {
-    .lang { display: none; }
-    .grid, .steps, .services, form { grid-template-columns: 1fr; }
-    .origins .wrap { grid-template-columns: 1fr; }
-    .origin, .origin:first-child { border-left: 0; padding-inline: 0; border-top: 1px solid var(--line); padding-block: 18px; }
-    .origin:first-child { border-top: 0; }
-    .foot-cols { grid-template-columns: 1fr; }
-    .hero-copy .btns .btn { flex: 1; }
+    body { font-size: 16px; }
+    form { grid-template-columns: 1fr; }
+    .rail { grid-auto-columns: 82vw; gap: 16px; }
+    .figures { gap: 0 28px; }
+    .hero-meta { gap: 28px; }
+    .steps li { grid-template-columns: 48px 1fr; gap: 12px; }
+    .mark b, .mark span { letter-spacing: 0.36em; font-size: 13px; }
   }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    html { scroll-behavior: auto; }
+  }
 </style>
 
-<header class="topbar">
-  <div class="wrap">
-    <nav class="nav" aria-label="Разделы">
-      <a href="#models">Модели</a>
-      <a href="#process">Процесс</a>
-      <a href="#services">Услуги</a>
-      <a href="#contact">Контакты</a>
-    </nav>
-    <a class="logo" href="#top" aria-label="EVA Import — на главную">
-      <span class="logo-mark"><img src="img/logo.png" alt="EVA Import"></span>
-    </a>
-    <div class="top-right">
-      <div class="lang" aria-label="Язык"><span>ՀՅ</span><b>RU</b><span>EN</span></div>
-      <span class="phone">+374 95 090 701</span>
-    </div>
-  </div>
+<header class="gut">
+  <a class="mark" href="#top" aria-label="EVA Import"><b>EVA</b><i></i><span>IMPORT</span></a>
+  <nav class="menu" aria-label="Разделы">
+    <a href="#collection">Коллекция</a>
+    <a href="#journey">Импорт</a>
+    <a href="#request">Запрос</a>
+  </nav>
 </header>
 
 <main id="top">
-  <section class="hero" aria-label="EVA Import">
-    <img src="img/hero.jpg" alt="Автомобиль в морском порту на закате">
-    <div class="hero-copy">
-      <div class="wrap">
-        <p class="eyebrow" style="color:#c9ccd0">Лицензированный импортёр · с 2018 года</p>
-        <h1>Автомобиль вашей мечты. Из любой точки мира.</h1>
-        <p>Находим, проверяем и доставляем в Ереван автомобили из США, ОАЭ и Китая. Страховка, таможня и регистрация — на нас.</p>
-        <div class="btns">
-          <a class="btn btn-primary" href="#models">Смотреть модели</a>
-          <a class="btn btn-ghost" href="#contact">Оставить заявку</a>
+  <section class="hero">
+    <div class="hero-text gut">
+      <p class="label">Ереван · с 2018 года</p>
+      <h1>Автомобиль,<br>который <em>ждали.</em></h1>
+      <p class="lead">Частный импорт премиальных автомобилей из Дубая, США и Китая. Подбор, проверка, доставка и оформление — от первого звонка до ключей.</p>
+      <div class="hero-foot">
+        <a class="link" href="#collection">Коллекция</a>
+        <div class="hero-meta">
+          <div><b>3000+</b>автомобилей</div>
+          <div><b>98%</b>возвращаются</div>
         </div>
       </div>
     </div>
-  </section>
-
-  <div class="origins">
-    <div class="wrap">
-      <div class="origin"><strong>Китай</strong><span>Доставка 30–45 дней</span></div>
-      <div class="origin"><strong>ОАЭ</strong><span>Доставка 30–40 дней</span></div>
-      <div class="origin"><strong>США</strong><span>Доставка 2–4 месяца</span></div>
-    </div>
-  </div>
-
-  <section class="block" id="models">
-    <div class="wrap">
-      <div class="head">
-        <div>
-          <p class="eyebrow">Модельный ряд</p>
-          <h2>Автомобили в наличии и в пути</h2>
-        </div>
-      </div>
-      <div class="tabs" role="tablist" aria-label="Страна происхождения">
-        <button class="tab" role="tab" aria-selected="true" data-f="all" id="tab-all">Все<span class="n">6</span></button>
-        <button class="tab" role="tab" aria-selected="false" data-f="china" id="tab-china">Китай<span class="n">3</span></button>
-        <button class="tab" role="tab" aria-selected="false" data-f="uae" id="tab-uae">ОАЭ<span class="n">1</span></button>
-        <button class="tab" role="tab" aria-selected="false" data-f="usa" id="tab-usa">США<span class="n">2</span></button>
-      </div>
-      <div class="grid" id="grid">
-        <article class="car" data-o="uae">
-          <div class="car-img"><img src="img/amg.jpg" alt="Mercedes-AMG, передняя часть" loading="lazy"></div>
-          <div class="car-meta"><h3>Mercedes-AMG</h3><span class="flag">ОАЭ</span></div>
-          <p class="specs">2025 · 20 000 км · 4MATIC AWD · 577–604 л.с.</p>
-          <p class="price">от <b>$130 000</b></p>
-          <a class="car-link" href="#contact" data-car="Mercedes-AMG">Запросить</a>
-        </article>
-        <article class="car" data-o="china">
-          <div class="car-img"><img src="img/zeekr.jpg" alt="Zeekr 9X Black Edition" loading="lazy"></div>
-          <div class="car-meta"><h3>Zeekr 9X Black Edition</h3><span class="flag">Китай</span></div>
-          <p class="specs">2025 · Полная комплектация · Zeekr Charger Extra</p>
-          <p class="price">от <b>$100 000</b></p>
-          <a class="car-link" href="#contact" data-car="Zeekr 9X Black Edition">Запросить</a>
-        </article>
-        <article class="car" data-o="usa">
-          <div class="car-img"><img src="img/lexus.jpg" alt="Lexus GX F Sport" loading="lazy"></div>
-          <div class="car-meta"><h3>Lexus GX</h3><span class="flag">США</span></div>
-          <p class="specs">2022 · 35 000 км · 4.6L V8 · F Sport</p>
-          <p class="price">от <b>$73 000</b></p>
-          <a class="car-link" href="#contact" data-car="Lexus GX">Запросить</a>
-        </article>
-        <article class="car" data-o="china">
-          <div class="car-img"><img src="img/avatr.jpg" alt="Avatr 12 Ultra" loading="lazy"></div>
-          <div class="car-meta"><h3>Avatr 12 Ultra</h3><span class="flag">Китай</span></div>
-          <p class="specs">2026 · Гибрид 4WD · Чёрный / красный салон · E-Mirrors</p>
-          <p class="price">от <b>$53 000</b></p>
-          <a class="car-link" href="#contact" data-car="Avatr 12 Ultra">Запросить</a>
-        </article>
-        <article class="car" data-o="china">
-          <div class="car-img"><img src="img/changan.jpg" alt="Changan Qiyuan Q07" loading="lazy"></div>
-          <div class="car-meta"><h3>Changan Qiyuan Q07</h3><span class="flag">Китай</span></div>
-          <p class="specs">2025 · Model 215 · Flagship PLUS</p>
-          <p class="price">от <b>$26 000</b></p>
-          <a class="car-link" href="#contact" data-car="Changan Qiyuan Q07">Запросить</a>
-        </article>
-        <article class="car" data-o="usa">
-          <div class="car-img"><img src="img/jeep.jpg" alt="Jeep Compass Trailhawk" loading="lazy"></div>
-          <div class="car-meta"><h3>Jeep Compass Trailhawk</h3><span class="flag">США</span></div>
-          <p class="specs">2018 · 132 000 км · 4×4</p>
-          <p class="price">от <b>$13 000</b></p>
-          <a class="car-link" href="#contact" data-car="Jeep Compass Trailhawk">Запросить</a>
-        </article>
-      </div>
+    <div class="hero-img">
+      <img src="img/hero.jpg" alt="Mercedes-AMG в чёрном цвете в студии EVA Import">
     </div>
   </section>
 
-  <section class="feature" aria-label="Mercedes-AMG">
-    <div class="wrap">
-      <img src="img/amg2.jpg" alt="Mercedes-AMG в студии">
+  <section class="statement gut">
+    <p class="label">О нас</p>
+    <p class="big">Мы находим автомобиль там, где он лучше и честнее по цене, <em>и берём на себя всё остальное: море, таможню, документы.</em></p>
+  </section>
+
+  <section class="collection" id="collection">
+    <div class="col-head gut">
       <div>
-        <p class="eyebrow">Автомобиль месяца</p>
-        <h2>Mercedes-AMG. Мощь без компромиссов.</h2>
-        <p>2025 год, пробег 20 000 км, полный привод 4MATIC. Автомобиль из ОАЭ. Доставка в Ереван за 30–40 дней.</p>
-        <div class="spec-row">
-          <div><b>604</b><span>л.с., максимум</span></div>
-          <div><b>20 000</b><span>км пробега</span></div>
-          <div><b>AWD</b><span>4MATIC</span></div>
-        </div>
-        <div class="btns">
-          <a class="btn btn-primary" href="#contact" data-car="Mercedes-AMG">Запросить этот автомобиль</a>
-        </div>
+        <p class="label">Коллекция · 2026</p>
+        <h2>В наличии и в пути</h2>
+      </div>
+      <div class="filters" role="group" aria-label="Страна">
+        <button class="filter" aria-pressed="true" data-f="all" id="fl-all">Все</button>
+        <button class="filter" aria-pressed="false" data-f="uae" id="fl-uae">Дубай</button>
+        <button class="filter" aria-pressed="false" data-f="usa" id="fl-usa">США</button>
+        <button class="filter" aria-pressed="false" data-f="china" id="fl-china">Китай</button>
+      </div>
+    </div>
+    <div class="rail" id="rail" tabindex="0" aria-label="Автомобили">
+      <article class="car" data-o="uae">
+        <div class="car-img"><img src="img/hero.jpg" alt="Mercedes-AMG" loading="lazy"></div>
+        <div class="car-row"><h3>Mercedes-AMG</h3><span class="price">$130 000</span></div>
+        <p class="spec"><span class="origin">Дубай</span> · 2025 · 20 000 км · 4MATIC · до 604 л.с.</p>
+      </article>
+      <article class="car" data-o="china">
+        <div class="car-img"><img src="img/zeekr.jpg" alt="Zeekr 9X Black Edition" loading="lazy" style="object-position:40% 50%"></div>
+        <div class="car-row"><h3>Zeekr 9X Black Edition</h3><span class="price">$100 000</span></div>
+        <p class="spec"><span class="origin">Китай</span> · 2025 · полная комплектация</p>
+      </article>
+      <article class="car" data-o="usa">
+        <div class="car-img"><img src="img/lexus.jpg" alt="Lexus GX F Sport" loading="lazy"></div>
+        <div class="car-row"><h3>Lexus GX</h3><span class="price">$73 000</span></div>
+        <p class="spec"><span class="origin">США</span> · 2022 · 35 000 км · 4.6 V8 · F Sport</p>
+      </article>
+      <article class="car" data-o="china">
+        <div class="car-img"><img src="img/avatr.jpg" alt="Avatr 12 Ultra, салон" loading="lazy"></div>
+        <div class="car-row"><h3>Avatr 12 Ultra</h3><span class="price">$53 000</span></div>
+        <p class="spec"><span class="origin">Китай</span> · 2026 · гибрид 4WD · красный салон</p>
+      </article>
+      <article class="car" data-o="china">
+        <div class="car-img"><img src="img/changan.jpg" alt="Changan Qiyuan Q07" loading="lazy"></div>
+        <div class="car-row"><h3>Changan Qiyuan Q07</h3><span class="price">$26 000</span></div>
+        <p class="spec"><span class="origin">Китай</span> · 2025 · Flagship PLUS</p>
+      </article>
+      <article class="car" data-o="usa">
+        <div class="car-img"><img src="img/jeep.jpg" alt="Jeep Compass Trailhawk" loading="lazy"></div>
+        <div class="car-row"><h3>Jeep Compass Trailhawk</h3><span class="price">$13 000</span></div>
+        <p class="spec"><span class="origin">США</span> · 2018 · 132 000 км · 4×4</p>
+      </article>
+    </div>
+    <div class="rail-ctrl gut">
+      <span class="count"><b id="cur">01</b> / <span id="tot">06</span></span>
+      <div class="arrows">
+        <button class="arrow" id="prev" aria-label="Назад">←</button>
+        <button class="arrow" id="next" aria-label="Вперёд">→</button>
       </div>
     </div>
   </section>
 
-  <section class="block process" id="process">
-    <div class="wrap">
-      <div class="head">
-        <div>
-          <p class="eyebrow">Как проходит импорт</p>
-          <h2>Шесть шагов от заявки до ключей</h2>
-        </div>
+  <section class="feature">
+    <div class="feature-img"><img src="img/amg-int.jpg" alt="Салон Mercedes-AMG: кожа с ромбовидной прострочкой" loading="lazy"></div>
+    <div class="feature-body gut">
+      <p class="label">Автомобиль месяца</p>
+      <h2>Mercedes-AMG.<br><em>Из Дубая.</em></h2>
+      <p>Полный привод 4MATIC, 2025 год, 20 000 километров. Путь до Еревана занимает 30–40 дней.</p>
+      <div class="figures">
+        <div><b>604</b><span>л.с.</span></div>
+        <div><b>2025</b><span>год</span></div>
+        <div><b>40</b><span>дней</span></div>
       </div>
-      <div class="steps">
-        <div class="step"><span class="num">1</span><p class="sub">Мы находим ваш автомобиль</p><h3>Глобальный поиск</h3><p>Работаем напрямую с производителями, официальными дилерами и проверенными частными продавцами в трёх странах.</p></div>
-        <div class="step"><span class="num">2</span><p class="sub">Полное покрытие в пути</p><h3>Морское страхование</h3><p>Страховка от всех рисков на полную заявленную стоимость на время морской перевозки.</p></div>
-        <div class="step"><span class="num">3</span><p class="sub">Контейнер или RoRo</p><h3>Морская доставка</h3><p>Закрытый контейнер для максимальной защиты или RoRo для экономии. GPS-отслеживание в реальном времени.</p></div>
-        <div class="step"><span class="num">4</span><p class="sub">Пошлины и оформление</p><h3>Таможня</h3><p>Готовим все таможенные документы, проходим проверки и оплачиваем пошлины от вашего имени.</p></div>
-        <div class="step"><span class="num">5</span><p class="sub">От порта до вашей двери</p><h3>Перевозка по суше</h3><p>Закрытый автовоз от порта прибытия до указанного вами адреса.</p></div>
-        <div class="step"><span class="num">6</span><p class="sub">Ваш автомобиль прибыл</p><h3>Передача</h3><p>Полный осмотр, помощь с регистрацией и передача автомобиля с полным пакетом документов.</p></div>
-      </div>
+      <a class="link" href="#request" data-car="Mercedes-AMG">Запросить автомобиль</a>
     </div>
   </section>
 
-  <section class="block facts" aria-label="Сроки и цифры">
-    <div class="wrap">
+  <section class="details" aria-label="Детали">
+    <figure><img src="img/amg-console.jpg" alt="Центральная консоль Mercedes-AMG" loading="lazy"><figcaption>Mercedes-AMG</figcaption></figure>
+    <figure><img src="img/lexus-rear.jpg" alt="Lexus GX, вид сзади" loading="lazy"><figcaption>Lexus GX</figcaption></figure>
+    <figure><img src="img/jeep.jpg" alt="Jeep Compass Trailhawk" loading="lazy" style="object-position:30% 50%"><figcaption>Jeep Trailhawk</figcaption></figure>
+  </section>
+
+  <section class="journey gut" id="journey">
+    <div class="journey-grid">
       <div>
-        <p class="eyebrow">Сроки доставки</p>
-        <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.08;margin:10px 0 24px">Сколько ждать автомобиль</h2>
-        <table class="transit">
-          <tbody>
-            <tr><th scope="row">Китай</th><td>30–45 дней</td></tr>
-            <tr><th scope="row">ОАЭ · Дубай</th><td>30–40 дней</td></tr>
-            <tr><th scope="row">США</th><td>2–4 месяца</td></tr>
-          </tbody>
-        </table>
+        <p class="label">Импорт</p>
+        <h2>От заявки до ключей</h2>
       </div>
-      <div class="stats">
-        <div class="stat"><b>3000+</b><span>автомобилей импортировано</span></div>
-        <div class="stat"><b>98%</b><span>клиентов возвращаются</span></div>
-        <div class="stat"><b>3</b><span>страны закупки</span></div>
-        <div class="stat"><b>2018</b><span>год основания</span></div>
-      </div>
+      <ol class="steps">
+        <li><div><h3>Поиск</h3><p>Работаем напрямую с производителями, официальными дилерами и проверенными частными продавцами в трёх странах.</p></div></li>
+        <li><div><h3>Страхование</h3><p>Страховка от всех рисков на полную стоимость автомобиля на время морской перевозки.</p></div></li>
+        <li><div><h3>Морская доставка</h3><p>Закрытый контейнер для максимальной защиты или RoRo для экономии. Отслеживание по GPS.</p></div></li>
+        <li><div><h3>Таможня</h3><p>Готовим документы, проходим проверки и оплачиваем пошлины от вашего имени.</p></div></li>
+        <li><div><h3>Доставка до двери</h3><p>Закрытый автовоз от порта прибытия до вашего адреса.</p></div></li>
+        <li><div><h3>Передача</h3><p>Осмотр, помощь с регистрацией и полный пакет документов вместе с ключами.</p></div></li>
+      </ol>
     </div>
   </section>
 
-  <section class="block" id="services" style="padding-top:0">
-    <div class="wrap">
-      <div class="head">
-        <div>
-          <p class="eyebrow">Услуги</p>
-          <h2>Выберите формат работы</h2>
-        </div>
-      </div>
-      <div class="services">
-        <div class="service"><h3>Импорт под ключ</h3><p>Поиск, проверка, доставка, таможня и регистрация. Вы получаете готовый автомобиль.</p></div>
-        <div class="service"><h3>Только поиск</h3><p>Подбираем и проверяем автомобиль за границей, дальше вы решаете сами.</p></div>
-        <div class="service"><h3>Морское страхование</h3><p>Покрытие полной стоимости автомобиля на время перевозки.</p></div>
-        <div class="service"><h3>Доставка по суше</h3><p>Закрытый автовоз от порта до вашего адреса.</p></div>
-      </div>
+  <section class="origins gut">
+    <p class="label">Сроки доставки</p>
+    <div class="origins-grid">
+      <div class="o"><h3>Дубай</h3><b>30–40<small>дней</small></b><p>Самый быстрый путь для премиальных моделей.</p></div>
+      <div class="o"><h3>Китай</h3><b>30–45<small>дней</small></b><p>Новые электромобили и гибриды: Zeekr, Avatr, Changan.</p></div>
+      <div class="o"><h3>США</h3><b>2–4<small>месяца</small></b><p>Внедорожники и автомобили с пробегом.</p></div>
+    </div>
+    <div class="trust">
+      <div><b>2018</b><span>год основания</span></div>
+      <div><b>3000+</b><span>автомобилей доставлено</span></div>
+      <div><b>98%</b><span>клиентов возвращаются</span></div>
+      <div><b>24 ч</b><span>ответ на заявку</span></div>
     </div>
   </section>
 
-  <section class="contact" id="contact">
-    <div class="wrap">
+  <section class="request" id="request">
+    <div class="request-img"><img src="img/lexus.jpg" alt="Lexus GX в студии" loading="lazy"></div>
+    <div class="request-body gut">
       <div>
-        <p class="eyebrow">Заявка на импорт</p>
+        <p class="label">Частный запрос</p>
         <h2>Расскажите, какой автомобиль вы ищете</h2>
-        <p>Специалист свяжется с вами в течение 24 часов. Обычно отвечаем быстрее, чем за 2 часа.</p>
-        <div class="direct">
-          <div><span>Телефон</span><strong>+374 95 090 701</strong></div>
-          <div><span>Адрес</span><strong>Ереван, ул. Арама Хачатряна, 25</strong></div>
-          <div><span>Часы работы</span><strong>Пн–Сб, 8:00–20:00</strong></div>
-        </div>
       </div>
+      <p class="sub">Персональный менеджер свяжется с вами в течение 24 часов.</p>
       <form id="lead" novalidate>
-        <div class="field"><label for="f-name">Имя и фамилия</label><input id="f-name" name="name" autocomplete="name" value="Арам Петросян" required></div>
-        <div class="field"><label for="f-phone">Телефон</label><input id="f-phone" name="phone" type="tel" autocomplete="tel" value="+374 91 000 000" required></div>
-        <div class="field"><label for="f-car">Модель</label><input id="f-car" name="car" placeholder="Например, Mercedes-AMG GLE" value="Mercedes-AMG"></div>
-        <div class="field"><label for="f-origin">Откуда везти</label>
-          <select id="f-origin" name="origin">
-            <option>Не важно</option><option>Китай</option><option selected>ОАЭ</option><option>США</option>
-          </select>
+        <div class="f"><label for="f-name">Имя</label><input id="f-name" autocomplete="name" value="Арам Петросян"></div>
+        <div class="f"><label for="f-phone">Телефон</label><input id="f-phone" type="tel" autocomplete="tel" value="+374 91 000 000"></div>
+        <div class="f"><label for="f-car">Автомобиль</label><input id="f-car" value="Mercedes-AMG"></div>
+        <div class="f"><label for="f-origin">Откуда</label>
+          <select id="f-origin"><option>Не важно</option><option selected>Дубай</option><option>США</option><option>Китай</option></select>
         </div>
-        <div class="field full"><label for="f-notes">Пожелания</label><textarea id="f-notes" name="notes">Год от 2024, бюджет до $140 000, чёрный цвет.</textarea></div>
-        <div class="form-foot">
-          <button class="btn btn-primary" type="submit">Отправить заявку</button>
-          <p class="note">Поля заполнены для примера.</p>
+        <div class="f wide"><label for="f-notes">Пожелания</label><textarea id="f-notes">Чёрный, от 2024 года, бюджет до $140 000.</textarea></div>
+        <div class="submit-row">
+          <button class="btn-solid" type="submit">Отправить запрос</button>
+          <p class="fine">Поля заполнены для примера</p>
         </div>
-        <p class="ok" id="ok" hidden>Прототип: на рабочем сайте здесь заявка уйдёт менеджеру. Отсюда ничего не отправляется.</p>
+        <p class="ok" id="ok" hidden>Это прототип: на рабочем сайте запрос уйдёт менеджеру. Отсюда ничего не отправляется.</p>
       </form>
+      <div class="contact-line">
+        <div><span class="label">Телефон</span><strong>+374 95 090 701</strong></div>
+        <div><span class="label">Салон</span><strong>Ереван, Арама Хачатряна, 25</strong></div>
+      </div>
     </div>
   </section>
 </main>
 
-<footer>
-  <div class="wrap">
-    <div class="foot-cols">
-      <div>
-        <span class="logo-mark" style="display:inline-block"><img src="img/logo.png" alt="EVA Import" style="height:34px;width:auto"></span>
-        <p style="margin:16px 0 0;max-width:34ch">Лицензированный импортёр автомобилей из США, ОАЭ и Китая. Ереван, с 2018 года.</p>
-      </div>
-      <div><h4>Модели</h4><ul><li><a href="#models">Китай</a></li><li><a href="#models">ОАЭ</a></li><li><a href="#models">США</a></li></ul></div>
-      <div><h4>Услуги</h4><ul><li><a href="#services">Импорт под ключ</a></li><li><a href="#services">Только поиск</a></li><li><a href="#services">Страхование</a></li><li><a href="#services">Доставка по суше</a></li></ul></div>
-      <div><h4>Компания</h4><ul><li><a href="#process">Как мы работаем</a></li><li><a href="#contact">Контакты</a></li></ul></div>
-    </div>
-    <div class="foot-bottom"><span>© 2026 EVA Import. Все права защищены.</span><span>Прототип дизайна</span></div>
+<footer class="gut">
+  <div class="foot-top">
+    <div class="foot-word" aria-hidden="true">EVA</div>
+    <nav class="foot-nav" aria-label="Нижнее меню">
+      <a href="#collection">Коллекция</a><a href="#journey">Импорт</a><a href="#request">Запрос</a>
+    </nav>
   </div>
+  <div class="foot-bot"><span>© 2026 EVA Import · Ереван</span><span>Пн–Сб · 8:00–20:00</span></div>
 </footer>
 
 <script>
   (function () {
-    var tabs = document.querySelectorAll('.tab');
-    var cars = document.querySelectorAll('.car');
-    tabs.forEach(function (t) {
-      t.addEventListener('click', function () {
-        tabs.forEach(function (x) { x.setAttribute('aria-selected', x === t ? 'true' : 'false'); });
-        var f = t.dataset.f;
+    var rail = document.getElementById('rail');
+    var cars = Array.prototype.slice.call(rail.querySelectorAll('.car'));
+    var cur = document.getElementById('cur'), tot = document.getElementById('tot');
+    function visible() { return cars.filter(function (c) { return !c.hidden; }); }
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    function update() {
+      var v = visible(), left = rail.scrollLeft, idx = 0;
+      v.forEach(function (c, i) { if (c.offsetLeft - rail.offsetLeft - 40 <= left) idx = i; });
+      cur.textContent = pad(Math.min(idx + 1, v.length)); tot.textContent = pad(v.length);
+    }
+    function step(dir) {
+      var c = visible()[0]; if (!c) return;
+      rail.scrollBy({ left: dir * (c.getBoundingClientRect().width + 28), behavior: 'smooth' });
+    }
+    document.getElementById('prev').addEventListener('click', function () { step(-1); });
+    document.getElementById('next').addEventListener('click', function () { step(1); });
+    rail.addEventListener('scroll', function () { window.requestAnimationFrame(update); }, { passive: true });
+    document.querySelectorAll('.filter').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.filter').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+        var f = b.dataset.f;
         cars.forEach(function (c) { c.hidden = !(f === 'all' || c.dataset.o === f); });
+        rail.scrollLeft = 0; update();
       });
     });
     document.querySelectorAll('[data-car]').forEach(function (a) {
       a.addEventListener('click', function () { document.getElementById('f-car').value = a.dataset.car; });
     });
     document.getElementById('lead').addEventListener('submit', function (e) {
-      e.preventDefault();
-      document.getElementById('ok').hidden = false;
+      e.preventDefault(); document.getElementById('ok').hidden = false;
     });
+    update();
   })();
 </script>

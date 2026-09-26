@@ -3,6 +3,7 @@ import { PermissionName, PrismaClient, RoleName } from '@prisma/client';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
 import { PaymentsController } from '../src/modules/payments/payments.controller';
 import { PayoutsController } from '../src/modules/payouts/payouts.controller';
+import { PartnerSettlementAdminController } from '../src/modules/partner-settlements/partner-settlement.controller';
 import { ReconciliationController } from '../src/modules/reconciliation/reconciliation.controller';
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { createCustomer, createPartner } from './setup/fixtures';
@@ -201,8 +202,37 @@ describe('Financial endpoint authorization (integration)', () => {
   // ── The right permission on the right route ───────────────────────────
 
   describe('permission requirements', () => {
-    it('demands PAYOUT_MANAGE to move money to a bank', () => {
+    it('has no legacy payout write route left to guard', () => {
+      // `request` / `confirm` / `fail` were the retired payout engine's routes
+      // (26.09.2026). A route that is merely gated can be reached by whoever
+      // holds the permission; these are gone from the controller altogether.
       for (const method of ['request', 'confirm', 'fail']) {
+        expect((payoutsController as unknown as Record<string, unknown>)[method]).toBeUndefined();
+      }
+    });
+
+    it('demands SETTLEMENT_MANAGE on every step that moves money to a bank', () => {
+      const controller = harness.app.get(PartnerSettlementAdminController);
+      for (const method of [
+        'draft',
+        'draftClosedPeriod',
+        'ready',
+        'approve',
+        'paymentPending',
+        'paid',
+        'failed',
+        'ambiguous',
+        'proposeReconciliation',
+        'confirmReconciliation',
+        'revokeApproval',
+        'cancel',
+      ]) {
+        expect(permissionsOn(controller, method)).toContain(PermissionName.SETTLEMENT_MANAGE);
+      }
+    });
+
+    it('demands PAYOUT_MANAGE to record money arriving from a partner', () => {
+      for (const method of ['recordCollection', 'confirmCollection']) {
         expect(permissionsOn(payoutsController, method)).toContain(PermissionName.PAYOUT_MANAGE);
       }
     });
@@ -232,9 +262,15 @@ describe('Financial endpoint authorization (integration)', () => {
   // ── Who holds what, by seeded role ────────────────────────────────────
 
   describe('seeded role grants', () => {
-    it('does not give ADMIN the ability to wire money out', async () => {
-      // Deliberate: a payout is the least reversible action on the platform
-      // and there is no maker-checker flow yet, so it stays with SUPER_ADMIN.
+    it('does not give ADMIN the ability to wire money out alone', async () => {
+      // Deliberate: `PAYOUT_MANAGE` (recording money against a partner's
+      // balance) stays with SUPER_ADMIN. `SETTLEMENT_MANAGE` — the one way
+      // money now reaches a partner's bank — *is* held by ADMIN, and that is
+      // the current seeded policy, pinned here rather than assumed: the
+      // settlement engine refuses the maker as checker, so no single ADMIN
+      // can draft and approve the same transfer (26.09.2026: recorded as an
+      // owner decision to confirm, since the retired payout engine's
+      // reasoning for SUPER_ADMIN-only was "no maker-checker flow yet").
       const adminRole = await prisma.role.findUniqueOrThrow({
         where: { name: RoleName.ADMIN },
         include: { permissions: { include: { permission: true } } },
@@ -245,6 +281,11 @@ describe('Financial endpoint authorization (integration)', () => {
       // asserts the *seed script's* intent rather than the harness fixture.
       const seedIntent = await import('../prisma/seed-permissions');
       expect(seedIntent.ROLE_PERMISSIONS.ADMIN).not.toContain(PermissionName.PAYOUT_MANAGE);
+      expect(seedIntent.ROLE_PERMISSIONS.ADMIN).toContain(PermissionName.SETTLEMENT_MANAGE);
+      expect(seedIntent.ROLE_PERMISSIONS.SUPER_ADMIN).toContain(PermissionName.SETTLEMENT_MANAGE);
+      // Partner-side roles never hold it: a payee who can move their own Net
+      // Position is not a payee.
+      expect(seedIntent.ROLE_PERMISSIONS.PARTNER_OWNER).not.toContain(PermissionName.SETTLEMENT_MANAGE);
       expect(seedIntent.ROLE_PERMISSIONS.ADMIN).toContain(PermissionName.PAYMENT_REFUND);
       expect(seedIntent.ROLE_PERMISSIONS.SUPER_ADMIN).toContain(PermissionName.PAYOUT_MANAGE);
       expect(held.length).toBeGreaterThan(0);

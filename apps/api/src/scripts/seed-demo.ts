@@ -452,13 +452,11 @@ async function main() {
   // rule on partner settlements. With one admin the rule is invisible — and a
   // control nobody has seen working is a control nobody trusts when it fires.
   //
-  // SUPER_ADMIN, not ADMIN: approving a settlement needs SETTLEMENT_MANAGE,
-  // which is deliberately not granted to ADMIN because wiring money to an
-  // external account is the least reversible action here. The consequence is
-  // worth stating plainly — running with dual control means the business
-  // needs *two* super administrators, or no settlement can ever be approved.
-  // An ADMIN approver looks like it should work and is refused by the
-  // permission guard before the two-person rule is even reached.
+  // The engine refuses the maker as checker, so the business needs *two*
+  // people holding SETTLEMENT_MANAGE (ADMIN or SUPER_ADMIN — see
+  // `role-permissions.ts`), or no settlement can ever be approved. This one
+  // is a SUPER_ADMIN so the demo also has a second holder of PAYOUT_MANAGE
+  // for confirming partner collections.
   const approver = await prisma.user.upsert({
     where: { phone: '+37400000001' },
     update: { passwordHash, mustChangePassword: false },
@@ -597,6 +595,17 @@ async function main() {
   const available = await payouts.availableBalance(cafe.id);
   if (available.greaterThan(0)) {
     const maker = admin?.id ?? owner.id;
+    // Approval snapshots where the money goes, so the café needs a bank
+    // account on file first — the same step a real partner goes through.
+    await prisma.partnerBankAccount.create({
+      data: {
+        partnerId: cafe.id,
+        beneficiaryName: 'Cafe Yerevan LLC',
+        accountNumber: 'AM00 0000 0000 0000 0117',
+        bankName: 'Demo Bank',
+        createdByUserId: maker,
+      },
+    });
     const draft = await settlements.createDraft({
       partnerId: cafe.id,
       actorId: maker,

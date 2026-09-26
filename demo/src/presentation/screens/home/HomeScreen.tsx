@@ -19,6 +19,7 @@ import { SectionHeader } from '../../components/SectionHeader';
 import { ListRow } from '../../components/ListRow';
 import { PartnerMark } from '../../components/PartnerMark';
 import { EmptyState } from '../../components/EmptyState';
+import { Surface } from '../../components/Surface';
 import { Skeleton } from '../../components/Skeleton';
 import { walletApi } from '../../../data/api/walletApi';
 import { transactionsApi } from '../../../data/api/transactionsApi';
@@ -37,7 +38,12 @@ export function HomeScreen({ navigation }: Props) {
   const { color, space, text, layout, radius } = useTheme();
   const { user } = useAuthStore();
 
-  const { data: wallet, isLoading: walletLoading } = useQuery({
+  const {
+    data: wallet,
+    isLoading: walletLoading,
+    isError: walletError,
+    refetch: refetchWallet,
+  } = useQuery({
     queryKey: ['wallet'],
     queryFn: walletApi.getMyWallet,
   });
@@ -71,12 +77,30 @@ export function HomeScreen({ navigation }: Props) {
         </View>
 
         <View style={{ paddingHorizontal: layout.screenPaddingX }}>
-          <BalanceCard
-            available={wallet?.availableBonus}
-            pending={wallet?.pendingBonus}
-            reserved={wallet?.reservedBonus}
-            loading={walletLoading}
-          />
+          {walletError ? (
+            // `BalanceCard` renders `available ?? 0`, so a failed request puts
+            // a confident "0 points" on the first screen of the app. A
+            // customer reading that has no way to tell it from having spent
+            // everything, and the balance is the number this whole product is
+            // about.
+            <Surface>
+              <EmptyState
+                title={t('common.error')}
+                message={t('common.somethingWentWrong')}
+                actionLabel={t('common.retry')}
+                onAction={() => {
+                  void refetchWallet();
+                }}
+              />
+            </Surface>
+          ) : (
+            <BalanceCard
+              available={wallet?.availableBonus}
+              pending={wallet?.pendingBonus}
+              reserved={wallet?.reservedBonus}
+              loading={walletLoading}
+            />
+          )}
         </View>
 
         {/* Unverified accounts can pay and charge, but cannot earn — the

@@ -1,13 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  Image,
-  LayoutChangeEvent,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { LayoutChangeEvent, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import {
@@ -179,8 +172,17 @@ export function TileMap({
             height: TILE_SIZE,
           }}
           // Tiles are opaque squares that tile exactly; fading each one in
-          // makes a screenful arrive as a visible patchwork.
-          fadeDuration={0}
+          // makes a screenful arrive as a visible patchwork. (`expo-image`
+          // spells React Native's `fadeDuration={0}` this way.)
+          transition={0}
+          // The reason this component uses `expo-image` at all. A pan or a
+          // zoom asks for a screenful of tiles, and returning to a tile
+          // already seen is the common case — React Native's `Image` gives a
+          // memory cache and, on iOS, little more, so every revisit went back
+          // over the network. These are immutable by URL: the same z/x/y is
+          // the same square forever, which is exactly what a disk cache is
+          // for, and it is also somebody's mobile data.
+          cachePolicy="memory-disk"
         />
       ))}
 

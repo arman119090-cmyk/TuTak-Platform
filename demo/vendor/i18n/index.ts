@@ -13,8 +13,6 @@ export const i18nResources = {
   hy: { translation: hy },
 } as const;
 
-export const translations = { en, ru, hy };
-
 export function isSupportedLocale(value: string): value is SupportedLocale {
   return (SUPPORTED_LOCALES as readonly string[]).includes(value);
 }

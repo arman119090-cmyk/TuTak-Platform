@@ -1,5 +1,12 @@
+import { AppEnvironment, resolveAppEnvironment } from './app-environment';
+import { ClientIpConfig, resolveClientIpConfig } from './client-ip';
 export interface AppConfig {
+  /** Node's own runtime mode. `production` for anything deployed, always. */
   nodeEnv: string;
+  /** Which deployment this is — see `config/app-environment.ts`. */
+  appEnv: AppEnvironment;
+  /** Where `req.ip` comes from — see `config/client-ip.ts`. */
+  clientIp: ClientIpConfig;
   /**
    * A public demonstration, running every production protection, on a fake
    * acquirer.
@@ -63,12 +70,34 @@ export interface AppConfig {
     baseUrl: string;
   };
   sms: {
+    /**
+     * Which carrier integration to use. `viva` is the Armenian Business Hub
+     * (template-based); `http` is the generic text-posting client.
+     */
+    driver: 'http' | 'viva';
     endpoint: string;
     authScheme: 'basic' | 'bearer';
     username: string;
     token: string;
     sender: string;
     encoding: 'form' | 'json';
+    viva: {
+      clientId: string;
+      clientSecret: string;
+      /** Name registered under Templates/Text in the Viva profile. */
+      templateName: string;
+      /** Ask Viva for Unicode where it can — required for Armenian text. */
+      sendUtf: boolean;
+      /** `national` | `msisdn` | `e164`. Required — see `missingVivaSettings`. */
+      numberFormat: string;
+      /** `bearer` | `header:<Name>` | `body:<field>` | `query:<param>`. */
+      tokenPlacement: string;
+      /** HMAC secret for the Contabo gateway. Empty = no gateway in front. */
+      gatewaySecret: string;
+    };
+    /** Platform-wide ceilings, counted across every flow — see `SmsBudgetService`. */
+    globalMaxPerHour: number;
+    globalMaxPerDay: number;
   };
   push: {
     enabled: boolean;
@@ -331,6 +360,8 @@ export default (): AppConfig => {
 
 const buildConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
+  appEnv: resolveAppEnvironment(process.env),
+  clientIp: resolveClientIpConfig(process.env),
   // Compared against the exact string, so an unset variable, an empty one,
   // `1`, or `yes` all leave it off. Something this consequential should
   // require someone to have typed the word.
@@ -426,12 +457,40 @@ const buildConfig = (): AppConfig => ({
     baseUrl: process.env.OCPI_BASE_URL ?? '',
   },
   sms: {
+    // `http` stays the default so an existing deployment's behaviour does not
+    // change by upgrading; Viva is opted into by name.
+    driver: (process.env.SMS_DRIVER as 'http' | 'viva') ?? 'http',
     endpoint: process.env.SMS_ENDPOINT ?? '',
     authScheme: (process.env.SMS_AUTH_SCHEME as 'basic' | 'bearer') ?? 'basic',
     username: process.env.SMS_USERNAME ?? '',
     token: process.env.SMS_TOKEN ?? '',
     sender: process.env.SMS_SENDER ?? 'TuTak',
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
+    viva: {
+      clientId: process.env.SMS_VIVA_CLIENT_ID ?? '',
+      clientSecret: process.env.SMS_VIVA_CLIENT_SECRET ?? '',
+      templateName: process.env.SMS_VIVA_TEMPLATE_NAME ?? '',
+      // Armenian does not fit GSM-7, and the code is useless inside a
+      // message the customer cannot read. On unless explicitly turned off.
+      sendUtf: process.env.SMS_VIVA_SEND_UTF !== '0',
+      // No fallback. An unset value fails the boot with the variable named,
+      // which is the only outcome better than delivering nothing silently.
+      numberFormat: process.env.SMS_VIVA_NUMBER_FORMAT ?? '',
+      // `bearer` is the shape an OAuth-style token pair implies, and is not
+      // stated anywhere by Viva. Changing it is an environment edit.
+      tokenPlacement: process.env.SMS_VIVA_TOKEN_PLACEMENT ?? 'bearer',
+      // Set when SMS_ENDPOINT points at the Contabo gateway rather than at
+      // Viva. Railway has no static outbound IP, so an allow-list cannot be
+      // the authentication — the request signs itself instead.
+      gatewaySecret: process.env.SMS_VIVA_GATEWAY_SECRET ?? '',
+    },
+    // Deliberately configuration, not a constant: the right ceiling depends
+    // on the carrier contract and the size of the user base, and an operator
+    // who has to edit code to raise it during an incident will instead turn
+    // the protection off. The defaults are sized for a pre-launch
+    // deployment, not for a live customer base.
+    globalMaxPerHour: parseInt(process.env.SMS_GLOBAL_MAX_PER_HOUR ?? '500', 10),
+    globalMaxPerDay: parseInt(process.env.SMS_GLOBAL_MAX_PER_DAY ?? '5000', 10),
   },
   push: {
     // Off by default so local development needs no Expo project. Production

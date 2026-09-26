@@ -72,7 +72,11 @@ export class PhoneVerificationService {
 
     // Unlike a password reset, the caller here is already authenticated, so a
     // delivery failure can be reported honestly — it reveals nothing.
-    await this.sms.send({ to: user.phone, body: `TuTak: your verification code is ${code}` });
+    await this.sms.send({
+      to: user.phone,
+      body: `TuTak: your verification code is ${code}`,
+      templateParams: [code],
+    });
 
     await this.notifications.send({
       userId,

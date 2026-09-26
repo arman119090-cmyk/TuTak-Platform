@@ -73,19 +73,3 @@ export interface BonusLotDto {
   expiresAt: string;
   createdAt: string;
 }
-
-export interface ReserveBonusRequestDto {
-  walletId: string;
-  amount: string;
-  reasonTransactionId: string;
-  holdSeconds?: number;
-}
-
-export interface SettleBonusRequestDto {
-  reservationId: string;
-}
-
-export interface ReleaseBonusRequestDto {
-  reservationId: string;
-  reason: string;
-}

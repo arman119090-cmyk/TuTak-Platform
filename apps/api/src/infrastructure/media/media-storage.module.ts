@@ -1,3 +1,5 @@
+import { isProductionDeployment } from '../../config/app-environment';
+import { assertProductionMediaPublicBaseUrl } from '../../config/public-base-url';
 import * as path from 'node:path';
 import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -42,8 +44,7 @@ import { S3MediaStorage } from './s3-media-storage';
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>): MediaStorage => {
         const media = config.get('media', { infer: true });
-        const nodeEnv = config.get('nodeEnv', { infer: true });
-        const isProduction = nodeEnv === 'production';
+        const isProduction = isProductionDeployment(config.get('appEnv', { infer: true }));
         const logger = new Logger('MediaStorage');
 
         if (isProduction && media.driver !== 's3') {
@@ -64,6 +65,14 @@ import { S3MediaStorage } from './s3-media-storage';
               'default is localhost.',
           );
         }
+        // Set is not the same as correct, and localhost is the value this one
+        // is most likely to be wrong *as*: it is the development default, and
+        // it is what gets typed to satisfy the check above on a platform whose
+        // public domain does not exist until the first deploy succeeds.
+        assertProductionMediaPublicBaseUrl(
+          process.env.MEDIA_PUBLIC_BASE_URL,
+          config.get('appEnv', { infer: true }),
+        );
 
         if (media.driver === 's3') {
           const missing = (

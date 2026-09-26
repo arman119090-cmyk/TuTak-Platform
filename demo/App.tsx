@@ -15,9 +15,25 @@ import { SplashScreen } from './src/presentation/screens/SplashScreen';
 import { useAuthStore } from './src/data/stores/authStore';
 import { usePushRegistration } from './src/app/usePushRegistration';
 import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
+import { OfflineBanner } from './src/presentation/components/OfflineBanner';
+import { startNetworkStateTracking } from './src/data/network/networkState';
 
+/**
+ * `mutations.retry: 0` is the library default and is stated here anyway.
+ *
+ * A retried mutation is a second purchase, a second bonus accrual and a
+ * second settlement obligation — a timeout means the request may well have
+ * been received and only the answer lost. That must stay a person's decision,
+ * so the value is written down where anyone changing retry policy will see it
+ * rather than left to a default that could move in a future major version.
+ * `src/data/network/networkFailure.ts` holds the same rule for anything that
+ * retries outside Query.
+ */
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 30_000 },
+    mutations: { retry: 0 },
+  },
 });
 
 function Root() {
@@ -70,6 +86,13 @@ function Root() {
   // chance of being allowed.
   usePushRegistration();
 
+  // One subscription for the whole app: it drives both the banner below and
+  // TanStack Query's own online state, so a paused query and the message on
+  // screen cannot contradict each other. Stopped on unmount — an app-level
+  // listener that outlives the app is exactly the kind of handle that only
+  // surfaces as a stuck test run.
+  useEffect(() => startNetworkStateTracking(), []);
+
   // One latch, not two. This used to also require the store's `isHydrated`,
   // which is only raised on the success path — so any failure inside
   // hydration left both flags disagreeing and the splash screen up. `ready`
@@ -92,6 +115,9 @@ function Root() {
         last so nothing paints over it. Renders `null` in every build except
         the `diagnostic` profile — see `isDiagnosticBuild`.
       */}
+      {/* Above the navigator and below the diagnostic overlay: it must be
+          visible on every screen without taking the screen away. */}
+      <OfflineBanner />
       <DiagnosticOverlay />
     </NavigationContainer>
   );

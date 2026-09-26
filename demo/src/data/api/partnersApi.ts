@@ -1,4 +1,4 @@
-import type { NearbyPartnerDto, PartnerCategory, PartnerPublicDto } from '@tutak/shared-types';
+import type { FuelType, NearbyPartnerDto, PartnerCategory, PartnerPublicDto } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from './httpClient';
 
 export interface NearbyPartnersQuery {
@@ -6,6 +6,8 @@ export interface NearbyPartnersQuery {
   lng: number;
   radiusKm?: number;
   category?: PartnerCategory;
+  /** The "fuel" chip's own sub-filter — "Газ" or "Бензин". Overrides `category` server-side. */
+  fuelType?: FuelType;
   /** Free text over the partner's name, the branch, and the street. */
   q?: string;
 }
@@ -26,6 +28,7 @@ export const partnersApi = {
         lng: query.lng,
         radiusKm: query.radiusKm ?? 10,
         ...(query.category ? { category: query.category } : {}),
+        ...(query.fuelType ? { fuelType: query.fuelType } : {}),
         ...(query.q?.trim() ? { q: query.q.trim() } : {}),
       },
     });

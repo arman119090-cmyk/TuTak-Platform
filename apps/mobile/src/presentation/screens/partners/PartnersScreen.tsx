@@ -24,6 +24,7 @@ import { FuelType, PartnerCategory as PartnerCategoryEnum } from '@tutak/shared-
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { MainTabParamList, RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
+import { useTabBarSpace } from '../../components/useTabBarSpace';
 import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
@@ -81,6 +82,7 @@ type MapItem =
 export function PartnersScreen() {
   const { t } = useTranslation();
   const { color, space, text, radius, glass } = useTheme();
+  const tabBarSpace = useTabBarSpace();
   const route = useRoute<PartnersRoute>();
   const navigation = useNavigation<Nav>();
   const queryClient = useQueryClient();
@@ -250,7 +252,9 @@ export function PartnersScreen() {
       <ScrollView
         ref={listRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: space[10] }}
+        // `Screen scroll={false}`, so this list owns its own bottom room —
+        // 64 points of it, which is less than the tab bar is tall.
+        contentContainerStyle={{ paddingBottom: tabBarSpace }}
         showsVerticalScrollIndicator={false}
       >
         <TileMap

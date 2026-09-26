@@ -1,6 +1,6 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
-import { render, screen } from '@testing-library/react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
+import { act, render, screen } from '@testing-library/react-native';
 import { KeyboardAwareScroll, scrollTargetFor, shouldIssueScroll } from './KeyboardAwareScroll';
 import { TextField } from './TextField';
 import { ThemeProvider } from '../../app/theme/ThemeProvider';
@@ -26,14 +26,53 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
-const renderScroll = () =>
+const renderScroll = (contentContainerStyle?: Record<string, unknown>) =>
   render(
     <ThemeProvider>
-      <KeyboardAwareScroll>
+      <KeyboardAwareScroll contentContainerStyle={contentContainerStyle}>
         <Text>content</Text>
       </KeyboardAwareScroll>
     </ThemeProvider>,
   );
+
+/** The content style the ScrollView actually received, flattened. */
+const contentStyle = () =>
+  Object.assign(
+    {},
+    ...[screen.UNSAFE_getByType(ScrollView).props.contentContainerStyle].flat().filter(Boolean),
+  );
+
+/**
+ * The handlers the component registered, captured from `Keyboard.addListener`
+ * itself rather than emitted through the event system — `Keyboard.emit` is not
+ * part of the public surface and does not exist in this version. Capturing the
+ * registration also asserts that it happened at all.
+ */
+const listeners: Record<string, (event: unknown) => void> = {};
+
+beforeEach(() => {
+  for (const key of Object.keys(listeners)) delete listeners[key];
+  jest.spyOn(Keyboard, 'addListener').mockImplementation(((
+    event: string,
+    handler: (payload: unknown) => void,
+  ) => {
+    listeners[event] = handler;
+    return { remove: () => delete listeners[event] };
+  }) as unknown as typeof Keyboard.addListener);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+/** Fires the system's own keyboard event, the way Android reports it. */
+function showKeyboard(height: number) {
+  act(() => listeners.keyboardDidShow?.({ endCoordinates: { height } }));
+}
+
+function hideKeyboard() {
+  act(() => listeners.keyboardDidHide?.({}));
+}
 
 /**
  * Jest runs as iOS by default, which is exactly the platform where the old
@@ -108,6 +147,55 @@ describe('KeyboardAwareScroll', () => {
     expect(content.flex).toBeUndefined();
   });
 
+  /**
+   * The reason a short form was unusable.
+   *
+   * Edge-to-edge Android does not resize the window for the keyboard, and
+   * `flexGrow: 1` makes a form shorter than the window exactly one window
+   * tall — so there is nothing to scroll, and a submit button under the
+   * keyboard stays there however hard anyone swipes. Growing the content by
+   * the keyboard's own height is what gives the list somewhere to go.
+   */
+  it('grows the content by the keyboard height so a short form can scroll clear', () => {
+    asPlatform('android', () => {
+      renderScroll();
+      expect(contentStyle().paddingBottom ?? 0).toBe(0);
+
+      showKeyboard(320);
+      expect(contentStyle().paddingBottom).toBe(320);
+
+      hideKeyboard();
+      expect(contentStyle().paddingBottom ?? 0).toBe(0);
+    });
+  });
+
+  it('adds to the padding a screen asked for rather than replacing it', () => {
+    // Every auth screen passes `paddingBottom: 40`. Overwriting it would
+    // *reduce* clearance at the moment more of it is needed.
+    asPlatform('android', () => {
+      renderScroll({ paddingBottom: 40 });
+      expect(contentStyle().paddingBottom).toBe(40);
+
+      showKeyboard(320);
+      expect(contentStyle().paddingBottom).toBe(360);
+    });
+  });
+
+  it('ignores a repeated report of the same height', () => {
+    // Android reports the height several times per appearance — approximate,
+    // corrected, then again for the suggestion strip. Each identical report
+    // must not be a re-render.
+    asPlatform('android', () => {
+      renderScroll();
+      showKeyboard(320);
+      showKeyboard(320.4);
+      expect(contentStyle().paddingBottom).toBe(320);
+
+      // A real change still moves.
+      showKeyboard(280);
+      expect(contentStyle().paddingBottom).toBe(280);
+    });
+  });
 });
 
 /**

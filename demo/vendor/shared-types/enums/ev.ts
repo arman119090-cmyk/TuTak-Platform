@@ -26,17 +26,11 @@ export enum EvSessionStatus {
   AUTHORIZED = 'AUTHORIZED',
   CHARGING = 'CHARGING',
   SUSPENDED = 'SUSPENDED',
+  /** Stopped, awaiting the roaming CPO's own trusted CDR before it can be billed. */
+  AWAITING_SETTLEMENT = 'AWAITING_SETTLEMENT',
   COMPLETED = 'COMPLETED',
   INVALID = 'INVALID',
   CANCELLED = 'CANCELLED',
-}
-
-export enum EvReservationStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  CANCELLED = 'CANCELLED',
-  EXPIRED = 'EXPIRED',
-  FULFILLED = 'FULFILLED',
 }
 
 /**

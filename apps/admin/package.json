@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest && node --test api-base-url.test.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "10.72.0",

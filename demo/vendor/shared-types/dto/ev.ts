@@ -1,11 +1,5 @@
 import type { PartnerBrandDto } from './media';
-import {
-  EvConnectorStatus,
-  EvConnectorType,
-  EvReservationStatus,
-  EvSessionStatus,
-  EvStationProvider,
-} from '../enums/ev';
+import { EvConnectorStatus, EvConnectorType, EvSessionStatus, EvStationProvider } from '../enums/ev';
 
 export interface EvStationDto {
   id: string;
@@ -90,18 +84,3 @@ export interface EvSessionDto {
   partnerBrand?: PartnerBrandDto | null;
 }
 
-/** See StartEvSessionRequestDto on why there is no `userId`. */
-export interface CreateEvReservationRequestDto {
-  connectorId: string;
-  startAt: string;
-  holdMinutes?: number;
-}
-
-export interface EvReservationDto {
-  id: string;
-  connectorId: string;
-  userId: string;
-  status: EvReservationStatus;
-  startAt: string;
-  expiresAt: string;
-}

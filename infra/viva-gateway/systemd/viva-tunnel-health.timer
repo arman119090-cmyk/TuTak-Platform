@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the Viva tunnel state file
+
+[Timer]
+# Every 30s, and the gateway treats a file older than 120s as down — so a
+# stopped timer fails closed rather than freezing the last good answer.
+OnBootSec=15s
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

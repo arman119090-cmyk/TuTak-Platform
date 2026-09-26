@@ -1,6 +1,4 @@
 import type {
-  CreateEvReservationRequestDto,
-  EvReservationDto,
   EvSessionDto,
   EvStationDto,
   StartEvSessionRequestDto,
@@ -18,16 +16,6 @@ export const evApi = {
     const { data } = await httpClient.get<ApiEnvelope<EvStationDto[]>>('/ev/stations/nearby', {
       params: { lat, lng, radiusKm },
     });
-    return data.data;
-  },
-
-  async createReservation(dto: CreateEvReservationRequestDto) {
-    const { data } = await httpClient.post<ApiEnvelope<EvReservationDto>>('/ev/reservations', dto);
-    return data.data;
-  },
-
-  async myReservations() {
-    const { data } = await httpClient.get<ApiEnvelope<EvReservationDto[]>>('/ev/reservations/me');
     return data.data;
   },
 

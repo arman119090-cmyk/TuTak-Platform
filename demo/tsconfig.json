@@ -7,7 +7,8 @@
     "paths": {
       "@tutak/design": ["vendor/design"],
       "@tutak/i18n": ["vendor/i18n"],
-      "@tutak/shared-types": ["vendor/shared-types"]
+      "@tutak/shared-types": ["vendor/shared-types"],
+      "@tutak/observability": ["vendor/observability"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

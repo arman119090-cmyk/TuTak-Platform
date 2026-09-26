@@ -26,6 +26,21 @@ import { CookieOptions, Request, Response } from 'express';
  * never sends this cookie to the API, and refresh cannot work at all — not
  * intermittently, never.
  *
+ * **Railway is the same shape and needs the same answer.** Its generated
+ * hostnames are `<service>.up.railway.app`, and `railway.app` is on the
+ * Public Suffix List too, so an API on one `*.up.railway.app` name and a
+ * dashboard on another are cross-site exactly as on Render. Left at the
+ * `strict` default there, signing in appears to work and then the session
+ * dies at the first refresh — the access token simply expires and the user is
+ * bounced to the login screen, with nothing in any log to say why. So a
+ * Railway deployment on generated domains must set
+ * `AUTH_COOKIE_SAMESITE=none`.
+ *
+ * Custom domains are the way out of the trade-off rather than a detail: put
+ * the API and the dashboards under one registrable domain (`api.example.com`
+ * and `admin.example.com` are two subdomains of `example.com`, which is *not*
+ * a public suffix) and `strict` works, keeping the CSRF protection it buys.
+ *
  * So the mode is configurable, the default stays `strict`, and `none` (the
  * only value that works cross-site) forces `Secure` because browsers reject
  * `SameSite=None` without it. Choosing `none` gives up the CSRF protection

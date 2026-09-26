@@ -1,7 +1,8 @@
-import React, { useEffect, useReducer } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getEvents, resetEvents, subscribe } from './eventLog';
 import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
+import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
 
 /**
  * The event log, on the screen, in a screenshot.
@@ -31,6 +32,10 @@ import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
  */
 export function DiagnosticOverlay() {
   const [, bump] = useReducer((n: number) => n + 1, 0);
+  // The probe's own result, shown beside the button. Deliberately not routed
+  // through the event log: that log is the app talking about itself, and
+  // this is the operator's own action reporting back.
+  const [probe, setProbe] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
   useEffect(() => subscribe(bump), []);
 
@@ -46,9 +51,32 @@ export function DiagnosticOverlay() {
           <Text style={styles.header}>
             {buildCommit()} · win {Math.round(width)}×{Math.round(height)}
           </Text>
-          <Pressable onPress={resetEvents} hitSlop={12}>
-            <Text style={styles.clear}>CLEAR</Text>
-          </Pressable>
+          <View style={styles.actions}>
+            {/* Absent unless this is a diagnostic build of a non-production
+                environment — see sentryProbe.ts for why both must hold. */}
+            {isSentryProbeAvailable() ? (
+              <Pressable
+                onPress={() => {
+                  setProbe('sending');
+                  void runSentryProbe().then((outcome) =>
+                    setProbe(outcome === 'sent' ? 'sent' : 'failed'),
+                  );
+                }}
+                hitSlop={12}
+              >
+                <Text style={styles.clear}>
+                  {probe === 'idle'
+                    ? 'SENTRY'
+                    : probe === 'sending'
+                      ? 'SENDING'
+                      : probe.toUpperCase()}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable onPress={resetEvents} hitSlop={12}>
+              <Text style={styles.clear}>CLEAR</Text>
+            </Pressable>
+          </View>
         </View>
 
         {events.length === 0 ? (
@@ -81,6 +109,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   header: { color: '#39FF14', fontSize: 11, fontWeight: '700' },
   clear: { color: '#39FF14', fontSize: 11, fontWeight: '700' },
+  actions: { flexDirection: 'row', gap: 12 },
   empty: { color: '#888', fontSize: 11 },
   // Monospace so the timestamps line up and a repeating pattern is visible as
   // a shape rather than having to be read.

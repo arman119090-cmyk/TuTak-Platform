@@ -190,7 +190,13 @@ jobs:
         run: pnpm --filter @tutak/partner test
 
       - name: Build all applications
+        # The dashboards refuse to build without being told which API they are
+        # for: the value is baked into their Content-Security-Policy and no
+        # runtime variable can change it afterwards. This build is for the
+        # local stack, so it says so.
         run: pnpm build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/v1
 
   # The demo stack is only a real deliverable if the images actually build.
   # This job is the proof: it builds all three Dockerfiles the same way
@@ -231,6 +237,14 @@ jobs:
           context: .
           file: apps/admin/Dockerfile
           push: false
+          # The API this image is built to talk to, stated rather than left to
+          # a default. It decides the `connect-src` of the dashboard's
+          # Content-Security-Policy, which is fixed at build time — so an image
+          # built without it and then booted against the stack below serves a
+          # policy that forbids that stack's own API, and every login in the
+          # end-to-end suite is refused by the browser.
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
           # Loaded into the daemon under the name Compose derives for
           # this service, so the boot step below runs these exact
           # images instead of building them a second time.
@@ -245,6 +259,14 @@ jobs:
           context: .
           file: apps/partner/Dockerfile
           push: false
+          # The API this image is built to talk to, stated rather than left to
+          # a default. It decides the `connect-src` of the dashboard's
+          # Content-Security-Policy, which is fixed at build time — so an image
+          # built without it and then booted against the stack below serves a
+          # policy that forbids that stack's own API, and every login in the
+          # end-to-end suite is refused by the browser.
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/v1
           # Loaded into the daemon under the name Compose derives for
           # this service, so the boot step below runs these exact
           # images instead of building them a second time.
@@ -315,8 +337,17 @@ jobs:
           # the first try, the browser opened a file listing, and the failure
           # was reported as "the demo entry never appeared". Every run of this
           # step since it was added had been driving that listing.
+          #
+          # The title carries the environment suffix `app.config.js` gives every
+          # build that is not production — `TuTak (development)` here, since
+          # mobile-web-serve.sh exports with APP_ENV=development so that a
+          # loopback API is allowed. This asked for the bare `<title>TuTak</title>`
+          # and so never matched, and the loop ran its whole budget out on an app
+          # that had been up since the twentieth second. Still specific enough for
+          # the thing it is guarding against: what answered here once was a
+          # directory listing titled `Index of /`.
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8099/ | grep -q '<title>TuTak</title>'; then break; fi
+            if curl -fsS http://localhost:8099/ | grep -qE '<title>TuTak( \([^<]*\))?</title>'; then break; fi
             # Bundling is the slow half and the half that fails. Its log is
             # the only place that says why, so print it rather than reporting
             # a timeout with no cause.

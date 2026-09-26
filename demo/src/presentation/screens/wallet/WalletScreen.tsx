@@ -21,7 +21,12 @@ export function WalletScreen() {
   const { t } = useTranslation();
   const { color, space, text, radius } = useTheme();
 
-  const { data: wallet, isLoading } = useQuery({
+  const {
+    data: wallet,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ['wallet'],
     queryFn: walletApi.getMyWallet,
   });
@@ -45,6 +50,19 @@ export function WalletScreen() {
             <Skeleton width="45%" height={36} />
             <Skeleton width="100%" height={10} style={{ borderRadius: 999 }} />
           </View>
+        ) : isError ? (
+          // A failed wallet request leaves `wallet` undefined, and every
+          // `?? 0` below then renders a confident, wrong zero balance. On a
+          // loyalty app that is the one number a customer will believe and
+          // act on, so it must not be shown when it was never received.
+          <EmptyState
+            title={t('common.error')}
+            message={t('common.somethingWentWrong')}
+            actionLabel={t('common.retry')}
+            onAction={() => {
+              void refetch();
+            }}
+          />
         ) : (
           <>
             <Text style={[text.caption, { color: color.textSecondary }]}>

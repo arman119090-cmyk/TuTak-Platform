@@ -1,3 +1,4 @@
+import { isPublicDeployment } from '../../config/app-environment';
 import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
@@ -42,7 +43,7 @@ export function assertRedisUrlConfigured(opts: {
         const logger = new Logger('Redis');
 
         assertRedisUrlConfigured({
-          isProduction: config.get('nodeEnv', { infer: true }) === 'production',
+          isProduction: isPublicDeployment(config.get('appEnv', { infer: true })),
           hasExplicitUrl: Boolean(process.env.REDIS_URL),
           demoMode: config.get('demoMode', { infer: true }),
         });

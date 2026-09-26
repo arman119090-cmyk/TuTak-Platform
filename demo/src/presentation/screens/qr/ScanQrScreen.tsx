@@ -13,7 +13,8 @@ import { Surface } from '../../components/Surface';
 import { Button } from '../../components/Button';
 import { DemoOnly } from '../../components/DemoOnly';
 import { JakoWingMark } from '../../components/V2NavIcon';
-import { parsePartnerPayQr } from '../../utils/partnerPayQr';
+import { parseBranchQrToken, parsePartnerPayQr } from '../../utils/partnerPayQr';
+import { partnerBranchQrApi } from '../../../data/api/partnerBranchQrApi';
 
 /**
  * NEXT_CLAUDE_TASK.md requirement 1: scanning a partner's payment code opens
@@ -41,13 +42,39 @@ export function ScanQrScreen() {
 
   const handleScan = ({ data }: { data: string }) => {
     if (scanned) return;
+
+    // A fuel-station branch's own code carries no partner/branch id at
+    // all — only the server can say what it names, and an unresolvable
+    // token (revoked, unknown, or a since-closed branch) is a scan
+    // failure, never a fallback to the plain form below.
+    const branchToken = parseBranchQrToken(data);
+    if (branchToken) {
+      setScanned(true);
+      partnerBranchQrApi
+        .resolve(branchToken)
+        .then((resolved) => {
+          navigation.replace('CreatePurchaseIntent', {
+            partnerId: resolved.partnerId,
+            partnerBranchId: resolved.partnerBranchId,
+          });
+        })
+        .catch(() => {
+          setScanned(false);
+          setInvalid(true);
+        });
+      return;
+    }
+
     const parsed = parsePartnerPayQr(data);
     if (!parsed) {
       setInvalid(true);
       return;
     }
     setScanned(true);
-    navigation.replace('CreatePurchaseIntent', { partnerId: parsed.partnerId });
+    navigation.replace('CreatePurchaseIntent', {
+      partnerId: parsed.partnerId,
+      partnerBranchId: parsed.branchId,
+    });
   };
 
   const retry = () => {

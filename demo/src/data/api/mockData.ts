@@ -45,7 +45,6 @@ import {
  * Dates are computed relative to launch so nothing reads as stale.
  */
 
-const now = () => new Date();
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const daysAhead = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
@@ -65,6 +64,7 @@ export const MOCK_USER: AuthenticatedUserDto = {
   // neutral mark, which is what a real account without a photo shows.
   avatar: null,
   showAvatarInReferralList: false,
+  personalizedRecommendationsEnabled: false,
 };
 
 export function mockTokens() {
@@ -394,6 +394,9 @@ export function freshMockState(): MockState {
         distanceKm: 0.3,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-2',
@@ -409,6 +412,9 @@ export function freshMockState(): MockState {
         distanceKm: 2.9,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-3',
@@ -424,6 +430,9 @@ export function freshMockState(): MockState {
         distanceKm: 1.0,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-4',
@@ -439,6 +448,9 @@ export function freshMockState(): MockState {
         distanceKm: 1.0,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-5',
@@ -454,6 +466,9 @@ export function freshMockState(): MockState {
         distanceKm: 0.2,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-6',
@@ -469,6 +484,9 @@ export function freshMockState(): MockState {
         distanceKm: 0.8,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-7',
@@ -484,6 +502,9 @@ export function freshMockState(): MockState {
         distanceKm: 0.7,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-8',
@@ -499,6 +520,9 @@ export function freshMockState(): MockState {
         distanceKm: 0.7,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-9',
@@ -514,6 +538,9 @@ export function freshMockState(): MockState {
         distanceKm: 2.5,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-10',
@@ -529,6 +556,9 @@ export function freshMockState(): MockState {
         distanceKm: 2.4,
         logo: null,
         cover: null,
+        sellsGas: true,
+        sellsPetrol: true,
+        recommended: false,
       },
       {
         id: 'branch-11',
@@ -544,6 +574,9 @@ export function freshMockState(): MockState {
         distanceKm: 1.1,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
       {
         id: 'branch-12',
@@ -559,6 +592,9 @@ export function freshMockState(): MockState {
         distanceKm: 0.0,
         logo: null,
         cover: null,
+        sellsGas: false,
+        sellsPetrol: false,
+        recommended: false,
       },
     ],
 
@@ -757,5 +793,3 @@ export function freshMockState(): MockState {
     purchaseIntents: [],
   };
 }
-
-export { now };

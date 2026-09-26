@@ -29,17 +29,6 @@ export interface TransactionDto {
   updatedAt: string;
 }
 
-export interface TransactionHistoryQueryDto {
-  userId?: string;
-  partnerId?: string;
-  type?: TransactionType;
-  status?: TransactionStatus;
-  from?: string;
-  to?: string;
-  cursor?: string;
-  limit?: number;
-}
-
 export interface PaginatedResultDto<T> {
   items: T[];
   nextCursor: string | null;

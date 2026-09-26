@@ -25,11 +25,6 @@ export interface AuthTokensDto {
   refreshTokenExpiresAt: string;
 }
 
-export interface RefreshRequestDto {
-  refreshToken: string;
-  deviceId: string;
-}
-
 export interface AuthenticatedUserDto {
   id: string;
   phone: string;
@@ -53,6 +48,14 @@ export interface AuthenticatedUserDto {
    * toggle can render the truth rather than an optimistic guess.
    */
   showAvatarInReferralList: boolean;
+  /**
+   * Whether this customer opted in to nearby partners being ranked by their
+   * own purchase history. Default false — behavioural personalisation is
+   * off until the customer turns it on, same posture as
+   * `showAvatarInReferralList` above. Returned so Settings can render the
+   * truth rather than an optimistic guess.
+   */
+  personalizedRecommendationsEnabled: boolean;
 }
 
 export interface AuthResponseDto {

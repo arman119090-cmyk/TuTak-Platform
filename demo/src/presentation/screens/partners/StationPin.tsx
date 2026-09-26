@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../app/theme/ThemeProvider';
+import { mapPinStyles } from './mapPinStyles';
 
 /**
  * One TuTak charging station on the map.
@@ -26,11 +27,11 @@ export function StationPin({
   const anyFree = freeConnectors > 0;
 
   return (
-    <View style={styles.wrap} pointerEvents="none">
+    <View style={mapPinStyles.wrap} pointerEvents="none">
       {selected ? (
         <View
           style={[
-            styles.badge,
+            mapPinStyles.badge,
             {
               backgroundColor: anyFree ? color.availableFill : color.textTertiary,
               borderRadius: radius.full,
@@ -46,8 +47,8 @@ export function StationPin({
 
       <View
         style={[
-          styles.disc,
-          selected ? styles.discSelected : null,
+          mapPinStyles.disc,
+          selected ? mapPinStyles.discSelected : null,
           {
             backgroundColor: selected
               ? color.availableFill
@@ -66,25 +67,8 @@ export function StationPin({
       </View>
 
       <View
-        style={[styles.stem, { backgroundColor: selected ? color.availableFill : color.availableFill }]}
+        style={[mapPinStyles.stem, { backgroundColor: selected ? color.availableFill : color.availableFill }]}
       />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  // Matches PartnerPin's anchor exactly — 36 wide, stem tip at the bottom —
-  // so the two pin types line up on the same coordinate math in `TileMap`.
-  wrap: { width: 36, alignItems: 'center' },
-  disc: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  discSelected: { width: 34, height: 34, borderRadius: 17, borderWidth: 2 },
-  stem: { width: 2, height: 8 },
-  badge: { paddingHorizontal: 6, paddingVertical: 2 },
-});

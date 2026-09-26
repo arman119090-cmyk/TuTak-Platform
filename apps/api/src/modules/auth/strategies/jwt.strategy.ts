@@ -22,6 +22,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: config.get('jwt.accessSecret', { infer: true }),
+      // Pin the accepted algorithm. With a symmetric string secret the
+      // library already refuses `none` and any asymmetric algorithm, so this
+      // is defence in depth rather than a fix for a live hole — but it states
+      // the one algorithm we sign with explicitly, so no future change to how
+      // the secret is sourced can silently widen what a token may be signed
+      // with. Access tokens are minted HS256 (see AuthService.issueTokenPair).
+      algorithms: ['HS256'],
     });
   }
 

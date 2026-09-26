@@ -4,17 +4,21 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../../app/theme/ThemeProvider';
 
 /**
- * The one container in the system — a pane of frosted glass on a near-black
- * ground.
+ * The one container in the system — a near-white glass card on the app's
+ * light ground (see `light-premium.ts`'s own docblock: v2 is a light-only
+ * release, so this always renders that scheme, never the dark one `glass`/
+ * `glow` also support).
  *
- * Three things make it read as glass rather than as a grey box: a blur of
- * whatever is behind it, a 5%-white fill so the pane has substance, and a
- * 10%-white hairline along its edge. The border is the part people skip, and
- * it is the part that matters: without an edge, a blur is a smudge.
+ * Three things make it read as glass rather than as a plain white box: a
+ * blur of whatever is behind it, a faint ink-tinted fill so the pane has
+ * substance against a white ground, and a low-alpha hairline along its edge.
+ * The border is the part people skip, and it is the part that matters:
+ * without an edge, a blur is a smudge.
  *
- * Depth comes from a blue glow rather than a drop shadow. On #0A0A0F a grey
- * shadow is invisible — there is nothing darker to cast it onto — so the
- * light has to spill outward from the element instead of pooling under it.
+ * Depth comes from a conventional soft shadow rather than a glow — on white,
+ * a shadow pools under the element the way it would on paper; a glow only
+ * reads as "light spilling out" against a dark ground, which this theme no
+ * longer has.
  */
 export function Surface({
   children,

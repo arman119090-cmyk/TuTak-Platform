@@ -26,7 +26,12 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
+      # `production`, not `staging`: this is a network-reachable deployment,
+      # and every framework and guard that keys on NODE_ENV must take its
+      # production path here. Which deployment it is lives in APP_ENV.
       - key: NODE_ENV
+        value: production
+      - key: APP_ENV
         value: staging
       - key: PORT
         value: '4000'
@@ -52,7 +57,26 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
-      - key: TRUST_PROXY
+      # Where req.ip comes from. Render appends to X-Forwarded-For without
+      # stripping what the client sent, so the leftmost entry is forgeable and
+      # TRUST_PROXY (which names a proxy address) does not apply. Measure the
+      # hop count against the live service before setting these — an
+      # over-count selects an attacker-supplied address. Left unset, per-IP
+      # OTP limits stand down and the global SMS budget carries the load.
+      # See docs/RENDER_STAGING_RU.md.
+      - key: CLIENT_IP_STRATEGY
+        sync: false
+      - key: CLIENT_IP_TRUSTED_HOPS
+        sync: false
+      # Total messages this service may send, across every flow. The only
+      # limit that bounds the carrier bill rather than one attacker's reach.
+      - key: SMS_GLOBAL_MAX_PER_HOUR
+        sync: false
+      - key: SMS_GLOBAL_MAX_PER_DAY
+        sync: false
+      # Without a carrier every code send fails with a generic
+      # "temporarily unavailable" — never a code written to the log.
+      - key: SMS_ENDPOINT
         sync: false
       - key: SWEEPS_ENABLED
         value: 'true'
@@ -74,8 +98,14 @@ services:
         value: '3000'
       - key: APP_ENV
         value: staging
+      # Must reach the *build*, not just the running container: it fixes the
+      # `connect-src` of the Content-Security-Policy, which no runtime variable
+      # can change afterwards. The build now refuses rather than guessing, so a
+      # failed build with `ApiBaseUrlNotConfiguredError` means Render did not
+      # forward this into the Docker build — see docs/PRODUCTION_RUNBOOK_RU.md
+      # §3 for the two ways to supply it. Not a secret; a public API address.
       - key: NEXT_PUBLIC_API_BASE_URL
-        sync: false
+        value: https://tutak-staging-api.onrender.com/v1
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
@@ -100,8 +130,14 @@ services:
         value: '3001'
       - key: APP_ENV
         value: staging
+      # Must reach the *build*, not just the running container: it fixes the
+      # `connect-src` of the Content-Security-Policy, which no runtime variable
+      # can change afterwards. The build now refuses rather than guessing, so a
+      # failed build with `ApiBaseUrlNotConfiguredError` means Render did not
+      # forward this into the Docker build — see docs/PRODUCTION_RUNBOOK_RU.md
+      # §3 for the two ways to supply it. Not a secret; a public API address.
       - key: NEXT_PUBLIC_API_BASE_URL
-        sync: false
+        value: https://tutak-staging-api.onrender.com/v1
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
       - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT

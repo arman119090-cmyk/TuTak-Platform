@@ -270,7 +270,7 @@ export interface AppConfig {
     challengeSlotLimit: number;
   };
   /**
-   * Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md). Read by
+   * Partner Commerce (docs/PARTNER_COMMERCE.md). Read by
    * `CommissionRuleService` and the SLA sweeps in `sweeps.jobs.ts` —
    * nowhere else should hardcode one of these values.
    */

@@ -62,7 +62,7 @@ enum PermissionName {
   /// cashier) does this as their ordinary job, while only PARTNER_MANAGE
   /// reaches the negotiated rate and the bonus-payment cap.
   PURCHASE_INTENT_CONFIRM
-  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md): mark a
+  /// Partner Commerce (docs/PARTNER_COMMERCE.md): mark a
   /// PartnerOrder seen, confirm/reject stock. Same population and same
   /// reasoning as PURCHASE_INTENT_CONFIRM — every tier of staff does this as
   /// ordinary work.
@@ -1742,7 +1742,7 @@ model Partner {
   evMarginReferralCapPerKwh Decimal          @default(20.00) @db.Decimal(10, 2)
   status                    PartnerStatus    @default(ACTIVE)
   isActive                  Boolean          @default(true)
-  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md): whether an
+  /// Partner Commerce (docs/PARTNER_COMMERCE.md): whether an
   /// OUT_OF_STOCK order for this partner may be routed to TuTak's internal
   /// sourcing queue (spec §13) for an employee to look for the same item
   /// elsewhere. Spec §14's example is a toy shop that would rather refund an
@@ -3669,7 +3669,7 @@ enum AuditAction {
   /// (revoke + issue, recorded as both). See `PartnerBranchQrCode`.
   BRANCH_QR_ISSUED
   BRANCH_QR_REVOKED
-  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md) — every step of a
+  /// Partner Commerce (docs/PARTNER_COMMERCE.md) — every step of a
   /// PartnerOrder's life is independently auditable, same discipline as
   /// PURCHASE_INTENT_* above.
   PARTNER_ORDER_CREATED

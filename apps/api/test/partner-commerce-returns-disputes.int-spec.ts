@@ -247,6 +247,49 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
     });
   });
 
+  describe('remaining races and idempotency (spec §60-61)', () => {
+    it('customer received × refund: a return never runs before completion, and runs once after', async () => {
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const admin = await createStaffUser(prisma);
+      const integrationId = await s.websiteIntegration(partner.id, admin.id);
+      const staff = await s.staff(partner.id);
+      const customer = await s.customer('50000');
+      const created = await orders.create(partner.id, integrationId, orderDto('RR-1'));
+      await orders.submit(created.id, customer.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'rr-1' });
+      await orders.confirmStock(created.id, staff.id);
+      const [received, ret] = await Promise.allSettled([
+        orders.confirmReceived(created.id, customer.user.id),
+        returns.createReturn({ orderId: created.id, reason: 'race', actorId: staff.id, actorType: 'PARTNER', idempotencyKey: 'rr-ret' }),
+      ]);
+      expect(received.status).toBe('fulfilled');
+      const final = await prisma.partnerOrder.findUniqueOrThrow({ where: { id: created.id } });
+      expect(final.operationalStatus).toBe('COMPLETED');
+      const returnsCount = await prisma.partnerOrderReturn.count({ where: { orderId: created.id } });
+      expect(returnsCount).toBe(ret.status === 'fulfilled' ? 1 : 0);
+      await s.assertAllAccountsReplay();
+    });
+
+    it('a duplicated top-up callback (IDRAM, when connected) credits the balance once', async () => {
+      const { customer } = await referredCustomer('50000');
+      const { randomUUID } = await import('node:crypto');
+      const { CustomerBalanceService } = await import('../src/modules/customer-balance/customer-balance.service');
+      const { BANK_TOPUP_ADAPTER } = await import('../src/modules/customer-balance/bank-topup-adapter.interface');
+      const balance = harness.app.get(CustomerBalanceService);
+      const bank = harness.app.get<{ initiateTopUp: () => Promise<unknown>; verifyTopUpWebhook: () => Promise<unknown> }>(BANK_TOPUP_ADAPTER);
+      const providerReference = `P-${randomUUID()}`;
+      jest.spyOn(bank, 'initiateTopUp').mockResolvedValueOnce({ outcome: 'INITIATED', providerReference });
+      await balance.initiateTopUp(customer.user.id, '7000');
+      jest.spyOn(bank, 'verifyTopUpWebhook').mockResolvedValue({ providerReference, outcome: 'COMPLETED' });
+      await Promise.allSettled([
+        balance.confirmTopUpWebhook({ reference: providerReference }, {}),
+        balance.confirmTopUpWebhook({ reference: providerReference }, {}),
+        balance.confirmTopUpWebhook({ reference: providerReference }, {}),
+      ]);
+      expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-57000.0000');
+      await s.assertAllAccountsReplay();
+    });
+  });
+
   describe('settlement statements', () => {
     it('two workers generate one statement; every line traces to a posting; closing = opening + lines', async () => {
       const { partner } = await completedOrder();

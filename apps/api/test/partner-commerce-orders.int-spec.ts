@@ -374,6 +374,26 @@ describe('Partner Commerce — online orders (integration)', () => {
       await s.assertAllAccountsReplay();
     });
 
+    it('H: accepting the same price-increase proposal twice funds the difference once', async () => {
+      const { partner, admin, integrationId, staff } = await setup({ rateBps: 500 });
+      const customer = await s.customer('50000');
+      const created = await orders.create(partner.id, integrationId, orderDto('H-2b'));
+      await orders.submit(created.id, customer.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'h-2b' });
+      await orders.rejectStock(created.id, staff.id, {});
+      const task = await prisma.sourcingTask.findUniqueOrThrow({ where: { orderId: created.id } });
+      await sourcing.recordResult(task.id, { status: 'FOUND_EXACT', productName: 'Same pads', price: '31000' }, admin.id);
+      const proposal = (await orders.findByIdOrThrow(created.id)).adjustments[0]!;
+      await Promise.allSettled([
+        adjustments.accept(proposal.id, customer.user.id, { tutakMoneyAmount: '1000' }),
+        adjustments.accept(proposal.id, customer.user.id, { tutakMoneyAmount: '1000' }),
+      ]);
+      await adjustments.accept(proposal.id, customer.user.id, { tutakMoneyAmount: '1000' });
+      expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-19000.0000');
+      expect(await prisma.partnerOrderPaymentLeg.count({ where: { orderId: created.id, purpose: 'ADDITIONAL' } })).toBe(1);
+      await s.assertOrderInvariants(created.id);
+      await s.assertAllAccountsReplay();
+    });
+
     it('H: declining the proposal cancels with a full refund; not found cancels too', async () => {
       const { partner, admin, integrationId, staff } = await setup();
       const customer = await s.customer('60000');

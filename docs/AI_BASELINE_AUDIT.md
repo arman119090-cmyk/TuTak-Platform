@@ -13,7 +13,8 @@
   через OpenAI-совместимый `/chat/completions`:
   - Kimi (Moonshot): secret `KIMI_API_KEY`, переменные `KIMI_BASE_URL`
     (по умолчанию `https://api.moonshot.ai/v1`), `KIMI_MODEL`
-    (`kimi-k2-0905-preview`);
+    (`kimi-k3`; до 26.09 — `kimi-k2-0905-preview`: серия kimi-k2 снята с
+    обслуживания 25.05.2026, официальная рекомендация миграции — `kimi-k3`);
   - DeepSeek: secret `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`
     (`https://api.deepseek.com`), `DEEPSEEK_MODEL` (`deepseek-chat`).
 - `scripts/ai-review.mjs` — один sticky-комментарий на PR на модель

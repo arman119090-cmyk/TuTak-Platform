@@ -42,7 +42,8 @@ test.describe('QR payment loop', () => {
   test.use({ storageState: PARTNER_STATE });
 
   /**
-   * What the phone gets back from scanning the code on the table.
+   * What the phone gets back from scanning the code on the table — with
+   * the owner's shift at that branch open, so the till can confirm it.
    *
    * The owner reads their own branch's active QR — the same screen that
    * prints it — and the token is then resolved through the public endpoint
@@ -56,6 +57,11 @@ test.describe('QR payment loop', () => {
       `/partners/${partnerId}/branches`,
     );
     const branch = branches.find((b) => b.isActive)!;
+    // The person at the till opens their shift at this branch first —
+    // Partner Commerce (Q4): a cash-desk confirmation is taken on an active
+    // shift, and a partner seeded after the migration has no rollout window.
+    // The same call the dashboard's shift bar makes; idempotent per day.
+    await api(ownerToken, '/shifts/start', { method: 'POST', body: { branchId: branch.id } });
     const qr = await api<{ token: string }>(
       ownerToken,
       `/partners/${partnerId}/branches/${branch.id}/qr`,

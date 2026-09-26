@@ -824,7 +824,11 @@ export class PartnerOrdersService {
    */
   async cancelByCustomer(orderId: string, customerId: string, reason?: string) {
     const order = await this.findByIdOrThrow(orderId);
-    if (order.customerId !== customerId && !(order.customerId === null && order.operationalStatus === Op.DRAFT)) {
+    // Only the customer who confirmed the order can cancel it. An unclaimed
+    // DRAFT belongs to nobody yet: nothing was paid, it simply expires — and
+    // letting anyone holding the link cancel it would let a stranger kill
+    // somebody else's checkout.
+    if (order.customerId !== customerId) {
       throw new NotFoundException('Order not found');
     }
     if (order.operationalStatus === Op.CANCELLED) return order;

@@ -315,6 +315,11 @@ describe('Partner Commerce — online orders (integration)', () => {
       await expect(
         orders.submit(created.id, second.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'x-3b' }),
       ).rejects.toThrow(/not found/);
+      await expect(orders.cancelByCustomer(created.id, second.user.id)).rejects.toThrow(/not found/);
+      // Nor can anyone cancel an unclaimed checkout link they merely hold.
+      const draft = await orders.create(partner.id, integrationId, orderDto('X-3-draft'));
+      await expect(orders.cancelByCustomer(draft.id, second.user.id)).rejects.toThrow(/not found/);
+      expect((await prisma.partnerOrder.findUniqueOrThrow({ where: { id: draft.id } })).operationalStatus).toBe('DRAFT');
     });
   });
 

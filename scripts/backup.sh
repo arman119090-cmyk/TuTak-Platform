@@ -69,14 +69,20 @@ green "  ✓ wrote $SIZE"
 # file is a complete, non-truncated archive rather than the first half of
 # one written before the disk filled.
 info "Verifying the archive is readable"
-TABLES="$(pg_restore --list "$FILE" | grep -c 'TABLE DATA' || true)"
+# Read the table of contents once. Piping `pg_restore --list` straight into
+# `grep -q` looked right and was not: under `pipefail`, grep exits on the
+# first match and closes the pipe, pg_restore dies of SIGPIPE, the pipeline
+# fails, and a perfectly good dump was reported as "not a TuTak database"
+# (found 26.09.2026 on a dump that then passed `restore.sh --verify`).
+LISTING="$(pg_restore --list "$FILE")"
+TABLES="$(grep -c 'TABLE DATA' <<<"$LISTING" || true)"
 [[ "$TABLES" -gt 0 ]] || die "The archive contains no table data. Do not trust this backup."
 green "  ✓ archive readable, $TABLES tables with data"
 
 # The tables that would hurt most to lose, checked by name so a dump taken
 # against the wrong database is caught here rather than during a restore.
 for table in ledger_postings ledger_transactions payments wallets bonus_lots; do
-  pg_restore --list "$FILE" | grep -q "TABLE DATA public $table " \
+  grep -q "TABLE DATA public $table " <<<"$LISTING" \
     || die "Missing $table — this dump is not a TuTak database."
 done
 green "  ✓ every money-bearing table is present"

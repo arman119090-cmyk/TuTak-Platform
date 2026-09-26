@@ -57,6 +57,14 @@ export interface DistributionContext {
   sourceTransactionId: string;
   /** Where the contribution ledger posting points back to. */
   ledgerSource: { sourceType: string; sourceId: string };
+  /**
+   * Pilot anti-fraud (docs/AI_RISK_ENGINE_DESIGN.md §2): when a rule fired,
+   * the customer's green reward is accrued PENDING for this many hours
+   * instead of AVAILABLE. Only the green leg is held — deferred, referrers
+   * and the partner posting are unchanged, so the economics are identical
+   * and only the moment the customer may *spend* moves.
+   */
+  rewardHoldHours?: number;
 }
 
 /**
@@ -161,7 +169,7 @@ export class CommissionDistributionService {
           type: BonusEntryType.ACCRUAL_PURCHASE,
           amount: green,
           sourceTransactionId: ctx.sourceTransactionId,
-          pendingHours: 0,
+          pendingHours: ctx.rewardHoldHours && ctx.rewardHoldHours > 0 ? ctx.rewardHoldHours : 0,
         },
         tx,
       );

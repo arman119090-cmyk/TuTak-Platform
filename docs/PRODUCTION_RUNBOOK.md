@@ -47,6 +47,7 @@
 | `PAYOUT_DUAL_CONTROL` | не задавать (true) | двое на каждую выплату партнёру |
 | `EMERGENCY_FREEZE` | не задавать (false) | §5 |
 | `FRAUD_VELOCITY_WINDOW_MINUTES` / `FRAUD_VELOCITY_MAX_TRANSACTIONS` | 10 / 8 (по умолчанию) | велосити-правило; ужесточать — владелец |
+| `FRAUD_PARTNER_VELOCITY_MAX` / `FRAUD_BRANCH_VELOCITY_MAX` / `FRAUD_EMPLOYEE_VELOCITY_MAX` / `FRAUD_HIGH_VALUE_AMOUNT` / `FRAUD_NEW_ACCOUNT_HOURS` / `FRAUD_NEW_ACCOUNT_MAX_PURCHASES` / `FRAUD_REWARD_HOLD_HOURS` | 300 / 150 / 60 / 300000 / 24 / 5 / 72 (по умолчанию) | пилотные правила на подтверждении покупки: награда клиента удерживается PENDING, сигнал в Fraud signals; `0` выключает правило |
 | `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID` | заданы | канал алертов (после `06d97e6a`) |
 | `SENTRY_DSN` | **нет** — задать | ошибки |
 | `METRICS_TOKEN` | нет | метрики (не блокер) |
@@ -85,6 +86,11 @@
   только для APPROVED/FAILED без следов перевода.
 - **Клиент «платёж удержан» (velocity).** Админка → Fraud signals → resolve;
   клиент повторяет платёж. Порог — `FRAUD_VELOCITY_*`.
+- **Клиент: «бонус висит в ожидании» после покупки.** Сработало пилотное
+  правило (см. Fraud signals → `metadata.rules`). Если честно — resolve
+  сигнала: награда станет доступной на ближайшем промоушен-sweep (минуты).
+  Если нет — оставить: через `FRAUD_REWARD_HOLD_HOURS` она откроется сама,
+  либо владелец решает про клиента/партнёра (деактивация).
 - **Партнёр заблокирован по сверке.** §6.
 - **Сброс пароля супер-админа.** `RAILWAY_PRODUCTION_RUNBOOK_RU.md` §8.3.
 - **Смена мандатной даты смен партнёра.** Только вперёд (раньше), API

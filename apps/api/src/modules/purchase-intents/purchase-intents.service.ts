@@ -37,6 +37,7 @@ import { contributionForPurchase } from '../partners/contribution/contribution-r
 import { PartnerContributionRuleService } from '../partners/contribution/partner-contribution-rule.service';
 import { PartnersService } from '../partners/partners.service';
 import { MONEY_MAY_HAVE_MOVED } from '../psp/psp-attempt-safety';
+import { FraudDetectionService } from '../security/fraud-detection.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { WalletService } from '../wallet/wallet.service';
 import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
@@ -201,6 +202,7 @@ export class PurchaseIntentsService {
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly media: MediaViewService,
+    private readonly fraud: FraudDetectionService,
   ) {}
 
   /**
@@ -1084,7 +1086,24 @@ export class PurchaseIntentsService {
      */
     await this.stampMerchantApproval(intent, staffUserId, dto);
 
-    const outcome = await this.settlePurchase(intent, staffUserId);
+    // Pilot anti-fraud: a hit holds the customer's green reward, never the
+    // sale. Fails open on an infrastructure error — the rules protect the
+    // reward, and a broken rule engine must not stop a till — but says so.
+    const risk = await this.fraud
+      .assessPurchase({
+        customerId: intent.customerId,
+        partnerId: intent.partnerId,
+        branchId: intent.partnerBranchId,
+        staffUserId,
+        grossAmount: intent.grossAmount,
+        sourceTransactionId: intent.sourceTransactionId,
+      })
+      .catch((err: unknown) => {
+        this.logger.error(`Fraud assessment failed for intent ${intent.id}; reward not held`, err);
+        return { hold: false, reasons: [] as string[], holdHours: 0 };
+      });
+
+    const outcome = await this.settlePurchase(intent, staffUserId, undefined, risk);
     if (outcome === 'already-resolved') {
       // Lost the race — someone else confirmed, rejected, or the sweep
       // expired it a moment ago.
@@ -1106,6 +1125,8 @@ export class PurchaseIntentsService {
         // Spec §6.2 / Q4 rollout: a confirmation made without a shift inside
         // the partner's one-off transition window is recorded as such.
         withoutShift: confirmed.confirmedWithoutShift,
+        // Pilot anti-fraud: which rules held the reward, if any.
+        ...(risk.hold ? { rewardHold: { rules: risk.reasons, hours: risk.holdHours } } : {}),
       },
     });
 
@@ -1205,6 +1226,7 @@ export class PurchaseIntentsService {
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
     staffUserId: string | null,
     externalTx?: Prisma.TransactionClient,
+    risk?: { hold: boolean; holdHours: number },
   ): Promise<'settled' | 'already-resolved'> {
     // Spec §12: the pool is computed from the terms this purchase was
     // *snapshotted* under — not from whatever the partner's terms are today.
@@ -1297,6 +1319,7 @@ export class PurchaseIntentsService {
           turnoverAmount: intent.grossAmount,
           sourceTransactionId: intent.sourceTransactionId!,
           ledgerSource: { sourceType: 'PurchaseIntent', sourceId: intent.id },
+          rewardHoldHours: risk?.hold ? risk.holdHours : undefined,
         },
         tx,
       );

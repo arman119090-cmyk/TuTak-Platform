@@ -7,6 +7,7 @@
 | Правило | Где | Порог | Действие |
 |---|---|---|---|
 | Velocity: N транзакций клиента за окно | `FraudDetectionService.checkVelocity` (QR redeem, EV stop, EV CDR) | `FRAUD_VELOCITY_WINDOW_MINUTES` (10), `FRAUD_VELOCITY_MAX_TRANSACTIONS` (8) — **с `adb30a8f` настраиваются без релиза** | платёж держится (400 «held for review»), `FraudSignal VELOCITY_LIMIT_EXCEEDED` MEDIUM, QR-код не расходуется |
+| **Пилотные правила на подтверждении покупки** (`PurchaseIntentsService.confirm` → `FraudDetectionService.assessPurchase`): velocity партнёра / филиала / сотрудника за окно; high-value покупка; «новый аккаунт» (возраст < N ч и ≥ M покупок) | `FRAUD_PARTNER_VELOCITY_MAX` (300), `FRAUD_BRANCH_VELOCITY_MAX` (150), `FRAUD_EMPLOYEE_VELOCITY_MAX` (60), `FRAUD_HIGH_VALUE_AMOUNT` (300 000 AMD), `FRAUD_NEW_ACCOUNT_HOURS` (24) + `FRAUD_NEW_ACCOUNT_MAX_PURCHASES` (5), `FRAUD_REWARD_HOLD_HOURS` (72); `0` = правило выключено | **продажа проходит**; зелёная награда клиента начисляется PENDING на `FRAUD_REWARD_HOLD_HOURS` (deferred/рефереры/партнёрская проводка не меняются); `FraudSignal` (VELOCITY_LIMIT_EXCEEDED или BONUS_ABUSE_PATTERN, HIGH при high_value) с `metadata.rules`; AuditLog `PURCHASE_INTENT_CONFIRMED.rewardHold`; **resolve сигнала админом снимает удержание** (лоты становятся due, промоушен-sweep переводит в AVAILABLE). Тест: `fraud-pilot-controls.int-spec.ts` |
 | Одна живая покупка на клиента/партнёра | unique index `purchase_intents(customerId, partnerId)` live | — | 400 «already in progress» |
 | Self-referral / фарминг | `ReferralService` (+ DB CHECK single owner) | — | отказ, без записи участника |
 | Лимит слотов реферальной награды | `REFERRAL_CHALLENGE_SLOT_LIMIT` (3) | — | награда не платится |
@@ -20,21 +21,20 @@
 Всё это — код, покрытый интеграционными тестами (`partner-state-and-fraud`,
 `referral-abuse`, `adversarial-probe`, `emergency-freeze`, `sms-budget`).
 
-## 2. Чего для пилота не хватает (предложение, пороги — решение владельца)
+## 2. Пороги и что ещё предложить владельцу
 
-Не реализовано, потому что пороги — бизнес-решение (список STOP задачи):
+Реализованные правила §1 работают с **умеренно широкими значениями по
+умолчанию** — они ловят скрипт, а не бойкую субботу. Окончательные
+коммерческие пороги — решение владельца (список STOP), меняются переменными
+без релиза. Не реализовано (следующая задача Anti-Fraud):
 
-1. Дневной потолок начислений на клиента (например, 3 000 AMD зелёного
-   бонуса в сутки) → `FraudSignal BONUS_ABUSE_PATTERN`, начисление в PENDING
-   до ручного решения.
-2. Потолок доли бонуса в покупке per партнёр уже есть (`maxBonusPaymentPercent`);
-   добавить дневной потолок списаний на клиента.
-3. «Один телефон — один аккаунт» уже (unique phone); добавить лимит
-   регистраций с одного IP/устройства в час (нужен измеренный IP).
-4. Сигнал на партнёра: доля покупок с бонусом > X% при < Y уникальных
+1. Дневной потолок начислений/списаний на клиента.
+2. Лимит регистраций с одного IP/устройства в час (нужен измеренный IP).
+3. Сигнал на партнёра: доля покупок с бонусом > X% при < Y уникальных
    клиентах за день (кассир гоняет свою карту).
-5. Сигнал на реферальную сеть: > N приглашённых с покупкой ровно на порог
+4. Сигнал на реферальную сеть: > N приглашённых с покупкой ровно на порог
    квалификации в первые сутки.
+5. Return/dispute abuse: > N возвратов/споров клиента за окно.
 
 Каждое — правило `FraudDetectionService.raise` + пороги из env; действие —
 HOLD/сигнал, никогда тихий drop.

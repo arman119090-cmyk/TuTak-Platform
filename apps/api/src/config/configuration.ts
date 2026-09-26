@@ -140,10 +140,21 @@ export interface AppConfig {
     dualControl: boolean;
   };
   fraud: {
-    /** Sliding window for the per-customer transaction velocity rule. */
+    /** Sliding window for every velocity rule below. */
     velocityWindowMinutes: number;
-    /** Transactions inside the window at or above which a payment is held. */
+    /** Customer: transactions inside the window at or above which a payment is held. */
     velocityMaxTransactions: number;
+    /** Partner / branch / employee: confirmed purchases inside the window; 0 = rule off. */
+    partnerVelocityMax: number;
+    branchVelocityMax: number;
+    employeeVelocityMax: number;
+    /** A single purchase at or above this gross (AMD) holds the reward; '0' = off. */
+    highValueAmount: string;
+    /** An account younger than this, with this many confirmed purchases, holds the reward; 0 = off. */
+    newAccountHours: number;
+    newAccountMaxPurchases: number;
+    /** How long a held green reward stays PENDING before the sweep releases it (an admin can release earlier). */
+    rewardHoldHours: number;
   };
   emergency: {
     /**
@@ -771,6 +782,19 @@ const buildConfig = (): AppConfig => ({
     // hard-coded before 26.09.2026 (10 minutes, 8 transactions).
     velocityWindowMinutes: parseInt(process.env.FRAUD_VELOCITY_WINDOW_MINUTES ?? '10', 10),
     velocityMaxTransactions: parseInt(process.env.FRAUD_VELOCITY_MAX_TRANSACTIONS ?? '8', 10),
+    // Pilot minimum (26.09.2026). The defaults are deliberately loose — they
+    // catch a script, not a busy Saturday — and every one is the owner's to
+    // tighten; none of them is a commercial decision made here. A hit never
+    // refuses the sale: the customer's green reward is held PENDING for
+    // `rewardHoldHours` and a FraudSignal is raised for an admin to release
+    // or keep (docs/AI_RISK_ENGINE_DESIGN.md §1-2).
+    partnerVelocityMax: parseInt(process.env.FRAUD_PARTNER_VELOCITY_MAX ?? '300', 10),
+    branchVelocityMax: parseInt(process.env.FRAUD_BRANCH_VELOCITY_MAX ?? '150', 10),
+    employeeVelocityMax: parseInt(process.env.FRAUD_EMPLOYEE_VELOCITY_MAX ?? '60', 10),
+    highValueAmount: process.env.FRAUD_HIGH_VALUE_AMOUNT ?? '300000',
+    newAccountHours: parseInt(process.env.FRAUD_NEW_ACCOUNT_HOURS ?? '24', 10),
+    newAccountMaxPurchases: parseInt(process.env.FRAUD_NEW_ACCOUNT_MAX_PURCHASES ?? '5', 10),
+    rewardHoldHours: parseInt(process.env.FRAUD_REWARD_HOLD_HOURS ?? '72', 10),
   },
   emergency: {
     // Off unless spelled out. Set EMERGENCY_FREEZE=true on the service and

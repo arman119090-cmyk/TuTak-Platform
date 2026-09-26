@@ -8,6 +8,11 @@ export interface CreatePurchaseIntentRequestDto {
   grossAmount: string;
   /** 0 up to the partner's max_bonus_payment_percent of grossAmount. */
   bonusAmountRequested?: string;
+  /**
+   * Partner Commerce v2 (Q1 = C): paid from the customer's real TuTak money
+   * balance — a separate source from the discount. The rest is external.
+   */
+  tutakMoneyAmount?: string;
 }
 
 export interface RejectPurchaseIntentRequestDto {
@@ -24,6 +29,9 @@ export interface PurchaseIntentDto {
   status: PurchaseIntentStatus;
   grossAmount: string;
   bonusAmountRequested: string;
+  /** Paid from the customer's TuTak money balance (0 for every pre-v2 purchase). */
+  tutakMoneyAmount: string;
+  /** The external part — paid to the partner directly: gross − bonus − tutakMoney. */
   ordinaryPaymentRemainder: string;
   negotiatedRateBps: number;
   maxBonusPaymentPercent: number;
@@ -36,6 +44,9 @@ export interface PurchaseIntentDto {
    */
   partnerBrand: PartnerBrandDto;
   confirmedByUserId: string | null;
+  /** The shift the confirming employee was on (spec §6.2); null for a shiftless rollout-window confirmation. */
+  confirmedShiftId?: string | null;
+  confirmedWithoutShift?: boolean;
   rejectionReason: string | null;
   createdAt: string;
   expiresAt: string;

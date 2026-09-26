@@ -1,102 +1,206 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { PartnerOrderDto } from '@tutak/shared-types';
+import type { CustomerPartnerOrderDto, PartnerOrderAdjustmentDto } from '@tutak/shared-types';
 import { useTheme } from '../../../app/theme/ThemeProvider';
 import type { RootStackParamList } from '../../../app/navigation/types';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
+import { Button } from '../../components/Button';
+import { TextField } from '../../components/TextField';
 import { partnerOrderApi } from '../../../data/api/partnerOrderApi';
+import { describeApiError } from '../../../data/api/errors';
 import { formatAmd } from '../../utils/format';
 
 /**
- * Spec §18: "Мои заказы" — orders placed on a partner's own website through
- * TuTak Checkout. Deliberately shows only customer-facing status text (spec
- * §17: never "partner did not respond in 5 minutes", never an internal
- * escalation) — see `STATUS_KEY` below, which maps every `PartnerOrderStatus`
- * to one of a handful of neutral, reassuring phrases.
+ * "Мои заказы" (spec §31-34, §43, §48, §69). Every status shown is the
+ * neutral `customerStatus` the server derives — never the partner's
+ * internal SLA state (spec §19). "Получил заказ" appears only once the
+ * partner confirmed stock (spec §31) and always asks a second time (§32).
  */
-const STATUS_KEY: Record<string, string> = {
-  PAID: 'partnerOrder.statusPaid',
-  PARTNER_SEEN: 'partnerOrder.statusPartnerSeen',
-  STOCK_CONFIRMED: 'partnerOrder.statusStockConfirmed',
-  OUT_OF_STOCK: 'partnerOrder.statusOutOfStock',
-  SOURCING_REQUIRED: 'partnerOrder.statusSourcing',
-  SOURCING_IN_PROGRESS: 'partnerOrder.statusSourcing',
-  CUSTOMER_DECISION_REQUIRED: 'partnerOrder.statusCustomerDecision',
-  ACCEPTED: 'partnerOrder.statusAccepted',
-  PREPARING: 'partnerOrder.statusPreparing',
-  READY: 'partnerOrder.statusReady',
-  SHIPPED: 'partnerOrder.statusShipped',
-  PICKUP_READY: 'partnerOrder.statusPickupReady',
-  COMPLETED: 'partnerOrder.statusCompleted',
-  CANCELLED: 'partnerOrder.statusCancelled',
-  REFUNDED: 'partnerOrder.statusRefunded',
-};
-
 export function MyOrdersScreen() {
   const { t } = useTranslation();
-  const { color, space, text, radius } = useTheme();
+  const { color, space, text } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
   const { data: orders, isLoading } = useQuery({
     queryKey: ['partner-orders-mine'],
     queryFn: partnerOrderApi.listMine,
   });
 
-  const renderItem = ({ item }: { item: PartnerOrderDto }) => {
-    const needsAction =
-      item.paymentStatus === 'PAYMENT_PENDING' || item.orderStatus === 'CUSTOMER_DECISION_REQUIRED';
-    const card = (
-      <Surface style={{ marginBottom: space[3] }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={[text.bodySm, { color: color.textSecondary }]}>
-            {t('partnerOrder.orderNumberLabel')} #{item.orderNumber}
-          </Text>
-          <Text style={[text.body, { color: color.textPrimary }]}>{formatAmd(item.totalAmount)}</Text>
-        </View>
-        <Text style={[text.body, { color: color.textPrimary, marginTop: space[2] }]}>
-          {item.items.map((i) => `${i.quantity}× ${i.name}`).join(', ')}
-        </Text>
-        <View
-          style={{
-            marginTop: space[3],
-            alignSelf: 'flex-start',
-            backgroundColor: color.pendingSurface,
-            borderRadius: radius.full,
-            paddingHorizontal: space[3],
-            paddingVertical: space[1],
-          }}
-        >
-          <Text style={[text.caption, { color: color.pendingText }]}>
-            {t(STATUS_KEY[item.orderStatus] ?? 'partnerOrder.statusPaid')}
-          </Text>
-        </View>
-      </Surface>
-    );
-    return needsAction ? (
-      <Pressable onPress={() => navigation.navigate('Checkout', { orderId: item.id })}>{card}</Pressable>
-    ) : (
-      card
-    );
-  };
-
   return (
-    <Screen title={t('partnerOrder.myOrdersTitle')}>
+    <Screen title={t('partnerOrder.myOrdersTitle')} scroll={false}>
       {isLoading ? (
         <ActivityIndicator color={color.primary} />
       ) : !orders || orders.length === 0 ? (
-        <Surface style={{ alignItems: 'center', paddingVertical: space[8] }}>
-          <Text style={[text.bodySm, { color: color.textSecondary, textAlign: 'center' }]}>
-            {t('partnerOrder.myOrdersEmpty')}
-          </Text>
-        </Surface>
+        <Text style={[text.body, { color: color.textSecondary }]}>{t('partnerOrder.myOrdersEmpty')}</Text>
       ) : (
-        <FlatList data={orders} keyExtractor={(o) => o.id} renderItem={renderItem} />
+        <FlatList
+          data={orders}
+          keyExtractor={(o) => o.id}
+          ItemSeparatorComponent={() => <View style={{ height: space[3] }} />}
+          renderItem={({ item }) => (
+            <OrderCard order={item} onOpenCheckout={() => navigation.navigate('Checkout', { orderId: item.id })} />
+          )}
+        />
       )}
     </Screen>
+  );
+}
+
+function OrderCard({ order, onOpenCheckout }: { order: CustomerPartnerOrderDto; onOpenCheckout: () => void }) {
+  const { t } = useTranslation();
+  const { color, space, text } = useTheme();
+  const queryClient = useQueryClient();
+  const [error, setError] = React.useState<string | null>(null);
+  const [problem, setProblem] = React.useState<string | null>(null);
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['partner-orders-mine'] });
+    queryClient.invalidateQueries({ queryKey: ['customer-balance'] });
+  };
+  const onError = (err: unknown) => setError(describeApiError(err) ?? t('common.somethingWentWrong'));
+
+  const received = useMutation({ mutationFn: () => partnerOrderApi.confirmReceived(order.id), onSuccess: refresh, onError });
+  const cancel = useMutation({ mutationFn: () => partnerOrderApi.cancel(order.id), onSuccess: refresh, onError });
+  const dispute = useMutation({
+    mutationFn: (reason: string) => partnerOrderApi.openDispute(order.id, reason),
+    onSuccess: () => {
+      setProblem(null);
+      Alert.alert(t('partnerOrder.disputeSent'));
+      refresh();
+    },
+    onError,
+  });
+
+  const pending = order.adjustments.find((a) => a.status === 'PENDING_CUSTOMER');
+
+  const line = (label: string) => <Text style={[text.caption, { color: color.textSecondary, marginTop: space[1] }]}>{label}</Text>;
+
+  return (
+    <Surface>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={[text.label, { color: color.textPrimary }]}>
+          {t('partnerOrder.orderNumberLabel')} #{order.orderNumber}
+        </Text>
+        <Text style={[text.label, { color: color.textPrimary }]}>{formatAmd(order.totalAmount)}</Text>
+      </View>
+      <Text style={[text.bodySm, { color: color.textSecondary, marginTop: space[1] }]}>
+        {t(`partnerOrder.status_${order.customerStatus}`)}
+      </Text>
+      {order.items.slice(0, 3).map((item) => line(`${item.quantity}× ${item.name}`))}
+      {Number(order.discountAmount) > 0 ? line(t('partnerOrder.paidDiscount', { amount: formatAmd(order.discountAmount) })) : null}
+      {Number(order.tutakMoneyAmount) > 0 ? line(t('partnerOrder.paidMoney', { amount: formatAmd(order.tutakMoneyAmount) })) : null}
+      {Number(order.externalAmount) > 0 ? line(t('partnerOrder.paidExternal', { amount: formatAmd(order.externalAmount) })) : null}
+
+      {pending ? <ProposalBlock order={order} proposal={pending} onDone={refresh} /> : null}
+
+      {error ? <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}>{error}</Text> : null}
+
+      <View style={{ marginTop: space[3], gap: space[2] }}>
+        {order.customerStatus === 'awaiting_confirmation' ? (
+          <Button label={t('partnerOrder.confirmButton')} onPress={onOpenCheckout} size="sm" />
+        ) : null}
+        {order.canConfirmReceipt ? (
+          <Button
+            label={t('partnerOrder.receivedButton')}
+            size="sm"
+            loading={received.isPending}
+            onPress={() =>
+              Alert.alert(t('partnerOrder.receivedConfirmTitle'), t('partnerOrder.receivedConfirmBody'), [
+                { text: t('common.cancel'), style: 'cancel' },
+                { text: t('partnerOrder.receivedConfirmYes'), onPress: () => received.mutate() },
+              ])
+            }
+          />
+        ) : null}
+        {order.canCancel && order.customerStatus !== 'awaiting_confirmation' ? (
+          <Button
+            label={t('partnerOrder.cancelButton')}
+            variant="secondary"
+            size="sm"
+            loading={cancel.isPending}
+            onPress={() =>
+              Alert.alert(t('partnerOrder.cancelButton'), t('partnerOrder.cancelConfirmBody'), [
+                { text: t('common.cancel'), style: 'cancel' },
+                { text: t('common.confirm'), style: 'destructive', onPress: () => cancel.mutate() },
+              ])
+            }
+          />
+        ) : null}
+        {order.canOpenDispute && order.disputeStatus !== 'OPEN' ? (
+          problem === null ? (
+            <Button label={t('partnerOrder.disputeButton')} variant="tertiary" size="sm" onPress={() => setProblem('')} />
+          ) : (
+            <View>
+              <TextField label={t('partnerOrder.disputeButton')} placeholder={t('partnerOrder.disputeReasonPlaceholder')} value={problem} onChangeText={setProblem} />
+              <View style={{ height: space[2] }} />
+              <Button
+                label={t('common.confirm')}
+                size="sm"
+                disabled={problem.trim().length < 2}
+                loading={dispute.isPending}
+                onPress={() => dispute.mutate(problem.trim())}
+              />
+            </View>
+          )
+        ) : null}
+      </View>
+    </Surface>
+  );
+}
+
+/** Spec §39-41: a sourcing proposal — nothing continues without the customer's explicit yes. */
+function ProposalBlock({
+  order,
+  proposal,
+  onDone,
+}: {
+  order: CustomerPartnerOrderDto;
+  proposal: PartnerOrderAdjustmentDto;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation();
+  const { color, space, text } = useTheme();
+  const [money, setMoney] = React.useState(proposal.deltaAmount);
+  const [error, setError] = React.useState<string | null>(null);
+  const delta = Number(proposal.deltaAmount);
+  const accept = useMutation({
+    mutationFn: () =>
+      partnerOrderApi.acceptAdjustment(proposal.id, delta > 0 ? { tutakMoneyAmount: money, idempotencyKey: `adj-${proposal.id}-${money}` } : {}),
+    onSuccess: onDone,
+    onError: (err) => setError(describeApiError(err) ?? t('common.somethingWentWrong')),
+  });
+  const decline = useMutation({ mutationFn: () => partnerOrderApi.declineAdjustment(proposal.id), onSuccess: onDone });
+
+  return (
+    <View style={{ marginTop: space[3], padding: space[3], borderRadius: 12, backgroundColor: color.surfaceSunken }}>
+      <Text style={[text.label, { color: color.textPrimary }]}>{t('partnerOrder.proposalTitle')}</Text>
+      <Text style={[text.bodySm, { color: color.textPrimary, marginTop: space[1] }]}>
+        {proposal.type === 'SAME_ITEM_OTHER_SOURCE' ? t('partnerOrder.proposalSameItem') : t('partnerOrder.proposalAlternate')}
+        {proposal.description ? ` — ${proposal.description}` : ''}
+      </Text>
+      {proposal.details?.differences ? (
+        <Text style={[text.caption, { color: color.textSecondary }]}>
+          {t('partnerOrder.proposalDifferences', { text: proposal.details.differences })}
+        </Text>
+      ) : null}
+      <Text style={[text.bodySm, { color: color.textPrimary, marginTop: space[1] }]}>
+        {formatAmd(order.totalAmount)} → {formatAmd(proposal.newTotalAmount)}
+      </Text>
+      {delta < 0 ? <Text style={[text.caption, { color: color.availableText }]}>{t('partnerOrder.proposalCheaper', { amount: formatAmd(-delta) })}</Text> : null}
+      {delta > 0 ? (
+        <>
+          <Text style={[text.caption, { color: color.textSecondary }]}>{t('partnerOrder.proposalMoreExpensive', { amount: formatAmd(delta) })}</Text>
+          <TextField label={t('partnerOrder.moneyLabel')} keyboardType="number-pad" value={money} onChangeText={setMoney} />
+        </>
+      ) : null}
+      {error ? <Text style={[text.bodySm, { color: color.dangerText }]}>{error}</Text> : null}
+      <View style={{ marginTop: space[2], gap: space[2] }}>
+        <Button label={t('partnerOrder.acceptButton')} size="sm" loading={accept.isPending} onPress={() => accept.mutate()} />
+        <Button label={t('partnerOrder.declineButton')} size="sm" variant="secondary" loading={decline.isPending} onPress={() => decline.mutate()} />
+      </View>
+    </View>
   );
 }

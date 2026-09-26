@@ -1,5 +1,5 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import type { PartnerOrderDto, PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type { CustomerPartnerOrderDto, PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
@@ -370,9 +370,11 @@ function handle(
         partnerBranchId?: string;
         grossAmount: string;
         bonusAmountRequested?: string;
+        tutakMoneyAmount?: string;
       }>(config);
       const partner = state.partners.find((p) => p.partnerId === dto.partnerId);
       const bonusAmountRequested = dto.bonusAmountRequested ?? '0';
+      const tutakMoneyAmount = dto.tutakMoneyAmount ?? '0';
       const intent: PurchaseIntentDto = {
         id: `pi-${Date.now()}`,
         customerId: MOCK_USER.id,
@@ -381,8 +383,9 @@ function handle(
         status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
         grossAmount: dto.grossAmount,
         bonusAmountRequested,
+        tutakMoneyAmount,
         ordinaryPaymentRemainder: String(
-          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
+          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested) - Number(tutakMoneyAmount)),
         ),
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
         maxBonusPaymentPercent: 50,
@@ -474,6 +477,7 @@ function handle(
       status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
       grossAmount: '5000',
       bonusAmountRequested: '0',
+      tutakMoneyAmount: '0',
       ordinaryPaymentRemainder: '5000',
       negotiatedRateBps: 500,
       maxBonusPaymentPercent: 50,
@@ -564,92 +568,133 @@ function handle(
   // 404ing, same reasoning as `getPurchaseIntent` above — the checkout
   // screen always passes an id this adapter itself issued, and the only
   // caller of an id it never created is the route-completeness test.
-  const synthesizedOrder = (id: string): PartnerOrderDto => ({
-    id,
-    orderNumber: 1000,
-    customerId: null,
-    partnerId: state.partners[0]?.partnerId ?? 'partner-1',
-    externalOrderId: `demo-${id}`,
-    currency: 'AMD',
-    subtotal: '5000.0000',
-    totalAmount: '5000.0000',
-    commissionAmount: '250.0000',
-    partnerAmount: '4750.0000',
-    paymentStatus: 'PAYMENT_PENDING' as never,
-    orderStatus: 'CREATED' as never,
-    sourcingAllowed: true,
-    refundedAmount: '0.0000',
-    rejectionReason: null,
-    createdAt: new Date().toISOString(),
-    paidAt: null,
-    partnerSeenAt: null,
-    stockConfirmedAt: null,
-    stockRejectedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    refundedAt: null,
-    items: [
-      {
-        id: `${id}-item-1`,
-        externalProductId: null,
-        name: 'Demo item',
-        sku: null,
-        oemNumber: null,
-        quantity: 1,
-        unitPrice: '5000.0000',
-        totalPrice: '5000.0000',
-        imageUrl: null,
-        description: null,
-      },
-    ],
-  });
+  const synthesizedOrder = (id: string): CustomerPartnerOrderDto => {
+    const now = new Date().toISOString();
+    return {
+      id,
+      orderNumber: 1000,
+      customerId: null,
+      partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+      branchId: null,
+      externalOrderId: `demo-${id}`,
+      serviceType: null,
+      category: null,
+      currency: 'AMD',
+      subtotal: '5000.0000',
+      totalAmount: '5000.0000',
+      discountAmount: '0.0000',
+      tutakMoneyAmount: '0.0000',
+      externalAmount: '0.0000',
+      prepaymentRequiredAmount: '0.0000',
+      refundedAmount: '0.0000',
+      operationalStatus: 'DRAFT' as never,
+      paymentStatus: 'UNFUNDED' as never,
+      sourcingStatus: 'NONE' as never,
+      disputeStatus: 'NONE' as never,
+      sourcingAllowed: true,
+      createdAt: now,
+      draftExpiresAt: now,
+      submittedAt: null,
+      partnerSeenAt: null,
+      stockConfirmedAt: null,
+      stockRejectedAt: null,
+      handedOverAt: null,
+      customerReceivedAt: null,
+      completedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+      customerStatus: 'awaiting_confirmation',
+      canConfirmReceipt: false,
+      canCancel: true,
+      canOpenDispute: false,
+      paymentLegs: [],
+      adjustments: [],
+      items: [
+        {
+          id: `${id}-item-1`,
+          externalProductId: null,
+          name: 'Demo item',
+          sku: null,
+          oemNumber: null,
+          quantity: 1,
+          unitPrice: '5000.0000',
+          totalPrice: '5000.0000',
+          imageUrl: null,
+          description: null,
+        },
+      ],
+    };
+  };
+
+  const upsertOrder = (order: CustomerPartnerOrderDto) => {
+    state.partnerOrders = state.partnerOrders.some((o) => o.id === order.id)
+      ? state.partnerOrders.map((o) => (o.id === order.id ? order : o))
+      : [order, ...state.partnerOrders];
+    return order;
+  };
+  const findOrder = (id: string) => state.partnerOrders.find((o) => o.id === id) ?? synthesizedOrder(id);
 
   const getCheckout = /^\/partner-orders\/([^/]+)\/checkout$/.exec(path);
   if (method === 'GET' && getCheckout) {
-    const id = getCheckout[1]!;
-    const existing = state.partnerOrders.find((o) => o.id === id);
-    return envelope(existing ?? synthesizedOrder(id));
+    const order = findOrder(getCheckout[1]!);
+    return envelope({
+      order,
+      partner: { id: order.partnerId, displayName: state.partners[0]?.name ?? 'TuTak partner' },
+      balances: { discountAvailable: state.wallet.availableBonus, tutakMoney: state.balance.balance },
+      limits: { maxDiscountAmount: order.totalAmount, prepaymentRequiredAmount: order.prepaymentRequiredAmount },
+    });
   }
 
-  const payOrder = /^\/partner-orders\/([^/]+)\/pay$/.exec(path);
-  if (method === 'POST' && payOrder) {
-    const id = payOrder[1]!;
-    const existing = state.partnerOrders.find((o) => o.id === id) ?? synthesizedOrder(id);
-    const paid: PartnerOrderDto = {
-      ...existing,
-      customerId: MOCK_USER.id,
-      paymentStatus: 'PAID' as never,
-      orderStatus: 'PAID' as never,
-      paidAt: new Date().toISOString(),
-    };
-    state.partnerOrders = state.partnerOrders.some((o) => o.id === id)
-      ? state.partnerOrders.map((o) => (o.id === id ? paid : o))
-      : [paid, ...state.partnerOrders];
-    return envelope({ order: paid, insufficientBalance: false });
-  }
-
-  const adjustmentAction = /^\/partner-orders\/adjustments\/([^/]+)\/(accept|decline|pay-additional)$/.exec(
-    path,
-  );
-  if (method === 'POST' && adjustmentAction) {
-    const [, id, action] = adjustmentAction;
-    const adjustment = {
-      id,
-      orderId: 'demo-order',
-      type: 'PRICE_INCREASE' as never,
-      status: action === 'decline' ? ('CUSTOMER_DECLINED' as never) : ('APPLIED' as never),
-      previousTotalAmount: '5000.0000',
-      newTotalAmount: '5500.0000',
-      deltaAmount: '500.0000',
-      description: null,
-      reason: null,
-      additionalPaymentStatus: null,
-      createdAt: new Date().toISOString(),
-      appliedAt: new Date().toISOString(),
-    };
+  const submitOrder = /^\/partner-orders\/([^/]+)\/submit$/.exec(path);
+  if (method === 'POST' && submitOrder) {
+    const dto = body<{ discountAmount?: string; tutakMoneyAmount?: string }>(config);
+    const order = findOrder(submitOrder[1]!);
+    const discount = Number(dto.discountAmount ?? 0);
+    const money = Number(dto.tutakMoneyAmount ?? 0);
     return envelope(
-      action === 'pay-additional' ? { adjustment, insufficientBalance: false } : adjustment,
+      upsertOrder({
+        ...order,
+        customerId: MOCK_USER.id,
+        operationalStatus: 'SUBMITTED' as never,
+        paymentStatus: 'RESERVED' as never,
+        submittedAt: new Date().toISOString(),
+        discountAmount: discount.toFixed(4),
+        tutakMoneyAmount: money.toFixed(4),
+        externalAmount: Math.max(Number(order.totalAmount) - discount - money, 0).toFixed(4),
+        customerStatus: 'checking_availability',
+      }),
     );
+  }
+
+  const orderAction = /^\/partner-orders\/([^/]+)\/(received|cancel)$/.exec(path);
+  if (method === 'POST' && orderAction) {
+    const order = findOrder(orderAction[1]!);
+    const received = orderAction[2] === 'received';
+    return envelope(
+      upsertOrder({
+        ...order,
+        operationalStatus: (received ? 'COMPLETED' : 'CANCELLED') as never,
+        customerStatus: received ? 'received' : 'cancelled',
+        canConfirmReceipt: false,
+        canCancel: false,
+        canOpenDispute: received,
+      }),
+    );
+  }
+
+  const openDispute = /^\/partner-orders\/([^/]+)\/disputes$/.exec(path);
+  if (method === 'POST' && openDispute) {
+    return envelope({ id: `dispute-${Date.now()}`, orderId: openDispute[1], type: 'ORDER', status: 'OPEN' });
+  }
+
+  const adjustmentAction = /^\/partner-orders\/adjustments\/([^/]+)\/(accept|decline)$/.exec(path);
+  if (method === 'POST' && adjustmentAction) {
+    const order = state.partnerOrders.find((o) => o.adjustments.some((a) => a.id === adjustmentAction[1])) ?? synthesizedOrder('demo-order');
+    return envelope(order);
+  }
+
+  if (method === 'POST' && path === '/balance/topup') {
+    return envelope({ topUpId: `topup-${Date.now()}`, status: 'DECLINED', amount: '0', declineReason: 'top_up_not_configured' });
   }
 
   // Fuel-station branches task: the preview has no real branch/QR state to

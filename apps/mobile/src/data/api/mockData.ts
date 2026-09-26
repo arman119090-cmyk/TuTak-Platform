@@ -7,7 +7,7 @@ import type {
   NearbyPartnerDto,
   NotificationDto,
   PartnerBrandDto,
-  PartnerOrderDto,
+  CustomerPartnerOrderDto,
   PurchaseIntentDto,
   ReferralCodeDto,
   ReferralInviteDto,
@@ -115,7 +115,7 @@ export interface MockState {
   referralCode: ReferralCodeDto;
   invites: ReferralInviteDto[];
   purchaseIntents: PurchaseIntentDto[];
-  partnerOrders: PartnerOrderDto[];
+  partnerOrders: CustomerPartnerOrderDto[];
   /** The real-money TuTak balance — separate from `wallet`'s bonus points. */
   balance: { balance: string; currency: string };
 }

@@ -139,6 +139,20 @@ export interface AppConfig {
     /** Whether confirming a payout requires someone other than its requester. */
     dualControl: boolean;
   };
+  fraud: {
+    /** Sliding window for the per-customer transaction velocity rule. */
+    velocityWindowMinutes: number;
+    /** Transactions inside the window at or above which a payment is held. */
+    velocityMaxTransactions: number;
+  };
+  emergency: {
+    /**
+     * Platform-wide freeze: every state-changing HTTP request except auth
+     * and health is refused with 503 while this is on. See
+     * `EmergencyFreezeGuard` and docs/PRODUCTION_RUNBOOK.md.
+     */
+    freeze: boolean;
+  };
   metrics: {
     /** Bearer token a Prometheus scraper must present. Empty disables /metrics. */
     token: string;
@@ -750,6 +764,18 @@ const buildConfig = (): AppConfig => ({
     // exists (`TelegramAlertChannel`). Used when no webhook is set.
     telegramBotToken: process.env.ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '',
     telegramChatId: process.env.ALERT_TELEGRAM_CHAT_ID?.trim() ?? '',
+  },
+  fraud: {
+    // The pilot's deterministic anti-fraud rule, configurable so the owner
+    // can tighten it without a release. Defaults are the values that were
+    // hard-coded before 26.09.2026 (10 minutes, 8 transactions).
+    velocityWindowMinutes: parseInt(process.env.FRAUD_VELOCITY_WINDOW_MINUTES ?? '10', 10),
+    velocityMaxTransactions: parseInt(process.env.FRAUD_VELOCITY_MAX_TRANSACTIONS ?? '8', 10),
+  },
+  emergency: {
+    // Off unless spelled out. Set EMERGENCY_FREEZE=true on the service and
+    // let it restart: reads keep working, writes answer 503 PLATFORM_FROZEN.
+    freeze: process.env.EMERGENCY_FREEZE === 'true',
   },
   metrics: {
     // No default. An unset token disables the endpoint rather than opening

@@ -52,7 +52,9 @@ import { TransactionsModule } from '../../src/modules/transactions/transactions.
 import { UsersModule } from '../../src/modules/users/users.module';
 import { WalletModule } from '../../src/modules/wallet/wallet.module';
 import { TEST_DATABASE_URL } from './test-database';
+import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import { EmergencyFreezeGuard } from '../../src/common/guards/emergency-freeze.guard';
 import { JwtAuthGuard } from '../../src/common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../src/common/guards/roles.guard';
 import { PermissionsGuard } from '../../src/common/guards/permissions.guard';
@@ -392,6 +394,10 @@ export async function createHttpTestHarness(
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+  // Always, like `AppModule`: it reads `EMERGENCY_FREEZE` from the config and
+  // is a no-op unless a suite sets that before booting. Ahead of the
+  // authentication guard for the same reason it is there in production.
+  app.useGlobalGuards(new EmergencyFreezeGuard(moduleRef.get(ConfigService)));
   if (options.authGuards) {
     // Only `JwtAuthGuard`. The role and permission guards read metadata this
     // harness's callers set per-test, and attaching them globally here would

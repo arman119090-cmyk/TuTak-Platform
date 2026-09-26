@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FraudSignalSeverity, FraudSignalType, Prisma } from '@prisma/client';
+import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-
-const VELOCITY_WINDOW_MINUTES = 10;
-const VELOCITY_MAX_TRANSACTIONS = 8;
 
 /**
  * Lightweight rule-based fraud signal engine. Intentionally simple and
@@ -15,22 +14,40 @@ const VELOCITY_MAX_TRANSACTIONS = 8;
 export class FraudDetectionService {
   private readonly logger = new Logger(FraudDetectionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<AppConfig, true>,
+  ) {}
 
-  /** Returns true if the user is currently transacting at an anomalous velocity. */
+  /**
+   * Returns true if the user is currently transacting at an anomalous velocity.
+   *
+   * The window and the ceiling come from `FRAUD_VELOCITY_WINDOW_MINUTES` /
+   * `FRAUD_VELOCITY_MAX_TRANSACTIONS` (defaults 10 / 8 — the values that were
+   * constants until 26.09.2026), so the pilot can be tightened from the
+   * environment rather than a release. A held payment is a `FraudSignal` an
+   * admin resolves, never a silent drop.
+   */
   async checkVelocity(userId: string, relatedTransactionId?: string): Promise<boolean> {
-    const since = new Date(Date.now() - VELOCITY_WINDOW_MINUTES * 60_000);
+    const { velocityWindowMinutes, velocityMaxTransactions } = this.config.get('fraud', {
+      infer: true,
+    });
+    const since = new Date(Date.now() - velocityWindowMinutes * 60_000);
     const recentCount = await this.prisma.transaction.count({
       where: { userId, createdAt: { gte: since } },
     });
 
-    if (recentCount >= VELOCITY_MAX_TRANSACTIONS) {
+    if (recentCount >= velocityMaxTransactions) {
       await this.raise({
         userId,
         type: FraudSignalType.VELOCITY_LIMIT_EXCEEDED,
         severity: FraudSignalSeverity.MEDIUM,
         relatedTransactionId,
-        metadata: { recentCount, windowMinutes: VELOCITY_WINDOW_MINUTES },
+        metadata: {
+          recentCount,
+          windowMinutes: velocityWindowMinutes,
+          maxTransactions: velocityMaxTransactions,
+        },
       });
       return true;
     }

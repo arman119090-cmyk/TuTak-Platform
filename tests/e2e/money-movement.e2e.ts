@@ -161,99 +161,141 @@ test.describe('refunds', () => {
   });
 });
 
-test.describe('payouts', () => {
+test.describe('partner settlements', () => {
   test.use({ storageState: PARTNER_STATE });
 
-  test('a payout leaves the partner balance and shows up on their earnings screen', async ({
-    page,
-  }) => {
+  /**
+   * The one way a partner is paid since 26.09.2026: a settlement claims every
+   * settleable posting of a period, a second administrator approves it, and
+   * "paid" — with the bank's reference — is the single step that posts. The
+   * retired request/confirm payout engine answered `POST /payouts`; that
+   * route is gone, and the first test below pins that it stays gone.
+   */
+  const settlementPaths = {
+    draft: (partnerId: string) => `/partner-settlements/drafts/${partnerId}`,
+    ready: (id: string) => `/partner-settlements/${id}/ready`,
+    approve: (id: string) => `/partner-settlements/${id}/approve`,
+    paid: (id: string) => `/partner-settlements/${id}/paid`,
+  };
+
+  interface Settlement {
+    id: string;
+    status: string;
+    netPayableAmount: string;
+  }
+
+  /** Earns the café something new to settle, so the test never depends on what the seed left behind. */
+  const earnAtCafe = async (adminToken: string, cafeId: string, amount: string, label: string) => {
+    const customerToken = await apiLogin(PHONES.refundCustomer, 'refund-customer');
+    const payment = await api<{ paymentId: string }>(customerToken, '/payments', {
+      method: 'POST',
+      body: { partnerId: cafeId, amount, sourceToken: 'tok_demo_visa', idempotencyKey: unique(label) },
+    });
+    await waitForSettlement(adminToken, payment.paymentId);
+  };
+
+  const wholePeriod = () => ({
+    periodStart: '2020-01-01T00:00:00.000Z',
+    periodEnd: new Date(Date.now() + 60_000).toISOString(),
+  });
+
+  test('the retired payout routes are gone, for the most privileged caller there is', async () => {
     const adminToken = await apiLogin(PHONES.admin, 'admin');
     const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
     const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
 
+    const request = await fetch(`${API}/payouts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ partnerId: cafe.id, amount: '100', idempotencyKey: unique('e2e-legacy') }),
+    });
+    expect(request.status).toBe(404);
+    await expectLedgerBalanced(adminToken);
+  });
+
+  test('a settlement pays the partner everything owed, needs a second person, and posts only on "paid"', async ({
+    page,
+  }) => {
+    const adminToken = await apiLogin(PHONES.admin, 'admin');
+    const approverToken = await apiLogin(PHONES.approver, 'approver');
+    const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
+    const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
+
+    await earnAtCafe(adminToken, cafe.id, '12000', 'e2e-settle-earn');
     const before = await api<{ availableBalance: string }>(
       adminToken,
       `/payouts/partners/${cafe.id}/balance`,
     );
-    const amount = 1500;
-    expect(Number(before.availableBalance)).toBeGreaterThan(amount);
+    expect(Number(before.availableBalance)).toBeGreaterThan(0);
+    const clearingBefore = await clearingBalance(adminToken);
 
-    const payout = await api<{ payoutId: string; remainingBalance: string }>(
+    const draft = await api<Settlement>(adminToken, settlementPaths.draft(cafe.id), {
+      method: 'POST',
+      body: wholePeriod(),
+    });
+    expect(draft.status).toBe('DRAFT');
+    expect(Number(draft.netPayableAmount)).toBeCloseTo(Number(before.availableBalance), 4);
+
+    await api(adminToken, settlementPaths.ready(draft.id), {
+      method: 'POST',
+      body: { documentNumber: unique('E2E-ACT') },
+    });
+
+    // The maker cannot be the checker — asserted through the whole stack,
+    // because this is the path an actual person takes.
+    const selfApprove = await fetch(`${API}${settlementPaths.approve(draft.id)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    });
+    expect(selfApprove.status).toBe(403);
+
+    const approved = await api<Settlement>(approverToken, settlementPaths.approve(draft.id), {
+      method: 'POST',
+    });
+    expect(approved.status).toBe('APPROVED');
+
+    // Nothing has moved yet: approval is a decision, not a posting.
+    const afterApprove = await api<{ availableBalance: string }>(
       adminToken,
-      '/payouts',
-      {
-        method: 'POST',
-        body: { partnerId: cafe.id, amount: String(amount), idempotencyKey: unique('e2e-payout') },
-      },
+      `/payouts/partners/${cafe.id}/balance`,
     );
+    expect(afterApprove.availableBalance).toBe(before.availableBalance);
 
-    expect(Number(payout.remainingBalance)).toBeCloseTo(
-      Number(before.availableBalance) - amount,
+    const paid = await api<Settlement>(approverToken, settlementPaths.paid(draft.id), {
+      method: 'POST',
+      body: { bankTransferReference: unique('E2E-WIRE') },
+    });
+    expect(paid.status).toBe('PAID');
+
+    const after = await api<{ availableBalance: string }>(
+      adminToken,
+      `/payouts/partners/${cafe.id}/balance`,
+    );
+    expect(Number(after.availableBalance)).toBeCloseTo(
+      Number(before.availableBalance) - Number(draft.netPayableAmount),
       4,
     );
+    // The retired engine parked transfers in BANK_CLEARING; a settlement never touches it.
+    expect(await clearingBalance(adminToken)).toBeCloseTo(clearingBefore, 4);
 
     // ── The partner's own view of it ─────────────────────────────────────
     await page.goto(`${PARTNER}/earnings`);
-    await expect(page.getByText('1,500.00', { exact: false }).first()).toBeVisible({
+    await expect(page.getByText(`${Number(after.availableBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })} AMD`, { exact: false }).first()).toBeVisible({
       timeout: 20_000,
     });
 
     await expectLedgerBalanced(adminToken);
   });
 
-  test('a confirmed payout drains the clearing account rather than parking there', async () => {
+  test('the same earnings cannot be settled twice', async () => {
     const adminToken = await apiLogin(PHONES.admin, 'admin');
     const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
     const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
 
-    const payout = await api<{ payoutId: string }>(adminToken, '/payouts', {
-      method: 'POST',
-      body: { partnerId: cafe.id, amount: '900', idempotencyKey: unique('e2e-payout-confirm') },
-    });
-
-    const clearingBefore = await clearingBalance(adminToken);
-    expect(clearingBefore).toBeLessThan(0); // credit-normal: in flight
-
-    // The same admin cannot confirm their own request — asserted here rather
-    // than only in the integration suite, because this is the path an actual
-    // person takes and the refusal has to survive the whole stack.
-    const selfConfirm = await fetch(`${API}/payouts/${payout.payoutId}/confirm`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-      body: JSON.stringify({ bankReference: unique('E2E-SELF') }),
-    });
-    expect(selfConfirm.status).toBe(403);
-
-    const approverToken = await apiLogin(PHONES.approver, 'approver');
-    await api(approverToken, `/payouts/${payout.payoutId}/confirm`, {
-      method: 'POST',
-      body: { bankReference: unique('E2E-WIRE') },
-    });
-
-    // The whole point of a clearing account: settled money leaves it.
-    expect(await clearingBalance(adminToken)).toBeCloseTo(clearingBefore + 900, 4);
-    await expectLedgerBalanced(adminToken);
-  });
-
-  test('a payout larger than the partner has earned is refused', async () => {
-    const adminToken = await apiLogin(PHONES.admin, 'admin');
-    const partners = await api<Array<{ id: string; displayName: string }>>(adminToken, '/partners');
-    const cafe = partners.find((p) => p.displayName === 'Cafe Yerevan')!;
-
-    const { availableBalance } = await api<{ availableBalance: string }>(
-      adminToken,
-      `/payouts/partners/${cafe.id}/balance`,
-    );
-
+    // The previous test paid everything the café was owed; a draft over the
+    // same period finds nothing to pay and refuses rather than paying zero.
     await expect(
-      api(adminToken, '/payouts', {
-        method: 'POST',
-        body: {
-          partnerId: cafe.id,
-          amount: String(Number(availableBalance) + 10_000),
-          idempotencyKey: unique('e2e-payout-over'),
-        },
-      }),
+      api(adminToken, settlementPaths.draft(cafe.id), { method: 'POST', body: wholePeriod() }),
     ).rejects.toThrow();
 
     await expectLedgerBalanced(adminToken);

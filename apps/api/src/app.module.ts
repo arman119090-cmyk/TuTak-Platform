@@ -16,6 +16,7 @@ import { MediaStorageModule } from './infrastructure/media/media-storage.module'
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ClientIpThrottlerGuard } from './common/guards/client-ip-throttler.guard';
+import { EmergencyFreezeGuard } from './common/guards/emergency-freeze.guard';
 import { RequestContextMiddleware } from './common/observability/request-context.middleware';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -128,6 +129,9 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
   ],
   providers: [
     { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
+    // Before authentication on purpose: a frozen platform answers "frozen",
+    // whoever is asking — see the guard's own docblock.
+    { provide: APP_GUARD, useClass: EmergencyFreezeGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },

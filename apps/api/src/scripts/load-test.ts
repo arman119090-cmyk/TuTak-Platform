@@ -32,6 +32,7 @@ import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
 import { PayoutHistoryService } from '../modules/payouts/payout-history.service';
 import { PartnerSettlementService } from '../modules/partner-settlements/partner-settlement.service';
+import { EmployeeShiftService } from '../modules/employee-shifts/employee-shift.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
 import { PurchaseIntentsService } from '../modules/purchase-intents/purchase-intents.service';
 import { ReferralService } from '../modules/referral/referral.service';
@@ -176,6 +177,7 @@ async function main() {
   const settlements = app.get(PartnerSettlementService);
   const outbox = app.get(OutboxService);
   const intents = app.get(PurchaseIntentsService);
+  const shifts = app.get(EmployeeShiftService);
   const referrals = app.get(ReferralService);
   const ledger = app.get(LedgerService);
 
@@ -326,7 +328,8 @@ async function main() {
     ['Maker', 'Checker'].map((lastName, i) =>
       prisma.user.create({
         data: {
-          phone: phoneFor(CUSTOMERS + i),
+          // 9000+: an index no other fixture in this script reaches.
+          phone: phoneFor(9000 + i),
           firstName: 'Load',
           lastName,
           passwordHash,
@@ -335,6 +338,17 @@ async function main() {
       }),
     ),
   );
+  // Approval snapshots where the money goes; a partner with no bank account
+  // on file cannot be approved, so the fixture partner gets one.
+  await prisma.partnerBankAccount.create({
+    data: {
+      partnerId: partner.id,
+      beneficiaryName: `Load Test ${run} LLC`,
+      accountNumber: `AM00 LOAD ${run}`,
+      bankName: 'Load Test Bank',
+      createdByUserId: makerRow!.id,
+    },
+  });
   const owedBefore = await payouts.availableBalance(partner.id);
   const draftRuns = await saturate(Math.min(CONCURRENCY, 16), Math.min(SECONDS, 10), async () => {
     await settlements.createDraft({
@@ -392,7 +406,7 @@ async function main() {
   // Each merchant needs its own confirming staff member: affiliation is what
   // `create` refuses, so a staff member not attached to the partner would
   // measure a path production rejects rather than the settlement.
-  const tills: Array<{ partnerId: string; staffUserId: string }> = [];
+  const tills: Array<{ partnerId: string; staffUserId: string; branchId: string }> = [];
   for (let i = 0; i < PARTNERS; i += 1) {
     const merchant =
       i === 0
@@ -417,13 +431,26 @@ async function main() {
     await prisma.partnerMembership.create({
       data: { partnerId: merchant.id, userId: staff.id },
     });
-    tills.push({ partnerId: merchant.id, staffUserId: staff.id });
+    // Since the shift rollout a till confirms purchases only inside an open
+    // shift at a branch; the load-test staff clock in the way real staff do.
+    const branch = await prisma.partnerBranch.create({
+      data: {
+        partnerId: merchant.id,
+        name: `Load Test ${run}-${i} till`,
+        address: 'Load Test St. 1',
+        city: 'Yerevan',
+        latitude: 40.18,
+        longitude: 44.51,
+      },
+    });
+    await shifts.start(staff.id, branch.id);
+    tills.push({ partnerId: merchant.id, staffUserId: staff.id, branchId: branch.id });
   }
 
   const purchases = await saturate(CONCURRENCY, SECONDS, async (n) => {
     const till = tills[n % tills.length]!;
     const intent = await intents.create(
-      { partnerId: till.partnerId, grossAmount: '1000' },
+      { partnerId: till.partnerId, partnerBranchId: till.branchId, grossAmount: '1000' },
       customers[n % customers.length]!,
     );
     await intents.confirm(intent.id, till.staffUserId);
@@ -506,7 +533,7 @@ async function main() {
   const till = tills[0]!;
   for (const customerId of [...bonusOnly, ...chained]) {
     const warmup = await intents.create(
-      { partnerId: till.partnerId, grossAmount: WARMUP_GROSS },
+      { partnerId: till.partnerId, partnerBranchId: till.branchId, grossAmount: WARMUP_GROSS },
       customerId,
     );
     await intents.confirm(warmup.id, till.staffUserId);
@@ -527,6 +554,7 @@ async function main() {
     const intent = await intents.create(
       {
         partnerId: till.partnerId,
+        partnerBranchId: till.branchId,
         grossAmount: '1000',
         bonusAmountRequested: BONUS_SPEND,
       },
@@ -545,7 +573,7 @@ async function main() {
 
   const throughChain = await saturate(CONCURRENCY, SECONDS, async (n) => {
     const intent = await intents.create(
-      { partnerId: till.partnerId, grossAmount: '1000' },
+      { partnerId: till.partnerId, partnerBranchId: till.branchId, grossAmount: '1000' },
       chained[n % chained.length]!,
     );
     await intents.confirm(intent.id, till.staffUserId);
@@ -562,6 +590,7 @@ async function main() {
     const intent = await intents.create(
       {
         partnerId: till.partnerId,
+        partnerBranchId: till.branchId,
         grossAmount: '1000',
         bonusAmountRequested: BONUS_SPEND,
       },
@@ -637,16 +666,34 @@ async function main() {
       WHERE w."reservedBonus" <> COALESCE(r.s, 0)`,
   );
 
-  // Every unit taken out of a lot must be accounted for by an allocation
-  // naming that lot. Consume a lot twice and this is what disagrees.
+  // Every unit taken out of a lot must be accounted for: by an allocation of
+  // a hold that is still active or was settled, or by an accrual reversal
+  // (a refund clawing the lot back — `reverseAccrualLot`, a DEBIT REVERSAL
+  // ledger entry naming the lot). A released hold gives the lot its units
+  // back but keeps its allocation rows as history, so those must not count
+  // — the first version of this check summed every allocation and flagged
+  // every lot a rolled-back saga had ever touched (26.09.2026). Expired lots
+  // are zeroed by the sweep and checked by the expiry invariants instead.
+  // Consume a lot twice and this is what disagrees.
   await check(
-    'every lot consumed exactly as much as its allocations claim',
+    'every lot consumed exactly as much as its live allocations and reversals claim',
     prisma.$queryRaw`
       SELECT count(*) AS n FROM bonus_lots bl
       LEFT JOIN (
-        SELECT "lotId", SUM(amount) AS s FROM bonus_reservation_allocations GROUP BY "lotId"
+        SELECT a."lotId", SUM(a.amount) AS s
+        FROM bonus_reservation_allocations a
+        JOIN bonus_reservations r ON r.id = a."reservationId"
+        WHERE r.status IN ('ACTIVE', 'SETTLED')
+        GROUP BY a."lotId"
       ) a ON a."lotId" = bl.id
-      WHERE bl."originalAmount" - bl."remainingAmount" <> COALESCE(a.s, 0)`,
+      LEFT JOIN (
+        SELECT "relatedLotId" AS "lotId", SUM(amount) AS s
+        FROM bonus_ledger_entries
+        WHERE type = 'REVERSAL' AND direction = 'DEBIT' AND "relatedLotId" IS NOT NULL
+        GROUP BY "relatedLotId"
+      ) rv ON rv."lotId" = bl.id
+      WHERE bl.status <> 'EXPIRED'
+        AND bl."originalAmount" - bl."remainingAmount" <> COALESCE(a.s, 0) + COALESCE(rv.s, 0)`,
   );
   await check(
     'no lot is over-consumed or negative',

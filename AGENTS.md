@@ -53,8 +53,15 @@ DeepSeek, Codex) и для человека, который запускает �
 ## 4. Обзор кода вторыми моделями
 
 `.github/workflows/ai-review.yml` вызывает Kimi и DeepSeek на каждый PR, если
-в GitHub Secrets есть `KIMI_API_KEY` / `DEEPSEEK_API_KEY`. Без ключей шаг
-печатает `BLOCKED_BY_API_KEY` и не валит CI. Их вывод — **совет, не approve**:
+в GitHub Secrets есть `KIMI_API_KEY` / `DEEPSEEK_API_KEY`. Каждый прогон модели
+заканчивается ровно одним статусом: `REVIEW_COMPLETE`, `BLOCKED_BY_API_KEY`,
+`PROVIDER_FAILURE`, `INVALID_RESPONSE`, `NOTHING_TO_REVIEW`, `NOT_RUN`
+(`scripts/ai-review.mjs`, тесты — `scripts/ai-review.test.mjs`, без сети).
+Job «Kimi + DeepSeek review» **зелёный только когда обе модели вернули
+`REVIEW_COMPLETE`** (или diff не содержит кода); иначе шаг «Verdict» валит
+этот job намеренно. Job advisory и **не входит** в required checks ruleset
+«Protect main» — и не должен туда попадать, пока ключей нет. Вывод моделей —
+**совет, не approve**:
 любое замечание проверяется тестом или чтением кода до того, как попадёт в
 отчёт как факт. Ключи никогда не лежат в репозитории.
 

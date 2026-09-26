@@ -21,11 +21,26 @@
   Системный промпт нацелен на деньги: баланс двойной записи, идемпотентность,
   гонки, maker/checker, tenant isolation, авторизация на write-маршрутах;
   шкала P0/P1/P2/NIT; «не хвалить».
-- Без ключа скрипт печатает `BLOCKED_BY_API_KEY` **и постит это же в PR как
-  sticky-комментарий** («это не чистое ревью»), завершаясь с кодом 0 —
-  проверено локально. Сбой провайдера после 2 повторов → `PROVIDER_FAILURE`
-  тем же способом. Job **никогда не валит CI**, но отсутствие ревью никогда
-  не выглядит как «нет замечаний» (`AGENTS.md` §4).
+- Статусы (с 26.09, закрытие «ложного зелёного»): каждый прогон модели
+  заканчивается ровно одним из `REVIEW_COMPLETE` / `BLOCKED_BY_API_KEY` /
+  `PROVIDER_FAILURE` / `INVALID_RESPONSE` / `NOTHING_TO_REVIEW` / `NOT_RUN`;
+  статус пишется в `$GITHUB_STEP_SUMMARY`, в step output `status`, в
+  `ai-review-out/<provider>-<mode>.status.json` и в sticky-комментарий PR
+  («это не чистое ревью»). Шаг модели сам никогда не падает (чтобы вторая
+  модель успела отработать); финальный шаг **Verdict**
+  (`node scripts/ai-review.mjs --verdict`) выходит с кодом 1, если не все
+  модели `REVIEW_COMPLETE` (исключение — обе `NOTHING_TO_REVIEW`: в diff нет
+  кода, docs-only PR). Поэтому job «Kimi + DeepSeek review» GREEN ⇔ обе
+  модели реально отревьюили. Job **не является required check** и не должен
+  им становиться без ключей — иначе заблокирует все PR. Ответ модели не в
+  форме JSON-массива объектов → `INVALID_RESPONSE` (raw сохраняется), а не
+  «0 замечаний».
+- Тесты `scripts/ai-review.test.mjs` (`node --test`, fetch подменён, платные
+  API не вызываются; выполняются первым шагом workflow): нет ключа Kimi; нет
+  ключа DeepSeek; нет обоих; таймаут провайдера (реальный AbortController) и
+  HTTP 500/503/401; невалидный JSON; Kimi success + DeepSeek failure; обе
+  success (+ sticky-комментарии); пустой diff; отсутствующий status-файл;
+  нормализация findings. 12 тестов.
 - Вывод — JSON по схеме `FINDING_SCHEMA` в `scripts/ai-review.mjs`
   (`severity P0–P3, category, file, line, finding, evidence, suggestedFix,
   confidence`), сохраняется артефактом (`ai-review-out/<provider>-<mode>.json`,

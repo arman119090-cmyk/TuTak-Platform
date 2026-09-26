@@ -3,16 +3,26 @@ name: AI review (advisory)
 # Second-opinion review of every pull request by Kimi and DeepSeek, plus a
 # weekly full-module audit of the money code.
 #
-# Advisory by construction: the job never fails the PR, and it never runs a
-# model unless the API keys exist in GitHub Secrets — the repository holds no
-# keys (AGENTS.md §4). Without a key the step posts BLOCKED_BY_API_KEY as a PR
-# comment and exits 0; a provider failure posts PROVIDER_FAILURE the same way.
-# Neither ever looks like a clean review, and neither model sees the other's
-# answer (they run as separate steps with separate prompts).
+# Honest by construction. Each model step ends in exactly one STATUS
+# (scripts/ai-review.mjs): REVIEW_COMPLETE, BLOCKED_BY_API_KEY,
+# PROVIDER_FAILURE, INVALID_RESPONSE, NOTHING_TO_REVIEW or NOT_RUN. The
+# status goes to the step summary, to the step outputs and into a sticky PR
+# comment. The final "Verdict" step is GREEN only when BOTH models report
+# REVIEW_COMPLETE (or both NOTHING_TO_REVIEW for a docs-only diff); anything
+# else fails this job on purpose, so a missing key or a dead provider never
+# looks like a clean review.
 #
-# Output per model: one sticky PR comment (findings table) and a JSON file
-# (scripts/ai-review.mjs FINDING_SCHEMA) uploaded as an artifact for a later
-# decision engine. Nothing here merges, deploys or marks anything verified.
+# Advisory, not a gate: this job is NOT in the "Protect main" ruleset's
+# required checks and MUST NOT be added there while KIMI_API_KEY /
+# DEEPSEEK_API_KEY are absent from GitHub Secrets — it would block every PR.
+# The repository holds no keys (AGENTS.md §4); forks never receive secrets.
+# Neither model sees the other's answer (separate steps, separate prompts).
+#
+# Output per model: one sticky PR comment (findings table) and JSON files
+# (scripts/ai-review.mjs FINDING_SCHEMA + <provider>-<mode>.status.json)
+# uploaded as an artifact for a later decision engine. Nothing here merges,
+# deploys or marks anything verified. The script itself is covered by
+# scripts/ai-review.test.mjs (offline, no model calls) — run first below.
 
 on:
   pull_request:
@@ -51,6 +61,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Self-test of the review script (offline, no model calls)
+        run: node --test scripts/ai-review.test.mjs
       - name: Diff against the base branch
         run: |
           git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1
@@ -58,7 +70,8 @@ jobs:
             -- . ':(exclude)pnpm-lock.yaml' ':(exclude)**/*.snap' ':(exclude)docs/**' \
             > /tmp/pr.diff
           wc -c /tmp/pr.diff
-      - name: Kimi
+      - name: Kimi (status in step summary; never fails by itself)
+        id: kimi
         env:
           AI_REVIEW_PROVIDER: kimi
           AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
@@ -69,7 +82,8 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node scripts/ai-review.mjs /tmp/pr.diff
-      - name: DeepSeek
+      - name: DeepSeek (status in step summary; never fails by itself)
+        id: deepseek
         env:
           AI_REVIEW_PROVIDER: deepseek
           AI_REVIEW_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -87,6 +101,12 @@ jobs:
           path: ai-review-out/
           if-no-files-found: ignore
           retention-days: 90
+      - name: "Verdict: GREEN only if both models returned REVIEW_COMPLETE (Kimi=${{ steps.kimi.outputs.status || 'NOT_RUN' }}, DeepSeek=${{ steps.deepseek.outputs.status || 'NOT_RUN' }})"
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/ai-review.mjs --verdict ai-review-out kimi,deepseek
 
   weekly-audit:
     name: Weekly full audit of the money modules
@@ -115,7 +135,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Self-test of the review script (offline, no model calls)
+        run: node --test scripts/ai-review.test.mjs
       - name: Kimi
+        id: kimi
         env:
           AI_REVIEW_PROVIDER: kimi
           AI_REVIEW_MODE: full
@@ -124,6 +147,7 @@ jobs:
           AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
         run: node scripts/ai-review.mjs "${{ matrix.module }}"
       - name: DeepSeek
+        id: deepseek
         env:
           AI_REVIEW_PROVIDER: deepseek
           AI_REVIEW_MODE: full
@@ -138,3 +162,8 @@ jobs:
           path: ai-review-out/
           if-no-files-found: ignore
           retention-days: 90
+      - name: "Verdict: GREEN only if both models returned REVIEW_COMPLETE (Kimi=${{ steps.kimi.outputs.status || 'NOT_RUN' }}, DeepSeek=${{ steps.deepseek.outputs.status || 'NOT_RUN' }})"
+        if: always()
+        env:
+          AI_REVIEW_MODE: full
+        run: node scripts/ai-review.mjs --verdict ai-review-out kimi,deepseek

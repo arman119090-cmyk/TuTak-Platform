@@ -357,7 +357,7 @@ test('no input path → NOT_RUN; STATUSES is the closed list', async () => {
   );
 });
 
-test('temperature: 0.1 is sent by default; AI_REVIEW_TEMPERATURE="" omits the field (Moonshot fixes it server-side)', async () => {
+test('temperature 0.1 by default; AI_REVIEW_TEMPERATURE="" omits it and AI_REVIEW_REASONING_EFFORT adds reasoning_effort (Kimi only)', async () => {
   const bodies = [];
   const capture = async (url, init = {}) => {
     if (String(url).startsWith('https://api.github.com/'))
@@ -376,9 +376,18 @@ test('temperature: 0.1 is sent by default; AI_REVIEW_TEMPERATURE="" omits the fi
   assert.equal(d.status, 'REVIEW_COMPLETE');
   assert.equal(bodies[0].temperature, 0.1, 'DeepSeek keeps the deterministic default');
   assert.equal(bodies[0].max_tokens, 4000);
+  assert.equal(
+    'reasoning_effort' in bodies[0],
+    false,
+    'DeepSeek request carries no reasoning_effort',
+  );
   const s2 = scratch();
   const k = await runReview({
-    env: envFor('kimi', 'k', s2, { AI_REVIEW_TEMPERATURE: '' }),
+    env: envFor('kimi', 'k', s2, {
+      AI_REVIEW_TEMPERATURE: '',
+      AI_REVIEW_REASONING_EFFORT: 'low',
+      AI_REVIEW_MAX_OUTPUT_TOKENS: '32000',
+    }),
     argv: [s2.diff],
     fetchImpl: capture,
     sleep: noSleep,
@@ -386,6 +395,8 @@ test('temperature: 0.1 is sent by default; AI_REVIEW_TEMPERATURE="" omits the fi
   });
   assert.equal(k.status, 'REVIEW_COMPLETE');
   assert.equal('temperature' in bodies[1], false, 'Kimi request carries no temperature field');
+  assert.equal(bodies[1].reasoning_effort, 'low');
+  assert.equal(bodies[1].max_tokens, 32000);
   assert.equal(bodies[1].model, 'kimi-model');
   const s3 = scratch();
   await runReview({

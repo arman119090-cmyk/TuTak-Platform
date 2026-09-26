@@ -53,8 +53,8 @@ jobs:
     name: Kimi + DeepSeek review
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # Kimi may take up to AI_REVIEW_TIMEOUT_MS (10 min) per attempt, 3 attempts.
-    timeout-minutes: 35
+    # Kimi may take up to AI_REVIEW_TIMEOUT_MS (5 min) per attempt, 3 attempts.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,10 +83,14 @@ jobs:
           AI_REVIEW_TEMPERATURE: ''
           # kimi-k3 always reasons and its reasoning_content counts toward
           # max_tokens (docs: "set max_tokens >= 16000"); with the shared 4000
-          # cap the answer came back empty (INVALID_RESPONSE). Reasoning also
-          # takes minutes on a large diff, hence the longer per-request timeout.
+          # cap the answer came back empty (INVALID_RESPONSE). At the default
+          # reasoning_effort "max" a 33k-token diff reasoned for over 5 minutes
+          # and the request died on Node fetch's 300 s header timeout — so the
+          # effort is "low" and the timeout stays at the 300 s that fetch can
+          # actually honour for a non-streaming call.
           AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.KIMI_MAX_OUTPUT_TOKENS || '32000' }}
-          AI_REVIEW_TIMEOUT_MS: ${{ vars.KIMI_TIMEOUT_MS || '600000' }}
+          AI_REVIEW_REASONING_EFFORT: ${{ vars.KIMI_REASONING_EFFORT || 'low' }}
+          AI_REVIEW_TIMEOUT_MS: ${{ vars.KIMI_TIMEOUT_MS || '300000' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -157,7 +161,8 @@ jobs:
           AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
           AI_REVIEW_TEMPERATURE: ''
           AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.KIMI_MAX_OUTPUT_TOKENS || '32000' }}
-          AI_REVIEW_TIMEOUT_MS: ${{ vars.KIMI_TIMEOUT_MS || '600000' }}
+          AI_REVIEW_REASONING_EFFORT: ${{ vars.KIMI_REASONING_EFFORT || 'low' }}
+          AI_REVIEW_TIMEOUT_MS: ${{ vars.KIMI_TIMEOUT_MS || '300000' }}
         run: node scripts/ai-review.mjs "${{ matrix.module }}"
       - name: DeepSeek
         id: deepseek

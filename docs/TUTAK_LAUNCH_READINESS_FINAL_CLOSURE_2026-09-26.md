@@ -32,7 +32,7 @@ BEFORE PILOT — 8 пунктов; (17) три вердикта; (18) крите
 | HEAD на старте задачи | `327e5661` |
 | FINAL code SHA (последнее изменение `apps/`, `packages/`) | `7f53969a` — **не изменился** |
 | Этот коммит закрытия AI-review (scripts + workflow + AGENTS/AI docs) | `34bda477` |
-| Отчёт закрытия (этот файл) | см. коммит ниже |
+| Отчёт закрытия (этот файл) | `cf299d84` (+ этот коммит с записью SHA) |
 | MAIN | `369eda19` (ancestor HEAD — проверено `git merge-base --is-ancestor`) |
 | PRODUCTION (Railway `tutak-api`, deployment `f94d56eb`, 19.09 07:30 UTC) | `369eda19` — ничего из ветки в production нет |
 

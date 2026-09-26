@@ -449,18 +449,15 @@ export const settlementAdminApi = {
   },
 
   /**
-   * Revoke an approval before any transfer started: the claims are released
-   * and the partner is redrafted through now (null when nothing is payable).
+   * Revoke an approval while it is provable that no money moved: the claims
+   * are released and the settlement becomes CANCELLED. No draft is made — the
+   * postings go into the next settlement drafted for the partner's period.
    */
   async revokeApproval(id: string, reason: string) {
     const { data } = await httpClient.post(`/admin/partner-settlements/${id}/revoke-approval`, {
       reason,
     });
-    return data.data as {
-      revoked: PartnerSettlementDto;
-      redraft: PartnerSettlementDto | null;
-      redraftSkipped: string | null;
-    };
+    return data.data as PartnerSettlementDto;
   },
 };
 

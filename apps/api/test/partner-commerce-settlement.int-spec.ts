@@ -375,12 +375,12 @@ describe('Partner Commerce — settlement through PartnerSettlementService (inte
   });
 
   it.each([
-    // [outcome, refund, redraft net = 28500 − refund + 5% commission on the refund]
+    // [outcome, refund, next net = 28500 − refund + 5% commission on the refund]
     ['RESOLVED_CUSTOMER', '12000', '17100.0000'],
     ['RESOLVED_SPLIT', '6000', '22800.0000'],
   ] as const)(
-    '8e: %s before any transfer — the stale 28500 is not paid; revoke releases the claims and the redraft nets the refund',
-    async (outcome, refund, redraftNet) => {
+    '8e: %s before any transfer — the stale 28500 is not paid; revoke releases the claims and the closed-period draft nets the refund',
+    async (outcome, refund, nextNet) => {
       const { setup, customer, order, settlement } = await approvedSettlement();
       const dispute = await openOrderDispute(order.id, customer.user.id);
       await disputes.resolve(dispute.id, setup.admin.id, { outcome, customerRefundAmount: refund, note: 'damaged on arrival' });
@@ -394,18 +394,23 @@ describe('Partner Commerce — settlement through PartnerSettlementService (inte
       await expect(engine.cancel(settlement.id, { actorId: maker, reason: 'x' })).rejects.toThrow(/draft or ready/);
 
       const claimedBefore = (await prisma.partnerSettlementEntry.findMany({ where: { settlementId: settlement.id } })).map((e) => e.ledgerPostingId);
-      const result = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
-      expect(result.revoked.status).toBe('CANCELLED');
-      expect(result.revoked.approvedByUserId).toBe(checker); // the approval stays as history
+      const revoked = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
+      expect(revoked.status).toBe('CANCELLED');
+      expect(revoked.approvedByUserId).toBe(checker); // the approval stays as history
+      expect(revoked.cancelledReason).toMatch(/approval revoked/);
       expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(0);
+      // Revoke drafts nothing: the postings are simply unsettled again.
+      expect(await prisma.partnerSettlement.count({ where: { partnerId: setup.partner.id, status: { in: ['DRAFT', 'READY'] } } })).toBe(0);
+      const unsettled = await assertExplained(setup.partner.id);
+      expect(unsettled.entries.map((e) => e.ledgerPostingId)).toEqual(expect.arrayContaining(claimedBefore));
+      expect(unsettled.net.toFixed(4)).toBe(nextNet);
 
-      const redraft = result.redraft!;
-      expect(redraft.status).toBe('DRAFT');
-      expect(redraft.netPayableAmount.toFixed(4)).toBe(redraftNet);
-      const redrafted = await prisma.partnerSettlementEntry.findMany({ where: { settlementId: redraft.id } });
-      // The released claims are claimed again, once, together with the refund.
-      expect(redrafted.map((e) => e.ledgerPostingId)).toEqual(expect.arrayContaining(claimedBefore));
-      expect(await kindsOf(redraft.id)).toEqual(
+      // The next settlement of the cadence claims the released credit and the refund together, once.
+      const next = await draftCurrentPeriod(setup.partner.id);
+      expect(next.netPayableAmount.toFixed(4)).toBe(nextNet);
+      const nextClaims = (await prisma.partnerSettlementEntry.findMany({ where: { settlementId: next.id } })).map((e) => e.ledgerPostingId);
+      expect(nextClaims).toEqual(expect.arrayContaining(claimedBefore));
+      expect(await kindsOf(next.id)).toEqual(
         expect.arrayContaining([
           'partner_order.completion:CREDIT:30000',
           'partner.contribution:DEBIT:1500',
@@ -415,9 +420,9 @@ describe('Partner Commerce — settlement through PartnerSettlementService (inte
       );
       await assertExplained(setup.partner.id);
 
-      const paid = await pay(redraft.id);
+      const paid = await pay(next.id);
       expect(paid.status).toBe('PAID');
-      expect(paid.netPayableAmount.toFixed(4)).toBe(redraftNet);
+      expect(paid.netPayableAmount.toFixed(4)).toBe(nextNet);
       expect((await owedToPartner(setup.partner.id)).toFixed(4)).toBe('0.0000');
       await assertExplained(setup.partner.id);
     },
@@ -498,9 +503,9 @@ describe('Partner Commerce — settlement through PartnerSettlementService (inte
     await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8H' })).rejects.toEqual(
       refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'),
     );
-    // ...so the only way to pay is the redraft.
-    const { redraft } = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
-    await pay(redraft!.id);
+    // ...so the only way to pay is to revoke and let the cadence's next draft claim what is owed now.
+    await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
+    await pay((await draftCurrentPeriod(setup.partner.id)).id);
 
     const payouts = await prisma.partnerSettlement.findMany({ where: { partnerId: setup.partner.id, status: 'PAID' } });
     const totalPaid = payouts.reduce((sum, p) => sum.plus(p.netPayableAmount), new Decimal(0));
@@ -517,6 +522,158 @@ describe('Partner Commerce — settlement through PartnerSettlementService (inte
     // The customer has the 12000 back.
     expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-32000.0000');
     await assertExplained(setup.partner.id);
+  });
+
+  // ── 8i-8k: FAILED — revocable only when the attempt record proves no money moved ──
+
+  it('8i: FAILED with the bank\'s unambiguous "no" — provably unpaid: the stale figure is not retried and the approval can be revoked', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    await engine.markPaymentPending(settlement.id, checker);
+    const failed = await engine.markFailed(settlement.id, { actorId: checker, reason: 'IBAN closed', bankTransferReference: 'BOUNCE-8I' });
+    expect(failed.status).toBe('FAILED');
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_CUSTOMER', customerRefundAmount: '12000', note: 'damaged' });
+
+    // The proof: one attempt, resolved, failed — and nothing else.
+    const attempts = await prisma.partnerSettlementTransferAttempt.findMany({ where: { settlementId: settlement.id } });
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({ succeeded: false, bankTransferReference: 'BOUNCE-8I' });
+    expect(attempts[0]!.resolvedAt).not.toBeNull();
+    // So a retry of the stale 28500 is refused, in both forms.
+    await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'RETRY-8I' })).rejects.toEqual(
+      refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'),
+    );
+    await expect(engine.markPaymentPending(settlement.id, checker)).rejects.toEqual(refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'));
+    expect(await paidPostings(settlement.id)).toBe(0);
+    await expect(engine.cancel(settlement.id, { actorId: maker, reason: 'x' })).rejects.toThrow(/draft or ready/);
+
+    const revoked = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
+    expect(revoked.status).toBe('CANCELLED');
+    expect(revoked.failedReason).toBe('IBAN closed'); // history kept
+    expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(0);
+    expect(await prisma.partnerSettlement.count({ where: { partnerId: setup.partner.id, status: { in: ['DRAFT', 'READY'] } } })).toBe(0);
+    const next = await draftCurrentPeriod(setup.partner.id);
+    expect(next.netPayableAmount.toFixed(4)).toBe('17100.0000');
+    await pay(next.id);
+    expect((await owedToPartner(setup.partner.id)).toFixed(4)).toBe('0.0000');
+    await assertExplained(setup.partner.id);
+  });
+
+  it('8j: FAILED by a two-person MONEY_DID_NOT_MOVE — the ambiguous attempt is resolved in place, so the settlement is provably unpaid and revocable', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    await engine.markPaymentPending(settlement.id, checker);
+    await engine.markRequiresReconciliation(settlement.id, { actorId: checker, reason: 'bank timeout', bankTransferReference: 'MAYBE-8J' });
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_CUSTOMER', customerRefundAmount: '12000', note: 'damaged' });
+    // While the bank's answer is unknown: neither payable nor revocable.
+    await expect(engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute' })).rejects.toEqual(refused('TRANSFER_MAY_HAVE_STARTED'));
+    await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'GUESS' })).rejects.toThrow(/needs reconciliation/);
+
+    await engine.proposeReconciliationOutcome(settlement.id, { actorId: maker, outcome: 'MONEY_DID_NOT_MOVE', evidence: 'no debit on the statement' });
+    const failed = await engine.confirmReconciliationOutcome(settlement.id, { actorId: checker });
+    expect(failed.status).toBe('FAILED');
+    // The same attempt turned out not to have worked — not a new row beside an unresolved one.
+    const attempts = await prisma.partnerSettlementTransferAttempt.findMany({ where: { settlementId: settlement.id } });
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({ succeeded: false, bankTransferReference: 'MAYBE-8J', failureReason: 'no debit on the statement' });
+    expect(attempts[0]!.resolvedAt).not.toBeNull();
+
+    await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'RETRY-8J' })).rejects.toEqual(
+      refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'),
+    );
+    const revoked = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
+    expect(revoked.status).toBe('CANCELLED');
+    expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(0);
+    const next = await draftCurrentPeriod(setup.partner.id);
+    expect(next.netPayableAmount.toFixed(4)).toBe('17100.0000');
+    await pay(next.id);
+    await assertExplained(setup.partner.id);
+  });
+
+  it('8k: FAILED after a retracted MONEY_MOVED reading — not provable: revoke refused, the retry pays the approved figure and the refund is debt', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    await engine.markPaymentPending(settlement.id, checker);
+    await engine.markRequiresReconciliation(settlement.id, { actorId: checker, reason: 'bank timeout' });
+    await engine.proposeReconciliationOutcome(settlement.id, { actorId: maker, outcome: 'MONEY_MOVED', evidence: 'statement line 3', bankTransferReference: 'SEEN-8K' });
+    await engine.proposeReconciliationOutcome(settlement.id, { actorId: maker, outcome: 'MONEY_DID_NOT_MOVE', evidence: 'line 3 was another partner' });
+    const failed = await engine.confirmReconciliationOutcome(settlement.id, { actorId: checker });
+    expect(failed.status).toBe('FAILED');
+    expect(failed.bankTransferReference).toBe('SEEN-8K'); // the retracted reading left its reference behind
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_CUSTOMER', customerRefundAmount: '12000', note: 'damaged' });
+
+    await expect(engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute' })).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'TRANSFER_MAY_HAVE_STARTED', message: expect.stringContaining('bank transfer reference') }),
+    });
+    expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(2);
+    // Not provably unpaid, so the refund does not block: the retry pays the approved figure and the refund is the partner's debt.
+    const paid = await engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'RETRY-8K' });
+    expect(paid.status).toBe('PAID');
+    expect(await paidPostings(settlement.id)).toBe(1);
+    const debt = await assertExplained(setup.partner.id);
+    expect(debt.net.toFixed(4)).toBe('-11400.0000');
+  });
+
+  // ── 8r: resolve(dispute) × markPaid on real PostgreSQL ────────────────────
+
+  describe('8r: resolve(dispute) × markPaid — no interleaving pays the stale pre-refund figure', () => {
+    const orderings = [
+      ['pay', 0],
+      ['resolve', 0],
+      ['pay', 15],
+      ['resolve', 15],
+    ] as const;
+
+    async function race(outcome: 'RESOLVED_CUSTOMER' | 'RESOLVED_SPLIT' | 'RESOLVED_PARTNER', first: 'pay' | 'resolve', delayMs: number) {
+      const { setup, customer, order, settlement } = await approvedSettlement();
+      const dispute = await openOrderDispute(order.id, customer.user.id);
+      const refund = outcome === 'RESOLVED_PARTNER' ? {} : { customerRefundAmount: '12000' };
+      const resolve = () => disputes.resolve(dispute.id, setup.admin.id, { outcome, ...refund, note: 'race' });
+      const payNow = () => engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: `RACE-${settlement.id.slice(0, 8)}` });
+      const later = <T>(fn: () => Promise<T>) =>
+        new Promise<T>((res, rej) => {
+          setTimeout(() => {
+            void fn().then(res, rej);
+          }, delayMs);
+        });
+      const [a, b] = first === 'pay' ? await Promise.allSettled([payNow(), later(resolve)]) : await Promise.allSettled([resolve(), later(payNow)]);
+      const [payResult, resolveResult] = first === 'pay' ? [a, b] : [b, a];
+      expect(resolveResult.status).toBe('fulfilled');
+      return { setup, settlement, payResult };
+    }
+    const errorOf = (r: PromiseSettledResult<unknown>) =>
+      r.status === 'rejected' ? ((r.reason as { response?: { error?: string } }).response?.error ?? String(r.reason)) : null;
+
+    it.each(['RESOLVED_CUSTOMER', 'RESOLVED_SPLIT'] as const)('%s: markPaid is refused in every ordering; nothing is posted', async (outcome) => {
+      for (const [first, delayMs] of orderings) {
+        const { setup, settlement, payResult } = await race(outcome, first, delayMs);
+        expect(payResult.status).toBe('rejected');
+        expect(['OPEN_DISPUTE_NOT_IN_SETTLEMENT', 'DISPUTE_REFUND_NOT_IN_SETTLEMENT']).toContain(errorOf(payResult));
+        const after = await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
+        expect(after.status).toBe('APPROVED');
+        expect(await paidPostings(settlement.id)).toBe(0);
+        expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(2);
+        await assertExplained(setup.partner.id);
+      }
+    });
+
+    it('RESOLVED_PARTNER: markPaid passes once the decision is final, and pays exactly once', async () => {
+      for (const [first, delayMs] of orderings) {
+        const { setup, settlement, payResult } = await race('RESOLVED_PARTNER', first, delayMs);
+        if (payResult.status === 'rejected') {
+          // It saw the dispute still open; the decision is in now.
+          expect(errorOf(payResult)).toBe('OPEN_DISPUTE_NOT_IN_SETTLEMENT');
+          await engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: `RACE2-${settlement.id.slice(0, 8)}` });
+        }
+        const after = await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
+        expect(after.status).toBe('PAID');
+        expect(after.netPayableAmount.toFixed(4)).toBe('28500.0000');
+        expect(await paidPostings(settlement.id)).toBe(1);
+        expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(2);
+        expect((await owedToPartner(setup.partner.id)).toFixed(4)).toBe('0.0000');
+        await assertExplained(setup.partner.id);
+      }
+    });
   });
 
   // ── 9: cancellation actual cost ────────────────────────────────────────────

@@ -346,14 +346,22 @@ settlement itself:
 | READY, dispute changed a claimed order credit | `approve` refuses (`OPEN_DISPUTE_NOT_IN_SETTLEMENT` / `DISPUTE_REFUND_NOT_IN_SETTLEMENT`) — cancel and draft through now |
 | APPROVED / PAYMENT_PENDING / FAILED, an OPEN order dispute whose hold is not in it (or none, opened after approval) | `markPaid` and `markPaymentPending` refuse `OPEN_DISPUTE_NOT_IN_SETTLEMENT`: nothing posted, status unchanged — wait for the decision |
 | decided for the partner | nothing blocks; the approved settlement is paid as it is |
-| decided for the customer / split, APPROVED and provably no transfer started | `markPaid` / `markPaymentPending` refuse `DISPUTE_REFUND_NOT_IN_SETTLEMENT`; `revokeApproval` → CANCELLED, claims released, redraft `periodStart` → now nets credit and refund |
-| decided for the customer, a transfer may have started (PAYMENT_PENDING, FAILED, REQUIRES_RECONCILIATION, any attempt / reference / paid posting / PAYMENT_PENDING ever recorded) | `revokeApproval` refuses `TRANSFER_MAY_HAVE_STARTED`, claims stay; the transfer / reconciliation lifecycle finishes it and the refund is debt netted by the next settlement |
+| decided for the customer / split, and provably no money moved (APPROVED; or FAILED with a clean attempt record) | `markPaid` / `markPaymentPending` refuse `DISPUTE_REFUND_NOT_IN_SETTLEMENT`; `revokeApproval` → CANCELLED (approval kept as history), claims released, **no draft** — the credit and the refund are unsettled again and go into the next closed-period draft of the cadence |
+| decided for the customer, a transfer may have moved money (PAYMENT_PENDING; REQUIRES_RECONCILIATION; FAILED with a successful or unresolved attempt, a bank reference or a MONEY_MOVED reading in its history; any paid posting) | `revokeApproval` refuses `TRANSFER_MAY_HAVE_STARTED`, claims stay; the transfer / reconciliation lifecycle finishes it and the refund is debt netted by the next settlement |
 
-"Provably no transfer started" is checked on data: status APPROVED, no
-transfer attempt, no bank reference, no `partner.settlement.paid` posting,
-no `settlement.payment_pending` audit event. A refund counts as "not in the
-settlement" while its return is not written yet, waits on the desk (Q9), or
-has PARTNER_PAYABLE postings this settlement does not claim.
+"Provably no money moved" is checked on data (`transferEvidence`): status
+APPROVED with no `settlement.payment_pending` audit event, or FAILED whose
+every transfer attempt is resolved and none succeeded — the bank's
+unambiguous refusal (`markFailed`) or a two-person MONEY_DID_NOT_MOVE, which
+resolves the ambiguous attempt in place; in both cases no bank reference on
+the settlement, no MONEY_MOVED reading, no `partner.settlement.paid` posting.
+A refund counts as "not in the settlement" while its return is not written
+yet, waits on the desk (Q9), or has PARTNER_PAYABLE postings this settlement
+does not claim. Nothing is frozen for a dispute opened after approval and no
+hold is created later: the settlement waits for the decision. Drafts are
+only ever cut by an administrator for a closed period of the cadence — a
+revoke never drafts, so a correction cannot become an extra settlement
+period (owner's decisions, 26.09.2026).
 
 **One cadence.** `Partner.settlementPeriodicity` (+ `settlementAnchorDay`) —
 DAILY (added), WEEKLY, BIWEEKLY, MONTHLY; bounds in `settlement-period.ts`

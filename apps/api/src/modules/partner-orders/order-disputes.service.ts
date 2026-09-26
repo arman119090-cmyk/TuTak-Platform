@@ -80,10 +80,11 @@ export class OrderDisputesService {
    * engine — claimed by a `PartnerSettlementEntry` whose settlement is
    * APPROVED or later (docs/PARTNER_COMMERCE.md §14)? Then nothing is frozen
    * (Q7b), and the settlement engine guards it instead: it will not record
-   * that settlement as paid while the dispute is open, and a
-   * customer-favourable decision before any transfer is redrafted
-   * (`revokeApproval`); once a transfer may have started, the return is a
-   * deduction the next settlement nets. A
+   * that settlement as paid while the dispute is open; a customer-favourable
+   * decision while it is provable no money moved has the approval revoked
+   * (`revokeApproval`) and the postings settle at the next cadence; once a
+   * transfer may have moved money, the return is a deduction the next
+   * settlement nets. A
    * credit only in a DRAFT/READY settlement is not committed: the dispute
    * freezes it, the hold posting is a deduction, and cancelling that draft
    * leaves the credit and its hold to net out in the next one.

@@ -177,9 +177,11 @@ export class PartnerSettlementAdminController {
   }
 
   /**
-   * Takes back an approval when it is provable that no transfer started,
-   * releases the claims and redrafts through now — for a dispute decided for
-   * the customer after approval. Refused once a transfer may have started.
+   * Takes back an approval when it is provable that no money moved and
+   * releases the claims — for a dispute decided for the customer after
+   * approval. No draft is made: the released postings go into the next
+   * settlement drafted for the partner's closed period. Refused once a
+   * transfer may have moved money.
    */
   @Post(':id/revoke-approval')
   @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)

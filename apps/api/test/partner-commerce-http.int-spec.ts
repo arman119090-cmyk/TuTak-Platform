@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
-import { LedgerAccountType as A, PrismaClient, RoleName } from '@prisma/client';
+import { LedgerAccountType as A, PostingDirection, PrismaClient, RoleName } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
+import { LedgerService } from '../src/modules/ledger/ledger.service';
+import { PartnerSettlementService } from '../src/modules/partner-settlements/partner-settlement.service';
 import { PartnerIntegrationsService } from '../src/modules/partners/partner-integrations.service';
 import { PartnerApiKeyService } from '../src/modules/partners/partner-api-key.service';
 import { CustomerBalanceService } from '../src/modules/customer-balance/customer-balance.service';
@@ -297,5 +300,126 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
     expect((await call('GET', '/admin/partner-orders/return-reviews', { auth: token(w.owner) })).status).toBe(403);
     expect((await call('GET', '/admin/partner-orders/referral-withholdings', { auth: token(w.owner) })).status).toBe(403);
     expect((await call('GET', '/admin/partner-orders/referral-withholdings', { auth: token(w.admin) })).status).toBe(200);
+  });
+
+  /**
+   * `POST admin/partner-settlements/:id/revoke-approval` — the server-side
+   * state machine over HTTP (docs/PARTNER_COMMERCE.md §14): who may, what it
+   * needs, from which states, and that it releases claims without drafting.
+   */
+  it('revoke-approval: permission, reason, and only from a provably unpaid APPROVED or FAILED settlement', async () => {
+    const app = harness.app as unknown as { get<T>(t: unknown): T };
+    const engine = app.get<PartnerSettlementService>(PartnerSettlementService);
+    const ledger = app.get<LedgerService>(LedgerService);
+    // ADMIN holds SETTLEMENT_MANAGE (the finance desk); a second person approves.
+    const finance = await createStaffUser(prisma);
+    await withRole(finance.id, RoleName.ADMIN);
+    const checker = await createStaffUser(prisma);
+    const { user: nobody } = await createCustomer(prisma); // authenticated, no role at all
+    const revoke = (id: string, auth: string, body?: unknown) =>
+      call('POST', `/admin/partner-settlements/${id}/revoke-approval`, { auth, body });
+    const entries = (id: string) => prisma.partnerSettlementEntry.count({ where: { settlementId: id } });
+    const openDrafts = (partnerId: string) =>
+      prisma.partnerSettlement.count({ where: { partnerId, status: { in: ['DRAFT', 'READY'] } } });
+
+    type Stage = 'DRAFT' | 'READY' | 'APPROVED' | 'PAYMENT_PENDING' | 'FAILED' | 'REQUIRES_RECONCILIATION' | 'FAILED_AMBIGUOUS';
+    /** A partner owed 30000 for one settleable posting, with its settlement advanced to `stage`. */
+    async function settlementAt(stage: Stage) {
+      const partner = await createPartner(prisma, { displayName: `Partner ${stage}` });
+      await prisma.partnerBankAccount.create({
+        data: { partnerId: partner.id, beneficiaryName: 'ООО Партнёр', accountNumber: 'AM00 2222', bankName: 'Тестбанк', createdByUserId: finance.id },
+      });
+      const [payable, bonus] = await Promise.all([
+        ledger.accountFor({ type: A.PARTNER_PAYABLE, partnerId: partner.id }),
+        ledger.accountFor({ type: A.BONUS_LIABILITY }),
+      ]);
+      await ledger.post({
+        kind: 'partner.bonus_redemption_compensation',
+        sourceType: 'PurchaseIntent',
+        sourceId: `purchase-${randomUUID()}`,
+        postings: [
+          { accountId: bonus.id, direction: PostingDirection.DEBIT, amount: new Decimal('30000') },
+          { accountId: payable.id, direction: PostingDirection.CREDIT, amount: new Decimal('30000') },
+        ],
+      });
+      const draft = await engine.createDraft({
+        partnerId: partner.id,
+        periodStart: new Date(Date.now() - 86_400_000),
+        periodEnd: new Date(Date.now() + 60_000),
+        actorId: finance.id,
+      });
+      const current = () => prisma.partnerSettlement.findUniqueOrThrow({ where: { id: draft.id } });
+      if (stage === 'DRAFT') return { partner, settlement: await current() };
+      await engine.markReady(draft.id, { actorId: finance.id });
+      if (stage === 'READY') return { partner, settlement: await current() };
+      await engine.approve(draft.id, checker.id);
+      if (stage === 'APPROVED') return { partner, settlement: await current() };
+      await engine.markPaymentPending(draft.id, checker.id);
+      if (stage === 'PAYMENT_PENDING') return { partner, settlement: await current() };
+      if (stage === 'FAILED') {
+        // The bank's unambiguous "no": the one FAILED that proves nothing moved.
+        await engine.markFailed(draft.id, { actorId: checker.id, reason: 'IBAN closed', bankTransferReference: `B-${draft.id.slice(0, 8)}` });
+        return { partner, settlement: await current() };
+      }
+      await engine.markRequiresReconciliation(draft.id, { actorId: checker.id, reason: 'bank timeout' });
+      if (stage === 'REQUIRES_RECONCILIATION') return { partner, settlement: await current() };
+      // A MONEY_MOVED reading, retracted, then confirmed not moved: FAILED with the reference left on the row.
+      await engine.proposeReconciliationOutcome(draft.id, { actorId: finance.id, outcome: 'MONEY_MOVED', evidence: 'line 3', bankTransferReference: `M-${draft.id.slice(0, 8)}` });
+      await engine.proposeReconciliationOutcome(draft.id, { actorId: finance.id, outcome: 'MONEY_DID_NOT_MOVE', evidence: 'line 3 was another partner' });
+      await engine.confirmReconciliationOutcome(draft.id, { actorId: checker.id });
+      return { partner, settlement: await current() };
+    }
+
+    // Permission: SETTLEMENT_MANAGE is required. The integration seed grants
+    // every role every permission (test/setup/global-setup.ts), so a partner
+    // owner passes the guard *here*; which roles hold SETTLEMENT_MANAGE in
+    // production — ADMIN and SUPER_ADMIN, never a partner-side role — is
+    // asserted in src/scripts/money-permissions.spec.ts. What HTTP can prove
+    // is that the guard is on: no token → 401, a user with no role → 403.
+    const approved = await settlementAt('APPROVED');
+    expect((await call('POST', `/admin/partner-settlements/${approved.settlement.id}/revoke-approval`, { body: { reason: 'x'.repeat(10) } })).status).toBe(401);
+    expect((await revoke(approved.settlement.id, token(nobody), { reason: 'dispute decided for the customer' })).status).toBe(403);
+    // A reason is mandatory, 3-500 characters.
+    expect((await revoke(approved.settlement.id, token(finance), {})).status).toBe(400);
+    expect((await revoke(approved.settlement.id, token(finance), { reason: 'no' })).status).toBe(400);
+    expect((await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: approved.settlement.id } })).status).toBe('APPROVED');
+    expect(await entries(approved.settlement.id)).toBe(1);
+
+    // Nothing approved yet: cancel is the tool, and the claims stay for it.
+    for (const stage of ['DRAFT', 'READY'] as const) {
+      const { settlement } = await settlementAt(stage);
+      const r = await revoke(settlement.id, token(finance), { reason: 'why not' });
+      expect(r.status).toBe(409);
+      expect(JSON.stringify(r.error)).toMatch(/cancel this settlement instead/);
+      expect(await entries(settlement.id)).toBe(1);
+    }
+
+    // A transfer may have moved money: never, and nothing changes.
+    for (const stage of ['PAYMENT_PENDING', 'REQUIRES_RECONCILIATION', 'FAILED_AMBIGUOUS'] as const) {
+      const { settlement } = await settlementAt(stage);
+      const r = await revoke(settlement.id, token(finance), { reason: 'dispute decided for the customer' });
+      expect(r.status).toBe(409);
+      expect(JSON.stringify(r.error)).toMatch(/TRANSFER_MAY_HAVE_STARTED/);
+      const after = await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
+      expect(after.status).toBe(settlement.status);
+      expect(await entries(settlement.id)).toBe(1);
+    }
+
+    // Provably unpaid — APPROVED untouched, or FAILED on the bank's unambiguous "no": revoked, claims
+    // released, no draft made; a second call is refused and changes nothing.
+    for (const stage of ['APPROVED', 'FAILED'] as const) {
+      const { partner, settlement } = await settlementAt(stage);
+      const r = await revoke(settlement.id, token(finance), { reason: 'dispute decided for the customer' });
+      expect(r.status).toBe(201);
+      expect(r.data).toMatchObject({ id: settlement.id, status: 'CANCELLED', approvedByUserId: checker.id });
+      expect(await entries(settlement.id)).toBe(0);
+      expect((await engine.unsettled(partner.id)).net.toFixed(4)).toBe('30000.0000');
+      expect(await openDrafts(partner.id)).toBe(0);
+      const again = await revoke(settlement.id, token(finance), { reason: 'dispute decided for the customer' });
+      expect(again.status).toBe(409);
+      expect(JSON.stringify(again.error)).toMatch(/ALREADY_CANCELLED/);
+      expect((await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } })).status).toBe('CANCELLED');
+      expect(await openDrafts(partner.id)).toBe(0);
+    }
   });
 });

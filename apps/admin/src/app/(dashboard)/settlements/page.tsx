@@ -53,15 +53,18 @@ type Action =
 const ACTIONS: Record<PartnerSettlementStatus, Action[]> = {
   [PartnerSettlementStatus.DRAFT]: ['ready', 'cancel'],
   [PartnerSettlementStatus.READY]: ['approve', 'cancel'],
-  // Not 'cancel': the server refuses to cancel an approved settlement. Before
-  // any transfer started, an approval can be revoked (claims released and
-  // redrafted through now) — for a dispute decided after approval.
+  // Not 'cancel': the server refuses to cancel an approved settlement. While
+  // it is provable no money moved, the approval can be revoked and the claims
+  // released — for a dispute decided for the customer after approval. No
+  // draft is made; the next closed-period draft picks the postings up.
   [PartnerSettlementStatus.APPROVED]: ['payment-pending', 'revoke-approval'],
   [PartnerSettlementStatus.PAYMENT_PENDING]: ['paid', 'failed', 'ambiguous'],
   // PAID is immutable and REQUIRES_RECONCILIATION is resolved by the
   // two-person reconciliation flow, not by a status button here.
   [PartnerSettlementStatus.PAID]: [],
-  [PartnerSettlementStatus.FAILED]: ['payment-pending', 'cancel'],
+  // The same for FAILED: the server refuses to cancel it, and revokes the
+  // approval only when the attempt record proves no money moved.
+  [PartnerSettlementStatus.FAILED]: ['payment-pending', 'revoke-approval'],
   /*
    * Not empty, and the empty version was a defect: the screen told people
    * this state was "resolved by two-person reconciliation" and then offered
@@ -85,7 +88,7 @@ const ACTION_LABEL: Record<Action, string> = {
   failed: 'Transfer bounced',
   ambiguous: 'Bank answer unclear',
   cancel: 'Cancel',
-  'revoke-approval': 'Revoke approval and redraft',
+  'revoke-approval': 'Revoke approval',
   'propose-moved': 'Propose: money did move',
   'propose-not-moved': 'Propose: money did not move',
   confirm: 'Confirm the proposal',
@@ -200,7 +203,7 @@ export default function AdminSettlementsPage() {
         case 'cancel':
           return settlementAdminApi.cancel(row.id, value);
         case 'revoke-approval':
-          return (await settlementAdminApi.revokeApproval(row.id, value)).revoked;
+          return settlementAdminApi.revokeApproval(row.id, value);
         case 'propose-moved':
           return settlementAdminApi.proposeReconciliation(
             row.id,

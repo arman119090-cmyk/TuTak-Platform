@@ -247,110 +247,95 @@ export class PartnerSettlementService {
 
     return this.prisma.$transaction(async (tx) => {
       await lockPartnerForSettlement(tx, params.partnerId);
-      const drafted = await this.draftInTx(tx, params);
-      if ('skipped' in drafted) throw new ConflictException(drafted.skipped);
-      return drafted.settlement;
-    });
-  }
+      const partner = await tx.partner.findUnique({
+        where: { id: params.partnerId },
+        select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },
+      });
+      if (!partner) throw new NotFoundException('Partner not found');
+      if (partner.payoutsBlockedAt) {
+        throw new ConflictException(
+          `Payouts are blocked for this partner: ${partner.payoutsBlockedReason ?? 'no reason recorded'}`,
+        );
+      }
 
-  /**
-   * The body of `createDraft`, under a partner lock the caller holds. A
-   * refusal is returned, not thrown, so `revokeApproval` can release the old
-   * claims and still commit when there is nothing to redraft.
-   */
-  private async draftInTx(
-    tx: Tx,
-    params: { partnerId: string; periodStart: Date; periodEnd: Date; actorId: string },
-  ): Promise<{ settlement: Prisma.PartnerSettlementGetPayload<object> } | { skipped: string }> {
-    const partner = await tx.partner.findUnique({
-      where: { id: params.partnerId },
-      select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },
-    });
-    if (!partner) throw new NotFoundException('Partner not found');
-    if (partner.payoutsBlockedAt) {
-      return {
-        skipped: `Payouts are blocked for this partner: ${partner.payoutsBlockedReason ?? 'no reason recorded'}`,
-      };
-    }
-
-    const open = await tx.partnerSettlement.findFirst({
-      where: {
-        partnerId: params.partnerId,
-        status: {
-          in: [
-            PartnerSettlementStatus.DRAFT,
-            PartnerSettlementStatus.READY,
-            PartnerSettlementStatus.APPROVED,
-            PartnerSettlementStatus.PAYMENT_PENDING,
-          ],
-        },
-      },
-      select: { id: true, status: true },
-    });
-    if (open) {
-      return {
-        skipped: `Settlement ${open.id} is still ${open.status}; finish or cancel it before starting another`,
-      };
-    }
-
-    const breakdown = await this.unsettled(params.partnerId, { until: params.periodEnd, tx });
-    if (breakdown.net.lessThanOrEqualTo(0)) {
-      return {
-        skipped:
-          `Nothing to pay: this partner's unsettled balance is ${breakdown.net.toFixed(2)}. ` +
-          'A non-positive balance is carried into the next period and offset against future earnings, ' +
-          'not settled.',
-      };
-    }
-
-    const settlement = await tx.partnerSettlement.create({
-      data: {
-        partnerId: params.partnerId,
-        periodStart: params.periodStart,
-        periodEnd: params.periodEnd,
-        status: PartnerSettlementStatus.DRAFT,
-        accruedAmount: breakdown.accrued,
-        deductionAmount: breakdown.deductions,
-        netPayableAmount: breakdown.net,
-        entryCount: breakdown.entries.length,
-        createdByUserId: params.actorId,
-      },
-    });
-
-    // One statement, so two concurrent drafts cannot interleave: the loser
-    // hits the unique index on `ledgerPostingId` and its whole transaction
-    // rolls back, settlement row included.
-    await tx.partnerSettlementEntry.createMany({
-      data: breakdown.entries.map((entry) => ({
-        settlementId: settlement.id,
-        ledgerPostingId: entry.ledgerPostingId,
-        partnerId: params.partnerId,
-        amount: entry.amount,
-        direction: entry.direction,
-        kind: entry.kind,
-        sourceType: entry.sourceType,
-        sourceId: entry.sourceId,
-        occurredAt: entry.occurredAt,
-      })),
-    });
-
-    await this.audit.record(
-      {
-        actorUserId: params.actorId,
-        action: AuditAction.PARTNER_UPDATED,
-        entityType: 'PartnerSettlement',
-        entityId: settlement.id,
-        metadata: {
-          event: 'settlement.draft_created',
+      const open = await tx.partnerSettlement.findFirst({
+        where: {
           partnerId: params.partnerId,
-          net: breakdown.net.toFixed(4),
-          entryCount: breakdown.entries.length,
+          status: {
+            in: [
+              PartnerSettlementStatus.DRAFT,
+              PartnerSettlementStatus.READY,
+              PartnerSettlementStatus.APPROVED,
+              PartnerSettlementStatus.PAYMENT_PENDING,
+            ],
+          },
         },
-      },
-      tx,
-    );
+        select: { id: true, status: true },
+      });
+      if (open) {
+        throw new ConflictException(
+          `Settlement ${open.id} is still ${open.status}; finish or cancel it before starting another`,
+        );
+      }
 
-    return { settlement };
+      const breakdown = await this.unsettled(params.partnerId, { until: params.periodEnd, tx });
+      if (breakdown.net.lessThanOrEqualTo(0)) {
+        throw new ConflictException(
+          `Nothing to pay: this partner's unsettled balance is ${breakdown.net.toFixed(2)}. ` +
+            'A non-positive balance is carried into the next period and offset against future earnings, ' +
+            'not settled.',
+        );
+      }
+
+      const settlement = await tx.partnerSettlement.create({
+        data: {
+          partnerId: params.partnerId,
+          periodStart: params.periodStart,
+          periodEnd: params.periodEnd,
+          status: PartnerSettlementStatus.DRAFT,
+          accruedAmount: breakdown.accrued,
+          deductionAmount: breakdown.deductions,
+          netPayableAmount: breakdown.net,
+          entryCount: breakdown.entries.length,
+          createdByUserId: params.actorId,
+        },
+      });
+
+      // One statement, so two concurrent drafts cannot interleave: the loser
+      // hits the unique index on `ledgerPostingId` and its whole transaction
+      // rolls back, settlement row included.
+      await tx.partnerSettlementEntry.createMany({
+        data: breakdown.entries.map((entry) => ({
+          settlementId: settlement.id,
+          ledgerPostingId: entry.ledgerPostingId,
+          partnerId: params.partnerId,
+          amount: entry.amount,
+          direction: entry.direction,
+          kind: entry.kind,
+          sourceType: entry.sourceType,
+          sourceId: entry.sourceId,
+          occurredAt: entry.occurredAt,
+        })),
+      });
+
+      await this.audit.record(
+        {
+          actorUserId: params.actorId,
+          action: AuditAction.PARTNER_UPDATED,
+          entityType: 'PartnerSettlement',
+          entityId: settlement.id,
+          metadata: {
+            event: 'settlement.draft_created',
+            partnerId: params.partnerId,
+            net: breakdown.net.toFixed(4),
+            entryCount: breakdown.entries.length,
+          },
+        },
+        tx,
+      );
+
+      return settlement;
+    });
   }
 
   /**
@@ -586,20 +571,19 @@ export class PartnerSettlementService {
    *   the decision. A partner-favourable decision simply lets this pass.
    * - a customer-favourable decision whose refund this settlement does not
    *   contain → `DISPUTE_REFUND_NOT_IN_SETTLEMENT`, but only while it is
-   *   provable that no transfer has started (APPROVED, no evidence): then the
-   *   stale figure is not paid — `revokeApproval` redrafts it. Once a transfer
-   *   may have started, the refund is ordinary partner debt, netted by the
+   *   provable that no transfer moved money (`transferEvidence` empty:
+   *   APPROVED, or FAILED with a clean attempt record): then the stale
+   *   figure is not paid — `revokeApproval` releases it. Once a transfer may
+   *   have moved money, the refund is ordinary partner debt, netted by the
    *   next settlement, and this does not block.
    */
   private async assertPayable(tx: Tx, settlement: { id: string; partnerId: string }) {
     await lockPartnerForSettlement(tx, settlement.partnerId);
     // Re-read under the lock: the status decides which rule applies.
     const current = await tx.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
-    const beforeTransfer =
-      current.status === PartnerSettlementStatus.APPROVED &&
-      (await this.transferEvidence(tx, current)).length === 0;
+    const provablyUnpaid = (await this.transferEvidence(tx, current)).length === 0;
     await this.assertNoDisputeBlockers(tx, settlement.id, {
-      refunds: beforeTransfer,
+      refunds: provablyUnpaid,
       remedy: 'Nothing was posted and the status is unchanged.',
     });
   }
@@ -693,28 +677,47 @@ export class PartnerSettlementService {
   }
 
   /**
-   * Anything that says a transfer for this settlement may have started. Empty
-   * is the proof `revokeApproval` needs: no PAYMENT_PENDING ever recorded, no
-   * transfer attempt, no bank reference, no paid posting.
+   * Everything that says a transfer for this settlement may have moved money.
+   * Empty means it is provable, on the data alone, that none did — the one
+   * condition under which claims may be released (`revokeApproval`) and a
+   * customer-favourable refund blocks paying the stale figure.
+   *
+   * Only APPROVED and FAILED can be provable at all: PAYMENT_PENDING is a
+   * transfer in flight, REQUIRES_RECONCILIATION is by definition unknown, and
+   * PAID is paid. For FAILED the proof is the attempt record: every attempt
+   * resolved and none succeeded — what `markFailed` ("only when the bank's
+   * answer is unambiguous") and a two-person MONEY_DID_NOT_MOVE both leave
+   * behind — with no bank reference on the settlement and no MONEY_MOVED
+   * reading anywhere in its history. PAYMENT_PENDING in a FAILED settlement's
+   * past is not evidence: it is how the bounced transfer reached the bank.
    */
   private async transferEvidence(
     tx: Tx,
     settlement: {
       id: string;
+      status: PartnerSettlementStatus;
       bankTransferReference: string | null;
       ledgerTransactionId: string | null;
       paidAt: Date | null;
+      reconciliationOutcome: ReconciliationOutcome | null;
     },
   ): Promise<string[]> {
     const evidence: string[] = [];
-    if (settlement.bankTransferReference) evidence.push('bank transfer reference');
-    if (settlement.ledgerTransactionId || settlement.paidAt) evidence.push('marked paid');
     if (
-      (await tx.partnerSettlementTransferAttempt.count({
-        where: { settlementId: settlement.id },
-      })) > 0
+      settlement.status !== PartnerSettlementStatus.APPROVED &&
+      settlement.status !== PartnerSettlementStatus.FAILED
     ) {
-      evidence.push('transfer attempt');
+      evidence.push(`status ${settlement.status}`);
+    }
+    if (settlement.ledgerTransactionId || settlement.paidAt) evidence.push('marked paid');
+    if (settlement.bankTransferReference) {
+      evidence.push('a bank transfer reference on the settlement');
+    }
+    if (
+      settlement.reconciliationOutcome &&
+      settlement.reconciliationOutcome !== ReconciliationOutcome.MONEY_DID_NOT_MOVE
+    ) {
+      evidence.push(`a reconciliation reading of ${settlement.reconciliationOutcome}`);
     }
     const paidPostings = await tx.ledgerTransaction.count({
       where: {
@@ -724,14 +727,27 @@ export class PartnerSettlementService {
       },
     });
     if (paidPostings > 0) evidence.push(`${SETTLEMENT_PAID_KIND} posting`);
-    const pending = await tx.auditLog.count({
-      where: {
-        entityType: 'PartnerSettlement',
-        entityId: settlement.id,
-        metadata: { path: ['event'], equals: 'settlement.payment_pending' },
-      },
+    const attempts = await tx.partnerSettlementTransferAttempt.findMany({
+      where: { settlementId: settlement.id },
+      select: { succeeded: true, resolvedAt: true },
     });
-    if (pending > 0) evidence.push('PAYMENT_PENDING recorded');
+    if (attempts.some((a) => a.succeeded)) evidence.push('a successful transfer attempt');
+    if (attempts.some((a) => !a.succeeded && a.resolvedAt === null)) {
+      evidence.push('an unresolved transfer attempt');
+    }
+    if (settlement.status === PartnerSettlementStatus.FAILED && attempts.length === 0) {
+      evidence.push('FAILED without a recorded attempt');
+    }
+    if (settlement.status === PartnerSettlementStatus.APPROVED) {
+      const pending = await tx.auditLog.count({
+        where: {
+          entityType: 'PartnerSettlement',
+          entityId: settlement.id,
+          metadata: { path: ['event'], equals: 'settlement.payment_pending' },
+        },
+      });
+      if (pending > 0) evidence.push('PAYMENT_PENDING recorded');
+    }
     return evidence;
   }
 
@@ -755,6 +771,8 @@ export class PartnerSettlementService {
       extra?: Prisma.PartnerSettlementUpdateManyMutationInput;
       /** Runs before anything is posted; throwing leaves the settlement as it was. */
       guard?: (tx: Tx, settlement: { id: string; partnerId: string }) => Promise<void>;
+      /** From reconciliation: this outcome is the ambiguous attempt's, resolved in place. */
+      resolvesAmbiguous?: boolean;
     },
   ) {
     const reference = params.bankTransferReference.trim();
@@ -829,6 +847,7 @@ export class PartnerSettlementService {
         actorId: params.actorId,
         outcome: 'succeeded',
         bankTransferReference: reference,
+        resolvesAmbiguous: params.resolvesAmbiguous,
       });
 
       await this.audit.record(
@@ -1089,6 +1108,7 @@ export class PartnerSettlementService {
         from: [PartnerSettlementStatus.REQUIRES_RECONCILIATION],
         event: 'settlement.reconciled_paid',
         extra: confirmed,
+        resolvesAmbiguous: true,
       });
     }
 
@@ -1100,6 +1120,7 @@ export class PartnerSettlementService {
       event: 'settlement.reconciled_failed',
       from: [PartnerSettlementStatus.REQUIRES_RECONCILIATION],
       extra: confirmed,
+      resolvesAmbiguous: true,
     });
   }
 
@@ -1166,27 +1187,33 @@ export class PartnerSettlementService {
   }
 
   /**
-   * Takes back an approval before any money could have moved, and drafts the
-   * partner's settlement again from what the ledger says now.
+   * Takes back an approval when it is provable that no money moved, and
+   * releases the claims — nothing else.
    *
    * The case it exists for (docs/PARTNER_COMMERCE.md §14): a dispute decided
    * for the customer after approval. Paying the approved figure would pay
-   * money the partner already owes back; redrafted, the new settlement nets
-   * the order's credit against the refund in one go.
+   * money the partner already owes back, so `markPaid` refuses it
+   * (`DISPUTE_REFUND_NOT_IN_SETTLEMENT`) and this is the way out. The
+   * settlement becomes CANCELLED with its approval left on the row as
+   * history; its entries are deleted, which the entries trigger allows once
+   * the status is no longer approved-or-later; and the postings are
+   * unsettled again — the order's credit and the refund alike. They are
+   * claimed by the next settlement an administrator drafts for the partner's
+   * closed period (`createDraftForClosedPeriod`), with everything else that
+   * period owes. No draft is made here: one cut outside the cadence would
+   * claim whatever else has posted since and quietly become an extra
+   * settlement period (owner's decision, 26.09.2026).
    *
-   * Allowed only on proof, re-checked under the partner lock: the settlement
-   * is APPROVED and `transferEvidence` finds nothing — no PAYMENT_PENDING ever
-   * recorded, no transfer attempt, no bank reference, no paid posting. From
-   * PAYMENT_PENDING, FAILED or REQUIRES_RECONCILIATION a transfer may have
-   * started, so the claims are never released: that settlement finishes
-   * through the transfer/reconciliation lifecycle and a refund is debt for
-   * the next one.
-   *
-   * The revoked settlement becomes CANCELLED (its approval stays on the row
-   * as history) and its claims are deleted, which the entries trigger allows
-   * once the status is no longer approved-or-later. The redraft runs
-   * `periodStart` → now so it includes the refund; when the partner's net is
-   * not positive there is no redraft — the balance carries, as always.
+   * Allowed only on proof, re-checked under the partner lock:
+   * `transferEvidence` finds nothing. That is APPROVED with no PAYMENT_PENDING
+   * ever recorded, or FAILED whose every attempt is resolved and failed — the
+   * bank's unambiguous refusal, or two people confirming MONEY_DID_NOT_MOVE —
+   * and in both cases no attempt that succeeded or is unresolved, no bank
+   * reference, no paid posting, no MONEY_MOVED reading. PAYMENT_PENDING and
+   * REQUIRES_RECONCILIATION are never revocable: a transfer may have moved
+   * money, so the claims stay and that settlement finishes through the
+   * transfer or reconciliation steps; a refund is then the partner's debt for
+   * the next settlement.
    */
   async revokeApproval(id: string, params: { actorId: string; reason: string }) {
     const reason = params.reason.trim();
@@ -1207,19 +1234,25 @@ export class PartnerSettlementService {
       ) {
         throw new ConflictException('Nothing is approved yet; cancel this settlement instead');
       }
+      if (settlement.status === PartnerSettlementStatus.CANCELLED) {
+        throw new ConflictException({
+          message: 'Settlement is already CANCELLED; there is nothing to revoke',
+          error: 'ALREADY_CANCELLED',
+        });
+      }
       const evidence = await this.transferEvidence(tx, settlement);
-      if (settlement.status !== PartnerSettlementStatus.APPROVED || evidence.length > 0) {
+      if (evidence.length > 0) {
         throw new ConflictException({
           message:
-            `Settlement is ${settlement.status}${evidence.length ? ` (${evidence.join(', ')})` : ''}: ` +
-            'a transfer may have started, so its claims stay. Finish it through the transfer or ' +
-            'reconciliation steps; a refund is then netted by the next settlement.',
+            `Settlement is ${settlement.status} (${evidence.join(', ')}): a transfer may have moved ` +
+            'money, so its claims stay. Finish it through the transfer or reconciliation steps; ' +
+            'a refund is then netted by the next settlement.',
           error: 'TRANSFER_MAY_HAVE_STARTED',
         });
       }
 
       const revoked = await tx.partnerSettlement.updateMany({
-        where: { id, status: PartnerSettlementStatus.APPROVED },
+        where: { id, status: settlement.status },
         data: {
           status: PartnerSettlementStatus.CANCELLED,
           cancelledByUserId: params.actorId,
@@ -1240,24 +1273,14 @@ export class PartnerSettlementService {
             event: 'settlement.approval_revoked',
             partnerId: settlement.partnerId,
             amount: settlement.netPayableAmount.toFixed(4),
+            fromStatus: settlement.status,
             releasedEntries: released.count,
             reason,
           },
         },
         tx,
       );
-
-      const redraft = await this.draftInTx(tx, {
-        partnerId: settlement.partnerId,
-        periodStart: settlement.periodStart,
-        periodEnd: new Date(Math.max(Date.now(), settlement.periodEnd.getTime())),
-        actorId: params.actorId,
-      });
-      return {
-        revoked: await tx.partnerSettlement.findUniqueOrThrow({ where: { id } }),
-        redraft: 'settlement' in redraft ? redraft.settlement : null,
-        redraftSkipped: 'skipped' in redraft ? redraft.skipped : null,
-      };
+      return tx.partnerSettlement.findUniqueOrThrow({ where: { id } });
     });
   }
 
@@ -1281,6 +1304,8 @@ export class PartnerSettlementService {
       from?: readonly PartnerSettlementStatus[];
       /** Extra columns to stamp on the same claim, inside the same transaction. */
       extra?: Prisma.PartnerSettlementUpdateManyMutationInput;
+      /** From reconciliation: this outcome is the ambiguous attempt's, resolved in place. */
+      resolvesAmbiguous?: boolean;
     },
   ) {
     const reason = params.reason.trim();
@@ -1306,6 +1331,7 @@ export class PartnerSettlementService {
         outcome: params.outcome,
         reason,
         bankTransferReference: params.bankTransferReference,
+        resolvesAmbiguous: params.resolvesAmbiguous,
       });
 
       await this.audit.record(
@@ -1342,8 +1368,13 @@ export class PartnerSettlementService {
    * When an ambiguous attempt is later resolved by a human, the *same* row is
    * updated rather than a new one written: the bank reference is unique
    * across attempts, so re-inserting it would collide, and more importantly
-   * the history should read "this attempt turned out to have worked", not
-   * "some attempt failed and a different one worked".
+   * the history should read "this attempt turned out to have worked" (or
+   * "not to have"), not "some attempt failed and a different one worked".
+   * From reconciliation (`resolvesAmbiguous`) that holds whatever reference
+   * the resolution names, or none: the unresolved attempt is the one being
+   * decided. Leaving it unresolved beside a new row would make a settlement
+   * two people found unpaid look like one that may still have paid — and
+   * `transferEvidence` would rightly refuse to release its claims.
    */
   private async recordAttempt(
     tx: Tx,
@@ -1353,6 +1384,7 @@ export class PartnerSettlementService {
       outcome: 'succeeded' | 'failed' | 'unresolved';
       reason?: string;
       bankTransferReference?: string;
+      resolvesAmbiguous?: boolean;
     },
   ) {
     const succeeded = params.outcome === 'succeeded';
@@ -1361,16 +1393,18 @@ export class PartnerSettlementService {
       succeeded,
       failureReason: succeeded ? null : (params.reason ?? null),
       successKey: succeeded ? TRANSFER_SUCCESS_KEY : null,
-      bankTransferReference: reference,
       attemptedByUserId: params.actorId,
       resolvedAt: params.outcome === 'unresolved' ? null : new Date(),
+      // A reference is added, never blanked: an ambiguous attempt keeps the
+      // one it was recorded with when the resolution names none.
+      ...(reference ? { bankTransferReference: reference } : {}),
     };
 
-    if (reference) {
+    if (reference || params.resolvesAmbiguous) {
       const resolved = await tx.partnerSettlementTransferAttempt.updateMany({
         where: {
           settlementId: settlement.id,
-          bankTransferReference: reference,
+          ...(params.resolvesAmbiguous ? {} : { bankTransferReference: reference }),
           succeeded: false,
           resolvedAt: null,
         },
@@ -1382,6 +1416,7 @@ export class PartnerSettlementService {
     await tx.partnerSettlementTransferAttempt.create({
       data: {
         ...data,
+        bankTransferReference: reference,
         settlementId: settlement.id,
         // The database checks both against the settlement; passing anything
         // else here is caught rather than stored.

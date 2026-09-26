@@ -272,18 +272,16 @@ describe('AdminSettlementsPage', () => {
   });
 
   /**
-   * An approved settlement cannot be cancelled (the server refuses); before a
-   * transfer starts it can have its approval revoked and be redrafted.
+   * An approved settlement cannot be cancelled (the server refuses); while it
+   * is provable no money moved, its approval can be revoked instead.
    */
   it('offers revoking an approval, with a reason, instead of a cancel the server refuses', async () => {
     (settlementAdminApi.list as jest.Mock).mockResolvedValue([
       fixture({ status: PartnerSettlementStatus.APPROVED }),
     ]);
-    (settlementAdminApi.revokeApproval as jest.Mock).mockResolvedValue({
-      revoked: fixture({ status: PartnerSettlementStatus.CANCELLED }),
-      redraft: fixture({ status: PartnerSettlementStatus.DRAFT }),
-      redraftSkipped: null,
-    });
+    (settlementAdminApi.revokeApproval as jest.Mock).mockResolvedValue(
+      fixture({ status: PartnerSettlementStatus.CANCELLED }),
+    );
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /revoke approval/i }));
     expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull();
@@ -298,6 +296,16 @@ describe('AdminSettlementsPage', () => {
         'Dispute decided for the customer',
       ),
     );
+  });
+
+  it('offers a bounced settlement revoke instead of the cancel the server refuses', async () => {
+    (settlementAdminApi.list as jest.Mock).mockResolvedValue([
+      fixture({ status: PartnerSettlementStatus.FAILED }),
+    ]);
+    renderPage();
+    expect(await screen.findByRole('button', { name: /revoke approval/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /transfer sent/i })).toBeTruthy();
   });
 
   it('refuses the proposer their own confirmation', async () => {

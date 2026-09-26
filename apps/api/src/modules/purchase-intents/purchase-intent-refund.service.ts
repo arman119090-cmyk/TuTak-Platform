@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -9,9 +10,13 @@ import {
 import {
   AuditAction,
   BonusEntryType,
+  FinancialPolicyVersion,
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PurchaseIntent,
+  PurchaseIntentRefund,
+  PurchaseIntentRefundStatus as RS,
   PaymentRoute,
   PurchaseIntentStatus,
   ReferralProgramVersion,
@@ -23,12 +28,49 @@ import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CommerceLedgerService } from '../commerce-ledger/commerce-ledger.service';
+import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
 import { PSP_ADAPTER, PspAdapter } from '../psp/psp-adapter.interface';
 import { ReferralService, ResolvedReferrer } from '../referral/referral.service';
+import {
+  CommerceReversalService,
+  netShortfall,
+  ShortfallBreakdown,
+  ShortfallSettlementChanged,
+  ShortfallSettlementRequired,
+} from '../commission-distribution/commerce-reversal.service';
+
+/** A refund not executed yet blocks every other refund on the purchase. */
+const UNEXECUTED: RS[] = [RS.AWAITING_SHORTFALL_SETTLEMENT, RS.MANUAL_REVIEW];
+
+type V2Mode =
+  | { kind: 'initial'; params: PurchaseIntentRefundParams }
+  | { kind: 'settle'; row: PurchaseIntentRefund; staffUserId: string };
+
+/** The Q9 breakdown columns of a `PurchaseIntentRefund` (never one netted figure). */
+function breakdownColumns(b: ShortfallBreakdown) {
+  const moneyNet = b.moneyGross.minus(b.netting.fromMoney);
+  const cashNet = b.cashGross.minus(b.netting.fromCash);
+  return {
+    tutakMoneyRefunded: moneyNet,
+    customerShortfall: b.customerShortfall,
+    shortfallFromMoney: b.netting.fromMoney,
+    shortfallFromCash: b.netting.fromCash,
+    shortfallCollected: b.netting.collected,
+    recoveredShortfall: b.netting.fromMoney.plus(b.netting.fromCash).plus(b.netting.collected),
+    cashRefundGross: b.cashGross,
+    cashRefundNet: cashNet,
+    grossRefund: b.moneyGross.plus(b.cashGross),
+    netRefund: moneyNet.plus(cashNet),
+    referralWithheld: b.referralWithheld,
+    expiredWrittenBack: b.expiredWrittenBack,
+    revenueReversed: b.revenueReversed,
+  };
+}
 
 /** One stored (never re-walked) snapshot level of a THREE_LEVEL_V2 `PurchaseIntent`'s referrer chain. */
 interface SnapshotLevel {
@@ -52,10 +94,21 @@ export interface PurchaseIntentRefundParams {
 
 export interface PurchaseIntentRefundResult {
   refundId: string;
+  /** COMPLETED, or (COMMERCE_V2 only) AWAITING_SHORTFALL_SETTLEMENT — nothing moved yet. */
+  status: RS;
   amount: string;
   /** Total merchandise value refunded against this purchase after this refund, including this one. */
   totalRefunded: string;
   bonusRestored: string;
+  /** Q9: gross money owed back, the customer shortfall recovered from it, and what they get. */
+  grossRefund: string;
+  recoveredShortfall: string;
+  netRefund: string;
+  tutakMoneyRefunded: string;
+  /** The cash the partner hands back (outside TuTak). */
+  cashRefundNet: string;
+  /** What the customer still pays at the desk before the refund executes. */
+  shortfallCollected: string;
 }
 
 /** Did this come from the (actorId, idempotencyKey) unique index? Same reasoning as RefundEngineService's own check. */
@@ -101,6 +154,9 @@ export class PurchaseIntentRefundService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly auditService: AuditService,
+    private readonly commerceLedger: CommerceLedgerService,
+    private readonly shifts: EmployeeShiftService,
+    private readonly reversal: CommerceReversalService,
   ) {}
 
   /**
@@ -154,6 +210,7 @@ export class PurchaseIntentRefundService {
     try {
       return await this.runSerializable((tx) => this.postRefund(tx, params));
     } catch (err) {
+      if (err instanceof ShortfallSettlementRequired) return this.recordAwaitingSettlement(params, err.breakdown);
       if (isKeyCollision(err)) {
         const existing = await this.findByKey(params.actorId, params.idempotencyKey);
         if (existing) return this.toResult(existing);
@@ -292,6 +349,29 @@ export class PurchaseIntentRefundService {
       );
     }
 
+    const unexecuted = await tx.purchaseIntentRefund.count({
+      where: { purchaseIntentId: intent.id, status: { in: UNEXECUTED } },
+    });
+    if (unexecuted > 0) throw new ConflictException('A previous refund on this purchase is still being settled');
+
+    // Spec §6: a refund is a cash-desk action — only on an active shift
+    // (inside the partner's one-off rollout window, audited as shiftless).
+    const stamp = await this.shifts.stampFor(tx, {
+      userId: actorId,
+      partnerId: intent.partnerId,
+      branchId: intent.partnerBranchId,
+    });
+
+    // Q9: purchases created under the Commerce v2 financial model follow it;
+    // every older purchase keeps the rules it was sold under (snapshot on
+    // the row, never a date comparison).
+    if (intent.financialPolicyVersion === FinancialPolicyVersion.COMMERCE_V2) {
+      if (intent.programVersion !== ReferralProgramVersion.THREE_LEVEL_V2) {
+        throw new InternalServerErrorException(`Purchase intent ${intent.id} is COMMERCE_V2 but not THREE_LEVEL_V2 — manual reconciliation required`);
+      }
+      return this.postRefundV2(tx, intent, amount, stamp, { kind: 'initial', params });
+    }
+
     const cumulativeBefore = intent.refundedAmount;
     const cumulativeAfter = cumulativeBefore.plus(amount);
 
@@ -299,6 +379,28 @@ export class PurchaseIntentRefundService {
       where: { id: intent.id },
       data: { refundedAmount: cumulativeAfter },
     });
+
+    // Partner Commerce v2 (Q1): the proportional slice of the TuTak-money
+    // part goes back to the customer's money balance, from the partner's
+    // payable (it was released there at confirmation). Same cumulative
+    // watermark as every other leg, so a full refund returns exactly the
+    // original amount and repeated partial refunds never over-return.
+    const moneyAt = (cumulative: Decimal) =>
+      roundIssued(intent.tutakMoneyAmount.times(cumulative).dividedBy(intent.grossAmount));
+    const moneyΔ = intent.tutakMoneyAmount.greaterThan(0)
+      ? moneyAt(cumulativeAfter).minus(moneyAt(cumulativeBefore))
+      : new Decimal(0);
+    const moneyLedgerTransactionId = moneyΔ.greaterThan(0)
+      ? await this.commerceLedger.refundMoneyFromPartner(
+          intent.customerId,
+          intent.partnerId,
+          moneyΔ,
+          { sourceType: 'PurchaseIntent', sourceId: intent.id },
+          'purchase_intent.money_refund',
+          tx,
+          tx,
+        )
+      : null;
 
     // Dispatch on the persisted eligibility boundary — never on today's
     // config, and never by re-walking the live referral chain (spec:
@@ -317,15 +419,28 @@ export class PurchaseIntentRefundService {
             reason,
           );
 
+    // LEGACY_V1: no netting — the customer gets back the gross TuTak-money
+    // share and the partner repays the cash share outside TuTak in full.
+    const cashΔ = Decimal.max(amount.minus(bonusRestored).minus(moneyΔ), new Decimal(0));
     const refund = await tx.purchaseIntentRefund.create({
       data: {
         purchaseIntentId: intent.id,
         amount,
         bonusRestored,
+        tutakMoneyRefunded: moneyΔ,
+        moneyLedgerTransactionId,
+        shiftId: stamp.shiftId,
         reason,
         ledgerTransactionId,
         actorId,
         idempotencyKey,
+        status: RS.COMPLETED,
+        financialPolicyVersion: FinancialPolicyVersion.LEGACY_V1,
+        cashRefundGross: cashΔ,
+        cashRefundNet: cashΔ,
+        grossRefund: moneyΔ.plus(cashΔ),
+        netRefund: moneyΔ.plus(cashΔ),
+        completedAt: new Date(),
       },
     });
 
@@ -340,6 +455,9 @@ export class PurchaseIntentRefundService {
           amount: amount.toString(),
           totalRefunded: cumulativeAfter.toString(),
           bonusRestored: bonusRestored.toString(),
+          tutakMoneyRefunded: moneyΔ.toString(),
+          shiftId: stamp.shiftId,
+          withoutShift: stamp.withoutShift,
           // Earned-bonus liability that could not be reclaimed from wallets
           // (already spent elsewhere or expired) — see `reverseLoyaltyEffects`.
           unrecoverableShortfall: shortfall.toString(),
@@ -353,12 +471,357 @@ export class PurchaseIntentRefundService {
       `Refunded ${amount.toString()} of purchase intent ${intent.id} (total ${cumulativeAfter.toString()})`,
     );
 
+    return this.resultOf(refund, cumulativeAfter);
+  }
+
+  private resultOf(refund: PurchaseIntentRefund, totalRefunded: Decimal): PurchaseIntentRefundResult {
     return {
       refundId: refund.id,
-      amount: amount.toFixed(MONEY_SCALE),
-      totalRefunded: cumulativeAfter.toFixed(MONEY_SCALE),
-      bonusRestored: bonusRestored.toFixed(MONEY_SCALE),
+      status: refund.status,
+      amount: refund.amount.toFixed(MONEY_SCALE),
+      totalRefunded: totalRefunded.toFixed(MONEY_SCALE),
+      bonusRestored: refund.bonusRestored.toFixed(MONEY_SCALE),
+      grossRefund: refund.grossRefund.toFixed(MONEY_SCALE),
+      recoveredShortfall: refund.recoveredShortfall.toFixed(MONEY_SCALE),
+      netRefund: refund.netRefund.toFixed(MONEY_SCALE),
+      tutakMoneyRefunded: refund.tutakMoneyRefunded.toFixed(MONEY_SCALE),
+      cashRefundNet: refund.cashRefundNet.toFixed(MONEY_SCALE),
+      shortfallCollected: refund.shortfallCollected.toFixed(MONEY_SCALE),
     };
+  }
+
+  /**
+   * COMMERCE_V2 (Arman, Q8/Q9): the distribution is reversed by the shared
+   * `CommerceReversalService` (a USER referrer's spent share is withheld
+   * from their future accruals, never absorbed); the customer's own spent
+   * share is netted from the TuTak money they get back, then from the cash
+   * the partner hands back, and any rest is paid at the desk. Whenever the
+   * desk is involved the refund waits (`AWAITING_SHORTFALL_SETTLEMENT`) and
+   * nothing moves until an employee on shift confirms the settlement.
+   */
+  private async postRefundV2(
+    tx: Tx,
+    intent: PurchaseIntent,
+    amount: Decimal,
+    stamp: { shiftId: string | null; withoutShift: boolean },
+    mode: V2Mode,
+  ): Promise<PurchaseIntentRefundResult> {
+    const actorId = mode.kind === 'initial' ? mode.params.actorId : mode.staffUserId;
+    const reasonText = mode.kind === 'initial' ? mode.params.reason : mode.row.reason;
+    const before = intent.refundedAmount;
+    const after = before.plus(amount);
+    const claimed = await tx.purchaseIntent.updateMany({
+      where: { id: intent.id, refundedAmount: before, status: PurchaseIntentStatus.CONFIRMED },
+      data: { refundedAmount: after },
+    });
+    if (claimed.count === 0) throw new ConflictException('This purchase was changed concurrently — please retry');
+
+    const shareAt = (value: Decimal, cumulative: Decimal) =>
+      value.lessThanOrEqualTo(0) ? new Decimal(0) : roundIssued(value.times(cumulative).dividedBy(intent.grossAmount));
+    const delta = (value: Decimal) => shareAt(value, after).minus(shareAt(value, before));
+    const bonusRestoreΔ = delta(intent.bonusAmountRequested);
+    const moneyΔ = delta(intent.tutakMoneyAmount);
+    const cashΔ = amount.minus(bonusRestoreΔ).minus(moneyΔ);
+
+    const row =
+      mode.kind === 'settle'
+        ? mode.row
+        : await tx.purchaseIntentRefund.create({
+            data: {
+              purchaseIntentId: intent.id,
+              amount,
+              reason: reasonText,
+              actorId,
+              idempotencyKey: mode.params.idempotencyKey,
+              shiftId: stamp.shiftId,
+              status: RS.COMPLETED,
+              financialPolicyVersion: FinancialPolicyVersion.COMMERCE_V2,
+            },
+          });
+    const source = { sourceType: 'PurchaseIntentRefund', sourceId: row.id };
+    const reversed = await this.reversal.reverse(
+      tx,
+      {
+        base: intent.grossAmount,
+        poolAmount: intent.poolAmount,
+        greenAmount: intent.greenAmount,
+        deferredAmount: intent.deferredAmount,
+        referrer1Type: intent.referrer1Type,
+        referrer1UserId: intent.referrer1UserId,
+        referrer1PartnerId: intent.referrer1PartnerId,
+        referrer1Amount: intent.referrer1Amount,
+        referrer2Type: intent.referrer2Type,
+        referrer2UserId: intent.referrer2UserId,
+        referrer2PartnerId: intent.referrer2PartnerId,
+        referrer2Amount: intent.referrer2Amount,
+        referrer3Type: intent.referrer3Type,
+        referrer3UserId: intent.referrer3UserId,
+        referrer3PartnerId: intent.referrer3PartnerId,
+        referrer3Amount: intent.referrer3Amount,
+        tutakAmount: intent.tutakAmount,
+        sourceTransactionId: intent.sourceTransactionId!,
+        customerId: intent.customerId,
+        partnerId: intent.partnerId,
+      },
+      before,
+      after,
+      reasonText,
+      source,
+      actorId,
+    );
+    const netting = netShortfall(reversed.customerShortfall, moneyΔ, cashΔ);
+    const breakdown: ShortfallBreakdown = {
+      customerShortfall: reversed.customerShortfall,
+      moneyGross: moneyΔ,
+      cashGross: cashΔ,
+      netting,
+      referralWithheld: reversed.referralWithheld,
+      expiredWrittenBack: reversed.expiredWrittenBack,
+      revenueReversed: reversed.revenueReversed,
+    };
+    const deskPart = netting.fromCash.plus(netting.collected);
+    if (mode.kind === 'initial' && deskPart.greaterThan(0)) throw new ShortfallSettlementRequired(breakdown);
+    if (
+      mode.kind === 'settle' &&
+      (!netting.collected.equals(mode.row.shortfallCollected) || !netting.fromCash.equals(mode.row.shortfallFromCash))
+    ) {
+      throw new ShortfallSettlementChanged(breakdown);
+    }
+
+    if (bonusRestoreΔ.greaterThan(0)) {
+      const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: intent.customerId } });
+      await this.bonusEngine.restoreSpentBonus(wallet.id, bonusRestoreΔ, intent.sourceTransactionId!, reasonText, tx);
+      const [payable, liability] = await Promise.all([
+        this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }, tx),
+        this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      ]);
+      await this.ledger.post(
+        {
+          kind: 'partner.bonus_redemption_compensation_refund',
+          sourceType: source.sourceType,
+          sourceId: source.sourceId,
+          postings: [
+            { accountId: liability.id, direction: PostingDirection.CREDIT, amount: bonusRestoreΔ },
+            { accountId: payable.id, direction: PostingDirection.DEBIT, amount: bonusRestoreΔ },
+          ],
+        },
+        tx,
+      );
+    }
+    const moneyLedgerTransactionId = moneyΔ.greaterThan(0)
+      ? await this.commerceLedger.refundMoneyFromPartner(
+          intent.customerId,
+          intent.partnerId,
+          moneyΔ,
+          source,
+          'purchase_intent.money_refund',
+          tx,
+          tx,
+          netting.fromMoney,
+        )
+      : null;
+    if (deskPart.greaterThan(0)) {
+      await this.commerceLedger.recoverShortfallViaPartner(
+        intent.customerId,
+        intent.partnerId,
+        deskPart,
+        source,
+        'purchase_intent.shortfall_settled_at_desk',
+        tx,
+        tx,
+      );
+    }
+
+    const now = new Date();
+    const data = {
+      status: RS.COMPLETED,
+      bonusRestored: bonusRestoreΔ,
+      moneyLedgerTransactionId,
+      ledgerTransactionId: reversed.contributionLedgerTransactionId,
+      completedAt: now,
+      ...breakdownColumns(breakdown),
+      ...(mode.kind === 'settle' ? { settledByUserId: mode.staffUserId, settledShiftId: stamp.shiftId, settledAt: now } : {}),
+    };
+    let saved: PurchaseIntentRefund;
+    if (mode.kind === 'settle') {
+      const done = await tx.purchaseIntentRefund.updateMany({ where: { id: row.id, status: RS.AWAITING_SHORTFALL_SETTLEMENT }, data });
+      if (done.count === 0) throw new ConflictException('This refund was already settled');
+      saved = await tx.purchaseIntentRefund.findUniqueOrThrow({ where: { id: row.id } });
+    } else {
+      saved = await tx.purchaseIntentRefund.update({ where: { id: row.id }, data });
+    }
+
+    await this.auditService.record(
+      {
+        actorUserId: actorId,
+        action: mode.kind === 'settle' ? AuditAction.PURCHASE_INTENT_REFUND_SHORTFALL_SETTLED : AuditAction.PURCHASE_INTENT_REFUNDED,
+        entityType: 'PurchaseIntent',
+        entityId: intent.id,
+        metadata: {
+          refundId: saved.id,
+          financialPolicyVersion: FinancialPolicyVersion.COMMERCE_V2,
+          amount: amount.toString(),
+          totalRefunded: after.toString(),
+          bonusRestored: bonusRestoreΔ.toString(),
+          grossRefund: saved.grossRefund.toString(),
+          recoveredShortfall: saved.recoveredShortfall.toString(),
+          netRefund: saved.netRefund.toString(),
+          collectedAtDesk: netting.collected.toString(),
+          referralWithheld: reversed.referralWithheld.toString(),
+          shiftId: stamp.shiftId,
+          withoutShift: stamp.withoutShift,
+          reason: reasonText,
+        },
+      },
+      tx,
+    );
+    return this.resultOf(saved, after);
+  }
+
+  /** Nothing moved: the refund waits for the partner to settle the shortfall at the desk (Q9). */
+  private async recordAwaitingSettlement(params: PurchaseIntentRefundParams, b: ShortfallBreakdown): Promise<PurchaseIntentRefundResult> {
+    try {
+      const row = await this.runSerializable(async (tx) => {
+        const intent = await tx.purchaseIntent.findUniqueOrThrow({ where: { id: params.purchaseIntentId } });
+        const remaining = intent.grossAmount.minus(intent.refundedAmount);
+        const amount = params.amount ? parsePositiveMoney(params.amount, 'refund amount') : remaining;
+        const stamp = await this.shifts.stampFor(tx, { userId: params.actorId, partnerId: intent.partnerId, branchId: intent.partnerBranchId });
+        const created = await tx.purchaseIntentRefund.create({
+          data: {
+            purchaseIntentId: intent.id,
+            amount,
+            reason: params.reason,
+            actorId: params.actorId,
+            idempotencyKey: params.idempotencyKey,
+            shiftId: stamp.shiftId,
+            status: RS.AWAITING_SHORTFALL_SETTLEMENT,
+            financialPolicyVersion: FinancialPolicyVersion.COMMERCE_V2,
+            ...breakdownColumns(b),
+          },
+        });
+        await this.auditService.record(
+          {
+            actorUserId: params.actorId,
+            action: AuditAction.PURCHASE_INTENT_REFUND_PENDING,
+            entityType: 'PurchaseIntent',
+            entityId: intent.id,
+            metadata: {
+              refundId: created.id,
+              amount: amount.toString(),
+              customerShortfall: b.customerShortfall.toString(),
+              nettedFromMoney: b.netting.fromMoney.toString(),
+              nettedFromCash: b.netting.fromCash.toString(),
+              toCollectAtDesk: b.netting.collected.toString(),
+            },
+          },
+          tx,
+        );
+        return { created, refunded: intent.refundedAmount };
+      });
+      return this.resultOf(row.created, row.refunded);
+    } catch (err) {
+      if (isKeyCollision(err)) {
+        const existing = await this.findByKey(params.actorId, params.idempotencyKey);
+        if (existing) return this.toResult(existing);
+      }
+      throw err;
+    }
+  }
+
+  /** Q9: an employee on shift confirms the desk settlement; the refund then executes atomically. */
+  async settleShortfall(refundId: string, staffUserId: string, confirmedCollected: string): Promise<PurchaseIntentRefundResult> {
+    const row = await this.prisma.purchaseIntentRefund.findUnique({ where: { id: refundId } });
+    if (!row) throw new NotFoundException('Refund not found');
+    if (row.status === RS.COMPLETED) return this.toResult(row);
+    if (row.status !== RS.AWAITING_SHORTFALL_SETTLEMENT) throw new ConflictException('This refund is not awaiting a settlement');
+    if (!new Decimal(confirmedCollected).equals(row.shortfallCollected)) {
+      throw new ConflictException({ message: `The amount to collect is ${row.shortfallCollected.toFixed(0)} AMD`, error: 'SETTLEMENT_AMOUNT_MISMATCH' });
+    }
+    try {
+      return await this.runSerializable(async (tx) => {
+        const intent = await tx.purchaseIntent.findUniqueOrThrow({ where: { id: row.purchaseIntentId } });
+        if (intent.status !== PurchaseIntentStatus.CONFIRMED) throw new BadRequestException('Only a confirmed purchase can be refunded');
+        const remaining = intent.grossAmount.minus(intent.refundedAmount);
+        if (row.amount.greaterThan(remaining)) throw new BadRequestException('This refund no longer fits what remains refundable');
+        const stamp = await this.shifts.stampFor(tx, { userId: staffUserId, partnerId: intent.partnerId, branchId: intent.partnerBranchId });
+        return this.postRefundV2(tx, intent, row.amount, stamp, { kind: 'settle', row, staffUserId });
+      });
+    } catch (err) {
+      if (err instanceof ShortfallSettlementChanged) {
+        const updated = await this.prisma.purchaseIntentRefund.update({ where: { id: row.id }, data: breakdownColumns(err.breakdown) });
+        throw new ConflictException({
+          message: `The amount to settle changed: collect ${updated.shortfallCollected.toFixed(0)} AMD, hand back ${updated.cashRefundNet.toFixed(0)} AMD`,
+          error: 'SETTLEMENT_AMOUNT_CHANGED',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /** Q9: the customer refuses or disputes — no hidden debt; an operator decides. Nothing moves. */
+  async refuseShortfall(refundId: string, actor: { userId: string; isCustomer: boolean }, note: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.purchaseIntentRefund.findUnique({ where: { id: refundId }, include: { purchaseIntent: true } });
+      if (!row) throw new NotFoundException('Refund not found');
+      if (actor.isCustomer && row.purchaseIntent.customerId !== actor.userId) throw new NotFoundException('Refund not found');
+      const stamp = actor.isCustomer
+        ? null
+        : await this.shifts.stampFor(tx, { userId: actor.userId, partnerId: row.purchaseIntent.partnerId, branchId: row.purchaseIntent.partnerBranchId });
+      const claimed = await tx.purchaseIntentRefund.updateMany({
+        where: { id: refundId, status: RS.AWAITING_SHORTFALL_SETTLEMENT },
+        data: { status: RS.MANUAL_REVIEW, refusedByUserId: actor.userId, refusedAt: new Date(), refusalNote: note },
+      });
+      if (claimed.count === 0 && row.status !== RS.MANUAL_REVIEW) throw new ConflictException('This refund is not awaiting a settlement');
+      if (claimed.count === 1) {
+        await this.auditService.record(
+          {
+            actorUserId: actor.userId,
+            action: AuditAction.PURCHASE_INTENT_REFUND_SHORTFALL_REFUSED,
+            entityType: 'PurchaseIntent',
+            entityId: row.purchaseIntentId,
+            metadata: { refundId, byCustomer: actor.isCustomer, note, shiftId: stamp?.shiftId ?? null },
+          },
+          tx,
+        );
+      }
+      return tx.purchaseIntentRefund.findUniqueOrThrow({ where: { id: refundId } });
+    });
+  }
+
+  /** Operator decision: WITHDRAW (never executed) or REOPEN (back to the desk). No write-off. */
+  async reviewShortfall(refundId: string, adminUserId: string, decision: 'WITHDRAW' | 'REOPEN', note: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.purchaseIntentRefund.updateMany({
+        where: { id: refundId, status: RS.MANUAL_REVIEW },
+        data: {
+          status: decision === 'WITHDRAW' ? RS.WITHDRAWN : RS.AWAITING_SHORTFALL_SETTLEMENT,
+          reviewedByUserId: adminUserId,
+          reviewedAt: new Date(),
+          reviewNote: note,
+        },
+      });
+      if (claimed.count === 0) throw new ConflictException('This refund is not waiting for a review');
+      const row = await tx.purchaseIntentRefund.findUniqueOrThrow({ where: { id: refundId } });
+      await this.auditService.record(
+        {
+          actorUserId: adminUserId,
+          action: AuditAction.PURCHASE_INTENT_REFUND_REVIEWED,
+          entityType: 'PurchaseIntent',
+          entityId: row.purchaseIntentId,
+          metadata: { refundId, decision, note },
+        },
+        tx,
+      );
+      return row;
+    });
+  }
+
+  listAwaitingReview() {
+    return this.prisma.purchaseIntentRefund.findMany({
+      where: { status: RS.MANUAL_REVIEW },
+      include: { purchaseIntent: { select: { id: true, partnerId: true, customerId: true, grossAmount: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   /**
@@ -1021,23 +1484,19 @@ export class PurchaseIntentRefundService {
     });
   }
 
-  private toResult(refund: {
-    id: string;
-    amount: Decimal;
-    bonusRestored: Decimal;
-    purchaseIntentId: string;
-  }): Promise<PurchaseIntentRefundResult> {
+  private toResult(refund: PurchaseIntentRefund): Promise<PurchaseIntentRefundResult> {
     // Re-read rather than trust a stored snapshot: other refunds may have
     // landed against this purchase since, same reasoning as
     // RefundEngineService.toResult.
     return this.prisma.purchaseIntent
       .findUniqueOrThrow({ where: { id: refund.purchaseIntentId } })
-      .then((intent) => ({
-        refundId: refund.id,
-        amount: refund.amount.toFixed(MONEY_SCALE),
-        totalRefunded: intent.refundedAmount.toFixed(MONEY_SCALE),
-        bonusRestored: refund.bonusRestored.toFixed(MONEY_SCALE),
-      }));
+      .then((intent) => this.resultOf(refund, intent.refundedAmount));
+  }
+
+  async findRefundOrThrow(refundId: string) {
+    const refund = await this.prisma.purchaseIntentRefund.findUnique({ where: { id: refundId } });
+    if (!refund) throw new NotFoundException('Refund not found');
+    return refund;
   }
 
   listForIntent(purchaseIntentId: string) {
@@ -1064,6 +1523,7 @@ export class PurchaseIntentRefundService {
         });
       } catch (err) {
         if (isKeyCollision(err)) throw err;
+        if (err instanceof ShortfallSettlementRequired || err instanceof ShortfallSettlementChanged) throw err;
         const code = (err as { code?: string })?.code;
         const message = err instanceof Error ? err.message : '';
         const retryable =

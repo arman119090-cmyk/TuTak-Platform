@@ -76,10 +76,18 @@ export async function createPartner(
     evWholesaleRatePerKwh: string;
     evMarginReferralCapPerKwh: string;
     category: string;
+    allowExternalSourcing: boolean;
+    shiftsRequiredFrom: Date;
   }> = {},
 ): Promise<Partner> {
   return prisma.partner.create({
     data: {
+      // Partner Commerce v2 (Q4): these suites are about money, not shifts,
+      // so a fixture partner behaves like a partner that existed before
+      // mandatory shifts — inside its rollout window. Suites that test shifts
+      // pass a past date explicitly.
+      shiftsRequiredFrom: overrides.shiftsRequiredFrom ?? new Date('2100-01-01T00:00:00Z'),
+      ...(overrides.allowExternalSourcing !== undefined ? { allowExternalSourcing: overrides.allowExternalSourcing } : {}),
       legalName: 'Test Partner LLC',
       displayName: overrides.displayName ?? 'Test Partner',
       taxId: randomUUID(),

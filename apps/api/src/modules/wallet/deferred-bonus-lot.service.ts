@@ -16,6 +16,28 @@ import { BonusEngineService } from './bonus-engine.service';
 type Tx = Prisma.TransactionClient;
 
 /**
+ * What `reverseForRefund` could and could not take back, classified so a
+ * COMMERCE_V2 reversal (Q9) can route each part correctly. `shortfall` is
+ * the legacy total (everything not reversed from BONUS_LIABILITY) and is
+ * always `revenueRecognized + unrecoveredFromGrant` (+ the whole share when
+ * the lot is missing):
+ *  - `revenueRecognized` — value an expiry (`expireOne`) or a past
+ *    `reverseUnlock` forfeiture already released to PLATFORM_REVENUE;
+ *  - `unrecoveredFromGrant` — part of the granted green lot that is gone
+ *    from the wallet (spent, or expired as a green lot) — the caller splits
+ *    it using `grantedBonusLotId` (null when that pointer was already
+ *    cleared: the grant had been drained, i.e. spent).
+ */
+export interface DeferredRefundReversal {
+  liabilityToReverse: Decimal;
+  shortfall: Decimal;
+  revenueRecognized: Decimal;
+  unrecoveredFromGrant: Decimal;
+  grantedBonusLotId: string | null;
+  lotMissing: boolean;
+}
+
+/**
  * The 30% deferred/"black" pool share — spec §13-16. Deliberately not built
  * on `BonusLot`'s own PENDING→AVAILABLE machinery: that sweep promotes on
  * elapsed *time*, unconditionally, and a deferred lot's unlock condition is
@@ -238,11 +260,15 @@ export class DeferredBonusLotService {
     share: Decimal,
     reason: string,
     tx: Tx,
-  ): Promise<{ liabilityToReverse: Decimal; shortfall: Decimal }> {
+  ): Promise<DeferredRefundReversal> {
     const zero = new Decimal(0);
     const lot = await tx.deferredBonusLot.findFirst({ where: { sourceTransactionId } });
-    if (!lot || lot.status === DeferredBonusLotStatus.EXPIRED) {
-      return { liabilityToReverse: zero, shortfall: share };
+    if (!lot) {
+      return { liabilityToReverse: zero, shortfall: share, revenueRecognized: zero, unrecoveredFromGrant: zero, grantedBonusLotId: null, lotMissing: true };
+    }
+    if (lot.status === DeferredBonusLotStatus.EXPIRED) {
+      // `expireOne` already released this lot's liability to PLATFORM_REVENUE.
+      return { liabilityToReverse: zero, shortfall: share, revenueRecognized: share, unrecoveredFromGrant: zero, grantedBonusLotId: null, lotMissing: false };
     }
 
     // `amounts_sane` requires `amount` to stay strictly positive for as
@@ -258,7 +284,7 @@ export class DeferredBonusLotService {
     // for it again.
     const ceilingGap = share.minus(reduceBy);
     if (reduceBy.lessThanOrEqualTo(0)) {
-      return { liabilityToReverse: zero, shortfall: share };
+      return { liabilityToReverse: zero, shortfall: share, revenueRecognized: share, unrecoveredFromGrant: zero, grantedBonusLotId: null, lotMissing: false };
     }
 
     await tx.deferredBonusLot.update({
@@ -267,11 +293,18 @@ export class DeferredBonusLotService {
     });
 
     if (lot.status === DeferredBonusLotStatus.DEFERRED) {
-      return { liabilityToReverse: reduceBy, shortfall: ceilingGap };
+      return { liabilityToReverse: reduceBy, shortfall: ceilingGap, revenueRecognized: ceilingGap, unrecoveredFromGrant: zero, grantedBonusLotId: null, lotMissing: false };
     }
 
     if (!lot.grantedBonusLotId) {
-      return { liabilityToReverse: zero, shortfall: reduceBy.plus(ceilingGap) };
+      return {
+        liabilityToReverse: zero,
+        shortfall: reduceBy.plus(ceilingGap),
+        revenueRecognized: ceilingGap,
+        unrecoveredFromGrant: reduceBy,
+        grantedBonusLotId: null,
+        lotMissing: false,
+      };
     }
     const clawed = await this.bonusEngine.reverseAccrualLot(lot.grantedBonusLotId, reason, reduceBy, tx);
     const actual = clawed ?? zero;
@@ -303,7 +336,14 @@ export class DeferredBonusLotService {
           : { liveGrantReclaimedAmount: { increment: actual } },
     });
 
-    return { liabilityToReverse: actual, shortfall: reduceBy.minus(actual).plus(ceilingGap) };
+    return {
+      liabilityToReverse: actual,
+      shortfall: reduceBy.minus(actual).plus(ceilingGap),
+      revenueRecognized: ceilingGap,
+      unrecoveredFromGrant: reduceBy.minus(actual),
+      grantedBonusLotId: lot.grantedBonusLotId,
+      lotMissing: false,
+    };
   }
 
   /**

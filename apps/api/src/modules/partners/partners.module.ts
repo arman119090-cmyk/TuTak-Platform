@@ -16,6 +16,7 @@ import {
   PartnerBranchQrResolveController,
 } from './partner-branch-qr.controller';
 import { PartnerBranchQrService } from './partner-branch-qr.service';
+import { PartnerApiKeyService } from './partner-api-key.service';
 import {
   PartnerContributionRuleController,
   PartnerOwnContributionRuleController,
@@ -39,8 +40,9 @@ import { PartnerContributionRuleService } from './contribution/partner-contribut
     PartnerIntegrationsService,
     PartnerBranchStaffService,
     PartnerBranchQrService,
+    PartnerApiKeyService,
     PartnerContributionRuleService,
   ],
-  exports: [PartnersService, PartnerContributionRuleService],
+  exports: [PartnersService, PartnerIntegrationsService, PartnerApiKeyService, PartnerContributionRuleService],
 })
 export class PartnersModule {}

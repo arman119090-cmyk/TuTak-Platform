@@ -1,16 +1,23 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AuditAction,
   BonusEntryType,
+  BonusLot,
   BonusLotStatus,
   BonusReservationStatus,
+  LedgerAccountType,
   LedgerDirection,
+  PostingDirection,
   Prisma,
+  ReferralWithholdingStatus,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MONEY_MAX, parsePositiveMoney } from '../../common/utils/money';
+import { AuditService } from '../audit/audit.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -40,6 +47,21 @@ interface BucketDelta {
 const ZERO = new Decimal(0);
 
 /**
+ * Q8: the positive accruals that pay off a user's open
+ * `ReferralWithholding` before any of them becomes spendable ("следующие
+ * положительные bonus/referral начисления"). Not a manual admin adjustment
+ * (an operator's own correction) and not a restored discount
+ * (`restoreSpentBonus` gives back value the customer already paid with —
+ * it is not an accrual).
+ */
+const WITHHOLDABLE_ACCRUALS: BonusEntryType[] = [
+  BonusEntryType.ACCRUAL_PURCHASE,
+  BonusEntryType.ACCRUAL_REFERRAL,
+  BonusEntryType.ACCRUAL_PROMOTION,
+  BonusEntryType.ACCRUAL_DEFERRED,
+];
+
+/**
  * Domain service owning all bonus-point movement.
  *
  * Two rules govern this file:
@@ -60,6 +82,8 @@ export class BonusEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly ledger: LedgerService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ── Ledger primitive ──────────────────────────────────────────────────
@@ -236,10 +260,129 @@ export class BonusEngineService {
         metadata: params.metadata,
       });
 
-      return lot;
+      if (WITHHOLDABLE_ACCRUALS.includes(params.type)) {
+        await this.applyWithholdings(client, lot);
+      }
+
+      return client.bonusLot.findUniqueOrThrow({ where: { id: lot.id } });
     };
 
     return tx ? run(tx) : this.prisma.$transaction((t) => run(t));
+  }
+
+  /**
+   * Q8: a fresh accrual lot first pays off the wallet owner's open
+   * `ReferralWithholding`s, oldest first; only the rest stays in the lot.
+   * Each repayment is its own WITHHOLDING bonus-ledger entry (so the wallet
+   * history shows "earned X, withheld Y") and its own double-entry posting,
+   * DEBIT BONUS_LIABILITY / CREDIT the selling partner's PARTNER_PAYABLE —
+   * the commission refund that partner was waiting for (Arman,
+   * 2026-09-26: "the partner waits"). The accrual itself was already
+   * funded into BONUS_LIABILITY by its own caller, so the liability ends up
+   * matching exactly what the wallet received.
+   *
+   * Each withholding is claimed with a conditional update on its
+   * `remainingAmount`, so two concurrent accruals can never repay the same
+   * slice twice: the loser re-reads and takes only what is left.
+   */
+  private async applyWithholdings(client: Tx, lot: BonusLot): Promise<void> {
+    const open = await client.referralWithholding.findMany({
+      where: { walletId: lot.walletId, status: ReferralWithholdingStatus.OPEN },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (open.length === 0) return;
+
+    let left = lot.remainingAmount;
+    const wasPending = lot.status === BonusLotStatus.PENDING;
+    for (const candidate of open) {
+      if (!left.greaterThan(0)) break;
+      let current = candidate;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const take = Decimal.min(left, current.remainingAmount);
+        if (!take.greaterThan(0)) break;
+        const after = current.remainingAmount.minus(take);
+        const now = new Date();
+        const claimed = await client.referralWithholding.updateMany({
+          where: { id: current.id, status: ReferralWithholdingStatus.OPEN, remainingAmount: current.remainingAmount },
+          data: {
+            remainingAmount: after,
+            ...(after.isZero() ? { status: ReferralWithholdingStatus.SETTLED, settledAt: now } : {}),
+          },
+        });
+        if (claimed.count === 0) {
+          const fresh = await client.referralWithholding.findUnique({ where: { id: current.id } });
+          if (!fresh || fresh.status !== ReferralWithholdingStatus.OPEN) break;
+          current = fresh;
+          continue;
+        }
+
+        const lotAfter = left.minus(take);
+        await client.bonusLot.update({
+          where: { id: lot.id },
+          data: { remainingAmount: lotAfter, ...(lotAfter.isZero() ? { status: BonusLotStatus.CONSUMED } : {}) },
+        });
+        await client.wallet.update({
+          where: { id: lot.walletId },
+          data: {
+            ...(wasPending ? { pendingBonus: { decrement: take } } : { availableBonus: { decrement: take } }),
+            version: { increment: 1 },
+          },
+        });
+        await this.writeLedger(client, {
+          walletId: lot.walletId,
+          type: BonusEntryType.WITHHOLDING,
+          direction: LedgerDirection.DEBIT,
+          amount: take,
+          delta: wasPending ? { pending: take.negated() } : { available: take.negated() },
+          relatedLotId: lot.id,
+          sourceTransactionId: lot.sourceTransactionId,
+          metadata: {
+            withholdingId: current.id,
+            reason: 'referral_withholding_repayment',
+            returnedPurchaseTransactionId: current.sourceTransactionId,
+          },
+        });
+        const [liability, payable] = await Promise.all([
+          // Same client as every other write here — a tx-less lookup would wait
+          // on an account this transaction may have just created.
+          this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, client),
+          this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: current.beneficiaryPartnerId }, client),
+        ]);
+        const posted = await this.ledger.post(
+          {
+            kind: 'referral.withholding_recovered',
+            sourceType: 'ReferralWithholding',
+            sourceId: current.id,
+            postings: [
+              { accountId: liability.id, direction: PostingDirection.DEBIT, amount: take },
+              { accountId: payable.id, direction: PostingDirection.CREDIT, amount: take },
+            ],
+          },
+          client,
+        );
+        await client.referralWithholdingRecovery.create({
+          data: { withholdingId: current.id, bonusLotId: lot.id, amount: take, ledgerTransactionId: posted.id },
+        });
+        await this.auditService.record(
+          {
+            actorUserId: current.userId,
+            action: AuditAction.REFERRAL_WITHHOLDING_RECOVERED,
+            entityType: 'ReferralWithholding',
+            entityId: current.id,
+            metadata: {
+              amount: take.toString(),
+              remaining: after.toString(),
+              bonusLotId: lot.id,
+              beneficiaryPartnerId: current.beneficiaryPartnerId,
+              ledgerTransactionId: posted.id,
+            },
+          },
+          client,
+        );
+        left = lotAfter;
+        break;
+      }
+    }
   }
 
   // ── Reservation lifecycle ─────────────────────────────────────────────

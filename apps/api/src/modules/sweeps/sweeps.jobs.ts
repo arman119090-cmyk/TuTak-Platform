@@ -7,6 +7,8 @@ import type { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import type { OutboxService } from '../ledger/outbox.service';
 import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
+import type { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
+import type { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
 import type { PspAttemptAgeingService } from '../psp/psp-attempt-ageing.service';
 import type { PspCallbackWorkerService } from '../psp/psp-callback-worker.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
@@ -54,6 +56,8 @@ export interface SweepDependencies {
   deferredBonusLots: DeferredBonusLotService;
   purchaseIntents: PurchaseIntentsService;
   partnerSettlement: PartnerSettlementCheckService;
+  partnerOrderSla: PartnerOrderSlaSweepService;
+  employeeShifts: EmployeeShiftService;
   pspAgeing: PspAttemptAgeingService;
   pspCallbacks: PspCallbackWorkerService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
@@ -256,6 +260,64 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 26 * 60 * 60_000,
     lockTtlMs: 10 * 60_000,
     run: ({ partnerSettlement }) => partnerSettlement.checkOverdueSettlements(),
+  },
+  {
+    name: 'partner-order.not-seen-alert',
+    why: "Spec §17: an order the partner has not acknowledged within 5 minutes of the customer's confirmation (`submittedAt`) must surface to TuTak operators — nothing else in the running process checks `partnerSeenAt` against a clock.",
+    // Sub-minute cadence against a 5-minute deadline, same ratio
+    // `purchase-intent.expire` uses against its 3-minute one.
+    repeat: { every: 30_000 },
+    maxSilenceMs: 5 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepNotSeen(),
+  },
+  {
+    name: 'partner-order.stock-not-confirmed-alert',
+    why: 'Spec §18: 30 minutes after `submittedAt` with no stock decision is critical, and it must re-alert every 5 minutes until claimed or resolved — nothing else re-checks this on a clock.',
+    repeat: { every: 60_000 },
+    maxSilenceMs: 10 * 60_000,
+    lockTtlMs: 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepStockNotConfirmed(),
+  },
+  {
+    name: 'partner-order.receipt-followup',
+    why: 'Spec §34 / Q3: 24h after handover without "Получил заказ" the customer is reminded, at 48h the order goes to manual review — and the escrow is never released by this timer.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepReceipt(),
+  },
+  {
+    name: 'partner-order.payment-issue',
+    why: 'Q10: an order received while an external payment is still unconfirmed is flagged "Payment issue" at receipt; this is the safety net for any it missed and the 24h escalation for any still unconfirmed.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepPaymentIssues(),
+  },
+  {
+    name: 'partner-order.cancellation-claims',
+    why: 'Item 8: a customer cancellation the partner did not answer (no costs / actual-cost claim) within its window must proceed as a full refund instead of pausing the order forever.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.expireCancellationClaims(),
+  },
+  {
+    name: 'partner-order.draft-expiry',
+    why: 'An unconfirmed DRAFT (abandoned cart) must stop being confirmable after its window; it never reserved anything, so this only closes it.',
+    repeat: { every: 15 * 60_000 },
+    maxSilenceMs: 2 * 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.expireDrafts(),
+  },
+  {
+    name: 'employee-shift.close-stale',
+    why: 'Q4: a branch nobody opens the next day still has yesterday\'s shifts open; this closes every shift whose branch business day has ended, so a stale shift can never authorise today\'s cash actions.',
+    repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 3 * 60 * 60_000,
+    lockTtlMs: 10 * 60_000,
+    run: ({ employeeShifts }) => employeeShifts.closeStaleShifts(),
   },
   {
     name: 'psp.process-callbacks',

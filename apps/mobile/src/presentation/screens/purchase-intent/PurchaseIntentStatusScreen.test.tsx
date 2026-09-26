@@ -44,6 +44,7 @@ const intentFixture = (overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
   status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
   grossAmount: '5000',
   bonusAmountRequested: '500',
+  tutakMoneyAmount: '0',
   ordinaryPaymentRemainder: '4500',
   // The purchase-intent work this screen sits inside: the till code (#36),
   // how much is already refunded (#38) and who refused it (#41).

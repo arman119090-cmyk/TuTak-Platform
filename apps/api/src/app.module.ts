@@ -36,6 +36,8 @@ import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
 import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
 import { RoamingCpoModule } from './modules/roaming-cpo/roaming-cpo.module';
 import { CustomerBalanceModule } from './modules/customer-balance/customer-balance.module';
+import { PartnerOrdersModule } from './modules/partner-orders/partner-orders.module';
+import { EmployeeShiftsModule } from './modules/employee-shifts/employee-shifts.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
@@ -102,6 +104,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     EvChargingModule,
     RoamingCpoModule,
     CustomerBalanceModule,
+    PartnerOrdersModule,
+    EmployeeShiftsModule,
     AdminModule,
     NotificationsModule,
     AnalyticsModule,

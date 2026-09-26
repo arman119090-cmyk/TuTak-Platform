@@ -399,6 +399,66 @@ export interface AppConfig {
     /** Spec §18. "First 3 qualified friends" — this is the 3. */
     challengeSlotLimit: number;
   };
+  /**
+   * Partner Commerce (docs/PARTNER_COMMERCE.md). Read by
+   * `CommissionRuleService` and the SLA sweeps in `sweeps.jobs.ts` —
+   * nowhere else should hardcode one of these values.
+   */
+  partnerOrderPolicy: {
+    /**
+     * There is deliberately no platform default commission rate here any
+     * more (Q5 = A, v1 error E4): `Partner.bonusAccrualRateBps` is the one
+     * base rate, and a `CommissionRule` only ever overrides it for a
+     * specific service type/category.
+     */
+    /** Spec §17. Minutes since `submittedAt` before the "not seen" alert fires. */
+    notSeenAlertMinutes: number;
+    /**
+     * Spec §18. Minutes since `submittedAt` — never `partnerSeenAt` — before
+     * the critical "stock not confirmed" alert first fires.
+     */
+    stockConfirmDeadlineMinutes: number;
+    /** Spec §18.1. How often the critical alert repeats until resolved. */
+    stockAlertRepeatMinutes: number;
+    /** An unconfirmed DRAFT (abandoned cart) expires after this long. */
+    draftTtlHours: number;
+    /**
+     * Spec §34 / item 7. Hours after the partner marked the order DELIVERED
+     * (never after a courier handoff) before the customer is reminded.
+     */
+    receiptReminderHours: number;
+    /** Spec §34 / item 7. Hours after DELIVERED before TuTak manual review. */
+    receiptManualReviewHours: number;
+    /**
+     * Q10: the order enters "Payment issue" the moment the customer confirms
+     * receipt with an external leg still unconfirmed; this many hours later
+     * it is escalated once more. The escrow stays put either way.
+     */
+    paymentIssueHours: number;
+    /**
+     * Item 8: how long the partner has to declare "no costs" or claim actual,
+     * previously disclosed cancellation costs before a customer's
+     * cancellation proceeds as a full refund.
+     */
+    cancellationClaimHours: number;
+  };
+  /**
+   * Q9: from when new purchases carry the COMMERCE_V2 financial model. Unset
+   * = effective as soon as this code runs. Only ever compared at *creation*;
+   * refunds dispatch on the version stamped on the purchase.
+   */
+  financialPolicy: {
+    commerceV2EffectiveAt: Date | null;
+  };
+  /**
+   * Q12: where TuTak Web Checkout (apps/checkout) is served, e.g.
+   * https://checkout.tutak.am — the partner's website gets
+   * `<base>/o/<orderId>` back when it creates an order. Unset = no web link
+   * is offered (the app deep link always is).
+   */
+  checkout: {
+    webBaseUrl: string | null;
+  };
 }
 
 /**
@@ -432,6 +492,30 @@ export function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
         `L1 ${policy.poolReferrerL1Bps} + L2 ${policy.poolReferrerL2Bps} + L3 ${policy.poolReferrerL3Bps} + ` +
         `tutak ${policy.poolTutakBps})`,
     );
+  }
+}
+
+/**
+ * Same "fail loudly at boot" discipline as `assertPoolSplitSums` above, for
+ * the one Partner Commerce figure a bad env var could put out of range.
+ */
+export function assertPartnerOrderPolicy(policy: AppConfig['partnerOrderPolicy']): void {
+  for (const [name, value] of [
+    ['notSeenAlertMinutes', policy.notSeenAlertMinutes],
+    ['stockConfirmDeadlineMinutes', policy.stockConfirmDeadlineMinutes],
+    ['stockAlertRepeatMinutes', policy.stockAlertRepeatMinutes],
+    ['draftTtlHours', policy.draftTtlHours],
+    ['receiptReminderHours', policy.receiptReminderHours],
+    ['receiptManualReviewHours', policy.receiptManualReviewHours],
+    ['paymentIssueHours', policy.paymentIssueHours],
+    ['cancellationClaimHours', policy.cancellationClaimHours],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`partnerOrderPolicy.${name} must be a positive integer, got ${value}`);
+    }
+  }
+  if (policy.receiptManualReviewHours <= policy.receiptReminderHours) {
+    throw new Error('partnerOrderPolicy.receiptManualReviewHours must be later than receiptReminderHours');
   }
 }
 
@@ -473,6 +557,7 @@ function oneOf(
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
+  assertPartnerOrderPolicy(config.partnerOrderPolicy);
   return config;
 };
 
@@ -765,7 +850,40 @@ const buildConfig = (): AppConfig => ({
     // First 3 qualified friends, per spec §18.
     challengeSlotLimit: parseInt(process.env.REFERRAL_CHALLENGE_SLOT_LIMIT ?? '3', 10),
   },
+  partnerOrderPolicy: {
+    // Spec §17.
+    notSeenAlertMinutes: parseInt(process.env.PARTNER_ORDER_NOT_SEEN_ALERT_MINUTES ?? '5', 10),
+    // Spec §18.
+    stockConfirmDeadlineMinutes: parseInt(
+      process.env.PARTNER_ORDER_STOCK_CONFIRM_DEADLINE_MINUTES ?? '30',
+      10,
+    ),
+    stockAlertRepeatMinutes: parseInt(
+      process.env.PARTNER_ORDER_STOCK_ALERT_REPEAT_MINUTES ?? '5',
+      10,
+    ),
+    draftTtlHours: parseInt(process.env.PARTNER_ORDER_DRAFT_TTL_HOURS ?? '24', 10),
+    // Spec §34 / Q3: 24h reminder, 48h manual review.
+    receiptReminderHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_REMINDER_HOURS ?? '24', 10),
+    receiptManualReviewHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_MANUAL_REVIEW_HOURS ?? '48', 10),
+    paymentIssueHours: parseInt(process.env.PARTNER_ORDER_PAYMENT_ISSUE_HOURS ?? '24', 10),
+    cancellationClaimHours: parseInt(process.env.PARTNER_ORDER_CANCELLATION_CLAIM_HOURS ?? '24', 10),
+  },
+  financialPolicy: {
+    commerceV2EffectiveAt: parseEffectiveAt(process.env.FINANCIAL_POLICY_V2_EFFECTIVE_AT),
+  },
+  checkout: {
+    webBaseUrl: process.env.CHECKOUT_WEB_BASE_URL?.trim().replace(/\/+$/, '') || null,
+  },
 });
+
+/** An ISO timestamp, or null (= effective immediately). A malformed value refuses to boot. */
+function parseEffectiveAt(raw: string | undefined): Date | null {
+  if (!raw || raw.trim() === '') return null;
+  const at = new Date(raw);
+  if (Number.isNaN(at.getTime())) throw new Error(`FINANCIAL_POLICY_V2_EFFECTIVE_AT is not a valid timestamp: ${raw}`);
+  return at;
+}
 
 /**
  * A positive whole number of milliseconds from the environment.

@@ -10,4 +10,5 @@ export * from './purchase-intent';
 export * from './partner-integration';
 export * from './media';
 export * from './partner-branch';
+export * from './partner-order';
 export * from './settlement';

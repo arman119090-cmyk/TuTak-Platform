@@ -60,8 +60,12 @@ describe('PurchaseIntentRefundService (integration)', () => {
     return user;
   };
 
-  /** A confirmed purchase at 5% (pool 500 on a 10000 gross): green 100, deferred 150, tutak 150. */
-  const confirmedPurchase = async (params: { bonusAmountRequested?: string } = {}) => {
+  /**
+   * A confirmed purchase at 5% (pool 500 on a 10000 gross): green 100, deferred 150, tutak 150.
+   * `legacy` stamps it LEGACY_V1 — a purchase made before
+   * `FINANCIAL_POLICY_V2_EFFECTIVE_AT` (Q9), refunded under the old rule.
+   */
+  const confirmedPurchase = async (params: { bonusAmountRequested?: string; legacy?: boolean } = {}) => {
     const { user, wallet } = await createCustomer(prisma);
     const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
     const staff = await staffMember(partner.id);
@@ -83,8 +87,19 @@ describe('PurchaseIntentRefundService (integration)', () => {
       },
       user.id,
     );
+    if (params.legacy) {
+      await prisma.purchaseIntent.update({ where: { id: intent.id }, data: { financialPolicyVersion: 'LEGACY_V1' } });
+    }
     const confirmed = await purchaseIntents.confirm(intent.id, staff.id);
     return { user, wallet, partner, staff, intent: confirmed };
+  };
+
+  /** Spends `bonus` of the customer's green balance on a real purchase at another partner. */
+  const spendElsewhere = async (userId: string, bonus: string) => {
+    const other = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+    const otherStaff = await staffMember(other.id);
+    const spend = await purchaseIntents.create({ partnerId: other.id, grossAmount: '1000', bonusAmountRequested: bonus }, userId);
+    await purchaseIntents.confirm(spend.id, otherStaff.id);
   };
 
   /** Same shape as `confirmedPurchase`, but for a caller-supplied customer and gross amount. */
@@ -306,8 +321,10 @@ describe('PurchaseIntentRefundService (integration)', () => {
 
   // ── Already-spent earned bonus ──────────────────────────────────────────
 
-  it('claws back only what remains when the earned bonus was already spent', async () => {
-    const { wallet, staff, intent } = await confirmedPurchase();
+  // LEGACY_V1 only: under COMMERCE_V2 the spent share is the customer's
+  // shortfall, netted from their refund (see the COMMERCE_V2 section below).
+  it('LEGACY_V1: claws back only what remains when the earned bonus was already spent', async () => {
+    const { wallet, staff, intent } = await confirmedPurchase({ legacy: true });
 
     // Spend the green 100 the purchase just earned, in full, before refunding.
     const reservation = await engine.reserve(wallet.id, '100', 'spend-before-refund');
@@ -432,8 +449,8 @@ describe('PurchaseIntentRefundService (integration)', () => {
 
   // ── Ledger balance ───────────────────────────────────────────────────────
 
-  it('records a balanced reversing ledger transaction distinct from the original', async () => {
-    const { partner, staff, intent } = await confirmedPurchase({ bonusAmountRequested: '2000' });
+  it('LEGACY_V1: records a balanced reversing ledger transaction distinct from the original', async () => {
+    const { partner, staff, intent } = await confirmedPurchase({ bonusAmountRequested: '2000', legacy: true });
 
     await refunds.refund({
       purchaseIntentId: intent.id,
@@ -475,8 +492,8 @@ describe('PurchaseIntentRefundService (integration)', () => {
 
   // ── Liability reversal must match what wallets actually gave back ──────
 
-  it('debits BONUS_LIABILITY only for what was actually reclaimed from wallets, not the theoretical share', async () => {
-    const { wallet, partner, staff, intent } = await confirmedPurchase();
+  it('LEGACY_V1: debits BONUS_LIABILITY only for what was actually reclaimed from wallets, not the theoretical share', async () => {
+    const { wallet, partner, staff, intent } = await confirmedPurchase({ legacy: true });
 
     // Spend all 100 of the green share elsewhere before the purchase that
     // earned it is refunded — nothing is left in the lot to claw back.
@@ -510,8 +527,8 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(partner.id).toBeTruthy();
   });
 
-  it('debits BONUS_LIABILITY only for the unspent remainder when the green share was partly spent', async () => {
-    const { wallet, intent, staff } = await confirmedPurchase();
+  it('LEGACY_V1: debits BONUS_LIABILITY only for the unspent remainder when the green share was partly spent', async () => {
+    const { wallet, intent, staff } = await confirmedPurchase({ legacy: true });
 
     // Spend 40 of the 100 green share elsewhere; 60 remains reclaimable.
     const reservation = await engine.reserve(wallet.id, '40', 'partial-spend-before-refund');
@@ -537,6 +554,116 @@ describe('PurchaseIntentRefundService (integration)', () => {
     expect(liabilityLeg?.amount.toFixed(4)).toBe('210.0000');
     expect(bonusLiabilityAccount.balance.toFixed(4)).toBe('-40.0000');
 
+    await assertWalletIntegrity(prisma, wallet.id);
+  });
+
+  // ── COMMERCE_V2 counterparts (Q9): the spent share is netted, not absorbed ──
+
+  it('COMMERCE_V2: reversing transactions are sourced to the refund itself, balanced, and leave the original untouched', async () => {
+    const { staff, intent } = await confirmedPurchase({ bonusAmountRequested: '2000' });
+    expect((await prisma.purchaseIntent.findUniqueOrThrow({ where: { id: intent.id } })).financialPolicyVersion).toBe('COMMERCE_V2');
+
+    const result = await refunds.refund({
+      purchaseIntentId: intent.id,
+      amount: '5000',
+      reason: 'partial return',
+      actorId: staff.id,
+      idempotencyKey: 'v2-ledger-balance-1',
+    });
+    // Nothing was spent: no shortfall, executed at once. 5000 = 1000 discount back + 4000 cash.
+    expect(result.status).toBe('COMPLETED');
+    expect(result.bonusRestored).toBe('1000.0000');
+    expect(result.recoveredShortfall).toBe('0.0000');
+    expect(result.cashRefundNet).toBe('4000.0000');
+
+    const signedSum = (postings: { direction: string; amount: Decimal }[]) =>
+      postings.reduce((acc, p) => acc.plus(p.direction === 'DEBIT' ? p.amount : p.amount.negated()), new Decimal(0));
+    const reversals = await prisma.ledgerTransaction.findMany({
+      where: { sourceType: 'PurchaseIntentRefund', sourceId: result.refundId },
+      include: { postings: true },
+    });
+    expect(reversals.map((t) => t.kind).sort()).toEqual(['partner.bonus_redemption_compensation_refund', 'partner.contribution_refund']);
+    for (const t of reversals) expect(signedSum(t.postings).toFixed(4)).toBe('0.0000');
+    // The confirmation's own two transactions are never edited.
+    expect(await prisma.ledgerTransaction.count({ where: { sourceType: 'PurchaseIntent', sourceId: intent.id } })).toBe(2);
+  });
+
+  it('COMMERCE_V2: a fully spent green share is the customer shortfall — recovered from the cash they get back at the desk, not absorbed', async () => {
+    const { user, wallet, partner, staff, intent } = await confirmedPurchase();
+    await spendElsewhere(user.id, '100');
+    const liability = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const payableBefore = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'PARTNER_PAYABLE', partnerId: partner.id } });
+
+    const pending = await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'return after full spend',
+      actorId: staff.id,
+      idempotencyKey: 'v2-full-spend-1',
+    });
+    // Gross 10000 cash; the spent 100 is netted: the customer gets 9900. The
+    // desk is involved, so nothing moves until the employee confirms it.
+    expect(pending.status).toBe('AWAITING_SHORTFALL_SETTLEMENT');
+    expect(pending.grossRefund).toBe('10000.0000');
+    expect(pending.recoveredShortfall).toBe('100.0000');
+    expect(pending.netRefund).toBe('9900.0000');
+    expect((await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: liability.id } })).balance.toFixed(4)).toBe(liability.balance.toFixed(4));
+    expect((await prisma.ledgerAccount.findUniqueOrThrow({ where: { id: payableBefore.id } })).balance.toFixed(4)).toBe(payableBefore.balance.toFixed(4));
+
+    const done = await refunds.settleShortfall(pending.refundId, staff.id, '0');
+    expect(done.status).toBe('COMPLETED');
+    expect(done.totalRefunded).toBe('10000.0000');
+
+    // BONUS_LIABILITY is debited only for what the wallets actually gave back
+    // (the untouched deferred 150); the spent 100 is cleared from the
+    // customer's own refund through the partner, who kept it from the cash.
+    const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntentRefund', sourceId: pending.refundId },
+      include: { postings: true },
+    });
+    expect(contributionRefund.postings.find((p) => p.accountId === liability.id)?.amount.toFixed(4)).toBe('150.0000');
+    const clearing = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'CUSTOMER_SHORTFALL_CLEARING', userId: user.id } });
+    expect(clearing.balance.toFixed(4)).toBe('0.0000');
+    const desk = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'purchase_intent.shortfall_settled_at_desk', sourceId: pending.refundId },
+      include: { postings: true },
+    });
+    expect(desk.postings.find((p) => p.accountId === payableBefore.id && p.direction === 'DEBIT')?.amount.toFixed(4)).toBe('100.0000');
+
+    const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(after.availableBonus.isNegative()).toBe(false);
+    await assertWalletIntegrity(prisma, wallet.id);
+    const accounts = await prisma.ledgerAccount.findMany();
+    expect(accounts.reduce((sum, a) => sum.plus(a.balance), new Decimal(0)).toFixed(4)).toBe('0.0000');
+  });
+
+  it('COMMERCE_V2: a partly spent green share — only the spent 40 is netted; the unspent 60 is clawed back', async () => {
+    const { user, wallet, staff, intent } = await confirmedPurchase();
+    await spendElsewhere(user.id, '40');
+    const pending = await refunds.refund({
+      purchaseIntentId: intent.id,
+      reason: 'return after partial spend',
+      actorId: staff.id,
+      idempotencyKey: 'v2-partial-spend-1',
+    });
+    expect(pending.status).toBe('AWAITING_SHORTFALL_SETTLEMENT');
+    expect(pending.recoveredShortfall).toBe('40.0000');
+    expect(pending.netRefund).toBe('9960.0000');
+    await refunds.settleShortfall(pending.refundId, staff.id, '0');
+
+    const liability = await prisma.ledgerAccount.findFirstOrThrow({ where: { type: 'BONUS_LIABILITY' } });
+    const contributionRefund = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { kind: 'partner.contribution_refund', sourceType: 'PurchaseIntentRefund', sourceId: pending.refundId },
+      include: { postings: true },
+    });
+    // 60 of the green back from the lot + the deferred 150.
+    expect(contributionRefund.postings.find((p) => p.accountId === liability.id)?.amount.toFixed(4)).toBe('210.0000');
+    const lot = await prisma.bonusLot.findFirstOrThrow({
+      where: { sourceTransactionId: intent.sourceTransactionId!, type: BonusEntryType.ACCRUAL_PURCHASE },
+    });
+    expect(lot.remainingAmount.toFixed(4)).toBe('0.0000');
+    const row = await prisma.purchaseIntentRefund.findUniqueOrThrow({ where: { id: pending.refundId } });
+    expect(row.customerShortfall.toFixed(4)).toBe('40.0000');
+    expect(row.shortfallFromCash.toFixed(4)).toBe('40.0000');
     await assertWalletIntegrity(prisma, wallet.id);
   });
 
@@ -1172,6 +1299,8 @@ describe('PurchaseIntentRefundService (integration)', () => {
       await prisma.purchaseIntent.update({
         where: { id: confirmed.id },
         data: {
+          // A pre-rework row predates COMMERCE_V2 too.
+          financialPolicyVersion: 'LEGACY_V1',
           programVersion: null,
           referrerAmount: '100',
           referrer1Type: null,

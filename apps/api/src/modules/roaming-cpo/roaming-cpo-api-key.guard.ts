@@ -1,5 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { PartnerApiKeyService } from './partner-api-key.service';
+import { PartnerApiKeyService } from '../partners/partner-api-key.service';
 
 /**
  * M2M auth for the roaming-CPO inbound webhook routes

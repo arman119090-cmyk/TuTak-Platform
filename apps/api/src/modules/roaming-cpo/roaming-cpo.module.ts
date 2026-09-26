@@ -9,7 +9,6 @@ import { RoamingCpoController } from './roaming-cpo.controller';
 import { RoamingCpoStationsService } from './roaming-cpo-stations.service';
 import { RoamingCpoSettlementService } from './roaming-cpo-settlement.service';
 import { RoamingCpoCustomersService } from './roaming-cpo-customers.service';
-import { PartnerApiKeyService } from './partner-api-key.service';
 import { RoamingCpoApiKeyGuard } from './roaming-cpo-api-key.guard';
 import { ROAMING_CPO_PROVIDER } from './roaming-cpo-provider.interface';
 import { NoopRoamingCpoProvider } from './noop-roaming-cpo-provider.service';
@@ -28,7 +27,6 @@ import { NoopRoamingCpoProvider } from './noop-roaming-cpo-provider.service';
     RoamingCpoStationsService,
     RoamingCpoSettlementService,
     RoamingCpoCustomersService,
-    PartnerApiKeyService,
     RoamingCpoApiKeyGuard,
     {
       // No real partner endpoint exists to call yet — see that

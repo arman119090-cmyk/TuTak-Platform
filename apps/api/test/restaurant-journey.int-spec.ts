@@ -28,6 +28,7 @@ import { TransactionsController } from '../src/modules/transactions/transactions
 import { RequestUser } from '../src/modules/auth/types/request-user.type';
 import { SMS_PROVIDER, SmsProvider } from '../src/infrastructure/sms/sms-provider.interface';
 import { ROLE_PERMISSIONS } from '../src/scripts/role-permissions';
+import { EmployeeShiftService } from '../src/modules/employee-shifts/employee-shift.service';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { assertWalletIntegrity } from './setup/invariants';
 
@@ -278,7 +279,12 @@ describe('A restaurant, end to end (integration)', () => {
     // The customer cannot wave their own purchase through.
     await expect(intents.confirm(d.request, intent.id)).rejects.toMatchObject({ status: 403 });
 
-    // 14. The cashier confirms it.
+    // 14. The cashier starts their shift at the branch — Partner Commerce v2
+    //     (Q4): a cash-desk action is taken by an employee on an active
+    //     shift, and a newly approved partner has no rollout window — and
+    //     confirms the purchase.
+    const shifts = harness.app.get(EmployeeShiftService);
+    await shifts.start(cashierPerson.id, branch.id);
     const confirmed = await intents.confirm(cashier, intent.id);
     expect(confirmed.status).toBe(PurchaseIntentStatus.CONFIRMED);
     await outbox.drain();
@@ -390,6 +396,8 @@ describe('A restaurant, end to end (integration)', () => {
       }),
     ).rejects.toMatchObject({ status: 403 });
 
+    // The owner refunds at the branch, on a shift of their own (Q4).
+    await shifts.start(restaurateur.id, branch.id);
     await intents.refund(owner, intent.id, {
       amount: '10000',
       reason: 'One course was sent back',

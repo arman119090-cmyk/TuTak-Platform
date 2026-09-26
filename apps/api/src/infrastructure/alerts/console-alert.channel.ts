@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { Alert, AlertChannel } from './alert-channel.interface';
+import { Alert, AlertChannel, AlertDelivery } from './alert-channel.interface';
 
 /**
  * Where alerts go when no webhook is configured — development, and tests.
@@ -15,13 +15,14 @@ export class ConsoleAlertChannel implements AlertChannel {
 
   // Not `async`: there is nothing to await, and the interface's Promise is
   // for the transports that do have I/O.
-  send(alert: Alert): Promise<void> {
+  send(alert: Alert): Promise<AlertDelivery> {
     const context = Object.entries(alert.context ?? {})
       .map(([k, v]) => `${k}=${v}`)
       .join(' ');
     this.logger.error(
       `[${alert.severity}] ${alert.title} — ${alert.body}${context ? ` (${context})` : ''}`,
     );
-    return Promise.resolve();
+    // Logged is not delivered: nobody was told.
+    return Promise.resolve({ delivered: false, detail: 'logged to the console; no human was told' });
   }
 }

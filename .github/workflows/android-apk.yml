@@ -49,11 +49,11 @@ on:
         required: true
         type: string
       profile:
-        description: 'preview = standalone. staging = standalone, app name visibly marked "TuTak (staging)". diagnostic = preview plus the on-screen event log. development = needs a Metro server on a computer.'
+        description: 'production-apk = what customers install: named "TuTak", no marking, sideloadable. preview/staging = standalone but visibly marked. diagnostic = preview plus the on-screen event log. development = needs a Metro server on a computer.'
         required: true
-        default: preview
+        default: production-apk
         type: choice
-        options: [preview, staging, diagnostic, development]
+        options: [production-apk, preview, staging, diagnostic, development]
       builder:
         description: 'local = build here on the GitHub runner, spends no EAS build credit. cloud = build on EAS, spends one credit and also leaves a download link on expo.dev.'
         required: true
@@ -191,12 +191,73 @@ jobs:
         env:
           API_BASE_URL: ${{ inputs.api_base_url }}
           PROFILE: ${{ inputs.profile }}
+          # The tile provider. `MAP_TILE_API_KEY` is a secret because it is
+          # billable; the template and the attribution line are not secrets
+          # and read better in plain repository variables.
+          MAP_TILE_URL_TEMPLATE: ${{ vars.MAP_TILE_URL_TEMPLATE }}
+          # The secret first, then a repository variable of the same name —
+          # see `map-tile-check.yml` for why a tile key may live in either.
+          # A build that finds neither is refused by the gate below.
+          MAP_TILE_API_KEY: ${{ secrets.MAP_TILE_API_KEY || vars.MAP_TILE_API_KEY }}
+          MAP_TILE_ATTRIBUTION: ${{ vars.MAP_TILE_ATTRIBUTION }}
         run: |
           set -e
           tmp=$(mktemp)
           jq --arg p "$PROFILE" --arg url "$API_BASE_URL" \
             '.build[$p].env.API_BASE_URL = $url' eas.json > "$tmp"
           mv "$tmp" eas.json
+          # The map's tile provider crosses the same boundary for the same
+          # reason, and matters for the same kind of failure: a build with no
+          # provider configured falls back to openstreetmap.org, whose usage
+          # policy asks applications with real traffic to use their own
+          # provider. That fallback is right for a developer and wrong for
+          # anything handed to a customer, and the difference is invisible on
+          # screen until the tiles stop arriving.
+          #
+          # Repository variables rather than inputs: the key belongs to the
+          # account, not to one build, and a person dispatching a build should
+          # not have to paste it.
+          #
+          # The template and the attribution line default to MapTiler's when a
+          # key is present and they are not, so configuring the provider is
+          # one secret rather than one secret and two variables that have to
+          # be copied exactly. Neither default is a secret — the URL shape is
+          # in MapTiler's public documentation and the attribution is a
+          # credit line that is drawn on screen — and an override is still
+          # just setting the repository variable, which is what switching
+          # provider later looks like.
+          # A secret pasted through a browser can arrive with a newline or a
+          # trailing space attached. The provider then refuses a key that is
+          # correct in every visible respect, and the only symptom is a grey
+          # map on a phone. Strip it here, where the value enters the build,
+          # rather than making every reader of it defend itself.
+          MAP_TILE_API_KEY="$(printf '%s' "$MAP_TILE_API_KEY" | tr -d '[:space:]')"
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_URL_TEMPLATE" ]; then
+            MAP_TILE_URL_TEMPLATE='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}'
+            echo "MAP_TILE_URL_TEMPLATE not set; defaulting to MapTiler's streets-v2 raster tiles."
+          fi
+          if [ -n "$MAP_TILE_API_KEY" ] && [ -z "$MAP_TILE_ATTRIBUTION" ]; then
+            MAP_TILE_ATTRIBUTION='© MapTiler © OpenStreetMap'
+            echo "MAP_TILE_ATTRIBUTION not set; defaulting to MapTiler's required credit line."
+          fi
+          if [ -n "$MAP_TILE_URL_TEMPLATE" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg v "$MAP_TILE_URL_TEMPLATE" \
+              '.build[$p].env.MAP_TILE_URL_TEMPLATE = $v' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
+          if [ -n "$MAP_TILE_API_KEY" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg v "$MAP_TILE_API_KEY" \
+              '.build[$p].env.MAP_TILE_API_KEY = $v' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
+          if [ -n "$MAP_TILE_ATTRIBUTION" ]; then
+            tmp=$(mktemp)
+            jq --arg p "$PROFILE" --arg v "$MAP_TILE_ATTRIBUTION" \
+              '.build[$p].env.MAP_TILE_ATTRIBUTION = $v' eas.json > "$tmp"
+            mv "$tmp" eas.json
+          fi
           # The project id crosses the same boundary and was making the same
           # trip on the same missing bus: the builder logged
           # "extra.eas.projectId is missing" while this job had it in its
@@ -207,6 +268,24 @@ jobs:
               '.build[$p].env.EAS_PROJECT_ID = $id' eas.json > "$tmp"
             mv "$tmp" eas.json
           fi
+          # The commit the app states as its own — and the reason it has to be
+          # set here rather than left to be inferred.
+          #
+          # `app.config.js` takes GIT_COMMIT_SHA, then EAS_BUILD_GIT_COMMIT_HASH,
+          # then GITHUB_SHA. The step below commits `eas.json` locally so the
+          # builder sees this run's inputs, and the builder then reports *that*
+          # commit as EAS_BUILD_GIT_COMMIT_HASH — a SHA that exists only inside
+          # this job and is pushed nowhere. A diagnostic build whose on-screen
+          # identity cannot be looked up is the "which version is on the phone"
+          # problem in a new costume: it was found by unzipping a finished APK
+          # and reading `extra.commit`, which named a commit nobody could find.
+          #
+          # GIT_COMMIT_SHA wins over both, so naming the repository SHA here is
+          # what makes the panel say something the repository can confirm.
+          tmp=$(mktemp)
+          jq --arg p "$PROFILE" --arg sha "$GITHUB_SHA" \
+            '.build[$p].env.GIT_COMMIT_SHA = $sha' eas.json > "$tmp"
+          mv "$tmp" eas.json
           echo "Profile that will be built:"
           jq --arg p "$PROFILE" '.build[$p]' eas.json
           # EAS takes the project from git, so a change left only in the
@@ -215,6 +294,107 @@ jobs:
           git -c user.email=actions@github.com -c user.name='GitHub Actions' \
             commit -q -m "ci: point $PROFILE at $API_BASE_URL" -- eas.json
           echo "eas.json committed locally for this build only"
+
+      - name: Ask the tile provider whether this key works
+        # The map on the first shipped APK was a grey rectangle. Every part of
+        # this pipeline had done its job: the key reached eas.json, eas.json
+        # reached the builder, the builder baked it into the binary, and
+        # unpacking the APK showed the template, the key and the credit line
+        # exactly where they belong. The provider was answering 403 "Invalid
+        # key" to every tile, and nothing between the secret and the handset
+        # was in a position to notice — the app's own fallback text is the
+        # first and only report, and it reaches a person, not a build.
+        #
+        # So the build asks before it ships. One request, before twenty
+        # minutes of compilation: if the provider will not serve this key,
+        # there is no point producing an installable that cannot draw a map.
+        #
+        # Only for profiles that are handed to someone. A developer building
+        # locally against openstreetmap.org has no key and needs none, and
+        # this must not stand between them and a build.
+        working-directory: apps/mobile
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -uo pipefail
+          # The same rule app.config.js applies, read from the same place it
+          # reads: APP_ENV, not the profile's name. `diagnostic` is a preview
+          # build with an overlay, and it is handed to people — keying on the
+          # profile name would have quietly exempted it.
+          app_env=$(jq -r --arg p "$PROFILE" '.build[$p].env.APP_ENV // ""' eas.json)
+          shipping=false
+          case "$app_env" in
+            preview|staging|production) shipping=true ;;
+          esac
+
+          key=$(jq -r --arg p "$PROFILE" '.build[$p].env.MAP_TILE_API_KEY // ""' eas.json)
+          template=$(jq -r --arg p "$PROFILE" '.build[$p].env.MAP_TILE_URL_TEMPLATE // ""' eas.json)
+
+          if [ -z "$key" ] || [ -z "$template" ]; then
+            if [ "$shipping" = true ]; then
+              echo "::error::Profile $PROFILE has no tile provider configured. Set the MAP_TILE_API_KEY secret."
+              exit 1
+            fi
+            echo "No tile provider configured, and APP_ENV=$app_env is not a build anyone is handed. Skipping."
+            exit 0
+          fi
+
+          # A secret that picked up a newline or a space on the way into
+          # GitHub is a valid key the provider will refuse, and it looks
+          # identical to a wrong one in its answer. Say so by name.
+          trimmed=$(printf '%s' "$key" | tr -d '[:space:]')
+          if [ "${#trimmed}" != "${#key}" ]; then
+            echo "::warning::The MAP_TILE_API_KEY secret has whitespace around it; testing the trimmed value."
+            key="$trimmed"
+          fi
+
+          # One real tile over Yerevan, the same address the app builds.
+          url="${template//\{z\}/12}"
+          url="${url//\{x\}/2782}"
+          url="${url//\{y\}/1541}"
+          url="${url//\{s\}/a}"
+          url="${url//\{key\}/$key}"
+
+          ask() {
+            curl --silent --show-error --location --max-time 25 \
+              --output /dev/null --write-out '%{http_code}' \
+              --header "User-Agent: TuTak/1.0 (https://tutak.am)" \
+              --header "Referer: https://tutak.am" "$url" 2>/dev/null || echo 000
+          }
+          status=$(ask)
+          # A request that never completed says nothing about the key, and a
+          # release should not be blocked by one dropped connection. A refusal
+          # is not retried — the provider already answered.
+          if [ "$status" = "000" ]; then
+            echo "The first request did not complete; asking once more."
+            sleep 5
+            status=$(ask)
+          fi
+
+          if [ "$status" = "200" ]; then
+            echo "The tile provider served a tile for this key."
+            exit 0
+          fi
+
+          # The tile route answers a refusal with a placeholder image, which
+          # explains nothing. MapTiler's TileJSON route answers the same
+          # refusal in words, so the failure names itself in the log rather
+          # than leaving a bare status code for someone to interpret.
+          reason=""
+          case "$template" in
+            https://api.maptiler.com/maps/*)
+              map_id="${template#https://api.maptiler.com/maps/}"
+              map_id="${map_id%%/*}"
+              reason=$(curl --silent --max-time 25 \
+                "https://api.maptiler.com/maps/$map_id/tiles.json?key=$key" | head -c 200)
+              ;;
+          esac
+
+          echo "::error::The tile provider refused this key (HTTP $status)${reason:+ — $reason}"
+          echo "The APK would install and show no map, so the build stops here."
+          echo "Fix the MAP_TILE_API_KEY secret at Settings -> Secrets and variables -> Actions,"
+          echo "checking it against https://cloud.maptiler.com/account/keys/ , then dispatch again."
+          exit 1
 
       - name: Read the app config the way EAS will read it
         # Deliberately hostile: it throws away this job's environment and
@@ -244,6 +424,9 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           API_BASE_URL: ${{ inputs.api_base_url }}
           APP_ENV: ${{ inputs.profile }}
+          # See the note in "Put the address where the build can see it": this
+          # is what stops the app naming a throwaway CI commit as its own.
+          GIT_COMMIT_SHA: ${{ github.sha }}
         # `--local` runs the same build EAS would run, on this runner, and
         # spends no build credit. `--output` names the file directly, which is
         # why the cloud path's download step has no local equivalent: there is
@@ -271,6 +454,9 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           API_BASE_URL: ${{ inputs.api_base_url }}
           APP_ENV: ${{ inputs.profile }}
+          # See the note in "Put the address where the build can see it": this
+          # is what stops the app naming a throwaway CI commit as its own.
+          GIT_COMMIT_SHA: ${{ github.sha }}
         # --json puts the build record on stdout and the progress on stderr,
         # so the artifact URL can be read without scraping a progress bar.
         # --wait so the job does not report success while the build is queued.
@@ -352,6 +538,23 @@ jobs:
             exit 1
           fi
 
+      # The one number that says "the file on the phone is the file this run
+      # built". Everything else identifying a build — the run number, the
+      # commit, the release tag — describes what was *meant* to be produced.
+      # Computed here rather than left to whoever needs it, because the only
+      # other way to get it is to download 120 MB and hash it by hand, and a
+      # check nobody can afford to run is a check nobody runs.
+      - name: Checksum the APK
+        id: checksum
+        working-directory: apps/mobile
+        run: |
+          SUM="$(sha256sum tutak.apk | cut -d' ' -f1)"
+          BYTES="$(stat -c%s tutak.apk)"
+          echo "sha256=$SUM" >> "$GITHUB_OUTPUT"
+          echo "bytes=$BYTES" >> "$GITHUB_OUTPUT"
+          echo "SHA-256: $SUM"
+          echo "Size:    $BYTES bytes"
+
       - name: Attach the APK to this run
         uses: actions/upload-artifact@v4
         with:
@@ -377,13 +580,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: apk-${{ inputs.profile }}-${{ github.run_number }}
           API_BASE_URL: ${{ inputs.api_base_url }}
+          APK_SHA256: ${{ steps.checksum.outputs.sha256 }}
+          APK_BYTES: ${{ steps.checksum.outputs.bytes }}
         run: |
           set -euo pipefail
           notes="Commit \`$GITHUB_SHA\`. Talks to \`$API_BASE_URL\`.
 
           Open this page on the Android phone and tap **tutak.apk** below.
           Android will ask permission to install from this source, which is
-          expected for an app that did not come from Play."
+          expected for an app that did not come from Play.
+
+          SHA-256 \`$APK_SHA256\` — $APK_BYTES bytes."
           gh release create "$TAG" apps/mobile/tutak.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -398,6 +605,8 @@ jobs:
           APK_URL: ${{ steps.build.outputs.apk_url }}
           BUILD_ID: ${{ steps.build.outputs.build_id }}
           RELEASE_URL: ${{ steps.release.outputs.url }}
+          APK_SHA256: ${{ steps.checksum.outputs.sha256 }}
+          APK_BYTES: ${{ steps.checksum.outputs.bytes }}
         run: |
           {
             echo "## The APK"
@@ -429,4 +638,8 @@ jobs:
             echo "Android will ask permission to install from this source; that is expected for an app that did not come from Play."
             echo ""
             echo "This build talks to \`${{ inputs.api_base_url }}\`."
+            if [ -n "${APK_SHA256:-}" ]; then
+              echo ""
+              echo "SHA-256 \`$APK_SHA256\` — $APK_BYTES bytes."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -171,9 +171,7 @@ export class RoamingCpoSettlementService {
   }
 
   private async settleOnce(partnerId: string, dto: RoamingCpoSessionSettleDto) {
-    const already = await this.prisma.evSession.findUnique({
-      where: { externalSessionId: dto.externalSessionId },
-    });
+    const already = await this.ownSessionOrRefuse(partnerId, dto.externalSessionId);
     if (already) return this.toResult(already);
 
     const partner = await this.prisma.partner.findUnique({ where: { id: partnerId } });
@@ -434,9 +432,16 @@ export class RoamingCpoSettlementService {
         // fully rolled back, against `this.prisma` directly, once the
         // concurrent winner's INSERT (or its own transaction) has committed.
         if ((err as { code?: string })?.code === 'P2002') {
-          const existing = await this.prisma.evSession.findUniqueOrThrow({
-            where: { externalSessionId: dto.externalSessionId },
-          });
+          const existing = await this.ownSessionOrRefuse(partnerId, dto.externalSessionId);
+          if (!existing) {
+            // The id was taken by a different network between our check and
+            // our INSERT. Recovering here by returning "the" session would
+            // hand one CPO another's settlement, which is the same leak the
+            // check at the top of `settleOnce` exists to prevent.
+            throw new BadRequestException(
+              'This externalSessionId is already in use — choose an id unique to your network',
+            );
+          }
           settled = { duplicate: true as const, session: existing, greenLotId: null, completedTx: null };
         } else {
           throw err;
@@ -604,6 +609,36 @@ export class RoamingCpoSettlementService {
       }
     }
     throw new Error('runSerializable exhausted retries without a result');
+  }
+
+  /**
+   * The session this CPO means, or nothing — never another network's.
+   *
+   * `EvSession.externalSessionId` is globally unique, and the id is chosen
+   * by the CPO. Looking one up by that field alone and returning it as an
+   * idempotent replay handed any partner the settlement of any other partner
+   * that happened to use the same id: amounts, kWh, which customer it was
+   * linked to. Sequential ids make that a collision rather than an attack,
+   * and a competitor with an API key makes it a two-line script.
+   *
+   * Ownership lives through the connector's station, so that is what gets
+   * checked. A session belonging to somebody else is reported as absent:
+   * this caller has no session by that id, which is true, and saying
+   * anything more specific would confirm the other network's id exists.
+   *
+   * The deeper fix is a natural key of `(partnerId, externalSessionId)`
+   * rather than a global one, so two networks cannot collide at all. That is
+   * a migration with a backfill and it is written down in the report rather
+   * than smuggled into a security fix.
+   */
+  private async ownSessionOrRefuse(partnerId: string, externalSessionId: string) {
+    const session = await this.prisma.evSession.findUnique({
+      where: { externalSessionId },
+      include: { connector: { include: { station: true } } },
+    });
+    if (!session) return null;
+    if (session.connector.station.partnerId !== partnerId) return null;
+    return session;
   }
 
   private compensationFailed(what: string, entityId: string, externalSessionId: string, err: unknown): void {

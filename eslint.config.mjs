@@ -39,6 +39,21 @@ export default tseslint.config(
       'demo/**',
     ],
   },
+  {
+    /*
+     * k6 load scripts.
+     *
+     * Linted rather than ignored, because a typo in a script that hammers a
+     * staging environment is worth catching — but k6 injects its own globals
+     * and imports its modules from bare `k6/...` specifiers that resolve
+     * inside the k6 binary, not from node_modules. Declaring the globals is
+     * what lets the rest of the rules apply.
+     */
+    files: ['load/**/*.js'],
+    languageOptions: {
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' },
+    },
+  },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -287,7 +287,14 @@ describe('Partner branch staff, allBranches, QR, and branch-scoped PurchaseInten
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('does not require a branch for a non-fuel partner (unchanged behavior)', async () => {
+    // Renamed from "does not require a branch for a non-fuel partner": that
+    // is no longer the rule and the old name read as licence to delete the
+    // new one. A branch is required whenever the partner *has* open
+    // branches, whatever its category — see
+    // `restaurant-branch-attribution.int-spec.ts`. What stays true, and is
+    // what this fixture actually sets up, is that a business with no
+    // locations at all needs none.
+    it('does not require a branch for a partner that has no branches', async () => {
       const partner = await createPartner(prisma, { category: 'cafe' });
       const { user: customer } = await createCustomer(prisma);
 

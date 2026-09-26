@@ -10,9 +10,13 @@ import { ReferralScreen } from '../../presentation/screens/referral/ReferralScre
 import { EvHistoryScreen } from '../../presentation/screens/ev/EvHistoryScreen';
 import { EvSessionScreen } from '../../presentation/screens/ev/EvSessionScreen';
 import { ChangePasswordScreen } from '../../presentation/screens/settings/ChangePasswordScreen';
+import { EditProfileScreen } from '../../presentation/screens/settings/EditProfileScreen';
+import { BecomePartnerScreen } from '../../presentation/screens/partner-application/BecomePartnerScreen';
+import { PartnerApplicationSentScreen } from '../../presentation/screens/partner-application/PartnerApplicationSentScreen';
 import { DeleteAccountScreen } from '../../presentation/screens/settings/DeleteAccountScreen';
 import { VerifyPhoneScreen } from '../../presentation/screens/settings/VerifyPhoneScreen';
 import { CreatePurchaseIntentScreen } from '../../presentation/screens/purchase-intent/CreatePurchaseIntentScreen';
+import { ProviderPaymentScreen } from '../../presentation/screens/purchase-intent/ProviderPaymentScreen';
 import { PurchaseIntentStatusScreen } from '../../presentation/screens/purchase-intent/PurchaseIntentStatusScreen';
 import { PartnerDetailScreen } from '../../presentation/screens/partners/PartnerDetailScreen';
 import { CheckoutScreen } from '../../presentation/screens/partner-order/CheckoutScreen';
@@ -81,6 +85,21 @@ export function RootNavigator() {
         options={{ title: t('ev.sessionTitle'), headerShown: false }}
       />
       <Stack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{ title: t('editProfile.title'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="BecomePartner"
+        component={BecomePartnerScreen}
+        options={{ title: t('becomePartner.title'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="PartnerApplicationSent"
+        component={PartnerApplicationSentScreen}
+        options={{ title: t('partnerApplication.title'), headerShown: false }}
+      />
+      <Stack.Screen
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ title: t('settings.changePassword'), headerShown: false }}
@@ -104,6 +123,11 @@ export function RootNavigator() {
         name="PurchaseIntentStatus"
         component={PurchaseIntentStatusScreen}
         options={{ title: t('purchaseIntent.statusTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="ProviderPayment"
+        component={ProviderPaymentScreen}
+        options={{ title: t('psp.title', 'Payment'), headerShown: false }}
       />
       <Stack.Screen
         name="PartnerDetail"

@@ -1,4 +1,5 @@
-import { LedgerAccountType as A, PrismaClient, ShiftEndReason } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { LedgerAccountType as A, PaymentRoute, PrismaClient, ShiftEndReason } from '@prisma/client';
 import { PartnerOrdersService } from '../src/modules/partner-orders/partner-orders.service';
 import { PartnerOrderSlaSweepService } from '../src/modules/partner-orders/partner-order-sla-sweep.service';
 import { OrderEscalationService } from '../src/modules/partner-orders/order-escalation.service';
@@ -217,6 +218,38 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       const refundRow = await prisma.purchaseIntentRefund.findFirstOrThrow({ where: { purchaseIntentId: intent.id } });
       expect(refundRow.tutakMoneyRefunded.toFixed(4)).toBe('2000.0000');
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-47000.0000');
+      await s.assertAllAccountsReplay();
+    });
+
+    it('with the provider route: TuTak money is refused on a TUTAK_PSP purchase; a customer cancel returns it', async () => {
+      const partner = await createPartner(prisma, { bonusAccrualRateBps: 500 });
+      const customer = await s.customer('20000');
+      const config = harness.app.get(ConfigService);
+      const pspEnabled = config.get('features.tutakPspEnabled', { infer: true });
+      config.set('features.tutakPspEnabled', true);
+      try {
+        // One purchase, one money route: the money leg is released only by a
+        // cashier's confirmation, which a provider-routed purchase never gets.
+        await expect(
+          intents.create(
+            { partnerId: partner.id, grossAmount: '10000', tutakMoneyAmount: '4000', paymentRoute: PaymentRoute.TUTAK_PSP },
+            customer.user.id,
+          ),
+        ).rejects.toThrow(/cannot be combined/);
+      } finally {
+        config.set('features.tutakPspEnabled', pspEnabled);
+      }
+      expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-20000.0000');
+
+      const intent = await intents.create({ partnerId: partner.id, grossAmount: '10000', tutakMoneyAmount: '4000' }, customer.user.id);
+      expect(await s.escrow(partner.id)).toBe('-4000.0000');
+      const cancelled = await intents.cancel(intent.id, customer.user.id);
+      expect(cancelled.status).toBe('CANCELLED');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
+      expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-20000.0000');
+      // A repeat cancel is idempotent and moves nothing twice.
+      await intents.cancel(intent.id, customer.user.id);
+      expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-20000.0000');
       await s.assertAllAccountsReplay();
     });
 

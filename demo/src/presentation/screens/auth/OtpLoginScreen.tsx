@@ -14,6 +14,8 @@ import { authApi } from '../../../data/api/authApi';
 import { describeApiError } from '../../../data/api/errors';
 import { useAuthStore } from '../../../data/stores/authStore';
 import type { AuthStackParamList } from '../../../app/navigation/types';
+import { useMountTrace } from '../../../diagnostics/instanceTrace';
+import { useDimensionsTrace } from '../../../diagnostics/useDimensionsTrace';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OtpLogin'>;
 
@@ -27,6 +29,24 @@ export function OtpLoginScreen({ navigation }: Props) {
   const { color, space, text, layout } = useTheme();
   const compact = useCompactLayout();
   const { deviceId, setSession } = useAuthStore();
+
+  /*
+   * Instrumented like the other two auth screens, and for a reason specific
+   * to this one: it shows a *single* field at a time.
+   *
+   * The fault was being described as focus migrating between two fields, and
+   * a capture from this screen killed that framing — one field, `of=1` in the
+   * keyboard line, and the field still loses focus about thirty milliseconds
+   * after being granted it, with no `REQ blur` anywhere. So the migration is
+   * a consequence, not the cause: what actually happens is that a focused
+   * input is dropped, and on a two-field screen Android then hands focus to
+   * the next focusable, which produces the ping-pong.
+   *
+   * That makes this screen the cleanest place to test any candidate: no
+   * second field to muddy the reading.
+   */
+  useMountTrace('OtpLogin');
+  useDimensionsTrace();
 
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -94,6 +114,7 @@ export function OtpLoginScreen({ navigation }: Props) {
           <>
             <TextField
               label={t('auth.phoneNumber')}
+              traceId="phone"
               prefix="+374"
               value={phone}
               onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 8))}
@@ -116,6 +137,7 @@ export function OtpLoginScreen({ navigation }: Props) {
           <>
             <TextField
               label={t('auth.resetCode')}
+              traceId="otp"
               value={code}
               onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
               keyboardType="number-pad"

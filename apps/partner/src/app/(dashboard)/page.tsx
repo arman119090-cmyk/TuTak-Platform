@@ -35,7 +35,18 @@ export default function OverviewPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Revenue" value={amd(analytics?.totalRevenue)} tone="brand" />
+        {/* Net first, gross underneath it. A dashboard that led with gross
+            reported a fully refunded sale as revenue and said nothing about
+            refunds at all — so the headline number is what was actually
+            sold, and the two figures it is made of are named next to it. */}
+        <StatTile
+          label="Net revenue"
+          value={amd(analytics?.netRevenue)}
+          tone="brand"
+          hint="Sales less refunds"
+        />
+        <StatTile label="Gross revenue" value={amd(analytics?.totalRevenue)} />
+        <StatTile label="Refunded" value={amd(analytics?.totalRefunded)} />
         <StatTile label="Transactions" value={num(analytics?.totalTransactions)} />
         <StatTile label="Unique customers" value={num(analytics?.uniqueCustomers)} />
         <StatTile

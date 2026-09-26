@@ -31,7 +31,15 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
   let customerBalance: CustomerBalanceService;
   let bankAdapter: BankTopUpAdapter;
 
+  const savedTopUpFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+
   beforeAll(async () => {
+    // The collection tests below fund a balance through the real top-up
+    // flow, and top-ups are off by default as of 15.09.2026 (see
+    // `customer-balance-disabled.int-spec.ts` for why). Turned on here
+    // because what these tests are about is the *spending* half, which stays
+    // available either way — the funding is fixture, not subject.
+    process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = 'true';
     harness = await createTestHarness();
     prisma = harness.prisma;
     sessions = harness.app.get(EvSessionsService);
@@ -42,6 +50,8 @@ describe('Roaming-CPO frozen-rate financial accounting (integration)', () => {
   });
 
   afterAll(async () => {
+    if (savedTopUpFlag === undefined) delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+    else process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = savedTopUpFlag;
     await harness.close();
   });
 

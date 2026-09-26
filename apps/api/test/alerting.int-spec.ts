@@ -200,6 +200,8 @@ describe('Alerting (integration)', () => {
           partnerOrderSla: undefined as never,
           employeeShifts: undefined as never,
           settlementStatements: undefined as never,
+          pspAgeing: undefined as never,
+          pspCallbacks: undefined as never,
           refunds: undefined as never,
         },
         harness.app.get(DistributedLockService),
@@ -244,9 +246,9 @@ describe('Alerting (integration)', () => {
         body: 'Happened',
       };
 
-      expect(await alerts.fire(alert)).toBe(true);
-      expect(await alerts.fire(alert)).toBe(false);
-      expect(await alerts.fire(alert)).toBe(false);
+      expect(await alerts.fire(alert)).toMatchObject({ suppressed: false, delivered: true });
+      expect(await alerts.fire(alert)).toMatchObject({ suppressed: true, delivered: false });
+      expect(await alerts.fire(alert)).toMatchObject({ suppressed: true, delivered: false });
 
       // The window exists so an operator does not mute the channel — and a
       // muted channel is worse than none, because it still looks alive.

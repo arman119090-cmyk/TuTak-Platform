@@ -17,18 +17,22 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { proxyChainProbe } from './common/middleware/proxy-chain-probe';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 import { resolveTrustProxySetting } from './config/trust-proxy';
-import { isPublicDeployment } from './config/app-environment';
+import { isPublicDeployment, resolveAppEnvironment } from './config/app-environment';
 import { assertProductionCorsOrigins } from './config/cors-origins';
 import { expressTrustProxySetting } from './config/client-ip';
 import { StructuredLogger } from './common/observability/structured-logger';
+import { SMS_PROVIDER, SmsProvider } from './infrastructure/sms/sms-provider.interface';
 
 const tracingEnabled = startTracing({
   serviceName: process.env.OTEL_SERVICE_NAME ?? 'tutak-api',
   serviceVersion: process.env.npm_package_version ?? '0.1.0',
-  environment: process.env.NODE_ENV ?? 'development',
+  // Same reason as `initSentry`: traces have to say which deployment they
+  // came from, and on Railway `NODE_ENV` is `production` everywhere.
+  environment: resolveAppEnvironment(process.env),
   endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? '',
   headers: process.env.OTEL_EXPORTER_OTLP_HEADERS ?? '',
   debug: process.env.OTEL_DEBUG === 'true',
@@ -63,6 +67,11 @@ async function bootstrap() {
   app.use(compression());
   // Required to read the httpOnly refresh cookie the web clients now use.
   app.use(cookieParser());
+  // Answers, in the log and nowhere else, how many hops this deployment's own
+  // infrastructure adds to X-Forwarded-For — the measurement `client-ip.ts`
+  // insists on and that nothing else could produce. Inert unless a request
+  // asks for it by header; see `proxy-chain-probe.ts`.
+  app.use(proxyChainProbe());
 
   // Reflecting any origin while sending credentials is a misconfiguration, and
   // CORS_ORIGINS is not required by env validation — so a deployment that
@@ -200,6 +209,38 @@ async function bootstrap() {
       (tracingEnabled ? ' (tracing on)' : ''),
   );
 
+  /*
+   * Which SMS transport is actually live, said out loud on every boot.
+   *
+   * It was invisible, and its absence cost a day: a staging deployment was
+   * selecting `UnavailableSmsProvider` — refusing every send before a byte
+   * reached a carrier — while the demo banner underneath announced that SMS
+   * codes were being written to this log. They were not; that stopped being
+   * true when the console transport was removed from public deployments. So
+   * somebody debugging "no code arrived" read the banner, went looking in the
+   * log for a code, and found nothing, twice.
+   *
+   * The name is read from the container rather than re-derived from
+   * configuration: this reports what was *built*, which is the only thing
+   * that answers the question.
+   */
+  const smsTransport = app.get<SmsProvider>(SMS_PROVIDER).name;
+  const smsLogger = new Logger('SMS');
+  if (smsTransport === 'unavailable') {
+    smsLogger.error(
+      `SMS transport: ${smsTransport} — every verification and password-reset code ` +
+        'will be REFUSED. Nobody can sign in or register on this deployment. ' +
+        'Set SMS_DRIVER/SMS_ENDPOINT and their credentials.',
+    );
+  } else if (smsTransport === 'console') {
+    smsLogger.warn(
+      `SMS transport: ${smsTransport} — codes are written to this log and not ` +
+        'delivered. Local development only.',
+    );
+  } else {
+    smsLogger.log(`SMS transport: ${smsTransport}`);
+  }
+
   // Loud on purpose, and at the end so it is the last thing in the log
   // rather than buried under Nest's route table. Somebody reading these logs
   // to work out why a payment never reached the bank should not have to
@@ -212,7 +253,10 @@ async function bootstrap() {
     console.log('  ╠════════════════════════════════════════════════════════════╣');
     console.log('  ║  Payments run on the sandbox acquirer: every charge is      ║');
     console.log('  ║  simulated and nothing reaches a bank.                      ║');
-    console.log('  ║  SMS codes are written to this log, not delivered.          ║');
+    // Deliberately not a claim about SMS. This banner used to say codes were
+    // written to the log, which `DEMO_MODE` has not bought since the console
+    // transport was taken out of public deployments — the line above reports
+    // the real transport instead.
     console.log('  ║                                                            ║');
     console.log('  ║  Every other protection is on: CORS allowlist, security     ║');
     console.log('  ║  headers, rate limits, secret validation.                   ║');

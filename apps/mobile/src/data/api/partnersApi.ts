@@ -12,7 +12,44 @@ export interface NearbyPartnersQuery {
   q?: string;
 }
 
+/**
+ * What a business tells us when it asks to join.
+ *
+ * `taxId` is optional here because it is optional on the server: the form is
+ * the first contact with a business that has agreed to nothing yet, and a
+ * required ՀՎՀՀ at that moment does not produce the number, it loses the
+ * applicant. It can be supplied later from the partner's own panel.
+ */
+export interface PartnerApplication {
+  legalName: string;
+  displayName: string;
+  taxId?: string;
+  category: PartnerCategory;
+  /**
+   * Basis points, on the 0.5% grid the server enforces — 1000 is 10%.
+   *
+   * The applicant's own proposal. Approval accepts it as it stands, so this
+   * is the rate the business will actually trade on.
+   */
+  bonusAccrualRateBps: number;
+}
+
 export const partnersApi = {
+  /**
+   * Applies to become a partner.
+   *
+   * Creates the partner awaiting approval — it can accrue nothing, redeem
+   * nothing and confirm nothing until an administrator approves it — and
+   * makes the caller its owner.
+   */
+  async apply(application: PartnerApplication) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerPublicDto>>(
+      '/partners/apply',
+      application,
+    );
+    return data.data;
+  },
+
   /**
    * Branches a customer can walk into, nearest first.
    *

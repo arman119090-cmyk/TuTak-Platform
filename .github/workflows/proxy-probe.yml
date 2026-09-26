@@ -7,17 +7,12 @@
 # the deployment itself. A runner is exactly that, and "Run workflow" is a
 # button that works from a phone.
 #
-# The probe sends `X-Forwarded-For: <marker>` and names that same value in
-# `X-TuTak-Proxy-Probe`. The default marker is 203.0.113.7 — TEST-NET-3,
-# reserved by RFC 5737 for documentation, so it can never be a real client
-# address. Naming it is what lets the API tell the entry the caller wrote
-# from the entries its own edge appended: everything to the right of the
-# marker is infrastructure, and that count is the answer.
-#
-# Repeat the measurement with a routable marker before trusting a reading
-# that says the edge discarded what was sent: an edge that sanitises
-# reserved ranges but forwards routable ones would produce the same line and
-# would not be safe.
+# The probe sends `X-Forwarded-For: 203.0.113.7` and names that same value in
+# `X-TuTak-Proxy-Probe`. 203.0.113.7 is TEST-NET-3, reserved by RFC 5737 for
+# documentation, so it can never be a real client address and can never be
+# confused with one. Naming it is what lets the API tell the entry the caller
+# wrote from the entries its own edge appended: everything to the right of
+# the marker is infrastructure, and that count is the answer.
 #
 # The API prints the shape of the chain to its own log — positions and counts
 # only, never addresses. Read that line on Railway and it names the value to

@@ -34,6 +34,16 @@ export type RootStackParamList = {
   /** The session is passed through so the screen renders instantly on start;
       it re-polls for the authoritative figures either way. */
   EvSession: { session?: EvSessionDto } | undefined;
+  /** Where a customer writes their own name — see `EditProfileScreen`. */
+  EditProfile: undefined;
+  /** The application form a business fills in to join — see `BecomePartnerScreen`. */
+  BecomePartner: undefined;
+  /**
+   * Shown once the application is in. The name travels through params
+   * rather than being re-fetched: the screen confirms what was just sent and
+   * has nothing to look up.
+   */
+  PartnerApplicationSent: { displayName: string; category: string; rateBps: number; taxId?: string };
   ChangePassword: undefined;
   VerifyPhone: undefined;
   DeleteAccount: undefined;
@@ -59,4 +69,10 @@ export type RootStackParamList = {
   /** Spec §18: "Мои заказы" — every order the customer has placed through
       a partner's website via TuTak Checkout. */
   MyOrders: undefined;
+  /**
+   * Paying through the provider. Takes only the purchase id: everything the
+   * screen may believe about the payment comes from the server, never from
+   * params a previous screen captured before the payment existed.
+   */
+  ProviderPayment: { purchaseIntentId: string };
 };

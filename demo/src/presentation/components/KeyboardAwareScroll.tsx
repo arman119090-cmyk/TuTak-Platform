@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Keyboard, ScrollView, ScrollViewProps, StyleSheet, View, ViewStyle } from 'react-native';
-import { logEvent } from '../../diagnostics/eventLog';
+import { logEventCoalesced } from '../../diagnostics/eventLog';
+import { logWithFocus } from '../../diagnostics/focusRegistry';
+import { useScrollsChildToFocus } from '../../diagnostics/experiment';
 
 /**
  * One place that knows how this app behaves when the keyboard is open.
@@ -95,11 +97,20 @@ export function useKeyboardInset(): number {
       // between them was closed by the system; one preceded by `blur` was
       // closed because the app dropped the focus, and those have nothing in
       // common but the symptom.
-      logEvent(`kbShow h=${Math.round(height)}`);
+      //
+      // The focus summary is appended here rather than inferred later: the
+      // reported fault is a keyboard that *changes type*, and the only thing
+      // that answers which input it is serving is asking, at the moment it
+      // appears, which input React Native says is focused and what keyboard
+      // that input asked for. `on=none` while a keyboard is on screen is a
+      // finding in its own right.
+      logWithFocus(`kbShow h=${Math.round(height)}`);
       setInset((previous) => (Math.abs(previous - height) < 1 ? previous : height));
     });
     const hidden = Keyboard.addListener('keyboardDidHide', () => {
-      logEvent('kbHide');
+      // Same question at the other end: a keyboard that goes while an input
+      // still reports focus was not closed by this app losing it.
+      logWithFocus('kbHide');
       setInset(0);
     });
     return () => {
@@ -212,6 +223,9 @@ export function KeyboardAwareScroll({
   ...rest
 }: KeyboardAwareScrollProps) {
   const keyboardInset = useKeyboardInset();
+  // The one parameter the comparison varies — see `experiment.ts`. Constant
+  // `false` in every build except the diagnostic one, where a button flips it.
+  const scrollsChildToFocus = useScrollsChildToFocus();
 
   // Flattened so the keyboard's height *adds to* whatever bottom padding the
   // screen asked for rather than overwriting it. Every auth screen passes one
@@ -270,12 +284,117 @@ export function KeyboardAwareScroll({
           content,
           keyboardInset > 0 ? { paddingBottom: requested + keyboardInset } : null,
         ]}
-        // The only prop kept from the original. Without it the first tap on a
-        // button while the keyboard is open merely closes the keyboard, and
-        // has to be repeated — which reads as the button being broken. It
-        // cannot cause a loop: it changes what a tap does, not what the layout
-        // does.
-        keyboardShouldPersistTaps="handled"
+        /*
+         * `always`, not `handled`, and the difference is a bug the device log
+         * caught red-handed.
+         *
+         * Both values keep the first tap on a button working — that is what
+         * this prop was here for. What `handled` does not do is stop React
+         * Native's own ScrollView from blurring the focused input by hand:
+         *
+         *   if (currentlyFocusedTextInput != null &&
+         *       this.props.keyboardShouldPersistTaps !== true &&
+         *       this.props.keyboardShouldPersistTaps !== 'always' &&
+         *       this._keyboardIsDismissible() &&
+         *       e.target !== currentlyFocusedTextInput && …) {
+         *     TextInputState.blurTextInput(currentlyFocusedTextInput);
+         *   }
+         *
+         * `'handled'` passes every one of those guards, so the path was live
+         * here, and the log names it: `REQ blur phone`, twice, each followed
+         * immediately by `blur phone` and `kbHide on=none of=2`. That is this
+         * app closing its own keyboard through a React Native code path that
+         * no search of this repository would ever have shown — the call is in
+         * ScrollView.js, not here.
+         *
+         * `'always'` excludes it explicitly. The cost is that tapping the
+         * background no longer dismisses the keyboard; on a form whose fields
+         * are the point, that is not a loss worth having a keyboard close
+         * itself for.
+         */
+        /*
+         * Every scroll, recorded — because this is the one thing that would
+         * either confirm or kill the current candidate outright.
+         *
+         * A capture from the single-field OTP screen showed a focused input
+         * dropped roughly thirty milliseconds after being granted focus, with
+         * no `REQ blur` and no second field to migrate to (`of=1`). So the
+         * question is no longer "what moves focus between two fields" but
+         * "what drops focus from one". `scrollsChildToFocus` was disabled on
+         * exactly that suspicion: `ReactScrollView.requestChildFocus` calls
+         * `scrollToChild(focused)`, deliberately skipping the layout-dirty
+         * guard stock Android uses to avoid scrolling mid-layout.
+         *
+         * If a `scroll y=` line lands between `focus` and `blur`, that is the
+         * scroll happening inside focus handling and the candidate is
+         * confirmed. If focus is dropped with no scroll anywhere near it, the
+         * candidate is dead and nothing else needs building to find out.
+         *
+         * Passive: `onScroll` observes, and anything a caller passes is
+         * called after. Throttled to 16ms so a fling cannot flood the log —
+         * the question is whether a scroll happened at all, not how smooth it
+         * was.
+         */
+        onScroll={(event) => {
+          /*
+           * One line per burst, carrying when it started and how far it went.
+           *
+           * A drag used to write ninety lines and push the focus events out
+           * of the buffer, which cost a capture. Folding fixes the volume;
+           * what the fold has to keep is the two things a scroll is worth
+           * against a `focus` line — **when** it began, and **how far** it
+           * moved. So the line reads `scroll y=120→938 ×57`: the burst's own
+           * start timestamp, the offset it started from, the offset it ended
+           * on, and how many samples that took.
+           *
+           * A scroll inside focus handling is one sample and prints as a
+           * plain `scroll y=120`, which is exactly the case this exists for.
+           */
+          const y = Math.round(event.nativeEvent.contentOffset.y);
+          logEventCoalesced('scroll y=', (previous) => {
+            const from = /^scroll y=(-?\d+)/.exec(previous ?? '')?.[1];
+            return from === undefined ? `scroll y=${y}` : `scroll y=${from}→${y}`;
+          });
+          rest.onScroll?.(event);
+        }}
+        scrollEventThrottle={16}
+        keyboardShouldPersistTaps="always"
+        /*
+         * Android's ScrollView must stop scrolling to the focused child —
+         * because this component already decided it should not, and the
+         * native side never got the message.
+         *
+         * `NO_SCROLLING` above is that decision: `ensureVisible` is a
+         * deliberate no-op, and the comment on it records why auto-scrolling
+         * to a focused field was taken out. What it could not switch off is
+         * `ReactScrollView`, which does the same thing underneath in Java,
+         * with `scrollsChildToFocus` defaulting to true:
+         *
+         *   public void requestChildFocus(View child, View focused) {
+         *     if (focused != null && mScrollsChildToFocus) {
+         *       scrollToChild(focused);
+         *     }
+         *     requestChildFocusWithoutScroll(child, focused);
+         *   }
+         *
+         * So every focus change scrolled the list — and React Native's own
+         * comment above that method says it deliberately skips the
+         * `mIsLayoutDirty` guard that stock Android uses precisely to avoid
+         * scrolling in the middle of a layout pass.
+         *
+         * That lands on the device log's remaining fault: focus alternates
+         * between the two fields, roughly a frame and a half apart, and
+         * settles on the topmost one — which is what Android's
+         * `ScrollView.onRequestFocusInDescendants` returns when it is asked
+         * with a null rect. A scroll issued from inside focus handling is a
+         * plausible way to provoke that arbitration, and it is not the app's
+         * behaviour either way.
+         *
+         * So this is both a fix candidate and a correction on its own merits:
+         * the form scrolls when the person scrolls it, and not because a
+         * field took focus. Android-only; ignored on iOS.
+         */
+        scrollsChildToFocus={scrollsChildToFocus}
         {...rest}
       >
         {children}

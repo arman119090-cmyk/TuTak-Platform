@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
+import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
@@ -23,7 +24,10 @@ export function ChangePasswordScreen({ navigation }: Props) {
   const { color } = useTheme();
 
   const [currentPassword, setCurrentPassword] = useState('');
+
+  const revealCurrent = usePasswordReveal();
   const [newPassword, setNewPassword] = useState('');
+  const revealNew = usePasswordReveal();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -50,14 +54,16 @@ export function ChangePasswordScreen({ navigation }: Props) {
           label={t('auth.currentPassword')}
           value={currentPassword}
           onChangeText={setCurrentPassword}
-          secureTextEntry
+          secureTextEntry={revealCurrent.secureTextEntry}
+          revealToggle={revealCurrent.revealToggle}
           placeholder="••••••••"
         />
         <TextField
           label={t('auth.newPassword')}
           value={newPassword}
           onChangeText={setNewPassword}
-          secureTextEntry
+          secureTextEntry={revealNew.secureTextEntry}
+          revealToggle={revealNew.revealToggle}
           placeholder="••••••••"
           hint={t('auth.passwordHint')}
           error={error ?? undefined}

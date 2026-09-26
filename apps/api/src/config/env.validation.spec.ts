@@ -6,7 +6,7 @@
 // already imported this polyfill does not help this one.
 import 'reflect-metadata';
 import { randomBytes } from 'node:crypto';
-import { assertProductionJwtSecretsAreStrong, validate } from './env.validation';
+import { assertProviderPaymentsConfigured, assertProductionJwtSecretsAreStrong, validate } from './env.validation';
 
 /**
  * Security hardening (2026-08-23): regression suite for the boot-time
@@ -158,6 +158,81 @@ describe('assertProductionJwtSecretsAreStrong', () => {
  * actually calls at boot — proves the guard is wired in, not just present
  * as a standalone function nothing calls.
  */
+/**
+ * The retiring key during a rotation, and the secret that never did anything.
+ *
+ * Both were gaps in the rotation work: `JWT_ACCESS_SECRET_PREVIOUS` was added
+ * as a feature and never validated, so a weak retiring key would have been
+ * accepted for the length of a rotation window; and `JWT_REFRESH_SECRET` was
+ * found to be unused but left required, which is a deployment obligation that
+ * buys nothing and implies something false.
+ */
+describe('rotation and the deprecated refresh secret', () => {
+  const strongSecret = () => randomBytes(32).toString('hex');
+
+  const prodEnv = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    NODE_ENV: 'production' as const,
+    PORT: 4000,
+    DATABASE_URL: 'postgresql://x:y@localhost:5432/db',
+    JWT_ACCESS_SECRET: strongSecret(),
+    ...overrides,
+  });
+
+  it('accepts a deployment that sets no refresh secret at all', () => {
+    // It is read by nothing. Requiring it made deployments carry a secret
+    // that does not exist as far as the running system is concerned.
+    expect(() => assertProductionJwtSecretsAreStrong(prodEnv() as never)).not.toThrow();
+  });
+
+  it('still refuses a weak refresh secret when one is supplied', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(prodEnv({ JWT_REFRESH_SECRET: 'aaaaaaaa'.repeat(8) }) as never),
+    ).toThrow(/JWT_REFRESH_SECRET/);
+  });
+
+  it('accepts a genuine rotation: a strong, different retiring key', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        prodEnv({ JWT_ACCESS_SECRET_PREVIOUS: strongSecret() }) as never,
+      ),
+    ).not.toThrow();
+  });
+
+  /**
+   * A retiring key verifies real tokens for the length of the window. A
+   * rotation is not an excuse to accept a weak one for fifteen minutes.
+   */
+  it('refuses a weak retiring key', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        prodEnv({ JWT_ACCESS_SECRET_PREVIOUS: 'bbbbbbbb'.repeat(8) }) as never,
+      ),
+    ).toThrow(/JWT_ACCESS_SECRET_PREVIOUS/);
+  });
+
+  it('refuses a placeholder as the retiring key', () => {
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        prodEnv({ JWT_ACCESS_SECRET_PREVIOUS: 'change-me-example-secret-min-32-chars-x' }) as never,
+      ),
+    ).toThrow(/JWT_ACCESS_SECRET_PREVIOUS/);
+  });
+
+  /**
+   * Setting the retiring key to the live one is the mistake that looks like
+   * a rotation and is not one: nothing has changed, and the deployment now
+   * believes it is mid-rotation.
+   */
+  it('refuses a "rotation" to the same value', () => {
+    const same = strongSecret();
+    expect(() =>
+      assertProductionJwtSecretsAreStrong(
+        { ...prodEnv({ JWT_ACCESS_SECRET: same }), JWT_ACCESS_SECRET_PREVIOUS: same } as never,
+      ),
+    ).toThrow(/nothing is being rotated/i);
+  });
+});
+
 describe('validate() — production boot integration', () => {
   const strongSecret = () => randomBytes(32).toString('hex');
 
@@ -226,5 +301,68 @@ describe('validate() — production boot integration', () => {
         JWT_REFRESH_SECRET: 'change-me-refresh-secret-min-32-chars-long',
       }),
     ).not.toThrow();
+  });
+});
+
+/**
+ * Turning the provider route on without the provider configured must refuse
+ * to boot. The first version let it boot and fail at the first customer —
+ * leaving an `INITIATED` attempt behind, which is worse than not starting.
+ */
+describe('assertProviderPaymentsConfigured', () => {
+  const on = (overrides: Record<string, unknown> = {}) => ({
+    TUTAK_PSP_ENABLED: 'true',
+    IDRAM_MERCHANT_ID: '110000110',
+    IDRAM_SECRET_KEY: 'a-real-secret',
+    IDRAM_FORM_ACTION: 'https://sandbox.idram.example/pay',
+    ALERT_WEBHOOK_URL: 'https://hooks.example/tutak-alerts',
+    ...overrides,
+  });
+
+  it('lets a deployment with the route off boot with nothing set', () => {
+    expect(() => assertProviderPaymentsConfigured({})).not.toThrow();
+    expect(() => assertProviderPaymentsConfigured({ TUTAK_PSP_ENABLED: 'false' })).not.toThrow();
+  });
+
+  it('accepts the route on with everything set', () => {
+    expect(() => assertProviderPaymentsConfigured(on())).not.toThrow();
+  });
+
+  it.each(['IDRAM_MERCHANT_ID', 'IDRAM_SECRET_KEY', 'IDRAM_FORM_ACTION'])(
+    'refuses to boot with the route on and %s missing',
+    (name) => {
+      expect(() => assertProviderPaymentsConfigured(on({ [name]: undefined }))).toThrow(name);
+      expect(() => assertProviderPaymentsConfigured(on({ [name]: '   ' }))).toThrow(name);
+    },
+  );
+
+  /**
+   * No silent production default any more, and no plain-HTTP action either:
+   * the form carries the amount and the bill the customer is about to pay.
+   */
+  /**
+   * The provider route may not start blind. `AlertsModule` deliberately only
+   * warns when the webhook is missing, so the till keeps working while
+   * somebody fixes it; the route where a customer's money can sit
+   * unaccounted for is the one that has to refuse instead.
+   */
+  it('refuses the route on without an alert webhook, and with a plain-http one', () => {
+    expect(() => assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: undefined }))).toThrow(
+      /ALERT_WEBHOOK_URL/,
+    );
+    expect(() => assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: '  ' }))).toThrow(
+      /ALERT_WEBHOOK_URL/,
+    );
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: 'http://hooks.example/x' })),
+    ).toThrow(/https/);
+    // And the route off never asks for one.
+    expect(() => assertProviderPaymentsConfigured({ ALERT_WEBHOOK_URL: undefined })).not.toThrow();
+  });
+
+  it('refuses a form action that is not https', () => {
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ IDRAM_FORM_ACTION: 'http://banking.idram.am/x' })),
+    ).toThrow(/https/);
   });
 });

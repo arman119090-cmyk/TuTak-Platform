@@ -165,7 +165,17 @@ describe('mockAdapter', () => {
      * *no handler at all*, so for these the bar is "not a 404" — and the
      * upload path's own success case is covered directly, below.
      */
-    const REJECTS_A_SYNTHETIC_BODY = new Set(['put /users/me/avatar']);
+    const REJECTS_A_SYNTHETIC_BODY = new Set([
+      'put /users/me/avatar',
+      /*
+       * `POST /psp/purchases/:id/begin` answers 409 on purpose, and that is
+       * the handler working rather than missing. The demo has no payment
+       * provider: returning a bill would be demonstrating money moving when
+       * none did, in the one part of the app whose whole purpose is to refuse
+       * that claim. The bar here, as for the avatar upload, is "not a 404".
+       */
+      'post /psp/purchases/sample-id/begin',
+    ]);
 
     const unmocked: string[] = [];
     for (const entry of calls) {
@@ -244,6 +254,10 @@ describe('mockAdapter', () => {
         await call('post', '/purchase-intents', { partnerId: 'partner-sas', grossAmount: '10000' })
       ).data.data;
       expect(created.negotiatedRateBps).toBe(500); // pool = 10000 * 5% = 500
+      // The offline adapter carries the till code too — the status screen
+      // renders it, so a mock without one would show an empty label on a
+      // demo phone.
+      expect(created.confirmationCode).toMatch(/^\d{4}$/);
 
       const before = Number((await call('get', '/wallet/me')).data.data.availableBonus);
 
@@ -277,12 +291,39 @@ describe('mockAdapter', () => {
         params: { lat: 40.1776, lng: 44.5126, radiusKm: 25, ...params },
       } as InternalAxiosRequestConfig);
 
-    it('returns the nearest partner first', async () => {
+    /*
+     * The ordering this used to assert — strictly ascending distance — is no
+     * longer the rule, and the change was deliberate: a partner who offers
+     * more cashback now ranks ahead of a nearer one, so that choosing a
+     * generous rate buys them something real. It is bounded, though, and the
+     * bound is the part worth testing. Distance is compared in
+     * half-kilometre bands: inside a band the better rate wins, and across
+     * bands the nearer band always wins however generous the far one is.
+     *
+     * So this checks the bound rather than the raw sequence, which is what
+     * actually protects the screen: whatever the rates, nothing far may climb
+     * over something near. See `PartnersService.listNearbyBranches`.
+     */
+    it('never lets a further partner climb over a nearer band', async () => {
       const rows = (await nearby()).data.data as Array<{ distanceKm: number }>;
       expect(rows.length).toBeGreaterThan(5);
 
-      const distances = rows.map((r) => r.distanceKm);
-      expect(distances).toEqual([...distances].sort((a, b) => a - b));
+      const bands = rows.map((r) => Math.floor(r.distanceKm / 0.5));
+      expect(bands).toEqual([...bands].sort((a, b) => a - b));
+    });
+
+    it('ranks the more generous partner first among equally near ones', async () => {
+      const rows = (await nearby()).data.data as Array<{
+        distanceKm: number;
+        cashbackPercent: number;
+      }>;
+
+      for (let i = 1; i < rows.length; i += 1) {
+        const previous = rows[i - 1]!;
+        const current = rows[i]!;
+        if (Math.floor(previous.distanceKm / 0.5) !== Math.floor(current.distanceKm / 0.5)) continue;
+        expect(previous.cashbackPercent).toBeGreaterThanOrEqual(current.cashbackPercent);
+      }
     });
 
     it('puts each partner somewhere different, so the map is not one stack', async () => {

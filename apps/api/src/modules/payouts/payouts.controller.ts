@@ -63,8 +63,19 @@ export class PayoutsController {
     return this.acquirerSettlements.list();
   }
 
+  /*
+   * Gated on `ACQUIRER_SETTLEMENT_MANAGE` rather than `PAYOUT_MANAGE` since
+   * 15.09.2026.
+   *
+   * They are opposite directions of travel and deserve different keys:
+   * `PAYOUT_MANAGE` sends money out of the platform's bank, this records
+   * money arriving into it. Sharing one permission meant whoever could wire
+   * funds away could also assert that funds had appeared — and an asserted
+   * inbound settlement is cash conjured from a form field. Separate grants
+   * also let the two be held by different people, which is the point.
+   */
   @Post('acquirer/settlements')
-  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
+  @RequirePermissions(PermissionName.ACQUIRER_SETTLEMENT_MANAGE)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async recordAcquirerSettlement(
     @CurrentUser() admin: RequestUser,

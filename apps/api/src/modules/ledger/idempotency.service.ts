@@ -4,6 +4,23 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 /**
+ * The key is claimed and the work behind it is running right now.
+ *
+ * Distinguished from every other `ConflictException` this service raises
+ * because the two mean opposite things to a caller holding a decision.
+ * "Already in progress" says another attempt owns this work and may be
+ * committing money this instant, so nothing about the decision may be
+ * rolled back on the strength of it. A key reused with a different body
+ * says the work will never run, and releasing is safe. Matching on the
+ * message text would have worked until somebody improved the wording.
+ */
+export class IdempotencyInFlightException extends ConflictException {
+  constructor(message = 'An identical request is already in progress') {
+    super(message);
+  }
+}
+
+/**
  * A caller retrying a stuck request must not be blocked forever by the
  * attempt that got stuck. Past this age, an IN_FLIGHT row is treated as
  * abandoned (its process presumably crashed) and is fair game to reclaim.
@@ -101,7 +118,7 @@ export class IdempotencyService {
     // really is a concurrent duplicate of a request that is actively running.
     const staleBefore = new Date(Date.now() - leaseMs);
     if (existing.createdAt > staleBefore) {
-      throw new ConflictException('An identical request is already in progress');
+      throw new IdempotencyInFlightException();
     }
 
     const reclaimed = await this.prisma.idempotencyRecord.updateMany({
@@ -110,7 +127,7 @@ export class IdempotencyService {
     });
     if (reclaimed.count === 0) {
       // Lost the reclaim race to another caller doing the same thing.
-      throw new ConflictException('An identical request is already in progress');
+      throw new IdempotencyInFlightException();
     }
     return 'own';
   }

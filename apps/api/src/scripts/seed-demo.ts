@@ -28,6 +28,7 @@
  * app.module.ts.
  */
 import 'reflect-metadata';
+import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import {
@@ -253,18 +254,64 @@ async function main() {
   log.log('Creating branches…');
   await prisma.partnerBranch.createMany({
     data: [
-      { partnerId: cafe.id, name: 'Cafe Yerevan — Northern Ave', address: 'Հյուսիսային պող. 12', city: 'Yerevan', latitude: 40.1826, longitude: 44.5145 },
-      { partnerId: cafe.id, name: 'Cafe Yerevan — Cascade', address: 'Թամանյան 5', city: 'Yerevan', latitude: 40.1899, longitude: 44.5153 },
-      { partnerId: market.id, name: 'TuTak Market — Arabkir', address: 'Կոմիտաս 42', city: 'Yerevan', latitude: 40.2044, longitude: 44.4989 },
-      { partnerId: pharm.id, name: 'Ararat Pharm — Gyumri', address: 'Շիրակացի 8', city: 'Gyumri', latitude: 40.7894, longitude: 43.8475 },
+      {
+        partnerId: cafe.id,
+        name: 'Cafe Yerevan — Northern Ave',
+        address: 'Հյուսիսային պող. 12',
+        city: 'Yerevan',
+        latitude: 40.1826,
+        longitude: 44.5145,
+      },
+      {
+        partnerId: cafe.id,
+        name: 'Cafe Yerevan — Cascade',
+        address: 'Թամանյան 5',
+        city: 'Yerevan',
+        latitude: 40.1899,
+        longitude: 44.5153,
+      },
+      {
+        partnerId: market.id,
+        name: 'TuTak Market — Arabkir',
+        address: 'Կոմիտաս 42',
+        city: 'Yerevan',
+        latitude: 40.2044,
+        longitude: 44.4989,
+      },
+      {
+        partnerId: pharm.id,
+        name: 'Ararat Pharm — Gyumri',
+        address: 'Շիրակացի 8',
+        city: 'Gyumri',
+        latitude: 40.7894,
+        longitude: 43.8475,
+      },
     ],
   });
 
   log.log('Creating EV stations…');
   for (const station of [
-    { name: 'ElectroGo — Republic Square', address: 'Հանրապետության հրապարակ', city: 'Yerevan', latitude: 40.1776, longitude: 44.5126 },
-    { name: 'ElectroGo — Sevan Highway', address: 'Մ4 խճուղի, 42 կմ', city: 'Sevan', latitude: 40.5535, longitude: 44.9511 },
-    { name: 'ElectroGo — Dilijan', address: 'Կալինինի 3', city: 'Dilijan', latitude: 40.7408, longitude: 44.8631 },
+    {
+      name: 'ElectroGo — Republic Square',
+      address: 'Հանրապետության հրապարակ',
+      city: 'Yerevan',
+      latitude: 40.1776,
+      longitude: 44.5126,
+    },
+    {
+      name: 'ElectroGo — Sevan Highway',
+      address: 'Մ4 խճուղի, 42 կմ',
+      city: 'Sevan',
+      latitude: 40.5535,
+      longitude: 44.9511,
+    },
+    {
+      name: 'ElectroGo — Dilijan',
+      address: 'Կալինինի 3',
+      city: 'Dilijan',
+      latitude: 40.7408,
+      longitude: 44.8631,
+    },
   ]) {
     const created = await prisma.evStation.create({
       data: {
@@ -330,6 +377,53 @@ async function main() {
   await grantRole(staff.id, RoleName.PARTNER_STAFF, cafe.id);
   await prisma.partnerMembership.create({ data: { partnerId: cafe.id, userId: staff.id } });
 
+  /*
+   * The cashier actually works somewhere, and there is a code on the table.
+   *
+   * Neither existed before, and together they were the difference between a
+   * demo stack that looks complete and one a purchase can go through. A
+   * purchase must name the branch it happened at whenever the partner has
+   * branches, and a cashier may only confirm purchases at branches they are
+   * assigned to — so a two-branch cafe with an unassigned cashier and no
+   * branch codes could take no money at all through its own till.
+   *
+   * Lilit is put on the Northern Avenue branch specifically, not on both:
+   * branch scoping is a real part of this product and a seed that grants
+   * everyone everything demonstrates the opposite of what it does. Gor, as
+   * the owner, sees every branch without needing a row here.
+   */
+  log.log('Assigning branch staff and issuing branch QR codes…');
+  // By name, not by position: `orderBy` here and the order the branch list
+  // endpoint returns are different things, and the comment above names a
+  // specific branch.
+  const northernAve = await prisma.partnerBranch.findFirst({
+    where: { partnerId: cafe.id, name: { contains: 'Northern' } },
+  });
+  if (northernAve) {
+    await prisma.partnerBranchStaffAssignment.create({
+      data: {
+        partnerId: cafe.id,
+        partnerBranchId: northernAve.id,
+        userId: staff.id,
+        employeeDisplayCode: 'B-001',
+        assignedByUserId: owner.id,
+      },
+    });
+  }
+
+  const allBranches = await prisma.partnerBranch.findMany({ orderBy: { createdAt: 'asc' } });
+  await prisma.partnerBranchQrCode.createMany({
+    data: allBranches.map((branch) => ({
+      partnerId: branch.partnerId,
+      partnerBranchId: branch.id,
+      // Random and meaningless on its own, exactly like
+      // `PartnerBranchQrService.issue` produces: nothing about the partner
+      // or the branch can be read off a printed code.
+      token: randomUUID(),
+      issuedByUserId: owner.id,
+    })),
+  });
+
   const marketOwner = await createUser({
     phone: '+37477200003',
     firstName: 'Armen',
@@ -381,7 +475,11 @@ async function main() {
 
   // ── QR payments: the loyalty loop ──────────────────────────────────────
 
-  const asRequestUser = (user: User, roles: RoleName[], scopes: Record<string, string[]> = {}): RequestUser => ({
+  const asRequestUser = (
+    user: User,
+    roles: RoleName[],
+    scopes: Record<string, string[]> = {},
+  ): RequestUser => ({
     id: user.id,
     phone: user.phone,
     roles,
@@ -492,7 +590,9 @@ async function main() {
 
   log.log('Requesting a payout…');
   const available = await payouts.availableBalance(cafe.id);
-  const payoutAmount = available.greaterThan(20_000) ? new Decimal('20000') : available.dividedBy(2);
+  const payoutAmount = available.greaterThan(20_000)
+    ? new Decimal('20000')
+    : available.dividedBy(2);
   if (payoutAmount.greaterThan(0)) {
     const payout = await payouts.requestPayout({
       partnerId: cafe.id,

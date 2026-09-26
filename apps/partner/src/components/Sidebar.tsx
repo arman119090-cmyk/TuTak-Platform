@@ -13,7 +13,15 @@ const NAV: NavItem[] = [
   { href: '/purchase-intents', label: 'Purchase requests', icon: <NavIcon d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 13l2 2 4-4" /> },
   { href: '/orders', label: 'Orders', icon: <NavIcon d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4M3 6h18M16 10a4 4 0 0 1-8 0" /> },
   { href: '/settlement', label: 'Settlement', icon: <NavIcon d="M4 6h16M4 12h16M4 18h10M18 16v4M16 18h4" /> },
+  { href: '/refunds', label: 'Returns', icon: <NavIcon d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /> },
   { href: '/earnings', label: 'Earnings', icon: <NavIcon d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" /> },
+  // Next to Earnings deliberately: Earnings is what activity produced, this
+  // is what TuTak has actually drafted and transferred against it.
+  {
+    href: '/settlements',
+    label: 'Settlements',
+    icon: <NavIcon d="M4 7h16M4 12h16M4 17h10" />,
+  },
   { href: '/ev-stations', label: 'EV stations', icon: <NavIcon d="m13 2-8 11h6l-2 9 8-11h-6l2-9Z" /> },
   { href: '/branding', label: 'Branding', icon: <NavIcon d="M4 16.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1.5Zm0 0 4.5-4.5 3 3 3.5-3.5L20 15M9 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z" /> },
   { href: '/locations', label: 'Locations', icon: <NavIcon d="M12 21s7-6.5 7-11.5a7 7 0 1 0-14 0C5 14.5 12 21 12 21Zm0-8.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /> },

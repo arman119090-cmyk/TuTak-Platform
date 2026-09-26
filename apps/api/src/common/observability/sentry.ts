@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/node';
 import type { Request } from 'express';
 import { resolveReleaseSha } from './release';
 import { sanitizeBreadcrumb, sanitizeSentryEvent } from './sentry-sanitize';
+import { resolveAppEnvironment } from '../../config/app-environment';
 
 /**
  * Error monitoring, off unless `SENTRY_DSN` is set — the same "off unless
@@ -35,7 +36,13 @@ export function initSentry(options: { transport?: Sentry.NodeOptions['transport'
 
   Sentry.init({
     dsn,
-    environment: process.env.NODE_ENV ?? 'development',
+    // `APP_ENV`, not `NODE_ENV` — see `app-environment.ts`, which says in
+    // its own docblock that `NODE_ENV` is `production` for anything
+    // deployed and `APP_ENV` names *which* deployment it is. Reading
+    // `NODE_ENV` here filed staging's errors under `production`, so an
+    // alert on the production error rate fired for a staging smoke test
+    // and the alert that mattered got tuned out.
+    environment: resolveAppEnvironment(process.env),
     release: resolveReleaseSha(process.env),
     // Error monitoring only — see the module docblock. No tracing, no
     // profiling, no session replay (replay does not exist for Node), no

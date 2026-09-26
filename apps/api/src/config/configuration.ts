@@ -38,6 +38,21 @@ export interface AppConfig {
   sweeps: { enabled: boolean };
   jwt: {
     accessSecret: string;
+    /**
+     * The secret being retired, accepted for verification but never used to
+     * sign.
+     *
+     * Rotation without this is not rotation: changing `JWT_ACCESS_SECRET`
+     * invalidates every access token in flight at once, so every signed-in
+     * customer is thrown out mid-action — which is why a leaked secret
+     * tends not to get rotated promptly, which is the actual danger. With an
+     * overlap window the new secret signs immediately, tokens minted under
+     * the old one keep working until they expire (fifteen minutes by
+     * default), and the variable is then removed.
+     *
+     * Empty when no rotation is in progress, which is the normal state.
+     */
+    previousAccessSecret: string;
     accessExpiresIn: string;
     refreshSecret: string;
     refreshExpiresIn: string;
@@ -157,10 +172,29 @@ export interface AppConfig {
      * The legacy card-payment/PSP subsystem (`PaymentsModule`: `/payments`,
      * `/refunds`, `PaymentEngineService`, `RefundEngineService`).
      *
-     * The approved canonical model does not have TuTak charge the
-     * customer's card at all — the customer pays the partner directly
-     * outside TuTak, and the whole PurchaseIntent/refund path this platform
-     * actually ships on (`purchase-intents`) never touches a PSP. Yet
+     * ## The model below was superseded on 14.09.2026
+     *
+     * Arman's decision of that date changes the business: the customer will
+     * pay **inside** TuTak through a licensed provider (Idram is the one
+     * being negotiated), TuTak will owe the partner a net amount, and that
+     * amount will be paid out by ordinary bank transfer against a settlement
+     * document. `PartnerSettlementsModule` is the first half of that, and it
+     * is live. The customer-money half is deliberately unbuilt: who legally
+     * holds a customer's stored balance — Idram as the issuer, or TuTak on
+     * its own merchant account — is unresolved, and building either shape
+     * before that is answered would be guessing about regulation.
+     *
+     * The paragraph below is kept rather than deleted because it explains
+     * why the code looks the way it does, and deleting it would make the
+     * next reader think nobody ever decided.
+     *
+     * > The approved canonical model does not have TuTak charge the
+     * > customer's card at all — the customer pays the partner directly
+     * > outside TuTak, and the whole PurchaseIntent/refund path this platform
+     * > actually ships on (`purchase-intents`) never touches a PSP.
+     *
+     * That is still an accurate description of what runs today. It is no
+     * longer a description of where this is going. Yet
      * `PaymentsModule` used to be imported unconditionally, and its own
      * provider factory refuses to boot `NODE_ENV=production` without either
      * a real acquirer or `DEMO_MODE=true` — meaning a canonical production
@@ -178,6 +212,102 @@ export interface AppConfig {
      * `DEMO_MODE`) still refuses to boot, exactly as before.
      */
     cardPaymentsEnabled: boolean;
+    /**
+     * Whether a customer may choose to pay the remainder **inside TuTak**
+     * through a licensed provider (`PaymentRoute.TUTAK_PSP`), rather than
+     * handing the money to the partner directly.
+     *
+     * Off by default, and deliberately a flag of its own rather than a reuse
+     * of `cardPaymentsEnabled`: that one governs the legacy acquirer surface
+     * the canonical model never used, and this one governs a route that
+     * changes who owes whom. Turning it on where no provider contract exists
+     * would let a customer open a purchase nothing can collect.
+     *
+     * Production keeps this off until Arman decides otherwise (15.09.2026):
+     * the Idram integration is written against published documentation and
+     * has never been exercised against the real provider.
+     */
+    tutakPspEnabled: boolean;
+    /**
+     * Whether TuTak may **credit** a customer's own stored-value balance —
+     * `/balance/topup`, its provider webhook, and anything else that turns
+     * real money into `CUSTOMER_PREPAID_BALANCE`.
+     *
+     * Off by default, and the default is the decision rather than caution.
+     * Holding customers' money as a balance they top up in advance is
+     * issuing electronic money: who may legally hold it — a licensed issuer
+     * or TuTak on its own merchant account — is exactly the question
+     * `cardPaymentsEnabled`'s note above records as unresolved. A platform
+     * that ships the button first and asks afterwards has already taken the
+     * deposits.
+     *
+     * What the flag does **not** gate is reading a balance or spending one
+     * that already exists: `collectFromBalance` remains available to the EV
+     * roaming path, because a customer who has a balance must be able to use
+     * it and see it even after top-ups are closed. Stranding somebody's
+     * money is not the safe direction.
+     *
+     * No provider is wired to this either way. The bank adapter is the
+     * no-op; Idram is deliberately **not** connected to this circuit, and
+     * turning this flag on alone still credits nobody.
+     */
+    customerPrepaidTopUpEnabled: boolean;
+    /**
+     * Whether a purchase collected through the provider may be refunded
+     * through this platform at all.
+     *
+     * Off, and Arman's decision of 15.09.2026 is that it stays off until the
+     * provider's own refund/reversal API is confirmed to exist. The two
+     * alternatives were both rejected on the record:
+     *
+     *  - a routine manual bank refund, which puts an operator in the money
+     *    path with no provider record tying the return to the original
+     *    payment;
+     *  - refunding in bonus points, which is not a refund. The customer paid
+     *    real money and is owed real money.
+     *
+     * So the honest behaviour while the capability is unknown is to refuse,
+     * and say why. A refund button built on an endpoint nobody has confirmed
+     * exists is a button that lies to a customer about their money.
+     *
+     * Turning this on is not sufficient by itself: `PspAdapter.capabilities
+     * .refund` must also be true for the provider in question, so switching
+     * a flag cannot conjure an API.
+     */
+    pspRefundsEnabled: boolean;
+  };
+  /**
+   * How long an unanswered payment attempt may sit before the platform stops
+   * presenting its bill as payable, and how often it is escalated after that.
+   *
+   * Per provider, because thirty minutes was my number and not a fact. A
+   * redirect-and-callback provider, a provider whose customers finish in an
+   * app, and one that settles in overnight batches have genuinely different
+   * answers, and Arman's decision of 15.09.2026 is that this is configuration
+   * rather than a constant somebody has to read the source to find.
+   *
+   * Neither number ever decides anything. Passing `staleAfterMs` moves an
+   * attempt to `EXPIRED`, which is still in `MONEY_MAY_HAVE_MOVED` — the
+   * purchase stays blocked and the money's fate stays unknown. Time escalates;
+   * only the provider or two people reading its statement resolve.
+   */
+  psp: {
+    /** Used for any provider with no entry of its own. */
+    defaultStaleAfterMs: number;
+    defaultEscalateEveryMs: number;
+    /** Keyed by `PspAdapter.name`, e.g. `idram`. */
+    perProvider: Record<string, { staleAfterMs?: number; escalateEveryMs?: number }>;
+    /**
+     * Where Idram's payment form posts, and the language it renders in.
+     *
+     * Configuration rather than a constant because the sandbox and the live
+     * endpoint differ, and hard-coding either one is how a test payment ends
+     * up somewhere real. No default that points at production: an unset
+     * value leaves the sandbox host, and activating the live one is a
+     * deliberate change somebody makes.
+     */
+    idramFormAction: string;
+    idramLanguage: string;
   };
   /**
    * Where partner brand assets and customer avatars actually live
@@ -389,6 +519,41 @@ export function assertPartnerOrderPolicy(policy: AppConfig['partnerOrderPolicy']
   }
 }
 
+/**
+ * One value from two possible variable names, refusing to choose silently.
+ *
+ * `VIVA_*` is the name set the owner configures; the `SMS_*` spellings are
+ * what `docs/RAILWAY_ENV_CONTRACT_RU.md` and the live Render staging service
+ * already carry. Both are honoured, and `VIVA_*` wins — but only when they
+ * agree or only one is present.
+ *
+ * When both are set to *different* values, this throws. Picking one and
+ * carrying on is the failure mode that costs a day: whoever set the loser
+ * believes the deployment is configured the way they typed it, and the first
+ * evidence otherwise is a rejected send — or a message that went out under
+ * the wrong sender name. An environment that contradicts itself is not a
+ * preference to resolve, it is a mistake to report. Neither value is printed:
+ * two of these pairs are secrets.
+ */
+function oneOf(
+  preferred: readonly [name: string, value: string | undefined],
+  fallback: readonly [name: string, value: string | undefined],
+  defaultValue = '',
+): string {
+  const [preferredName, preferredValue] = preferred;
+  const [fallbackName, fallbackValue] = fallback;
+
+  if (preferredValue && fallbackValue && preferredValue !== fallbackValue) {
+    throw new Error(
+      `${preferredName} and ${fallbackName} are both set, to different values. ` +
+        `Remove one: ${preferredName} is the current name, ${fallbackName} is kept only so ` +
+        'an already-configured deployment keeps working.',
+    );
+  }
+
+  return preferredValue ?? fallbackValue ?? defaultValue;
+}
+
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
@@ -423,6 +588,7 @@ const buildConfig = (): AppConfig => ({
   },
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',
+    previousAccessSecret: process.env.JWT_ACCESS_SECRET_PREVIOUS ?? '',
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
@@ -430,10 +596,7 @@ const buildConfig = (): AppConfig => ({
   bonus: {
     pendingHours: parseInt(process.env.BONUS_PENDING_HOURS ?? '48', 10),
     expiryMonths: parseInt(process.env.BONUS_EXPIRY_MONTHS ?? '12', 10),
-    reservationHoldSeconds: parseInt(
-      process.env.BONUS_RESERVATION_HOLD_SECONDS ?? '300',
-      10,
-    ),
+    reservationHoldSeconds: parseInt(process.env.BONUS_RESERVATION_HOLD_SECONDS ?? '300', 10),
     referralRewardAmount: process.env.REFERRAL_REWARD_AMOUNT ?? '1000',
     // A goodwill credit is normally a few thousand points. A million is
     // already far beyond any plausible correction, which makes it a useful
@@ -498,22 +661,56 @@ const buildConfig = (): AppConfig => ({
     // `http` stays the default so an existing deployment's behaviour does not
     // change by upgrading; Viva is opted into by name.
     driver: (process.env.SMS_DRIVER as 'http' | 'viva') ?? 'http',
-    endpoint: process.env.SMS_ENDPOINT ?? '',
+    // `VIVA_*` is the name set the owner configures in Railway, and it wins.
+    // The `SMS_*` names stay as fallbacks rather than being renamed away:
+    // they are what `docs/RAILWAY_ENV_CONTRACT_RU.md` and the Render staging
+    // service already carry, and a rename that silently un-configures a live
+    // deployment is the sort of change that is only noticed by a customer who
+    // cannot sign in.
+    endpoint: oneOf(
+      ['VIVA_API_BASE_URL', process.env.VIVA_API_BASE_URL],
+      ['SMS_ENDPOINT', process.env.SMS_ENDPOINT],
+    ),
     authScheme: (process.env.SMS_AUTH_SCHEME as 'basic' | 'bearer') ?? 'basic',
-    username: process.env.SMS_USERNAME ?? '',
-    token: process.env.SMS_TOKEN ?? '',
-    sender: process.env.SMS_SENDER ?? 'TuTak',
+    username: oneOf(
+      ['VIVA_USERNAME', process.env.VIVA_USERNAME],
+      ['SMS_USERNAME', process.env.SMS_USERNAME],
+    ),
+    token: oneOf(
+      ['VIVA_PASSWORD', process.env.VIVA_PASSWORD],
+      ['SMS_TOKEN', process.env.SMS_TOKEN],
+    ),
+    sender: oneOf(
+      ['VIVA_SENDER_NAME', process.env.VIVA_SENDER_NAME],
+      ['SMS_SENDER', process.env.SMS_SENDER],
+      'TuTak',
+    ),
     encoding: (process.env.SMS_ENCODING as 'form' | 'json') ?? 'form',
     viva: {
-      clientId: process.env.SMS_VIVA_CLIENT_ID ?? '',
-      clientSecret: process.env.SMS_VIVA_CLIENT_SECRET ?? '',
-      templateName: process.env.SMS_VIVA_TEMPLATE_NAME ?? '',
-      // Armenian does not fit GSM-7, and the code is useless inside a
-      // message the customer cannot read. On unless explicitly turned off.
-      sendUtf: process.env.SMS_VIVA_SEND_UTF !== '0',
-      // No fallback. An unset value fails the boot with the variable named,
-      // which is the only outcome better than delivering nothing silently.
-      numberFormat: process.env.SMS_VIVA_NUMBER_FORMAT ?? '',
+      clientId: oneOf(
+        ['VIVA_CLIENT_ID', process.env.VIVA_CLIENT_ID],
+        ['SMS_VIVA_CLIENT_ID', process.env.SMS_VIVA_CLIENT_ID],
+      ),
+      clientSecret: oneOf(
+        ['VIVA_CLIENT_SECRET', process.env.VIVA_CLIENT_SECRET],
+        ['SMS_VIVA_CLIENT_SECRET', process.env.SMS_VIVA_CLIENT_SECRET],
+      ),
+      templateName: oneOf(
+        ['VIVA_OTP_TEMPLATE_NAME', process.env.VIVA_OTP_TEMPLATE_NAME],
+        ['SMS_VIVA_TEMPLATE_NAME', process.env.SMS_VIVA_TEMPLATE_NAME],
+      ),
+      // Off by default now, because that is the setting a delivered message
+      // was sent with (`send_utf: 0`). The earlier default of "on" was
+      // reasoning about Armenian not fitting GSM-7; the approved template
+      // renders correctly without it, and a verified value beats a sound
+      // argument. Still an override, for a template that needs it.
+      sendUtf: process.env.SMS_VIVA_SEND_UTF === '1',
+      // `national` — the eight-digit local form — is what actually reached a
+      // handset, so it is the default rather than a required answer the
+      // operator has to supply. It used to have none on purpose: an unknown
+      // format is delivered to nobody and looks like nothing at all. That
+      // question is now answered by a delivered SMS.
+      numberFormat: process.env.SMS_VIVA_NUMBER_FORMAT ?? 'national',
       // `bearer` is the shape an OAuth-style token pair implies, and is not
       // stated anywhere by Viva. Changing it is an environment edit.
       tokenPlacement: process.env.SMS_VIVA_TOKEN_PLACEMENT ?? 'bearer',
@@ -572,6 +769,33 @@ const buildConfig = (): AppConfig => ({
     // announce, so the safe default is "this subsystem does not exist,"
     // not "on until proven otherwise."
     cardPaymentsEnabled: process.env.CARD_PAYMENTS_ENABLED === 'true',
+    // Same "off until explicitly on" default and the same reason: a route
+    // whose provider is not contracted is a route that cannot take money.
+    tutakPspEnabled: process.env.TUTAK_PSP_ENABLED === 'true',
+    // Off until the provider's refund API is confirmed to exist — and even
+    // then the adapter's own capability has the last word.
+    pspRefundsEnabled: process.env.PSP_REFUNDS_ENABLED === 'true',
+    // Off unless explicitly turned on, and it stays off in production until
+    // the e-money question in its docblock has a legal answer. The route is
+    // not merely refused when off — the controller carrying it is not
+    // registered at all, so there is no top-up surface to find.
+    customerPrepaidTopUpEnabled: process.env.CUSTOMER_PREPAID_TOPUP_ENABLED === 'true',
+  },
+  psp: {
+    // Thirty minutes and an hour: the same figures the code used as
+    // constants, kept as the defaults so nothing changes behaviour by being
+    // made configurable. What changed is that they can now be argued with.
+    defaultStaleAfterMs: positiveIntFromEnv('PSP_STALE_AFTER_MS', 30 * 60_000),
+    defaultEscalateEveryMs: positiveIntFromEnv('PSP_ESCALATE_EVERY_MS', 60 * 60_000),
+    perProvider: pspPerProviderPolicy(),
+    // No default, and the absence of one is the safety property. The previous
+    // default was the production URL, so a deployment that forgot the variable
+    // would have sent real customers to real Idram without anybody choosing
+    // to. Sandbox and production are both explicit now; with the route
+    // enabled and this unset, the adapter refuses to open a bill and boot
+    // validation refuses to start at all.
+    idramFormAction: process.env.IDRAM_FORM_ACTION ?? '',
+    idramLanguage: process.env.IDRAM_LANGUAGE ?? 'AM',
   },
   media: {
     // Local disk unless told otherwise. That is the right default for a
@@ -592,17 +816,15 @@ const buildConfig = (): AppConfig => ({
       forcePathStyle: process.env.MEDIA_STORAGE_S3_FORCE_PATH_STYLE !== 'false',
     },
     signedUrlTtlSeconds: parseInt(process.env.MEDIA_SIGNED_URL_TTL_SECONDS ?? '43200', 10),
-    publicBaseUrl: (process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`)
-      .replace(/\/+$/, ''),
+    publicBaseUrl: (
+      process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`
+    ).replace(/\/+$/, ''),
   },
   purchasePolicy: {
     // 3 minutes, per spec §7 — long enough for a cashier mid-queue to glance
     // at their phone, short enough that a customer at the till is not left
     // standing on a stale hold.
-    intentTimeoutSeconds: parseInt(
-      process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180',
-      10,
-    ),
+    intentTimeoutSeconds: parseInt(process.env.PURCHASE_INTENT_TIMEOUT_SECONDS ?? '180', 10),
     // 30/20/30/10/5/5 (TuTak/Green/Deferred/L1/L2/L3), per the 2026-08-22
     // 3-level referral rework (docs/NEXT_CLAUDE_TASK.md, GitHub issue #28
     // comment 5360139848) — six legs of the contribution pool in basis
@@ -619,14 +841,10 @@ const buildConfig = (): AppConfig => ({
     poolReferrerL3Bps: parseInt(process.env.PURCHASE_POOL_REFERRER_L3_BPS ?? '500', 10),
     poolTutakBps: parseInt(process.env.PURCHASE_POOL_TUTAK_BPS ?? '3000', 10),
     // 3 months / 54 000 AMD cumulative, per spec §13.
-    deferredWindowMonths: parseInt(
-      process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3',
-      10,
-    ),
+    deferredWindowMonths: parseInt(process.env.DEFERRED_BONUS_WINDOW_MONTHS ?? '3', 10),
     deferredRequiredTurnover: process.env.DEFERRED_BONUS_REQUIRED_TURNOVER ?? '54000',
     // 10 000 AMD cumulative, no deadline, per spec §18.
-    challengeQualificationAmount:
-      process.env.REFERRAL_CHALLENGE_QUALIFICATION_AMOUNT ?? '10000',
+    challengeQualificationAmount: process.env.REFERRAL_CHALLENGE_QUALIFICATION_AMOUNT ?? '10000',
     // 1000 AMD to each side, per spec §18.
     challengeRewardAmount: process.env.REFERRAL_CHALLENGE_REWARD_AMOUNT ?? '1000',
     // First 3 qualified friends, per spec §18.
@@ -665,4 +883,71 @@ function parseEffectiveAt(raw: string | undefined): Date | null {
   const at = new Date(raw);
   if (Number.isNaN(at.getTime())) throw new Error(`FINANCIAL_POLICY_V2_EFFECTIVE_AT is not a valid timestamp: ${raw}`);
   return at;
+}
+
+/**
+ * A positive whole number of milliseconds from the environment.
+ *
+ * Refuses rather than falls back on a malformed value: a timeout silently
+ * reverting to its default because somebody typed `30m` is a timeout nobody
+ * can reason about from the config they are looking at.
+ */
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive whole number of milliseconds, got "${raw}"`);
+  }
+  return value;
+}
+
+/**
+ * Per-provider overrides, as JSON:
+ *
+ *     PSP_TIMEOUT_POLICY='{"idram":{"staleAfterMs":900000}}'
+ *
+ * JSON rather than one variable per provider per setting, because the set of
+ * providers is not known here and `PSP_STALE_AFTER_MS_<NAME>` would have to
+ * guess at how a provider's name becomes an environment key. Malformed JSON
+ * throws at boot, where it is somebody's problem immediately, rather than
+ * being ignored into a default nobody chose.
+ */
+function pspPerProviderPolicy(): Record<
+  string,
+  { staleAfterMs?: number; escalateEveryMs?: number }
+> {
+  const raw = process.env.PSP_TIMEOUT_POLICY;
+  if (!raw || raw.trim() === '') return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('PSP_TIMEOUT_POLICY is not valid JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('PSP_TIMEOUT_POLICY must be a JSON object keyed by provider name');
+  }
+
+  const out: Record<string, { staleAfterMs?: number; escalateEveryMs?: number }> = {};
+  for (const [provider, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error(`PSP_TIMEOUT_POLICY.${provider} must be an object`);
+    }
+    const entry = value as Record<string, unknown>;
+    const policy: { staleAfterMs?: number; escalateEveryMs?: number } = {};
+    for (const key of ['staleAfterMs', 'escalateEveryMs'] as const) {
+      if (entry[key] === undefined) continue;
+      const n = Number(entry[key]);
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(
+          `PSP_TIMEOUT_POLICY.${provider}.${key} must be a positive whole number of milliseconds`,
+        );
+      }
+      policy[key] = n;
+    }
+    out[provider] = policy;
+  }
+  return out;
 }

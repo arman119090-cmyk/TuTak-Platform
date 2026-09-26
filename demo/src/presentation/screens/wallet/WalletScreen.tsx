@@ -13,7 +13,7 @@ import { PartnerMark } from '../../components/PartnerMark';
 import { StatePill } from '../../components/StatePill';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
-import { walletApi } from '../../../data/api/walletApi';
+import { isWalletAbsent, walletApi } from '../../../data/api/walletApi';
 import { formatDate, formatPoints } from '../../utils/format';
 import { bonusStateFor, ledgerAmountFor } from '../../utils/transactionPresentation';
 
@@ -25,11 +25,14 @@ export function WalletScreen() {
     data: wallet,
     isLoading,
     isError,
+    error,
     refetch,
   } = useQuery({
     queryKey: ['wallet'],
     queryFn: walletApi.getMyWallet,
   });
+  // An account with no wallet is a state, not a fault — see `isWalletAbsent`.
+  const noWallet = isError && isWalletAbsent(error);
   const { data: ledger } = useQuery({
     queryKey: ['wallet-ledger'],
     queryFn: () => walletApi.getMyLedger(),
@@ -50,6 +53,14 @@ export function WalletScreen() {
             <Skeleton width="45%" height={36} />
             <Skeleton width="100%" height={10} style={{ borderRadius: 999 }} />
           </View>
+        ) : noWallet ? (
+          // Said plainly, and with no "Retry": asking again would produce
+          // the same answer, because nothing failed. The balance is still
+          // not drawn — there is no wallet to draw one from.
+          <EmptyState
+            title={t('wallet.noWalletTitle')}
+            message={t('wallet.noWalletBody')}
+          />
         ) : isError ? (
           // A failed wallet request leaves `wallet` undefined, and every
           // `?? 0` below then renders a confident, wrong zero balance. On a

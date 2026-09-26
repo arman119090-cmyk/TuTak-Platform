@@ -2,12 +2,16 @@ import 'react-native-gesture-handler';
 import React, { useEffect, useMemo, useState } from 'react';
 import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider } from 'react-i18next';
 
 import { ErrorBoundary } from './src/app/ErrorBoundary';
 import i18n from './src/app/i18n/i18n';
+// Side-effect import: subscribes the interface language to the session, so it
+// follows the account rather than staying wherever the last person on this
+// handset left it. Module scope for the same reason as the query cache below.
+import './src/app/i18n/sessionLocale';
 import { ThemeProvider, useTheme } from './src/app/theme/ThemeProvider';
 import { AuthNavigator } from './src/app/navigation/AuthNavigator';
 import { RootNavigator } from './src/app/navigation/RootNavigator';
@@ -15,26 +19,18 @@ import { SplashScreen } from './src/presentation/screens/SplashScreen';
 import { useAuthStore } from './src/data/stores/authStore';
 import { usePushRegistration } from './src/app/usePushRegistration';
 import { DiagnosticOverlay } from './src/diagnostics/DiagnosticOverlay';
+import { useMountTrace } from './src/diagnostics/instanceTrace';
+import { useAppStateTrace } from './src/diagnostics/useAppStateTrace';
+import { installFocusCommandTrace } from './src/diagnostics/focusCommandTrace';
+import { useNativeFocusTrace } from './src/diagnostics/nativeFocusTrace';
 import { OfflineBanner } from './src/presentation/components/OfflineBanner';
 import { startNetworkStateTracking } from './src/data/network/networkState';
 
-/**
- * `mutations.retry: 0` is the library default and is stated here anyway.
- *
- * A retried mutation is a second purchase, a second bonus accrual and a
- * second settlement obligation — a timeout means the request may well have
- * been received and only the answer lost. That must stay a person's decision,
- * so the value is written down where anyone changing retry policy will see it
- * rather than left to a default that could move in a future major version.
- * `src/data/network/networkFailure.ts` holds the same rule for anything that
- * retries outside Query.
- */
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, staleTime: 30_000 },
-    mutations: { retry: 0 },
-  },
-});
+// The client and its retry policy live in `src/data/queryClient.ts`, together
+// with the subscription that empties the cache when the session changes —
+// that subscription has to be established once, at module scope, not by a
+// component the sign-out it watches for could unmount.
+import { queryClient } from './src/data/queryClient';
 
 /**
  * Partner Commerce (spec §5): a partner's own website redirects here with
@@ -64,6 +60,69 @@ function Root() {
   const theme = useTheme();
   const { user, hydrate } = useAuthStore();
   const [ready, setReady] = useState(false);
+
+  /*
+   * The reference mark every other mount line is read against.
+   *
+   * A screen mounting twice can mean the screen was rebuilt or that
+   * everything was — and the difference decides whether the answer is in this
+   * codebase or in the Android configuration. This is the root of the React
+   * tree, so a second `mount App` in one run means the whole surface
+   * restarted; a second `mount OtpRegister` with `mount App #1` still
+   * standing above it means only the screen did. Neither reading is available
+   * from a screen's own log line, which is why the previous round could not
+   * make it and inferred an activity restart it had no evidence for.
+   *
+   * `useAppStateTrace` is the third signal: an activity that is being
+   * recreated does not stay `active` throughout, and a keyboard appearing on
+   * an app that keeps running does.
+   */
+  useMountTrace('App');
+  /*
+   * What this line does and does not mean — stated here because it has
+   * already been over-read once.
+   *
+   * `useMountTrace` sits in `Root`, which is a React component nested inside
+   * `ErrorBoundary → SafeAreaProvider → I18nextProvider → QueryClientProvider
+   * → ThemeProvider`. So `mount App #n` records that **this React component**
+   * mounted, and nothing more.
+   *
+   * `unmount App @1` followed by `mount App #2 @2` under the *same* run id
+   * therefore means exactly this: the React tree below here was torn down and
+   * rebuilt while the JavaScript context survived. That is **consistent
+   * with** the activity being recreated and the React Native surface
+   * restarting — and it is not proof of it. Anything above `Root` that
+   * changed its identity would produce the same two lines, and so would a
+   * surface restart with no activity involved.
+   *
+   * What would distinguish them is not available from JavaScript. It needs a
+   * native trace — `adb logcat` showing the activity lifecycle — and until
+   * that exists these lines say "the React root was replaced", full stop.
+   */
+  useAppStateTrace();
+
+  /*
+   * Armed before anything can be focused, and only in a diagnostic build.
+   *
+   * The device log shows focus moving between two fields in twenty
+   * milliseconds, several times, which nobody's thumb did. What it cannot
+   * show is whether some JavaScript asked for that or whether Android moved
+   * it and React Native merely reported it — the two have different fixes,
+   * and `onFocus` looks identical either way. See `focusCommandTrace.ts`.
+   */
+  installFocusCommandTrace();
+
+  /*
+   * The Android-side observers, drained into the same log.
+   *
+   * Everything reachable from JavaScript has been spent: the focus commands
+   * are wrapped and stay silent, the mount counters hold, the window never
+   * moves, and `scrollsChildToFocus` changed nothing across eight attempts.
+   * What is left is the Java stack at the moment the focus moves, and it
+   * exists only on the native side. See `modules/focus-trace` for what the
+   * three observers do and do not cover.
+   */
+  useNativeFocusTrace();
 
   /**
    * Navigation's own chrome recoloured to the active TuTak palette.

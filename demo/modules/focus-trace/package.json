@@ -1,0 +1,7 @@
+{
+  "name": "focus-trace",
+  "version": "0.1.0",
+  "description": "Android focus observers for the TuTak diagnostic build. Not shipped in production.",
+  "main": "index.ts",
+  "private": true
+}

@@ -40,6 +40,7 @@ import { evStatusTone } from '../../utils/transactionPresentation';
 import { formatAmd } from '../../utils/format';
 import { useApproximateLocation } from './useApproximateLocation';
 import { CATEGORY_ICONS, CATEGORY_ORDER, formatDistance } from './categories';
+import { HERE_MARKER_ID, HerePin } from './HerePin';
 import { PartnerPin } from './PartnerPin';
 import { StationPin } from './StationPin';
 
@@ -222,7 +223,36 @@ export function PartnersScreen() {
     [items],
   );
 
+  /**
+   * The person's own position, drawn only when it is really theirs.
+   *
+   * Appended to the markers rather than passed separately so it takes part
+   * in the map's own framing: `TileMap` refits whenever the marker set
+   * changes, so the fix arriving is what pulls the view to include where
+   * they actually are, instead of leaving them looking at the city centre
+   * with their own dot off-screen.
+   *
+   * Never drawn while `isFallback` is true — a dot labelled "you" sitting on
+   * Republic Square when the person is in Gyumri is worse than no dot.
+   */
+  const mapMarkers: MapMarker[] = useMemo(
+    () =>
+      centre.isFallback
+        ? markers
+        : [
+            ...markers,
+            {
+              id: HERE_MARKER_ID,
+              position: { lat: centre.lat, lng: centre.lng },
+              render: () => <HerePin />,
+            },
+          ],
+    [markers, centre.isFallback, centre.lat, centre.lng],
+  );
+
   const selectFromMap = (id: string) => {
+    // The person's own dot is not a destination.
+    if (id === HERE_MARKER_ID) return;
     // A partner's pin opens its own page — a location on the map is
     // expected to open what's there, per Arman's request, 2026-08-23. A
     // station's pin still only selects and scrolls: there is no equivalent
@@ -258,11 +288,23 @@ export function PartnersScreen() {
         showsVerticalScrollIndicator={false}
       >
         <TileMap
-          markers={markers}
+          markers={mapMarkers}
+          /*
+           * What the person asked for, not what came back. The map reframes
+           * when this changes — a new chip or a new search deserves a fresh
+           * view — and holds its place when only the results change, which
+           * happens on its own every time the device's location updates and
+           * the nearby query re-runs. Keyed on the results instead, a drag
+           * was undone a second or two after it was made.
+           */
+          frameKey={`${filter.kind}:${
+            filter.kind === 'category' || filter.kind === 'fuelType' ? filter.value : ''
+          }:${query}`}
           initialCentre={centre}
           selectedId={selectedId}
           onSelect={selectFromMap}
           height={260}
+          unavailableLabel={t('partners.mapUnavailable')}
         />
 
         {/*
@@ -522,6 +564,17 @@ function PartnerCard({
             <Text style={[text.headline, { color: premium.brand.light }]}>
               {partner.cashbackPercent}%
             </Text>
+            {/* What makes offering a generous rate worth something. The
+                server decides where the line is — the threshold lives there
+                so it can move without an app release — and ranks these
+                partners ahead of nearer-equal neighbours; this is the part
+                the customer can see, and so the part that makes the ranking
+                an honest thing to promise an applicant. */}
+            {partner.highCashback ? (
+              <View style={{ marginTop: space[1] }}>
+                <StatePill state="available" label={t('partners.goodValue')} />
+              </View>
+            ) : null}
             <Text style={[text.caption, { color: color.textTertiary, marginTop: 2 }]}>
               {formatDistance(partner.distanceKm)}
             </Text>

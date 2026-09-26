@@ -60,6 +60,9 @@ export const SANDBOX_REFUND_TRIGGERS = {
 export class SandboxPspAdapter implements PspAdapter {
   private readonly logger = new Logger(SandboxPspAdapter.name);
 
+  /** Nothing to configure: the sandbox needs no credentials to pretend. */
+  assertReady(): void {}
+
   /**
    * The sandbox's own memory of what each refund idempotency key eventually
    * resolves to — a fake's stand-in for the acquirer's own server-side

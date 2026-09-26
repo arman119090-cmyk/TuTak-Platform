@@ -35,9 +35,16 @@ describe('HealthController (integration)', () => {
     expect(typeof health.live().demoMode).toBe('boolean');
   });
 
-  it('reports ready when the database and Redis are both reachable', async () => {
+  it('reports ready when the database, Redis and object storage all answer', async () => {
     const result = await health.ready();
-    expect(result).toEqual({ status: 'ok', checks: { database: 'ok', redis: 'ok' } });
+    // The harness runs the in-memory storage driver, which answers a read of
+    // a missing key the same way a real bucket does — so this covers the
+    // probe's shape end to end, and the driver is named so an operator can
+    // see from the probe alone which backend a deployment is really on.
+    expect(result).toEqual({
+      status: 'ok',
+      checks: { database: 'ok', redis: 'ok', storage: 'ok', storageDriver: 'memory' },
+    });
   });
 
   it('is registered outside API versioning, at a fixed path', () => {
@@ -57,7 +64,9 @@ describe('HealthController readiness under a failing dependency', () => {
     const failingController = new HealthController(
       { $queryRaw: () => Promise.reject(new Error('connection refused')) } as never,
       { ping: () => Promise.resolve('PONG') } as never,
+      { driverName: 'memory', get: () => Promise.resolve(null) } as never,
       { get: () => false } as never,
+      { fire: () => Promise.resolve(true) } as never,
     );
 
     await expect(failingController.ready()).rejects.toThrow(HttpException);
@@ -69,7 +78,7 @@ describe('HealthController readiness under a failing dependency', () => {
       expect((err as HttpException).getStatus()).toBe(503);
       expect((err as HttpException).getResponse()).toEqual({
         status: 'error',
-        checks: { database: 'error', redis: 'ok' },
+        checks: { database: 'error', redis: 'ok', storage: 'ok', storageDriver: 'memory' },
       });
     }
   });

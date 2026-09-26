@@ -127,6 +127,98 @@ export function Input({
   );
 }
 
+/**
+ * A password box with an eye.
+ *
+ * Its own component rather than a `type="password"` on `Input`, so that a
+ * password field without a way to see what was typed is not something a page
+ * can produce by accident. Every one of them in the panels goes through here.
+ *
+ * Why it matters more than it looks: these are typed on phones, where a
+ * mistyped character is invisible and the only feedback is a rejected sign-in
+ * that blames the person. The admin password in particular is a generated one
+ * nobody has memorised, read off another screen — exactly the case where
+ * typing blind fails and the failure looks like a wrong password.
+ *
+ * The box is never revealed by default and reverts on every mount; nothing
+ * about the state is remembered anywhere.
+ */
+export function PasswordInput({
+  className,
+  showLabel = 'Show password',
+  hideLabel = 'Hide password',
+  ...rest
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
+  showLabel?: string;
+  hideLabel?: string;
+}) {
+  const [revealed, setRevealed] = React.useState(false);
+  const label = revealed ? hideLabel : showLabel;
+
+  return (
+    <div className="relative">
+      <Input
+        {...rest}
+        type={revealed ? 'text' : 'password'}
+        // Room for the button, so a long value never runs under it.
+        className={cx('pr-10', className)}
+      />
+      <button
+        type="button"
+        onClick={() => setRevealed((on) => !on)}
+        // `tabIndex={-1}` deliberately NOT set: someone who cannot see the
+        // field is exactly who may need to check what a password manager or a
+        // phone keyboard put there, and taking it out of the tab order would
+        // put it out of their reach.
+        //
+        // The label says what pressing it does, not what is on screen — a
+        // screen-reader user gets nothing from being told about pixels.
+        aria-label={label}
+        aria-pressed={revealed}
+        title={label}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-secondary transition-colors hover:text-ink"
+      >
+        {revealed ? <EyeOffGlyph /> : <EyeGlyph />}
+      </button>
+    </div>
+  );
+}
+
+function EyeGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function EyeOffGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3 3l18 18M10.6 5.2C11.05 5.1 11.51 5 12 5c6.4 0 10 7 10 7-.63 1.2-1.6 2.6-2.9 3.9M6.5 6.6C4 8.3 2 12 2 12s3.6 7 10 7c1.36 0 2.56-.31 3.6-.8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.9 9.9a3 3 0 0 0 4.2 4.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Select({
   className,
   children,

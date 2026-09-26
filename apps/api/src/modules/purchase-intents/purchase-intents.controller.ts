@@ -4,13 +4,16 @@ import { PermissionName, PurchaseIntentStatus } from '@prisma/client';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
-import { assertPartnerScope } from '../../common/auth/partner-scope';
+import { assertPartnerApprover, assertPartnerScope } from '../../common/auth/partner-scope';
 import { assertResourceBranchScope, branchFilterFor } from '../../common/auth/branch-scope';
 import { RequestUser } from '../auth/types/request-user.type';
+import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
+import { FindPurchaseIntentByCodeDto } from './dto/find-by-code.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
 import { RefuseShortfallDto, SettleShortfallDto } from '../partner-orders/dto/final-fixes.dto';
+import { PurchaseIntentRefundRequestService } from './purchase-intent-refund-request.service';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
@@ -21,12 +24,35 @@ export class PurchaseIntentsController {
   constructor(
     private readonly purchaseIntents: PurchaseIntentsService,
     private readonly purchaseIntentRefunds: PurchaseIntentRefundService,
+    private readonly refundRequests: PurchaseIntentRefundRequestService,
   ) {}
 
   /** Spec §7 steps 1-8. Any authenticated customer, for themselves. */
   @Post()
   async create(@CurrentUser() customer: RequestUser, @Body() dto: CreatePurchaseIntentDto) {
     return this.purchaseIntents.toDto(await this.purchaseIntents.create(dto, customer.id));
+  }
+
+  /**
+   * Find the live purchase a four-digit till code belongs to.
+   *
+   * Declared before `@Get(':id')` deliberately: Nest matches routes in
+   * declaration order, and a path parameter would otherwise swallow this
+   * one.
+   *
+   * The code is a disambiguator and grants nothing by itself — this is
+   * gated exactly like the queue it is an alternative to: the same
+   * confirm permission, the same partner scope, and the branch scope
+   * applied to the row that comes back, so a cashier cannot pull a
+   * purchase from a branch they are not assigned to.
+   */
+  @Get('by-code')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async findByCode(@CurrentUser() staff: RequestUser, @Query() query: FindPurchaseIntentByCodeDto) {
+    assertPartnerScope(staff, query.partnerId);
+    const intent = await this.purchaseIntents.findActiveByCode(query.partnerId, query.code);
+    assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
+    return this.purchaseIntents.toDto(intent);
   }
 
   @Get(':id')
@@ -68,19 +94,76 @@ export class PurchaseIntentsController {
   @Get('activity/daily')
   async dailyActivity(@CurrentUser() user: RequestUser, @Query('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
-    return this.purchaseIntents.dailyActivityForPartner(partnerId, 30, branchFilterFor(user, partnerId));
+    return this.purchaseIntents.dailyActivityForPartner(
+      partnerId,
+      30,
+      branchFilterFor(user, partnerId),
+    );
   }
 
   /**
    * Spec §7 steps 9-11 / §25-26. Any partner staff tier scoped to this
    * intent's partner *and*, when the intent carries one, its branch.
    */
+  /**
+   * The customer's own way out of a purchase nobody has confirmed yet.
+   *
+   * No `@RequirePermissions`: this is the customer's action on their own
+   * record, exactly like `POST /purchase-intents`, and the ownership check
+   * lives in the service so it cannot be bypassed by another route
+   * reaching the same method.
+   */
+  @Post(':id/cancel')
+  async cancel(@CurrentUser() customer: RequestUser, @UuidParam('id') id: string) {
+    return this.purchaseIntents.toDto(await this.purchaseIntents.cancel(id, customer.id));
+  }
+
+  /**
+   * The cashier takes the money and confirms the sale.
+   *
+   * The body carries what they read off the pump or the till. Empty for a
+   * percentage partner; required for one paid per unit, where the quantity is
+   * what the platform's own share is calculated from and a confirm button
+   * next to a number nobody read is not approval of that number.
+   */
   @Post(':id/confirm')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
-  async confirm(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+  async confirm(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('id') id: string,
+    // Defaulted so a percentage partner's till can post an empty body, and
+    // so the many suites that drive this controller directly stay honest
+    // about what they are testing rather than passing `{}` everywhere.
+    @Body() dto: ApprovePurchaseIntentDto = {},
+  ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
     assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
-    return this.purchaseIntents.toDto(await this.purchaseIntents.confirm(id, staff.id));
+    return this.purchaseIntents.toDto(await this.purchaseIntents.confirm(id, staff.id, dto));
+  }
+
+  /**
+   * Staff agree what is being sold, so the customer may pay for it inside
+   * TuTak.
+   *
+   * Only for `TUTAK_PSP` purchases: a provider confirms that money moved and
+   * cannot confirm that a sale happened, and on this platform the customer
+   * typed the gross and the quantity. Without this step one verified callback
+   * would credit the partner, mint the customer's own cashback and pay their
+   * referrers for a sale that never took place. A direct purchase needs no
+   * separate call — confirming it at the till is the same act.
+   */
+  @Post(':id/approve-for-payment')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async approveForPayment(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: ApprovePurchaseIntentDto = {},
+  ) {
+    const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
+    return this.purchaseIntents.toDto(
+      await this.purchaseIntents.approveForPayment(id, staff.id, dto),
+    );
   }
 
   @Post(':id/reject')
@@ -97,9 +180,23 @@ export class PurchaseIntentsController {
 
   /**
    * A TuTak-side refund of merchandise value against a confirmed purchase —
-   * never real money. Gated the same way confirm/reject are: any partner
-   * staff tier scoped to this intent's partner (and its branch, if any),
-   * since undoing a sale is ordinary work for whoever can process one.
+   * never real money.
+   *
+   * Owner or manager only, as of the maker/checker decision of 2026-09-12.
+   * It used to be gated the same way confirm/reject are — any staff tier
+   * scoped to the partner — on the reasoning that undoing a sale is ordinary
+   * work for whoever can process one. It is not: a refund restores the
+   * customer's spent bonus and claws back the referral and deferred shares
+   * that other people may already have spent, and at a till with shift work
+   * that is not a decision to leave with a single cashier's tap.
+   *
+   * Staff who are not owners or managers use
+   * `POST /purchase-intent-refund-requests` instead, and an owner or manager
+   * decides. This route stays for the case that flow cannot serve: an owner
+   * of a business with no second person to ask. That is one person taking
+   * one decision openly, which is honest; approving your own request would
+   * be the same person pretending to be two, which is why
+   * `PurchaseIntentRefundRequestService.approve` refuses it.
    */
   @Post(':id/refund')
   @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
@@ -109,8 +206,13 @@ export class PurchaseIntentsController {
     @Body() dto: RefundPurchaseIntentDto,
   ) {
     const intent = await this.purchaseIntents.findByIdOrThrow(id);
+    assertPartnerApprover(staff, intent.partnerId, 'refund a purchase directly');
     assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
-    return this.purchaseIntentRefunds.refund({
+    // Routed through the request service, not straight at the engine, so
+    // this refund leaves the same record an approved request does — see
+    // `refundDirectly` for why the path exists at all and what stops it
+    // being a way around a cashier who did ask.
+    return this.refundRequests.refundDirectly({
       purchaseIntentId: id,
       amount: dto.amount,
       reason: dto.reason,

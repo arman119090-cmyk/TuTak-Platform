@@ -156,12 +156,12 @@ ADD COLUMN     "shiftId" TEXT,
 ADD COLUMN     "tutakMoneyRefunded" DECIMAL(18,4) NOT NULL DEFAULT 0;
 
 -- AlterTable
+-- ("rejectedByUserId" is created by 20260913020000_purchase_intent_rejected_by.)
 ALTER TABLE "purchase_intents" ADD COLUMN     "confirmedShiftId" TEXT,
 ADD COLUMN     "confirmedWithoutShift" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "moneyCaptureLedgerTransactionId" TEXT,
 ADD COLUMN     "moneyReleaseLedgerTransactionId" TEXT,
 ADD COLUMN     "moneyReturnLedgerTransactionId" TEXT,
-ADD COLUMN     "rejectedByUserId" TEXT,
 ADD COLUMN     "rejectedShiftId" TEXT,
 ADD COLUMN     "tutakMoneyAmount" DECIMAL(18,4) NOT NULL DEFAULT 0;
 

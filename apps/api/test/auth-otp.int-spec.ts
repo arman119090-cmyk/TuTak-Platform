@@ -2,6 +2,9 @@ import { BadRequestException, ForbiddenException, UnauthorizedException } from '
 import { ConfigService } from '@nestjs/config';
 import { AuthOtpPurpose, PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { VerifyRegistrationOtpDto } from '../src/modules/auth/dto/otp.dto';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { AuthOtpService } from '../src/modules/auth/auth-otp.service';
 import { SMS_PROVIDER, SmsProvider } from '../src/infrastructure/sms/sms-provider.interface';
@@ -63,6 +66,15 @@ describe('OTP-first auth (integration)', () => {
 
   const randomPhone = () => `+3746${Math.floor(Math.random() * 90_000_000 + 10_000_000)}`;
 
+  /**
+   * The password a customer types on the last stage of registration.
+   *
+   * Every `verifyRegistrationOtp` below carries one, because the endpoint no
+   * longer accepts a registration without it — which is the whole point of
+   * this suite's newest section.
+   */
+  const REGISTRATION_PASSWORD = 'chosen-by-the-customer-1';
+
   /** Captures the code from the outbound SMS body rather than the DB, which stores only its hash. */
   const captureCode = (): (() => string) => {
     const spy = jest.spyOn(sms, 'send');
@@ -83,7 +95,7 @@ describe('OTP-first auth (integration)', () => {
       await authService.requestRegistrationOtp({ phone });
 
       const result = await authService.verifyRegistrationOtp(
-        { phone, code: lastCode(), deviceId: 'device-1' },
+        { phone, code: lastCode(), deviceId: 'device-1', password: REGISTRATION_PASSWORD },
         {},
       );
 
@@ -101,7 +113,7 @@ describe('OTP-first auth (integration)', () => {
       const lastCode1 = captureCode();
       await authService.requestRegistrationOtp({ phone: phone1 });
       const r1 = await authService.verifyRegistrationOtp(
-        { phone: phone1, code: lastCode1(), deviceId: 'device-1' },
+        { phone: phone1, code: lastCode1(), deviceId: 'device-1', password: REGISTRATION_PASSWORD },
         {},
       );
       expect(r1.user.firstName).toBeTruthy();
@@ -111,22 +123,135 @@ describe('OTP-first auth (integration)', () => {
       const lastCode2 = captureCode();
       await authService.requestRegistrationOtp({ phone: phone2 });
       const r2 = await authService.verifyRegistrationOtp(
-        { phone: phone2, code: lastCode2(), firstName: 'Ani', lastName: 'Petrosyan', deviceId: 'device-2' },
+        { phone: phone2, code: lastCode2(), firstName: 'Ani', lastName: 'Petrosyan', deviceId: 'device-2', password: REGISTRATION_PASSWORD },
         {},
       );
       expect(r2.user.firstName).toBe('Ani');
       expect(r2.user.lastName).toBe('Petrosyan');
     });
 
-    it('makes the account passwordless: a random-guess password login fails cleanly, not with a crash', async () => {
+    /*
+     * This used to assert the opposite, and the assertion was right about the
+     * code and wrong about the product: registration created the account with
+     * `argon2.hash(randomBytes(32))`, so *no* password could ever work and the
+     * test pinned that as correct. It is the defect the password stage exists
+     * to remove, so the test turns over with it.
+     */
+    it('leaves the account usable from the sign-in screen, with the password its owner chose', async () => {
       const phone = randomPhone();
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
-      await authService.verifyRegistrationOtp({ phone, code: lastCode(), deviceId: 'device-1' }, {});
+      await authService.verifyRegistrationOtp(
+        { phone, code: lastCode(), deviceId: 'device-1', password: REGISTRATION_PASSWORD },
+        {},
+      );
 
+      const signedIn = await authService.login(
+        { phone, password: REGISTRATION_PASSWORD, deviceId: 'device-1' },
+        {},
+      );
+      expect(signedIn.tokens.accessToken).toBeTruthy();
+
+      // And a wrong one still fails as a wrong password rather than a crash —
+      // the property the old test was really protecting.
       await expect(
         authService.login({ phone, password: 'whatever-someone-typed', deviceId: 'device-1' }, {}),
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    /*
+     * The business rule, and the three ways it used to be breakable.
+     *
+     * "Every customer knows their own password" is not one assertion. It is:
+     * the endpoint refuses a registration without one; the hash it stores is
+     * of *that* password and not of something else; and nothing anywhere
+     * writes the plaintext down. Each of the three below failed differently
+     * before the password stage existed, and only the first is visible from
+     * the outside.
+     */
+    describe('the password the customer chooses', () => {
+      const registerWith = async (password: unknown) => {
+        const phone = randomPhone();
+        const lastCode = captureCode();
+        await authService.requestRegistrationOtp({ phone });
+        const code = lastCode();
+        return { phone, code, password };
+      };
+
+      it('is what the stored hash verifies against — not a random one', async () => {
+        const { phone, code } = await registerWith(REGISTRATION_PASSWORD);
+        await authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD },
+          {},
+        );
+
+        const row = await prisma.user.findUniqueOrThrow({ where: { phone } });
+        // The hash is an argon2 hash of the customer's own string. This is the
+        // assertion that would have failed against `randomBytes(32)`, and the
+        // only one that can tell the two apart.
+        await expect(argon2.verify(row.passwordHash, REGISTRATION_PASSWORD)).resolves.toBe(true);
+      });
+
+      it('is never stored in the clear, anywhere on the row', async () => {
+        const { phone, code } = await registerWith(REGISTRATION_PASSWORD);
+        await authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD },
+          {},
+        );
+
+        const row = await prisma.user.findUniqueOrThrow({ where: { phone } });
+        expect(row.passwordHash.startsWith('$argon2')).toBe(true);
+        expect(JSON.stringify(row)).not.toContain(REGISTRATION_PASSWORD);
+      });
+
+      it('is stamped as chosen, so the account can never be read as OTP-only', async () => {
+        const { phone, code } = await registerWith(REGISTRATION_PASSWORD);
+        await authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD },
+          {},
+        );
+
+        const row = await prisma.user.findUniqueOrThrow({ where: { phone } });
+        // `passwordChangedAt IS NULL` is half of how an account with an
+        // unknown password is identified (`scripts/report-otp-only-users.ts`).
+        // Accounts made this way must never enter that set.
+        expect(row.passwordChangedAt).not.toBeNull();
+        expect(row.isPhoneVerified).toBe(true);
+      });
+
+      it('does not spend the code when the password is refused', async () => {
+        // The password is validated by the global ValidationPipe, before the
+        // handler runs — so this calls the controller's contract rather than
+        // the service, which is the only place the ordering is visible.
+        const { phone, code } = await registerWith('short');
+        const dto = plainToInstance(VerifyRegistrationOtpDto, {
+          phone,
+          code,
+          deviceId: 'd',
+          password: 'short',
+        });
+        const errors = await validate(dto);
+        expect(errors.some((e) => e.property === 'password')).toBe(true);
+
+        // The code is untouched, so the customer fixes the password and
+        // carries on with the same SMS.
+        await authService.verifyRegistrationOtp(
+          { phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD },
+          {},
+        );
+        const row = await prisma.user.findUniqueOrThrow({ where: { phone } });
+        await expect(argon2.verify(row.passwordHash, REGISTRATION_PASSWORD)).resolves.toBe(true);
+      });
+
+      it('is required: the DTO refuses a registration that carries none', async () => {
+        const dto = plainToInstance(VerifyRegistrationOtpDto, {
+          phone: randomPhone(),
+          code: '123456',
+          deviceId: 'd',
+        });
+        const errors = await validate(dto);
+        expect(errors.some((e) => e.property === 'password')).toBe(true);
+      });
     });
 
     it('captures referral attribution exactly once, at registration', async () => {
@@ -139,7 +264,7 @@ describe('OTP-first auth (integration)', () => {
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
       const result = await authService.verifyRegistrationOtp(
-        { phone, code: lastCode(), referralCode: code.code, deviceId: 'device-1' },
+        { phone, code: lastCode(), referralCode: code.code, deviceId: 'device-1', password: REGISTRATION_PASSWORD },
         {},
       );
 
@@ -187,7 +312,7 @@ describe('OTP-first auth (integration)', () => {
       await createCustomer(prisma, { phone });
 
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'device-1' }, {}),
+        authService.verifyRegistrationOtp({ phone, code, deviceId: 'device-1', password: REGISTRATION_PASSWORD }, {}),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -199,11 +324,11 @@ describe('OTP-first auth (integration)', () => {
 
       for (let i = 0; i < 5; i += 1) {
         await expect(
-          authService.verifyRegistrationOtp({ phone, code: '000000', deviceId: 'd' }, {}),
+          authService.verifyRegistrationOtp({ phone, code: '000000', deviceId: 'd', password: REGISTRATION_PASSWORD }, {}),
         ).rejects.toThrow(UnauthorizedException);
       }
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd' }, {}),
+        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD }, {}),
       ).rejects.toThrow(UnauthorizedException);
       expect(await prisma.user.findUnique({ where: { phone } })).toBeNull();
     });
@@ -219,7 +344,7 @@ describe('OTP-first auth (integration)', () => {
       });
 
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd' }, {}),
+        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd', password: REGISTRATION_PASSWORD }, {}),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -228,10 +353,10 @@ describe('OTP-first auth (integration)', () => {
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
       const code = lastCode();
-      await authService.verifyRegistrationOtp({ phone, code, deviceId: 'd1' }, {});
+      await authService.verifyRegistrationOtp({ phone, code, deviceId: 'd1', password: REGISTRATION_PASSWORD }, {});
 
       await expect(
-        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd2' }, {}),
+        authService.verifyRegistrationOtp({ phone, code, deviceId: 'd2', password: REGISTRATION_PASSWORD }, {}),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -429,7 +554,7 @@ describe('OTP-first auth (integration)', () => {
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
       const registered = await authService.verifyRegistrationOtp(
-        { phone, code: lastCode(), deviceId: 'device-otp-prod' },
+        { phone, code: lastCode(), deviceId: 'device-otp-prod', password: REGISTRATION_PASSWORD },
         {},
       );
       expect(registered.user.phone).toBe(phone);
@@ -439,7 +564,7 @@ describe('OTP-first auth (integration)', () => {
       const phone = randomPhone();
       const lastCode = captureCode();
       await authService.requestRegistrationOtp({ phone });
-      await authService.verifyRegistrationOtp({ phone, code: lastCode(), deviceId: 'd' }, {});
+      await authService.verifyRegistrationOtp({ phone, code: lastCode(), deviceId: 'd', password: REGISTRATION_PASSWORD }, {});
 
       const row = await prisma.user.findUniqueOrThrow({ where: { phone } });
       expect(row.passwordHash.startsWith('$argon2')).toBe(true);

@@ -62,10 +62,20 @@ describe("the production config cannot produce either flag", () => {
       }),
     );
 
+  // A shipping profile now has to name its tile provider before the config
+  // will evaluate at all (`refuseUnkeyedMapInInstallableBuild`), so these
+  // carry one. Development does not, and deliberately still does not.
+  const SHIPPING_ENV = {
+    API_BASE_URL: 'https://api.example.com/v1',
+    MAP_TILE_URL_TEMPLATE: 'https://tiles.example.com/{z}/{x}/{y}.png?key={key}',
+    MAP_TILE_API_KEY: 'a-key',
+    MAP_TILE_ATTRIBUTION: '© Example',
+  };
+
   it.each([
     ['development', {}],
-    ['preview', { API_BASE_URL: 'https://api.example.com/v1' }],
-    ['production', { API_BASE_URL: 'https://api.example.com/v1' }],
+    ['preview', SHIPPING_ENV],
+    ['production', SHIPPING_ENV],
   ])('pins useMocks to false on the %s profile', (appEnv, extraEnv) => {
     const config = readConfig(appEnv, extraEnv);
 

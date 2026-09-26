@@ -83,7 +83,12 @@ export class PhoneVerificationService {
       channel: NotificationChannel.SMS,
       titleKey: 'notifications.phoneVerificationTitle',
       bodyKey: 'notifications.phoneVerificationBody',
-      params: { code },
+      // Deliberately no code. This row is readable through
+      // `GET /notifications` by anyone holding a session for the account,
+      // and a confirmation code that a session can read is not a second
+      // factor at all — for a phone change it is not even a first one,
+      // since the whole point is to prove control of the *number*.
+      // The code travels by SMS and nowhere else.
     });
 
     return { success: true };
@@ -106,14 +111,26 @@ export class PhoneVerificationService {
     if (!challenge) throw invalid;
 
     if (challenge.codeHash !== sha256Hex(code)) {
-      const attempts = challenge.attempts + 1;
-      await this.prisma.phoneVerificationToken.update({
+      // Incremented by the database, not by this process. `attempts + 1`
+      // read the count and wrote back a number computed from it, so two
+      // wrong guesses arriving together both read the same value and both
+      // wrote the same one: N simultaneous guesses cost one attempt instead
+      // of N, and the ceiling below could be walked straight past by firing
+      // them in parallel rather than in sequence.
+      //
+      // Burning the challenge stays a separate, conditional write: it must
+      // happen once whichever attempt crosses the line, and `consumedAt`
+      // already being set is the thing that decides.
+      const bumped = await this.prisma.phoneVerificationToken.update({
         where: { id: challenge.id },
-        data: {
-          attempts,
-          ...(attempts >= MAX_ATTEMPTS ? { consumedAt: new Date() } : {}),
-        },
+        data: { attempts: { increment: 1 } },
       });
+      if (bumped.attempts >= MAX_ATTEMPTS && !bumped.consumedAt) {
+        await this.prisma.phoneVerificationToken.updateMany({
+          where: { id: challenge.id, consumedAt: null },
+          data: { consumedAt: new Date() },
+        });
+      }
       throw invalid;
     }
 

@@ -19,6 +19,10 @@ import { MemoryMediaStorage } from '../../src/infrastructure/media/memory-media-
 import { MediaModule } from '../../src/modules/media/media.module';
 import { ALERT_CHANNEL } from '../../src/infrastructure/alerts/alert-channel.interface';
 import { RecordingAlertChannel } from './recording-alert.channel';
+import { SMS_PROVIDER } from '../../src/infrastructure/sms/sms-provider.interface';
+import { BudgetedSmsProvider } from '../../src/infrastructure/sms/budgeted-sms.provider';
+import { SmsBudgetService } from '../../src/infrastructure/sms/sms-budget.service';
+import { RecordingSmsProvider } from './recording-sms.provider';
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service';
 import { AdminModule } from '../../src/modules/admin/admin.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -27,6 +31,10 @@ import { PurchaseIntentsModule } from '../../src/modules/purchase-intents/purcha
 import { AnalyticsModule } from '../../src/modules/analytics/analytics.module';
 import { LedgerModule } from '../../src/modules/ledger/ledger.module';
 import { PaymentsModule } from '../../src/modules/payments/payments.module';
+import { PartnerSettlementsModule } from '../../src/modules/partner-settlements/partner-settlements.module';
+import { PspModule } from '../../src/modules/psp/psp.module';
+import { AccountingModule } from '../../src/modules/accounting/accounting.module';
+import { TreasuryModule } from '../../src/modules/treasury/treasury.module';
 import { SettlementModule } from '../../src/modules/settlement/settlement.module';
 import { PayoutsModule } from '../../src/modules/payouts/payouts.module';
 import { ReconciliationModule } from '../../src/modules/reconciliation/reconciliation.module';
@@ -77,6 +85,14 @@ export interface TestHarness {
   alerts: RecordingAlertChannel;
   /** The in-memory object store the media suites read back out of. */
   mediaStorage: MemoryMediaStorage;
+  /**
+   * Every SMS the platform handed to a carrier.
+   *
+   * The only place a verification code exists outside the hash in the
+   * database — which is the point: a suite that needs a code reads it from
+   * here rather than from anything a session could reach.
+   */
+  sms: RecordingSmsProvider;
   /** Clears captured alerts *and* the Redis suppression window. */
   resetAlerts(): Promise<void>;
   close(): Promise<void>;
@@ -142,7 +158,12 @@ export async function settleEvents(): Promise<void> {
 }
 
 /** Tables holding reference data that survives per-test truncation. */
-const PRESERVED_TABLES = new Set(['roles', 'permissions', 'role_permissions', '_prisma_migrations']);
+const PRESERVED_TABLES = new Set([
+  'roles',
+  'permissions',
+  'role_permissions',
+  '_prisma_migrations',
+]);
 
 /**
  * The domain module set every suite in this file boots, shared by both
@@ -154,54 +175,72 @@ function domainTestingModuleBuilder(
   alerts: RecordingAlertChannel,
   mediaStorage: MemoryMediaStorage,
   emitter: SettleableEventEmitter,
+  sms: RecordingSmsProvider,
 ) {
-  return Test.createTestingModule({
-    imports: [
-      ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
-      EventEmitterModule.forRoot(),
-      PrismaModule,
-      RedisModule,
-      SmsModule,
-      PushModule,
-      AlertsModule,
-      MediaStorageModule,
-      MediaModule,
-      WalletModule,
-      TransactionsModule,
-      QrPaymentsModule,
-      EvChargingModule,
-      RoamingCpoModule,
-      CustomerBalanceModule,
-      PartnerOrdersModule,
-      AuditModule,
-      UsersModule,
-      AdminModule,
-      ReferralModule,
-      PurchaseIntentsModule,
-      NotificationsModule,
-      AuthModule,
-      SecurityModule,
-      AnalyticsModule,
-      LedgerModule,
-      PaymentsModule,
-      SettlementModule,
-      PayoutsModule,
-      ReconciliationModule,
-      RetentionModule,
-      HealthModule,
-    ],
-  })
-    .overrideProvider(PrismaService)
-    .useValue(prisma)
-    .overrideProvider(ALERT_CHANNEL)
-    .useValue(alerts)
-    .overrideProvider(MEDIA_STORAGE)
-    .useValue(mediaStorage)
-    // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
-    // instance, so replacing the instance is enough — no listener needs to
-    // know it happened.
-    .overrideProvider(EventEmitter2)
-    .useValue(emitter);
+  return (
+    Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
+        EventEmitterModule.forRoot(),
+        PrismaModule,
+        RedisModule,
+        SmsModule,
+        PushModule,
+        AlertsModule,
+        MediaStorageModule,
+        MediaModule,
+        WalletModule,
+        TransactionsModule,
+        QrPaymentsModule,
+        EvChargingModule,
+        RoamingCpoModule,
+        CustomerBalanceModule,
+        PartnerOrdersModule,
+        AuditModule,
+        UsersModule,
+        AdminModule,
+        ReferralModule,
+        PurchaseIntentsModule,
+        NotificationsModule,
+        AuthModule,
+        SecurityModule,
+        AnalyticsModule,
+        LedgerModule,
+        PaymentsModule,
+        PartnerSettlementsModule,
+        PspModule,
+        TreasuryModule,
+        AccountingModule,
+        SettlementModule,
+        PayoutsModule,
+        ReconciliationModule,
+        RetentionModule,
+        HealthModule,
+      ],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .overrideProvider(ALERT_CHANNEL)
+      .useValue(alerts)
+      .overrideProvider(MEDIA_STORAGE)
+      .useValue(mediaStorage)
+      // The recording transport goes *under* the budget wrapper, not in place
+      // of the whole chain. Replacing `SMS_PROVIDER` outright silently took
+      // the global SMS ceiling out of every integration test — the one
+      // protection standing between a loop and the carrier bill — and
+      // `sms-budget.int-spec.ts` is what noticed. This is production's own
+      // composition with only the last hop changed.
+      .overrideProvider(SMS_PROVIDER)
+      .useFactory({
+        factory: (budget: SmsBudgetService) => new BudgetedSmsProvider(sms, budget),
+        inject: [SmsBudgetService],
+      })
+      // Nest wires every `@OnEvent` handler onto the injected EventEmitter2
+      // instance, so replacing the instance is enough — no listener needs to
+      // know it happened.
+      .overrideProvider(EventEmitter2)
+      .useValue(emitter)
+  );
 }
 
 export async function createTestHarness(): Promise<TestHarness> {
@@ -213,8 +252,17 @@ export async function createTestHarness(): Promise<TestHarness> {
   // boundary is the real code — the image pipeline really re-encodes, the
   // delivery service really signs — only the bytes' destination changes.
   const mediaStorage = new MemoryMediaStorage();
+  // The only place a verification code exists outside its hash. Suites that
+  // need one read it from here; nothing a session can reach carries it.
+  const sms = new RecordingSmsProvider();
 
-  const moduleRef = await domainTestingModuleBuilder(prisma, alerts, mediaStorage, emitter).compile();
+  const moduleRef = await domainTestingModuleBuilder(
+    prisma,
+    alerts,
+    mediaStorage,
+    emitter,
+    sms,
+  ).compile();
 
   // TestingModule *is* an application context — no HTTP adapter is created,
   // so the suites exercise the services directly with no server listening.
@@ -228,6 +276,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     prisma,
     alerts,
     mediaStorage,
+    sms,
     async resetAlerts() {
       alerts.clear();
       // Suppression lives in Redis and survives table truncation, so without
@@ -256,6 +305,14 @@ export interface HttpTestHarness {
   /** `http://127.0.0.1:<port>` of the listening instance — build request URLs off this. */
   baseUrl: string;
   prisma: PrismaClient;
+  /**
+   * Alerts raised during the test, same as `TestHarness`.
+   *
+   * Added for the callback-inbox suite: a dead-lettered payment callback is
+   * a customer who may have paid for a purchase that never completed, and
+   * "somebody is told" is the property worth asserting, not an incidental.
+   */
+  alerts: RecordingAlertChannel;
   close(): Promise<void>;
 }
 
@@ -288,19 +345,37 @@ export interface HttpTestHarness {
  * that authenticated routes behave the same way end-to-end, guards included.
  */
 /**
- * `authGuards: true` additionally installs the same global guard chain
- * `AppModule` declares (JWT → roles → permissions → password rotation), so a
- * suite can prove end-to-end, over real HTTP, who may call what — e.g.
- * Partner Commerce's authorization tests. Off by default, preserving this
- * harness's original, guard-free behaviour for `id-validation.int-spec.ts`.
+ * `authGuards` attaches `AppModule`'s `JwtAuthGuard` to this instance.
+ *
+ * Off by default, because `id-validation.int-spec.ts` — the reason this
+ * harness exists — is specifically about a pipe rejecting a malformed id
+ * *before* the handler runs, and it reaches controllers unauthenticated on
+ * purpose. Anything testing what a token is worth needs the guard, and
+ * without this option there was no way to get one: the global guards live on
+ * `AppModule`, which neither harness imports.
+ *
+ * `rbacGuards` additionally installs the rest of `AppModule`'s chain (roles →
+ * permissions → password rotation) after the JWT guard, so a suite can prove
+ * end-to-end, over real HTTP, who may call what — Partner Commerce's
+ * authorization tests. Separate from `authGuards` so callers that only need a
+ * token's identity keep seeing exactly what they saw before.
  */
-export async function createHttpTestHarness(options: { authGuards?: boolean } = {}): Promise<HttpTestHarness> {
+export async function createHttpTestHarness(
+  options: { authGuards?: boolean; rbacGuards?: boolean } = {},
+): Promise<HttpTestHarness> {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
   const alerts = new RecordingAlertChannel();
   const emitter = new SettleableEventEmitter();
   const mediaStorage = new MemoryMediaStorage();
+  const sms = new RecordingSmsProvider();
 
-  const moduleRef = await domainTestingModuleBuilder(prisma, alerts, mediaStorage, emitter).compile();
+  const moduleRef = await domainTestingModuleBuilder(
+    prisma,
+    alerts,
+    mediaStorage,
+    emitter,
+    sms,
+  ).compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   // Mirrors `main.ts` bootstrap and `AppModule`'s global providers for the
@@ -317,12 +392,18 @@ export async function createHttpTestHarness(options: { authGuards?: boolean } = 
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+  if (options.authGuards) {
+    // Only `JwtAuthGuard`. The role and permission guards read metadata this
+    // harness's callers set per-test, and attaching them globally here would
+    // change what every existing caller sees.
+    app.useGlobalGuards(new JwtAuthGuard(moduleRef.get(Reflector)));
+  }
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
-  if (options.authGuards) {
+  if (options.rbacGuards) {
     const reflector = app.get(Reflector);
     app.useGlobalGuards(
-      new JwtAuthGuard(reflector),
+      ...(options.authGuards ? [] : [new JwtAuthGuard(reflector)]),
       new RolesGuard(reflector),
       new PermissionsGuard(reflector),
       new PasswordRotationGuard(reflector),
@@ -341,6 +422,7 @@ export async function createHttpTestHarness(options: { authGuards?: boolean } = 
 
   return {
     app,
+    alerts,
     baseUrl,
     prisma,
     async close() {

@@ -20,9 +20,13 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
  * Bottom-nav icon family — `TUTAK_V2_COMPONENT_INVENTORY.md`: "use the
  * Jako-derived SVG family: open nest, flight pin, QR eye, folded wing,
  * profile head; QR is central/larger; referral is accessed from Home and
- * Profile, not a sixth tab." `Partners` carries the Map tab (see
- * `MainTabParamList`'s own note on why Map and the station filter share one
- * route), so it renders the `map` icon.
+ * Profile, not a sixth tab." `Partners` carries the Map tab.
+ *
+ * Pilot rule: the central QR action is the customer's primary purchase
+ * action, so tapping it opens the root `ScanQr` screen. `MyQrScreen` remains
+ * mounted as the tab component for backward compatibility/deep navigation,
+ * but ordinary tab presses are intercepted before it renders. This avoids
+ * presenting the old customer-presented QR surface as the main pilot flow.
  */
 const ICONS: Record<keyof MainTabParamList, V2NavIconName> = {
   Home: 'home',
@@ -35,22 +39,6 @@ const ICONS: Record<keyof MainTabParamList, V2NavIconName> = {
 export function MainTabNavigator() {
   const { t } = useTranslation();
   const { color, text, layout, glass } = useTheme();
-  // Android's system nav bar (gesture pill or 3-button bar) sits in this
-  // inset, and its height varies by device — a fixed padding either wastes
-  // space or, worse, leaves the tab bar's own buttons underneath it, exactly
-  // where the system's own buttons are hardest to avoid mis-tapping. See
-  // `TUTAK_V2_ANDROID_SYSTEM_UI_QA.md` rule 4: this height still has to be
-  // the *actual* rendered bar height plus the live inset, never a
-  // guessed/fixed device constant — `layout.tabBarHeight` is the bar's own
-  // fixed content height, and `insets.bottom` (read live, every render) is
-  // what is added on top of it for Android, exactly as before.
-  //
-  // Real-device evidence (Arman, 2026-08-23, 3-button nav): a device that
-  // reports a zero/near-zero live inset still puts its own back/home/recent
-  // row directly beneath our tab icons, close enough to read as one row —
-  // the old 12px floor wasn't enough breathing room against buttons that
-  // are not our own to move. Raised to 20px; devices with a real inset
-  // larger than that are untouched, they already clear this by definition.
   const insets = useSafeAreaInsets();
   const androidBottomPadding = Math.max(20, insets.bottom);
 
@@ -61,13 +49,13 @@ export function MainTabNavigator() {
         tabBarActiveTintColor: color.primary,
         tabBarInactiveTintColor: color.textTertiary,
         tabBarStyle: {
-          // Slightly lifted off the ground rather than the same white, so
-          // the bar reads as a surface the content scrolls beneath instead
-          // of as the end of the screen.
           backgroundColor: color.backgroundSubtle,
           borderTopColor: glass.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: Platform.OS === 'android' ? layout.tabBarHeight + insets.bottom : layout.tabBarHeight,
+          height:
+            Platform.OS === 'android'
+              ? layout.tabBarHeight + insets.bottom
+              : layout.tabBarHeight,
           paddingTop: 8,
           paddingBottom: Platform.OS === 'ios' ? 28 : androidBottomPadding,
         },
@@ -78,10 +66,15 @@ export function MainTabNavigator() {
         },
         tabBarIcon: ({ color: c, size, focused }) => {
           const name = ICONS[route.name as keyof MainTabParamList];
-          // QR gets its own larger chip treatment below; every other tab is
-          // a plain outline icon at the standard nav size.
           if (name === 'qr') return null;
-          return <V2NavIcon name={name} size={size - 2} color={c} strokeWidth={focused ? 3 : 2.4} />;
+          return (
+            <V2NavIcon
+              name={name}
+              size={size - 2}
+              color={c}
+              strokeWidth={focused ? 3 : 2.4}
+            />
+          );
         },
       })}
     >
@@ -90,13 +83,15 @@ export function MainTabNavigator() {
       <Tab.Screen
         name="Pay"
         component={MyQrScreen}
+        listeners={({ navigation }) => ({
+          tabPress: (event) => {
+            event.preventDefault();
+            const parent = navigation.getParent();
+            if (parent) parent.navigate('ScanQr' as never);
+          },
+        })}
         options={{
           title: t('nav.pay'),
-          // "Central QR" — master spec: "one fixed bottom navigation with a
-          // visually larger central QR action". Focused, it wears the
-          // identity gradient and its glow, the only place in the tab bar
-          // that does, which is how the app's primary verb stays findable
-          // without the label alone carrying it.
           tabBarIcon: ({ focused }) => <PayTabIcon focused={focused} />,
         }}
       />
@@ -123,16 +118,17 @@ function PayTabIcon({ focused }: { focused: boolean }) {
   }
 
   return (
-    <View style={[styles.payChip, { backgroundColor: color.primarySurface, borderRadius: radius.full }]}>
+    <View
+      style={[
+        styles.payChip,
+        { backgroundColor: color.primarySurface, borderRadius: radius.full },
+      ]}
+    >
       <V2NavIcon name="qr" size={22} color={color.primary} strokeWidth={2.7} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Visually larger than its neighbours (master spec: "visually larger
-  // central QR action") and a perfect circle rather than the plain rounded
-  // chip the other tabs implicitly have — the shape alone marks it as the
-  // one non-symmetric tab before colour or size are read at all.
   payChip: { width: 48, height: 40, alignItems: 'center', justifyContent: 'center' },
 });

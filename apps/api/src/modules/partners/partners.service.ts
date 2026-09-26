@@ -9,7 +9,9 @@ import { ApplyPartnerDto } from './dto/apply-partner.dto';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { PartnerOfferingInputDto } from './dto/replace-partner-offerings.dto';
 import {
+  canonicalPartnerCategory,
   haversineKm,
+  NAMED_PARTNER_CATEGORIES,
   toPartnerCategory,
   type FuelType,
   type NearbyPartner,
@@ -27,6 +29,36 @@ type MediaAssetRow = MediaAsset | null;
 const MIN_PURCHASES_FOR_RECOMMENDATION = 2;
 /** Enough to feel personal; few enough that "recommended" stays a meaningful label, not most of the list. */
 const MAX_RECOMMENDED_CATEGORIES = 2;
+
+/**
+ * The cashback at which a partner is marked as giving noticeably more.
+ *
+ * A tuning knob, not a law: it lives here so it can be changed without an app
+ * release, and so every client agrees on what "generous" means on any given
+ * day. Set where it is because the ordinary offer sits at a few percent, and
+ * a badge that most of the list carries stops meaning anything.
+ */
+export const HIGH_CASHBACK_PERCENT = 5;
+
+/**
+ * How near two places have to be before their rates are worth comparing.
+ *
+ * Five hundred metres is about a six-minute walk — close enough that a
+ * customer standing between the two shops is genuinely choosing, rather than
+ * being sent somewhere. Within one band the better rate ranks first; between
+ * bands the nearer band always wins, however generous the far one is.
+ *
+ * Banding, rather than a weighted score of distance and rate: a score can
+ * always be out-bid, so a high enough rate would eventually drag a partner
+ * across the city to the top of a list that is supposed to mean "near you".
+ * A band cannot be out-bid — it is a hard boundary, and that is the point.
+ */
+const DISTANCE_BAND_KM = 0.5;
+
+/** Which half-kilometre a distance falls in. */
+function distanceBand(distanceKm: number): number {
+  return Math.floor(distanceKm / DISTANCE_BAND_KM);
+}
 
 @Injectable()
 export class PartnersService {
@@ -53,7 +85,10 @@ export class PartnersService {
           legalName: dto.legalName,
           displayName: dto.displayName,
           taxId: dto.taxId,
-          category: dto.category,
+          // Stored the way every reader already assumes it is — see
+          // `canonicalPartnerCategory`. Without this a partner is drawn
+          // under one chip and returned by another.
+          category: canonicalPartnerCategory(dto.category),
           bonusAccrualRateBps: dto.bonusAccrualRateBps,
           sellsGas: dto.sellsGas ?? false,
           sellsPetrol: dto.sellsPetrol ?? false,
@@ -104,6 +139,34 @@ export class PartnersService {
     if (!isCommissionRateBps(dto.bonusAccrualRateBps)) {
       throw new BadRequestException('bonusAccrualRateBps must be on the 0.5% commission grid');
     }
+
+    /*
+     * One application in the queue at a time.
+     *
+     * Nothing needed this while no client could reach the endpoint. Now a
+     * button reaches it, and a person who taps twice — or opens the form
+     * again while waiting — would put two identical applications in front of
+     * an administrator with no way to tell which one to act on, and approving
+     * both would create two partners for one shop.
+     *
+     * Scoped to a *pending* application on purpose, rather than to owning a
+     * partner at all: someone whose application was rejected may reasonably
+     * apply again, and someone who already runs one business may open a
+     * second. Neither of those is the mistake this guards against.
+     */
+    const waiting = await this.prisma.partnerMembership.findFirst({
+      where: {
+        userId: applicantUserId,
+        partner: { status: PartnerStatus.PENDING_APPROVAL },
+      },
+      include: { partner: { select: { displayName: true } } },
+    });
+    if (waiting) {
+      throw new ConflictException(
+        `An application for "${waiting.partner.displayName}" is already awaiting a decision`,
+      );
+    }
+
     const ownerRole = await this.prisma.role.findUniqueOrThrow({
       where: { name: RoleName.PARTNER_OWNER },
     });
@@ -114,7 +177,9 @@ export class PartnersService {
           legalName: dto.legalName,
           displayName: dto.displayName,
           taxId: dto.taxId,
-          category: dto.category,
+          // See `create` above: the applicant types this by hand, so it is
+          // the likeliest place for a stray capital or space to enter.
+          category: canonicalPartnerCategory(dto.category),
           bonusAccrualRateBps: dto.bonusAccrualRateBps,
           status: PartnerStatus.PENDING_APPROVAL,
           isActive: false,
@@ -383,6 +448,20 @@ export class PartnersService {
     sellsGas: true,
     sellsPetrol: true,
     bonusAccrualRateBps: true,
+    // The partner's own ceiling on how much of a bill bonus may cover. It
+    // is the one number that decides whether the amount a customer types on
+    // the purchase screen will be accepted, and it lived on the private
+    // projection only — so the first time anyone learned a restaurant caps
+    // bonus at 30% was being refused at the till. It is a published term of
+    // trade, not a commercial secret: `paymentCommissionRateBps`, which is,
+    // stays out of this list.
+    maxBonusPaymentPercent: true,
+    // Whether this business is trading, and if not, which kind of not.
+    // `isActive` alone cannot say: an application still awaiting a decision
+    // and a business that was switched off for fraud are both `false`, and
+    // a client holding a deep link had no way to tell either from a normal
+    // partner — the field simply was not in the projection.
+    status: true,
     isActive: true,
     createdAt: true,
     // The brand a directory card shows — spec §1.3/§4. The whole asset row is
@@ -429,9 +508,26 @@ export class PartnersService {
     return { id: item.id, name: item.name, description: item.description, price: item.price };
   }
 
-  /** Every partner, in the projection safe for any authenticated caller. */
+  /**
+   * Every *trading* partner, in the projection safe for any authenticated
+   * caller.
+   *
+   * The `where` is the point. This used to select every row, so a business
+   * that had merely applied — or one an administrator had rejected, or
+   * switched off — was served to any signed-in customer as an ordinary
+   * entry in the directory, at whatever cashback rate it had proposed for
+   * itself. `nearby` has always filtered on `isActive`, which is why this
+   * never reached the map; the directory is the surface that never got the
+   * check.
+   *
+   * Both conditions, not one: `status` is the business decision and
+   * `isActive` is the operational switch, they are set independently
+   * (`setActive` moves one and not the other), and a customer should see a
+   * partner only when both say yes.
+   */
   async listPublic() {
     const partners = await this.prisma.partner.findMany({
+      where: { status: PartnerStatus.ACTIVE, isActive: true },
       select: PartnersService.PUBLIC_FIELDS,
       orderBy: { createdAt: 'desc' },
     });
@@ -537,6 +633,22 @@ export class PartnersService {
    * somebody there to earn points they will not get is worse than not showing
    * it at all.
    */
+  /**
+   * The `where` fragment for one filter chip.
+   *
+   * Every chip but one is a column comparison. `other` is not: it is defined
+   * by `toPartnerCategory` as "none of the recognised categories", which is
+   * how a partner stored as `retail` comes to be drawn under it. Matching
+   * the column against the literal string `other` therefore returned
+   * nothing for exactly the cards the chip was showing — a filter that
+   * hides its own contents.
+   */
+  private static categoryFilter(category: string) {
+    return category === 'other'
+      ? { category: { notIn: [...NAMED_PARTNER_CATEGORIES] } }
+      : { category };
+  }
+
   async listNearbyBranches(params: {
     lat: number;
     lng: number;
@@ -565,10 +677,11 @@ export class PartnersService {
         longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
         partner: {
           isActive: true,
+          status: PartnerStatus.ACTIVE,
           ...(fuelType
             ? { category: 'fuel', ...(fuelType === 'gas' ? { sellsGas: true } : { sellsPetrol: true }) }
             : category
-              ? { category }
+              ? PartnersService.categoryFilter(category)
               : {}),
         },
         ...(q
@@ -631,12 +744,35 @@ export class PartnersService {
           sellsGas: b.partner.sellsGas,
           sellsPetrol: b.partner.sellsPetrol,
           recommended: recommendedCategories.includes(branchCategory),
+          highCashback: b.partner.bonusAccrualRateBps / 100 >= HIGH_CASHBACK_PERCENT,
         };
       })
       .filter((b) => b.distanceKm <= radiusKm)
-      // Recommended first, nearest first within each group — personalising
-      // this list reorders it, it never hides anything that was already on it.
-      .sort((a, b) => Number(b.recommended) - Number(a.recommended) || a.distanceKm - b.distanceKm);
+      /*
+       * Recommended first; then near before far; then generous before stingy.
+       *
+       * The middle key is the one that needs explaining. A partner who offers
+       * more deserves to be found more easily — otherwise the rate is a
+       * number the applicant picks and nobody ever rewards, and there is
+       * nothing honest to tell them when we ask for a better one. But sorting
+       * by rate outright would put a shop nine kilometres away above the one
+       * across the road, and this screen answers "where can I spend near
+       * here". A customer who walks past the near shop to reach the generous
+       * one is not better off.
+       *
+       * So distance is compared in bands rather than exactly. Inside a band
+       * the shops are close enough that the choice between them is a real
+       * choice, and there the better rate wins; across bands, nearer always
+       * wins however generous the far one is. Exact distance breaks the
+       * remaining ties, so the order is total and stable.
+       */
+      .sort(
+        (a, b) =>
+          Number(b.recommended) - Number(a.recommended) ||
+          distanceBand(a.distanceKm) - distanceBand(b.distanceKm) ||
+          b.cashbackPercent - a.cashbackPercent ||
+          a.distanceKm - b.distanceKm,
+      );
   }
 
   /**

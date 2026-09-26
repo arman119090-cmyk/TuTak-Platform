@@ -167,6 +167,14 @@ export class MediaDeliveryController {
     viewerId: string,
   ): Promise<boolean> {
     if (asset.kind === MediaAssetKind.USER_AVATAR) {
+      // Revocation is the control an administrator uses when the *file* must
+      // stop being shown — an offensive image, one uploaded from a
+      // compromised account. It said so for the public route and was never
+      // applied here, so a revoked avatar kept being served over a signed
+      // URL: to its owner, and — the part that matters — to the person who
+      // invited them. "Stop showing it" has to mean to everybody, or it is
+      // not the control it is described as.
+      if (asset.status === MediaAssetStatus.REVOKED) return false;
       if (asset.userId === viewerId) return true;
       if (!asset.userId) return false;
       const subject = await this.prisma.user.findUnique({

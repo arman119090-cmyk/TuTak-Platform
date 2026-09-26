@@ -19,7 +19,8 @@
     "somethingWentWrong": "Something went wrong. Please try again.",
     "clear": "Clear",
     "offlineTitle": "No internet connection",
-    "offlineBody": "Check your connection — data will refresh by itself."
+    "offlineBody": "Check your connection — data will refresh by itself.",
+    "optional": "optional"
   },
   "auth": {
     "welcomeBack": "Welcome back",
@@ -47,8 +48,14 @@
     "useSmsCodeInstead": "Use an SMS code instead",
     "useEmailPasswordInstead": "Use phone and password instead",
     "otpRegisterTitle": "Create your account",
-    "otpRegisterSubtitle": "Enter your phone number and we'll text you a code — no password needed.",
+    "otpRegisterSubtitle": "Enter your phone number — we will send a code by SMS.",
     "otpRegisterCodeSubtitle": "Enter the 6-digit code we sent to {{phone}}",
+    "createPasswordTitle": "Create a password",
+    "createPasswordSubtitle": "Your number is confirmed. Choose a password — you will use it to sign in.",
+    "confirmPassword": "Repeat password",
+    "passwordsDoNotMatch": "The passwords do not match.",
+    "showPassword": "Show",
+    "hidePassword": "Hide",
     "otpRegisterButton": "Create account",
     "otpLoginTitle": "Log in with a code",
     "otpLoginSubtitle": "Enter your phone number and we'll text you a one-time code.",
@@ -92,7 +99,9 @@
     "history": "Transaction history",
     "noTransactions": "No transactions yet",
     "totalBalance": "Total balance",
-    "expiringSoon": "Expiring soon"
+    "expiringSoon": "Expiring soon",
+    "noWalletTitle": "No wallet yet",
+    "noWalletBody": "This account has no points wallet. Register with a phone number to start earning."
   },
   "bonus": {
     "earned": "Earned",
@@ -364,12 +373,18 @@
     "clearFilters": "Clear filters",
     "loadFailed": "Could not load partners. Check your connection.",
     "howToEarn": "Pay through TuTak and earn {{percent}}% back in points.",
+    "howToSpend": "Bonus points can cover up to {{percent}}% of a bill here.",
+    "howToSpendAll": "Bonus points can cover the whole bill here.",
+    "notTradingYet": "This business is not open on TuTak yet.",
+    "notTrading": "This business is not accepting TuTak payments right now.",
     "approximateLocation": "Shown from the centre of Yerevan. Drag the map to look around.",
     "address": "Address",
     "distance": "Distance",
     "cashback": "Cashback",
     "about": "About",
-    "offerings": "Products & services"
+    "offerings": "Products & services",
+    "mapUnavailable": "The map is unavailable right now. Partners are listed below.",
+    "goodValue": "good value"
   },
   "partnerCategory": {
     "grocery": "Groceries",
@@ -395,9 +410,18 @@
     "confirmed": "Purchase confirmed",
     "rejected": "Purchase declined",
     "expired": "This purchase was not confirmed in time and has expired.",
+    "cancel": "Cancel this purchase",
+    "cancelConfirmTitle": "Cancel this purchase?",
+    "cancelConfirmBody": "The cashier will no longer be able to confirm it, and any bonus you applied goes back to your balance.",
+    "cancelKeep": "No, keep it",
+    "cancelled": "Purchase cancelled",
+    "cancelFailed": "Could not cancel the purchase",
+    "cancelTooLate": "The cashier has already answered this purchase",
     "payHere": "Pay here",
     "youPay": "You pay",
     "purchaseId": "Purchase ID",
+    "tillCode": "Read this code to the cashier",
+    "tillCodeAccessible": "Code for the cashier: {{digits}}",
     "createNew": "Create new purchase",
     "goHome": "Go home",
     "cashbackHere": "{{percent}}% back here",
@@ -504,5 +528,62 @@
     "avatarConsentTitle": "Show my photo to the person who invited me",
     "avatarConsentExplain": "Only them. Nobody further up the chain, and no partner, ever sees it.",
     "avatarPrivacyNote": "We strip location data from every photo before storing it. You can remove yours at any time."
+  },
+  "becomePartner": {
+    "entry": "Become a partner",
+    "title": "Become a partner",
+    "intro": "Tell us about your business. We will review the application and get in touch.",
+    "legalName": "Legal name",
+    "legalNamePlaceholder": "Nairi Foods LLC",
+    "displayName": "Shop name",
+    "displayNamePlaceholder": "Nairi",
+    "displayNameHint": "What your customers call you — this is the name they will see in the app.",
+    "taxId": "ՀՎՀՀ",
+    "taxIdPlaceholder": "8 digits",
+    "category": "Category",
+    "rate": "Cashback for customers",
+    "rateFloor": "0.5%",
+    "rateCeiling": "20%",
+    "rateRecommended": "we suggest 5–10%",
+    "ratePreview": "On a {{bill}} bill a customer earns {{points}} points",
+    "rateAdvantage": "A \"good value\" marker and a higher place in the nearby list",
+    "submit": "Send application",
+    "failed": "Could not send the application. Please try again.",
+    "alreadyApplied": "Your application is already under review. We will be in touch."
+  },
+  "partnerApplication": {
+    "title": "Partner application",
+    "sentTitle": "Application under review",
+    "sentBody": "We have received the application from \"{{name}}\". We will be in touch in the next few days to agree terms.",
+    "taxIdMissing": "not given",
+    "taxIdLater": "You can add your ՀՎՀՀ later, from your partner panel.",
+    "backHome": "Back to home"
+  },
+  "editProfile": {
+    "entry": "My details",
+    "title": "My details",
+    "intro": "What to call you. Your name is visible only to you and to whoever invited you.",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "email": "Email",
+    "emailPlaceholder": "name@example.com",
+    "phone": "Phone",
+    "phoneLocked": "The number cannot be changed — your wallet is tied to it.",
+    "save": "Save",
+    "saved": "Saved",
+    "failed": "Could not save. Please try again."
+  },
+  "nameStep": {
+    "title": "What is your name?",
+    "body": "So the app can address you by name. You can skip this and fill it in later.",
+    "continue": "Continue",
+    "skip": "Skip"
+  },
+  "unitOfMeasure": {
+    "LITER": "L",
+    "KWH": "kWh",
+    "KILOGRAM": "kg",
+    "ITEM": "pcs",
+    "HOUR": "h"
   }
 }

@@ -1,7 +1,15 @@
 import React, { useEffect, useReducer, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import { getEvents, resetEvents, subscribe } from './eventLog';
+import { TAIL_CAPACITY, getEvents, resetEvents, runId, subscribe } from './eventLog';
 import { buildCommit, isDiagnosticBuild } from './isDiagnosticBuild';
+import {
+  experimentLabel,
+  toggleFocusRerender,
+  toggleScrollsChildToFocus,
+  useFocusRerender,
+  useScrollsChildToFocus,
+} from './experiment';
+import { ExportOutcome, shareLogFile, shareLogTail, shareLogText } from './logExport';
 import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
 
 /**
@@ -29,54 +37,123 @@ import { isSentryProbeAvailable, runSentryProbe } from './sentryProbe';
  *   three.
  * - `render #N` climbing while nothing is touched is a render loop, and none
  *   of the above.
+ * - `mount X #n @id` is read with the run id in the header: see
+ *   `instanceTrace.ts`. A repeated mount line on its own says nothing about
+ *   the activity being recreated.
+ *
+ * ## Why there are three export buttons
+ *
+ * The panel shows the last fourteen rows because that is what fits. Longer
+ * logs go out through `logExport.ts`, which explains why one button became
+ * three: TXT writes a file, TAIL sends fifty rows, TEXT sends everything as a
+ * message and is the one that was found to truncate silently.
+ *
+ * ## Why the controls are on their own row
+ *
+ * They used to sit beside the header, and on a 384-wide screen the last two —
+ * EXPORT and CLEAR, the two that matter most — were off the right edge and
+ * unreachable. The row below wraps, so adding a button can no longer hide an
+ * existing one.
  */
+
 export function DiagnosticOverlay() {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   // The probe's own result, shown beside the button. Deliberately not routed
   // through the event log: that log is the app talking about itself, and
   // this is the operator's own action reporting back.
   const [probe, setProbe] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  // Same reasoning, and the same refusal to write to the log: an export is
+  // the operator reading the log, and a log that records being read is a log
+  // that changed while being read. `null` is "nothing exported yet".
+  const [exported, setExported] = useState<string | null>(null);
 
   useEffect(() => subscribe(bump), []);
+  // Re-renders the header when the arm is flipped.
+  useScrollsChildToFocus();
+  useFocusRerender();
 
   if (!isDiagnosticBuild()) return null;
 
   const events = getEvents();
   const { width, height } = Dimensions.get('window');
 
+  // A share sheet that never opened and one the operator dismissed look the
+  // same from JavaScript, so this says what happened rather than guessing.
+  const report = (label: string, run: () => Promise<ExportOutcome>) => () => {
+    setExported(`${label}…`);
+    void run().then((outcome) =>
+      setExported(outcome === 'shared' ? `${label} sent` : `${label} ${outcome}`),
+    );
+  };
+
   return (
     <View pointerEvents="box-none" style={styles.root}>
       <View style={styles.panel}>
-        <View style={styles.headerRow}>
-          <Text style={styles.header}>
-            {buildCommit()} · win {Math.round(width)}×{Math.round(height)}
-          </Text>
-          <View style={styles.actions}>
-            {/* Absent unless this is a diagnostic build of a non-production
-                environment — see sentryProbe.ts for why both must hold. */}
-            {isSentryProbeAvailable() ? (
-              <Pressable
-                onPress={() => {
-                  setProbe('sending');
-                  void runSentryProbe().then((outcome) =>
-                    setProbe(outcome === 'sent' ? 'sent' : 'failed'),
-                  );
-                }}
-                hitSlop={12}
-              >
-                <Text style={styles.clear}>
-                  {probe === 'idle'
-                    ? 'SENTRY'
-                    : probe === 'sending'
-                      ? 'SENDING'
-                      : probe.toUpperCase()}
-                </Text>
-              </Pressable>
-            ) : null}
-            <Pressable onPress={resetEvents} hitSlop={12}>
-              <Text style={styles.clear}>CLEAR</Text>
+        {/* The run id is here as well as in the export, because a photograph
+            of this panel is still the fastest way to send it and a mount
+            count means nothing without knowing whether the runtime
+            underneath it was replaced. */}
+        <Text style={styles.header}>
+          {buildCommit()} · {runId()} · {experimentLabel()} · win {Math.round(width)}×
+          {Math.round(height)}
+          {exported === null ? '' : ` · ${exported}`}
+        </Text>
+
+        {/* Its own row, and wrapping: on a 384-wide screen these did not all
+            fit beside the header and the ones that fell off the edge could
+            not be tapped at all. */}
+        <View style={styles.actions}>
+          {/* Absent unless this is a diagnostic build of a non-production
+              environment — see sentryProbe.ts for why both must hold. */}
+          {isSentryProbeAvailable() ? (
+            <Pressable
+              onPress={() => {
+                setProbe('sending');
+                void runSentryProbe().then((outcome) =>
+                  setProbe(outcome === 'sent' ? 'sent' : 'failed'),
+                );
+              }}
+              hitSlop={12}
+            >
+              <Text style={styles.action}>
+                {probe === 'idle' ? 'SENTRY' : probe === 'sending' ? 'SENDING' : probe.toUpperCase()}
+              </Text>
             </Pressable>
-          </View>
+          ) : null}
+          {/* Flips the one parameter under comparison. Both arms then run
+              in the same build, the same launch and the same handset,
+              which is what separates a cause from a coincidence. */}
+          <Pressable onPress={toggleScrollsChildToFocus} hitSlop={12}>
+            <Text style={styles.action}>SCF</Text>
+          </Pressable>
+          {/* The second arm. Flip one at a time — the header shows both, so
+              a trial with two changed at once is visible as such. */}
+          <Pressable onPress={toggleFocusRerender} hitSlop={12}>
+            <Text style={styles.action}>RR</Text>
+          </Pressable>
+          {/* The whole log as a file. First choice: nothing between here and
+              the receiving app can re-flow or clip it. */}
+          <Pressable onPress={report('TXT', shareLogFile)} hitSlop={12}>
+            <Text style={styles.action}>TXT</Text>
+          </Pressable>
+          {/* Short enough to survive any transport, including a photograph. */}
+          <Pressable onPress={report('TAIL', shareLogTail)} hitSlop={12}>
+            <Text style={styles.action}>TAIL{TAIL_CAPACITY}</Text>
+          </Pressable>
+          {/* The original path, kept as the fallback for a device that
+              reports file sharing unavailable. */}
+          <Pressable onPress={report('TEXT', shareLogText)} hitSlop={12}>
+            <Text style={styles.action}>TEXT</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setExported(null);
+              resetEvents();
+            }}
+            hitSlop={12}
+          >
+            <Text style={styles.action}>CLEAR</Text>
+          </Pressable>
         </View>
 
         {events.length === 0 ? (
@@ -106,10 +183,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     margin: 4,
   },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   header: { color: '#39FF14', fontSize: 11, fontWeight: '700' },
-  clear: { color: '#39FF14', fontSize: 11, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: 12 },
+  action: { color: '#39FF14', fontSize: 11, fontWeight: '700' },
+  // Wrapping is the point: a button that does not fit cannot be tapped, and
+  // this panel gained three at once.
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingVertical: 2 },
   empty: { color: '#888', fontSize: 11 },
   // Monospace so the timestamps line up and a repeating pattern is visible as
   // a shape rather than having to be read.

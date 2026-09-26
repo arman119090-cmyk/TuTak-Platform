@@ -10,9 +10,16 @@ export class CreatePartnerDto {
   @Length(2, 100)
   displayName: string;
 
+  /**
+   * Optional here for the same reason it is optional on `ApplyPartnerDto`:
+   * the column holds no number for a partner that has not supplied one, and
+   * requiring it on this path only would refuse an administrator adding a
+   * business they met in person, whose ՀՎՀՀ is not in the room.
+   */
+  @IsOptional()
   @IsString()
   @Length(5, 30)
-  taxId: string;
+  taxId?: string;
 
   @IsString()
   @Length(2, 50)

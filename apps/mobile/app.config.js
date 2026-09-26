@@ -96,6 +96,113 @@ function diagnosticsEnabled() {
 }
 
 /**
+ * A build anybody installs may not quietly ship on the development map.
+ *
+ * The tile default is openstreetmap.org, which is the right thing to develop
+ * against and the wrong thing to ship: those servers run on donated capacity
+ * and OSM's own tile usage policy asks applications with real traffic to use
+ * a provider instead. An app that ignores that does not fail loudly — it
+ * keeps working until the day OSM blocks it, and then the map is a grey
+ * rectangle for every customer at once, with nothing in the app or the logs
+ * saying why.
+ *
+ * That failure is invisible at build time, invisible in CI and invisible in
+ * review. It showed up here exactly that way: APK #47 was built, shipped and
+ * described as ready, and only unpacking the binary revealed it was on the
+ * fallback — the configuration was in place, the key simply had not been
+ * added, and nothing anywhere said so.
+ *
+ * So the check is structural, like `refuseDemoEnv` and the `http://` refusal
+ * below: development builds keep the fallback and everything a person
+ * installs must name its provider. `MAP_TILE_ALLOW_FALLBACK=1` is the escape
+ * hatch for deliberately building an installable app before the account
+ * exists — it has to be typed, which is the whole point.
+ */
+function refuseUnkeyedMapInInstallableBuild(appEnv) {
+  const shipping = appEnv === 'preview' || appEnv === 'staging' || appEnv === 'production';
+  if (!shipping) return;
+
+  const template = (process.env.MAP_TILE_URL_TEMPLATE ?? '').trim();
+  const key = (process.env.MAP_TILE_API_KEY ?? '').trim();
+  const attribution = (process.env.MAP_TILE_ATTRIBUTION ?? '').trim();
+  const refuse = (what) => {
+    throw new Error(
+      `APP_ENV is "${appEnv}" and ${what}\n\n` +
+        'docs/MAP_TILE_PROVIDER_RU.md is the one-page version of setting this up. To build ' +
+        'an installable app before the provider account exists, set ' +
+        'MAP_TILE_ALLOW_FALLBACK=1 — it is refused for `production`, because a production ' +
+        'build on the development map is not a thing anybody should be able to type their ' +
+        'way into.',
+    );
+  };
+
+  // The escape hatch is for getting an installable build out before the
+  // provider account exists. `production` is not that situation, and a flag
+  // that can be set by accident in the one place it must never apply is not
+  // an escape hatch, it is a hole with a label on it.
+  const allowFallback = process.env.MAP_TILE_ALLOW_FALLBACK === '1' && appEnv !== 'production';
+  if (!template) {
+    if (allowFallback) return;
+    refuse(
+      'MAP_TILE_URL_TEMPLATE is not set, so this build would ship on the ' +
+        'openstreetmap.org development fallback. OSM runs on donated capacity and its tile ' +
+        'usage policy asks applications with real traffic to use a provider. A build that ' +
+        'ignores that works until it is blocked, and then every customer sees a grey map at ' +
+        'the same moment.',
+    );
+  }
+
+  // Set is not the same as correct, and these are the four ways it has been
+  // wrong in practice rather than in theory: pointing back at the fallback
+  // on purpose, plain HTTP, a template whose key placeholder nothing fills,
+  // and a provider credited to nobody.
+  if (/openstreetmap\.org/i.test(template)) {
+    refuse(
+      'MAP_TILE_URL_TEMPLATE still points at openstreetmap.org. Naming it explicitly does ' +
+        'not make it a provider — it is the same donated capacity the fallback used.',
+    );
+  }
+
+  if (/^http:\/\//i.test(template)) {
+    refuse(
+      'MAP_TILE_URL_TEMPLATE uses plain http. Every tile request would carry the account ' +
+        'key in clear text over whatever network the phone is on, and Android blocks ' +
+        'cleartext traffic by default anyway — the map would simply be blank.',
+    );
+  }
+
+  if (template.includes('{key}') && !key) {
+    refuse(
+      'MAP_TILE_URL_TEMPLATE has a {key} placeholder and MAP_TILE_API_KEY is empty, so every ' +
+        'tile request would go out with an empty key and be refused by the provider. The ' +
+        'map would be blank on every phone, and nothing in the build would have said so.',
+    );
+  }
+
+  if (!attribution) {
+    refuse(
+      'MAP_TILE_ATTRIBUTION is empty. Every provider worth using requires visible credit, ' +
+        'and OpenStreetMap data is ODbL — shipping without it is a licence breach, not a ' +
+        'cosmetic omission.',
+    );
+  }
+}
+
+/**
+ * The map settings the app ships with — and the one place the refusal above
+ * is reached from, so no build can be configured without it having run.
+ */
+function mapExtra() {
+  refuseUnkeyedMapInInstallableBuild(process.env.APP_ENV ?? 'development');
+  return {
+    tileUrlTemplate:
+      process.env.MAP_TILE_URL_TEMPLATE ?? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    tileApiKey: process.env.MAP_TILE_API_KEY ?? '',
+    attribution: process.env.MAP_TILE_ATTRIBUTION ?? '© OpenStreetMap',
+  };
+}
+
+/**
  * Transport security, decided at build time rather than hoped for at runtime.
  *
  * The check above already refuses `localhost` outside development, which
@@ -285,6 +392,23 @@ module.exports = ({ config }) => ({
         recordAudioAndroid: false,
       },
     ],
+    [
+      'expo-location',
+      {
+        // Foreground only, and worded as what it actually does: the map
+        // sorts partners by how near they are, and the app works without
+        // it. There is no background tracking anywhere in this codebase,
+        // so the plugin's background options are deliberately not set —
+        // asking for "always" would be a store-review question with no
+        // good answer, and a reason to decline the install.
+        locationAlwaysAndWhenInUsePermission:
+          'TuTak uses your location to show partners near you on the map.',
+        locationWhenInUsePermission:
+          'TuTak uses your location to show partners near you on the map.',
+        isIosBackgroundLocationEnabled: false,
+        isAndroidBackgroundLocationEnabled: false,
+      },
+    ],
     // Wires the native Sentry SDKs into the iOS/Android projects EAS builds
     // and adds the build-phase scripts that upload debug symbols/source
     // maps. `authToken` is deliberately not passed here: those native
@@ -311,6 +435,22 @@ module.exports = ({ config }) => ({
   ],
   extra: {
     apiBaseUrl: apiBaseUrl(),
+    /**
+     * Where the map picture comes from — see
+     * `src/presentation/components/map/tileSource.ts` for why this is
+     * configuration rather than a constant in the code.
+     *
+     * The default is openstreetmap.org, which is right for development and
+     * wrong for a shipped app: those servers run on donated capacity and
+     * their usage policy asks apps with real traffic to use a provider of
+     * their own. Moving is two build-time variables and no code change.
+     *
+     * `MAP_TILE_API_KEY` is not a secret in the sense `SENTRY_AUTH_TOKEN`
+     * is: a tile key identifies the account the tiles are billed to, is
+     * restricted by the provider to this app's bundle id, and has to reach
+     * the device to be used at all — exactly like `sentryDsn` below.
+     */
+    map: mapExtra(),
     appEnv: process.env.APP_ENV ?? 'development',
     /**
      * The on-screen event log. Only the `diagnostic` EAS profile sets this,
@@ -357,3 +497,5 @@ module.exports = ({ config }) => ({
 // from a test evaluates the module, not the config factory below it.
 module.exports.assertTransportSecurity = assertTransportSecurity;
 module.exports.apiBaseUrl = apiBaseUrl;
+module.exports.refuseUnkeyedMapInInstallableBuild = refuseUnkeyedMapInInstallableBuild;
+module.exports.mapExtra = mapExtra;

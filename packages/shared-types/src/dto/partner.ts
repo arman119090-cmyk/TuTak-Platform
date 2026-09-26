@@ -60,6 +60,26 @@ export interface PartnerPublicDto {
   sellsPetrol: boolean;
   /** The cashback rate. Advertised by the partner; the customer is owed it. */
   bonusAccrualRateBps: number;
+  /**
+   * How much of a bill this partner lets bonus points cover, 0-100.
+   *
+   * A published term of trade, not a commercial secret — unlike
+   * `paymentCommissionRateBps`, which stays on `PartnerDto`. It is the one
+   * number that decides whether the amount a customer types on the purchase
+   * screen will be accepted, and while it lived on the private projection
+   * only, the first time anyone learned a restaurant caps bonus at 30% was
+   * being refused at the till.
+   */
+  maxBonusPaymentPercent: number;
+  /**
+   * Whether this business is trading, and if not, which kind of not.
+   *
+   * `isActive` alone cannot say: an application still awaiting a decision
+   * and a business switched off for fraud are both `false`. A client
+   * holding a deep link to a partner page needs to tell "not open yet"
+   * from "no longer with us", and both from a partner that is simply fine.
+   */
+  status: PartnerStatus;
   isActive: boolean;
   createdAt: string;
   /**
@@ -94,9 +114,22 @@ export interface PartnerPublicDto {
  * The full record. Returned only to a holder of PARTNER_MANAGE, or to the
  * partner's own people reading their own row.
  */
+/**
+ * Where a partner is in its life, which is not the same question as
+ * `isActive`.
+ *
+ * `status` says whether this business was ever admitted to the platform;
+ * `isActive` says whether an admitted one is trading today. A pending
+ * application and a partner suspended this morning are both "not trading",
+ * and telling them apart is the difference between a queue to work through
+ * and an incident to look into.
+ */
+export type PartnerStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
+
 export interface PartnerDto extends PartnerPublicDto {
   legalName: string;
-  taxId: string;
+  /** The Armenian ՀՎՀՀ. Null until the partner supplies it — see `Partner.taxId`. */
+  taxId: string | null;
   paymentCommissionRateBps: number;
   payoutsBlockedAt: string | null;
   payoutsBlockedReason: string | null;
@@ -106,7 +139,7 @@ export interface PartnerDto extends PartnerPublicDto {
 export interface CreatePartnerRequestDto {
   legalName: string;
   displayName: string;
-  taxId: string;
+  taxId?: string;
   category: string;
   bonusAccrualRateBps: number;
   ownerUserId: string;
@@ -119,7 +152,20 @@ export interface PartnerAnalyticsDto {
   periodFrom: string;
   periodTo: string;
   totalTransactions: number;
+  /** Gross — everything rung up in the period, refunds included. */
   totalRevenue: string;
+  /**
+   * Merchandise value handed back against those purchases.
+   *
+   * A refund is a new record pointing back at the original, because
+   * postings are immutable — it changes neither the transaction's amount
+   * nor its COMPLETED status. So `totalRevenue` alone counted a fully
+   * refunded dinner as revenue, and nothing in this payload said otherwise:
+   * there was no figure to subtract and no sign one was missing.
+   */
+  totalRefunded: string;
+  /** `totalRevenue` less `totalRefunded` — what the partner actually sold. */
+  netRevenue: string;
   totalBonusIssued: string;
   totalBonusRedeemed: string;
   uniqueCustomers: number;
@@ -159,6 +205,16 @@ export interface NearbyPartnerDto {
   cashbackPercent: number;
   /** Straight-line kilometres from the point asked about, to one decimal. */
   distanceKm: number;
+  /**
+   * True when this partner gives noticeably more back than the ordinary
+   * offer, at `HIGH_CASHBACK_PERCENT` or above.
+   *
+   * It exists so that choosing a generous rate buys a partner something real
+   * rather than a number nobody compares. The threshold lives on the server
+   * so it can be retuned without waiting for an app release, and so every
+   * client agrees on what "generous" means today.
+   */
+  highCashback: boolean;
   /**
    * The chain's published logo — spec §1.3's "catalogue/map card".
    *

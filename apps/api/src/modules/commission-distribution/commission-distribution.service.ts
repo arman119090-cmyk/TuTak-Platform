@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { BonusEntryType, LedgerAccountType, PostingDirection, Prisma, ReferrerType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { roundIssued } from '../../common/utils/money';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import {
   CURRENT_REFERRAL_PROGRAM_VERSION,
@@ -82,6 +83,7 @@ export class CommissionDistributionService {
     private readonly deferredBonusLots: DeferredBonusLotService,
     private readonly referralService: ReferralService,
     private readonly ledger: LedgerService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -92,9 +94,26 @@ export class CommissionDistributionService {
     return roundIssued(base.times(rateBps).dividedBy(10_000));
   }
 
-  async plan(customerId: string, base: Decimal, rateBps: number): Promise<ReferralPoolSplit> {
-    const pool = this.poolFor(base, rateBps);
-    const chain = await this.referralService.resolveReferralChain(customerId);
+  async plan(
+    customerId: string,
+    base: Decimal,
+    rateBps: number,
+    reader: Tx | PrismaService = this.prisma,
+  ): Promise<ReferralPoolSplit> {
+    return this.planForPool(customerId, this.poolFor(base, rateBps), reader);
+  }
+
+  /**
+   * The split of an already-computed pool — for a QR purchase priced under a
+   * per-unit contribution rule, whose pool is not base × rate
+   * (`contributionForPurchase`). `reader` is the caller's transaction when
+   * there is one: a provider settlement plans from inside its own open
+   * transaction, and a second connection taken from the pool there is what
+   * starved five concurrent callbacks of connections (see
+   * `PurchaseIntentsService.settlePurchase`).
+   */
+  async planForPool(customerId: string, pool: Decimal, reader: Tx | PrismaService = this.prisma): Promise<ReferralPoolSplit> {
+    const chain = await this.referralService.resolveReferralChain(customerId, reader);
     return this.referralService.computePoolSplit(pool, chain);
   }
 
@@ -169,18 +188,21 @@ export class CommissionDistributionService {
    * gets its own `PARTNER_PAYABLE` credit. `tutak` is already the pool's
    * residual (`ReferralService.computePoolSplit`).
    *
-   * Deliberately *not* passing `tx` to any `accountFor` call — see the
-   * self-deadlock note this was moved with: an account created inside the
-   * still-open transaction is invisible to a sibling tx-less lookup, whose
-   * insert then blocks on this transaction's own uncommitted row.
+   * Every `accountFor` takes `tx`, uniformly — the same correction the
+   * inline QR code received on main: *mixing* tx and tx-less lookups is
+   * what self-deadlocked (a tx-less lookup cannot see an account this
+   * transaction just created), and tx-less lookups borrow a second pool
+   * connection per settlement, which starved concurrent settlements until
+   * Prisma's 5s transaction timeout killed all of them. The sibling
+   * `postRedemptionCompensation` passes `tx` too.
    */
   private async postContribution(split: ReferralPoolSplit, ctx: DistributionContext, tx: Tx): Promise<void> {
     if (split.pool.lessThanOrEqualTo(0)) return;
 
     const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: ctx.partnerId }),
-      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
-      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }),
+      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: ctx.partnerId }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, tx),
+      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }, tx),
     ]);
 
     const byLevel: Record<1 | 2 | 3, Decimal> = { 1: split.l1, 2: split.l2, 3: split.l3 };
@@ -195,10 +217,10 @@ export class CommissionDistributionService {
         .map(async (c) => {
           const share = byLevel[c.level];
           if (share.lessThanOrEqualTo(0)) return null;
-          const account = await this.ledger.accountFor({
-            type: LedgerAccountType.PARTNER_PAYABLE,
-            partnerId: c.partnerId,
-          });
+          const account = await this.ledger.accountFor(
+            { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: c.partnerId },
+            tx,
+          );
           return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
         }),
     );

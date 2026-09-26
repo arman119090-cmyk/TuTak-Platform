@@ -96,6 +96,43 @@ const KNOWN = new Set<string>(PARTNER_CATEGORIES);
  * already.
  */
 export function toPartnerCategory(raw: string | null | undefined): PartnerCategory {
-  const value = (raw ?? '').trim().toLowerCase();
+  const value = canonicalPartnerCategory(raw);
   return KNOWN.has(value) ? (value as PartnerCategory) : 'other';
 }
+
+/**
+ * What to *store* in `Partner.category` — the write-side counterpart of
+ * `toPartnerCategory` above.
+ *
+ * These two used to disagree, and that was a bug a customer could see. Reads
+ * trimmed and lowercased; the map's filter did neither, matching the raw
+ * column exactly. A restaurant stored as `"Restaurant"` — the capital letter
+ * its own owner typed into the application form — therefore drew a restaurant
+ * pin and was invisible to the restaurant chip, and nothing in any panel
+ * could fix it: the category is not editable after the application, so it
+ * took someone with a SQL prompt.
+ *
+ * Canonicalising here makes the stored value the one the reader already
+ * assumes. Unknown values are *kept*, lowercased, rather than being collapsed
+ * to `other`: `toPartnerCategory` already draws them as `other`, and throwing
+ * away what the business actually called itself would lose the only record of
+ * it — a category worth adding to the list above is found by reading these,
+ * not by having rewritten them.
+ */
+export function canonicalPartnerCategory(raw: string | null | undefined): string {
+  return (raw ?? '').trim().toLowerCase();
+}
+
+/**
+ * The categories that are *not* `other` — what the `other` chip has to
+ * exclude, rather than match.
+ *
+ * `other` is the one chip whose meaning cannot be a column comparison. It is
+ * defined by `toPartnerCategory` as "none of the recognised ones", so a
+ * partner stored as `retail` is drawn under it; filtering `category: 'other'`
+ * against the column found only partners whose category is literally the
+ * string `other`, and returned nothing for every card the chip was showing.
+ */
+export const NAMED_PARTNER_CATEGORIES: readonly string[] = PARTNER_CATEGORIES.filter(
+  (c) => c !== 'other',
+);

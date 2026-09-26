@@ -8,6 +8,7 @@ import { useTheme } from '../../../app/theme/ThemeProvider';
 import { Screen } from '../../components/Screen';
 import { Surface } from '../../components/Surface';
 import { TextField } from '../../components/TextField';
+import { usePasswordReveal } from '../../components/usePasswordReveal';
 import { Button } from '../../components/Button';
 import { JakoWingMark } from '../../components/V2NavIcon';
 import { authApi } from '../../../data/api/authApi';
@@ -43,6 +44,8 @@ export function DeleteAccountScreen({ navigation }: Props) {
   const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
 
   const [password, setPassword] = useState('');
+
+  const reveal = usePasswordReveal();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -112,7 +115,8 @@ export function DeleteAccountScreen({ navigation }: Props) {
             label={t('auth.currentPassword')}
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={reveal.secureTextEntry}
+            revealToggle={reveal.revealToggle}
             placeholder="••••••••"
             hint={t('settings.deleteAccountPasswordHint')}
             error={error ?? undefined}

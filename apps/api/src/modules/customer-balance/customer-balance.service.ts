@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BalanceTopUp, BalanceTopUpStatus, Currency, LedgerAccountType, PostingDirection } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney } from '../../common/utils/money';
+import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { IdempotencyService } from '../ledger/idempotency.service';
@@ -25,8 +27,31 @@ export class CustomerBalanceService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
+    private readonly config: ConfigService<AppConfig, true>,
     @Inject(BANK_TOPUP_ADAPTER) private readonly bankAdapter: BankTopUpAdapter,
   ) {}
+
+  /**
+   * The second lock on the same door.
+   *
+   * `CustomerBalanceModule` already leaves the controller unregistered when
+   * top-ups are off, so there is no route to call. This exists because a
+   * module wiring is one edit away from being changed by someone who does
+   * not know what this account is, and because the EV roaming path holds a
+   * reference to this service already — the surface that can reach these
+   * methods is wider than the HTTP one.
+   *
+   * Guards only the two methods that turn real money into balance. Reading a
+   * balance and spending an existing one stay open on purpose: closing the
+   * feature must not strand money customers already hold.
+   */
+  private assertTopUpsEnabled(): void {
+    if (!this.config.get('features.customerPrepaidTopUpEnabled', { infer: true })) {
+      throw new ForbiddenException(
+        'Customer balance top-up is not enabled on this deployment',
+      );
+    }
+  }
 
   async getBalance(userId: string, currency: Currency = Currency.AMD) {
     const account = await this.ledger.accountFor({
@@ -44,6 +69,7 @@ export class CustomerBalanceService {
   }
 
   async initiateTopUp(userId: string, amountStr: string, idempotencyKey?: string) {
+    this.assertTopUpsEnabled();
     const amount = parsePositiveMoney(amountStr, 'amount');
     if (!idempotencyKey) {
       return this.initiateTopUpOnce(userId, amount);
@@ -127,6 +153,10 @@ export class CustomerBalanceService {
     body: Record<string, unknown>,
     headers: Record<string, string | string[] | undefined>,
   ): Promise<void> {
+    // Refused before the adapter is even asked. A deployment with top-ups
+    // off has no pending top-up a webhook could legitimately complete, so
+    // anything arriving here is either misrouted or probing.
+    this.assertTopUpsEnabled();
     const verified = await this.bankAdapter.verifyTopUpWebhook(body, headers);
     if (!verified) {
       throw new BadRequestException('Could not verify this callback');

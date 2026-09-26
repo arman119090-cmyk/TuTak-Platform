@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { TransactionStatus } from '@prisma/client';
+import { PurchaseIntentStatus, TransactionStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
@@ -37,7 +37,7 @@ export class AnalyticsService {
       ...(from || to ? { createdAt: { gte: from, lte: to } } : {}),
     };
 
-    const [totals, distinctCustomers] = await Promise.all([
+    const [totals, distinctCustomers, refunded] = await Promise.all([
       this.prisma.transaction.aggregate({
         where,
         _count: true,
@@ -46,14 +46,57 @@ export class AnalyticsService {
       // groupBy rather than a set built from every row: only the distinct
       // user ids cross the wire, not the transactions themselves.
       this.prisma.transaction.groupBy({ by: ['userId'], where }),
+      /*
+       * What went back over the counter.
+       *
+       * `totalRevenue` sums `Transaction.amount`, and a refund neither
+       * changes that column nor moves the transaction out of COMPLETED — a
+       * refund is a new record pointing back at the original, because
+       * postings are immutable. So a dinner that was refunded in full still
+       * counted as revenue in the partner's own dashboard, and the response
+       * said nothing at all about refunds: there was no figure a reader
+       * could subtract, and no hint that one was missing.
+       *
+       * Read off `PurchaseIntent.refundedAmount` rather than by summing
+       * `PurchaseIntentRefund` rows: the intent's column is the one a
+       * conditional UPDATE keeps within `grossAmount`, so it cannot drift
+       * above what was actually sold, and it is the same number the refund
+       * engine itself decides against.
+       *
+       * Scoped by the same branch filter as the totals above. A
+       * branch-scoped manager seeing network-wide refunds would learn their
+       * colleagues' figures just as surely as by reading the rows.
+       */
+      this.prisma.purchaseIntent.aggregate({
+        where: {
+          partnerId,
+          status: PurchaseIntentStatus.CONFIRMED,
+          ...(branchIds === null ? {} : { partnerBranchId: { in: branchIds } }),
+          ...(from || to ? { confirmedAt: { gte: from, lte: to } } : {}),
+        },
+        _sum: { refundedAmount: true },
+      }),
     ]);
+
+    const totalRevenue = totals._sum.amount ?? new Decimal(0);
+    const totalRefunded = refunded._sum.refundedAmount ?? new Decimal(0);
 
     return {
       partnerId,
       periodFrom: from?.toISOString() ?? null,
       periodTo: to?.toISOString() ?? null,
       totalTransactions: totals._count,
-      totalRevenue: (totals._sum.amount ?? new Decimal(0)).toFixed(4),
+      /** Gross — everything that was rung up, refunds included. Unchanged. */
+      totalRevenue: totalRevenue.toFixed(4),
+      /** Merchandise value handed back against those purchases. */
+      totalRefunded: totalRefunded.toFixed(4),
+      /**
+       * What the partner actually sold. Added beside `totalRevenue` rather
+       * than replacing it: gross and net are both real figures a business
+       * needs, and quietly redefining a field every existing dashboard
+       * already reads would change numbers nobody asked to change.
+       */
+      netRevenue: totalRevenue.minus(totalRefunded).toFixed(4),
       totalBonusIssued: (totals._sum.bonusEarnedAmount ?? new Decimal(0)).toFixed(4),
       totalBonusRedeemed: (totals._sum.bonusAppliedAmount ?? new Decimal(0)).toFixed(4),
       uniqueCustomers: distinctCustomers.length,

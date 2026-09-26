@@ -277,3 +277,37 @@ add its origin to the API CORS allowlist (`CORS_ORIGINS`) and set
 | `FINANCIAL_POLICY_V2_EFFECTIVE_AT` | unset = already effective | QR purchases created from this instant are COMMERCE_V2 (Q9) |
 | `PARTNER_ORDER_CANCELLATION_CLAIM_HOURS` | 24 | the partner's window to claim an actual cancellation cost |
 | `CHECKOUT_WEB_BASE_URL` | unset (no `checkoutUrl`) | public base URL of `apps/checkout` |
+
+## 13. Integration with main's money contour (merge of 2026-09-26)
+
+Main gained, in parallel, a provider route for QR purchases (`PaymentRoute`,
+`PspPaymentAttempt`, Idram adapter), per-unit contribution rules with
+maker/checker, dual-control refund requests, customer cancellation of a QR
+purchase and a partner settlement engine. Merged as follows — no business
+rule of either side was changed:
+
+- **One distribution implementation.** `settlePurchase` keeps main's shape
+  (the pool from the purchase's snapshotted contribution rule; reads through
+  the caller's transaction for a provider callback) and hands the split to
+  `CommissionDistributionService` (`planForPool`), which online orders use
+  too. Main's connection-pool fix (every `accountFor` takes `tx`) is ported
+  into that service.
+- **One purchase, one money route.** TuTak money cannot be combined with
+  `TUTAK_PSP`: the money leg is released by the cashier's confirmation, and
+  a provider-routed purchase is never confirmed at the till.
+- **Customer cancel** of a QR purchase returns its TuTak-money part from the
+  money escrow in the same transaction as the claim (like reject/expiry).
+- **Refunds.** Main's route guard (provider-collected purchases cannot be
+  refunded by hand) runs before the COMMERCE_V2 branch; an approved refund
+  request may produce a V2 refund awaiting desk settlement.
+- **Shifts (Q4).** A provider confirmation has no employee and is not
+  shift-stamped; every cash-desk action by a person still is.
+- **Open decision — settlement engine.** Main's `PartnerSettlementService`
+  pays only allow-listed ledger kinds (`settleable-kinds.ts`). Partner
+  Commerce kinds on `PARTNER_PAYABLE` (`partner_order.*`,
+  `purchase_intent.money_*`, `*.shortfall_settled_at_desk`,
+  `referral.withholding_recovered`) are deliberately **not** added: by that
+  file's own rule they are never paid, and surface as unrecognised kinds for
+  reconciliation, until TuTak decides how Partner Commerce credits are
+  settled. Likewise `Partner.settlementPeriod` (Partner Commerce statements)
+  and `Partner.settlementPeriodicity` (settlement engine) coexist.

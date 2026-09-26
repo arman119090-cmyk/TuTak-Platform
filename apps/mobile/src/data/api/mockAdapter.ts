@@ -1,6 +1,14 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { CustomerPartnerOrderDto, PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
-import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
+import {
+  CustomerPaymentState,
+  EvSessionStatus,
+  PaymentRoute,
+  PurchaseIntentStatus,
+  QrCodeStatus,
+  QrCodeType,
+} from '@tutak/shared-types';
+import { isSupportedLocale } from '@tutak/i18n';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
 /**
@@ -34,6 +42,32 @@ const LATENCY_MS = 140;
 let state: MockState = freshMockState();
 
 /** Exposed for tests; the app never calls it. */
+/**
+ * The hybrid-money-flow half of `PurchaseIntentDto` (15.09.2026), as it
+ * looks for the offline demo.
+ *
+ * The demo takes the partner-direct route throughout: the customer hands the
+ * money over at the till, which is the one route that finishes without a
+ * payment provider. Mocking the in-TuTak route would demonstrate a flow
+ * nobody can complete here — there is no Idram to answer, so the purchase
+ * would sit waiting for a callback for ever.
+ *
+ * Everything else is null because it is genuinely absent, not because null
+ * is convenient. Per-unit pricing is a negotiated commercial rule and no mock
+ * partner has one; merchant approval is only demanded before a provider bill
+ * is opened, and a direct purchase is confirmed at the till instead.
+ */
+const DIRECT_TILL_PURCHASE = {
+  paymentRoute: PaymentRoute.DIRECT_PARTNER,
+  quantity: null,
+  quantityUnit: null,
+  unitPrice: null,
+  contributionRuleKind: null,
+  contributionRuleVersion: null,
+  merchantApprovedAt: null,
+  merchantApprovedByUserId: null,
+} as const;
+
 export function resetMockState(): void {
   state = freshMockState();
 }
@@ -173,6 +207,21 @@ function handle(
       return envelope(state.user);
 
     /**
+     * The profile edit the app actually makes: the interface language.
+     *
+     * Only `locale` is honoured, and only against the three languages the
+     * app ships. The real endpoint validates the same set server-side and
+     * refuses anything else, so accepting a fourth here would let the demo
+     * reach a state the product cannot.
+     */
+    case 'PATCH /users/me': {
+      const dto = body<{ locale?: string }>(config);
+      const locale = dto.locale && isSupportedLocale(dto.locale) ? dto.locale : state.user.locale;
+      state.user = { ...state.user, locale };
+      return envelope(state.user);
+    }
+
+    /**
      * The offline avatar upload.
      *
      * It echoes back the local URI the picker produced, rather than
@@ -283,8 +332,57 @@ function handle(
               : true,
           )
           .filter((p) => p.distanceKm <= radiusKm)
-          .sort((a, b) => a.distanceKm - b.distanceKm),
+          /*
+           * The same ordering the server applies, and it has to be the same
+           * one: this demo's job is to answer "does this screen work", and a
+           * list sorted by distance alone would show the "good value" marker
+           * scattered through an order production never produces.
+           *
+           * Distance in half-kilometre bands, then the better rate inside a
+           * band, then exact distance. See `PartnersService.listNearbyBranches`
+           * for why it is banded rather than weighted.
+           */
+          .sort(
+            (a, b) =>
+              Math.floor(a.distanceKm / 0.5) - Math.floor(b.distanceKm / 0.5) ||
+              b.cashbackPercent - a.cashbackPercent ||
+              a.distanceKm - b.distanceKm,
+          ),
       );
+    }
+
+    /**
+     * Applying to become a partner.
+     *
+     * The demo accepts it and hands back a partner awaiting approval, which
+     * is what the real endpoint does — the screen's job here is to show that
+     * the form submits and the confirmation appears. Nothing is added to
+     * `state.partners`: an application cannot trade until an administrator
+     * approves it, so a demo that made the applicant's shop appear on the map
+     * would be showing something the real system refuses.
+     */
+    case 'POST /partners/apply': {
+      const dto = (config.data ? JSON.parse(config.data as string) : {}) as {
+        legalName?: string;
+        displayName?: string;
+        taxId?: string;
+        category?: string;
+        bonusAccrualRateBps?: number;
+      };
+      return envelope({
+        id: `partner-application-${Date.now()}`,
+        displayName: dto.displayName ?? '',
+        category: dto.category ?? 'other',
+        bonusAccrualRateBps: dto.bonusAccrualRateBps ?? 0,
+        sellsGas: false,
+        sellsPetrol: false,
+        isActive: false,
+        createdAt: new Date().toISOString(),
+        logo: null,
+        cover: null,
+        about: null,
+        offerings: [],
+      });
     }
 
     // ── EV ──────────────────────────────────────────────────────────────
@@ -381,12 +479,14 @@ function handle(
         partnerId: dto.partnerId,
         partnerBranchId: dto.partnerBranchId ?? null,
         status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+        confirmationCode: '0042',
         grossAmount: dto.grossAmount,
         bonusAmountRequested,
         tutakMoneyAmount,
         ordinaryPaymentRemainder: String(
           Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested) - Number(tutakMoneyAmount)),
         ),
+        refundedAmount: '0',
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
         maxBonusPaymentPercent: 50,
         // The brand snapshot the real API takes at creation — see
@@ -399,11 +499,14 @@ function handle(
           logo: null,
         },
         confirmedByUserId: null,
+        rejectedByUserId: null,
         rejectionReason: null,
+        ...DIRECT_TILL_PURCHASE,
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
         confirmedAt: null,
         rejectedAt: null,
+        cancelledAt: null,
       };
       state.purchaseIntents = [intent, ...state.purchaseIntents];
       return envelope(intent);
@@ -457,6 +560,75 @@ function handle(
     return envelope(stopped);
   }
 
+  /*
+   * Paying through the provider, in the offline demo.
+   *
+   * The demo has no provider and never will: there is no Idram to answer, so
+   * a mock that reported SUCCEEDED would be demonstrating money moving when
+   * none did — in the one part of the app whose entire purpose is to refuse
+   * exactly that claim.
+   *
+   * So `begin` is refused rather than faked. `NOT_APPLICABLE` is the honest
+   * status for a demo purchase: the demo settles at the till, which is the
+   * route it can actually complete.
+   */
+  const beginPspPayment = /^\/psp\/purchases\/([^/]+)\/begin$/.exec(path);
+  if (method === 'POST' && beginPspPayment) {
+    return envelope(
+      { message: 'The demo has no payment provider. Purchases here settle at the till.' },
+      409,
+    );
+  }
+
+  const pspStatus = /^\/psp\/purchases\/([^/]+)\/status$/.exec(path);
+  if (method === 'GET' && pspStatus) {
+    return envelope({ state: CustomerPaymentState.NOT_APPLICABLE });
+  }
+
+  // The customer's own way out, offline as well as online: the demo's
+  // auto-confirming poll below only fires while the intent is still
+  // AWAITING_CONFIRMATION, so a cancelled one stays cancelled.
+  const cancelPurchaseIntent = /^\/purchase-intents\/([^/]+)\/cancel$/.exec(path);
+  if (method === 'POST' && cancelPurchaseIntent) {
+    const id = cancelPurchaseIntent[1]!;
+    const existing = state.purchaseIntents.find((pi) => pi.id === id);
+    const cancelled: PurchaseIntentDto = {
+      ...(existing ?? {
+        id,
+        customerId: MOCK_USER.id,
+        partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+        partnerBrand: mockBrandFor(state.partners[0]?.partnerId ?? 'partner-1') ?? {
+          partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+          displayName: state.partners[0]?.name ?? 'TuTak',
+          logo: null,
+        },
+        partnerBranchId: null,
+        grossAmount: '5000',
+        bonusAmountRequested: '0',
+        tutakMoneyAmount: '0',
+        ordinaryPaymentRemainder: '5000',
+        refundedAmount: '0',
+        confirmationCode: '0042',
+        negotiatedRateBps: 500,
+        maxBonusPaymentPercent: 50,
+        confirmedByUserId: null,
+        rejectedByUserId: null,
+        rejectionReason: null,
+        ...DIRECT_TILL_PURCHASE,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
+        confirmedAt: null,
+        rejectedAt: null,
+      }),
+      status: PurchaseIntentStatus.CANCELLED,
+      cancelledAt: new Date().toISOString(),
+    };
+    state.purchaseIntents = existing
+      ? state.purchaseIntents.map((pi) => (pi.id === id ? cancelled : pi))
+      : [cancelled, ...state.purchaseIntents];
+    return envelope(cancelled);
+  }
+
   const getPurchaseIntent = /^\/purchase-intents\/([^/]+)$/.exec(path);
   if (method === 'GET' && getPurchaseIntent) {
     const id = getPurchaseIntent[1]!;
@@ -475,18 +647,23 @@ function handle(
       },
       partnerBranchId: null,
       status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
+      confirmationCode: '0042',
       grossAmount: '5000',
       bonusAmountRequested: '0',
       tutakMoneyAmount: '0',
       ordinaryPaymentRemainder: '5000',
+      refundedAmount: '0',
       negotiatedRateBps: 500,
       maxBonusPaymentPercent: 50,
       confirmedByUserId: null,
+      rejectedByUserId: null,
       rejectionReason: null,
+      ...DIRECT_TILL_PURCHASE,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 3 * 60_000).toISOString(),
       confirmedAt: null,
       rejectedAt: null,
+      cancelledAt: null,
     };
 
     // No cashier exists in the demo, so the poll itself plays that part —
@@ -540,6 +717,8 @@ function handle(
           sellsGas: match.sellsGas,
           sellsPetrol: match.sellsPetrol,
           bonusAccrualRateBps: Math.round(match.cashbackPercent * 100),
+          maxBonusPaymentPercent: 100,
+          status: 'ACTIVE',
           isActive: true,
           logo: match.logo,
           cover: match.cover,
@@ -554,6 +733,8 @@ function handle(
           sellsGas: false,
           sellsPetrol: false,
           bonusAccrualRateBps: 500,
+          maxBonusPaymentPercent: 100,
+          status: 'ACTIVE',
           isActive: true,
           logo: null,
           cover: null,

@@ -21,7 +21,7 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
   const jwt = new JwtService({ secret: process.env.JWT_ACCESS_SECRET });
 
   beforeAll(async () => {
-    harness = await createHttpTestHarness({ authGuards: true });
+    harness = await createHttpTestHarness({ authGuards: true, rbacGuards: true });
     prisma = harness.prisma;
   });
 

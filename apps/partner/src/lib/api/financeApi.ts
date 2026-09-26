@@ -1,3 +1,8 @@
+import type {
+  PartnerSettlementDto,
+  PartnerStatementDto,
+  UnsettledPositionDto,
+} from '@tutak/shared-types';
 import { httpClient } from '../httpClient';
 
 export interface Settlement {
@@ -69,6 +74,41 @@ export const financeApi = {
     const { data } = await httpClient.get('/purchase-intents/activity/daily', {
       params: { partnerId },
     });
+    return data.data;
+  },
+};
+
+/*
+ * Settlement types now live in `@tutak/shared-types` — see
+ * `PartnerSettlementDto`'s own docblock for why. They were typed here, they
+ * were typed *wrong*, and the tests agreed with the mistake because the
+ * fixture repeated it. A shared type makes the same mistake a `tsc` error in
+ * every consumer instead of a NaN a partner has to notice.
+ */
+
+export const settlementApi = {
+  async statements(partnerId: string): Promise<PartnerSettlementDto[]> {
+    const { data } = await httpClient.get(`/partner/settlements/${partnerId}`);
+    return data.data;
+  },
+
+  async statement(partnerId: string, id: string): Promise<PartnerStatementDto> {
+    const { data } = await httpClient.get(`/partner/settlements/${partnerId}/statement/${id}`);
+    return data.data;
+  },
+
+  async position(partnerId: string): Promise<UnsettledPositionDto> {
+    const { data } = await httpClient.get(`/partner/settlements/${partnerId}/position`);
+    return data.data;
+  },
+
+  // `reason`, matching `ReportTransferProblemDto` — the server validates it
+  // at 3-500 characters, so an empty complaint is refused there too.
+  async reportProblem(partnerId: string, id: string, reason: string): Promise<PartnerSettlementDto> {
+    const { data } = await httpClient.post(
+      `/partner/settlements/${partnerId}/statement/${id}/report-problem`,
+      { reason },
+    );
     return data.data;
   },
 };

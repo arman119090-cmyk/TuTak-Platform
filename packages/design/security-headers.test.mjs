@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { contentSecurityPolicy } from './security-headers.mjs';
+import { contentSecurityPolicy, securityHeaders } from './security-headers.mjs';
 
 const api = 'https://api.tutak.am/v1';
 const dsn = 'https://abc123@o4500.ingest.sentry.io/45001';
@@ -55,3 +55,20 @@ test('the rest of the policy is unchanged by a DSN', () => {
   assert.ok(policy.includes("form-action 'self'"));
   assert.ok(!policy.includes("script-src 'self' 'unsafe-inline' https://o4500"));
 });
+
+test('the dashboards tell crawlers not to index them', () => {
+  const headers = securityHeaders({ apiBaseUrl: 'https://api.example.am/v1' });
+  const robots = headers.find((h) => h.key === 'X-Robots-Tag');
+  assert.ok(robots, 'no X-Robots-Tag: an operator sign-in page was indexable');
+  assert.match(robots.value, /noindex/);
+  assert.match(robots.value, /nofollow/);
+});
+
+test('the crawl instruction is sent in development too', () => {
+  // A staging dashboard is the one most likely to be found and indexed:
+  // it is reachable, it is not linked from anywhere, and nobody is looking
+  // at its search presence.
+  const dev = securityHeaders({ apiBaseUrl: 'http://localhost:4000/v1', isDevelopment: true });
+  assert.ok(dev.some((h) => h.key === 'X-Robots-Tag'));
+});
+

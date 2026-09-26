@@ -99,4 +99,50 @@ export const usersApi = {
     >('/users/me/personalization-consent', { personalizedRecommendationsEnabled });
     return data.data;
   },
+
+  /**
+   * The customer's own name, and how to reach them by mail.
+   *
+   * `PATCH /users/me` has accepted these three fields all along and nothing
+   * ever sent them: the app used this route for `locale` only, so an account
+   * registered by SMS kept the placeholder the server writes when no name is
+   * given — "Customer", with the phone number standing in for a surname.
+   * That is what put "Привет, Customer" on the home screen.
+   *
+   * Empty strings are omitted rather than sent. The server validates a
+   * present field as one to fifty characters, so `''` is a rejection, not a
+   * way to clear a value — and clearing a name is not something this screen
+   * offers.
+   */
+  async updateProfile(profile: { firstName?: string; lastName?: string; email?: string }) {
+    const body: Record<string, string> = {};
+    if (profile.firstName?.trim()) body.firstName = profile.firstName.trim();
+    if (profile.lastName?.trim()) body.lastName = profile.lastName.trim();
+    if (profile.email?.trim()) body.email = profile.email.trim();
+
+    const { data } = await httpClient.patch<ApiEnvelope<{ firstName: string; lastName: string }>>(
+      '/users/me',
+      body,
+    );
+    return data.data;
+  },
+
+  /**
+   * Stores the interface language on the account.
+   *
+   * Language is a property of the person, not of the handset: someone who
+   * reads Russian reads Russian on a borrowed phone and on a replacement
+   * one. Keeping it only on the device meant the next person to sign in
+   * inherited the previous one's choice, and the `locale` already on their
+   * profile was ignored.
+   *
+   * `PATCH /users/me` validates the value against `hy | ru | en` server-side,
+   * so an unsupported code is refused there rather than stored.
+   */
+  async setLocale(locale: string) {
+    const { data } = await httpClient.patch<ApiEnvelope<{ locale: string }>>('/users/me', {
+      locale,
+    });
+    return data.data;
+  },
 };

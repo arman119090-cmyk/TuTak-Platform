@@ -45,7 +45,7 @@ describe('alert:verify', () => {
     const result = await runAlertVerify(alertsThatReport(accepted), console_);
 
     expect(result.sent).toBe(false);
-    expect(result.reason).toMatch(/ALERT_WEBHOOK_URL is not set/);
+    expect(result.reason).toMatch(/Neither ALERT_WEBHOOK_URL nor ALERT_TELEGRAM_BOT_TOKEN/);
   });
 
   it('says to check Redis when the alert was suppressed', async () => {

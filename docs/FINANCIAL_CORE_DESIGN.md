@@ -365,7 +365,10 @@ external bank are three different levels of trust. `PAYOUT_MANAGE` is
 deliberately **not** granted to `ADMIN` — only `SUPER_ADMIN`. Since the
 payout engine's retirement it gates the routes that *record* money against a
 partner's balance (collections); paying a partner is `SETTLEMENT_MANAGE`, with
-the settlement engine's own maker-checker rule.
+the settlement engine's own maker-checker rule. `SETTLEMENT_MANAGE` is seeded
+to `ADMIN` as well as `SUPER_ADMIN` — the engine refuses the maker as checker,
+so two people are always needed; whether ADMIN should hold it at all is
+recorded as an owner decision in the 26.09.2026 launch-readiness baseline.
 
 ---
 

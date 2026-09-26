@@ -128,6 +128,12 @@ export interface AppConfig {
   alerts: {
     /** Where an operator gets told that money is at risk. Empty = the log only. */
     webhookUrl: string;
+    /**
+     * A Telegram bot + chat as the human channel instead of (or before) a
+     * webhook. Both empty = not configured. Read by `AlertsModule`.
+     */
+    telegramBotToken: string;
+    telegramChatId: string;
   };
   payouts: {
     /** Whether confirming a payout requires someone other than its requester. */
@@ -739,6 +745,11 @@ const buildConfig = (): AppConfig => ({
     // JSON POST. Unset in development; production boots without it but warns
     // — see AlertsModule for why it does not refuse.
     webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+    // A Telegram bot token + chat id. Production on Railway had these set
+    // since before 26.09.2026 with nothing reading them — the channel now
+    // exists (`TelegramAlertChannel`). Used when no webhook is set.
+    telegramBotToken: process.env.ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '',
+    telegramChatId: process.env.ALERT_TELEGRAM_CHAT_ID?.trim() ?? '',
   },
   metrics: {
     // No default. An unset token disables the endpoint rather than opening

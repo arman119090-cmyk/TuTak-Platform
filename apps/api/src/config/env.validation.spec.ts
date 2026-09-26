@@ -346,7 +346,7 @@ describe('assertProviderPaymentsConfigured', () => {
    * somebody fixes it; the route where a customer's money can sit
    * unaccounted for is the one that has to refuse instead.
    */
-  it('refuses the route on without an alert webhook, and with a plain-http one', () => {
+  it('refuses the route on without an alert channel, and with a plain-http webhook', () => {
     expect(() => assertProviderPaymentsConfigured(on({ ALERT_WEBHOOK_URL: undefined }))).toThrow(
       /ALERT_WEBHOOK_URL/,
     );
@@ -358,6 +358,26 @@ describe('assertProviderPaymentsConfigured', () => {
     ).toThrow(/https/);
     // And the route off never asks for one.
     expect(() => assertProviderPaymentsConfigured({ ALERT_WEBHOOK_URL: undefined })).not.toThrow();
+  });
+
+  /**
+   * Telegram is the other real channel (26.09.2026: production had the two
+   * variables set and nothing reading them). A complete pair satisfies the
+   * guard on its own; half a pair is the console in disguise and does not.
+   */
+  it('accepts a Telegram bot + chat as the human channel, but not half of one', () => {
+    const telegram = { ALERT_WEBHOOK_URL: undefined, ALERT_TELEGRAM_BOT_TOKEN: '1:abc', ALERT_TELEGRAM_CHAT_ID: '-100' };
+    expect(() => assertProviderPaymentsConfigured(on(telegram))).not.toThrow();
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ ...telegram, ALERT_TELEGRAM_CHAT_ID: undefined })),
+    ).toThrow(/ALERT_TELEGRAM_BOT_TOKEN \+ ALERT_TELEGRAM_CHAT_ID/);
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ ...telegram, ALERT_TELEGRAM_BOT_TOKEN: '  ' })),
+    ).toThrow(/no alert channel/);
+    // A plain-http webhook is still refused even when Telegram would do.
+    expect(() =>
+      assertProviderPaymentsConfigured(on({ ...telegram, ALERT_WEBHOOK_URL: 'http://hooks.example/x' })),
+    ).toThrow(/https/);
   });
 
   it('refuses a form action that is not https', () => {

@@ -276,22 +276,32 @@ export interface AppConfig {
    */
   partnerOrderPolicy: {
     /**
-     * Spec §19: the commission rate used when a partner has no
-     * `CommissionRule` of their own configured — so an unconfigured partner
-     * still works rather than failing order creation. Never applied
-     * directly; `CommissionRuleService.resolve` always prefers a real,
-     * partner-specific rule first.
+     * There is deliberately no platform default commission rate here any
+     * more (Q5 = A, v1 error E4): `Partner.bonusAccrualRateBps` is the one
+     * base rate, and a `CommissionRule` only ever overrides it for a
+     * specific service type/category.
      */
-    defaultCommissionBps: number;
-    /** Spec §8. Minutes since `createdAt` before the "not seen" alert fires. */
+    /** Spec §17. Minutes since `submittedAt` before the "not seen" alert fires. */
     notSeenAlertMinutes: number;
     /**
-     * Spec §9. Minutes since `createdAt` — deliberately not `partnerSeenAt`
-     * — before the "stock not confirmed" alert first fires.
+     * Spec §18. Minutes since `submittedAt` — never `partnerSeenAt` — before
+     * the critical "stock not confirmed" alert first fires.
      */
     stockConfirmDeadlineMinutes: number;
-    /** Spec §9. How often the alert repeats after it first fires. */
+    /** Spec §18.1. How often the critical alert repeats until resolved. */
     stockAlertRepeatMinutes: number;
+    /** An unconfirmed DRAFT (abandoned cart) expires after this long. */
+    draftTtlHours: number;
+    /** Spec §34. Hours after handover before the customer is reminded to confirm receipt. */
+    receiptReminderHours: number;
+    /** Spec §34. Hours after handover before the order goes to TuTak manual review. */
+    receiptManualReviewHours: number;
+    /**
+     * Interim rule pending Q10: hours after the customer confirmed receipt
+     * with an external leg still unconfirmed before the order lands in the
+     * admin "Payment issue" queue. The escrow stays put either way.
+     */
+    paymentIssueHours: number;
   };
 }
 
@@ -334,20 +344,21 @@ export function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
  * the one Partner Commerce figure a bad env var could put out of range.
  */
 export function assertPartnerOrderPolicy(policy: AppConfig['partnerOrderPolicy']): void {
-  const { defaultCommissionBps } = policy;
-  if (!Number.isInteger(defaultCommissionBps) || defaultCommissionBps < 0 || defaultCommissionBps > 10_000) {
-    throw new Error(
-      `partnerOrderPolicy.defaultCommissionBps must be an integer between 0 and 10000, got ${defaultCommissionBps}`,
-    );
-  }
-  for (const [name, minutes] of [
+  for (const [name, value] of [
     ['notSeenAlertMinutes', policy.notSeenAlertMinutes],
     ['stockConfirmDeadlineMinutes', policy.stockConfirmDeadlineMinutes],
     ['stockAlertRepeatMinutes', policy.stockAlertRepeatMinutes],
+    ['draftTtlHours', policy.draftTtlHours],
+    ['receiptReminderHours', policy.receiptReminderHours],
+    ['receiptManualReviewHours', policy.receiptManualReviewHours],
+    ['paymentIssueHours', policy.paymentIssueHours],
   ] as const) {
-    if (!Number.isInteger(minutes) || minutes <= 0) {
-      throw new Error(`partnerOrderPolicy.${name} must be a positive integer, got ${minutes}`);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`partnerOrderPolicy.${name} must be a positive integer, got ${value}`);
     }
+  }
+  if (policy.receiptManualReviewHours <= policy.receiptReminderHours) {
+    throw new Error('partnerOrderPolicy.receiptManualReviewHours must be later than receiptReminderHours');
   }
 }
 
@@ -595,15 +606,9 @@ const buildConfig = (): AppConfig => ({
     challengeSlotLimit: parseInt(process.env.REFERRAL_CHALLENGE_SLOT_LIMIT ?? '3', 10),
   },
   partnerOrderPolicy: {
-    // 5%, a reasonable platform-wide starting point until a partner
-    // configures their own CommissionRule — spec §19.
-    defaultCommissionBps: parseInt(
-      process.env.PARTNER_ORDER_DEFAULT_COMMISSION_BPS ?? '500',
-      10,
-    ),
-    // Spec §8.
+    // Spec §17.
     notSeenAlertMinutes: parseInt(process.env.PARTNER_ORDER_NOT_SEEN_ALERT_MINUTES ?? '5', 10),
-    // Spec §9.
+    // Spec §18.
     stockConfirmDeadlineMinutes: parseInt(
       process.env.PARTNER_ORDER_STOCK_CONFIRM_DEADLINE_MINUTES ?? '30',
       10,
@@ -612,5 +617,10 @@ const buildConfig = (): AppConfig => ({
       process.env.PARTNER_ORDER_STOCK_ALERT_REPEAT_MINUTES ?? '5',
       10,
     ),
+    draftTtlHours: parseInt(process.env.PARTNER_ORDER_DRAFT_TTL_HOURS ?? '24', 10),
+    // Spec §34 / Q3: 24h reminder, 48h manual review.
+    receiptReminderHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_REMINDER_HOURS ?? '24', 10),
+    receiptManualReviewHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_MANUAL_REVIEW_HOURS ?? '48', 10),
+    paymentIssueHours: parseInt(process.env.PARTNER_ORDER_PAYMENT_ISSUE_HOURS ?? '24', 10),
   },
 });

@@ -1,25 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderEscalationType, PartnerOrderStatus } from '@prisma/client';
+import {
+  AuditAction,
+  OrderEscalationType,
+  PartnerOrderOperationalStatus as Op,
+  PaymentLegStatus,
+  PaymentLegType,
+} from '@prisma/client';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { OrderEscalationService } from './order-escalation.service';
+import { PartnerOrderNotifier } from './partner-order-notifier.service';
+import { PartnerOrdersService } from './partner-orders.service';
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 
 /**
- * Spec §8-9's two SLA timers, driven by `sweeps.jobs.ts` the same way every
- * other timed effect in this codebase is: a deadline column plus a
- * repeating sweep, not a per-event delayed job — see that file's own
- * docblock ("One schedule, not one per instance") for why. `PurchaseIntent`
- * expiry (`purchase-intent.expire`) is the closest existing precedent: a
- * fixed deadline stamped at creation, checked by a sweep that runs far more
- * often than the deadline itself, so the *sweep's* own cadence is not what
- * bounds SLA accuracy — the stamped deadline is.
+ * Every Partner Commerce timer, driven by `sweeps.jobs.ts` (BullMQ
+ * repeatable jobs on Redis) the same way every other timed effect in this
+ * codebase is: a timestamp column plus a sweep that runs far more often
+ * than the deadline — never a process-local `setTimeout` (spec §18.1). Each
+ * effect is claimed with a conditional UPDATE, so two workers running the
+ * same sweep never double-alert.
  *
- * No push/device notification is sent from these sweeps — the escalation
- * queue itself (`GET /admin/partner-orders/escalations`) is the alerting
- * surface, mirroring `FraudDetectionService`'s own queue-only pattern
- * exactly. Wiring a push to every ADMIN/SUPER_ADMIN device was judged out
- * of scope for this pass — see the final report's open-questions section.
+ * Every partner SLA is measured from `submittedAt` (v1 error E3 fixed): an
+ * abandoned DRAFT never has one, and "Увидел заказ" at minute 29 buys no
+ * extra time for the 30-minute stock deadline.
  */
 @Injectable()
 export class PartnerOrderSlaSweepService {
@@ -28,80 +36,51 @@ export class PartnerOrderSlaSweepService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly escalations: OrderEscalationService,
+    private readonly orders: PartnerOrdersService,
+    private readonly notifier: PartnerOrderNotifier,
+    private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
-  /** Spec §8: 5 minutes since `createdAt`, still not seen. Fires once per order. */
-  async sweepNotSeen(): Promise<number> {
-    const minutes = this.config.get('partnerOrderPolicy.notSeenAlertMinutes', { infer: true });
-    const cutoff = new Date(Date.now() - minutes * 60_000);
+  private policy() {
+    return this.config.get('partnerOrderPolicy', { infer: true });
+  }
 
+  /** Spec §17: 5 minutes after submit, still not "Увидел". Once per order. */
+  async sweepNotSeen(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.policy().notSeenAlertMinutes * MINUTE);
     const overdue = await this.prisma.partnerOrder.findMany({
-      where: {
-        orderStatus: PartnerOrderStatus.PAID,
-        partnerSeenAt: null,
-        notSeenAlertSentAt: null,
-        createdAt: { lt: cutoff },
-      },
-      select: { id: true, createdAt: true, partnerId: true },
+      where: { operationalStatus: Op.SUBMITTED, notSeenAlertSentAt: null, submittedAt: { lt: cutoff } },
     });
-
+    let alerted = 0;
     for (const order of overdue) {
-      // Claim first: two overlapping sweep ticks (or a slow tick still
-      // running when the next fires) must not raise this twice.
       const claimed = await this.prisma.partnerOrder.updateMany({
-        where: { id: order.id, notSeenAlertSentAt: null },
-        data: { notSeenAlertSentAt: new Date() },
+        where: { id: order.id, notSeenAlertSentAt: null, operationalStatus: Op.SUBMITTED },
+        data: { notSeenAlertSentAt: now },
       });
       if (claimed.count === 0) continue;
-
-      await this.escalations.raise(order.id, OrderEscalationType.NOT_SEEN_5MIN, {
-        partnerId: order.partnerId,
-        elapsedMinutes: Math.floor((Date.now() - order.createdAt.getTime()) / 60_000),
-      });
+      await this.escalations.raise(order, OrderEscalationType.NOT_SEEN_5MIN, `partner-order.not-seen:${order.id}`);
+      alerted += 1;
     }
-    return overdue.length;
+    return alerted;
   }
 
   /**
-   * Spec §9: 30 minutes since `createdAt` — deliberately never
-   * `partnerSeenAt`, so tapping "Увидел заказ" at minute 29 buys no extra
-   * time — then every 5 minutes after, until stock is confirmed or
-   * rejected. Skips creating another escalation (and so another alert) for
-   * an order whose current problem someone has already claimed — spec's own
-   * "не нужно бесконечно отправлять одинаковый push конкретному сотруднику"
-   * — while the order stays in the queue regardless, via `listOpen` /
-   * `listForPartner` reading `PartnerOrder` state directly rather than only
-   * through escalation rows.
+   * Spec §18: 30 minutes after submit with no stock decision → critical;
+   * then every 5 minutes (30, 35, 40 …) until it is decided. A problem an
+   * operator has claimed ("Взял в работу") is not re-pushed, but the order
+   * stays in the queue.
    */
-  async sweepStockNotConfirmed(): Promise<number> {
-    const deadlineMinutes = this.config.get('partnerOrderPolicy.stockConfirmDeadlineMinutes', { infer: true });
-    const repeatMinutes = this.config.get('partnerOrderPolicy.stockAlertRepeatMinutes', { infer: true });
-    const deadlineCutoff = new Date(Date.now() - deadlineMinutes * 60_000);
-
+  async sweepStockNotConfirmed(now = new Date()): Promise<number> {
+    const { stockConfirmDeadlineMinutes, stockAlertRepeatMinutes } = this.policy();
+    const cutoff = new Date(now.getTime() - stockConfirmDeadlineMinutes * MINUTE);
     const overdue = await this.prisma.partnerOrder.findMany({
-      where: {
-        orderStatus: { in: [PartnerOrderStatus.PAID, PartnerOrderStatus.PARTNER_SEEN] },
-        stockConfirmedAt: null,
-        stockRejectedAt: null,
-        createdAt: { lt: deadlineCutoff },
-      },
-      select: { id: true, createdAt: true, partnerId: true, stockAlertLastSentAt: true },
+      where: { operationalStatus: { in: [Op.SUBMITTED, Op.SEEN] }, submittedAt: { lt: cutoff } },
     });
-
     let alerted = 0;
     for (const order of overdue) {
-      const isFirstAlert = order.stockAlertLastSentAt === null;
-      const repeatDue =
-        !isFirstAlert && order.stockAlertLastSentAt !== null &&
-        Date.now() - order.stockAlertLastSentAt.getTime() >= repeatMinutes * 60_000;
-      if (!isFirstAlert && !repeatDue) continue;
-
-      const type = isFirstAlert
-        ? OrderEscalationType.STOCK_NOT_CONFIRMED_30MIN
-        : OrderEscalationType.STOCK_NOT_CONFIRMED_REPEAT;
-
-      // Someone already has this in hand — stay in the queue, stop paging.
+      const first = order.stockAlertLastSentAt === null;
+      if (!first && now.getTime() - order.stockAlertLastSentAt!.getTime() < stockAlertRepeatMinutes * MINUTE) continue;
       if (
         await this.escalations.hasClaimedOpenEscalation(order.id, [
           OrderEscalationType.STOCK_NOT_CONFIRMED_30MIN,
@@ -110,19 +89,110 @@ export class PartnerOrderSlaSweepService {
       ) {
         continue;
       }
-
       const claimed = await this.prisma.partnerOrder.updateMany({
-        where: { id: order.id, stockAlertLastSentAt: order.stockAlertLastSentAt },
-        data: { stockAlertLastSentAt: new Date() },
+        where: {
+          id: order.id,
+          stockAlertLastSentAt: order.stockAlertLastSentAt,
+          operationalStatus: { in: [Op.SUBMITTED, Op.SEEN] },
+        },
+        data: { stockAlertLastSentAt: now },
       });
       if (claimed.count === 0) continue;
-
-      await this.escalations.raise(order.id, type, {
-        partnerId: order.partnerId,
-        elapsedMinutes: Math.floor((Date.now() - order.createdAt.getTime()) / 60_000),
-      });
+      const elapsed = Math.floor((now.getTime() - order.submittedAt!.getTime()) / MINUTE);
+      await this.escalations.raise(
+        order,
+        first ? OrderEscalationType.STOCK_NOT_CONFIRMED_30MIN : OrderEscalationType.STOCK_NOT_CONFIRMED_REPEAT,
+        // Unique per tick: the alert channel's own 15-minute suppression must
+        // not swallow the 35/40/45-minute repeats spec §18.1 asks for.
+        `partner-order.stock-sla:${order.id}:${elapsed}`,
+      );
       alerted += 1;
     }
     return alerted;
+  }
+
+  /**
+   * Spec §34 / Q3: handed over 24h ago and not confirmed → remind the
+   * customer (once); 48h → TuTak manual review. Never releases the escrow —
+   * that only ever happens on the customer's own confirmation or an admin
+   * decision.
+   */
+  async sweepReceipt(now = new Date()): Promise<{ reminded: number; manualReview: number }> {
+    const { receiptReminderHours, receiptManualReviewHours } = this.policy();
+    let reminded = 0;
+    let manualReview = 0;
+
+    const toRemind = await this.prisma.partnerOrder.findMany({
+      where: {
+        operationalStatus: Op.HANDED_OVER,
+        receiptReminderSentAt: null,
+        handedOverAt: { lt: new Date(now.getTime() - receiptReminderHours * HOUR) },
+      },
+    });
+    for (const order of toRemind) {
+      const claimed = await this.prisma.partnerOrder.updateMany({
+        where: { id: order.id, receiptReminderSentAt: null, operationalStatus: Op.HANDED_OVER },
+        data: { receiptReminderSentAt: now },
+      });
+      if (claimed.count === 0) continue;
+      await this.notifier.receiptReminder(order);
+      reminded += 1;
+    }
+
+    const toReview = await this.prisma.partnerOrder.findMany({
+      where: {
+        operationalStatus: Op.HANDED_OVER,
+        manualReviewAt: null,
+        handedOverAt: { lt: new Date(now.getTime() - receiptManualReviewHours * HOUR) },
+      },
+    });
+    for (const order of toReview) {
+      const claimed = await this.prisma.partnerOrder.updateMany({
+        where: { id: order.id, manualReviewAt: null, operationalStatus: Op.HANDED_OVER },
+        data: { manualReviewAt: now, manualReviewReason: 'receipt_not_confirmed_48h' },
+      });
+      if (claimed.count === 0) continue;
+      await this.auditService.record({
+        action: AuditAction.PARTNER_ORDER_MANUAL_REVIEW,
+        entityType: 'PartnerOrder',
+        entityId: order.id,
+        metadata: { reason: 'receipt_not_confirmed_48h' },
+      });
+      await this.escalations.raise(order, OrderEscalationType.RECEIPT_NOT_CONFIRMED_48H, `partner-order.receipt-48h:${order.id}`);
+      manualReview += 1;
+    }
+    return { reminded, manualReview };
+  }
+
+  /**
+   * Interim rule pending Q10: the customer confirmed receipt but an external
+   * leg is still unconfirmed past the grace window → "Payment issue". The
+   * escrow stays where it is.
+   */
+  async sweepPaymentIssues(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.policy().paymentIssueHours * HOUR);
+    const stuck = await this.prisma.partnerOrder.findMany({
+      where: {
+        operationalStatus: Op.RECEIVED,
+        paymentIssueAt: null,
+        customerReceivedAt: { lt: cutoff },
+        paymentLegs: { some: { type: PaymentLegType.EXTERNAL, status: PaymentLegStatus.PENDING } },
+      },
+    });
+    let flagged = 0;
+    for (const order of stuck) {
+      const claimed = await this.prisma.partnerOrder.updateMany({
+        where: { id: order.id, paymentIssueAt: null, operationalStatus: Op.RECEIVED },
+        data: { paymentIssueAt: now },
+      });
+      if (claimed.count === 0) continue;
+      await this.escalations.raise(order, OrderEscalationType.PAYMENT_ISSUE, `partner-order.payment-issue:${order.id}`);
+      flagged += 1;
+    }
+    return flagged;
+  }
+
+  expireDrafts(now = new Date()): Promise<number> {
+    return this.orders.expireStaleDrafts(now);
   }
 }

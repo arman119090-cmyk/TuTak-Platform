@@ -24,4 +24,14 @@ export class CreatePurchaseIntentDto {
   @IsNumberString()
   @IsOptional()
   bonusAmountRequested?: string;
+
+  /**
+   * Partner Commerce v2 (Q1 = C): how much of the purchase to pay from the
+   * customer's own TuTak money balance (`CUSTOMER_PREPAID_BALANCE`) —
+   * separate from, and never mixed with, the discount above. Whatever
+   * remains after both is paid to the partner directly (external).
+   */
+  @IsNumberString()
+  @IsOptional()
+  tutakMoneyAmount?: string;
 }

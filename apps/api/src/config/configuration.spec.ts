@@ -82,31 +82,34 @@ describe('assertPoolSplitSums', () => {
 
 describe('assertPartnerOrderPolicy', () => {
   const validPolicy = (): AppConfig['partnerOrderPolicy'] => ({
-    defaultCommissionBps: 500,
     notSeenAlertMinutes: 5,
     stockConfirmDeadlineMinutes: 30,
     stockAlertRepeatMinutes: 5,
+    draftTtlHours: 24,
+    receiptReminderHours: 24,
+    receiptManualReviewHours: 48,
+    paymentIssueHours: 24,
   });
 
   it('accepts the default policy', () => {
     expect(() => assertPartnerOrderPolicy(validPolicy())).not.toThrow();
   });
 
-  it('rejects a commission rate outside 0-10000', () => {
-    const policy = validPolicy();
-    policy.defaultCommissionBps = 10_001;
-    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/defaultCommissionBps/);
-  });
-
-  it('rejects a non-integer commission rate', () => {
-    const policy = validPolicy();
-    policy.defaultCommissionBps = 500.5;
-    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/defaultCommissionBps/);
-  });
-
   it('rejects a zero or negative SLA minute value', () => {
     const policy = validPolicy();
     policy.stockConfirmDeadlineMinutes = 0;
     expect(() => assertPartnerOrderPolicy(policy)).toThrow(/stockConfirmDeadlineMinutes/);
+  });
+
+  it('rejects a non-integer timer', () => {
+    const policy = validPolicy();
+    policy.draftTtlHours = 1.5;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/draftTtlHours/);
+  });
+
+  it('rejects a manual-review deadline that is not after the reminder', () => {
+    const policy = validPolicy();
+    policy.receiptManualReviewHours = 24;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/receiptManualReviewHours/);
   });
 });

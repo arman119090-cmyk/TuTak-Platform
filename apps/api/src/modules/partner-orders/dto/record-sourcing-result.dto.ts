@@ -39,6 +39,12 @@ export class RecordSourcingResultDto {
   @IsOptional()
   price?: string;
 
+  /** Spec §40: what differs from the original (brand, model, condition, spec, kit) — shown to the customer. */
+  @IsString()
+  @Length(0, 2000)
+  @IsOptional()
+  differences?: string;
+
   @IsString()
   @Length(0, 500)
   @IsOptional()

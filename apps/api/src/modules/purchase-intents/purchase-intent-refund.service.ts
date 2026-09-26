@@ -19,6 +19,8 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE, parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CommerceLedgerService } from '../commerce-ledger/commerce-ledger.service';
+import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -94,6 +96,8 @@ export class PurchaseIntentRefundService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly auditService: AuditService,
+    private readonly commerceLedger: CommerceLedgerService,
+    private readonly shifts: EmployeeShiftService,
   ) {}
 
   /**
@@ -227,6 +231,14 @@ export class PurchaseIntentRefundService {
       );
     }
 
+    // Spec §6: a refund is a cash-desk action — only on an active shift
+    // (inside the partner's one-off rollout window, audited as shiftless).
+    const stamp = await this.shifts.stampFor(tx, {
+      userId: actorId,
+      partnerId: intent.partnerId,
+      branchId: intent.partnerBranchId,
+    });
+
     const cumulativeBefore = intent.refundedAmount;
     const cumulativeAfter = cumulativeBefore.plus(amount);
 
@@ -234,6 +246,28 @@ export class PurchaseIntentRefundService {
       where: { id: intent.id },
       data: { refundedAmount: cumulativeAfter },
     });
+
+    // Partner Commerce v2 (Q1): the proportional slice of the TuTak-money
+    // part goes back to the customer's money balance, from the partner's
+    // payable (it was released there at confirmation). Same cumulative
+    // watermark as every other leg, so a full refund returns exactly the
+    // original amount and repeated partial refunds never over-return.
+    const moneyAt = (cumulative: Decimal) =>
+      roundIssued(intent.tutakMoneyAmount.times(cumulative).dividedBy(intent.grossAmount));
+    const moneyΔ = intent.tutakMoneyAmount.greaterThan(0)
+      ? moneyAt(cumulativeAfter).minus(moneyAt(cumulativeBefore))
+      : new Decimal(0);
+    const moneyLedgerTransactionId = moneyΔ.greaterThan(0)
+      ? await this.commerceLedger.refundMoneyFromPartner(
+          intent.customerId,
+          intent.partnerId,
+          moneyΔ,
+          { sourceType: 'PurchaseIntent', sourceId: intent.id },
+          'purchase_intent.money_refund',
+          tx,
+          tx,
+        )
+      : null;
 
     // Dispatch on the persisted eligibility boundary — never on today's
     // config, and never by re-walking the live referral chain (spec:
@@ -251,6 +285,9 @@ export class PurchaseIntentRefundService {
         purchaseIntentId: intent.id,
         amount,
         bonusRestored,
+        tutakMoneyRefunded: moneyΔ,
+        moneyLedgerTransactionId,
+        shiftId: stamp.shiftId,
         reason,
         ledgerTransactionId,
         actorId,
@@ -269,6 +306,9 @@ export class PurchaseIntentRefundService {
           amount: amount.toString(),
           totalRefunded: cumulativeAfter.toString(),
           bonusRestored: bonusRestored.toString(),
+          tutakMoneyRefunded: moneyΔ.toString(),
+          shiftId: stamp.shiftId,
+          withoutShift: stamp.withoutShift,
           // Earned-bonus liability that could not be reclaimed from wallets
           // (already spent elsewhere or expired) — see `reverseLoyaltyEffects`.
           unrecoverableShortfall: shortfall.toString(),

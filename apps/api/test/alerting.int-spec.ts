@@ -198,6 +198,8 @@ describe('Alerting (integration)', () => {
           purchaseIntents: undefined as never,
           partnerSettlement: undefined as never,
           partnerOrderSla: undefined as never,
+          employeeShifts: undefined as never,
+          settlementStatements: undefined as never,
           refunds: undefined as never,
         },
         harness.app.get(DistributedLockService),

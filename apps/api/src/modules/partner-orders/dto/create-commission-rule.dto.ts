@@ -1,13 +1,21 @@
-import { IsInt, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
-/** Spec §19: a configurable commission rule — never a hardcoded per-partner percentage. */
+/**
+ * Q5: a partner-scoped override of the partner's own base rate
+ * (`bonusAccrualRateBps`) for one serviceType and/or category — never a
+ * platform-wide default, never a hardcoded per-partner percentage.
+ */
 export class CreateCommissionRuleDto {
-  /** Null = platform-wide default rule. */
   @IsUUID()
-  @IsOptional()
-  partnerId?: string | null;
+  partnerId: string;
 
   @IsString()
+  @Length(1, 100)
+  @IsOptional()
+  serviceType?: string;
+
+  @IsString()
+  @Length(1, 100)
   @IsOptional()
   category?: string;
 
@@ -15,8 +23,7 @@ export class CreateCommissionRuleDto {
   @Length(1, 200)
   name: string;
 
+  /** Same 0.5–20% grid as the partner's base rate (checked in the service). */
   @IsInt()
-  @Min(0)
-  @Max(10_000)
   rateBps: number;
 }

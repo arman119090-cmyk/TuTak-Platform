@@ -8,6 +8,8 @@ import type { OutboxService } from '../ledger/outbox.service';
 import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
 import type { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
+import type { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
+import type { PartnerSettlementStatementService } from '../payouts/partner-settlement-statement.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service';
 import type { RetentionService } from '../retention/retention.service';
@@ -54,6 +56,8 @@ export interface SweepDependencies {
   purchaseIntents: PurchaseIntentsService;
   partnerSettlement: PartnerSettlementCheckService;
   partnerOrderSla: PartnerOrderSlaSweepService;
+  employeeShifts: EmployeeShiftService;
+  settlementStatements: PartnerSettlementStatementService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
   refunds?: RefundEngineService;
 }
@@ -257,11 +261,9 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'partner-order.not-seen-alert',
-    why: "Spec §8: an order the partner has not acknowledged within 5 minutes needs to surface to TuTak admin, and nothing else in the running process checks `partnerSeenAt` against a clock — without this sweep a silently-ignored order just sits there.",
+    why: "Spec §17: an order the partner has not acknowledged within 5 minutes of the customer's confirmation (`submittedAt`) must surface to TuTak operators — nothing else in the running process checks `partnerSeenAt` against a clock.",
     // Sub-minute cadence against a 5-minute deadline, same ratio
-    // `purchase-intent.expire` uses against its 3-minute one — the alert
-    // should fire within roughly the same minute the deadline passes, not
-    // whenever the next slow tick happens to notice.
+    // `purchase-intent.expire` uses against its 3-minute one.
     repeat: { every: 30_000 },
     maxSilenceMs: 5 * 60_000,
     lockTtlMs: 60_000,
@@ -269,11 +271,53 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'partner-order.stock-not-confirmed-alert',
-    why: 'Spec §9: 30 minutes since creation with stock neither confirmed nor rejected is a critical problem, and it must keep re-alerting every 5 minutes after that until claimed or resolved — nothing else in the running process re-checks this on a clock.',
+    why: 'Spec §18: 30 minutes after `submittedAt` with no stock decision is critical, and it must re-alert every 5 minutes until claimed or resolved — nothing else re-checks this on a clock.',
     repeat: { every: 60_000 },
     maxSilenceMs: 10 * 60_000,
     lockTtlMs: 60_000,
     run: ({ partnerOrderSla }) => partnerOrderSla.sweepStockNotConfirmed(),
+  },
+  {
+    name: 'partner-order.receipt-followup',
+    why: 'Spec §34 / Q3: 24h after handover without "Получил заказ" the customer is reminded, at 48h the order goes to manual review — and the escrow is never released by this timer.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepReceipt(),
+  },
+  {
+    name: 'partner-order.payment-issue',
+    why: 'Interim rule pending Q10: an order the customer received while an external payment is still unconfirmed must reach the "Payment issue" queue instead of waiting silently.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.sweepPaymentIssues(),
+  },
+  {
+    name: 'partner-order.draft-expiry',
+    why: 'An unconfirmed DRAFT (abandoned cart) must stop being confirmable after its window; it never reserved anything, so this only closes it.',
+    repeat: { every: 15 * 60_000 },
+    maxSilenceMs: 2 * 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.expireDrafts(),
+  },
+  {
+    name: 'employee-shift.close-stale',
+    why: 'Q4: a branch nobody opens the next day still has yesterday\'s shifts open; this closes every shift whose branch business day has ended, so a stale shift can never authorise today\'s cash actions.',
+    repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 3 * 60 * 60_000,
+    lockTtlMs: 10 * 60_000,
+    run: ({ employeeShifts }) => employeeShifts.closeStaleShifts(),
+  },
+  {
+    name: 'partner-settlement.statements',
+    why: "Spec §51-52 / Q7b: each partner's statement for its own settlement period (daily/weekly/biweekly/monthly) is generated from the ledger once that period ends — nothing else produces it.",
+    // Hourly: a daily period ends at 00:00 Yerevan and its statement should
+    // exist within the hour; generation is idempotent per (partner, period).
+    repeat: { every: 60 * 60_000 },
+    maxSilenceMs: 3 * 60 * 60_000,
+    lockTtlMs: 15 * 60_000,
+    run: ({ settlementStatements }) => settlementStatements.generateDue(),
   },
   {
     name: 'reconciliation.nightly',

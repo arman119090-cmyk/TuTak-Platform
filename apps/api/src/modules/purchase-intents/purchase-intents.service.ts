@@ -19,6 +19,8 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CommissionDistributionService } from '../commission-distribution/commission-distribution.service';
+import { CommerceLedgerService } from '../commerce-ledger/commerce-ledger.service';
+import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
 import { MediaViewService } from '../media/media-view.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -76,6 +78,8 @@ export class PurchaseIntentsService {
     private readonly transactionsService: TransactionsService,
     private readonly ledger: LedgerService,
     private readonly distribution: CommissionDistributionService,
+    private readonly commerceLedger: CommerceLedgerService,
+    private readonly shifts: EmployeeShiftService,
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly media: MediaViewService,
@@ -245,6 +249,15 @@ export class PurchaseIntentsService {
     if (bonusAmountRequested.greaterThan(grossAmount)) {
       throw new BadRequestException('bonusAmountRequested cannot exceed grossAmount');
     }
+    // Partner Commerce v2 (Q1 = C): the customer's own TuTak money — a
+    // separate source from the discount, and never limited by the partner's
+    // bonus-payment cap (that cap is about the discount only).
+    const tutakMoneyAmount = dto.tutakMoneyAmount
+      ? parseMoney(dto.tutakMoneyAmount, 'tutakMoneyAmount')
+      : new Decimal(0);
+    if (bonusAmountRequested.plus(tutakMoneyAmount).greaterThan(grossAmount)) {
+      throw new BadRequestException('Discount plus TuTak money cannot exceed the purchase amount');
+    }
 
     // Refuses PENDING_APPROVAL/SUSPENDED/REJECTED partners automatically —
     // see PartnersService.findActiveOrThrow.
@@ -302,7 +315,8 @@ export class PurchaseIntentsService {
       );
     }
 
-    const ordinaryPaymentRemainder = grossAmount.minus(bonusAmountRequested);
+    // The external part — paid to the partner directly, outside TuTak.
+    const ordinaryPaymentRemainder = grossAmount.minus(bonusAmountRequested).minus(tutakMoneyAmount);
     const intentTimeoutSeconds = this.config.get('purchasePolicy.intentTimeoutSeconds', {
       infer: true,
     });
@@ -346,13 +360,19 @@ export class PurchaseIntentsService {
         bonusReservationId = reservation.reservationId;
       }
 
-      const intent = await this.prisma.purchaseIntent.create({
+      // The intent and its TuTak-money capture are one atomic unit: the
+      // money moves CUSTOMER_PREPAID_BALANCE → PARTNER_ORDER_ESCROW now (so
+      // it cannot be spent twice while staff decide), and only reaches the
+      // partner on confirmation — or goes back on reject/expiry.
+      const intent = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.purchaseIntent.create({
         data: {
           customerId,
           partnerId: partner.id,
           partnerBranchId: dto.partnerBranchId,
           grossAmount,
           bonusAmountRequested,
+          tutakMoneyAmount,
           ordinaryPaymentRemainder,
           // Commercial snapshot — spec §8. Frozen here; later changes to the
           // partner's settings never touch a PurchaseIntent already created.
@@ -369,6 +389,22 @@ export class PurchaseIntentsService {
           sourceTransactionId: transaction.id,
           expiresAt,
         },
+        });
+        if (tutakMoneyAmount.greaterThan(0)) {
+          const captureId = await this.commerceLedger.captureMoney(
+            customerId,
+            partner.id,
+            tutakMoneyAmount,
+            { sourceType: 'PurchaseIntent', sourceId: created.id },
+            'purchase_intent.money_capture',
+            tx,
+          );
+          return tx.purchaseIntent.update({
+            where: { id: created.id },
+            data: { moneyCaptureLedgerTransactionId: captureId },
+          });
+        }
+        return created;
       });
 
       await this.auditService.record({
@@ -380,6 +416,8 @@ export class PurchaseIntentsService {
           partnerId: partner.id,
           grossAmount: grossAmount.toString(),
           bonusAmountRequested: bonusAmountRequested.toString(),
+          tutakMoneyAmount: tutakMoneyAmount.toString(),
+          externalAmount: ordinaryPaymentRemainder.toString(),
         },
       });
 
@@ -426,15 +464,25 @@ export class PurchaseIntentsService {
       return this.findByIdOrThrow(intentId);
     }
 
+    const confirmed = await this.findByIdOrThrow(intentId);
     await this.auditService.record({
       actorUserId: staffUserId,
       action: AuditAction.PURCHASE_INTENT_CONFIRMED,
       entityType: 'PurchaseIntent',
       entityId: intentId,
-      metadata: { partnerId: intent.partnerId, grossAmount: intent.grossAmount.toString() },
+      metadata: {
+        partnerId: intent.partnerId,
+        branchId: intent.partnerBranchId,
+        grossAmount: intent.grossAmount.toString(),
+        tutakMoneyAmount: intent.tutakMoneyAmount.toString(),
+        shiftId: confirmed.confirmedShiftId,
+        // Spec §6.2 / Q4 rollout: a confirmation made without a shift inside
+        // the partner's one-off transition window is recorded as such.
+        withoutShift: confirmed.confirmedWithoutShift,
+      },
     });
 
-    return this.findByIdOrThrow(intentId);
+    return confirmed;
   }
 
   /**
@@ -477,6 +525,15 @@ export class PurchaseIntentsService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Spec §6: only an employee on an active shift confirms — checked
+        // and the shift row locked inside this same transaction, so a
+        // concurrent shift close or deactivation cannot slip in between.
+        const stamp = await this.shifts.stampFor(tx, {
+          userId: staffUserId,
+          partnerId: intent.partnerId,
+          branchId: intent.partnerBranchId,
+        });
+
         // Conditional on still being AWAITING_CONFIRMATION, exactly like
         // the rest of this codebase's claim-then-act pattern — but now the
         // claim and the act are the same atomic unit.
@@ -485,6 +542,8 @@ export class PurchaseIntentsService {
           data: {
             status: PurchaseIntentStatus.CONFIRMED,
             confirmedByUserId: staffUserId,
+            confirmedShiftId: stamp.shiftId,
+            confirmedWithoutShift: stamp.withoutShift,
             confirmedAt: new Date(),
             // Spec §12's pool split, snapshotted at the moment it is
             // actually posted — a later refund reverses these exact
@@ -525,6 +584,23 @@ export class PurchaseIntentsService {
 
         if (intent.bonusAmountRequested.greaterThan(0)) {
           await this.postRedemptionCompensation(intent, tx);
+        }
+
+        // The TuTak-money part leaves escrow and becomes partner receivable
+        // (Q1/Q2): the partner is owed it, netted against the contribution
+        // above in the same PARTNER_PAYABLE account (spec §11).
+        if (intent.tutakMoneyAmount.greaterThan(0)) {
+          const releaseId = await this.commerceLedger.releaseToPartner(
+            intent.partnerId,
+            intent.tutakMoneyAmount,
+            { sourceType: 'PurchaseIntent', sourceId: intent.id },
+            'purchase_intent.money_release',
+            tx,
+          );
+          await tx.purchaseIntent.update({
+            where: { id: intent.id },
+            data: { moneyReleaseLedgerTransactionId: releaseId },
+          });
         }
 
         return 'settled' as const;
@@ -624,15 +700,26 @@ export class PurchaseIntentsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Rejecting is a cash-desk decision too (spec §6) — same shift check
+      // as confirm().
+      const stamp = await this.shifts.stampFor(tx, {
+        userId: staffUserId,
+        partnerId: intent.partnerId,
+        branchId: intent.partnerBranchId,
+      });
       const claimed = await tx.purchaseIntent.updateMany({
         where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
         data: {
           status: PurchaseIntentStatus.REJECTED,
           rejectionReason: dto.comment ? `${dto.reasonCode}: ${dto.comment}` : dto.reasonCode,
           rejectedAt: new Date(),
+          rejectedByUserId: staffUserId,
+          rejectedShiftId: stamp.shiftId,
         },
       });
       if (claimed.count === 0) return;
+
+      await this.returnTutakMoney(intent, 'purchase_intent_rejected', tx);
 
       if (intent.bonusReservationId) {
         await this.bonusEngine.releaseReservation(intent.bonusReservationId, 'partner_rejected', tx);
@@ -647,13 +734,40 @@ export class PurchaseIntentsService {
           action: AuditAction.PURCHASE_INTENT_REJECTED,
           entityType: 'PurchaseIntent',
           entityId: intentId,
-          metadata: { reason: dto.reasonCode },
+          metadata: { reason: dto.reasonCode, shiftId: stamp.shiftId, withoutShift: stamp.withoutShift },
         },
         tx,
       );
     });
 
     return this.findByIdOrThrow(intentId);
+  }
+
+  /**
+   * PARTNER_ORDER_ESCROW → CUSTOMER_PREPAID_BALANCE for the TuTak-money part
+   * of an intent that will never be confirmed. Only ever called after the
+   * caller's own conditional status claim succeeded, inside the same
+   * transaction — so it runs at most once per intent.
+   */
+  private async returnTutakMoney(
+    intent: { id: string; partnerId: string; customerId: string; tutakMoneyAmount: Decimal },
+    reason: string,
+    tx: Tx,
+  ): Promise<void> {
+    if (!intent.tutakMoneyAmount.greaterThan(0)) return;
+    const returnId = await this.commerceLedger.returnMoney(
+      intent.customerId,
+      intent.partnerId,
+      intent.tutakMoneyAmount,
+      { sourceType: 'PurchaseIntent', sourceId: intent.id },
+      'purchase_intent.money_return',
+      tx,
+    );
+    await tx.purchaseIntent.update({
+      where: { id: intent.id },
+      data: { moneyReturnLedgerTransactionId: returnId },
+    });
+    this.logger.log(`Returned ${intent.tutakMoneyAmount.toString()} TuTak money for purchase intent ${intent.id} (${reason})`);
   }
 
   /** Spec §7: the 3-minute timeout, swept — see `sweeps.jobs.ts`. */
@@ -672,13 +786,22 @@ export class PurchaseIntentsService {
    * Same atomicity fix as `reject()`, for the sweep-driven expiry path —
    * see that method's docblock for the failure mode this closes.
    */
-  private async expireOne(intent: { id: string; bonusReservationId: string | null; sourceTransactionId: string | null }): Promise<boolean> {
+  private async expireOne(intent: {
+    id: string;
+    partnerId: string;
+    customerId: string;
+    tutakMoneyAmount: Decimal;
+    bonusReservationId: string | null;
+    sourceTransactionId: string | null;
+  }): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.purchaseIntent.updateMany({
         where: { id: intent.id, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
         data: { status: PurchaseIntentStatus.EXPIRED },
       });
       if (claimed.count === 0) return false;
+
+      await this.returnTutakMoney(intent, 'purchase_intent_expired', tx);
 
       if (intent.bonusReservationId) {
         await this.bonusEngine.releaseReservation(intent.bonusReservationId, 'purchase_intent_expired', tx);

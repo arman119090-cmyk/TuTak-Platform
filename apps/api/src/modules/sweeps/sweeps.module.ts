@@ -19,6 +19,9 @@ import { OutboxService } from '../ledger/outbox.service';
 import { RefundEngineService } from '../payments/refund-engine.service';
 import { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
 import { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
+import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
+import { EmployeeShiftsModule } from '../employee-shifts/employee-shifts.module';
+import { PartnerSettlementStatementService } from '../payouts/partner-settlement-statement.service';
 import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { RetentionService } from '../retention/retention.service';
@@ -63,6 +66,7 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     ...(cardPaymentsEnabled ? [PaymentsModule] : []),
     PayoutsModule,
     PartnerOrdersModule,
+    EmployeeShiftsModule,
     PurchaseIntentsModule,
     ReconciliationModule,
     RetentionModule,
@@ -87,6 +91,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         PurchaseIntentsService,
         PartnerSettlementCheckService,
         PartnerOrderSlaSweepService,
+        EmployeeShiftService,
+        PartnerSettlementStatementService,
         // Only resolvable when PaymentsModule was actually imported above —
         // Nest calls useFactory with exactly as many arguments as `inject`
         // has entries, so `refunds` below is simply never passed (and stays
@@ -107,6 +113,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         purchaseIntents: PurchaseIntentsService,
         partnerSettlement: PartnerSettlementCheckService,
         partnerOrderSla: PartnerOrderSlaSweepService,
+        employeeShifts: EmployeeShiftService,
+        settlementStatements: PartnerSettlementStatementService,
         refunds?: RefundEngineService,
       ): SweepDependencies => ({
         bonus,
@@ -121,6 +129,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         purchaseIntents,
         partnerSettlement,
         partnerOrderSla,
+        employeeShifts,
+        settlementStatements,
         refunds,
       }),
     },

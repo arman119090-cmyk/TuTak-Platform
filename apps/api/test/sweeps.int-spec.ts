@@ -73,7 +73,12 @@ describe('Sweeps (integration)', () => {
   const partnerOrderSla = {
     sweepNotSeen: jest.fn(record('partner-order.not-seen-alert')),
     sweepStockNotConfirmed: jest.fn(record('partner-order.stock-not-confirmed-alert')),
+    sweepReceipt: jest.fn(record('partner-order.receipt-followup')),
+    sweepPaymentIssues: jest.fn(record('partner-order.payment-issue')),
+    expireDrafts: jest.fn(record('partner-order.draft-expiry')),
   };
+  const employeeShifts = { closeStaleShifts: jest.fn(record('employee-shift.close-stale')) };
+  const settlementStatements = { generateDue: jest.fn(record('partner-settlement.statements')) };
   const refunds = {
     reconcilePendingRefunds: jest.fn(record('payments.reconcile-pending-refunds')),
   };
@@ -116,6 +121,8 @@ describe('Sweeps (integration)', () => {
             purchaseIntents,
             partnerSettlement,
             partnerOrderSla,
+            employeeShifts,
+            settlementStatements,
             refunds,
           },
         },
@@ -215,6 +222,11 @@ describe('Sweeps (integration)', () => {
       expect(partnerSettlement.checkOverdueSettlements).toHaveBeenCalledTimes(1);
       expect(partnerOrderSla.sweepNotSeen).toHaveBeenCalledTimes(1);
       expect(partnerOrderSla.sweepStockNotConfirmed).toHaveBeenCalledTimes(1);
+      expect(partnerOrderSla.sweepReceipt).toHaveBeenCalledTimes(1);
+      expect(partnerOrderSla.sweepPaymentIssues).toHaveBeenCalledTimes(1);
+      expect(partnerOrderSla.expireDrafts).toHaveBeenCalledTimes(1);
+      expect(employeeShifts.closeStaleShifts).toHaveBeenCalledTimes(1);
+      expect(settlementStatements.generateDue).toHaveBeenCalledTimes(1);
     });
 
     it('reconciles yesterday, not today', async () => {

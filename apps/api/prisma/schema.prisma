@@ -67,6 +67,11 @@ enum PermissionName {
   /// reasoning as PURCHASE_INTENT_CONFIRM — every tier of staff does this as
   /// ordinary work.
   PARTNER_ORDER_MANAGE
+  /// TuTak operators: the Partner Commerce queues (SLA escalations, sourcing,
+  /// manual review, payment issues) and the "Взял в работу" claim.
+  PARTNER_ORDER_OPERATE
+  /// Decide an OrderDispute (spec §29) — a financial decision, audited.
+  ORDER_DISPUTE_RESOLVE
 }
 
 model Role {
@@ -210,6 +215,7 @@ model User {
   payments                  Payment[]
   balanceTopUps             BalanceTopUp[]
   partnerOrders             PartnerOrder[]
+  employeeShifts            EmployeeShift[]                @relation("EmployeeShiftUser")
 
   avatarAsset         MediaAsset?  @relation("UserAvatarAsset", fields: [avatarAssetId], references: [id])
   mediaAssets         MediaAsset[] @relation("MediaAssetSubjectUser")
@@ -678,17 +684,29 @@ model PurchaseIntent {
   partnerBranchId String?
   status          PurchaseIntentStatus @default(AWAITING_CONFIRMATION)
 
-  grossAmount              Decimal @db.Decimal(18, 4)
-  bonusAmountRequested     Decimal @default(0) @db.Decimal(18, 4)
+  grossAmount                     Decimal @db.Decimal(18, 4)
+  bonusAmountRequested            Decimal @default(0) @db.Decimal(18, 4)
   /// = grossAmount - bonusAmountRequested, stored rather than derived so the
   /// figure the customer saw at scan time is exactly what is on record.
-  ordinaryPaymentRemainder Decimal @db.Decimal(18, 4)
+  ordinaryPaymentRemainder        Decimal @db.Decimal(18, 4)
+  /// Partner Commerce v2 (Q1 = C): the part paid from the customer's real
+  /// money balance (`CUSTOMER_PREPAID_BALANCE`) — separate from the
+  /// discount (`bonusAmountRequested`) and never mixed with it in the
+  /// ledger. `ordinaryPaymentRemainder` is now the external part:
+  /// bonus + tutakMoney + external = gross (CHECK, NOT VALID so existing
+  /// rows — all tutakMoney = 0 — are never rescanned). Captured into
+  /// PARTNER_ORDER_ESCROW at creation, released to PARTNER_PAYABLE at
+  /// confirmation, returned to the customer on reject/expiry.
+  tutakMoneyAmount                Decimal @default(0) @db.Decimal(18, 4)
+  moneyCaptureLedgerTransactionId String? @unique
+  moneyReleaseLedgerTransactionId String? @unique
+  moneyReturnLedgerTransactionId  String? @unique
   /// Running total of every TuTak-side refund against this purchase's
   /// merchandise value. The guard that stops a purchase being refunded past
   /// its own grossAmount is a conditional UPDATE on this column, exactly the
   /// way `Payment.refundedAmount` guards captured payments — see
   /// `PurchaseIntentRefundService`.
-  refundedAmount           Decimal @default(0) @db.Decimal(18, 4)
+  refundedAmount                  Decimal @default(0) @db.Decimal(18, 4)
 
   negotiatedRateBps      Int
   maxBonusPaymentPercent Int
@@ -768,11 +786,18 @@ model PurchaseIntent {
   brandDisplayName String?
   brandLogoAssetId String?
 
-  bonusReservationId  String?
-  sourceTransactionId String?
+  bonusReservationId    String?
+  sourceTransactionId   String?
   /// Individual staff identity of whoever confirmed or rejected — spec §25/§33.
-  confirmedByUserId   String?
-  rejectionReason     String?
+  confirmedByUserId     String?
+  rejectionReason       String?
+  /// Spec §6.2: the shift the confirming/rejecting employee was on. Null
+  /// with `confirmedWithoutShift` true only inside a partner's one-off
+  /// shift-rollout window (`Partner.shiftsRequiredFrom`).
+  confirmedShiftId      String?
+  confirmedWithoutShift Boolean @default(false)
+  rejectedByUserId      String?
+  rejectedShiftId       String?
 
   /// Set once, at confirmation. A repeat confirm call with the same key
   /// becomes a lookup rather than a second execution — spec §7's idempotency
@@ -806,25 +831,31 @@ model PurchaseIntent {
 /// the merchandise the partner is taking back, tracked immutably against the
 /// intent it refunds — see `PurchaseIntentRefundService`.
 model PurchaseIntentRefund {
-  id                  String   @id @default(uuid())
-  purchaseIntentId    String
+  id                       String   @id @default(uuid())
+  purchaseIntentId         String
   /// The merchandise refund amount the partner entered — always ≤ what
   /// remains of `PurchaseIntent.grossAmount`, enforced by a conditional
   /// UPDATE on `refundedAmount`, the same guard `Payment.refundedAmount` uses.
-  amount              Decimal  @db.Decimal(18, 4)
+  amount                   Decimal  @db.Decimal(18, 4)
   /// This refund's own proportional slice of the bonus the customer spent on
   /// the original purchase, restored to their wallet.
-  bonusRestored       Decimal  @default(0) @db.Decimal(18, 4)
-  reason              String
+  bonusRestored            Decimal  @default(0) @db.Decimal(18, 4)
+  /// This refund's proportional slice of the purchase's TuTak-money part,
+  /// returned PARTNER_PAYABLE → CUSTOMER_PREPAID_BALANCE.
+  tutakMoneyRefunded       Decimal  @default(0) @db.Decimal(18, 4)
+  moneyLedgerTransactionId String?  @unique
+  /// The refunding employee's shift (spec §6.2).
+  shiftId                  String?
+  reason                   String
   /// The reversing ledger transaction for the pool-contribution leg.
   /// Postings are immutable, so a refund is a new transaction pointing back
   /// at the original, never an edit.
-  ledgerTransactionId String?  @unique
-  actorId             String
+  ledgerTransactionId      String?  @unique
+  actorId                  String
   /// Scoped to the actor, matching `IdempotencyService`'s
   /// `purchase-intent-refund:<actorId>` scope.
-  idempotencyKey      String?
-  createdAt           DateTime @default(now())
+  idempotencyKey           String?
+  createdAt                DateTime @default(now())
 
   purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
@@ -835,189 +866,281 @@ model PurchaseIntentRefund {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Partner Commerce — docs/PARTNER_COMMERCE_2026-09-25.md
+// Partner Commerce — docs/PARTNER_COMMERCE.md
 //
 // A partner's own public website ("Купить через TuTak") creates an order
-// server-to-server, the customer pays through TuTak's own checkout, and the
-// order is handed to the partner to fulfil. Deliberately one universal
-// `PartnerOrder` model rather than a per-partner-site entity (spec §4) —
-// same reasoning `PurchaseIntent` already follows for the QR/branch flow,
-// which this reuses as its structural template: a commercial snapshot frozen
-// at creation, a claim-then-act state transition pattern, and immutable
-// money-movement rows rather than in-place edits.
+// server-to-server, the customer confirms it in TuTak ("Подтвердить заказ")
+// choosing how much to pay from each of three independent sources, and the
+// order is handed to the partner to fulfil. One universal `PartnerOrder`
+// model rather than a per-partner-site entity — same reasoning
+// `PurchaseIntent` already follows for the QR/branch flow: a commercial
+// snapshot frozen at creation, a claim-then-act state transition pattern,
+// and immutable money-movement rows rather than in-place edits.
 //
-// The partner's own website authenticates through the existing
+// Three payment sources, never mixed in the ledger (Arman, Q1 = C):
+//  - DISCOUNT     the customer's green bonus balance — a right to a
+//                 discount, not money; spent through `BonusEngineService`.
+//  - TUTAK_MONEY  real money in `CUSTOMER_PREPAID_BALANCE`.
+//  - EXTERNAL     paid straight to the partner (cash, own card terminal,
+//                 cash on delivery) — never passes through TuTak, confirmed
+//                 by an employee on shift.
+// discount + tutakMoney + external = totalAmount; commission is computed on
+// the whole total whatever the split (spec §10.2).
+//
+// Electronic legs sit in a real per-partner escrow account
+// (`PARTNER_ORDER_ESCROW`) until the customer confirms receipt ("Получил
+// заказ", Q2/Q3 = A) and every external leg is confirmed (interim rule
+// pending Q10) — only then do they become partner receivable and does the
+// existing 20/30/30/20 distribution run (`CommissionDistributionService`).
+//
+// The partner's website authenticates through the existing
 // `PartnerIntegration(type: WEBSITE)` / `PartnerApiKey` extension point
-// (spec §3) rather than a new credential system — that seam was already
-// built for exactly this (see `PartnerIntegrationType.WEBSITE`'s own
-// docblock). No request-signing scheme is layered on top: the threat this
-// guards against is a customer's browser forging a price, and the browser
-// never holds the partner's API secret — only the partner's own backend
-// does, over TLS, hashed at rest, timing-safe compared — the same bar
-// `PartnerApiKeyService` already clears for roaming-CPO M2M calls.
+// rather than a new credential system. The browser never holds the
+// partner's API secret — only the partner's own backend does, over TLS,
+// hashed at rest, timing-safe compared.
 // ─────────────────────────────────────────────────────────────────────────
 
-enum PartnerOrderPaymentStatus {
-  PAYMENT_PENDING
-  PAID
-  REFUNDED
-  PARTIALLY_REFUNDED
+/// Operational state — what is happening to the goods. One of four
+/// independent dimensions (spec §57); payment, sourcing and dispute state
+/// live in their own columns so impossible combinations cannot be spelled.
+///
+///   DRAFT ─submit→ SUBMITTED ─seen→ SEEN ─in stock→ STOCK_CONFIRMED
+///     ─handed over→ HANDED_OVER ─customer "Получил"→ RECEIVED ─→ COMPLETED
+///   SUBMITTED|SEEN ─no stock→ OUT_OF_STOCK ─(sourcing resolved)→ STOCK_CONFIRMED
+///   DRAFT ─24h→ EXPIRED
+///   DRAFT|SUBMITTED|SEEN|STOCK_CONFIRMED|OUT_OF_STOCK ─cancel→ CANCELLED
+///
+/// `SUBMITTED` is set only once the customer has explicitly confirmed the
+/// order and the prepayment is secured — `submittedAt` is the one clock the
+/// partner SLA runs from (spec §15); an abandoned `DRAFT` never raises one.
+/// A return after completion never moves this back: the order stays
+/// `COMPLETED` and the return is its own `PartnerOrderReturn` row.
+enum PartnerOrderOperationalStatus {
+  DRAFT
+  SUBMITTED
+  SEEN
+  STOCK_CONFIRMED
+  HANDED_OVER
+  RECEIVED
+  COMPLETED
+  OUT_OF_STOCK
+  CANCELLED
+  EXPIRED
 }
 
-/// Spec §11-16's fulfilment state machine. `CREATED` is the brief window
-/// between the partner's website calling the create API and the customer
-/// actually paying in TuTak Checkout — nothing partner-facing happens until
-/// `PAID`. `OUT_OF_STOCK`/`SOURCING_REQUIRED`/`SOURCING_IN_PROGRESS`/
-/// `CUSTOMER_DECISION_REQUIRED` are the detour spec §12-15 describes;
-/// `CANCELLED`/`REFUNDED` are reachable from most non-terminal states.
-enum PartnerOrderStatus {
-  CREATED
-  PAID
-  PARTNER_SEEN
-  STOCK_CONFIRMED
-  OUT_OF_STOCK
-  SOURCING_REQUIRED
-  SOURCING_IN_PROGRESS
-  CUSTOMER_DECISION_REQUIRED
-  ACCEPTED
-  PREPARING
-  READY
-  SHIPPED
-  PICKUP_READY
-  COMPLETED
-  CANCELLED
+/// Payment state — what is happening to the money.
+///
+///   UNFUNDED ─submit→ RESERVED (every electronic leg captured into escrow)
+///     ─every external leg confirmed→ FUNDED ─completion→ SETTLED
+///   an accepted price increase not yet funded → PARTIALLY_FUNDED
+///   cancel before completion → REFUNDED (electronic legs back to source),
+///     or REFUND_PENDING while a confirmed external leg awaits the
+///     partner's confirmation that it gave the cash back
+///   return after completion → PARTIALLY_REFUNDED | REFUNDED
+enum PartnerOrderPaymentStatus {
+  UNFUNDED
+  PARTIALLY_FUNDED
+  RESERVED
+  FUNDED
+  SETTLED
+  REFUND_PENDING
+  PARTIALLY_REFUNDED
   REFUNDED
+}
+
+/// Sourcing state (spec §35-42) — only ever leaves NONE for an order whose
+/// partner said "Нет в наличии" and whose snapshot allows sourcing.
+enum PartnerOrderSourcingStatus {
+  NONE
+  REQUIRED
+  SEARCHING
+  AWAITING_CUSTOMER
+  RESOLVED
+  FAILED
+}
+
+/// Dispute state (spec §48-49) — mirrors the order's single open
+/// `OrderDispute`, if any.
+enum PartnerOrderDisputeStatus {
+  NONE
+  OPEN
+  RESOLVED_CUSTOMER
+  RESOLVED_PARTNER
+  RESOLVED_SPLIT
+}
+
+enum PartnerOrderActorType {
+  CUSTOMER
+  PARTNER
+  ADMIN
+  SYSTEM
 }
 
 model PartnerOrder {
   id          String @id @default(uuid())
-  /// Spec §4/§10's human-facing "#18472" — a real Postgres sequence, not a
-  /// random token, so it reads and sorts the way a receipt number should.
-  /// Formatted as `#<orderNumber>` at every display surface.
+  /// Human-facing "#18472" — a real Postgres sequence, formatted as
+  /// `#<orderNumber>` at every display surface.
   orderNumber Int    @unique @default(autoincrement())
 
-  /// Null until claimed — see the model's own top comment. Set atomically
-  /// with `paymentStatus: PAID`/`paidAt` inside `pay()`, conditional on
-  /// still being null, so the first authenticated customer to actually pay
-  /// is the one the order belongs to. Unset (never set at creation): the
-  /// partner's website knows the cart, not who on TuTak is buying it.
+  /// Null until claimed: the partner's website knows the cart, not who on
+  /// TuTak is buying it. Set atomically with `submittedAt` inside
+  /// `submit()`, conditional on still being null, so the first
+  /// authenticated customer to explicitly confirm the order owns it — and a
+  /// reused checkout URL is refused to everyone else (spec §63).
   customerId      String?
   partnerId       String
   /// The `PartnerIntegration(type: WEBSITE)` this order was created through
-  /// — scopes `externalOrderId` uniqueness to one partner site rather than
-  /// the whole partner, and is how the create-order guard resolves which
-  /// `PartnerApiKey`s are allowed to write orders here.
+  /// — scopes `externalOrderId` uniqueness to one partner site.
   integrationId   String
-  /// The partner site's own order id, for the partner's own reconciliation.
-  /// Unique per integration — see `@@unique` below — which is also this
-  /// endpoint's create-time idempotency key: a retried create call with the
-  /// same `externalOrderId` returns the existing order rather than making a
-  /// second one.
+  /// The partner site's own order id. Unique per integration, which is also
+  /// the create endpoint's idempotency key.
   externalOrderId String
+  /// Optional: the branch fulfilling the order. Branch-scoped staff see only
+  /// their own branches' orders; an order without one is visible to every
+  /// branch-scoped employee of the partner.
+  branchId        String?
+  /// Commission/prepayment rule scope (Q5): a free-text service/product type
+  /// and category the partner's site tags the order with, e.g. Euro Import's
+  /// "vehicle_import_service" vs "parts". One order — one rate.
+  serviceType     String?
+  category        String?
 
+  /// AMD only for now (Q11, pending) — enforced by a CHECK constraint.
   currency    Currency @default(AMD)
-  /// Sum of `PartnerOrderItem.totalPrice`. Spec §20: for a service-fee-only
-  /// order (Euro Import's vehicle purchases), the partner's website simply
-  /// never includes the vehicle price in the items it sends — TuTak has no
-  /// special "vehicle" concept and never needs one, because the boundary of
-  /// what "goes through TuTak" is exactly the boundary of what the partner's
-  /// own site put in the order.
+  /// Sum of `PartnerOrderItem.totalPrice`. For a service-fee-only order
+  /// (Euro Import's vehicles) the site simply never includes the vehicle
+  /// price in the items it sends, so it is outside the commission base by
+  /// construction.
   subtotal    Decimal  @db.Decimal(18, 4)
-  /// Equal to `subtotal` today (no shipping/tax modelled yet) — kept as its
-  /// own column because spec §4 asks for both, and a future shipping/tax leg
-  /// should not require renaming `subtotal` out from under existing reads.
+  /// The commission base (spec §10.2). Equal to `subtotal` at creation;
+  /// changed only by an applied `PartnerOrderAdjustment`.
   totalAmount Decimal  @db.Decimal(18, 4)
 
   /// Commercial snapshot, frozen at creation — same discipline as
-  /// `PurchaseIntent.negotiatedRateBps`. A later change to the partner's
-  /// `CommissionRule` never touches an order already created.
+  /// `PurchaseIntent.negotiatedRateBps`. `commissionRuleId` is null when no
+  /// override matched and the partner's own `bonusAccrualRateBps` applied.
   commissionRuleId  String?
   commissionRateBps Int
+  /// The pool (= total × rate), recomputed whenever `totalAmount` changes;
+  /// the distributed figure is `poolAmount` below, fixed at completion.
   commissionAmount  Decimal @db.Decimal(18, 4)
-  /// = totalAmount - commissionAmount. What actually reaches
-  /// `PARTNER_PAYABLE` when this order settles.
-  partnerAmount     Decimal @db.Decimal(18, 4)
 
-  paymentStatus PartnerOrderPaymentStatus @default(PAYMENT_PENDING)
-  orderStatus   PartnerOrderStatus        @default(CREATED)
-
-  /// Snapshot of `Partner.allowExternalSourcing` at creation (spec §14) — a
-  /// partner changing this setting mid-flight never changes what happens to
-  /// an order already in progress.
+  /// Snapshot of `Partner.allowExternalSourcing` at creation.
   sourcingAllowed Boolean
 
-  /// Running total refunded against this order (spec §15's price-decrease
-  /// case, or a full refund) — guarded by a conditional UPDATE against
-  /// `totalAmount`, the same pattern `PurchaseIntent.refundedAmount` and
-  /// `Payment.refundedAmount` already use.
+  /// The customer's declared split, set at submit and kept in step with the
+  /// live payment legs. CHECK: discount + tutakMoney + external = total
+  /// once the order has left DRAFT.
+  discountAmount           Decimal @default(0) @db.Decimal(18, 4)
+  tutakMoneyAmount         Decimal @default(0) @db.Decimal(18, 4)
+  externalAmount           Decimal @default(0) @db.Decimal(18, 4)
+  /// Spec §30: shown to the customer before they confirm; the electronic
+  /// legs (discount + TuTak money) must cover it at submit.
+  prepaymentRuleId         String?
+  prepaymentRequiredAmount Decimal @default(0) @db.Decimal(18, 4)
+
+  /// Running merchandise total returned after completion — guarded by a
+  /// conditional UPDATE against `totalAmount`, the same pattern
+  /// `PurchaseIntent.refundedAmount` uses.
   refundedAmount Decimal @default(0) @db.Decimal(18, 4)
 
-  /// DEBIT CUSTOMER_PREPAID_BALANCE / CREDIT PARTNER_ORDER_ESCROW, for
-  /// `totalAmount`, posted by `pay()`.
-  captureLedgerTransactionId    String? @unique
-  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT PARTNER_PAYABLE(partnerAmount) +
-  /// PLATFORM_REVENUE(commissionAmount), posted when `stockConfirmedAt` is
-  /// set. Mutually exclusive with `refundLedgerTransactionId` — an order is
-  /// settled to the partner XOR refunded to the customer, never both.
-  settlementLedgerTransactionId String? @unique
-  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT CUSTOMER_PREPAID_BALANCE, for the
-  /// full captured amount — posted when the order is refunded outright
-  /// (sourcing disabled, sourcing failed, product not found) rather than
-  /// settled to the partner. See `PartnerOrderAdjustment` for a *partial*
-  /// refund (spec §15's price-decrease case), which posts its own
-  /// transaction rather than this one.
-  refundLedgerTransactionId     String? @unique
+  operationalStatus PartnerOrderOperationalStatus @default(DRAFT)
+  paymentStatus     PartnerOrderPaymentStatus     @default(UNFUNDED)
+  sourcingStatus    PartnerOrderSourcingStatus    @default(NONE)
+  disputeStatus     PartnerOrderDisputeStatus     @default(NONE)
 
-  /// Individual staff identity — spec §25/§33 discipline, same as
-  /// `PurchaseIntent.confirmedByUserId`. Plain actor references (no FK
-  /// relation), matching `AuditLog.actorUserId` — these exist for
-  /// "who did this", not for referential integrity a foreign key would add
-  /// little to.
+  /// The distribution actually posted at completion — the same snapshot
+  /// columns, with the same meaning, as `PurchaseIntent`'s (see
+  /// `CommissionDistributionService.snapshotOf`), so a later return
+  /// reverses the historical allocation, never a recomputed one. Null until
+  /// completed.
+  poolAmount         Decimal?                @db.Decimal(18, 4)
+  greenAmount        Decimal?                @db.Decimal(18, 4)
+  deferredAmount     Decimal?                @db.Decimal(18, 4)
+  programVersion     ReferralProgramVersion?
+  referrer1Type      ReferrerType?
+  referrer1UserId    String?
+  referrer1PartnerId String?
+  referrer1Amount    Decimal?                @db.Decimal(18, 4)
+  referrer2Type      ReferrerType?
+  referrer2UserId    String?
+  referrer2PartnerId String?
+  referrer2Amount    Decimal?                @db.Decimal(18, 4)
+  referrer3Type      ReferrerType?
+  referrer3UserId    String?
+  referrer3PartnerId String?
+  referrer3Amount    Decimal?                @db.Decimal(18, 4)
+  tutakAmount        Decimal?                @db.Decimal(18, 4)
+
+  /// The customer's `Transaction` (type PARTNER_PURCHASE) — created at
+  /// submit, COMPLETED at completion, FAILED on cancel. Every bonus lot the
+  /// discount spend and the distribution create is keyed by it, exactly as
+  /// for a QR purchase.
+  sourceTransactionId           String? @unique
+  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT PARTNER_PAYABLE for every captured
+  /// electronic leg, posted once at completion.
+  completionLedgerTransactionId String? @unique
+  /// Scoped to the customer: a retried "Подтвердить заказ" with the same key
+  /// is a lookup, never a second capture.
+  submitIdempotencyKey          String?
+
+  /// Individual staff identity for every step (spec §6.2/§26).
   partnerSeenByUserId    String?
   stockConfirmedByUserId String?
   stockRejectedByUserId  String?
+  handedOverByUserId     String?
   rejectionReason        String?
+  cancelledByType        PartnerOrderActorType?
+  cancelledByUserId      String?
   cancelledReason        String?
+  /// Why the order is waiting on a TuTak operator (spec §34: receipt not
+  /// confirmed for 48h; or a completion blocked on an unconfirmed external
+  /// leg). Never auto-resolves by releasing escrow on a timer.
+  manualReviewReason     String?
 
-  /// SLA bookkeeping (spec §8-9). `notSeenAlertSentAt` is set the first (and
-  /// only) time the 5-minute "not seen" alert fires. `stockAlertLastSentAt`
-  /// tracks the *repeating* 30-then-every-5-minutes "stock not confirmed"
-  /// alert so the sweep knows whether it is due for another tick — both are
-  /// mirrored into `OrderEscalation` rows for the admin queue/claim
-  /// mechanism; these columns exist so the sweep can answer "is one already
-  /// due" with an indexed query over `PartnerOrder` itself, without joining
-  /// out to escalations on every tick.
+  /// SLA bookkeeping (spec §17-18), all measured from `submittedAt`.
   notSeenAlertSentAt   DateTime?
   stockAlertLastSentAt DateTime?
 
-  createdAt        DateTime  @default(now())
-  paidAt           DateTime?
-  partnerSeenAt    DateTime?
-  stockConfirmedAt DateTime?
-  stockRejectedAt  DateTime?
-  completedAt      DateTime?
-  cancelledAt      DateTime?
-  refundedAt       DateTime?
-  updatedAt        DateTime  @updatedAt
+  createdAt             DateTime  @default(now())
+  /// A DRAFT nobody confirms expires (no SLA, no money ever moved).
+  draftExpiresAt        DateTime
+  submittedAt           DateTime?
+  partnerSeenAt         DateTime?
+  stockConfirmedAt      DateTime?
+  stockRejectedAt       DateTime?
+  handedOverAt          DateTime?
+  customerReceivedAt    DateTime?
+  receiptReminderSentAt DateTime?
+  manualReviewAt        DateTime?
+  /// Received, but an external leg is still unconfirmed past the grace
+  /// window — the admin "Payment issue" queue (interim rule pending Q10).
+  paymentIssueAt        DateTime?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+  updatedAt             DateTime  @updatedAt
 
   customer       User?              @relation(fields: [customerId], references: [id])
   partner        Partner            @relation(fields: [partnerId], references: [id])
   integration    PartnerIntegration @relation(fields: [integrationId], references: [id])
+  branch         PartnerBranch?     @relation(fields: [branchId], references: [id])
   commissionRule CommissionRule?    @relation(fields: [commissionRuleId], references: [id])
-
-  captureLedgerTransaction    LedgerTransaction? @relation("PartnerOrderCapture", fields: [captureLedgerTransactionId], references: [id])
-  settlementLedgerTransaction LedgerTransaction? @relation("PartnerOrderSettlement", fields: [settlementLedgerTransactionId], references: [id])
-  refundLedgerTransaction     LedgerTransaction? @relation("PartnerOrderRefund", fields: [refundLedgerTransactionId], references: [id])
+  prepaymentRule PrepaymentRule?    @relation(fields: [prepaymentRuleId], references: [id])
 
   items        PartnerOrderItem[]
+  paymentLegs  PartnerOrderPaymentLeg[]
   adjustments  PartnerOrderAdjustment[]
+  returns      PartnerOrderReturn[]
+  disputes     OrderDispute[]
   sourcingTask SourcingTask?
   escalations  OrderEscalation[]
 
   @@unique([integrationId, externalOrderId])
-  @@index([partnerId, orderStatus])
+  @@unique([customerId, submitIdempotencyKey])
+  @@index([partnerId, operationalStatus])
   @@index([customerId, createdAt])
-  @@index([orderStatus, createdAt])
+  @@index([operationalStatus, submittedAt])
+  @@index([operationalStatus, draftExpiresAt])
   @@map("partner_orders")
 }
 
@@ -1028,8 +1151,7 @@ model PartnerOrderItem {
   externalProductId String?
   name              String
   sku               String?
-  /// Auto-parts OEM number (spec §4/§13, Euro Import) — optional, only
-  /// meaningful for that category, never validated/interpreted by TuTak.
+  /// Auto-parts OEM number — optional, never interpreted by TuTak.
   oemNumber         String?
   quantity          Int
   unitPrice         Decimal @db.Decimal(18, 4)
@@ -1046,22 +1168,101 @@ model PartnerOrderItem {
   @@map("partner_order_items")
 }
 
-/// A partner-scoped (or, with `partnerId` null, platform-default) commission
-/// rate — spec §19's explicit "do not hardcode Little Joe = 15 / Euro Import
-/// = 5" requirement. Resolution precedence (see `CommissionRuleService
-/// .resolve`): the most specific active rule matching `partnerId` +
-/// `category` wins; falls back to a partner-only rule (`category: null`),
-/// then to `purchasePolicy.partnerOrderDefaultCommissionBps` if the partner
-/// has configured nothing at all — so an unconfigured partner still works
-/// rather than failing order creation.
+enum PaymentLegType {
+  DISCOUNT
+  TUTAK_MONEY
+  EXTERNAL
+}
+
+/// One leg's own lifecycle. Electronic legs (DISCOUNT, TUTAK_MONEY):
+/// PENDING → CAPTURED (in escrow) → SETTLED (released to the partner at
+/// completion) | RETURNED (back to its own source on cancel). EXTERNAL:
+/// PENDING → CONFIRMED (employee on shift) → CORRECTED (only before
+/// handover, OWNER/MANAGER, with a reason — replaced by a fresh leg) |
+/// RETURN_PENDING → RETURNED (cancel after confirmation: the partner gives
+/// the cash back and confirms it). A PENDING external leg on a cancelled
+/// order is simply RETURNED with nothing to confirm.
+enum PaymentLegStatus {
+  PENDING
+  CAPTURED
+  CONFIRMED
+  CORRECTED
+  SETTLED
+  RETURN_PENDING
+  RETURNED
+}
+
+enum PaymentLegPurpose {
+  /// The order's own original split.
+  ORDER
+  /// A price-increase adjustment's additional amount (spec §41).
+  ADDITIONAL
+}
+
+/// Provenance of every unit of money on an order (spec §47): which source
+/// paid it, when it moved, who confirmed it, and every ledger transaction
+/// it produced. Σ amount of the non-CORRECTED legs = `totalAmount`.
+model PartnerOrderPaymentLeg {
+  id             String            @id @default(uuid())
+  orderId        String
+  type           PaymentLegType
+  purpose        PaymentLegPurpose @default(ORDER)
+  status         PaymentLegStatus  @default(PENDING)
+  amount         Decimal           @db.Decimal(18, 4)
+  /// ADDITIONAL legs only.
+  adjustmentId   String?
+  /// Cumulative amount of this leg returned after completion.
+  refundedAmount Decimal           @default(0) @db.Decimal(18, 4)
+
+  /// DISCOUNT only: the bonus reservation reserved and settled at capture —
+  /// what a cancel reverses (`BonusEngineService.reverseSettlement`).
+  bonusReservationId         String?
+  /// DEBIT source / CREDIT PARTNER_ORDER_ESCROW (DISCOUNT: BONUS_LIABILITY;
+  /// TUTAK_MONEY: CUSTOMER_PREPAID_BALANCE).
+  captureLedgerTransactionId String? @unique
+  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT the same source, on cancel.
+  returnLedgerTransactionId  String? @unique
+
+  /// EXTERNAL only — spec §26: who, on which shift, at which branch.
+  confirmedByUserId       String?
+  confirmedShiftId        String?
+  confirmedBranchId       String?
+  confirmedAt             DateTime?
+  correctedByUserId       String?
+  correctedShiftId        String?
+  correctedAt             DateTime?
+  correctionReason        String?
+  /// EXTERNAL cancel/return: the partner confirmed it handed the cash back.
+  returnConfirmedByUserId String?
+  returnConfirmedShiftId  String?
+  returnConfirmedAt       DateTime?
+
+  capturedAt DateTime?
+  settledAt  DateTime?
+  returnedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  order              PartnerOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  adjustment         PartnerOrderAdjustment? @relation(fields: [adjustmentId], references: [id])
+  confirmedShift     EmployeeShift?          @relation("LegConfirmedShift", fields: [confirmedShiftId], references: [id])
+  correctedShift     EmployeeShift?          @relation("LegCorrectedShift", fields: [correctedShiftId], references: [id])
+  returnConfirmShift EmployeeShift?          @relation("LegReturnConfirmedShift", fields: [returnConfirmedShiftId], references: [id])
+
+  @@index([orderId, type])
+  @@index([type, status])
+  @@map("partner_order_payment_legs")
+}
+
+/// A partner-scoped commission override (Q5 = A). `Partner.bonusAccrualRateBps`
+/// is always the partner's base rate; a rule here only ever narrows it for a
+/// specific `serviceType` and/or `category`. Resolution is deterministic
+/// (`CommissionRateResolver`): serviceType+category → serviceType →
+/// category → the partner's base rate. At most one active rule per scope
+/// (partial unique index), on the same 0.5–20% grid as the base rate.
 model CommissionRule {
   id              String   @id @default(uuid())
-  /// Null = platform-wide default rule, manageable only by a platform admin.
-  partnerId       String?
-  /// Optional finer-grained scope (spec §19: "по типу товара/услуги... по
-  /// необходимости по категории") — free text matched against whatever the
-  /// partner's site tags its own catalogue with; null means "this partner,
-  /// any category".
+  partnerId       String
+  serviceType     String?
   category        String?
   name            String
   rateBps         Int
@@ -1070,76 +1271,91 @@ model CommissionRule {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  partner Partner?       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partner Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   orders  PartnerOrder[]
 
-  @@index([partnerId, category, isActive])
+  @@index([partnerId, isActive])
   @@map("commission_rules")
 }
 
+enum PrepaymentMode {
+  PERCENT
+  FIXED
+}
+
+/// Spec §30: a partner-scoped prepayment requirement, same scoping and
+/// resolution order as `CommissionRule`. No matching rule = 0%.
+model PrepaymentRule {
+  id              String         @id @default(uuid())
+  partnerId       String
+  serviceType     String?
+  category        String?
+  mode            PrepaymentMode
+  /// PERCENT only, 1..10000 bps of the order total.
+  percentBps      Int?
+  /// FIXED only, capped at the order total when applied.
+  fixedAmount     Decimal?       @db.Decimal(18, 4)
+  isActive        Boolean        @default(true)
+  createdByUserId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  partner Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  orders  PartnerOrder[]
+
+  @@index([partnerId, isActive])
+  @@map("prepayment_rules")
+}
+
 enum PartnerOrderAdjustmentType {
-  /// Spec §15: sourcing found the same item for less. Customer sees the
-  /// difference and the order proceeds; the difference is refunded.
+  /// Sourcing found the same item for less; the difference comes off the
+  /// payment legs and the order proceeds.
   PRICE_DECREASE
-  /// Spec §15: sourcing found the same item for more. Requires explicit
-  /// customer acceptance and a second, additional checkout for the delta.
+  /// Sourcing found the same item for more. Requires explicit customer
+  /// acceptance and funding of the difference.
   PRICE_INCREASE
-  /// Spec §15: sourcing found a different product entirely. Always requires
-  /// explicit customer confirmation, whatever the price difference.
+  /// Sourcing found a different product. Always requires explicit customer
+  /// confirmation, whatever the price.
   ALTERNATE_PRODUCT
-  /// Spec §16: sourcing could not find the item anywhere. Full refund, no
-  /// customer decision to make.
+  /// Sourcing found the identical item, at the same price, from another
+  /// source — still never substituted silently (spec §39): the customer
+  /// confirms.
+  SAME_ITEM_OTHER_SOURCE
+  /// Sourcing failed — full cancel/refund.
   SOURCING_FAILED_REFUND
-  /// Spec §14: sourcing is disabled for this partner/order and the item is
-  /// simply unavailable. Full refund, no customer decision to make.
+  /// Out of stock with sourcing disabled — full cancel/refund.
   OUT_OF_STOCK_REFUND
 }
 
 enum PartnerOrderAdjustmentStatus {
-  /// PRICE_INCREASE / ALTERNATE_PRODUCT only — waiting on the customer.
   PENDING_CUSTOMER
   CUSTOMER_ACCEPTED
   CUSTOMER_DECLINED
-  /// The adjustment's financial effect (refund posted, or additional
-  /// payment captured) has actually happened. PRICE_DECREASE/
-  /// SOURCING_FAILED_REFUND/OUT_OF_STOCK_REFUND go straight from creation to
-  /// `APPLIED` — they need no customer decision, only the money to move.
   APPLIED
 }
 
-/// One price/product change against an order already placed — spec §15-16.
-/// Deliberately its own row rather than fields bolted onto `PartnerOrder`:
-/// this is a distinct event with its own money movement and (for two of its
-/// five types) its own customer-facing decision, and a future order could in
-/// principle need more than one over its life.
+/// One price/product change against an order already placed (spec §39-42).
 model PartnerOrderAdjustment {
-  id                      String                       @id @default(uuid())
-  orderId                 String
-  type                    PartnerOrderAdjustmentType
-  status                  PartnerOrderAdjustmentStatus @default(PENDING_CUSTOMER)
-  previousTotalAmount     Decimal                      @db.Decimal(18, 4)
-  newTotalAmount          Decimal                      @db.Decimal(18, 4)
-  /// newTotalAmount - previousTotalAmount. Negative for PRICE_DECREASE,
-  /// positive for PRICE_INCREASE, zero for a same-price ALTERNATE_PRODUCT.
-  deltaAmount             Decimal                      @db.Decimal(18, 4)
-  description             String?
-  reason                  String?
-  customerRespondedAt     DateTime?
-  /// PRICE_INCREASE only — the additional checkout's own payment lifecycle,
-  /// separate from the order's own `paymentStatus`.
-  additionalPaymentStatus PartnerOrderPaymentStatus?
-  /// The refund or additional-capture transaction this adjustment's
-  /// financial effect posted.
-  ledgerTransactionId     String?                      @unique
-  /// Scoped to the order, matching this codebase's other adjustment-style
-  /// idempotency keys (e.g. `PurchaseIntentRefund`'s `actorId` scope) — a
-  /// retried create for the same order+reason is a lookup, not a second row.
-  idempotencyKey          String?                      @unique
-  createdAt               DateTime                     @default(now())
-  appliedAt               DateTime?
+  id                  String                       @id @default(uuid())
+  orderId             String
+  type                PartnerOrderAdjustmentType
+  status              PartnerOrderAdjustmentStatus @default(PENDING_CUSTOMER)
+  previousTotalAmount Decimal                      @db.Decimal(18, 4)
+  newTotalAmount      Decimal                      @db.Decimal(18, 4)
+  /// newTotalAmount - previousTotalAmount.
+  deltaAmount         Decimal                      @db.Decimal(18, 4)
+  /// What the customer is shown (spec §40): name, description, photo, the
+  /// differences from the original, the source.
+  description         String?
+  details             Json?
+  imageUrl            String?
+  reason              String?
+  customerRespondedAt DateTime?
+  createdAt           DateTime                     @default(now())
+  appliedAt           DateTime?
 
-  order             PartnerOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+  order       PartnerOrder             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  paymentLegs PartnerOrderPaymentLeg[]
 
   @@index([orderId])
   @@map("partner_order_adjustments")
@@ -1155,18 +1371,13 @@ enum SourcingTaskStatus {
 }
 
 enum SourcingResultSourceType {
-  /// Found among TuTak's own partner network (spec §13 step 1).
+  /// Found among TuTak's own partner network (spec §36 step 1).
   OTHER_TUTAK_PARTNER
-  /// Found via an external source, e.g. List.am (spec §13 step 2) — manual
-  /// for now, no scraper built (spec explicitly says not to build one yet).
+  /// Found via an external source, e.g. List.am — manual, no scraper.
   EXTERNAL
 }
 
-/// TuTak staff's internal "find this item elsewhere" queue — spec §13.
-/// One-to-one with the order it searches for; `status` drives the admin
-/// queue the same way `FraudSignal`'s open/resolved split does, plus a
-/// `claim` step `FraudSignal` has no precedent for (spec's own "взял в
-/// работу" requirement, §9).
+/// TuTak staff's internal "find this item elsewhere" queue — spec §36-37.
 model SourcingTask {
   id                    String                    @id @default(uuid())
   orderId               String                    @unique
@@ -1192,23 +1403,25 @@ model SourcingTask {
 }
 
 enum OrderEscalationType {
-  /// Spec §8: 5 minutes since createdAt, `partnerSeenAt` still null.
+  /// Spec §17: 5 minutes since `submittedAt`, `partnerSeenAt` still null.
   NOT_SEEN_5MIN
-  /// Spec §9: 30 minutes since createdAt (never from `partnerSeenAt`),
-  /// neither `stockConfirmedAt` nor `stockRejectedAt` set.
+  /// Spec §18: 30 minutes since `submittedAt` (never from `partnerSeenAt`),
+  /// no stock decision yet. Critical.
   STOCK_NOT_CONFIRMED_30MIN
-  /// Spec §9: the repeat alert every 5 minutes after the first, until
-  /// resolved. One row per tick, so the admin history shows exactly how long
-  /// this has been unresolved and how many times it has re-alerted.
+  /// Spec §18.1: the repeat every 5 minutes after the first, until resolved.
   STOCK_NOT_CONFIRMED_REPEAT
+  /// Spec §34: handed over 48h ago and the customer never confirmed receipt
+  /// — manual review, never an automatic release.
+  RECEIPT_NOT_CONFIRMED_48H
+  /// Received, but an external leg is still unconfirmed past the grace
+  /// window — "Payment issue" (interim rule pending Q10).
+  PAYMENT_ISSUE
 }
 
-/// TuTak's own internal "needs attention" record — spec §8/§9/§21. Never
-/// customer-visible (spec §17). Modelled as its own append-only trail rather
-/// than mutable fields on `PartnerOrder`, so the admin queue is a plain
-/// `resolvedAt: null` query (`FraudSignal`'s own pattern) and "взял в
-/// работу" (claim) can silence further *pushes* for this specific problem
-/// without hiding the order from anyone else still watching the queue.
+/// TuTak's own internal "needs attention" record — never customer-visible
+/// (spec §19). "Взял в работу" (claim) silences further pushes for this
+/// specific problem without hiding the order from anyone still watching the
+/// queue.
 model OrderEscalation {
   id               String              @id @default(uuid())
   orderId          String
@@ -1225,6 +1438,239 @@ model OrderEscalation {
   @@index([orderId, type])
   @@index([resolvedAt, createdAt])
   @@map("order_escalations")
+}
+
+enum PartnerOrderReturnStatus {
+  /// Electronic legs refunded; the partner still has to hand the external
+  /// share back and confirm it (spec §47).
+  PENDING_EXTERNAL_REFUND
+  COMPLETED
+  /// Reversing the distribution would leave an unrecoverable shortfall
+  /// (already-spent green/referral/deferred value). Nothing moved; a TuTak
+  /// operator decides (pending Q8/Q9 — Q7a forbids absorbing it silently).
+  MANUAL_REVIEW
+}
+
+/// A full or partial return after completion (spec §44-47). Proportional
+/// per leg and per distribution share, as linked reversal postings — the
+/// original entries are never touched.
+model PartnerOrderReturn {
+  id                                      String                   @id @default(uuid())
+  orderId                                 String
+  /// Merchandise value returned; ≤ what remains of `totalAmount`.
+  amount                                  Decimal                  @db.Decimal(18, 4)
+  reason                                  String
+  status                                  PartnerOrderReturnStatus
+  /// Where this return came from: a partner-initiated return, or an admin
+  /// dispute resolution.
+  origin                                  PartnerOrderActorType
+  disputeId                               String?
+  discountRestored                        Decimal                  @default(0) @db.Decimal(18, 4)
+  tutakMoneyRefunded                      Decimal                  @default(0) @db.Decimal(18, 4)
+  externalRefundDue                       Decimal                  @default(0) @db.Decimal(18, 4)
+  /// The distribution share reversed, and what could not be clawed back.
+  poolReversed                            Decimal                  @default(0) @db.Decimal(18, 4)
+  shortfallAmount                         Decimal                  @default(0) @db.Decimal(18, 4)
+  manualReviewReason                      String?
+  contributionReversalLedgerTransactionId String?                  @unique
+  moneyRefundLedgerTransactionId          String?                  @unique
+  discountRefundLedgerTransactionId       String?                  @unique
+
+  requestedByUserId               String
+  requestedShiftId                String?
+  externalRefundConfirmedByUserId String?
+  externalRefundConfirmedShiftId  String?
+  externalRefundConfirmedAt       DateTime?
+  idempotencyKey                  String
+  createdAt                       DateTime  @default(now())
+  completedAt                     DateTime?
+
+  order   PartnerOrder  @relation(fields: [orderId], references: [id])
+  dispute OrderDispute? @relation(fields: [disputeId], references: [id])
+
+  @@unique([requestedByUserId, idempotencyKey])
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("partner_order_returns")
+}
+
+enum OrderDisputeType {
+  /// Wrong item, damage, mismatch, quality, delivery (spec §48).
+  ORDER
+  /// A disputed external payment confirmation (spec §27-29).
+  PAYMENT
+}
+
+enum OrderDisputeStatus {
+  OPEN
+  RESOLVED_CUSTOMER
+  RESOLVED_PARTNER
+  RESOLVED_SPLIT
+}
+
+/// Manual dispute workflow (spec §29, §48-49). Only a TuTak admin with
+/// ORDER_DISPUTE_RESOLVE decides; neither the customer nor the partner can
+/// change a financial status through it. At most one OPEN dispute per order
+/// (partial unique index).
+model OrderDispute {
+  id                         String                @id @default(uuid())
+  orderId                    String
+  type                       OrderDisputeType
+  status                     OrderDisputeStatus    @default(OPEN)
+  reason                     String
+  description                String?
+  openedByUserId             String
+  openedByType               PartnerOrderActorType
+  disputedAmount             Decimal               @db.Decimal(18, 4)
+  /// Spec §49: opened before the order's partner credit reached a settlement
+  /// statement → this much moved PARTNER_PAYABLE → PARTNER_DISPUTE_HOLD and
+  /// is excluded from payouts. After settlement → nothing frozen; a
+  /// customer-favourable resolution becomes partner debt instead.
+  openedAfterSettlement      Boolean
+  frozenAmount               Decimal               @default(0) @db.Decimal(18, 4)
+  holdLedgerTransactionId    String?               @unique
+  releaseLedgerTransactionId String?               @unique
+  /// The amount the resolution returns to the customer (executed as a
+  /// `PartnerOrderReturn` with `origin: ADMIN`).
+  customerRefundAmount       Decimal?              @db.Decimal(18, 4)
+  resolutionNote             String?
+  resolvedByUserId           String?
+  resolvedAt                 DateTime?
+  createdAt                  DateTime              @default(now())
+
+  order    PartnerOrder          @relation(fields: [orderId], references: [id])
+  comments OrderDisputeComment[]
+  returns  PartnerOrderReturn[]
+
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@map("order_disputes")
+}
+
+/// Evidence and comments on a dispute — append-only.
+model OrderDisputeComment {
+  id             String                @id @default(uuid())
+  disputeId      String
+  authorUserId   String
+  authorType     PartnerOrderActorType
+  body           String
+  attachmentUrls String[]
+  createdAt      DateTime              @default(now())
+
+  dispute OrderDispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId, createdAt])
+  @@map("order_dispute_comments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Settlement periods and statements (spec §50-52)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Per-partner settlement cadence. Existing partners were migrated to
+/// BIWEEKLY — exactly the fixed 14-day cycle they already had (Q7b).
+enum SettlementPeriod {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+/// One settlement period's statement for one partner — the "invoice" side
+/// of spec §50. Never a stored total whose origin cannot be proven: every
+/// line is one ledger posting, `closingBalance = openingBalance + Σ lines`
+/// (PARTNER_PAYABLE only), and a posting can appear on at most one
+/// statement (unique `postingId`). Money still only moves through the
+/// existing dual-control Payout / PartnerCollection — there is no
+/// "withdraw" anywhere.
+model PartnerSettlementStatement {
+  id             String           @id @default(uuid())
+  partnerId      String
+  period         SettlementPeriod
+  periodStart    DateTime
+  periodEnd      DateTime
+  /// Raw PARTNER_PAYABLE ledger balances (DEBIT-positive: negative = TuTak
+  /// owes the partner, positive = the partner owes TuTak).
+  openingBalance Decimal          @db.Decimal(18, 4)
+  closingBalance Decimal          @db.Decimal(18, 4)
+  /// Raw PARTNER_DISPUTE_HOLD balance at the cut-off — frozen, excluded
+  /// from `closingBalance` and therefore from any payout.
+  frozenBalance  Decimal          @db.Decimal(18, 4)
+  /// Σ signed amount per ledger `kind` — a readable summary, recomputable
+  /// from `lines` at any time.
+  totalsByKind   Json
+  generatedAt    DateTime         @default(now())
+
+  partner Partner                          @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  lines   PartnerSettlementStatementLine[]
+
+  @@unique([partnerId, periodStart])
+  @@index([partnerId, periodEnd])
+  @@map("partner_settlement_statements")
+}
+
+model PartnerSettlementStatementLine {
+  id                  String            @id @default(uuid())
+  statementId         String
+  postingId           String            @unique
+  ledgerTransactionId String
+  accountType         LedgerAccountType
+  kind                String
+  sourceType          String
+  sourceId            String
+  /// DEBIT-positive, same sign convention as the account balance.
+  signedAmount        Decimal           @db.Decimal(18, 4)
+  postedAt            DateTime
+
+  statement PartnerSettlementStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+
+  @@index([statementId])
+  @@index([sourceType, sourceId])
+  @@map("partner_settlement_statement_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Employee shifts (spec §6, Q4)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum ShiftEndReason {
+  /// "Завершить смену".
+  MANUAL
+  /// Closed automatically because a new business day began at the branch
+  /// (by the next employee starting a shift, or the hourly sweep).
+  NEW_BUSINESS_DAY
+  /// The employee's branch assignment was deactivated.
+  DEACTIVATED
+}
+
+/// One employee's shift at one branch. Several employees can be on shift at
+/// the same branch at once; at most one open shift per employee (partial
+/// unique index). `businessDate` is the branch-local business day the shift
+/// started in (branch timezone + `businessDayStartMinute`), and it is what
+/// "yesterday's unclosed shifts" means — never another employee's shift
+/// from today.
+model EmployeeShift {
+  id            String          @id @default(uuid())
+  partnerId     String
+  branchId      String
+  userId        String
+  businessDate  DateTime        @db.Date
+  startedAt     DateTime        @default(now())
+  endedAt       DateTime?
+  endReason     ShiftEndReason?
+  endedByUserId String?
+
+  partner Partner       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  branch  PartnerBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user    User          @relation("EmployeeShiftUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  legsConfirmed       PartnerOrderPaymentLeg[] @relation("LegConfirmedShift")
+  legsCorrected       PartnerOrderPaymentLeg[] @relation("LegCorrectedShift")
+  legsReturnConfirmed PartnerOrderPaymentLeg[] @relation("LegReturnConfirmedShift")
+
+  @@index([branchId, endedAt])
+  @@index([userId, endedAt])
+  @@map("employee_shifts")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1244,38 +1690,38 @@ enum PartnerStatus {
 }
 
 model Partner {
-  id                        String        @id @default(uuid())
+  id                        String           @id @default(uuid())
   legalName                 String
   displayName               String
-  taxId                     String        @unique
+  taxId                     String           @unique
   category                  String
   /// Meaningful only when `category` is `fuel` — whether this station sells
   /// gas. Propane and methane are one customer-facing bucket, not two: a
   /// shopper picking "Газ" on the map does not care which of the two a given
   /// station burns, so this is a single flag rather than a per-gas-type
   /// field (Arman, 2026-08-26: "в категории газ пропан и метан для всех").
-  sellsGas                  Boolean       @default(false)
+  sellsGas                  Boolean          @default(false)
   /// Meaningful only when `category` is `fuel` — whether this station sells
   /// petrol/gasoline. Independent of `sellsGas`: a real station commonly
   /// sells both, so these are two flags rather than one enum choice.
-  sellsPetrol               Boolean       @default(false)
+  sellsPetrol               Boolean          @default(false)
   /// Basis points, e.g. 300 = 3%. Restricted to the fixed rate card — 0.5%
   /// steps from 0.5% to 20% (50..2000, step 50) — enforced by
   /// `IsCommissionRateBps` at the API boundary and by
   /// `partners_commission_rate_on_grid` (CHECK) at the database boundary.
-  bonusAccrualRateBps       Int           @default(300)
+  bonusAccrualRateBps       Int              @default(300)
   /// The platform's cut of a captured payment, in basis points. Independent
   /// of bonusAccrualRateBps — one prices what the customer earns, the other
   /// what the platform keeps, and conflating them would make either one
   /// impossible to change without affecting the other.
-  paymentCommissionRateBps  Int           @default(250) // 2.5%
+  paymentCommissionRateBps  Int              @default(250) // 2.5%
   /// Spec §11: the partner's own ceiling on how much of a purchase may be
   /// paid with bonus points, 0-100. Only PARTNER_OWNER may change it — see
   /// `partners.controller.ts`. Defaults to 100 (no cap), which is exactly
   /// today's behaviour before this field existed — see the migration doc's
   /// conflict table for why no lower default or platform-wide ceiling was
   /// invented.
-  maxBonusPaymentPercent    Int           @default(100)
+  maxBonusPaymentPercent    Int              @default(100)
   /// Roaming-CPO wholesale-resale integration only (docs/
   /// ROAMING_CPO_INTEGRATION_2026-08-25.md) — the contractual AMD/kWh rate
   /// TuTak owes this partner for wholesale energy, e.g. 75 AMD/kWh.
@@ -1287,15 +1733,15 @@ model Partner {
   /// `paymentCommissionRateBps`'s default is not "this partner takes
   /// payments" — every read of this field is already gated on the session's
   /// station being a roaming-CPO one.
-  evWholesaleRatePerKwh     Decimal       @default(75.00) @db.Decimal(10, 2)
+  evWholesaleRatePerKwh     Decimal          @default(75.00) @db.Decimal(10, 2)
   /// The ceiling (AMD/kWh) on how much of a roaming-CPO session's margin
   /// enters the ordinary green/deferred/L1/L2/L3/TuTak split —
   /// `min(margin, this)`. Margin above it is undivided TuTak revenue. See
   /// `RoamingCpoSettlementService.computeMarginSplit` for the worked
   /// examples this cap was confirmed against (5 / 30 / 45 AMD/kWh margins).
-  evMarginReferralCapPerKwh Decimal       @default(20.00) @db.Decimal(10, 2)
-  status                    PartnerStatus @default(ACTIVE)
-  isActive                  Boolean       @default(true)
+  evMarginReferralCapPerKwh Decimal          @default(20.00) @db.Decimal(10, 2)
+  status                    PartnerStatus    @default(ACTIVE)
+  isActive                  Boolean          @default(true)
   /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md): whether an
   /// OUT_OF_STOCK order for this partner may be routed to TuTak's internal
   /// sourcing queue (spec §13) for an employee to look for the same item
@@ -1305,7 +1751,21 @@ model Partner {
   /// rather than a name check, so the exception is not hardcoded to any one
   /// partner. Defaults to true: most goods/parts categories do want sourcing
   /// attempted before refunding.
-  allowExternalSourcing     Boolean       @default(true)
+  allowExternalSourcing     Boolean          @default(true)
+  /// Spec §51, Q7b: this partner's settlement cadence. Every partner that
+  /// existed before Partner Commerce v2 was migrated to BIWEEKLY — the fixed
+  /// 14-day cycle `PartnerSettlementCheckService` already enforced — and a
+  /// platform admin sets it individually from then on. Never partner-editable.
+  settlementPeriod          SettlementPeriod @default(BIWEEKLY)
+  /// Q4 rollout: from this moment every financially binding action by this
+  /// partner's staff (QR confirm/reject/refund, external payment
+  /// confirmation, return confirmations) requires an active
+  /// `EmployeeShift`. New partners: the moment they are created. Partners
+  /// that existed at migration time: 14 days later, a one-off transition
+  /// window in which a shiftless confirmation still works but is audited
+  /// as such. Only ever moved *earlier* through the API — there is no
+  /// endless bypass.
+  shiftsRequiredFrom        DateTime         @default(now())
   /// Set by reconciliation when this partner's ledger balance disagrees with
   /// the bank statement. Blocks payouts until a human clears it — paying out
   /// against a balance known to be wrong is the one thing worse than not
@@ -1360,8 +1820,8 @@ model Partner {
   /// timestamp would be, so a partner is never silently skipped just because
   /// they are new.
   lastSettledAt             DateTime?
-  createdAt                 DateTime      @default(now())
-  updatedAt                 DateTime      @updatedAt
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
 
   memberships            PartnerMembership[]
   branches               PartnerBranch[]
@@ -1382,6 +1842,9 @@ model Partner {
   roamingCustomerLinks   RoamingCustomerLink[]
   partnerOrders          PartnerOrder[]
   commissionRules        CommissionRule[]
+  prepaymentRules        PrepaymentRule[]
+  employeeShifts         EmployeeShift[]
+  settlementStatements   PartnerSettlementStatement[]
   sourcingTasksFulfilled SourcingTask[]
   /// Set only when this partner is itself a direct referrer (spec §21) —
   /// distinct from `referralInvitesAsReferrer`'s User-referrer counterpart.
@@ -1535,13 +1998,13 @@ enum BranchFuelType {
 }
 
 model PartnerBranch {
-  id        String          @id @default(uuid())
-  partnerId String
-  name      String
-  address   String
-  city      String
-  latitude  Float
-  longitude Float
+  id                     String          @id @default(uuid())
+  partnerId              String
+  name                   String
+  address                String
+  city                   String
+  latitude               Float
+  longitude              Float
   /// Whether this branch is currently open and should be shown to
   /// customers. Deactivating rather than deleting: `PurchaseIntent` and
   /// `PartnerIntegration` rows reference a branch by id, and a real
@@ -1549,7 +2012,7 @@ model PartnerBranch {
   /// at even after that location closes. Defaults true — every branch that
   /// predates this column is, in fact, still open; there is no historical
   /// case where the true value is otherwise.
-  isActive  Boolean         @default(true)
+  isActive               Boolean         @default(true)
   /// Meaningful only when the owning `Partner.category` is `"fuel"` — which
   /// single product this specific branch sells. Null for every non-fuel
   /// branch. Also null for a fuel branch nobody has classified yet: this is
@@ -1559,8 +2022,14 @@ model PartnerBranch {
   /// the existing fuel partners' branches were left unclassified rather
   /// than guessed at, and `PartnerBranchesService.setFuelType` for the
   /// owner/admin action that fills this in.
-  fuelType  BranchFuelType?
-  createdAt DateTime        @default(now())
+  fuelType               BranchFuelType?
+  /// Q4: the branch's own IANA timezone and the minute of the local day at
+  /// which its business day starts (300 = 05:00) — what "yesterday's
+  /// unclosed shifts" means at this branch. Defaults are Arman's decision
+  /// (05:00 Asia/Yerevan), stored per branch rather than hardcoded.
+  timezone               String          @default("Asia/Yerevan")
+  businessDayStartMinute Int             @default(300)
+  createdAt              DateTime        @default(now())
 
   partner          Partner                        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   integrations     PartnerIntegration[]
@@ -1568,6 +2037,8 @@ model PartnerBranch {
   staffAssignments PartnerBranchStaffAssignment[]
   qrCodes          PartnerBranchQrCode[]
   transactions     Transaction[]
+  employeeShifts   EmployeeShift[]
+  partnerOrders    PartnerOrder[]
 
   // Lets `PartnerBranchStaffAssignment`/`PartnerBranchQrCode` declare a
   // composite FK on (partnerId, id) — the DB-level guarantee that an
@@ -2494,40 +2965,38 @@ enum LedgerAccountType {
   /// when the balance can cover it in full — see `collectFromBalance`'s own
   /// docblock for why a partial collection is deliberately not attempted.
   ///
-  /// Closed-loop by design (business decision, 2026-08-29) — revised
-  /// 2026-09-25 (Arman, Partner Commerce task: "с помощью IDRAM других
-  /// банковских карт можем заряжать TuTak" — funding this balance is meant
-  /// to become general-purpose, not roaming-only). Two callers now debit
-  /// this account: `CustomerBalanceService.collectFromBalance` (roaming-CPO
-  /// charging, CREDIT `EV_ROAMING_RECEIVABLE`) and
-  /// `CustomerBalanceService.debitForPartnerOrder` (Partner Commerce
-  /// checkout, CREDIT `PARTNER_ORDER_ESCROW`) — both go through
-  /// `CustomerBalanceService`, both use the same claim-then-post shape, and
-  /// neither is a generic "spend my balance anywhere" helper. What is still
-  /// explicitly true, and unchanged by this revision: there is no
-  /// conversion into `BonusEntryType` wallet points or any other spendable
-  /// form — bonus points are usable anywhere a purchase accepts them (QR,
-  /// PurchaseIntent, internal EV), and funding them from this account would
-  /// still launder money out of every restriction this balance's specific,
-  /// named spenders enforce. A third spender needs the same explicit
-  /// decision this one got, not a quiet side effect of a generic helper.
+  /// Closed-loop by design (business decision, 2026-08-29) — revised for
+  /// Partner Commerce (Arman, Q1 = C: this is the customer's real money and
+  /// may be spent on partner purchases, funded through the existing/future
+  /// BankTopUpAdapter / IDRAM flow). Two named spenders debit this account:
+  /// `CustomerBalanceService.collectFromBalance` (roaming-CPO charging,
+  /// CREDIT `EV_ROAMING_RECEIVABLE`) and `CommerceLedgerService.captureMoney`
+  /// (the TuTak-money part of a QR `PurchaseIntent` or an online
+  /// `PartnerOrder`, CREDIT `PARTNER_ORDER_ESCROW` — never straight to a
+  /// partner). Both use the same claim-then-post shape; neither is a generic
+  /// "spend my balance anywhere" helper. Still explicitly true: there is no
+  /// conversion into `BonusEntryType` wallet points (the green discount
+  /// balance) — the two balances are never mixed in the ledger (Q1). A
+  /// further spender needs the same explicit decision.
   CUSTOMER_PREPAID_BALANCE
-  /// Partner Commerce (docs/PARTNER_COMMERCE_2026-09-25.md), spec §6: money
-  /// captured from a customer's `CUSTOMER_PREPAID_BALANCE` at `PartnerOrder`
-  /// payment time, before the partner has confirmed the item is actually in
-  /// stock. There is no real authorize/capture-hold primitive in this ledger
-  /// (see `LedgerService.post`'s own docblock) and building one was judged
-  /// out of scope for this feature (Arman, 2026-09-25) — so instead of a
-  /// fake hold, the money is captured for real into this per-partner escrow
-  /// account and only moves on to `PARTNER_PAYABLE` (minus the commission
-  /// leg, to `PLATFORM_REVENUE`) once `stockConfirmedAt` is set. If the
-  /// partner instead rejects stock and the order is refunded (no sourcing,
-  /// sourcing disabled, or sourcing failed), the same captured amount moves
-  /// back to `CUSTOMER_PREPAID_BALANCE` — the money never reaches
-  /// `PARTNER_PAYABLE` until the partner has actually confirmed they can
-  /// fulfil the order. Per-partner (`partnerId` set, `userId` null), like
-  /// `PARTNER_PAYABLE` itself.
+  /// Partner Commerce (docs/PARTNER_COMMERCE.md, Q2 = A): a real,
+  /// traceable reserve — never a boolean imitating a hold. Every electronic
+  /// payment leg of an online `PartnerOrder` (DISCOUNT from
+  /// BONUS_LIABILITY, TUTAK_MONEY from CUSTOMER_PREPAID_BALANCE) and the
+  /// TuTak-money part of a QR `PurchaseIntent` is captured here first and
+  /// is not partner receivable yet. It moves on to PARTNER_PAYABLE only at
+  /// completion — for an online order, after the customer confirms receipt;
+  /// for a QR purchase, when staff confirm it — or back to its own source on
+  /// cancel/reject/expiry. Each movement is its own posting, referenced from
+  /// the leg/intent that caused it. Per-partner (`partnerId` set), like
+  /// `PARTNER_PAYABLE` itself; a completed or cancelled order leaves nothing
+  /// behind in it.
   PARTNER_ORDER_ESCROW
+  /// Spec §49: a partner's credit for an order under an ORDER dispute opened
+  /// before that credit was settled — moved out of PARTNER_PAYABLE so no
+  /// payout can include it, and back (or on to the customer) only by an
+  /// admin's resolution. Per-partner.
+  PARTNER_DISPUTE_HOLD
 }
 
 enum PostingDirection {
@@ -2573,19 +3042,15 @@ model LedgerTransaction {
   reversesId String?  @unique
   postedAt   DateTime @default(now())
 
-  postings               LedgerPosting[]
-  payment                Payment?
-  refund                 Refund?
-  purchaseIntentRefund   PurchaseIntentRefund?
-  payoutRequested        Payout?                 @relation("PayoutRequested")
-  payoutSettled          Payout?                 @relation("PayoutSettled")
-  acquirerSettlement     AcquirerSettlement?
-  partnerCollection      PartnerCollection?
-  balanceTopUp           BalanceTopUp?
-  partnerOrderCapture    PartnerOrder?           @relation("PartnerOrderCapture")
-  partnerOrderSettlement PartnerOrder?           @relation("PartnerOrderSettlement")
-  partnerOrderRefund     PartnerOrder?           @relation("PartnerOrderRefund")
-  partnerOrderAdjustment PartnerOrderAdjustment?
+  postings             LedgerPosting[]
+  payment              Payment?
+  refund               Refund?
+  purchaseIntentRefund PurchaseIntentRefund?
+  payoutRequested      Payout?               @relation("PayoutRequested")
+  payoutSettled        Payout?               @relation("PayoutSettled")
+  acquirerSettlement   AcquirerSettlement?
+  partnerCollection    PartnerCollection?
+  balanceTopUp         BalanceTopUp?
 
   @@index([sourceType, sourceId])
   @@index([postedAt])
@@ -3208,7 +3673,26 @@ enum AuditAction {
   /// PartnerOrder's life is independently auditable, same discipline as
   /// PURCHASE_INTENT_* above.
   PARTNER_ORDER_CREATED
-  PARTNER_ORDER_PAID
+  PARTNER_ORDER_SUBMITTED
+  PARTNER_ORDER_HANDED_OVER
+  PARTNER_ORDER_RECEIVED
+  PARTNER_ORDER_EXPIRED
+  PARTNER_ORDER_MANUAL_REVIEW
+  PARTNER_ORDER_EXTERNAL_PAYMENT_CONFIRMED
+  PARTNER_ORDER_EXTERNAL_PAYMENT_CORRECTED
+  PARTNER_ORDER_EXTERNAL_REFUND_CONFIRMED
+  PARTNER_ORDER_RETURN_CREATED
+  PARTNER_ORDER_RETURN_COMPLETED
+  ORDER_DISPUTE_OPENED
+  ORDER_DISPUTE_COMMENTED
+  ORDER_DISPUTE_RESOLVED
+  PREPAYMENT_RULE_CREATED
+  PREPAYMENT_RULE_UPDATED
+  PARTNER_SETTLEMENT_PERIOD_CHANGED
+  PARTNER_SHIFTS_REQUIRED_FROM_CHANGED
+  SETTLEMENT_STATEMENT_GENERATED
+  EMPLOYEE_SHIFT_STARTED
+  EMPLOYEE_SHIFT_ENDED
   PARTNER_ORDER_SEEN
   PARTNER_ORDER_STOCK_CONFIRMED
   PARTNER_ORDER_STOCK_REJECTED

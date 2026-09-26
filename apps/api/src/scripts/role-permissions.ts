@@ -51,6 +51,10 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.WALLET_WRITE,
     PermissionName.PAYMENT_REFUND,
     PermissionName.LEDGER_READ,
+    // Partner Commerce operators: queues, sourcing, escalations, manual
+    // review — and deciding disputes, a financial decision (spec §29).
+    PermissionName.PARTNER_ORDER_OPERATE,
+    PermissionName.ORDER_DISPUTE_RESOLVE,
     // PAYOUT_MANAGE is deliberately absent. Wiring money to an external bank
     // account is the least reversible action on this platform; it stays with
     // SUPER_ADMIN until there is a maker-checker flow to hand it out safely.

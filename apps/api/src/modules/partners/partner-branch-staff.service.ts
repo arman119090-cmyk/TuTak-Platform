@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { BranchStaffRole, Prisma } from '@prisma/client';
+import { BranchStaffRole, Prisma, ShiftEndReason } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 /**
@@ -133,13 +133,27 @@ export class PartnerBranchStaffService {
    * every confirm/reject/refund this person made while active must keep
    * resolving to who they were and which branch they were assigned to.
    */
+  /**
+   * Also closes the person's open shift at that branch, in the same
+   * transaction (Partner Commerce, spec §61 "employee deactivation ×
+   * confirmation"): `EmployeeShiftService.stampFor` locks the shift row, so a
+   * confirmation either commits before this closes it or is refused after.
+   */
   async deactivate(partnerId: string, assignmentId: string, deactivatedByUserId: string) {
-    const { count } = await this.prisma.partnerBranchStaffAssignment.updateMany({
-      where: { id: assignmentId, partnerId, isActive: true },
-      data: { isActive: false, deactivatedAt: new Date(), deactivatedByUserId },
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const { count } = await tx.partnerBranchStaffAssignment.updateMany({
+        where: { id: assignmentId, partnerId, isActive: true },
+        data: { isActive: false, deactivatedAt: now, deactivatedByUserId },
+      });
+      if (count === 0) throw new NotFoundException('Active assignment not found');
+      const assignment = await tx.partnerBranchStaffAssignment.findUniqueOrThrow({ where: { id: assignmentId } });
+      await tx.employeeShift.updateMany({
+        where: { userId: assignment.userId, branchId: assignment.partnerBranchId, endedAt: null },
+        data: { endedAt: now, endReason: ShiftEndReason.DEACTIVATED, endedByUserId: deactivatedByUserId },
+      });
+      return assignment;
     });
-    if (count === 0) throw new NotFoundException('Active assignment not found');
-    return this.prisma.partnerBranchStaffAssignment.findUniqueOrThrow({ where: { id: assignmentId } });
   }
 
   /**

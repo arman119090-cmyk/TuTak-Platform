@@ -44,7 +44,7 @@
 
 - Код: `4d31a062` — feat(settlement): Partner Commerce settles through the one
   PartnerSettlementService (запушен в PR #70).
-- Поверх — коммит только с этим отчётом (docs), CI проверяется на нём.
+- Отчёт: `6e71f4e8` (только `docs/`) — на нём GitHub CI 10/10 GREEN.
 
 ## 3. Два найденных механизма расчётов
 
@@ -237,20 +237,22 @@ NOT SETTLEABLE среди kinds Partner Commerce нет. Внешний кэш/�
 
 ## 12. GitHub CI
 
-Состояние на 2026-09-26 15:00 UTC, head `4d31a062`: два прогона workflow `CI`,
-push (run 36250165608) и pull_request (run 36250168334), по 5 checks.
+Прогоны на `4d31a062` были отменены (`cancel-in-progress`) push'ем
+коммита с отчётом `6e71f4e8` (только `docs/`, код тот же). Финальный CI —
+на `6e71f4e8`: workflow `CI`, push (run 36250505758) и pull_request
+(run 36250508725).
 
 | Check | push | pull_request |
 |---|---|---|
-| Lint, test and build | ✅ success | ⏳ идёт |
-| Integration tests (1/3) | ⏳ идёт | ⏳ идёт |
-| Integration tests (2/3) | ⏳ идёт | ⏳ идёт |
-| Integration tests (3/3) | ⏳ идёт | ⏳ идёт |
-| Build the container images | ⏳ идёт | ⏳ идёт |
+| Lint, test and build (lint, typecheck, unit, история миграций + drift, web/mobile, build) | ✅ | ✅ |
+| Integration tests (1/3) | ✅ | ✅ |
+| Integration tests (2/3) | ✅ | ✅ |
+| Integration tests (3/3) | ✅ | ✅ |
+| Build the container images (образы, e2e Playwright, backup/restore) | ✅ | ✅ |
 
-**1 из 10 checks зелёный, 9 ещё выполняются, упавших нет.** Результат
-допишу в этот файл, когда прогоны завершатся. Коммит с отчётом запушу
-после них, чтобы не отменить текущие прогоны (`cancel-in-progress`).
+**GREEN — 10/10 checks**, упавших и пропущенных нет. PR #70 — Draft,
+`mergeable_state = clean`. Эта правка отчёта — ещё один docs-коммит поверх;
+его CI указан в ответе.
 
 ## 13. Что НЕ сделано
 
@@ -289,7 +291,6 @@ push (run 36250165608) и pull_request (run 36250168334), по 5 checks.
 
 ## 14. UNVERIFIED
 
-- **GitHub CI на `4d31a062` не завершён** (9 из 10 checks идут).
 - Поведение на реальной production-БД: там могут быть партнёры с явным
   расхождением `settlementPeriod` ≠ `settlementPeriodicity`, и тогда
   миграция остановится. Сколько таких — неизвестно, production я не
@@ -324,6 +325,4 @@ push (run 36250165608) и pull_request (run 36250168334), по 5 checks.
 
 ---
 
-Partner Commerce financial settlement: **NOT CLOSED** — код, миграции и
-тесты готовы и запушены, но обязательное условие «все GitHub checks GREEN»
-ещё не выполнено: 9 из 10 checks на `4d31a062` в процессе.
+Partner Commerce financial settlement: CLOSED

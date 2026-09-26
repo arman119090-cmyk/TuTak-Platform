@@ -21,7 +21,6 @@ import { PartnerSettlementCheckService } from '../payouts/partner-settlement-che
 import { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
 import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
 import { EmployeeShiftsModule } from '../employee-shifts/employee-shifts.module';
-import { PartnerSettlementStatementService } from '../payouts/partner-settlement-statement.service';
 import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { RetentionService } from '../retention/retention.service';
@@ -96,7 +95,6 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         PartnerSettlementCheckService,
         PartnerOrderSlaSweepService,
         EmployeeShiftService,
-        PartnerSettlementStatementService,
         PspAttemptAgeingService,
         PspCallbackWorkerService,
         // Only resolvable when PaymentsModule was actually imported above —
@@ -120,7 +118,6 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         partnerSettlement: PartnerSettlementCheckService,
         partnerOrderSla: PartnerOrderSlaSweepService,
         employeeShifts: EmployeeShiftService,
-        settlementStatements: PartnerSettlementStatementService,
         pspAgeing: PspAttemptAgeingService,
         pspCallbacks: PspCallbackWorkerService,
         refunds?: RefundEngineService,
@@ -138,7 +135,6 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         partnerSettlement,
         partnerOrderSla,
         employeeShifts,
-        settlementStatements,
         pspAgeing,
         pspCallbacks,
         refunds,

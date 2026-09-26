@@ -79,7 +79,6 @@ describe('Sweeps (integration)', () => {
     expireCancellationClaims: jest.fn(record('partner-order.cancellation-claims')),
   };
   const employeeShifts = { closeStaleShifts: jest.fn(record('employee-shift.close-stale')) };
-  const settlementStatements = { generateDue: jest.fn(record('partner-settlement.statements')) };
   const pspAgeing = {
     escalateStaleAttempts: jest.fn(record('psp.escalate-stale-attempts')),
   };
@@ -129,7 +128,6 @@ describe('Sweeps (integration)', () => {
             partnerSettlement,
             partnerOrderSla,
             employeeShifts,
-            settlementStatements,
             pspAgeing,
             pspCallbacks,
             refunds,
@@ -236,7 +234,6 @@ describe('Sweeps (integration)', () => {
       expect(partnerOrderSla.expireDrafts).toHaveBeenCalledTimes(1);
       expect(partnerOrderSla.expireCancellationClaims).toHaveBeenCalledTimes(1);
       expect(employeeShifts.closeStaleShifts).toHaveBeenCalledTimes(1);
-      expect(settlementStatements.generateDue).toHaveBeenCalledTimes(1);
       expect(pspAgeing.escalateStaleAttempts).toHaveBeenCalledTimes(1);
       expect(pspCallbacks.processPending).toHaveBeenCalledTimes(1);
     });

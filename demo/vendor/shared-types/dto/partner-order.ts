@@ -17,7 +17,7 @@ import {
   PartnerOrderSourcingStatus,
   PaymentLegStatus,
   PaymentLegType,
-  SettlementPeriod,
+  SettlementPeriodicity,
   SourcingTaskStatus,
 } from '../enums/partner-order';
 
@@ -399,21 +399,57 @@ export interface MyShiftDto {
   shiftsRequiredNow: boolean | null;
 }
 
+/**
+ * A settlement statement is a *report* over the one settlement engine
+ * (PartnerSettlement / PartnerSettlementEntry): every PARTNER_PAYABLE and
+ * dispute-hold posting of a period of the partner's cadence, with the
+ * settlement that claimed it — or why nothing will pay it.
+ */
+export type PartnerStatementLineClassification = 'SETTLEABLE' | 'TRANSFER' | 'NOT_SETTLEABLE';
+
+export interface PartnerSettlementStatementLineDto {
+  postingId: string;
+  postedAt: string;
+  account: 'PARTNER_PAYABLE' | 'PARTNER_DISPUTE_HOLD';
+  kind: string;
+  sourceType: string;
+  sourceId: string;
+  direction: 'DEBIT' | 'CREDIT';
+  amount: string;
+  /** + owed to the partner, − owed to TuTak. */
+  owedToPartner: string;
+  classification: PartnerStatementLineClassification;
+  settlementId: string | null;
+  settlementStatus: string | null;
+}
+
 export interface PartnerSettlementStatementDto {
-  id: string;
   partnerId: string;
-  period: SettlementPeriod;
+  periodicity: SettlementPeriodicity;
+  anchorDay: number;
   periodStart: string;
   periodEnd: string;
-  openingBalance: string;
-  closingBalance: string;
-  frozenBalance: string;
-  totalsByKind: Record<string, string>;
-  generatedAt: string;
+  openingOwedToPartner: string;
+  closingOwedToPartner: string;
+  totals: {
+    accrued: string;
+    deducted: string;
+    settleableNet: string;
+    claimedBySettlements: string;
+    transfers: string;
+    notSettleable: string;
+    frozenForDisputes: string;
+  };
+  unrecognisedKinds: string[];
+  settlements: { id: string; status: string; periodStart: string; periodEnd: string; netPayableAmount: string; paidAt: string | null }[];
+  /** Present on a single period's statement, omitted in the list. */
+  lines?: PartnerSettlementStatementLineDto[];
 }
 
 export interface PartnerBalanceSummaryDto {
   partnerId: string;
+  settlementPeriodicity: SettlementPeriodicity;
+  settlementAnchorDay: number;
   reservedInEscrow: string;
   reservedMoneyInEscrow: string;
   reservedDiscountInEscrow: string;
@@ -422,6 +458,9 @@ export interface PartnerBalanceSummaryDto {
   frozenForDisputes: string;
   dueToPartner: string;
   dueToTutak: string;
+  /** What the settlement engine would claim now. */
+  unsettledNet: string;
+  unrecognisedKinds: string[];
   externalPaymentsAwaitingConfirmation: string;
   statements: PartnerSettlementStatementDto[];
 }

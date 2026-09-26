@@ -9,7 +9,6 @@ import type { RefundEngineService } from '../payments/refund-engine.service';
 import type { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
 import type { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
 import type { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
-import type { PartnerSettlementStatementService } from '../payouts/partner-settlement-statement.service';
 import type { PspAttemptAgeingService } from '../psp/psp-attempt-ageing.service';
 import type { PspCallbackWorkerService } from '../psp/psp-callback-worker.service';
 import type { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
@@ -59,7 +58,6 @@ export interface SweepDependencies {
   partnerSettlement: PartnerSettlementCheckService;
   partnerOrderSla: PartnerOrderSlaSweepService;
   employeeShifts: EmployeeShiftService;
-  settlementStatements: PartnerSettlementStatementService;
   pspAgeing: PspAttemptAgeingService;
   pspCallbacks: PspCallbackWorkerService;
   /** Only present when `CARD_PAYMENTS_ENABLED=true` — see `cardPaymentsEnabled` above. */
@@ -320,16 +318,6 @@ export const SWEEPS: readonly SweepDefinition[] = [
     maxSilenceMs: 3 * 60 * 60_000,
     lockTtlMs: 10 * 60_000,
     run: ({ employeeShifts }) => employeeShifts.closeStaleShifts(),
-  },
-  {
-    name: 'partner-settlement.statements',
-    why: "Spec §51-52 / Q7b: each partner's statement for its own settlement period (daily/weekly/biweekly/monthly) is generated from the ledger once that period ends — nothing else produces it.",
-    // Hourly: a daily period ends at 00:00 Yerevan and its statement should
-    // exist within the hour; generation is idempotent per (partner, period).
-    repeat: { every: 60 * 60_000 },
-    maxSilenceMs: 3 * 60 * 60_000,
-    lockTtlMs: 15 * 60_000,
-    run: ({ settlementStatements }) => settlementStatements.generateDue(),
   },
   {
     name: 'psp.process-callbacks',

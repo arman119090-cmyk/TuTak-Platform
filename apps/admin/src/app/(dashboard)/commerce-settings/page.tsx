@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SettlementPeriod } from '@tutak/shared-types';
+import type { SettlementPeriodicity } from '@tutak/shared-types';
 import { Badge, Button, Input, PageHeader, Select, Surface, Table, Td, Th, Tr } from '@tutak/design/web';
 import { apiErrorMessage, partnerOrderAdminApi } from '@/lib/api/partnerOrderAdminApi';
 
@@ -12,7 +12,8 @@ import { apiErrorMessage, partnerOrderAdminApi } from '@/lib/api/partnerOrderAdm
  *  - commission overrides by service type / category on top of the partner's
  *    own base rate (same 0.5–20% card);
  *  - prepayment (0 / percent / fixed) by partner, service type or category;
- *  - the partner's settlement period;
+ *  - the partner's settlement cadence (`settlementPeriodicity` + anchor day —
+ *    the one cadence the settlement engine uses);
  *  - bringing the mandatory-shift date forward (it can never be pushed back).
  */
 export default function CommerceSettingsPage() {
@@ -21,7 +22,8 @@ export default function CommerceSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [rule, setRule] = useState({ serviceType: '', category: '', name: '', rateBps: '500' });
   const [prepay, setPrepay] = useState({ serviceType: '', category: '', mode: 'PERCENT' as 'PERCENT' | 'FIXED', value: '' });
-  const [period, setPeriod] = useState<SettlementPeriod>('BIWEEKLY' as SettlementPeriod);
+  const [period, setPeriod] = useState<SettlementPeriodicity>('MONTHLY' as SettlementPeriodicity);
+  const [anchorDay, setAnchorDay] = useState('1');
   const [shiftsFrom, setShiftsFrom] = useState('');
 
   const enabled = /^[0-9a-f-]{36}$/i.test(partnerId);
@@ -51,7 +53,7 @@ export default function CommerceSettingsPage() {
 
   return (
     <>
-      <PageHeader title="Commerce settings" description="Per-partner commission overrides, prepayment, settlement period and shift rollout." />
+      <PageHeader title="Commerce settings" description="Per-partner commission overrides, prepayment, settlement cadence and shift rollout." />
       <Surface className="mb-6">
         <label className="text-[13px] text-muted">Partner id</label>
         <Input value={partnerId} onChange={(e) => setPartnerId(e.target.value.trim())} placeholder="Partner UUID (from the Partners page)" />
@@ -177,16 +179,27 @@ export default function CommerceSettingsPage() {
           </Surface>
 
           <Surface>
-            <div className="mb-2 font-semibold">Settlement period and shifts</div>
+            <div className="mb-2 font-semibold">Settlement cadence and shifts</div>
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={period} onChange={(e) => setPeriod(e.target.value as SettlementPeriod)} className="w-auto">
+              <Select value={period} onChange={(e) => setPeriod(e.target.value as SettlementPeriodicity)} className="w-auto">
                 <option value="DAILY">Daily</option>
                 <option value="WEEKLY">Weekly</option>
                 <option value="BIWEEKLY">Every two weeks</option>
                 <option value="MONTHLY">Monthly</option>
               </Select>
-              <Button variant="secondary" onClick={() => act(() => partnerOrderAdminApi.setSettlementPeriod(partnerId, period))}>
-                Save settlement period
+              {period !== 'DAILY' ? (
+                <Input
+                  value={anchorDay}
+                  onChange={(e) => setAnchorDay(e.target.value)}
+                  className="w-40"
+                  placeholder={period === 'MONTHLY' ? 'Day of month 1-28' : 'Weekday 1 (Mon) - 7'}
+                />
+              ) : null}
+              <Button
+                variant="secondary"
+                onClick={() => act(() => partnerOrderAdminApi.setSettlementPeriodicity(partnerId, period, period === 'DAILY' ? undefined : Number(anchorDay)))}
+              >
+                Save settlement cadence
               </Button>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">

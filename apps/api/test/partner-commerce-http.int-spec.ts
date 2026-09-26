@@ -185,14 +185,15 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
     const w = await world();
     const rule = { partnerId: w.partner.id, serviceType: 'parts', name: 'self-serve', rateBps: 50 };
     expect((await call('POST', '/admin/partner-orders/commission-rules', { auth: token(w.owner), body: rule })).status).toBe(403);
-    expect((await call('POST', `/settlement/partners/${w.partner.id}/period`, { auth: token(w.owner), body: { period: 'DAILY' } })).status).toBe(403);
+    expect((await call('POST', `/settlement/partners/${w.partner.id}/period`, { auth: token(w.owner), body: { periodicity: 'DAILY' } })).status).toBe(403);
     expect(
       (await call('POST', `/shifts/admin/partners/${w.partner.id}/required-from`, { auth: token(w.owner), body: { at: '2099-01-01T00:00:00Z' } })).status,
     ).toBe(403);
     expect((await call('GET', '/admin/partner-orders/queue?queue=all', { auth: token(w.owner) })).status).toBe(403);
     expect((await call('POST', '/admin/partner-orders/commission-rules', { auth: token(w.admin), body: rule })).status).toBe(201);
-    expect((await call('POST', `/settlement/partners/${w.partner.id}/period`, { auth: token(w.admin), body: { period: 'WEEKLY' } })).status).toBe(201);
-    expect((await prisma.partner.findUniqueOrThrow({ where: { id: w.partner.id } })).settlementPeriod).toBe('WEEKLY');
+    expect((await call('POST', `/settlement/partners/${w.partner.id}/period`, { auth: token(w.admin), body: { periodicity: 'WEEKLY', anchorDay: 3 } })).status).toBe(201);
+    const cadence = await prisma.partner.findUniqueOrThrow({ where: { id: w.partner.id } });
+    expect([cadence.settlementPeriodicity, cadence.settlementAnchorDay]).toEqual(['WEEKLY', 3]);
   });
 
   it('the customer cannot pay with a currency other than AMD, and nobody unauthenticated reaches checkout', async () => {

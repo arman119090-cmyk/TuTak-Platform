@@ -16,6 +16,7 @@ import {
   Prisma,
   ReconciliationOutcome,
   ReconciliationSource,
+  SettlementPeriodicity,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AppConfig } from '../../config/configuration';
@@ -27,6 +28,7 @@ import {
   SETTLEMENT_PAID_KIND,
   unrecognisedKinds,
 } from './settleable-kinds';
+import { SettlementPeriodBounds, lastClosedPeriod, normaliseAnchorDay } from './settlement-period';
 
 type Tx = Prisma.TransactionClient;
 
@@ -56,6 +58,31 @@ const TRANSFER_ATTEMPTABLE: readonly PartnerSettlementStatus[] = [
  * success is a unique violation rather than a second row nobody notices.
  */
 const TRANSFER_SUCCESS_KEY = 'paid';
+
+/**
+ * A settlement in one of these states has committed the money it claimed:
+ * approved for transfer, being transferred, transferred, or waiting on a
+ * person to say whether a transfer happened. A DRAFT or READY one has not —
+ * it can still be cancelled, which releases its claims.
+ */
+export const COMMITTED_SETTLEMENT_STATUSES: readonly PartnerSettlementStatus[] = [
+  PartnerSettlementStatus.APPROVED,
+  PartnerSettlementStatus.PAYMENT_PENDING,
+  PartnerSettlementStatus.PAID,
+  PartnerSettlementStatus.FAILED,
+  PartnerSettlementStatus.REQUIRES_RECONCILIATION,
+];
+
+/**
+ * Serialises everything that decides what a partner's settlement contains:
+ * a draft claiming postings, and a Partner Commerce dispute deciding whether
+ * to freeze an order's credit (`OrderDisputesService.open`). Without it a
+ * dispute could post its hold a moment after a draft read the unclaimed
+ * postings, and the disputed amount would be paid in that draft.
+ */
+export async function lockPartnerForSettlement(tx: Tx, partnerId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "partners" WHERE id = ${partnerId} FOR UPDATE`;
+}
 
 export interface UnsettledEntry {
   ledgerPostingId: string;
@@ -219,6 +246,7 @@ export class PartnerSettlementService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await lockPartnerForSettlement(tx, params.partnerId);
       const partner = await tx.partner.findUnique({
         where: { id: params.partnerId },
         select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },
@@ -310,6 +338,82 @@ export class PartnerSettlementService {
     });
   }
 
+  /**
+   * The most recent period of this partner's own cadence that has ended at
+   * `now` — `Partner.settlementPeriodicity` + `settlementAnchorDay`, the one
+   * authoritative cadence (docs/PARTNER_COMMERCE.md §14).
+   */
+  async closedPeriodFor(partnerId: string, now = new Date()): Promise<SettlementPeriodBounds> {
+    const partner = await this.prisma.partner.findUnique({
+      where: { id: partnerId },
+      select: { settlementPeriodicity: true, settlementAnchorDay: true },
+    });
+    if (!partner) throw new NotFoundException('Partner not found');
+    return lastClosedPeriod(partner.settlementPeriodicity, partner.settlementAnchorDay, now);
+  }
+
+  /**
+   * A draft for the partner's last closed period: claims everything
+   * settleable posted before its end, exactly like `createDraft` with that
+   * period — the cadence only picks the dates.
+   */
+  async createDraftForClosedPeriod(params: { partnerId: string; actorId: string; now?: Date }) {
+    const period = await this.closedPeriodFor(params.partnerId, params.now);
+    return this.createDraft({
+      partnerId: params.partnerId,
+      actorId: params.actorId,
+      periodStart: period.start,
+      periodEnd: period.end,
+    });
+  }
+
+  /**
+   * A platform admin sets a partner's settlement cadence. Audited as
+   * PARTNER_SETTLEMENT_PERIOD_CHANGED — the same action the retired Partner
+   * Commerce `settlementPeriod` setter used, so one audit trail covers both.
+   */
+  async setPeriodicity(params: {
+    partnerId: string;
+    periodicity: SettlementPeriodicity;
+    anchorDay?: number;
+    actorId: string;
+  }) {
+    if (!Object.values(SettlementPeriodicity).includes(params.periodicity)) {
+      throw new BadRequestException('Unknown settlement periodicity');
+    }
+    const anchorDay = normaliseAnchorDay(params.periodicity, params.anchorDay);
+    return this.prisma.$transaction(async (tx) => {
+      const partner = await tx.partner.findUnique({
+        where: { id: params.partnerId },
+        select: { settlementPeriodicity: true, settlementAnchorDay: true },
+      });
+      if (!partner) throw new NotFoundException('Partner not found');
+      const updated = await tx.partner.update({
+        where: { id: params.partnerId },
+        data: { settlementPeriodicity: params.periodicity, settlementAnchorDay: anchorDay },
+        select: { id: true, settlementPeriodicity: true, settlementAnchorDay: true },
+      });
+      await this.audit.record(
+        {
+          actorUserId: params.actorId,
+          action: AuditAction.PARTNER_SETTLEMENT_PERIOD_CHANGED,
+          entityType: 'Partner',
+          entityId: params.partnerId,
+          metadata: {
+            from: { periodicity: partner.settlementPeriodicity, anchorDay: partner.settlementAnchorDay },
+            to: { periodicity: updated.settlementPeriodicity, anchorDay: updated.settlementAnchorDay },
+          },
+        },
+        tx,
+      );
+      return {
+        partnerId: updated.id,
+        settlementPeriodicity: updated.settlementPeriodicity,
+        settlementAnchorDay: updated.settlementAnchorDay,
+      };
+    });
+  }
+
   /** Attaches the accounting document and freezes the figures for approval. */
   async markReady(
     id: string,
@@ -355,6 +459,37 @@ export class PartnerSettlementService {
         throw new ForbiddenException(
           'The person who created a settlement cannot approve it. Ask a second administrator.',
         );
+      }
+
+      /*
+       * A Partner Commerce dispute opened after this draft was cut froze part
+       * of an order credit the draft already claimed. Its hold posting is a
+       * deduction this draft does not contain, so approving would pay the
+       * disputed amount. Refused: cancel and redraft, and the new draft nets
+       * the credit against its hold (docs/PARTNER_COMMERCE.md §14). Under the
+       * same partner lock `OrderDisputesService.open` takes.
+       */
+      await lockPartnerForSettlement(tx, settlement.partnerId);
+      const disputed = await tx.$queryRaw<{ orderId: string }[]>`
+        SELECT DISTINCT d."orderId"
+          FROM partner_settlement_entries e
+          JOIN order_disputes d
+            ON d."orderId" = e."sourceId" AND d.status = 'OPEN' AND d."holdLedgerTransactionId" IS NOT NULL
+         WHERE e."settlementId" = ${id}
+           AND e.kind = 'partner_order.completion'
+           AND e."sourceType" = 'PartnerOrder'
+           AND NOT EXISTS (
+             SELECT 1 FROM ledger_postings hp
+               JOIN partner_settlement_entries he ON he."ledgerPostingId" = hp.id
+              WHERE hp."transactionId" = d."holdLedgerTransactionId" AND he."settlementId" = ${id}
+           )`;
+      if (disputed.length > 0) {
+        throw new ConflictException({
+          message:
+            `An order in this settlement has an open dispute whose frozen amount is not in it ` +
+            `(${disputed.map((d) => d.orderId).join(', ')}). Cancel this settlement and draft it again.`,
+          error: 'OPEN_DISPUTE_NOT_IN_SETTLEMENT',
+        });
       }
 
       const account = await tx.partnerBankAccount.findFirst({

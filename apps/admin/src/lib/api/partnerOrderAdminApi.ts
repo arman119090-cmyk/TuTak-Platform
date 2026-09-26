@@ -13,7 +13,7 @@ import type {
   PartnerOrderAdminQueue,
   PrepaymentRuleDto,
   RecordSourcingResultRequestDto,
-  SettlementPeriod,
+  SettlementPeriodicity,
   SourcingTaskDto,
 } from '@tutak/shared-types';
 import { httpClient, ApiEnvelope } from '../httpClient';
@@ -151,8 +151,9 @@ export const partnerOrderAdminApi = {
     return data.data;
   },
 
-  async setSettlementPeriod(partnerId: string, period: SettlementPeriod) {
-    await httpClient.post(`/settlement/partners/${partnerId}/period`, { period });
+  /** The partner's one settlement cadence (`settlementPeriodicity` + anchor day). */
+  async setSettlementPeriodicity(partnerId: string, periodicity: SettlementPeriodicity, anchorDay?: number) {
+    await httpClient.post(`/settlement/partners/${partnerId}/period`, { periodicity, anchorDay });
   },
   async requireShiftsFrom(partnerId: string, at: string) {
     await httpClient.post(`/shifts/admin/partners/${partnerId}/required-from`, { at });

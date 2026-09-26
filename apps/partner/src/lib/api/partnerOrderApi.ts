@@ -155,10 +155,11 @@ export const settlementApi = {
     return data.data;
   },
 
-  async statement(id: string) {
-    const { data } = await httpClient.get<
-      ApiEnvelope<PartnerSettlementStatementDto & { lines: { id: string; kind: string; sourceType: string; sourceId: string; signedAmount: string; postedAt: string; accountType: string }[] }>
-    >(`/settlement/statements/${id}`);
+  /** One period of the partner's cadence, line by line — `at` is any instant inside it. */
+  async statement(partnerId: string, at: string) {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerSettlementStatementDto>>(`/settlement/partners/${partnerId}/statement`, {
+      params: { at },
+    });
     return data.data;
   },
 };

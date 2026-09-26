@@ -152,6 +152,15 @@ export enum OrderDisputeStatus {
   RESOLVED_SPLIT = 'RESOLVED_SPLIT',
 }
 
+/** A partner's one settlement cadence (`Partner.settlementPeriodicity`). */
+export enum SettlementPeriodicity {
+  DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY',
+  BIWEEKLY = 'BIWEEKLY',
+  MONTHLY = 'MONTHLY',
+}
+
+/** DEPRECATED — labels historical statements only; the cadence is `SettlementPeriodicity`. */
 export enum SettlementPeriod {
   DAILY = 'DAILY',
   WEEKLY = 'WEEKLY',

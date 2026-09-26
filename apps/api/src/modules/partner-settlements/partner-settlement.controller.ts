@@ -65,6 +65,13 @@ export class PartnerSettlementAdminController {
     });
   }
 
+  /** A draft for the partner's last closed period of its own cadence (`settlementPeriodicity`). */
+  @Post('drafts/:partnerId/closed-period')
+  @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)
+  async draftClosedPeriod(@CurrentUser() actor: RequestUser, @UuidParam('partnerId') partnerId: string) {
+    return this.settlements.createDraftForClosedPeriod({ partnerId, actorId: actor.id });
+  }
+
   @Post(':id/ready')
   @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)
   async ready(

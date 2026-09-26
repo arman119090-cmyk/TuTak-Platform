@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { PartnerSettlementsModule } from '../partner-settlements/partner-settlements.module';
 import { SettlementModule } from '../settlement/settlement.module';
 import { PayoutsController } from './payouts.controller';
 import { PayoutEngineService } from './payout-engine.service';
@@ -11,7 +12,7 @@ import { PartnerSettlementStatementService } from './partner-settlement-statemen
 import { PartnerSettlementController } from './partner-settlement.controller';
 
 @Module({
-  imports: [LedgerModule, AuditModule, SettlementModule],
+  imports: [LedgerModule, AuditModule, SettlementModule, PartnerSettlementsModule],
   controllers: [PayoutsController, PartnerSettlementController],
   providers: [
     PayoutEngineService,

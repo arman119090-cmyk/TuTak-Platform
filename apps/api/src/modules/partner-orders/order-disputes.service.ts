@@ -15,7 +15,9 @@ import { parsePositiveMoney, roundIssued } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CommerceLedgerService } from '../commerce-ledger/commerce-ledger.service';
+import { COMMITTED_SETTLEMENT_STATUSES, lockPartnerForSettlement } from '../partner-settlements/partner-settlement.service';
 import { PartnerOrderNotifier } from './partner-order-notifier.service';
+import { LEG_KINDS } from './partner-order-payments.service';
 import { PartnerOrderReturnsService } from './partner-order-returns.service';
 import { DISPUTABLE, PartnerOrdersService, RECEIPT_ALLOWED_FROM } from './partner-orders.service';
 
@@ -73,14 +75,27 @@ export class OrderDisputesService {
     private readonly notifier: PartnerOrderNotifier,
   ) {}
 
-  /** Has this order's partner credit already been through a settlement statement? */
-  private async isSettled(tx: Prisma.TransactionClient, orderId: string, completionLedgerTransactionId: string | null) {
-    if (!completionLedgerTransactionId) return false;
-    const line = await tx.partnerSettlementStatementLine.findFirst({
-      where: { ledgerTransactionId: completionLedgerTransactionId },
+  /**
+   * Has this order's partner credit already been committed by the settlement
+   * engine — claimed by a `PartnerSettlementEntry` whose settlement is
+   * APPROVED or later (docs/PARTNER_COMMERCE.md §14)? Then nothing is frozen
+   * (Q7b): the money is paid or being paid, and a customer-favourable
+   * decision runs as a return — a deduction the next settlement nets. A
+   * credit only in a DRAFT/READY settlement is not committed: the dispute
+   * freezes it, the hold posting is a deduction, and cancelling that draft
+   * leaves the credit and its hold to net out in the next one.
+   */
+  private async isSettled(tx: Prisma.TransactionClient, orderId: string) {
+    const claimed = await tx.partnerSettlementEntry.findFirst({
+      where: {
+        kind: LEG_KINDS.completion,
+        sourceType: 'PartnerOrder',
+        sourceId: orderId,
+        settlement: { status: { in: [...COMMITTED_SETTLEMENT_STATUSES] } },
+      },
       select: { id: true },
     });
-    return line !== null || (await tx.partnerSettlementStatementLine.count({ where: { sourceType: 'PartnerOrder', sourceId: orderId } })) > 0;
+    return claimed !== null;
   }
 
   async open(params: OpenDisputeParams) {
@@ -108,7 +123,10 @@ export class OrderDisputesService {
 
     try {
       const dispute = await this.prisma.$transaction(async (tx) => {
-        const settled = order.operationalStatus === Op.COMPLETED && (await this.isSettled(tx, order.id, order.completionLedgerTransactionId));
+        // Serialised with the settlement engine's drafts: either the draft
+        // sees this dispute's hold, or this dispute sees the draft's claim.
+        await lockPartnerForSettlement(tx, order.partnerId);
+        const settled = order.operationalStatus === Op.COMPLETED && (await this.isSettled(tx, order.id));
         const created = await tx.orderDispute.create({
           data: {
             orderId: order.id,

@@ -2,7 +2,8 @@ import { LedgerAccountType as A, PrismaClient } from '@prisma/client';
 import { PartnerOrdersService } from '../src/modules/partner-orders/partner-orders.service';
 import { PartnerOrderReturnsService } from '../src/modules/partner-orders/partner-order-returns.service';
 import { OrderDisputesService } from '../src/modules/partner-orders/order-disputes.service';
-import { PartnerSettlementStatementService, periodStartFor } from '../src/modules/payouts/partner-settlement-statement.service';
+import { PartnerSettlementStatementService } from '../src/modules/payouts/partner-settlement-statement.service';
+import { PartnerSettlementService } from '../src/modules/partner-settlements/partner-settlement.service';
 import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
 import { createCustomer, createPartner, createStaffUser } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
@@ -21,6 +22,7 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
   let disputes: OrderDisputesService;
   let statements: PartnerSettlementStatementService;
   let payouts: PayoutEngineService;
+  let engine: PartnerSettlementService;
   let s: ReturnType<typeof commerceSupport>;
 
   const savedTopUpFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
@@ -38,6 +40,7 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
     disputes = harness.app.get(OrderDisputesService);
     statements = harness.app.get(PartnerSettlementStatementService);
     payouts = harness.app.get(PayoutEngineService);
+    engine = harness.app.get(PartnerSettlementService);
     s = commerceSupport(harness.app, prisma);
   });
 
@@ -231,14 +234,18 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
   });
 
   describe('scenario M — dispute after settlement', () => {
-    it('creates partner debt that the next statement carries', async () => {
+    it('creates partner debt that the settlement engine carries into the next period', async () => {
       const { partner, admin, customer, order } = await completedOrder();
-      // Settle: the period containing the completion ends; the statement is generated; TuTak pays out.
-      const periodStart = periodStartFor(new Date(Date.now() - 3 * 86_400_000), 'DAILY');
-      const first = await statements.generate(partner.id, 'DAILY', periodStart, new Date(Date.now() + 1000));
-      expect(first!.closingBalance.toFixed(4)).toBe('-28500.0000');
-      const payout = await payouts.requestPayout({ partnerId: partner.id, amount: '28500', actorId: admin.id, idempotencyKey: 'po-m' });
-      expect(payout.payoutId).toBeDefined();
+      const checker = await createStaffUser(prisma);
+      await prisma.partnerBankAccount.create({
+        data: { partnerId: partner.id, beneficiaryName: 'ООО Партнёр', accountNumber: 'AM00 2222', bankName: 'Тестбанк', createdByUserId: admin.id },
+      });
+      // Settle and pay through the one engine (docs/PARTNER_COMMERCE.md §14).
+      const draft = await engine.createDraft({ partnerId: partner.id, actorId: admin.id, periodStart: new Date(Date.now() - 86_400_000), periodEnd: new Date(Date.now() + 1000) });
+      expect(draft.netPayableAmount.toFixed(4)).toBe('28500.0000');
+      await engine.markReady(draft.id, { actorId: admin.id });
+      await engine.approve(draft.id, checker.id);
+      await engine.markPaid(draft.id, { actorId: checker.id, bankTransferReference: 'BANK-M' });
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('0.0000');
 
       const dispute = await disputes.open({ orderId: order.id, type: 'ORDER', reason: 'broken', actorId: customer.user.id, actorType: 'CUSTOMER' });
@@ -248,11 +255,17 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
       // The customer got their money back; the partner now owes TuTak 28500 (positive = partner owes).
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-50000.0000');
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('28500.0000');
-      const next = await statements.generate(partner.id, 'DAILY', first!.periodEnd, new Date(Date.now() + 2000));
-      expect(next!.openingBalance.toFixed(4)).toBe('-28500.0000');
-      expect(next!.closingBalance.toFixed(4)).toBe('28500.0000');
+      // The debt stays unclaimed and is netted against future earnings — the PAID settlement is untouched.
+      const unsettled = await engine.unsettled(partner.id);
+      expect(unsettled.net.toFixed(4)).toBe('-28500.0000');
+      expect(unsettled.unrecognised).toEqual([]);
+      await expect(
+        engine.createDraft({ partnerId: partner.id, actorId: admin.id, periodStart: new Date(Date.now() - 86_400_000), periodEnd: new Date(Date.now() + 1000) }),
+      ).rejects.toThrow(/Nothing to pay/);
+      expect((await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe('PAID');
       const summary = await statements.balanceSummary(partner.id);
       expect(summary.dueToTutak).toBe('28500.0000');
+      expect(summary.unsettledNet).toBe('-28500.0000');
       await s.assertAllAccountsReplay();
     });
   });
@@ -297,66 +310,6 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
       ]);
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-57000.0000');
       await s.assertAllAccountsReplay();
-    });
-  });
-
-  describe('settlement statements', () => {
-    it('two workers generate one statement; every line traces to a posting; closing = opening + lines', async () => {
-      const { partner } = await completedOrder();
-      const start = periodStartFor(new Date(Date.now() - 86_400_000), 'DAILY');
-      const end = new Date(Date.now() + 1000);
-      const [a, b] = await Promise.all([
-        statements.generate(partner.id, 'DAILY', start, end),
-        statements.generate(partner.id, 'DAILY', start, end),
-      ]);
-      expect(a!.id).toBe(b!.id);
-      expect(await prisma.partnerSettlementStatement.count()).toBe(1);
-      const full = await statements.get(a!.id);
-      const sum = full.lines.filter((l) => l.accountType === 'PARTNER_PAYABLE').reduce((acc, l) => acc + Number(l.signedAmount), 0);
-      expect((Number(full.openingBalance) + sum).toFixed(4)).toBe(Number(full.closingBalance).toFixed(4));
-      expect(full.closingBalance.toFixed(4)).toBe(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id }));
-      const kinds = new Set(full.lines.map((l) => l.kind));
-      expect(kinds).toEqual(new Set(['partner_order.completion', 'partner.contribution']));
-    });
-
-    it('refund × settlement: a return racing the statement is on exactly one statement', async () => {
-      const { partner, staff, order } = await completedOrder();
-      const start = periodStartFor(new Date(Date.now() - 86_400_000), 'DAILY');
-      const [, statement] = await Promise.all([
-        returns.createReturn({ orderId: order.id, amount: '3000', reason: 'r', actorId: staff.id, actorType: 'PARTNER', idempotencyKey: 'rs-1' }),
-        statements.generate(partner.id, 'DAILY', start, new Date(Date.now() + 5000)),
-      ]);
-      const next = await statements.generate(partner.id, 'DAILY', statement!.periodEnd, new Date(Date.now() + 10_000));
-      const lines = await prisma.partnerSettlementStatementLine.findMany();
-      expect(new Set(lines.map((l) => l.postingId)).size).toBe(lines.length);
-      expect((next ?? statement)!.closingBalance.toFixed(4)).toBe(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id }));
-    });
-
-    it('dispute open × settlement: the frozen amount is never payable', async () => {
-      const { partner, admin, customer, order } = await completedOrder();
-      const start = periodStartFor(new Date(Date.now() - 86_400_000), 'DAILY');
-      await Promise.allSettled([
-        disputes.open({ orderId: order.id, type: 'ORDER', reason: 'x', actorId: customer.user.id, actorType: 'CUSTOMER' }),
-        statements.generate(partner.id, 'DAILY', start, new Date(Date.now() + 5000)),
-      ]);
-      const available = await payouts.availableBalance(partner.id);
-      const hold = await s.balance(A.PARTNER_DISPUTE_HOLD, { partnerId: partner.id });
-      // Whatever the interleaving: payable + frozen = the order's net credit, and payouts only see payable.
-      expect(available.plus(Number(hold) * -1).toFixed(4)).toBe('28500.0000');
-      if (hold !== '0.0000') {
-        await expect(payouts.requestPayout({ partnerId: partner.id, amount: '28500', actorId: admin.id, idempotencyKey: 'po-x' })).rejects.toThrow();
-      }
-      await s.assertAllAccountsReplay();
-    });
-
-    it('computes period boundaries on the Yerevan wall clock', () => {
-      // 2026-09-26 is a Saturday.
-      const at = new Date('2026-09-26T10:00:00Z');
-      expect(periodStartFor(at, 'DAILY').toISOString()).toBe('2026-09-25T20:00:00.000Z');
-      expect(periodStartFor(at, 'WEEKLY').toISOString()).toBe('2026-09-20T20:00:00.000Z');
-      expect(periodStartFor(at, 'MONTHLY').toISOString()).toBe('2026-08-31T20:00:00.000Z');
-      const biweekly = periodStartFor(at, 'BIWEEKLY');
-      expect([new Date('2026-09-20T20:00:00Z').getTime(), new Date('2026-09-13T20:00:00Z').getTime()]).toContain(biweekly.getTime());
     });
   });
 });

@@ -2050,8 +2050,8 @@ model OrderDisputeComment {
 // Settlement periods and statements (spec §50-52)
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Per-partner settlement cadence. Existing partners were migrated to
-/// BIWEEKLY — exactly the fixed 14-day cycle they already had (Q7b).
+/// DEPRECATED — only labels historical `PartnerSettlementStatement` rows.
+/// The cadence is `Partner.settlementPeriodicity`.
 enum SettlementPeriod {
   DAILY
   WEEKLY
@@ -2059,6 +2059,13 @@ enum SettlementPeriod {
   MONTHLY
 }
 
+/// DEPRECATED, read-only history (20260927090000). Nothing writes these any
+/// more: `PartnerSettlementService` (PartnerSettlement / PartnerSettlementEntry,
+/// unique `ledgerPostingId`) is the one engine that claims postings, and the
+/// partner's period statement is computed from it on read
+/// (`PartnerSettlementStatementService.periodStatement`). Rows written before
+/// are kept, never deleted.
+///
 /// One settlement period's statement for one partner — the "invoice" side
 /// of spec §50. Never a stored total whose origin cannot be proven: every
 /// line is one ledger posting, `closingBalance = openingBalance + Σ lines`
@@ -2173,7 +2180,7 @@ enum PartnerStatus {
 }
 
 model Partner {
-  id                        String           @id @default(uuid())
+  id                        String        @id @default(uuid())
   legalName                 String
   displayName               String
   /// The Armenian ՀՎՀՀ. Optional, because a self-service applicant is asked
@@ -2185,35 +2192,35 @@ model Partner {
   /// Still `@unique`: in PostgreSQL one NULL is not equal to another, so any
   /// number of partners may have none while two partners may never claim the
   /// same number.
-  taxId                     String?          @unique
+  taxId                     String?       @unique
   category                  String
   /// Meaningful only when `category` is `fuel` — whether this station sells
   /// gas. Propane and methane are one customer-facing bucket, not two: a
   /// shopper picking "Газ" on the map does not care which of the two a given
   /// station burns, so this is a single flag rather than a per-gas-type
   /// field (Arman, 2026-08-26: "в категории газ пропан и метан для всех").
-  sellsGas                  Boolean          @default(false)
+  sellsGas                  Boolean       @default(false)
   /// Meaningful only when `category` is `fuel` — whether this station sells
   /// petrol/gasoline. Independent of `sellsGas`: a real station commonly
   /// sells both, so these are two flags rather than one enum choice.
-  sellsPetrol               Boolean          @default(false)
+  sellsPetrol               Boolean       @default(false)
   /// Basis points, e.g. 300 = 3%. Restricted to the fixed rate card — 0.5%
   /// steps from 0.5% to 20% (50..2000, step 50) — enforced by
   /// `IsCommissionRateBps` at the API boundary and by
   /// `partners_commission_rate_on_grid` (CHECK) at the database boundary.
-  bonusAccrualRateBps       Int              @default(300)
+  bonusAccrualRateBps       Int           @default(300)
   /// The platform's cut of a captured payment, in basis points. Independent
   /// of bonusAccrualRateBps — one prices what the customer earns, the other
   /// what the platform keeps, and conflating them would make either one
   /// impossible to change without affecting the other.
-  paymentCommissionRateBps  Int              @default(250) // 2.5%
+  paymentCommissionRateBps  Int           @default(250) // 2.5%
   /// Spec §11: the partner's own ceiling on how much of a purchase may be
   /// paid with bonus points, 0-100. Only PARTNER_OWNER may change it — see
   /// `partners.controller.ts`. Defaults to 100 (no cap), which is exactly
   /// today's behaviour before this field existed — see the migration doc's
   /// conflict table for why no lower default or platform-wide ceiling was
   /// invented.
-  maxBonusPaymentPercent    Int              @default(100)
+  maxBonusPaymentPercent    Int           @default(100)
   /// Roaming-CPO wholesale-resale integration only (docs/
   /// ROAMING_CPO_INTEGRATION_2026-08-25.md) — the contractual AMD/kWh rate
   /// TuTak owes this partner for wholesale energy, e.g. 75 AMD/kWh.
@@ -2225,15 +2232,15 @@ model Partner {
   /// `paymentCommissionRateBps`'s default is not "this partner takes
   /// payments" — every read of this field is already gated on the session's
   /// station being a roaming-CPO one.
-  evWholesaleRatePerKwh     Decimal          @default(75.00) @db.Decimal(10, 2)
+  evWholesaleRatePerKwh     Decimal       @default(75.00) @db.Decimal(10, 2)
   /// The ceiling (AMD/kWh) on how much of a roaming-CPO session's margin
   /// enters the ordinary green/deferred/L1/L2/L3/TuTak split —
   /// `min(margin, this)`. Margin above it is undivided TuTak revenue. See
   /// `RoamingCpoSettlementService.computeMarginSplit` for the worked
   /// examples this cap was confirmed against (5 / 30 / 45 AMD/kWh margins).
-  evMarginReferralCapPerKwh Decimal          @default(20.00) @db.Decimal(10, 2)
-  status                    PartnerStatus    @default(ACTIVE)
-  isActive                  Boolean          @default(true)
+  evMarginReferralCapPerKwh Decimal       @default(20.00) @db.Decimal(10, 2)
+  status                    PartnerStatus @default(ACTIVE)
+  isActive                  Boolean       @default(true)
   /// Partner Commerce (docs/PARTNER_COMMERCE.md): whether an
   /// OUT_OF_STOCK order for this partner may be routed to TuTak's internal
   /// sourcing queue (spec §13) for an employee to look for the same item
@@ -2243,12 +2250,7 @@ model Partner {
   /// rather than a name check, so the exception is not hardcoded to any one
   /// partner. Defaults to true: most goods/parts categories do want sourcing
   /// attempted before refunding.
-  allowExternalSourcing     Boolean          @default(true)
-  /// Spec §51, Q7b: this partner's settlement cadence. Every partner that
-  /// existed before Partner Commerce v2 was migrated to BIWEEKLY — the fixed
-  /// 14-day cycle `PartnerSettlementCheckService` already enforced — and a
-  /// platform admin sets it individually from then on. Never partner-editable.
-  settlementPeriod          SettlementPeriod @default(BIWEEKLY)
+  allowExternalSourcing     Boolean       @default(true)
   /// Q4 rollout: from this moment every financially binding action by this
   /// partner's staff (QR confirm/reject/refund, external payment
   /// confirmation, return confirmations) requires an active
@@ -2257,7 +2259,7 @@ model Partner {
   /// window in which a shiftless confirmation still works but is audited
   /// as such. Only ever moved *earlier* through the API — there is no
   /// endless bypass.
-  shiftsRequiredFrom        DateTime         @default(now())
+  shiftsRequiredFrom        DateTime      @default(now())
   /// Set by reconciliation when this partner's ledger balance disagrees with
   /// the bank statement. Blocks payouts until a human clears it — paying out
   /// against a balance known to be wrong is the one thing worse than not
@@ -2312,8 +2314,8 @@ model Partner {
   /// timestamp would be, so a partner is never silently skipped just because
   /// they are new.
   lastSettledAt             DateTime?
-  createdAt                 DateTime         @default(now())
-  updatedAt                 DateTime         @updatedAt
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
 
   memberships            PartnerMembership[]
   branches               PartnerBranch[]
@@ -2328,9 +2330,13 @@ model Partner {
   /// How often this partner is settled. Per-partner, not one global period:
   /// a weekly restaurant and a monthly fuel chain are both normal, and
   /// hardcoding one cadence would force the other into it (Arman, 14.09.2026).
+  /// The one authoritative cadence — for `PartnerSettlementService` and for
+  /// Partner Commerce reporting alike (the Partner Commerce `settlementPeriod`
+  /// column it replaced was dropped by 20260927090000). Platform admin only.
   settlementPeriodicity  SettlementPeriodicity          @default(MONTHLY)
   /// Day the period is anchored to. 1-7 (Mon-Sun) for WEEKLY/BIWEEKLY, 1-28
-  /// for MONTHLY — 28 so a monthly anchor exists in February too.
+  /// for MONTHLY — 28 so a monthly anchor exists in February too. Ignored
+  /// (stored as 1) for DAILY. See `settlement-period.ts`.
   settlementAnchorDay    Int                            @default(1)
 
   settlements            Settlement[]
@@ -4130,6 +4136,7 @@ enum ReconciliationStatus {
 /// find.
 /// How often a partner is settled. Per-partner — see `Partner.settlementPeriodicity`.
 enum SettlementPeriodicity {
+  DAILY
   WEEKLY
   BIWEEKLY
   MONTHLY

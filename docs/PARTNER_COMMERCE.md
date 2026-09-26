@@ -24,7 +24,7 @@ referral share is credited to the selling partner only as it is repaid
 | Timers | BullMQ repeatable sweeps (`sweeps.jobs.ts`) | New sweeps only; no process-local timers. |
 | Operator alerts | `AlertsService.fire` (webhook, Redis suppression) | Per-tick keys for the 5-minute repeats. |
 | Customer/partner notifications | `NotificationsService` (inbox + push, i18n keys) | `PartnerOrderNotifier`. |
-| Settlement money | `PayoutEngineService`, `PartnerCollectionService` | Unchanged; statements only document. |
+| Settlement money | `PartnerSettlementService` (main) — PartnerSettlement / PartnerSettlementEntry, maker/checker, unique claim per posting | The one engine that pays partners (§14); statements are reports over it. |
 | RBAC / scope | `assertPartnerScope`, `branchFilterFor`, `assertPlatformAdmin` | New permissions `PARTNER_ORDER_OPERATE`, `ORDER_DISPUTE_RESOLVE`. |
 
 ## 2. Payment model (Q1 = C)
@@ -194,17 +194,13 @@ never alert and expire after 24 h.
 
 ## 8. Disputes and settlement (spec §49-52, Q7b)
 
-A dispute opened before the order's credit reached a settlement statement
-freezes that credit into `PARTNER_DISPUTE_HOLD` (payouts cannot reach it).
-After settlement nothing is frozen; a customer-favourable decision runs as a
-return and `PARTNER_PAYABLE` may go positive — the partner's debt, carried
-by the next statement. One OPEN dispute per order; resolution is a claim on
-OPEN (two admins → one decision).
-
-Statements: per-partner `settlementPeriod` (existing partners BIWEEKLY);
-each statement's lines are the partner's PARTNER_PAYABLE and HOLD postings
-not yet on any statement; `closing = opening + Σ lines`. The 14-day
-overdue check now uses each partner's own period.
+A dispute opened before the order's credit was committed by the settlement
+engine (claimed by a settlement APPROVED or later) freezes that credit into
+`PARTNER_DISPUTE_HOLD`. After that nothing is frozen; a customer-favourable
+decision runs as a return and `PARTNER_PAYABLE` may go positive — the
+partner's debt, netted by the next settlement. One OPEN dispute per order;
+resolution is a claim on OPEN (two admins → one decision). Settlement itself:
+§14.
 
 ## 9. Migration
 
@@ -302,12 +298,59 @@ rule of either side was changed:
   request may produce a V2 refund awaiting desk settlement.
 - **Shifts (Q4).** A provider confirmation has no employee and is not
   shift-stamped; every cash-desk action by a person still is.
-- **Open decision — settlement engine.** Main's `PartnerSettlementService`
-  pays only allow-listed ledger kinds (`settleable-kinds.ts`). Partner
-  Commerce kinds on `PARTNER_PAYABLE` (`partner_order.*`,
-  `purchase_intent.money_*`, `*.shortfall_settled_at_desk`,
-  `referral.withholding_recovered`) are deliberately **not** added: by that
-  file's own rule they are never paid, and surface as unrecognised kinds for
-  reconciliation, until TuTak decides how Partner Commerce credits are
-  settled. Likewise `Partner.settlementPeriod` (Partner Commerce statements)
-  and `Partner.settlementPeriodicity` (settlement engine) coexist.
+- **Settlement engine** — resolved by the owner (§14): main's
+  `PartnerSettlementService` is the one engine; Partner Commerce kinds are
+  classified into its allow-list, and `settlementPeriodicity` is the one
+  cadence.
+
+## 14. Settlement: one engine (owner's decision, 2026-09-26)
+
+`PartnerSettlementService` (main) is the **only** thing that pays a partner.
+A posting on `PARTNER_PAYABLE` is paid when a `PartnerSettlementEntry` claims
+it — at most once, ever (`ledgerPostingId` unique, a database invariant);
+maker/checker and the bank transfer are main's, unchanged. Partner Commerce
+adds no payout lifecycle of its own.
+
+**Allow-list.** Every Partner Commerce kind on `PARTNER_PAYABLE` is named
+exactly in `SETTLEABLE_LEDGER_KINDS` (no wildcard); a kind added later stays
+unpaid and is reported by `unrecognisedKinds()` until someone classifies it.
+
+| kind | source | on PARTNER_PAYABLE | meaning | class |
+|---|---|---|---|---|
+| `partner_order.completion` | PartnerOrder | CREDIT | electronic part (money + discount) of a received order, released from both escrows | SETTLEABLE |
+| `partner.contribution` | PartnerOrder / PurchaseIntent | DEBIT (CREDIT for a PARTNER referrer) | commission (pool) on the full total, incl. external cash | SETTLEABLE (existing) |
+| `partner.contribution_refund` | PartnerOrderReturn / PurchaseIntentRefund | CREDIT (DEBIT for a PARTNER referrer) | commission reversed on a return, minus a Q8 withheld share | SETTLEABLE (existing) |
+| `partner.bonus_redemption_compensation(_refund)` | PurchaseIntent(Refund) | CREDIT / DEBIT | QR discount compensation | SETTLEABLE (existing) |
+| `partner_order.return_money` | PartnerOrderReturn | DEBIT | TuTak money refunded to the customer (net of Q9 shortfall) | SETTLEABLE |
+| `partner_order.return_discount` | PartnerOrderReturn | DEBIT | discount restored to the customer | SETTLEABLE |
+| `partner_order.shortfall_settled_at_desk` | PartnerOrderReturn | DEBIT | Q9 shortfall the partner kept from the cash / collected | SETTLEABLE |
+| `partner_order.cancellation_cost` | PartnerOrderCancellation | CREDIT | money part of an approved actual cancellation cost | SETTLEABLE |
+| `order_dispute.hold` / `order_dispute.release` | OrderDispute | DEBIT / CREDIT | freeze / release of a disputed share | SETTLEABLE |
+| `purchase_intent.money_release` | PurchaseIntent | CREDIT | TuTak-money part of a confirmed QR purchase | SETTLEABLE |
+| `purchase_intent.money_refund` | PurchaseIntent(Refund) | DEBIT | QR refund of the TuTak-money part | SETTLEABLE |
+| `purchase_intent.shortfall_settled_at_desk` | PurchaseIntentRefund | DEBIT | Q9 shortfall kept from a QR cash refund | SETTLEABLE |
+| `referral.withholding_recovered` | ReferralWithholding | CREDIT | Q8 commission refund, credited as the referrer repays | SETTLEABLE |
+
+External cash/card is never posted, so it is never paid twice; sourcing
+price adjustments move only escrow and are released by `partner_order.completion`.
+
+**Disputes.** The hold is a deduction: while a dispute is open the frozen
+share is never payable. `createDraft` and `OrderDisputesService.open` take the
+same partner row lock, and `approve` refuses a settlement that claimed an
+order credit whose open dispute's hold it does not contain
+(`OPEN_DISPUTE_NOT_IN_SETTLEMENT`) — cancel and redraft.
+
+**One cadence.** `Partner.settlementPeriodicity` (+ `settlementAnchorDay`) —
+DAILY (added), WEEKLY, BIWEEKLY, MONTHLY; bounds in `settlement-period.ts`
+(Yerevan midnights). `createDraftForClosedPeriod` drafts the last closed
+period. Partner Commerce's `settlementPeriod` was dropped by
+`20260926200100` after a guard that STOPS if an explicitly set value (audited
+`PARTNER_SETTLEMENT_PERIOD_CHANGED`) differs from `settlementPeriodicity`.
+`PartnerSettlementCheckService` is main's, unchanged (its fixed 14 days).
+
+**Statements** are a read-only report (`PartnerSettlementStatementService`):
+for a period of the cadence, every PARTNER_PAYABLE / HOLD posting with the
+settlement that claimed it, or its class (unsettled / transfer / not
+settleable). Nothing stores or claims; the old statement tables are kept as
+history, no longer written, and the statement sweep is gone.
+

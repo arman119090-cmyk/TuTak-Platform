@@ -17,7 +17,12 @@ const KIND_LABEL: Record<string, string> = {
   'partner.contribution_refund': 'Commission returned on refunds',
   'partner_order.return_money': 'Refunds of TuTak money',
   'partner_order.return_discount': 'Refunds of discounts',
+  'partner_order.shortfall_settled_at_desk': 'Customer shortfall you kept at the desk',
+  'partner_order.cancellation_cost': 'Approved cancellation costs',
   'purchase_intent.money_refund': 'QR refunds of TuTak money',
+  'purchase_intent.shortfall_settled_at_desk': 'QR customer shortfall kept at the desk',
+  'referral.withholding_recovered': 'Commission refunds repaid by referrers',
+  'partner.settlement.paid': 'Settlement paid to you',
   'order_dispute.hold': 'Frozen for disputes',
   'order_dispute.release': 'Released from disputes',
   'payout.requested': 'Paid out to you',
@@ -25,16 +30,24 @@ const KIND_LABEL: Record<string, string> = {
   'partner.collection.confirmed': 'Collected from you',
 };
 
+const CLASS_LABEL: Record<string, string> = {
+  SETTLEABLE: 'Settled by TuTak',
+  TRANSFER: 'Money moved',
+  NOT_SETTLEABLE: 'Under review by TuTak',
+};
+
 /**
  * Spec §50, §77: what the partner is owed and owes, what is still reserved
- * for orders not yet received, and what is frozen by a dispute — plus every
- * settlement statement, each line traceable to one ledger entry. There is
- * deliberately no "withdraw": TuTak settles through its own payout process.
+ * for orders not yet received, and what is frozen by a dispute — plus a
+ * statement per period of the partner's settlement cadence. Statements are
+ * reports over TuTak's one settlement engine: every line shows the
+ * settlement that pays it (see "Settlements"). There is deliberately no
+ * "withdraw".
  */
 export default function SettlementPage() {
   const { user } = useAuthStore();
   const partnerId = getPrimaryPartnerId(user);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openAt, setOpenAt] = useState<string | null>(null);
 
   const { data: summary } = useQuery({
     queryKey: ['settlement-summary', partnerId],
@@ -42,9 +55,9 @@ export default function SettlementPage() {
     enabled: !!partnerId,
   });
   const { data: statement } = useQuery({
-    queryKey: ['settlement-statement', openId],
-    queryFn: () => settlementApi.statement(openId!),
-    enabled: !!openId,
+    queryKey: ['settlement-statement', partnerId, openAt],
+    queryFn: () => settlementApi.statement(partnerId!, openAt!),
+    enabled: !!partnerId && !!openAt,
   });
 
   if (!summary) return <PageHeader title="Settlement" />;
@@ -53,11 +66,12 @@ export default function SettlementPage() {
     <>
       <PageHeader
         title="Settlement"
-        description="Your internal balance with TuTak. It is settled by TuTak on your settlement period — there is no manual withdrawal."
+        description={`Your internal balance with TuTak, settled ${summary.settlementPeriodicity.toLowerCase()} by TuTak's settlement process — there is no manual withdrawal.`}
       />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatTile label="Due to you" value={`${num(summary.dueToPartner)} AMD`} />
         <StatTile label="Due to TuTak" value={`${num(summary.dueToTutak)} AMD`} />
+        <StatTile label="In your next settlement" value={`${num(summary.unsettledNet)} AMD`} hint="Not yet claimed by a settlement" />
         <StatTile
           label="Reserved (not yet received)"
           value={`${num(summary.reservedInEscrow)} AMD`}
@@ -74,7 +88,7 @@ export default function SettlementPage() {
 
       <Surface padded={false}>
         {summary.statements.length === 0 ? (
-          <EmptyState title="No statements yet" message="A statement is generated at the end of each settlement period." />
+          <EmptyState title="No statements yet" message="A statement covers each closed period of your settlement cadence." />
         ) : (
           <Table>
             <thead>
@@ -82,22 +96,24 @@ export default function SettlementPage() {
                 <Th>Period</Th>
                 <Th>Opening</Th>
                 <Th>Closing</Th>
+                <Th>Settled</Th>
                 <Th>Frozen</Th>
                 <Th> </Th>
               </tr>
             </thead>
             <tbody>
               {summary.statements.map((s) => (
-                <Tr key={s.id}>
+                <Tr key={s.periodStart}>
                   <Td>
                     {new Date(s.periodStart).toLocaleDateString()} – {new Date(s.periodEnd).toLocaleDateString()}
                   </Td>
-                  <Td>{num(-Number(s.openingBalance))} AMD</Td>
-                  <Td>{num(-Number(s.closingBalance))} AMD</Td>
-                  <Td>{num(-Number(s.frozenBalance))} AMD</Td>
+                  <Td>{num(s.openingOwedToPartner)} AMD</Td>
+                  <Td>{num(s.closingOwedToPartner)} AMD</Td>
+                  <Td>{num(s.totals.claimedBySettlements)} AMD</Td>
+                  <Td>{num(s.totals.frozenForDisputes)} AMD</Td>
                   <Td>
-                    <Button size="sm" variant="tertiary" onClick={() => setOpenId(openId === s.id ? null : s.id)}>
-                      {openId === s.id ? 'Hide' : 'Lines'}
+                    <Button size="sm" variant="tertiary" onClick={() => setOpenAt(openAt === s.periodStart ? null : s.periodStart)}>
+                      {openAt === s.periodStart ? 'Hide' : 'Lines'}
                     </Button>
                   </Td>
                 </Tr>
@@ -116,17 +132,19 @@ export default function SettlementPage() {
                 <Th>What</Th>
                 <Th>Reference</Th>
                 <Th>Amount (+ owed to you)</Th>
+                <Th>Settlement</Th>
               </tr>
             </thead>
             <tbody>
-              {statement.lines.map((line) => (
-                <Tr key={line.id}>
+              {(statement.lines ?? []).map((line) => (
+                <Tr key={line.postingId}>
                   <Td>{new Date(line.postedAt).toLocaleString()}</Td>
                   <Td>{KIND_LABEL[line.kind] ?? line.kind}</Td>
                   <Td>
                     {line.sourceType} {line.sourceId.slice(0, 8)}
                   </Td>
-                  <Td>{num(-Number(line.signedAmount))}</Td>
+                  <Td>{num(line.owedToPartner)}</Td>
+                  <Td>{line.settlementId ? `${line.settlementStatus} · ${line.settlementId.slice(0, 8)}` : CLASS_LABEL[line.classification]}</Td>
                 </Tr>
               ))}
             </tbody>

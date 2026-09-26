@@ -199,7 +199,6 @@ describe('Alerting (integration)', () => {
           partnerSettlement: undefined as never,
           partnerOrderSla: undefined as never,
           employeeShifts: undefined as never,
-          settlementStatements: undefined as never,
           pspAgeing: undefined as never,
           pspCallbacks: undefined as never,
           refunds: undefined as never,

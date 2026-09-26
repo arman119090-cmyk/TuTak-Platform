@@ -1,34 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Currency, LedgerAccountType, SettlementPeriod } from '@prisma/client';
+import { Currency, LedgerAccountType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { MONEY_SCALE } from '../../common/utils/money';
 import { AlertsService } from '../../infrastructure/alerts/alerts.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
-const DAY_MS = 24 * 60 * 60_000;
-
 /**
  * Doc §2: netting happens "periodically, e.g. every two weeks" — a target
- * cadence, not a promise every partner shares one calendar date. Partner
- * Commerce (spec §51, Q7b) makes the cadence each partner's own
- * `settlementPeriod`; every partner that existed before it was migrated to
- * BIWEEKLY, i.e. exactly the fixed fourteen days this sweep always used.
- * The window is still measured from the partner's own `lastSettledAt`: a
- * partner onboarded on a Tuesday is due on Tuesdays.
+ * cadence, not a promise every partner shares one calendar date. Fourteen
+ * days is the unit this sweep measures each partner's own window in, from
+ * their own `lastSettledAt`, which is exactly the point: a partner onboarded
+ * on a Tuesday is due on Tuesdays, not on whatever day the platform-wide
+ * clock says.
  */
-export const SETTLEMENT_CYCLE_MS: Record<SettlementPeriod, number> = {
-  DAILY: DAY_MS,
-  WEEKLY: 7 * DAY_MS,
-  BIWEEKLY: 14 * DAY_MS,
-  MONTHLY: 30 * DAY_MS,
-};
-
-const PERIOD_LABEL: Record<SettlementPeriod, { title: string; span: string }> = {
-  DAILY: { title: 'Daily', span: 'a day' },
-  WEEKLY: { title: 'Weekly', span: 'a week' },
-  BIWEEKLY: { title: 'Biweekly', span: 'two weeks' },
-  MONTHLY: { title: 'Monthly', span: 'a month' },
-};
+const SETTLEMENT_CYCLE_MS = 14 * 24 * 60 * 60_000;
 
 export interface SettlementCheckResult {
   /** Active partners whose settlement window had elapsed. */
@@ -89,25 +74,19 @@ export class PartnerSettlementCheckService {
   ) {}
 
   async checkOverdueSettlements(): Promise<SettlementCheckResult> {
-    const now = Date.now();
-    // The shortest cycle bounds the candidate query; each partner's own
-    // period then decides whether it is actually due.
-    const cutoff = new Date(now - SETTLEMENT_CYCLE_MS.DAILY);
+    const cutoff = new Date(Date.now() - SETTLEMENT_CYCLE_MS);
 
     // Null `lastSettledAt` is due immediately, same as a real 14-day-old
     // timestamp would be — see `Partner.lastSettledAt`'s own docblock. A
     // brand-new partner with a real balance must not go unnoticed just
     // because they have never been settled once.
-    const candidates = await this.prisma.partner.findMany({
+    const duePartners = await this.prisma.partner.findMany({
       where: {
         isActive: true,
         OR: [{ lastSettledAt: null }, { lastSettledAt: { lt: cutoff } }],
       },
-      select: { id: true, displayName: true, lastSettledAt: true, settlementPeriod: true },
+      select: { id: true, displayName: true, lastSettledAt: true },
     });
-    const duePartners = candidates.filter(
-      (p) => p.lastSettledAt === null || p.lastSettledAt.getTime() < now - SETTLEMENT_CYCLE_MS[p.settlementPeriod],
-    );
 
     if (duePartners.length === 0) {
       return { checked: 0, overdue: 0 };
@@ -134,7 +113,7 @@ export class PartnerSettlementCheckService {
       if (raw.isZero()) continue;
 
       overdue += 1;
-      await this.notify(partner.id, partner.displayName, raw, partner.lastSettledAt, partner.settlementPeriod);
+      await this.notify(partner.id, partner.displayName, raw, partner.lastSettledAt);
     }
 
     this.logger.log(
@@ -154,7 +133,6 @@ export class PartnerSettlementCheckService {
     displayName: string,
     rawBalance: Decimal,
     lastSettledAt: Date | null,
-    period: SettlementPeriod,
   ): Promise<void> {
     // Credit-normal: negated-positive means TuTak owes the partner (the
     // ordinary case — see `PayoutEngineService.availableBalance`); the raw
@@ -169,9 +147,9 @@ export class PartnerSettlementCheckService {
       await this.alerts.fire({
         severity: 'warning',
         key: `partner.settlement-due:${partnerId}`,
-        title: `${PERIOD_LABEL[period].title} settlement due — ${displayName}`,
+        title: `Biweekly settlement due — ${displayName}`,
         body:
-          `${displayName} (${partnerId}) has gone ${PERIOD_LABEL[period].span} or more without a settlement ` +
+          `${displayName} (${partnerId}) has gone two weeks or more without a settlement ` +
           `(last settled: ${since}). Net position: ${net} AMD — ${direction}. This is informational ` +
           'only — nothing has been transferred. Use a payout or a collection to net it.',
         context: {

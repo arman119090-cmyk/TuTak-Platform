@@ -627,7 +627,7 @@ describe('PartnerCollectionService (integration, dual control on)', () => {
       });
 
       await collections.confirm(recorded.collectionId, admin2);
-      // Mirrors `PayoutEngineService.confirmPaid`'s own repeated-resolution
+      // Mirrors `PartnerSettlementService.markPaid`'s own repeated-resolution
       // guard: a sequential retry after the row is already CONFIRMED is
       // caught by the status check before the transaction even opens, and
       // reads as a `BadRequestException` ("already resolved") rather than

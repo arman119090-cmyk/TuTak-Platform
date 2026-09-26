@@ -28,8 +28,8 @@ export interface AcquirerSettlementResult {
 /**
  * The acquirer paying the platform what it has been holding.
  *
- * This is the counterpart to `PayoutEngineService` and the half of the cash
- * cycle that was missing. Capture credits PSP_RECEIVABLE — a claim on the
+ * This is the counterpart to paying a partner (`PartnerSettlementService`)
+ * and the half of the cash cycle that was missing. Capture credits PSP_RECEIVABLE — a claim on the
  * acquirer, not cash. Payouts spend PLATFORM_BANK. With nothing joining the
  * two, PSP_RECEIVABLE grew for the life of the platform and PLATFORM_BANK
  * only ever went down, so neither could be compared against a real bank

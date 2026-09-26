@@ -1,12 +1,12 @@
-import { PayoutStatus, PrismaClient } from '@prisma/client';
+import { PartnerSettlementStatus, PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
 import { RefundEngineService } from '../src/modules/payments/refund-engine.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
 import { SettlementService } from '../src/modules/settlement/settlement.service';
 import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { settlementSupport } from './support/settle';
 
 /**
  * Random sequences of real money operations, with every invariant checked
@@ -34,9 +34,9 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  *
  * ## Refusals are not failures
  *
- * A payout larger than the partner is owed *should* be refused, and so
- * should a refund past the captured amount. The generator does not avoid
- * proposing them; it counts them. What must never happen is an operation
+ * A settlement drafted while another is open, or for a partner who is owed
+ * nothing, *should* be refused, and so should a refund past the captured
+ * amount. The generator does not avoid proposing them; it counts them. What must never happen is an operation
  * that succeeds and leaves the books wrong.
  */
 
@@ -63,7 +63,7 @@ describe('Money operations under random sequences (integration)', () => {
   let prisma: PrismaClient;
   let payments: PaymentEngineService;
   let refunds: RefundEngineService;
-  let payouts: PayoutEngineService;
+  let settle: ReturnType<typeof settlementSupport>;
   let settlement: SettlementService;
   let outbox: OutboxService;
 
@@ -72,7 +72,7 @@ describe('Money operations under random sequences (integration)', () => {
     prisma = harness.prisma;
     payments = harness.app.get(PaymentEngineService);
     refunds = harness.app.get(RefundEngineService);
-    payouts = harness.app.get(PayoutEngineService);
+    settle = settlementSupport(harness.app, prisma);
     settlement = harness.app.get(SettlementService);
     outbox = harness.app.get(OutboxService);
   });
@@ -127,7 +127,7 @@ describe('Money operations under random sequences (integration)', () => {
     );
 
     // A partner payable *can* legitimately go positive — the partner owing
-    // the platform — when a payout drains the balance and a refund then
+    // the platform — when a settlement drains the balance and a refund then
     // reverses the payment behind it. This invariant asserted it could not,
     // and the generator disproved that on its third seed.
     //
@@ -138,14 +138,15 @@ describe('Money operations under random sequences (integration)', () => {
     //
     // What is still asserted is the bound: a partner cannot owe more than
     // the platform ever paid them, which would mean a refund reversed money
-    // that was never sent.
+    // that was never sent. "Paid" is the sum of PAID settlements — the one
+    // way money leaves a payable since the legacy payout engine was retired.
     const impossibleDebt = await prisma.$queryRaw<{ count: bigint }[]>`
       select count(*)::bigint as count
       from ledger_accounts a
       where a.type = 'PARTNER_PAYABLE'
         and a.balance > coalesce((
-          select sum(p.amount) from payouts p
-          where p."partnerId" = a."partnerId"
+          select sum(s."netPayableAmount") from partner_settlements s
+          where s."partnerId" = a."partnerId" and s.status = 'PAID'
         ), 0)
     `;
     expect(`${context}: partners owing more than was paid out: ${Number(impossibleDebt[0]?.count ?? 0)}`).toBe(
@@ -182,7 +183,7 @@ describe('Money operations under random sequences (integration)', () => {
       const operator = await createCustomer(prisma);
 
       const captured: string[] = [];
-      const requestedPayouts: string[] = [];
+      const drafts: string[] = [];
       const refused: Record<string, number> = {};
       const performed: Record<string, number> = {};
       let step = 0;
@@ -248,25 +249,26 @@ describe('Money operations under random sequences (integration)', () => {
           if (!paymentId) continue;
           await attempt('settle', () => settlement.settlePayment(paymentId));
         } else if (roll < 0.88) {
+          // Paying a partner is a settlement: a draft claims everything owed
+          // so far. Refused when nothing is owed or one is already open.
           const partner = pick(partners)!;
-          await attempt('request payout', async () => {
-            const result = await payouts.requestPayout({
-              partnerId: partner.id,
-              amount: money(),
-              actorId: operator.user.id,
-              idempotencyKey: `fuzz-payout-${seed}-${step}`,
-            });
-            requestedPayouts.push(result.payoutId);
+          await attempt('draft settlement', async () => {
+            const draft = await settle.draftEverything(partner.id, { makerId: operator.user.id });
+            drafts.push(draft.id);
           });
         } else {
-          const payoutId = pick(requestedPayouts);
-          if (!payoutId) continue;
-          const payout = await prisma.payout.findUnique({ where: { id: payoutId } });
-          if (!payout || payout.status !== PayoutStatus.REQUESTED) continue;
-          await attempt('confirm payout', () =>
-            // A different person from the requester on purpose: the two-person
+          const draftId = pick(drafts);
+          if (!draftId) continue;
+          const draft = await prisma.partnerSettlement.findUnique({ where: { id: draftId } });
+          if (!draft || draft.status !== PartnerSettlementStatus.DRAFT) continue;
+          await attempt('pay settlement', () =>
+            // A different person from the maker on purpose: the two-person
             // rule is part of what must keep holding.
-            payouts.confirmPaid(payoutId, `fuzz-${seed}-${step}`, customers[0]!.user.id),
+            settle.payDraft(draftId, {
+              makerId: operator.user.id,
+              checkerId: customers[0]!.user.id,
+              bankTransferReference: `fuzz-${seed}-${step}`,
+            }),
           );
         }
       }

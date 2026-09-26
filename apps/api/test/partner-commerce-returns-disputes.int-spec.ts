@@ -4,7 +4,7 @@ import { PartnerOrderReturnsService } from '../src/modules/partner-orders/partne
 import { OrderDisputesService } from '../src/modules/partner-orders/order-disputes.service';
 import { PartnerSettlementStatementService } from '../src/modules/payouts/partner-settlement-statement.service';
 import { PartnerSettlementService } from '../src/modules/partner-settlements/partner-settlement.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
+import { PayoutHistoryService } from '../src/modules/payouts/payout-history.service';
 import { createCustomer, createPartner, createStaffUser } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { commerceSupport, orderDto } from './support/commerce';
@@ -21,7 +21,7 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
   let returns: PartnerOrderReturnsService;
   let disputes: OrderDisputesService;
   let statements: PartnerSettlementStatementService;
-  let payouts: PayoutEngineService;
+  let payouts: PayoutHistoryService;
   let engine: PartnerSettlementService;
   let s: ReturnType<typeof commerceSupport>;
 
@@ -39,7 +39,7 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
     returns = harness.app.get(PartnerOrderReturnsService);
     disputes = harness.app.get(OrderDisputesService);
     statements = harness.app.get(PartnerSettlementStatementService);
-    payouts = harness.app.get(PayoutEngineService);
+    payouts = harness.app.get(PayoutHistoryService);
     engine = harness.app.get(PartnerSettlementService);
     s = commerceSupport(harness.app, prisma);
   });
@@ -198,9 +198,10 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('0.0000');
       expect(await s.balance(A.PARTNER_DISPUTE_HOLD, { partnerId: partner.id })).toBe('-28500.0000');
       expect((await payouts.availableBalance(partner.id)).toFixed(4)).toBe('0.0000');
+      // The frozen share is out of the payable, so a settlement finds nothing to claim.
       await expect(
-        payouts.requestPayout({ partnerId: partner.id, amount: '100', actorId: admin.id, idempotencyKey: 'po-1' }),
-      ).rejects.toThrow();
+        engine.createDraft({ partnerId: partner.id, actorId: admin.id, periodStart: new Date('2020-01-01T00:00:00.000Z'), periodEnd: new Date(Date.now() + 1000) }),
+      ).rejects.toThrow(/Nothing to pay/);
       const summary = await statements.balanceSummary(partner.id);
       expect(summary.frozenForDisputes).toBe('28500.0000');
 

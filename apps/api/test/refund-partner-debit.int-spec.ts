@@ -2,9 +2,10 @@ import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
 import { RefundEngineService } from '../src/modules/payments/refund-engine.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
+import { PayoutHistoryService } from '../src/modules/payouts/payout-history.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { settlementSupport } from './support/settle';
 
 /**
  * A refund that leaves the partner owing the platform.
@@ -15,7 +16,7 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  * zero and the platform is out of pocket until the partner pays it back.
  *
  * Nothing is broken by this. The ledger balances, the postings are right,
- * and a payout request is refused while the balance is against them. What
+ * and a settlement is refused while the balance is against them. What
  * was missing is that nobody found out — and money outside the platform
  * that only a person can retrieve is a write-off if that person never hears
  * about it.
@@ -28,14 +29,16 @@ describe('A refund that puts a partner in debit (integration)', () => {
   let prisma: PrismaClient;
   let payments: PaymentEngineService;
   let refunds: RefundEngineService;
-  let payouts: PayoutEngineService;
+  let payouts: PayoutHistoryService;
+  let settle: ReturnType<typeof settlementSupport>;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     payments = harness.app.get(PaymentEngineService);
     refunds = harness.app.get(RefundEngineService);
-    payouts = harness.app.get(PayoutEngineService);
+    payouts = harness.app.get(PayoutHistoryService);
+    settle = settlementSupport(harness.app, prisma);
   });
 
   afterAll(async () => {
@@ -64,12 +67,8 @@ describe('A refund that puts a partner in debit (integration)', () => {
 
     // Everything the partner is owed, out the door.
     const owed = await payouts.availableBalance(partner.id);
-    await payouts.requestPayout({
-      partnerId: partner.id,
-      amount: owed.toFixed(4),
-      actorId: operator.user.id,
-      idempotencyKey: 'debit-payout',
-    });
+    const paid = await settle.payEverything(partner.id);
+    expect(paid.netPayableAmount.toFixed(4)).toBe(owed.toFixed(4));
 
     await refunds.refund({
       paymentId: payment.paymentId,
@@ -95,16 +94,12 @@ describe('A refund that puts a partner in debit (integration)', () => {
   });
 
   it('refuses to pay the partner again while the balance is against them', async () => {
-    const { partner, operator } = await drainThenRefund();
+    const { partner } = await drainThenRefund();
 
-    await expect(
-      payouts.requestPayout({
-        partnerId: partner.id,
-        amount: '1.00',
-        actorId: operator.user.id,
-        idempotencyKey: 'debit-second-payout',
-      }),
-    ).rejects.toThrow(/exceeds/i);
+    // A negative net is carried forward against future earnings, never
+    // drafted — so there is nothing to approve, let alone pay.
+    await expect(settle.draftEverything(partner.id)).rejects.toThrow(/Nothing to pay/);
+    expect(await prisma.partnerSettlement.count({ where: { partnerId: partner.id } })).toBe(1);
   });
 
   it('leaves the ledger balanced and the debt no larger than what was paid out', async () => {

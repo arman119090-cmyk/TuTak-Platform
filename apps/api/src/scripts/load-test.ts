@@ -30,7 +30,8 @@ import * as os from 'os';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
-import { PayoutEngineService } from '../modules/payouts/payout-engine.service';
+import { PayoutHistoryService } from '../modules/payouts/payout-history.service';
+import { PartnerSettlementService } from '../modules/partner-settlements/partner-settlement.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
 import { PurchaseIntentsService } from '../modules/purchase-intents/purchase-intents.service';
 import { ReferralService } from '../modules/referral/referral.service';
@@ -171,7 +172,8 @@ async function main() {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   const prisma = app.get(PrismaService);
   const payments = app.get(PaymentEngineService);
-  const payouts = app.get(PayoutEngineService);
+  const payouts = app.get(PayoutHistoryService);
+  const settlements = app.get(PartnerSettlementService);
   const outbox = app.get(OutboxService);
   const intents = app.get(PurchaseIntentsService);
   const referrals = app.get(ReferralService);
@@ -309,23 +311,54 @@ async function main() {
     say(`  rate          ${(drained / (drainMs / 1000)).toFixed(1)} events/s`);
   }
 
-  // ── 4. Contended payouts ───────────────────────────────────────────────
+  // ── 4. Contended settlement drafts ─────────────────────────────────────
   //
-  // Every one of these takes `FOR UPDATE` on the same partner's payable
-  // balance, so they serialize by design. The number to watch is not
-  // throughput but whether the total paid out ever exceeds what was owed —
-  // reported below by the ledger check.
-
+  // Paying a partner is a `PartnerSettlement` (the legacy per-amount payout
+  // engine was retired on 26.09.2026). Every draft here takes the partner
+  // settlement lock and claims the same postings, so they serialize by
+  // design and exactly one may win: the rest must be refused because a
+  // settlement is already open, and the number to watch is not throughput
+  // but that one draft, paid, never takes more than was owed.
+  //
+  // The audit log has a foreign key to users, so the maker and checker are
+  // real rows rather than labels.
+  const [makerRow, checkerRow] = await Promise.all(
+    ['Maker', 'Checker'].map((lastName, i) =>
+      prisma.user.create({
+        data: {
+          phone: phoneFor(CUSTOMERS + i),
+          firstName: 'Load',
+          lastName,
+          passwordHash,
+          isPhoneVerified: true,
+        },
+      }),
+    ),
+  );
   const owedBefore = await payouts.availableBalance(partner.id);
-  const payoutRuns = await saturate(Math.min(CONCURRENCY, 16), Math.min(SECONDS, 10), async (n) => {
-    await payouts.requestPayout({
+  const draftRuns = await saturate(Math.min(CONCURRENCY, 16), Math.min(SECONDS, 10), async () => {
+    await settlements.createDraft({
       partnerId: partner.id,
-      amount: '10',
-      actorId: 'load-test',
-      idempotencyKey: `load-payout-${run}-${n}`,
+      actorId: makerRow!.id,
+      periodStart: new Date(0),
+      periodEnd: new Date(Date.now() + 1000),
     });
   });
-  report('Contended payouts (same partner)', payoutRuns.samples, payoutRuns.elapsedMs);
+  report('Contended settlement drafts (same partner)', draftRuns.samples, draftRuns.elapsedMs);
+  const drafts = await prisma.partnerSettlement.findMany({ where: { partnerId: partner.id } });
+  say(`  drafts made   ${drafts.length} (exactly one is correct while the partner is owed anything)`);
+  if (drafts.length > 1) {
+    throw new Error(`${drafts.length} settlements are open for one partner; the claim did not serialize`);
+  }
+  const draft = drafts[0];
+  if (draft) {
+    await settlements.markReady(draft.id, { actorId: makerRow!.id });
+    await settlements.approve(draft.id, checkerRow!.id);
+    await settlements.markPaid(draft.id, {
+      actorId: checkerRow!.id,
+      bankTransferReference: `LOAD-${run}`,
+    });
+  }
   const owedAfter = await payouts.availableBalance(partner.id);
   const paid = owedBefore.minus(owedAfter);
   say(`  owed before   ${owedBefore.toFixed(4)}`);
@@ -333,6 +366,11 @@ async function main() {
   say(`  paid out      ${paid.toFixed(4)}`);
   if (owedAfter.lessThan(0)) {
     throw new Error(`Partner was overpaid: balance is ${owedAfter.toFixed(4)}`);
+  }
+  if (draft && !paid.equals(draft.netPayableAmount)) {
+    throw new Error(
+      `Paid ${paid.toFixed(4)} but the settlement said ${draft.netPayableAmount.toFixed(4)}`,
+    );
   }
 
   // ── 5. Purchase intent settlement ──────────────────────────────────────

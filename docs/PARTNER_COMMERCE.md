@@ -311,6 +311,19 @@ it — at most once, ever (`ledgerPostingId` unique, a database invariant);
 maker/checker and the bank transfer are main's, unchanged. Partner Commerce
 adds no payout lifecycle of its own.
 
+**Retired second payer (26.09.2026, Launch Readiness P1).** Until then the
+platform also carried the original `PayoutEngineService` (`POST /payouts`,
+`/payouts/:id/confirm`, `/payouts/:id/fail`): a per-amount request → clearing
+→ confirm engine that debited `PARTNER_PAYABLE` on its own. Its `payout.*`
+kinds are transfer kinds this engine never claims, so the two payers were
+invisible to each other and the same earnings could be paid by both (proved:
+legacy payout 30 000 followed by a settlement of the same period left the
+payable at −30 000). The engine, its routes, DTOs and the admin request /
+confirm / fail controls were removed; `PayoutHistoryService` keeps the old
+`payouts` rows and the balance figure readable. `payout.requested` /
+`payout.settled` stay in `TRANSFER_LEDGER_KINDS` so historical postings are
+classified, never claimed.
+
 **Allow-list.** Every Partner Commerce kind on `PARTNER_PAYABLE` is named
 exactly in `SETTLEABLE_LEDGER_KINDS` (no wildcard); a kind added later stays
 unpaid and is reported by `unrecognisedKinds()` until someone classifies it.

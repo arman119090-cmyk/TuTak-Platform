@@ -1,6 +1,15 @@
 import { Body, Controller, ForbiddenException, Get, NotFoundException, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { OrderDisputeType, PartnerOrderActorType, PartnerOrderOperationalStatus as Op, PermissionName, RoleName } from '@prisma/client';
+import {
+  OrderDisputeType,
+  PartnerOrderActorType,
+  PartnerOrderCancellationStatus,
+  PartnerOrderOperationalStatus as Op,
+  PermissionName,
+  RoleName,
+} from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { AppConfig } from '../../config/configuration';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -15,7 +24,9 @@ import { SubmitPartnerOrderDto } from './dto/submit-partner-order.dto';
 import { CancelPartnerOrderDto } from './dto/cancel-partner-order.dto';
 import { CorrectExternalPaymentDto } from './dto/correct-external-payment.dto';
 import { AcceptAdjustmentDto } from './dto/accept-adjustment.dto';
-import { PartnerOrderQueueFilter, PartnerOrdersService, RECEIPT_ALLOWED_FROM, PRE_HANDOVER } from './partner-orders.service';
+import { CANCELLABLE, DISPUTABLE, PartnerOrderQueueFilter, PartnerOrdersService, RECEIPT_ALLOWED_FROM } from './partner-orders.service';
+import { PartnerOrderCancellationService } from './partner-order-cancellation.service';
+import { ClaimCancellationCostDto, OutForDeliveryDto, RefuseShortfallDto, SettleShortfallDto } from './dto/final-fixes.dto';
 import { PartnerOrderAdjustmentService } from './partner-order-adjustment.service';
 import { PartnerOrderReturnsService } from './partner-order-returns.service';
 import { OrderDisputesService } from './order-disputes.service';
@@ -33,7 +44,10 @@ export function customerStatusOf(order: {
   operationalStatus: Op;
   sourcingStatus: string;
   paymentStatus: string;
+  cancellationStatus?: PartnerOrderCancellationStatus;
 }): string {
+  if (order.cancellationStatus === PartnerOrderCancellationStatus.REQUESTED) return 'cancellation_requested';
+  if (order.cancellationStatus === PartnerOrderCancellationStatus.COST_REVIEW) return 'cancellation_review';
   switch (order.operationalStatus) {
     case Op.DRAFT:
       return 'awaiting_confirmation';
@@ -44,8 +58,12 @@ export function customerStatusOf(order: {
       return order.sourcingStatus === 'AWAITING_CUSTOMER' ? 'decision_required' : 'checking_availability';
     case Op.STOCK_CONFIRMED:
       return 'confirmed';
-    case Op.HANDED_OVER:
+    case Op.OUT_FOR_DELIVERY:
       return 'on_the_way';
+    case Op.READY_FOR_PICKUP:
+      return 'ready_for_pickup';
+    case Op.DELIVERED:
+      return 'delivered';
     case Op.RECEIVED:
     case Op.COMPLETED:
       return order.paymentStatus === 'REFUNDED' ? 'refunded' : order.paymentStatus === 'PARTIALLY_REFUNDED' ? 'partially_refunded' : 'received';
@@ -60,7 +78,10 @@ const INTERNAL_FIELDS = [
   'partnerSeenByUserId',
   'stockConfirmedByUserId',
   'stockRejectedByUserId',
-  'handedOverByUserId',
+  'outForDeliveryByUserId',
+  'readyForPickupByUserId',
+  'deliveredByUserId',
+  'paymentIssueEscalatedAt',
   'rejectionReason',
   'cancelledByUserId',
   'manualReviewReason',
@@ -95,6 +116,31 @@ const INTERNAL_FIELDS = [
   'prepaymentRuleId',
 ] as const;
 
+/** Staff identities and ledger/shift references on a return or cancellation — never customer-facing. */
+const INTERNAL_CHILD_FIELDS = [
+  'requestedByUserId',
+  'requestedShiftId',
+  'externalRefundConfirmedByUserId',
+  'externalRefundConfirmedShiftId',
+  'settledByUserId',
+  'settledShiftId',
+  'refusedByUserId',
+  'reviewedByUserId',
+  'claimedByUserId',
+  'claimedShiftId',
+  'decidedByUserId',
+  'idempotencyKey',
+  'contributionReversalLedgerTransactionId',
+  'moneyRefundLedgerTransactionId',
+  'discountRefundLedgerTransactionId',
+  'shortfallRecoveryLedgerTransactionId',
+  'costLedgerTransactionId',
+  'poolReversed',
+  'referralWithheld',
+  'expiredWrittenBack',
+  'revenueReversed',
+] as const;
+
 const INTERNAL_LEG_FIELDS = [
   'bonusReservationId',
   'captureLedgerTransactionId',
@@ -125,11 +171,22 @@ export function toCustomerView<T extends Record<string, unknown>>(order: T) {
       return copy;
     });
   }
+  for (const key of ['returns', 'cancellations'] as const) {
+    if (Array.isArray(view[key])) {
+      view[key] = (view[key] as Record<string, unknown>[]).map((row) => {
+        const copy = { ...row };
+        for (const f of INTERNAL_CHILD_FIELDS) delete copy[f];
+        return copy;
+      });
+    }
+  }
   const op = order.operationalStatus as Op;
+  const noCancellationPending = order.cancellationStatus === undefined || order.cancellationStatus === PartnerOrderCancellationStatus.NONE;
   view.customerStatus = customerStatusOf(order as never);
-  view.canConfirmReceipt = RECEIPT_ALLOWED_FROM.includes(op);
-  view.canCancel = op === Op.DRAFT || PRE_HANDOVER.includes(op);
-  view.canOpenDispute = op === Op.RECEIVED || op === Op.COMPLETED || op === Op.HANDED_OVER;
+  view.canConfirmReceipt = RECEIPT_ALLOWED_FROM.includes(op) && noCancellationPending;
+  view.canCancel = (op === Op.DRAFT || CANCELLABLE.includes(op)) && noCancellationPending;
+  view.canWithdrawCancellation = !noCancellationPending;
+  view.canOpenDispute = DISPUTABLE.includes(op);
   return view;
 }
 
@@ -163,7 +220,9 @@ export class PartnerOrdersController {
     private readonly adjustments: PartnerOrderAdjustmentService,
     private readonly returns: PartnerOrderReturnsService,
     private readonly disputes: OrderDisputesService,
+    private readonly cancellations: PartnerOrderCancellationService,
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   // ── Partner website → TuTak (server-to-server) — spec §3 ────────────────
@@ -177,9 +236,13 @@ export class PartnerOrdersController {
     @Body() dto: CreatePartnerOrderDto,
   ) {
     const order = await this.partnerOrders.create(partnerId, integrationId, dto);
-    // The partner's own backend gets the id to build the checkout link
-    // (tutak://checkout/<id> or the web checkout) — never TuTak internals.
+    // The partner's own backend gets where to send the customer — TuTak Web
+    // Checkout (Q12; no app needed) and the app's deep link — never TuTak
+    // internals.
+    const webBase = this.config.get('checkout.webBaseUrl', { infer: true });
     return {
+      checkoutUrl: webBase ? `${webBase}/o/${order.id}` : null,
+      appCheckoutUrl: `tutak://checkout/${order.id}`,
       id: order.id,
       orderNumber: order.orderNumber,
       externalOrderId: order.externalOrderId,
@@ -217,9 +280,27 @@ export class PartnerOrdersController {
     return toCustomerView(await this.partnerOrders.confirmReceived(id, customer.id));
   }
 
+  /**
+   * "Отменить заказ" (item 8): immediate full refund, or — when the site
+   * disclosed possible costs and the partner may already have incurred them
+   * — a request the partner answers and, for an actual-cost claim, TuTak
+   * decides. Never a fixed or percentage penalty.
+   */
   @Post(':id/cancel')
   async cancel(@CurrentUser() customer: RequestUser, @UuidParam('id') id: string, @Body() dto: CancelPartnerOrderDto) {
-    return toCustomerView(await this.partnerOrders.cancelByCustomer(id, customer.id, dto.reason));
+    return toCustomerView(await this.cancellations.request(id, customer.id, dto.reason));
+  }
+
+  @Post(':id/cancel/withdraw')
+  async withdrawCancel(@CurrentUser() customer: RequestUser, @UuidParam('id') id: string) {
+    return toCustomerView(await this.cancellations.withdraw(id, customer.id));
+  }
+
+  /** Q9: the customer disputes a return's shortfall settlement — to TuTak manual review, nothing moves. */
+  @Post('returns/:id/dispute-shortfall')
+  async disputeShortfall(@CurrentUser() customer: RequestUser, @UuidParam('id') id: string, @Body() dto: RefuseShortfallDto) {
+    const row = await this.returns.refuseShortfall(id, { userId: customer.id, type: PartnerOrderActorType.CUSTOMER }, dto.note);
+    return row;
   }
 
   @Post('adjustments/:id/accept')
@@ -313,11 +394,44 @@ export class PartnerOrdersController {
     return toPartnerView(await this.partnerOrders.rejectStock(id, staff.id, dto));
   }
 
-  @Post(':id/handed-over')
+  /** "Передал курьеру" — no customer timer starts (item 7). */
+  @Post(':id/out-for-delivery')
   @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
-  async handedOver(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+  async outForDelivery(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string, @Body() dto: OutForDeliveryDto) {
     await this.scopedOrder(staff, id);
-    return toPartnerView(await this.partnerOrders.markHandedOver(id, staff.id));
+    return toPartnerView(await this.partnerOrders.markOutForDelivery(id, staff.id, dto.courierNote));
+  }
+
+  /** "Готов к выдаче" — self-pickup; no customer timer starts. */
+  @Post(':id/ready-for-pickup')
+  @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
+  async readyForPickup(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+    await this.scopedOrder(staff, id);
+    return toPartnerView(await this.partnerOrders.markReadyForPickup(id, staff.id));
+  }
+
+  /** "Доставлен / выдан клиенту" — the only event the 24h/48h receipt clock runs from. */
+  @Post(':id/delivered')
+  @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
+  async delivered(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+    await this.scopedOrder(staff, id);
+    return toPartnerView(await this.partnerOrders.markDelivered(id, staff.id));
+  }
+
+  /** Item 8: the partner had no costs — the cancellation proceeds with a full refund. */
+  @Post(':id/cancellation/no-cost')
+  @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
+  async cancellationNoCost(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+    await this.scopedOrder(staff, id);
+    return toPartnerView(await this.cancellations.declareNoCost(id, staff.id));
+  }
+
+  /** Item 8: an actual, previously disclosed cost — amount, reason, evidence. On shift; TuTak decides. */
+  @Post(':id/cancellation/claim-cost')
+  @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
+  async cancellationClaimCost(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string, @Body() dto: ClaimCancellationCostDto) {
+    await this.scopedOrder(staff, id);
+    return toPartnerView(await this.cancellations.claimCost(id, staff.id, dto));
   }
 
   private async scopedLeg(user: RequestUser, legId: string) {
@@ -394,10 +508,35 @@ export class PartnerOrdersController {
   @Post('returns/:id/confirm-external-refund')
   @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
   async confirmReturnExternalRefund(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string) {
+    await this.scopedReturn(staff, id);
+    return this.returns.confirmExternalRefund(id, staff.id);
+  }
+
+  private async scopedReturn(user: RequestUser, id: string) {
     const row = await this.prisma.partnerOrderReturn.findUnique({ where: { id }, include: { order: true } });
     if (!row) throw new NotFoundException('Return not found');
-    assertResourceBranchScope(staff, row.order.partnerId, row.order.branchId);
-    return this.returns.confirmExternalRefund(id, staff.id);
+    assertResourceBranchScope(user, row.order.partnerId, row.order.branchId);
+    return row;
+  }
+
+  /**
+   * Q9: the employee on shift confirms the cash settlement with the
+   * customer exactly as shown (net external hand-back + the amount
+   * collected); the return then executes.
+   */
+  @Post('returns/:id/settle-shortfall')
+  @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
+  async settleShortfall(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string, @Body() dto: SettleShortfallDto) {
+    await this.scopedReturn(staff, id);
+    return this.returns.settleShortfall(id, staff.id, dto.collectedAmount);
+  }
+
+  /** Q9: the customer refuses the shortfall at the desk — manual review, nothing moves. */
+  @Post('returns/:id/refuse-shortfall')
+  @RequirePermissions(PermissionName.PARTNER_ORDER_MANAGE)
+  async refuseShortfall(@CurrentUser() staff: RequestUser, @UuidParam('id') id: string, @Body() dto: RefuseShortfallDto) {
+    await this.scopedReturn(staff, id);
+    return this.returns.refuseShortfall(id, { userId: staff.id, type: PartnerOrderActorType.PARTNER }, dto.note);
   }
 
   @Post('legs/:id/confirm-external-return')

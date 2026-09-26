@@ -17,7 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import { CommerceLedgerService } from '../commerce-ledger/commerce-ledger.service';
 import { PartnerOrderNotifier } from './partner-order-notifier.service';
 import { PartnerOrderReturnsService } from './partner-order-returns.service';
-import { PartnerOrdersService, RECEIPT_ALLOWED_FROM } from './partner-orders.service';
+import { DISPUTABLE, PartnerOrdersService, RECEIPT_ALLOWED_FROM } from './partner-orders.service';
 
 const ZERO = new Decimal(0);
 
@@ -86,11 +86,11 @@ export class OrderDisputesService {
   async open(params: OpenDisputeParams) {
     const order = await this.orders.findByIdOrThrow(params.orderId);
     if (params.type === OrderDisputeType.ORDER) {
-      // Spec §48: after the goods reached the customer.
-      if (!([Op.HANDED_OVER, Op.RECEIVED, Op.COMPLETED] as Op[]).includes(order.operationalStatus)) {
-        throw new BadRequestException('An order dispute can be opened once the order has been handed over');
+      // Spec §48: once the goods left the partner (to its courier or to the customer).
+      if (!DISPUTABLE.includes(order.operationalStatus)) {
+        throw new BadRequestException('An order dispute can be opened once the order has left the partner');
       }
-    } else if (!([Op.HANDED_OVER, Op.RECEIVED, Op.COMPLETED] as Op[]).includes(order.operationalStatus)) {
+    } else if (!DISPUTABLE.includes(order.operationalStatus)) {
       // Before handover a mistaken confirmation is corrected, not disputed (spec §27).
       throw new BadRequestException('Before handover, correct the payment confirmation instead');
     }

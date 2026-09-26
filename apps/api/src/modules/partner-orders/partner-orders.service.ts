@@ -10,7 +10,11 @@ import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
   Currency,
+  FinancialPolicyVersion,
+  FulfillmentMethod,
   OrderEscalationType,
+  PartnerOrderCancellationRequestStatus,
+  PartnerOrderCancellationStatus,
   PartnerIntegrationStatus,
   PartnerIntegrationType,
   PartnerOrderActorType,
@@ -48,10 +52,27 @@ type Tx = Prisma.TransactionClient;
 
 const ZERO = new Decimal(0);
 
-/** Before the goods leave the partner — the only window a plain cancellation exists in (spec §43). */
-export const PRE_HANDOVER: Op[] = [Op.SUBMITTED, Op.SEEN, Op.STOCK_CONFIRMED, Op.OUT_OF_STOCK];
+/** The goods are still at the partner (a mistaken cash confirmation is corrected, not disputed). */
+export const PRE_DISPATCH: Op[] = [Op.SUBMITTED, Op.SEEN, Op.STOCK_CONFIRMED, Op.OUT_OF_STOCK, Op.READY_FOR_PICKUP];
+/** Item 8: the customer may always ask to cancel before receipt; after it, it is a return. */
+export const CANCELLABLE: Op[] = [
+  Op.SUBMITTED,
+  Op.SEEN,
+  Op.STOCK_CONFIRMED,
+  Op.OUT_OF_STOCK,
+  Op.OUT_FOR_DELIVERY,
+  Op.READY_FOR_PICKUP,
+  Op.DELIVERED,
+];
+/**
+ * Item 8: before stock is confirmed the partner cannot have spent anything
+ * on the order yet — a cancellation there is always immediate and full.
+ */
+export const COST_FREE_CANCELLATION: Op[] = [Op.SUBMITTED, Op.SEEN, Op.OUT_OF_STOCK];
 /** Where the customer's "Получил заказ" is available (spec §31: only after stock is confirmed). */
-export const RECEIPT_ALLOWED_FROM: Op[] = [Op.STOCK_CONFIRMED, Op.HANDED_OVER];
+export const RECEIPT_ALLOWED_FROM: Op[] = [Op.STOCK_CONFIRMED, Op.OUT_FOR_DELIVERY, Op.READY_FOR_PICKUP, Op.DELIVERED];
+/** The goods left the partner or reached the customer — an ORDER/PAYMENT dispute may be opened. */
+export const DISPUTABLE: Op[] = [Op.OUT_FOR_DELIVERY, Op.DELIVERED, Op.RECEIVED, Op.COMPLETED];
 /** Everything a partner works on — never an unconfirmed DRAFT or an EXPIRED cart. */
 export const PARTNER_VISIBLE: Op[] = Object.values(Op).filter((s) => s !== Op.DRAFT && s !== Op.EXPIRED);
 
@@ -60,7 +81,9 @@ export type PartnerOrderQueueFilter =
   | 'seen'
   | 'stock_confirmed'
   | 'out_of_stock'
-  | 'handed_over'
+  | 'in_delivery'
+  | 'delivered'
+  | 'cancellation'
   | 'completed'
   | 'cancelled'
   | 'refund'
@@ -70,6 +93,8 @@ const ORDER_INCLUDE = {
   items: true,
   paymentLegs: { orderBy: { createdAt: 'asc' } },
   adjustments: { orderBy: { createdAt: 'asc' } },
+  cancellations: { orderBy: { createdAt: 'asc' } },
+  returns: { orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.PartnerOrderInclude;
 
 export type PartnerOrderWithRelations = Prisma.PartnerOrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
@@ -87,6 +112,7 @@ export type AdminQueue =
   | 'disputes'
   | 'critical'
   | 'manual_review'
+  | 'cancellation_review'
   | 'completed';
 
 export interface Actor {
@@ -106,11 +132,11 @@ export interface Actor {
  * submit) has exactly one winner and the loser changes nothing.
  *
  * Money (Q1–Q3): the customer's discount and TuTak-money legs are captured
- * into PARTNER_ORDER_ESCROW at "Подтвердить заказ"; they become partner
- * receivable, and the existing 20/30/30/20 distribution runs, only at
- * completion — after the customer's "Получил заказ" and once every external
- * leg is confirmed (interim rule pending Q10). Nothing is ever released on a
- * timer.
+ * into their own escrows (discount / money, item 9) at "Подтвердить заказ";
+ * they become partner receivable, and the existing 20/30/30/20
+ * distribution runs, only at completion — once the customer confirmed
+ * receipt *and* every external leg is confirmed (Q10). Nothing is ever
+ * released on a timer.
  */
 @Injectable()
 export class PartnerOrdersService {
@@ -200,6 +226,9 @@ export class PartnerOrdersService {
           commissionAmount: this.distribution.poolFor(totalAmount, rateBps),
           prepaymentRuleId: prepayment.rule?.id,
           prepaymentRequiredAmount: prepayment.amount,
+          financialPolicyVersion: FinancialPolicyVersion.COMMERCE_V2,
+          cancellationTerms: dto.cancellationTerms?.trim() || null,
+          fulfillmentMethod: dto.fulfillmentMethod ?? null,
           sourcingAllowed: partner.allowExternalSourcing,
           draftExpiresAt: new Date(Date.now() + draftTtlHours * 3_600_000),
           items: {
@@ -276,7 +305,11 @@ export class PartnerOrdersService {
       limits: {
         maxDiscountAmount: maxDiscount.toFixed(4),
         prepaymentRequiredAmount: order.prepaymentRequiredAmount.toFixed(4),
+        // Q13: only real money secures the prepayment — the TuTak-money
+        // part. The discount lowers the price but never counts toward it.
+        prepaymentCountsFrom: 'TUTAK_MONEY' as const,
       },
+      cancellationTerms: order.cancellationTerms,
     };
   }
 
@@ -309,9 +342,15 @@ export class PartnerOrdersService {
     }
 
     const split = await this.validateSplit(order.partnerId, order.totalAmount, dto.discountAmount, dto.tutakMoneyAmount);
-    if (split.discount.plus(split.tutakMoney).lessThan(order.prepaymentRequiredAmount)) {
+    // Q13: the prepayment is real financial security for the order — only
+    // the TuTak-money part (captured into the money escrow below) covers it.
+    // The discount is a right to a discount, not money: it never counts.
+    const prepaymentCovered = split.tutakMoney;
+    if (prepaymentCovered.lessThan(order.prepaymentRequiredAmount)) {
       throw new BadRequestException({
-        message: `This order needs at least ${order.prepaymentRequiredAmount.toFixed(0)} AMD paid through TuTak in advance`,
+        message:
+          `This order needs at least ${order.prepaymentRequiredAmount.toFixed(0)} AMD paid in advance from your TuTak money ` +
+          'balance — the discount balance does not count toward the prepayment',
         error: 'PREPAYMENT_REQUIRED',
       });
     }
@@ -349,6 +388,7 @@ export class PartnerOrdersService {
             discountAmount: split.discount,
             tutakMoneyAmount: split.tutakMoney,
             externalAmount: split.external,
+            prepaymentCoveredAmount: prepaymentCovered,
             submitIdempotencyKey: dto.idempotencyKey,
             sourceTransactionId: transaction.id,
           },
@@ -373,6 +413,7 @@ export class PartnerOrdersService {
               tutakMoneyAmount: split.tutakMoney.toString(),
               externalAmount: split.external.toString(),
               prepaymentRequiredAmount: order.prepaymentRequiredAmount.toString(),
+              prepaymentCoveredAmount: prepaymentCovered.toString(),
             },
           },
           tx,
@@ -555,21 +596,98 @@ export class PartnerOrdersService {
     return order;
   }
 
-  /** "Передан клиенту / курьеру" — starts the 24h/48h receipt clock (spec §34). No shift needed. */
-  async markHandedOver(orderId: string, staffUserId: string) {
+  // ── Partner: fulfillment (item 7) ───────────────────────────────────────
+  //
+  // Three distinct events, never one ambiguous "handed over":
+  //   OUT_FOR_DELIVERY  handed to the partner's own courier (no TuTak account
+  //                     needed; the partner owns that relationship);
+  //   READY_FOR_PICKUP  waiting at the branch for self-pickup;
+  //   DELIVERED         the partner's side considers it actually delivered /
+  //                     handed to the customer — the ONLY event the customer's
+  //                     24h reminder / 48h manual review run from.
+  // No shift needed (not a cash-desk action). Blocked while a cancellation
+  // request is pending — the partner answers that first.
+
+  /** "Передал курьеру". Starts no customer timer. */
+  async markOutForDelivery(orderId: string, staffUserId: string, courierNote?: string) {
+    return this.fulfillmentStep(orderId, staffUserId, {
+      from: [Op.STOCK_CONFIRMED],
+      to: Op.OUT_FOR_DELIVERY,
+      data: {
+        outForDeliveryAt: new Date(),
+        outForDeliveryByUserId: staffUserId,
+        courierNote: courierNote?.trim() || null,
+        fulfillmentMethod: FulfillmentMethod.DELIVERY,
+      },
+      alreadyDone: [Op.OUT_FOR_DELIVERY, Op.DELIVERED, Op.RECEIVED, Op.COMPLETED],
+      action: AuditAction.PARTNER_ORDER_OUT_FOR_DELIVERY,
+      notify: (order) => this.notifier.outForDelivery(order),
+      error: 'Only an order confirmed in stock can be handed to a courier',
+    });
+  }
+
+  /** "Готов к выдаче" (self-pickup). Starts no customer timer. */
+  async markReadyForPickup(orderId: string, staffUserId: string) {
+    return this.fulfillmentStep(orderId, staffUserId, {
+      from: [Op.STOCK_CONFIRMED],
+      to: Op.READY_FOR_PICKUP,
+      data: { readyForPickupAt: new Date(), readyForPickupByUserId: staffUserId, fulfillmentMethod: FulfillmentMethod.PICKUP },
+      alreadyDone: [Op.READY_FOR_PICKUP, Op.DELIVERED, Op.RECEIVED, Op.COMPLETED],
+      action: AuditAction.PARTNER_ORDER_READY_FOR_PICKUP,
+      notify: (order) => this.notifier.readyForPickup(order),
+      error: 'Only an order confirmed in stock can be made ready for pickup',
+    });
+  }
+
+  /** "Доставлен / выдан клиенту" — starts the 24h/48h receipt clock (spec §34). */
+  async markDelivered(orderId: string, staffUserId: string) {
+    return this.fulfillmentStep(orderId, staffUserId, {
+      from: [Op.STOCK_CONFIRMED, Op.OUT_FOR_DELIVERY, Op.READY_FOR_PICKUP],
+      to: Op.DELIVERED,
+      data: { deliveredAt: new Date(), deliveredByUserId: staffUserId },
+      alreadyDone: [Op.DELIVERED, Op.RECEIVED, Op.COMPLETED],
+      action: AuditAction.PARTNER_ORDER_DELIVERED,
+      notify: (order) => this.notifier.delivered(order),
+      error: 'Only an order confirmed in stock can be marked delivered',
+    });
+  }
+
+  private async fulfillmentStep(
+    orderId: string,
+    staffUserId: string,
+    step: {
+      from: Op[];
+      to: Op;
+      data: Prisma.PartnerOrderUncheckedUpdateManyInput;
+      alreadyDone: Op[];
+      action: AuditAction;
+      notify: (order: PartnerOrderWithRelations) => Promise<unknown>;
+      error: string;
+    },
+  ) {
+    let changed = false;
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.partnerOrder.updateMany({
-        where: { id: orderId, operationalStatus: Op.STOCK_CONFIRMED },
-        data: { operationalStatus: Op.HANDED_OVER, handedOverAt: new Date(), handedOverByUserId: staffUserId },
+        where: { id: orderId, operationalStatus: { in: step.from }, cancellationStatus: PartnerOrderCancellationStatus.NONE },
+        data: { operationalStatus: step.to, ...step.data },
       });
       if (claimed.count === 0) {
         const current = await tx.partnerOrder.findUnique({ where: { id: orderId } });
-        if (current && ([Op.HANDED_OVER, Op.RECEIVED, Op.COMPLETED] as Op[]).includes(current.operationalStatus)) return;
-        throw new ConflictException('Only an order confirmed in stock can be handed over');
+        if (current && step.alreadyDone.includes(current.operationalStatus)) return;
+        if (current && current.cancellationStatus !== PartnerOrderCancellationStatus.NONE) {
+          throw new ConflictException({ message: 'The customer asked to cancel this order — answer the cancellation first', error: 'CANCELLATION_PENDING' });
+        }
+        throw new ConflictException(step.error);
       }
-      await this.audit(tx, staffUserId, AuditAction.PARTNER_ORDER_HANDED_OVER, orderId, {});
+      await this.audit(tx, staffUserId, step.action, orderId, {
+        from: step.from,
+        ...(step.data.courierNote ? { courierNote: step.data.courierNote } : {}),
+      });
+      changed = true;
     });
-    return this.findByIdOrThrow(orderId);
+    const order = await this.findByIdOrThrow(orderId);
+    if (changed) await step.notify(order);
+    return order;
   }
 
   // ── Partner: external payment — spec §24-28 ─────────────────────────────
@@ -586,7 +704,7 @@ export class PartnerOrdersService {
     const split = await this.planIfCompletable(leg.orderId);
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.partnerOrder.findUniqueOrThrow({ where: { id: leg.orderId } });
-      if (!([Op.SUBMITTED, Op.SEEN, Op.STOCK_CONFIRMED, Op.HANDED_OVER, Op.RECEIVED] as Op[]).includes(order.operationalStatus)) {
+      if (![...RECEIPT_ALLOWED_FROM, Op.SUBMITTED, Op.SEEN, Op.RECEIVED].includes(order.operationalStatus)) {
         if (leg.status === PaymentLegStatus.CONFIRMED) return;
         throw new ConflictException('This order is not awaiting payment');
       }
@@ -610,9 +728,19 @@ export class PartnerOrdersService {
         withoutShift: stamp.withoutShift,
       });
       await this.refreshFunding(tx, order.id);
-      await this.tryComplete(tx, order.id, split);
+      const completed = await this.tryComplete(tx, order.id, split);
+      if (!completed) await this.clearPaymentIssueIfSettled(tx, order.id, staffUserId);
     });
     return this.findByIdOrThrow(leg.orderId);
+  }
+
+  /** Q10: every external leg is confirmed now, but something else (a dispute) still holds completion. */
+  private async clearPaymentIssueIfSettled(tx: Tx, orderId: string, actorUserId: string | null) {
+    const pending = await tx.partnerOrderPaymentLeg.count({
+      where: { orderId, type: PaymentLegType.EXTERNAL, status: PaymentLegStatus.PENDING },
+    });
+    if (pending > 0) return;
+    await this.escalations.resolveTypes(orderId, [OrderEscalationType.PAYMENT_ISSUE, OrderEscalationType.PAYMENT_ISSUE_24H], actorUserId, tx);
   }
 
   /**
@@ -627,9 +755,9 @@ export class PartnerOrdersService {
     if (!leg || leg.type !== PaymentLegType.EXTERNAL) throw new NotFoundException('External payment not found');
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.partnerOrder.findUniqueOrThrow({ where: { id: leg.orderId } });
-      if (!([Op.SUBMITTED, Op.SEEN, Op.STOCK_CONFIRMED] as Op[]).includes(order.operationalStatus)) {
+      if (!([Op.SUBMITTED, Op.SEEN, Op.STOCK_CONFIRMED, Op.READY_FOR_PICKUP] as Op[]).includes(order.operationalStatus)) {
         throw new BadRequestException({
-          message: 'The goods were already handed over — open a payment dispute instead',
+          message: 'The goods already left the partner — open a payment dispute instead',
           error: 'USE_PAYMENT_DISPUTE',
         });
       }
@@ -687,7 +815,8 @@ export class PartnerOrdersService {
       if (claimed.count === 0) return;
       await this.audit(tx, staffUserId, AuditAction.PARTNER_ORDER_EXTERNAL_REFUND_CONFIRMED, order.id, {
         legId,
-        amount: leg.amount.minus(leg.refundedAmount).toString(),
+        amount: leg.amount.minus(leg.refundedAmount).minus(leg.retainedAmount).toString(),
+        retainedAsApprovedCost: leg.retainedAmount.toString(),
         shiftId: stamp.shiftId,
         withoutShift: stamp.withoutShift,
       });
@@ -716,22 +845,70 @@ export class PartnerOrdersService {
     const order = await this.findByIdOrThrow(orderId);
     if (order.customerId !== customerId) throw new NotFoundException('Order not found');
     if (([Op.RECEIVED, Op.COMPLETED] as Op[]).includes(order.operationalStatus)) return order;
+    return this.recordReceipt(orderId, { actorUserId: customerId, customerId, byAdmin: false });
+  }
+
+  /**
+   * The receipt itself, for the customer's own tap or an admin's audited
+   * manual-review decision. Q10: the order becomes COMPLETED only when the
+   * customer received it *and* every external leg is confirmed. If an
+   * external leg is still PENDING at this moment, `customerReceivedAt` is
+   * saved, the escrow stays, nothing is distributed, and the order enters
+   * "Payment issue" immediately (the 24h mark is only a further escalation).
+   * The partner's later confirmation calls `tryComplete` again.
+   */
+  private async recordReceipt(orderId: string, who: { actorUserId: string; customerId?: string; byAdmin: boolean; reason?: string }) {
     const split = await this.planIfCompletable(orderId, true);
+    let paymentIssue = false;
     await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
       const claimed = await tx.partnerOrder.updateMany({
-        where: { id: orderId, customerId, operationalStatus: { in: RECEIPT_ALLOWED_FROM } },
-        data: { operationalStatus: Op.RECEIVED, customerReceivedAt: new Date() },
+        where: {
+          id: orderId,
+          ...(who.customerId ? { customerId: who.customerId } : {}),
+          operationalStatus: { in: RECEIPT_ALLOWED_FROM },
+          cancellationStatus: PartnerOrderCancellationStatus.NONE,
+        },
+        data: { operationalStatus: Op.RECEIVED, customerReceivedAt: now },
       });
       if (claimed.count === 0) {
         const current = await tx.partnerOrder.findUniqueOrThrow({ where: { id: orderId } });
-        if (([Op.RECEIVED, Op.COMPLETED] as Op[]).includes(current.operationalStatus)) return;
-        throw new ConflictException('This order cannot be confirmed as received right now');
+        if (!who.byAdmin && ([Op.RECEIVED, Op.COMPLETED] as Op[]).includes(current.operationalStatus)) return;
+        if (current.cancellationStatus !== PartnerOrderCancellationStatus.NONE) {
+          throw new ConflictException({
+            message: 'A cancellation request is open on this order — withdraw it first',
+            error: 'CANCELLATION_PENDING',
+          });
+        }
+        throw new ConflictException(
+          who.byAdmin ? 'This order cannot be marked received right now' : 'This order cannot be confirmed as received right now',
+        );
       }
-      await this.audit(tx, customerId, AuditAction.PARTNER_ORDER_RECEIVED, orderId, {});
-      await this.escalations.resolveTypes(orderId, [OrderEscalationType.RECEIPT_NOT_CONFIRMED_48H], null, tx);
-      await this.tryComplete(tx, orderId, split);
+      await this.audit(tx, who.actorUserId, AuditAction.PARTNER_ORDER_RECEIVED, orderId, who.byAdmin ? { byAdmin: true, reason: who.reason } : {});
+      await this.escalations.resolveTypes(orderId, [OrderEscalationType.RECEIPT_NOT_CONFIRMED_48H], who.byAdmin ? who.actorUserId : null, tx);
+      const completed = await this.tryComplete(tx, orderId, split);
+      if (!completed) {
+        const pendingExternal = await tx.partnerOrderPaymentLeg.aggregate({
+          where: { orderId, type: PaymentLegType.EXTERNAL, status: PaymentLegStatus.PENDING },
+          _sum: { amount: true, refundedAmount: true },
+          _count: true,
+        });
+        if (pendingExternal._count > 0) {
+          await tx.partnerOrder.updateMany({ where: { id: orderId, paymentIssueAt: null }, data: { paymentIssueAt: now } });
+          await this.audit(tx, who.actorUserId, AuditAction.PARTNER_ORDER_PAYMENT_ISSUE, orderId, {
+            reason: 'received_with_external_payment_pending',
+            pendingExternalAmount: (pendingExternal._sum.amount ?? ZERO).minus(pendingExternal._sum.refundedAmount ?? ZERO).toString(),
+          });
+          paymentIssue = true;
+        }
+      }
     });
-    return this.findByIdOrThrow(orderId);
+    const order = await this.findByIdOrThrow(orderId);
+    if (paymentIssue) {
+      await this.escalations.raise(order, OrderEscalationType.PAYMENT_ISSUE, `partner-order.payment-issue:${orderId}`);
+      await this.notifier.paymentIssue(order);
+    }
+    return order;
   }
 
   /**
@@ -763,6 +940,7 @@ export class PartnerOrdersService {
   async tryComplete(tx: Tx, orderId: string, split: Awaited<ReturnType<CommissionDistributionService['plan']>> | null) {
     const order = await tx.partnerOrder.findUniqueOrThrow({ where: { id: orderId } });
     if (order.operationalStatus !== Op.RECEIVED || order.disputeStatus === PartnerOrderDisputeStatus.OPEN) return false;
+    if (order.cancellationStatus !== PartnerOrderCancellationStatus.NONE) return false;
     const pendingExternal = await tx.partnerOrderPaymentLeg.count({
       where: { orderId, type: PaymentLegType.EXTERNAL, status: PaymentLegStatus.PENDING },
     });
@@ -815,39 +993,25 @@ export class PartnerOrdersService {
     return true;
   }
 
-  // ── Cancel — spec §43 ────────────────────────────────────────────────────
+  // ── Cancel — spec §43, item 8 ─────────────────────────────────────────
+  //
+  // The customer's own request goes through `PartnerOrderCancellationService`
+  // (immediate full refund, or a partner cost claim reviewed by TuTak). Every
+  // path ends in `cancelInTx`.
 
   /**
-   * Customer-initiated cancellation: allowed before the goods are handed
-   * over, full release to every source, never a penalty. After handover
-   * it is a return, not a cancellation.
+   * Admin cancellation (manual review / sourcing outcome): full refund of
+   * every source. Refused while a partner cost claim waits for a decision —
+   * that claim is decided through the cancellation review instead.
    */
-  async cancelByCustomer(orderId: string, customerId: string, reason?: string) {
-    const order = await this.findByIdOrThrow(orderId);
-    // Only the customer who confirmed the order can cancel it. An unclaimed
-    // DRAFT belongs to nobody yet: nothing was paid, it simply expires — and
-    // letting anyone holding the link cancel it would let a stranger kill
-    // somebody else's checkout.
-    if (order.customerId !== customerId) {
-      throw new NotFoundException('Order not found');
-    }
-    if (order.operationalStatus === Op.CANCELLED) return order;
-    await this.prisma.$transaction((tx) =>
-      this.cancelInTx(tx, orderId, { type: PartnerOrderActorType.CUSTOMER, userId: customerId }, reason ?? 'customer_cancelled', [
-        Op.DRAFT,
-        ...PRE_HANDOVER,
-      ]),
-    );
-    const cancelled = await this.findByIdOrThrow(orderId);
-    if (cancelled.submittedAt) await this.notifier.cancelled(cancelled);
-    return cancelled;
-  }
-
-  /** Admin cancellation (manual review / sourcing outcome). Same rules, same money path. */
   async cancelByAdmin(orderId: string, adminUserId: string, reason: string) {
-    await this.prisma.$transaction((tx) =>
-      this.cancelInTx(tx, orderId, { type: PartnerOrderActorType.ADMIN, userId: adminUserId }, reason, [Op.DRAFT, ...PRE_HANDOVER]),
-    );
+    await this.prisma.$transaction(async (tx) => {
+      const current = await tx.partnerOrder.findUniqueOrThrow({ where: { id: orderId } });
+      if (current.cancellationStatus === PartnerOrderCancellationStatus.COST_REVIEW) {
+        throw new ConflictException({ message: 'Decide the partner’s cancellation cost claim instead', error: 'CANCELLATION_COST_REVIEW' });
+      }
+      await this.cancelInTx(tx, orderId, { type: PartnerOrderActorType.ADMIN, userId: adminUserId }, reason, [Op.DRAFT, ...CANCELLABLE]);
+    });
     const cancelled = await this.findByIdOrThrow(orderId);
     if (cancelled.submittedAt) await this.notifier.cancelled(cancelled);
     return cancelled;
@@ -857,13 +1021,28 @@ export class PartnerOrdersService {
    * The one cancellation path. Claims the order out of `from`, then returns
    * every leg to its own source (F4). A confirmed external leg stays
    * RETURN_PENDING until the partner confirms handing the cash back.
+   * Item 8: `retainCost` is an admin-approved actual cancellation cost the
+   * caller has already capped at the real money on the order — kept from
+   * confirmed external cash first, then released from the money escrow to
+   * the partner; the discount always goes back in full; no commission and
+   * no distribution run on it. Any still-open cancellation request is
+   * closed by the same claim (`cancellationRequestId` names the one being
+   * executed; any other is superseded).
    */
-  async cancelInTx(tx: Tx, orderId: string, actor: Actor, reason: string, from: Op[]) {
+  async cancelInTx(
+    tx: Tx,
+    orderId: string,
+    actor: Actor,
+    reason: string,
+    from: Op[],
+    opts: { retainCost?: Decimal; cancellationRequestId?: string } = {},
+  ) {
     const order = await tx.partnerOrder.findUniqueOrThrow({ where: { id: orderId } });
     const claimed = await tx.partnerOrder.updateMany({
       where: { id: orderId, operationalStatus: { in: from } },
       data: {
         operationalStatus: Op.CANCELLED,
+        cancellationStatus: PartnerOrderCancellationStatus.NONE,
         cancelledAt: new Date(),
         cancelledByType: actor.type,
         cancelledByUserId: actor.userId,
@@ -876,17 +1055,36 @@ export class PartnerOrdersService {
       },
     });
     if (claimed.count === 0) {
-      if (order.operationalStatus === Op.CANCELLED) return false;
+      if (order.operationalStatus === Op.CANCELLED) return { cancelled: false, retained: null };
       throw new ConflictException('This order can no longer be cancelled');
     }
 
     const wasFunded = order.submittedAt !== null;
-    const { externalPending } = wasFunded
-      ? await this.payments.returnAllLegs(tx, order, reason)
-      : { externalPending: false };
+    const retainCost = opts.retainCost ?? ZERO;
+    const { externalPending, retained } = wasFunded
+      ? await this.payments.returnAllLegs(
+          tx,
+          order,
+          reason,
+          retainCost,
+          opts.cancellationRequestId ? { sourceType: 'PartnerOrderCancellation', sourceId: opts.cancellationRequestId } : undefined,
+        )
+      : { externalPending: false, retained: null };
     await tx.partnerOrder.update({
       where: { id: orderId },
       data: { paymentStatus: externalPending ? Pay.REFUND_PENDING : wasFunded ? Pay.REFUNDED : Pay.UNFUNDED },
+    });
+    await tx.partnerOrderCancellation.updateMany({
+      where: {
+        orderId,
+        status: { in: [PartnerOrderCancellationRequestStatus.AWAITING_PARTNER, PartnerOrderCancellationRequestStatus.COST_REVIEW] },
+        ...(opts.cancellationRequestId ? { id: { not: opts.cancellationRequestId } } : {}),
+      },
+      data: {
+        status: PartnerOrderCancellationRequestStatus.COMPLETED,
+        completedAt: new Date(),
+        decisionNote: `superseded: order cancelled by ${actor.type.toLowerCase()} (${reason})`,
+      },
     });
     await tx.partnerOrderAdjustment.updateMany({
       where: { orderId, status: PartnerOrderAdjustmentStatus.PENDING_CUSTOMER },
@@ -905,8 +1103,11 @@ export class PartnerOrdersService {
       actorType: actor.type,
       refunded: wasFunded,
       externalRefundPending: externalPending,
+      retainedCost: retainCost.toString(),
+      retainedFromExternal: retained?.fromExternal.toString() ?? '0',
+      retainedFromMoney: retained?.fromMoney.toString() ?? '0',
     });
-    return true;
+    return { cancelled: true, retained };
   }
 
   /** An abandoned DRAFT: nothing was ever reserved, so nothing to return. Idempotent. */
@@ -977,8 +1178,14 @@ export class PartnerOrdersService {
       case 'out_of_stock':
         where.operationalStatus = Op.OUT_OF_STOCK;
         break;
-      case 'handed_over':
-        where.operationalStatus = { in: [Op.HANDED_OVER, Op.RECEIVED] };
+      case 'in_delivery':
+        where.operationalStatus = { in: [Op.OUT_FOR_DELIVERY, Op.READY_FOR_PICKUP] };
+        break;
+      case 'delivered':
+        where.operationalStatus = { in: [Op.DELIVERED, Op.RECEIVED] };
+        break;
+      case 'cancellation':
+        where.cancellationStatus = { not: PartnerOrderCancellationStatus.NONE };
         break;
       case 'completed':
         where.operationalStatus = Op.COMPLETED;
@@ -996,7 +1203,7 @@ export class PartnerOrdersService {
     if (branchIds) where.OR = [{ branchId: null }, { branchId: { in: branchIds } }];
     return this.prisma.partnerOrder.findMany({
       where,
-      include: { ...ORDER_INCLUDE, returns: true, disputes: true },
+      include: { ...ORDER_INCLUDE, disputes: true },
       orderBy: { submittedAt: 'desc' },
       take: 200,
     });
@@ -1035,13 +1242,13 @@ export class PartnerOrdersService {
       case 'payment_issue':
         where.OR = [
           { paymentIssueAt: { not: null }, operationalStatus: Op.RECEIVED },
-          { manualReviewReason: 'price_decrease_needs_external_refund', operationalStatus: { in: PRE_HANDOVER } },
+          { manualReviewReason: 'price_decrease_needs_external_refund', operationalStatus: { in: PRE_DISPATCH } },
         ];
         break;
       case 'refund_required':
         where.OR = [
           { paymentStatus: Pay.REFUND_PENDING },
-          { returns: { some: { status: { in: ['PENDING_EXTERNAL_REFUND', 'MANUAL_REVIEW'] } } } },
+          { returns: { some: { status: { in: ['PENDING_EXTERNAL_REFUND', 'AWAITING_SHORTFALL_SETTLEMENT', 'MANUAL_REVIEW'] } } } },
         ];
         break;
       case 'disputes':
@@ -1054,6 +1261,9 @@ export class PartnerOrdersService {
             type: { in: [OrderEscalationType.STOCK_NOT_CONFIRMED_30MIN, OrderEscalationType.STOCK_NOT_CONFIRMED_REPEAT] },
           },
         };
+        break;
+      case 'cancellation_review':
+        where.cancellationStatus = PartnerOrderCancellationStatus.COST_REVIEW;
         break;
       case 'manual_review':
         where.manualReviewAt = { not: null };
@@ -1071,7 +1281,6 @@ export class PartnerOrdersService {
         branch: { select: { id: true, name: true, address: true } },
         customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
         escalations: { where: { resolvedAt: null } },
-        returns: true,
         disputes: { where: { status: 'OPEN' } },
       },
       orderBy: { submittedAt: 'asc' },
@@ -1087,18 +1296,7 @@ export class PartnerOrdersService {
   async confirmReceivedByAdmin(orderId: string, adminUserId: string, reason: string) {
     const order = await this.findByIdOrThrow(orderId);
     if (!order.customerId) throw new BadRequestException('This order has no customer');
-    const split = await this.planIfCompletable(orderId, true);
-    await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.partnerOrder.updateMany({
-        where: { id: orderId, operationalStatus: { in: RECEIPT_ALLOWED_FROM } },
-        data: { operationalStatus: Op.RECEIVED, customerReceivedAt: new Date() },
-      });
-      if (claimed.count === 0) throw new ConflictException('This order cannot be marked received right now');
-      await this.audit(tx, adminUserId, AuditAction.PARTNER_ORDER_RECEIVED, orderId, { byAdmin: true, reason });
-      await this.escalations.resolveTypes(orderId, [OrderEscalationType.RECEIPT_NOT_CONFIRMED_48H], adminUserId, tx);
-      await this.tryComplete(tx, orderId, split);
-    });
-    return this.findByIdOrThrow(orderId);
+    return this.recordReceipt(orderId, { actorUserId: adminUserId, byAdmin: true, reason });
   }
 
   private audit(tx: Tx, actorUserId: string | null, action: AuditAction, orderId: string, metadata: Record<string, unknown>) {

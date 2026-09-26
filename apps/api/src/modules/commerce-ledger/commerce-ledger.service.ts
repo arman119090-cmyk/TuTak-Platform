@@ -19,20 +19,27 @@ export class InsufficientTutakMoneyError extends BadRequestException {
 }
 
 /**
- * Every ledger movement Partner Commerce makes, in one place — the escrow
- * (`PARTNER_ORDER_ESCROW`) in and out, the dispute hold, and the post-
- * completion refunds. Each method is exactly one balanced
+ * Every ledger movement Partner Commerce makes, in one place — the two
+ * escrows in and out, the dispute hold, the post-completion refunds and the
+ * Q9 shortfall clearing. Each method is exactly one balanced
  * `LedgerService.post`, run inside the caller's transaction, and returns the
  * new `LedgerTransaction` id so the leg/intent/return that caused it can
  * reference it (spec §52: every amount traceable to its origin).
  *
- * Deliberately two ledger-level sources, never mixed (Arman, Q1 = C):
- *  - money:    CUSTOMER_PREPAID_BALANCE (the customer's real money);
- *  - discount: BONUS_LIABILITY (the green discount balance — the points
- *              themselves move in `BonusEngineService`; this is only the
- *              platform-side liability that funds the partner for them,
- *              exactly what `partner.bonus_redemption_compensation` has
- *              always been for a QR purchase).
+ * Deliberately two ledger-level sources, never mixed (Arman, Q1 = C), each
+ * with its own escrow account (item 9 of the final fixes):
+ *  - money:    CUSTOMER_PREPAID_BALANCE ⇄ PARTNER_ORDER_MONEY_ESCROW (the
+ *              customer's real money);
+ *  - discount: BONUS_LIABILITY ⇄ PARTNER_ORDER_DISCOUNT_ESCROW (the green
+ *              discount balance — the points themselves move in
+ *              `BonusEngineService`; this is only the platform-side
+ *              liability that funds the partner for them, exactly what
+ *              `partner.bonus_redemption_compensation` has always been for a
+ *              QR purchase).
+ * The only way out of either escrow is back to its own source or on to
+ * PARTNER_PAYABLE; there is no method that could move discount value into
+ * CUSTOMER_PREPAID_BALANCE or money into BONUS_LIABILITY, and the
+ * provenance invariant test checks every posting on both escrows.
  *
  * `accountFor` is called without `tx`, the same as
  * `CommissionDistributionService` and `PurchaseIntentsService`: every
@@ -76,7 +83,7 @@ export class CommerceLedgerService {
   }
 
   /**
-   * CUSTOMER_PREPAID_BALANCE → PARTNER_ORDER_ESCROW, only if the balance
+   * CUSTOMER_PREPAID_BALANCE → PARTNER_ORDER_MONEY_ESCROW, only if the balance
    * covers the full amount. Claimed with a conditional `updateMany` on the
    * account row, the same idiom `CustomerBalanceService.collectFromBalance`
    * uses: two concurrent captures for the same customer serialise on the row
@@ -91,47 +98,89 @@ export class CommerceLedgerService {
       data: { version: { increment: 1 } },
     });
     if (claimed.count === 0) throw new InsufficientTutakMoneyError();
-    const escrow = await this.account({ type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId });
+    const escrow = await this.account({ type: LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, partnerId });
     return this.move(kind, source, balance.id, escrow.id, amount, tx);
   }
 
-  /** PARTNER_ORDER_ESCROW → CUSTOMER_PREPAID_BALANCE — a money leg returned before completion. */
+  /** PARTNER_ORDER_MONEY_ESCROW → CUSTOMER_PREPAID_BALANCE — a money leg returned before completion. */
   async returnMoney(userId: string, partnerId: string, amount: Decimal, source: CommerceLedgerSource, kind: string, tx: Tx) {
     const [escrow, balance] = await Promise.all([
-      this.account({ type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId }),
+      this.account({ type: LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, partnerId }),
       this.account({ type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId }),
     ]);
     return this.move(kind, source, escrow.id, balance.id, amount, tx);
   }
 
-  /** BONUS_LIABILITY → PARTNER_ORDER_ESCROW — the discount the customer spent, funded into escrow. */
+  /** BONUS_LIABILITY → PARTNER_ORDER_DISCOUNT_ESCROW — the discount the customer spent, funded into escrow. */
   async captureDiscount(partnerId: string, amount: Decimal, source: CommerceLedgerSource, kind: string, tx: Tx) {
     const [liability, escrow] = await Promise.all([
       this.account({ type: LedgerAccountType.BONUS_LIABILITY }),
-      this.account({ type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId }),
+      this.account({ type: LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW, partnerId }),
     ]);
     return this.move(kind, source, liability.id, escrow.id, amount, tx);
   }
 
-  /** PARTNER_ORDER_ESCROW → BONUS_LIABILITY — the discount handed back to the customer before completion. */
+  /** PARTNER_ORDER_DISCOUNT_ESCROW → BONUS_LIABILITY — the discount handed back to the customer before completion. */
   async returnDiscount(partnerId: string, amount: Decimal, source: CommerceLedgerSource, kind: string, tx: Tx) {
     const [escrow, liability] = await Promise.all([
-      this.account({ type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId }),
+      this.account({ type: LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW, partnerId }),
       this.account({ type: LedgerAccountType.BONUS_LIABILITY }),
     ]);
     return this.move(kind, source, escrow.id, liability.id, amount, tx);
   }
 
-  /** PARTNER_ORDER_ESCROW → PARTNER_PAYABLE — the electronic part becomes partner receivable. */
-  async releaseToPartner(partnerId: string, amount: Decimal, source: CommerceLedgerSource, kind: string, tx: Tx) {
+  /** PARTNER_ORDER_MONEY_ESCROW → PARTNER_PAYABLE — the money part becomes partner receivable (QR confirm, cancellation cost). */
+  async releaseMoneyToPartner(partnerId: string, amount: Decimal, source: CommerceLedgerSource, kind: string, tx: Tx) {
     const [escrow, payable] = await Promise.all([
-      this.account({ type: LedgerAccountType.PARTNER_ORDER_ESCROW, partnerId }),
+      this.account({ type: LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, partnerId }),
       this.account({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }),
     ]);
     return this.move(kind, source, escrow.id, payable.id, amount, tx);
   }
 
-  /** PARTNER_PAYABLE → CUSTOMER_PREPAID_BALANCE — money returned after completion (a return/refund). */
+  /**
+   * Completion of an online order: both escrows → PARTNER_PAYABLE in one
+   * balanced transaction, each escrow debited for exactly its own legs.
+   */
+  async releaseOrderToPartner(
+    partnerId: string,
+    amounts: { money: Decimal; discount: Decimal },
+    source: CommerceLedgerSource,
+    kind: string,
+    tx: Tx,
+  ): Promise<string | null> {
+    const total = amounts.money.plus(amounts.discount);
+    if (!total.greaterThan(0)) return null;
+    const [moneyEscrow, discountEscrow, payable] = await Promise.all([
+      this.account({ type: LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, partnerId }),
+      this.account({ type: LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW, partnerId }),
+      this.account({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }),
+    ]);
+    const posted = await this.ledger.post(
+      {
+        kind,
+        sourceType: source.sourceType,
+        sourceId: source.sourceId,
+        postings: [
+          ...(amounts.money.greaterThan(0) ? [{ accountId: moneyEscrow.id, direction: PostingDirection.DEBIT, amount: amounts.money }] : []),
+          ...(amounts.discount.greaterThan(0)
+            ? [{ accountId: discountEscrow.id, direction: PostingDirection.DEBIT, amount: amounts.discount }]
+            : []),
+          { accountId: payable.id, direction: PostingDirection.CREDIT, amount: total },
+        ],
+      },
+      tx,
+    );
+    return posted.id;
+  }
+
+  /**
+   * PARTNER_PAYABLE → CUSTOMER_PREPAID_BALANCE — money returned after
+   * completion (a return/refund). Q9: `recovered` of the gross `amount` is
+   * kept to cover the customer's own shortfall on the same return — the
+   * posting shows the gross debit, the net credit to the customer and the
+   * recovered credit to their CUSTOMER_SHORTFALL_CLEARING separately.
+   */
   async refundMoneyFromPartner(
     userId: string,
     partnerId: string,
@@ -140,12 +189,52 @@ export class CommerceLedgerService {
     kind: string,
     tx: Tx,
     serializableTx?: Tx,
+    recovered: Decimal = new Decimal(0),
   ) {
     const [payable, balance] = await Promise.all([
       this.account({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, serializableTx),
       this.account({ type: LedgerAccountType.CUSTOMER_PREPAID_BALANCE, userId }, serializableTx),
     ]);
-    return this.move(kind, source, payable.id, balance.id, amount, tx);
+    if (!recovered.greaterThan(0)) return this.move(kind, source, payable.id, balance.id, amount, tx);
+    if (recovered.greaterThan(amount)) throw new Error('Recovered shortfall cannot exceed the money refund');
+    const clearing = await this.account({ type: LedgerAccountType.CUSTOMER_SHORTFALL_CLEARING, userId }, serializableTx);
+    const net = amount.minus(recovered);
+    const posted = await this.ledger.post(
+      {
+        kind,
+        sourceType: source.sourceType,
+        sourceId: source.sourceId,
+        postings: [
+          { accountId: payable.id, direction: PostingDirection.DEBIT, amount },
+          ...(net.greaterThan(0) ? [{ accountId: balance.id, direction: PostingDirection.CREDIT, amount: net }] : []),
+          { accountId: clearing.id, direction: PostingDirection.CREDIT, amount: recovered },
+        ],
+      },
+      tx,
+    );
+    return posted.id;
+  }
+
+  /**
+   * Q9: the part of a customer's shortfall settled in cash at the partner's
+   * desk — kept from the external/cash refund and/or paid on top. The
+   * partner now holds that cash for TuTak: DEBIT PARTNER_PAYABLE / CREDIT
+   * the customer's CUSTOMER_SHORTFALL_CLEARING.
+   */
+  async recoverShortfallViaPartner(
+    userId: string,
+    partnerId: string,
+    amount: Decimal,
+    source: CommerceLedgerSource,
+    kind: string,
+    tx: Tx,
+    serializableTx?: Tx,
+  ) {
+    const [payable, clearing] = await Promise.all([
+      this.account({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId }, serializableTx),
+      this.account({ type: LedgerAccountType.CUSTOMER_SHORTFALL_CLEARING, userId }, serializableTx),
+    ]);
+    return this.move(kind, source, payable.id, clearing.id, amount, tx);
   }
 
   /**

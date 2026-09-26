@@ -1,0 +1,37 @@
+{
+  "name": "@tutak/checkout",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TuTak Web Checkout \u2014 the customer-facing checkout a partner's website hands the customer to, for an already-registered TuTak user, without the mobile app. Same API, state machine, ledger and idempotency rules as the app.",
+  "scripts": {
+    "dev": "next dev -p 3003",
+    "build": "next build",
+    "start": "next start -p 3003",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest && node --test api-base-url.test.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@tutak/design": "workspace:*",
+    "@tutak/i18n": "workspace:*",
+    "@tutak/shared-types": "workspace:*",
+    "axios": "^1.19.0",
+    "next": "^16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/react": "^16.3.2",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.2",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.4.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.6.3"
+  }
+}

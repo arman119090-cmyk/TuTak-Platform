@@ -13,6 +13,9 @@ const SEVERITY: Record<OrderEscalationType, AlertSeverity> = {
   STOCK_NOT_CONFIRMED_REPEAT: 'critical',
   RECEIPT_NOT_CONFIRMED_48H: 'warning',
   PAYMENT_ISSUE: 'warning',
+  PAYMENT_ISSUE_24H: 'critical',
+  CANCELLATION_COST_REVIEW: 'warning',
+  RETURN_SHORTFALL_REVIEW: 'warning',
 };
 
 const TITLE: Record<OrderEscalationType, string> = {
@@ -21,6 +24,9 @@ const TITLE: Record<OrderEscalationType, string> = {
   STOCK_NOT_CONFIRMED_REPEAT: 'Stock still not confirmed',
   RECEIPT_NOT_CONFIRMED_48H: 'Customer has not confirmed receipt for 48 hours — manual review',
   PAYMENT_ISSUE: 'Order received but external payment unconfirmed',
+  PAYMENT_ISSUE_24H: 'External payment still unconfirmed 24 hours after receipt',
+  CANCELLATION_COST_REVIEW: 'Partner claimed actual cancellation costs — admin decision needed',
+  RETURN_SHORTFALL_REVIEW: 'Customer refused a return shortfall settlement — manual review',
 };
 
 /**

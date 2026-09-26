@@ -81,8 +81,9 @@ function DisputeCard({ dispute }: { dispute: OrderDisputeDto }) {
           </div>
         ))}
         <div>
-          Stock confirmed: {order?.stockConfirmedAt ? new Date(order.stockConfirmedAt).toLocaleString() : '—'} · handed over:{' '}
-          {order?.handedOverAt ? new Date(order.handedOverAt).toLocaleString() : '—'} · customer confirmed receipt:{' '}
+          Stock confirmed: {order?.stockConfirmedAt ? new Date(order.stockConfirmedAt).toLocaleString() : '—'} · to courier:{' '}
+          {order?.outForDeliveryAt ? new Date(order.outForDeliveryAt).toLocaleString() : '—'} · delivered (partner):{' '}
+          {order?.deliveredAt ? new Date(order.deliveredAt).toLocaleString() : '—'} · customer confirmed receipt:{' '}
           {order?.customerReceivedAt ? new Date(order.customerReceivedAt).toLocaleString() : '—'}
         </div>
       </div>

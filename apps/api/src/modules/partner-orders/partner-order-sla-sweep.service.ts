@@ -11,6 +11,7 @@ import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OrderEscalationService } from './order-escalation.service';
+import { PartnerOrderCancellationService } from './partner-order-cancellation.service';
 import { PartnerOrderNotifier } from './partner-order-notifier.service';
 import { PartnerOrdersService } from './partner-orders.service';
 
@@ -37,6 +38,7 @@ export class PartnerOrderSlaSweepService {
     private readonly prisma: PrismaService,
     private readonly escalations: OrderEscalationService,
     private readonly orders: PartnerOrdersService,
+    private readonly cancellations: PartnerOrderCancellationService,
     private readonly notifier: PartnerOrderNotifier,
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
@@ -112,10 +114,12 @@ export class PartnerOrderSlaSweepService {
   }
 
   /**
-   * Spec §34 / Q3: handed over 24h ago and not confirmed → remind the
-   * customer (once); 48h → TuTak manual review. Never releases the escrow —
-   * that only ever happens on the customer's own confirmation or an admin
-   * decision.
+   * Spec §34 / Q3 / item 7: 24h after the partner marked the order
+   * DELIVERED (actually handed to the customer — never a courier handoff or
+   * "ready for pickup", which start no customer timer) and not confirmed →
+   * remind the customer (once); 48h → TuTak manual review. Never releases
+   * the escrow — that only ever happens on the customer's own confirmation
+   * or an admin decision.
    */
   async sweepReceipt(now = new Date()): Promise<{ reminded: number; manualReview: number }> {
     const { receiptReminderHours, receiptManualReviewHours } = this.policy();
@@ -124,14 +128,14 @@ export class PartnerOrderSlaSweepService {
 
     const toRemind = await this.prisma.partnerOrder.findMany({
       where: {
-        operationalStatus: Op.HANDED_OVER,
+        operationalStatus: Op.DELIVERED,
         receiptReminderSentAt: null,
-        handedOverAt: { lt: new Date(now.getTime() - receiptReminderHours * HOUR) },
+        deliveredAt: { lt: new Date(now.getTime() - receiptReminderHours * HOUR) },
       },
     });
     for (const order of toRemind) {
       const claimed = await this.prisma.partnerOrder.updateMany({
-        where: { id: order.id, receiptReminderSentAt: null, operationalStatus: Op.HANDED_OVER },
+        where: { id: order.id, receiptReminderSentAt: null, operationalStatus: Op.DELIVERED },
         data: { receiptReminderSentAt: now },
       });
       if (claimed.count === 0) continue;
@@ -141,14 +145,14 @@ export class PartnerOrderSlaSweepService {
 
     const toReview = await this.prisma.partnerOrder.findMany({
       where: {
-        operationalStatus: Op.HANDED_OVER,
+        operationalStatus: Op.DELIVERED,
         manualReviewAt: null,
-        handedOverAt: { lt: new Date(now.getTime() - receiptManualReviewHours * HOUR) },
+        deliveredAt: { lt: new Date(now.getTime() - receiptManualReviewHours * HOUR) },
       },
     });
     for (const order of toReview) {
       const claimed = await this.prisma.partnerOrder.updateMany({
-        where: { id: order.id, manualReviewAt: null, operationalStatus: Op.HANDED_OVER },
+        where: { id: order.id, manualReviewAt: null, operationalStatus: Op.DELIVERED },
         data: { manualReviewAt: now, manualReviewReason: 'receipt_not_confirmed_48h' },
       });
       if (claimed.count === 0) continue;
@@ -165,22 +169,20 @@ export class PartnerOrderSlaSweepService {
   }
 
   /**
-   * Interim rule pending Q10: the customer confirmed receipt but an external
-   * leg is still unconfirmed past the grace window → "Payment issue". The
-   * escrow stays where it is.
+   * Q10: an order is put into "Payment issue" the moment the customer
+   * confirms receipt with an external leg still PENDING (`recordReceipt`).
+   * This sweep is (a) the safety net for any received order that somehow
+   * was not flagged, and (b) the 24h escalation: still unconfirmed
+   * `paymentIssueHours` after it was flagged → escalated once more (and the
+   * partner reminded). The escrow stays where it is either way.
    */
   async sweepPaymentIssues(now = new Date()): Promise<number> {
-    const cutoff = new Date(now.getTime() - this.policy().paymentIssueHours * HOUR);
-    const stuck = await this.prisma.partnerOrder.findMany({
-      where: {
-        operationalStatus: Op.RECEIVED,
-        paymentIssueAt: null,
-        customerReceivedAt: { lt: cutoff },
-        paymentLegs: { some: { type: PaymentLegType.EXTERNAL, status: PaymentLegStatus.PENDING } },
-      },
-    });
+    const pendingExternal = { some: { type: PaymentLegType.EXTERNAL, status: PaymentLegStatus.PENDING } };
     let flagged = 0;
-    for (const order of stuck) {
+    const unflagged = await this.prisma.partnerOrder.findMany({
+      where: { operationalStatus: Op.RECEIVED, paymentIssueAt: null, paymentLegs: pendingExternal },
+    });
+    for (const order of unflagged) {
       const claimed = await this.prisma.partnerOrder.updateMany({
         where: { id: order.id, paymentIssueAt: null, operationalStatus: Op.RECEIVED },
         data: { paymentIssueAt: now },
@@ -189,7 +191,32 @@ export class PartnerOrderSlaSweepService {
       await this.escalations.raise(order, OrderEscalationType.PAYMENT_ISSUE, `partner-order.payment-issue:${order.id}`);
       flagged += 1;
     }
+
+    const cutoff = new Date(now.getTime() - this.policy().paymentIssueHours * HOUR);
+    const stuck = await this.prisma.partnerOrder.findMany({
+      where: {
+        operationalStatus: Op.RECEIVED,
+        paymentIssueAt: { lt: cutoff },
+        paymentIssueEscalatedAt: null,
+        paymentLegs: pendingExternal,
+      },
+    });
+    for (const order of stuck) {
+      const claimed = await this.prisma.partnerOrder.updateMany({
+        where: { id: order.id, paymentIssueEscalatedAt: null, operationalStatus: Op.RECEIVED },
+        data: { paymentIssueEscalatedAt: now },
+      });
+      if (claimed.count === 0) continue;
+      await this.escalations.raise(order, OrderEscalationType.PAYMENT_ISSUE_24H, `partner-order.payment-issue-24h:${order.id}`);
+      await this.notifier.paymentIssue(order);
+      flagged += 1;
+    }
     return flagged;
+  }
+
+  /** Item 8: a cancellation the partner did not answer in time proceeds with a full refund. */
+  expireCancellationClaims(now = new Date()): Promise<number> {
+    return this.cancellations.expireUnanswered(now);
   }
 
   expireDrafts(now = new Date()): Promise<number> {

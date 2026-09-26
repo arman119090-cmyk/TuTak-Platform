@@ -241,9 +241,20 @@ export class PartnerSettlementStatementService {
       where: { type: 'EXTERNAL', status: 'PENDING', order: { partnerId, operationalStatus: { notIn: ['CANCELLED', 'EXPIRED', 'DRAFT'] } } },
       _sum: { amount: true },
     });
+    // Q8: commission refunds this partner is owed for returned purchases,
+    // waiting on the referrer's future accruals (credited as repaid).
+    const awaitingWithholding = await this.prisma.referralWithholding.aggregate({
+      where: { beneficiaryPartnerId: partnerId, status: 'OPEN' },
+      _sum: { remainingAmount: true },
+    });
+    const reservedMoney = raw(LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW).negated();
+    const reservedDiscount = raw(LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW).negated();
     return {
       partnerId,
-      reservedInEscrow: raw(LedgerAccountType.PARTNER_ORDER_ESCROW).negated().toFixed(4),
+      reservedInEscrow: reservedMoney.plus(reservedDiscount).toFixed(4),
+      reservedMoneyInEscrow: reservedMoney.toFixed(4),
+      reservedDiscountInEscrow: reservedDiscount.toFixed(4),
+      commissionRefundAwaitingWithholding: (awaitingWithholding._sum.remainingAmount ?? new Decimal(0)).toFixed(4),
       frozenForDisputes: raw(LedgerAccountType.PARTNER_DISPUTE_HOLD).negated().toFixed(4),
       dueToPartner: payable.isNegative() ? payable.negated().toFixed(4) : '0.0000',
       dueToTutak: payable.isPositive() ? payable.toFixed(4) : '0.0000',

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, Select } from '@tutak/design/web';
-import { getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
+import { canManageShift, getPrimaryPartnerId, useAuthStore } from '@/lib/stores/authStore';
 import { partnerApi } from '@/lib/api/partnerApi';
 import { apiErrorMessage, shiftApi } from '@/lib/api/partnerOrderApi';
 
@@ -14,10 +14,14 @@ import { apiErrorMessage, shiftApi } from '@/lib/api/partnerOrderApi';
  * shifts are closed by the server, never by this bar. During a partner's
  * one-off rollout window the bar warns rather than blocks; after it, every
  * cash-desk action is refused without a shift.
+ *
+ * Shown to whoever holds a permission whose actions need a shift — an
+ * owner, a manager or a cashier alike — never decided by a "primary role".
  */
 export function ShiftBar() {
   const { user } = useAuthStore();
-  const partnerId = getPrimaryPartnerId(user);
+  const allowed = canManageShift(user);
+  const partnerId = allowed ? getPrimaryPartnerId(user) : null;
   const queryClient = useQueryClient();
   const [branchId, setBranchId] = useState('');
   const [error, setError] = useState<string | null>(null);

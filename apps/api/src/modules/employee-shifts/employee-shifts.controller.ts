@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PermissionName } from '@prisma/client';
-import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { RequireAnyPermission, RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UuidParam } from '../../common/decorators/uuid-param.decorator';
 import { assertBranchScope } from '../../common/auth/branch-scope';
@@ -13,10 +13,13 @@ import { StartShiftDto } from './dto/start-shift.dto';
 import { RequireShiftsFromDto } from './dto/require-shifts-from.dto';
 
 /**
- * "Начать смену / Завершить смену" (spec §6, §75). Any partner staff tier —
- * the same population that confirms purchases — at a branch it is scoped
- * to.
+ * "Начать смену / Завершить смену" (spec §6, §75). Open to anyone holding a
+ * permission whose actions require an active shift — confirming QR
+ * purchases (PURCHASE_INTENT_CONFIRM) or cash-desk steps on online orders
+ * (PARTNER_ORDER_MANAGE) — at a branch they are scoped to. Availability
+ * follows permissions, never a primary role name (final fixes, item 10).
  */
+const SHIFT_PERMISSIONS = [PermissionName.PURCHASE_INTENT_CONFIRM, PermissionName.PARTNER_ORDER_MANAGE] as const;
 @ApiTags('shifts')
 @ApiBearerAuth()
 @Controller('shifts')
@@ -27,7 +30,7 @@ export class EmployeeShiftsController {
   ) {}
 
   @Post('start')
-  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  @RequireAnyPermission(...SHIFT_PERMISSIONS)
   async start(@CurrentUser() user: RequestUser, @Body() dto: StartShiftDto) {
     const branch = await this.prisma.partnerBranch.findUnique({ where: { id: dto.branchId } });
     if (branch) assertBranchScope(user, branch.partnerId, branch.id);
@@ -35,7 +38,7 @@ export class EmployeeShiftsController {
   }
 
   @Post('end')
-  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  @RequireAnyPermission(...SHIFT_PERMISSIONS)
   end(@CurrentUser() user: RequestUser) {
     return this.shifts.end(user.id);
   }
@@ -46,7 +49,7 @@ export class EmployeeShiftsController {
    * banner is driven by.
    */
   @Get('me')
-  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  @RequireAnyPermission(...SHIFT_PERMISSIONS)
   async me(@CurrentUser() user: RequestUser, @Query('partnerId') partnerId?: string) {
     const shift = await this.shifts.current(user.id);
     const scopedPartnerId = partnerId ?? shift?.partnerId;
@@ -60,7 +63,7 @@ export class EmployeeShiftsController {
   }
 
   @Get('branch/:branchId')
-  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  @RequireAnyPermission(...SHIFT_PERMISSIONS)
   async listAtBranch(@CurrentUser() user: RequestUser, @UuidParam('branchId') branchId: string) {
     const branch = await this.prisma.partnerBranch.findUnique({ where: { id: branchId } });
     if (branch) assertBranchScope(user, branch.partnerId, branch.id);

@@ -29,7 +29,15 @@ export const LEG_KINDS = {
   discountReturn: 'partner_order.discount_return',
   moneyReturn: 'partner_order.money_return',
   completion: 'partner_order.completion',
+  cancellationCost: 'partner_order.cancellation_cost',
 } as const;
+
+/** Item 8: how an admin-approved cancellation cost was funded — real money only. */
+export interface RetainedCost {
+  fromExternal: Decimal;
+  fromMoney: Decimal;
+  ledgerTransactionId: string | null;
+}
 
 /**
  * The payment legs of one `PartnerOrder` — spec §23/§47's provenance of
@@ -155,20 +163,95 @@ export class PartnerOrderPaymentsService {
   }
 
   /**
-   * Cancel before completion (spec §43, F4): every electronic leg goes back
-   * to its own source in full — no penalty of any kind — and a confirmed
-   * external leg becomes RETURN_PENDING (the partner holds that cash and
-   * confirms handing it back). Returns whether anything is still pending on
-   * the partner's side.
+   * The real money on an order that an approved cancellation cost could be
+   * funded from (item 8): confirmed external cash the partner holds, and the
+   * TuTak money still in the money escrow. A pending (unpaid) external leg
+   * and the discount never count.
    */
-  async returnAllLegs(tx: Tx, order: { id: string; partnerId: string; customerId: string | null }, reason: string) {
-    const legs = await tx.partnerOrderPaymentLeg.findMany({ where: { orderId: order.id } });
+  async realMoneyAvailable(tx: Tx, orderId: string): Promise<{ external: Decimal; money: Decimal }> {
+    const legs = await tx.partnerOrderPaymentLeg.findMany({ where: { orderId } });
+    const outstanding = (l: PartnerOrderPaymentLeg) => l.amount.minus(l.refundedAmount).minus(l.retainedAmount);
+    return {
+      external: legs
+        .filter((l) => l.type === PaymentLegType.EXTERNAL && l.status === PaymentLegStatus.CONFIRMED)
+        .reduce((s, l) => s.plus(outstanding(l)), ZERO),
+      money: legs
+        .filter((l) => l.type === PaymentLegType.TUTAK_MONEY && l.status === PaymentLegStatus.CAPTURED)
+        .reduce((s, l) => s.plus(outstanding(l)), ZERO),
+    };
+  }
+
+  /**
+   * Cancel before completion (spec §43, F4): every leg goes back to its own
+   * source — the discount always in full — and a confirmed external leg
+   * becomes RETURN_PENDING (the partner holds that cash and confirms
+   * handing it back). Item 8: an admin-approved actual cancellation cost
+   * (`retainCost`) is kept first from confirmed external cash, then released
+   * from the money escrow to PARTNER_PAYABLE — no commission, no
+   * distribution; the caller has already capped it at the real money on the
+   * order. Returns whether anything is still pending on the partner's side
+   * and how the cost was funded.
+   */
+  async returnAllLegs(
+    tx: Tx,
+    order: { id: string; partnerId: string; customerId: string | null },
+    reason: string,
+    retainCost: Decimal = ZERO,
+    costSource?: { sourceType: string; sourceId: string },
+  ): Promise<{ externalPending: boolean; retained: RetainedCost }> {
+    const legs = await tx.partnerOrderPaymentLeg.findMany({ where: { orderId: order.id }, orderBy: { createdAt: 'asc' } });
     const now = new Date();
     const source = { sourceType: 'PartnerOrder', sourceId: order.id };
     let externalPending = false;
 
+    // Allocate the approved cost: confirmed external cash first, then money.
+    const keep = new Map<string, Decimal>();
+    let left = retainCost;
+    for (const type of [PaymentLegType.EXTERNAL, PaymentLegType.TUTAK_MONEY]) {
+      for (const leg of legs) {
+        if (!left.greaterThan(0)) break;
+        const eligible =
+          leg.type === type &&
+          ((type === PaymentLegType.EXTERNAL && leg.status === PaymentLegStatus.CONFIRMED) ||
+            (type === PaymentLegType.TUTAK_MONEY && leg.status === PaymentLegStatus.CAPTURED));
+        if (!eligible) continue;
+        const take = Decimal.min(left, leg.amount.minus(leg.refundedAmount).minus(leg.retainedAmount));
+        if (!take.greaterThan(0)) continue;
+        keep.set(leg.id, take);
+        left = left.minus(take);
+      }
+    }
+    if (left.greaterThan(0)) {
+      throw new BadRequestException('The approved cost exceeds the real money on this order');
+    }
+    const retained: RetainedCost = { fromExternal: ZERO, fromMoney: ZERO, ledgerTransactionId: null };
     for (const leg of legs) {
-      const outstanding = leg.amount.minus(leg.refundedAmount);
+      const k = keep.get(leg.id);
+      if (!k) continue;
+      if (leg.type === PaymentLegType.EXTERNAL) retained.fromExternal = retained.fromExternal.plus(k);
+      else retained.fromMoney = retained.fromMoney.plus(k);
+    }
+    if (retained.fromMoney.greaterThan(0)) {
+      retained.ledgerTransactionId = await this.commerceLedger.releaseMoneyToPartner(
+        order.partnerId,
+        retained.fromMoney,
+        costSource ?? source,
+        LEG_KINDS.cancellationCost,
+        tx,
+      );
+    }
+
+    for (const leg of legs) {
+      const kept = keep.get(leg.id) ?? ZERO;
+      const outstanding = leg.amount.minus(leg.refundedAmount).minus(leg.retainedAmount).minus(kept);
+      if (kept.greaterThan(0)) {
+        const claimed = await tx.partnerOrderPaymentLeg.updateMany({
+          where: { id: leg.id, status: leg.status, retainedAmount: leg.retainedAmount },
+          data: { retainedAmount: leg.retainedAmount.plus(kept) },
+        });
+        if (claimed.count === 0) throw new BadRequestException('This payment was changed concurrently — please retry');
+        leg.retainedAmount = leg.retainedAmount.plus(kept);
+      }
       if (leg.status === PaymentLegStatus.CAPTURED && leg.type === PaymentLegType.DISCOUNT) {
         // A leg never partially reduced goes back into the very lots it came
         // from (original expiry kept); a partially reduced one returns its
@@ -190,16 +273,19 @@ export class PartnerOrderPaymentsService {
       } else if (leg.type === PaymentLegType.EXTERNAL && leg.status === PaymentLegStatus.PENDING) {
         await this.markReturned(tx, leg, null, now);
       } else if (leg.type === PaymentLegType.EXTERNAL && leg.status === PaymentLegStatus.CONFIRMED) {
+        // All of it kept as the approved cost: nothing to hand back — the
+        // partner's cash is settled.
+        const fullyKept = !outstanding.greaterThan(0);
         const claimed = await tx.partnerOrderPaymentLeg.updateMany({
           where: { id: leg.id, status: PaymentLegStatus.CONFIRMED },
-          data: { status: PaymentLegStatus.RETURN_PENDING },
+          data: fullyKept ? { status: PaymentLegStatus.SETTLED, settledAt: now } : { status: PaymentLegStatus.RETURN_PENDING },
         });
-        if (claimed.count === 1) externalPending = true;
+        if (claimed.count === 1 && !fullyKept) externalPending = true;
       } else if (leg.status === PaymentLegStatus.RETURN_PENDING) {
         externalPending = true;
       }
     }
-    return { externalPending };
+    return { externalPending, retained };
   }
 
   private async markReturned(tx: Tx, leg: PartnerOrderPaymentLeg, returnLedgerTransactionId: string | null, now: Date) {
@@ -303,23 +389,26 @@ export class PartnerOrderPaymentsService {
 
   /**
    * Completion (F3): every captured electronic leg's outstanding amount
-   * leaves escrow for PARTNER_PAYABLE in one posting. Only called once, by
-   * the caller that won the RECEIVED → COMPLETED claim.
+   * leaves its own escrow (money / discount) for PARTNER_PAYABLE in one
+   * transaction. Only called once, by the caller that won the RECEIVED →
+   * COMPLETED claim.
    */
   async releaseForCompletion(tx: Tx, order: { id: string; partnerId: string }): Promise<{ released: Decimal; ledgerTransactionId: string | null }> {
     const legs = await tx.partnerOrderPaymentLeg.findMany({
       where: { orderId: order.id, status: PaymentLegStatus.CAPTURED },
     });
-    const released = legs.reduce((sum, l) => sum.plus(l.amount.minus(l.refundedAmount)), ZERO);
-    const ledgerTransactionId = released.greaterThan(0)
-      ? await this.commerceLedger.releaseToPartner(
-          order.partnerId,
-          released,
-          { sourceType: 'PartnerOrder', sourceId: order.id },
-          LEG_KINDS.completion,
-          tx,
-        )
-      : null;
+    const sumOf = (type: PaymentLegType) =>
+      legs.filter((l) => l.type === type).reduce((sum, l) => sum.plus(l.amount.minus(l.refundedAmount)), ZERO);
+    const money = sumOf(PaymentLegType.TUTAK_MONEY);
+    const discount = sumOf(PaymentLegType.DISCOUNT);
+    const released = money.plus(discount);
+    const ledgerTransactionId = await this.commerceLedger.releaseOrderToPartner(
+      order.partnerId,
+      { money, discount },
+      { sourceType: 'PartnerOrder', sourceId: order.id },
+      LEG_KINDS.completion,
+      tx,
+    );
     const now = new Date();
     for (const leg of legs) {
       await tx.partnerOrderPaymentLeg.updateMany({

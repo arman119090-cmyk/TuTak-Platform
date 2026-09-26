@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  FinancialPolicyVersion,
   LedgerAccountType,
   PostingDirection,
   Prisma,
@@ -241,6 +242,12 @@ export class PurchaseIntentsService {
    * No financial ledger entry exists yet — spec §7 step 11 is explicit that
    * those wait for confirmation.
    */
+  /** COMMERCE_V2 once its effective date has passed (unset = already effective). */
+  private financialPolicyVersionNow(now = new Date()): FinancialPolicyVersion {
+    const effectiveAt = this.config.get('financialPolicy', { infer: true }).commerceV2EffectiveAt;
+    return !effectiveAt || effectiveAt <= now ? FinancialPolicyVersion.COMMERCE_V2 : FinancialPolicyVersion.LEGACY_V1;
+  }
+
   async create(dto: CreatePurchaseIntentDto, customerId: string) {
     const grossAmount = parsePositiveMoney(dto.grossAmount, 'grossAmount');
     const bonusAmountRequested = dto.bonusAmountRequested
@@ -361,13 +368,16 @@ export class PurchaseIntentsService {
       }
 
       // The intent and its TuTak-money capture are one atomic unit: the
-      // money moves CUSTOMER_PREPAID_BALANCE → PARTNER_ORDER_ESCROW now (so
+      // money moves CUSTOMER_PREPAID_BALANCE → PARTNER_ORDER_MONEY_ESCROW now (so
       // it cannot be spent twice while staff decide), and only reaches the
       // partner on confirmation — or goes back on reject/expiry.
       const intent = await this.prisma.$transaction(async (tx) => {
         const created = await tx.purchaseIntent.create({
         data: {
           customerId,
+          // Q9: the financial model this purchase will be refunded under,
+          // stamped once — never re-derived from dates at refund time.
+          financialPolicyVersion: this.financialPolicyVersionNow(),
           partnerId: partner.id,
           partnerBranchId: dto.partnerBranchId,
           grossAmount,
@@ -590,7 +600,7 @@ export class PurchaseIntentsService {
         // (Q1/Q2): the partner is owed it, netted against the contribution
         // above in the same PARTNER_PAYABLE account (spec §11).
         if (intent.tutakMoneyAmount.greaterThan(0)) {
-          const releaseId = await this.commerceLedger.releaseToPartner(
+          const releaseId = await this.commerceLedger.releaseMoneyToPartner(
             intent.partnerId,
             intent.tutakMoneyAmount,
             { sourceType: 'PurchaseIntent', sourceId: intent.id },
@@ -744,7 +754,7 @@ export class PurchaseIntentsService {
   }
 
   /**
-   * PARTNER_ORDER_ESCROW → CUSTOMER_PREPAID_BALANCE for the TuTak-money part
+   * PARTNER_ORDER_MONEY_ESCROW → CUSTOMER_PREPAID_BALANCE for the TuTak-money part
    * of an intent that will never be confirmed. Only ever called after the
    * caller's own conditional status claim succeeded, inside the same
    * transaction — so it runs at most once per intent.

@@ -367,10 +367,11 @@ model Wallet {
   // which never issues a hard delete — no code path relies on this cascade
   // today, so this only closes a landmine for whatever deletes a user next
   // (independent audit, GitHub issue #28).
-  user          User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   lots          BonusLot[]
   reservations  BonusReservation[]
   ledgerEntries BonusLedgerEntry[]
+  withholdings  ReferralWithholding[]
 
   @@map("wallets")
 }
@@ -413,22 +414,36 @@ enum BonusEntryType {
   RESERVE_HOLD
   RESERVE_RELEASE
   PENDING_PROMOTION
+  /// Commerce v2, Q8: part of a new accrual taken — before it ever becomes
+  /// spendable — to pay off the user's open `ReferralWithholding` (a
+  /// referral allocation of a returned purchase that they had already
+  /// spent). Recorded as its own DEBIT entry right after the accrual's
+  /// CREDIT, so the history shows both "earned X" and "withheld Y".
+  WITHHOLDING
 }
 
 /// A discrete batch of bonus points accrued together, expiring together.
 /// FIFO consumption against lots is what lets us expire the *oldest*
 /// points first and gives an accurate "expiring soon" view.
 model BonusLot {
-  id                  String         @id @default(uuid())
-  walletId            String
-  type                BonusEntryType
-  status              BonusLotStatus @default(PENDING)
-  originalAmount      Decimal        @db.Decimal(18, 4)
-  remainingAmount     Decimal        @db.Decimal(18, 4)
-  sourceTransactionId String?
-  availableAt         DateTime // when PENDING -> AVAILABLE (cooling-off window)
-  expiresAt           DateTime
-  createdAt           DateTime       @default(now())
+  id                       String         @id @default(uuid())
+  walletId                 String
+  type                     BonusEntryType
+  status                   BonusLotStatus @default(PENDING)
+  originalAmount           Decimal        @db.Decimal(18, 4)
+  remainingAmount          Decimal        @db.Decimal(18, 4)
+  sourceTransactionId      String?
+  availableAt              DateTime // when PENDING -> AVAILABLE (cooling-off window)
+  expiresAt                DateTime
+  /// Commerce v2 reversal bookkeeping: how much of this lot's *expired*
+  /// value (Σ of its EXPIRY entries) later refunds/returns have already
+  /// written back against BONUS_LIABILITY. Lot expiry never releases the
+  /// double-entry liability, so a refund that finds the lot expired reverses
+  /// that part from BONUS_LIABILITY rather than charging anybody for it —
+  /// and this counter stops two partial refunds from claiming the same
+  /// expired slice twice.
+  expiredWrittenBackAmount Decimal        @default(0) @db.Decimal(18, 4)
+  createdAt                DateTime       @default(now())
 
   wallet      Wallet                       @relation(fields: [walletId], references: [id], onDelete: Cascade)
   allocations BonusReservationAllocation[]
@@ -677,12 +692,28 @@ enum PurchaseIntentStatus {
 /// asks for: captured once at creation, read-only afterwards, so a later
 /// change to the partner's rate or cap can never alter a live or historical
 /// intent.
+/// Which financial model a purchase's refund/return follows — snapshotted on
+/// the purchase at creation, never inferred from dates at refund time
+/// (Arman, Q9). LEGACY_V1: the pre-Commerce refund rules (an unrecoverable
+/// shortfall is released to PLATFORM_REVENUE). COMMERCE_V2: Q8/Q9 — a spent
+/// referral share becomes the referrer's `ReferralWithholding`, the
+/// customer's spent share is netted from the money they get back and any
+/// remainder is settled at the partner's desk; TuTak absorbs nothing.
+enum FinancialPolicyVersion {
+  LEGACY_V1
+  COMMERCE_V2
+}
+
 model PurchaseIntent {
-  id              String               @id @default(uuid())
-  customerId      String
-  partnerId       String
-  partnerBranchId String?
-  status          PurchaseIntentStatus @default(AWAITING_CONFIRMATION)
+  id                     String                 @id @default(uuid())
+  customerId             String
+  partnerId              String
+  partnerBranchId        String?
+  status                 PurchaseIntentStatus   @default(AWAITING_CONFIRMATION)
+  /// Every row that existed before Commerce v2 is LEGACY_V1 (the column
+  /// default); `PurchaseIntentsService.create` stamps COMMERCE_V2 on every
+  /// purchase created once the policy is effective (`financialPolicy`).
+  financialPolicyVersion FinancialPolicyVersion @default(LEGACY_V1)
 
   grossAmount                     Decimal @db.Decimal(18, 4)
   bonusAmountRequested            Decimal @default(0) @db.Decimal(18, 4)
@@ -830,38 +861,91 @@ model PurchaseIntent {
 /// loyalty effect the original purchase created, proportional to how much of
 /// the merchandise the partner is taking back, tracked immutably against the
 /// intent it refunds — see `PurchaseIntentRefundService`.
+/// COMMERCE_V2 only (Q9) — a LEGACY_V1 refund is always COMPLETED at once.
+enum PurchaseIntentRefundStatus {
+  COMPLETED
+  /// The customer's shortfall exceeds what could be netted from the
+  /// TuTak-money refund: the partner settles the rest in cash at the desk
+  /// (hands back less and/or collects the remainder) and confirms it on
+  /// shift. Nothing has moved yet.
+  AWAITING_SHORTFALL_SETTLEMENT
+  /// The customer refused or disputed the shortfall — no hidden debt is
+  /// created; a TuTak operator decides. Nothing has moved.
+  MANUAL_REVIEW
+  /// Closed by an operator without executing. Nothing ever moved.
+  WITHDRAWN
+}
+
 model PurchaseIntentRefund {
-  id                       String   @id @default(uuid())
+  id                       String                     @id @default(uuid())
   purchaseIntentId         String
+  status                   PurchaseIntentRefundStatus @default(COMPLETED)
+  /// Snapshot of the purchase's policy this refund was computed under.
+  financialPolicyVersion   FinancialPolicyVersion     @default(LEGACY_V1)
   /// The merchandise refund amount the partner entered — always ≤ what
   /// remains of `PurchaseIntent.grossAmount`, enforced by a conditional
   /// UPDATE on `refundedAmount`, the same guard `Payment.refundedAmount` uses.
-  amount                   Decimal  @db.Decimal(18, 4)
+  amount                   Decimal                    @db.Decimal(18, 4)
   /// This refund's own proportional slice of the bonus the customer spent on
   /// the original purchase, restored to their wallet.
-  bonusRestored            Decimal  @default(0) @db.Decimal(18, 4)
+  bonusRestored            Decimal                    @default(0) @db.Decimal(18, 4)
   /// This refund's proportional slice of the purchase's TuTak-money part,
   /// returned PARTNER_PAYABLE → CUSTOMER_PREPAID_BALANCE.
-  tutakMoneyRefunded       Decimal  @default(0) @db.Decimal(18, 4)
-  moneyLedgerTransactionId String?  @unique
+  tutakMoneyRefunded       Decimal                    @default(0) @db.Decimal(18, 4)
+  moneyLedgerTransactionId String?                    @unique
   /// The refunding employee's shift (spec §6.2).
   shiftId                  String?
   reason                   String
   /// The reversing ledger transaction for the pool-contribution leg.
   /// Postings are immutable, so a refund is a new transaction pointing back
   /// at the original, never an edit.
-  ledgerTransactionId      String?  @unique
+  ledgerTransactionId      String?                    @unique
   actorId                  String
   /// Scoped to the actor, matching `IdempotencyService`'s
   /// `purchase-intent-refund:<actorId>` scope.
   idempotencyKey           String?
-  createdAt                DateTime @default(now())
+
+  /// COMMERCE_V2 breakdown (Q9) — never one netted figure:
+  /// `grossRefund` is the money the customer is owed back (TuTak-money share
+  /// + the cash share the partner repays), `recoveredShortfall` the part of
+  /// it kept to cover the customer's own already-spent allocation of this
+  /// purchase (+ anything collected on top), `netRefund` what the customer
+  /// actually gets. `shortfallFromMoney` + `shortfallFromCash` +
+  /// `shortfallCollected` = `recoveredShortfall` = `customerShortfall`.
+  grossRefund        Decimal   @default(0) @db.Decimal(18, 4)
+  recoveredShortfall Decimal   @default(0) @db.Decimal(18, 4)
+  netRefund          Decimal   @default(0) @db.Decimal(18, 4)
+  customerShortfall  Decimal   @default(0) @db.Decimal(18, 4)
+  shortfallFromMoney Decimal   @default(0) @db.Decimal(18, 4)
+  shortfallFromCash  Decimal   @default(0) @db.Decimal(18, 4)
+  shortfallCollected Decimal   @default(0) @db.Decimal(18, 4)
+  /// The cash share (the external part the partner repays outside TuTak).
+  cashRefundGross    Decimal   @default(0) @db.Decimal(18, 4)
+  cashRefundNet      Decimal   @default(0) @db.Decimal(18, 4)
+  /// Q8: spent referral shares turned into `ReferralWithholding`s.
+  referralWithheld   Decimal   @default(0) @db.Decimal(18, 4)
+  /// Expired (never spent) bonus written back against BONUS_LIABILITY, and
+  /// expired/forfeited deferred value reversed from PLATFORM_REVENUE.
+  expiredWrittenBack Decimal   @default(0) @db.Decimal(18, 4)
+  revenueReversed    Decimal   @default(0) @db.Decimal(18, 4)
+  settledByUserId    String?
+  settledShiftId     String?
+  settledAt          DateTime?
+  refusedByUserId    String?
+  refusedAt          DateTime?
+  refusalNote        String?
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+  reviewNote         String?
+  createdAt          DateTime  @default(now())
+  completedAt        DateTime?
 
   purchaseIntent    PurchaseIntent     @relation(fields: [purchaseIntentId], references: [id])
   ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
 
   @@unique([actorId, idempotencyKey])
   @@index([purchaseIntentId])
+  @@index([status, createdAt])
   @@map("purchase_intent_refunds")
 }
 
@@ -904,11 +988,15 @@ model PurchaseIntentRefund {
 /// independent dimensions (spec §57); payment, sourcing and dispute state
 /// live in their own columns so impossible combinations cannot be spelled.
 ///
-///   DRAFT ─submit→ SUBMITTED ─seen→ SEEN ─in stock→ STOCK_CONFIRMED
-///     ─handed over→ HANDED_OVER ─customer "Получил"→ RECEIVED ─→ COMPLETED
+///   DRAFT ─submit→ SUBMITTED ─seen→ SEEN ─in stock→ STOCK_CONFIRMED (ready
+///     for fulfillment) ─→ OUT_FOR_DELIVERY (handed to the partner's own
+///     courier) | READY_FOR_PICKUP (self-pickup) ─→ DELIVERED (the partner
+///     marks it actually delivered / handed to the customer — the only event
+///     the customer's 24h/48h receipt timers run from) ─customer
+///     "Получил"→ RECEIVED ─→ COMPLETED
 ///   SUBMITTED|SEEN ─no stock→ OUT_OF_STOCK ─(sourcing resolved)→ STOCK_CONFIRMED
 ///   DRAFT ─24h→ EXPIRED
-///   DRAFT|SUBMITTED|SEEN|STOCK_CONFIRMED|OUT_OF_STOCK ─cancel→ CANCELLED
+///   any pre-RECEIVED state ─cancel (possibly via a cost review)→ CANCELLED
 ///
 /// `SUBMITTED` is set only once the customer has explicitly confirmed the
 /// order and the prepayment is secured — `submittedAt` is the one clock the
@@ -920,12 +1008,36 @@ enum PartnerOrderOperationalStatus {
   SUBMITTED
   SEEN
   STOCK_CONFIRMED
-  HANDED_OVER
+  /// The partner handed the goods to its own courier (who needs no TuTak
+  /// account). Not "delivered": no customer timer starts here.
+  OUT_FOR_DELIVERY
+  /// Self-pickup: the order waits at the branch. No customer timer.
+  READY_FOR_PICKUP
+  /// The partner's side considers the order delivered / handed to the
+  /// customer (`deliveredAt`) — starts the 24h reminder / 48h manual
+  /// review clock.
+  DELIVERED
   RECEIVED
   COMPLETED
   OUT_OF_STOCK
   CANCELLED
   EXPIRED
+}
+
+enum FulfillmentMethod {
+  DELIVERY
+  PICKUP
+}
+
+/// A customer's cancellation request that may carry a cost claim (item 8 of
+/// the final fixes). NONE when no request is pending.
+enum PartnerOrderCancellationStatus {
+  NONE
+  /// Waiting for the partner to declare "no costs" or claim actual costs,
+  /// until `PartnerOrderCancellation.partnerDeadlineAt` (then: no costs).
+  REQUESTED
+  /// The partner claimed actual costs; a TuTak admin approves/reduces/rejects.
+  COST_REVIEW
 }
 
 /// Payment state — what is happening to the money.
@@ -1034,10 +1146,30 @@ model PartnerOrder {
   discountAmount           Decimal @default(0) @db.Decimal(18, 4)
   tutakMoneyAmount         Decimal @default(0) @db.Decimal(18, 4)
   externalAmount           Decimal @default(0) @db.Decimal(18, 4)
-  /// Spec §30: shown to the customer before they confirm; the electronic
-  /// legs (discount + TuTak money) must cover it at submit.
+  /// Spec §30: shown to the customer before they confirm. Q13: only real
+  /// money secures it — the TuTak-money leg captured into the money escrow
+  /// (there is no confirmed-external-prepayment flow before submit). The
+  /// discount is a right to a discount, not money, and never counts.
   prepaymentRuleId         String?
   prepaymentRequiredAmount Decimal @default(0) @db.Decimal(18, 4)
+  /// What actually secured the prepayment at submit (= the TuTak-money leg;
+  /// `discountAmount` is never part of it). CHECK ≥ required once submitted.
+  prepaymentCoveredAmount  Decimal @default(0) @db.Decimal(18, 4)
+
+  /// Which refund/return economics apply (Q9) — always COMMERCE_V2 for an
+  /// online order; snapshotted, never inferred from dates.
+  financialPolicyVersion FinancialPolicyVersion @default(COMMERCE_V2)
+
+  /// Item 8: the partner site's own cancellation-cost terms, shown to the
+  /// customer before "Подтвердить заказ" (e.g. "доставка 2 000 AMD, если
+  /// курьер уже выехал"). Only costs disclosed here may ever be claimed; an
+  /// order without terms is always cancelled with a full refund.
+  cancellationTerms  String?
+  cancellationStatus PartnerOrderCancellationStatus @default(NONE)
+
+  /// How the goods reach the customer — sent by the site, or set by the
+  /// partner's first fulfillment action. Null = not decided yet.
+  fulfillmentMethod FulfillmentMethod?
 
   /// Running merchandise total returned after completion — guarded by a
   /// conditional UPDATE against `totalAmount`, the same pattern
@@ -1077,8 +1209,8 @@ model PartnerOrder {
   /// discount spend and the distribution create is keyed by it, exactly as
   /// for a QR purchase.
   sourceTransactionId           String? @unique
-  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT PARTNER_PAYABLE for every captured
-  /// electronic leg, posted once at completion.
+  /// DEBIT the money/discount escrow / CREDIT PARTNER_PAYABLE for every
+  /// captured electronic leg, posted once at completion.
   completionLedgerTransactionId String? @unique
   /// Scoped to the customer: a retried "Подтвердить заказ" with the same key
   /// is a lookup, never a second capture.
@@ -1088,7 +1220,12 @@ model PartnerOrder {
   partnerSeenByUserId    String?
   stockConfirmedByUserId String?
   stockRejectedByUserId  String?
-  handedOverByUserId     String?
+  outForDeliveryByUserId String?
+  readyForPickupByUserId String?
+  deliveredByUserId      String?
+  /// Free text the partner may add when handing to its courier (name,
+  /// phone, tracking) — the courier needs no TuTak account.
+  courierNote            String?
   rejectionReason        String?
   cancelledByType        PartnerOrderActorType?
   cancelledByUserId      String?
@@ -1102,23 +1239,29 @@ model PartnerOrder {
   notSeenAlertSentAt   DateTime?
   stockAlertLastSentAt DateTime?
 
-  createdAt             DateTime  @default(now())
+  createdAt               DateTime  @default(now())
   /// A DRAFT nobody confirms expires (no SLA, no money ever moved).
-  draftExpiresAt        DateTime
-  submittedAt           DateTime?
-  partnerSeenAt         DateTime?
-  stockConfirmedAt      DateTime?
-  stockRejectedAt       DateTime?
-  handedOverAt          DateTime?
-  customerReceivedAt    DateTime?
-  receiptReminderSentAt DateTime?
-  manualReviewAt        DateTime?
-  /// Received, but an external leg is still unconfirmed past the grace
-  /// window — the admin "Payment issue" queue (interim rule pending Q10).
-  paymentIssueAt        DateTime?
-  completedAt           DateTime?
-  cancelledAt           DateTime?
-  updatedAt             DateTime  @updatedAt
+  draftExpiresAt          DateTime
+  submittedAt             DateTime?
+  partnerSeenAt           DateTime?
+  stockConfirmedAt        DateTime?
+  stockRejectedAt         DateTime?
+  outForDeliveryAt        DateTime?
+  readyForPickupAt        DateTime?
+  /// The partner marked it delivered / handed to the customer — the only
+  /// clock the 24h reminder and the 48h manual review run from.
+  deliveredAt             DateTime?
+  customerReceivedAt      DateTime?
+  receiptReminderSentAt   DateTime?
+  manualReviewAt          DateTime?
+  /// Q10: the customer confirmed receipt while an external leg is still
+  /// unconfirmed — set at that very moment (the "Payment issue" queue).
+  paymentIssueAt          DateTime?
+  /// Still unconfirmed `paymentIssueHours` later — escalated once more.
+  paymentIssueEscalatedAt DateTime?
+  completedAt             DateTime?
+  cancelledAt             DateTime?
+  updatedAt               DateTime  @updatedAt
 
   customer       User?              @relation(fields: [customerId], references: [id])
   partner        Partner            @relation(fields: [partnerId], references: [id])
@@ -1127,13 +1270,14 @@ model PartnerOrder {
   commissionRule CommissionRule?    @relation(fields: [commissionRuleId], references: [id])
   prepaymentRule PrepaymentRule?    @relation(fields: [prepaymentRuleId], references: [id])
 
-  items        PartnerOrderItem[]
-  paymentLegs  PartnerOrderPaymentLeg[]
-  adjustments  PartnerOrderAdjustment[]
-  returns      PartnerOrderReturn[]
-  disputes     OrderDispute[]
-  sourcingTask SourcingTask?
-  escalations  OrderEscalation[]
+  items         PartnerOrderItem[]
+  paymentLegs   PartnerOrderPaymentLeg[]
+  adjustments   PartnerOrderAdjustment[]
+  returns       PartnerOrderReturn[]
+  disputes      OrderDispute[]
+  sourcingTask  SourcingTask?
+  escalations   OrderEscalation[]
+  cancellations PartnerOrderCancellation[]
 
   @@unique([integrationId, externalOrderId])
   @@unique([customerId, submitIdempotencyKey])
@@ -1213,14 +1357,18 @@ model PartnerOrderPaymentLeg {
   adjustmentId   String?
   /// Cumulative amount of this leg returned after completion.
   refundedAmount Decimal           @default(0) @db.Decimal(18, 4)
+  /// Item 8: the part kept by the partner as an admin-approved actual
+  /// cancellation cost (real-money legs only — never DISCOUNT).
+  retainedAmount Decimal           @default(0) @db.Decimal(18, 4)
 
   /// DISCOUNT only: the bonus reservation reserved and settled at capture —
   /// what a cancel reverses (`BonusEngineService.reverseSettlement`).
   bonusReservationId         String?
-  /// DEBIT source / CREDIT PARTNER_ORDER_ESCROW (DISCOUNT: BONUS_LIABILITY;
-  /// TUTAK_MONEY: CUSTOMER_PREPAID_BALANCE).
+  /// DEBIT source / CREDIT its own escrow — DISCOUNT: BONUS_LIABILITY →
+  /// PARTNER_ORDER_DISCOUNT_ESCROW; TUTAK_MONEY: CUSTOMER_PREPAID_BALANCE →
+  /// PARTNER_ORDER_MONEY_ESCROW. The two never share an account.
   captureLedgerTransactionId String? @unique
-  /// DEBIT PARTNER_ORDER_ESCROW / CREDIT the same source, on cancel.
+  /// DEBIT the same escrow / CREDIT the same source, on cancel.
   returnLedgerTransactionId  String? @unique
 
   /// EXTERNAL only — spec §26: who, on which shift, at which branch.
@@ -1361,6 +1509,72 @@ model PartnerOrderAdjustment {
   @@map("partner_order_adjustments")
 }
 
+enum PartnerOrderCancellationRequestStatus {
+  /// Waiting for the partner: "no costs" or an actual-cost claim.
+  AWAITING_PARTNER
+  /// A cost claim waits for a TuTak admin.
+  COST_REVIEW
+  /// Executed: the order is CANCELLED, every leg returned minus the
+  /// approved cost (if any).
+  COMPLETED
+  /// The customer changed their mind before a decision; the order goes on.
+  WITHDRAWN
+}
+
+enum CancellationCostDecision {
+  /// The partner let the window pass without claiming anything.
+  NO_CLAIM
+  /// The partner declared it had no costs.
+  NO_COST
+  APPROVED
+  REDUCED
+  REJECTED
+}
+
+/// Item 8 of the final fixes: a customer's cancellation that may carry an
+/// actual, previously disclosed partner cost (delivery, special
+/// preparation…). Never a fixed or percentage penalty: the partner states
+/// the actual amount with a reason and evidence, a TuTak admin approves,
+/// reduces or rejects it, and only the approved amount is kept — from real
+/// money only (confirmed external first, then TuTak money; the discount is
+/// always returned in full), capped by the real money on the order, with no
+/// commission or distribution on it (Arman, 2026-09-26). At most one active
+/// request per order (partial unique index).
+model PartnerOrderCancellation {
+  id                      String                                @id @default(uuid())
+  orderId                 String
+  status                  PartnerOrderCancellationRequestStatus @default(AWAITING_PARTNER)
+  requestedByUserId       String
+  reason                  String?
+  /// No claim by then = no costs → full refund automatically.
+  partnerDeadlineAt       DateTime
+  claimedCostAmount       Decimal?                              @db.Decimal(18, 4)
+  costReason              String?
+  costEvidence            String?
+  costEvidenceUrls        String[]
+  claimedByUserId         String?
+  claimedShiftId          String?
+  claimedAt               DateTime?
+  decision                CancellationCostDecision?
+  approvedCostAmount      Decimal                               @default(0) @db.Decimal(18, 4)
+  /// How the approved cost was funded: kept from confirmed external cash,
+  /// then released from the money escrow to PARTNER_PAYABLE.
+  costFromExternal        Decimal                               @default(0) @db.Decimal(18, 4)
+  costFromMoney           Decimal                               @default(0) @db.Decimal(18, 4)
+  costLedgerTransactionId String?                               @unique
+  decidedByUserId         String?
+  decidedAt               DateTime?
+  decisionNote            String?
+  createdAt               DateTime                              @default(now())
+  completedAt             DateTime?
+
+  order PartnerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status, partnerDeadlineAt])
+  @@map("partner_order_cancellations")
+}
+
 enum SourcingTaskStatus {
   OPEN
   SEARCHING
@@ -1413,9 +1627,15 @@ enum OrderEscalationType {
   /// Spec §34: handed over 48h ago and the customer never confirmed receipt
   /// — manual review, never an automatic release.
   RECEIPT_NOT_CONFIRMED_48H
-  /// Received, but an external leg is still unconfirmed past the grace
-  /// window — "Payment issue" (interim rule pending Q10).
+  /// Q10: the customer confirmed receipt while an external leg is still
+  /// unconfirmed — raised immediately at receipt.
   PAYMENT_ISSUE
+  /// …and still unconfirmed `paymentIssueHours` later.
+  PAYMENT_ISSUE_24H
+  /// Item 8: a partner claimed actual cancellation costs — admin decision.
+  CANCELLATION_COST_REVIEW
+  /// Q9: the customer refused/disputed a return's shortfall settlement.
+  RETURN_SHORTFALL_REVIEW
 }
 
 /// TuTak's own internal "needs attention" record — never customer-visible
@@ -1445,10 +1665,17 @@ enum PartnerOrderReturnStatus {
   /// share back and confirm it (spec §47).
   PENDING_EXTERNAL_REFUND
   COMPLETED
-  /// Reversing the distribution would leave an unrecoverable shortfall
-  /// (already-spent green/referral/deferred value). Nothing moved; a TuTak
-  /// operator decides (pending Q8/Q9 — Q7a forbids absorbing it silently).
+  /// Q9: the customer's shortfall exceeds what could be netted from the
+  /// TuTak-money refund — the partner settles the rest in cash at the desk
+  /// (hands back less of the external share and/or collects the remainder)
+  /// and confirms it on shift. Nothing has moved yet.
+  AWAITING_SHORTFALL_SETTLEMENT
+  /// Q9: the customer refused or disputed the shortfall — no hidden debt, a
+  /// TuTak operator decides. Nothing has moved. (No longer used for a
+  /// referral shortfall: that is a `ReferralWithholding`, Q8.)
   MANUAL_REVIEW
+  /// Closed by an operator without executing. Nothing ever moved.
+  WITHDRAWN
 }
 
 /// A full or partial return after completion (spec §44-47). Proportional
@@ -1468,10 +1695,42 @@ model PartnerOrderReturn {
   discountRestored                        Decimal                  @default(0) @db.Decimal(18, 4)
   tutakMoneyRefunded                      Decimal                  @default(0) @db.Decimal(18, 4)
   externalRefundDue                       Decimal                  @default(0) @db.Decimal(18, 4)
-  /// The distribution share reversed, and what could not be clawed back.
+  /// The distribution share reversed; `shortfallAmount` is the customer's
+  /// own already-spent allocation of this order (Q9) — recovered, never
+  /// absorbed.
   poolReversed                            Decimal                  @default(0) @db.Decimal(18, 4)
   shortfallAmount                         Decimal                  @default(0) @db.Decimal(18, 4)
   manualReviewReason                      String?
+  /// Q9 breakdown — never one netted figure. `grossRefund` = the money the
+  /// customer is owed back (TuTak-money share + external share);
+  /// `recoveredShortfall` = `shortfallFromMoney` + `shortfallFromExternal` +
+  /// `shortfallCollected` (= `shortfallAmount` once settled); `netRefund` =
+  /// what the customer actually gets. `tutakMoneyRefunded` /
+  /// `externalRefundDue` above are the *net* figures; the gross ones are
+  /// `tutakMoneyGross` / `externalRefundGross`.
+  grossRefund                             Decimal                  @default(0) @db.Decimal(18, 4)
+  recoveredShortfall                      Decimal                  @default(0) @db.Decimal(18, 4)
+  netRefund                               Decimal                  @default(0) @db.Decimal(18, 4)
+  tutakMoneyGross                         Decimal                  @default(0) @db.Decimal(18, 4)
+  externalRefundGross                     Decimal                  @default(0) @db.Decimal(18, 4)
+  shortfallFromMoney                      Decimal                  @default(0) @db.Decimal(18, 4)
+  shortfallFromExternal                   Decimal                  @default(0) @db.Decimal(18, 4)
+  shortfallCollected                      Decimal                  @default(0) @db.Decimal(18, 4)
+  /// Q8: spent user-referral shares turned into `ReferralWithholding`s —
+  /// the partner's commission refund for them follows as they are repaid.
+  referralWithheld                        Decimal                  @default(0) @db.Decimal(18, 4)
+  expiredWrittenBack                      Decimal                  @default(0) @db.Decimal(18, 4)
+  revenueReversed                         Decimal                  @default(0) @db.Decimal(18, 4)
+  shortfallRecoveryLedgerTransactionId    String?                  @unique
+  settledByUserId                         String?
+  settledShiftId                          String?
+  settledAt                               DateTime?
+  refusedByUserId                         String?
+  refusedAt                               DateTime?
+  refusalNote                             String?
+  reviewedByUserId                        String?
+  reviewedAt                              DateTime?
+  reviewNote                              String?
   contributionReversalLedgerTransactionId String?                  @unique
   moneyRefundLedgerTransactionId          String?                  @unique
   discountRefundLedgerTransactionId       String?                  @unique
@@ -2400,6 +2659,71 @@ model DeferredBonusLotContribution {
   @@map("deferred_bonus_lot_contributions")
 }
 
+enum ReferralWithholdingStatus {
+  OPEN
+  SETTLED
+}
+
+/// Q8 (Arman, 2026-09-26, option A): a USER referrer's referral allocation
+/// from a purchase that was later returned, which they had already spent.
+/// The unspent part was reversed at once; this is the spent part. Never a
+/// negative balance, never their real money, never moved onto the
+/// customer, the partner or TuTak: their next positive bonus/referral
+/// accruals (`BonusEngineService.accrue`) pay it off first and only the
+/// rest becomes available. Each repayment is credited to the selling
+/// partner's PARTNER_PAYABLE — the commission refund that partner was due
+/// for this slice waits for it ("the partner waits", 2026-09-26); TuTak
+/// fronts nothing and nothing is written off automatically.
+model ReferralWithholding {
+  id                   String                    @id @default(uuid())
+  /// The referrer.
+  userId               String
+  walletId             String
+  /// Referral level (1..3) the allocation was paid at.
+  level                Int
+  amount               Decimal                   @db.Decimal(18, 4)
+  remainingAmount      Decimal                   @db.Decimal(18, 4)
+  status               ReferralWithholdingStatus @default(OPEN)
+  /// The selling partner whose commission refund for this slice is paid as
+  /// the withholding is repaid.
+  beneficiaryPartnerId String
+  /// The returned purchase's `Transaction`.
+  sourceTransactionId  String
+  /// The return/refund that created it (`PartnerOrderReturn` /
+  /// `PurchaseIntentRefund`).
+  sourceType           String
+  sourceId             String
+  createdAt            DateTime                  @default(now())
+  settledAt            DateTime?
+
+  wallet     Wallet                        @relation(fields: [walletId], references: [id])
+  recoveries ReferralWithholdingRecovery[]
+
+  /// A retried return can never create a second debt for the same slice.
+  @@unique([sourceType, sourceId, level])
+  @@index([userId, status, createdAt])
+  @@index([beneficiaryPartnerId, status])
+  @@map("referral_withholdings")
+}
+
+/// One repayment of a `ReferralWithholding` out of one new accrual lot —
+/// DEBIT BONUS_LIABILITY / CREDIT the beneficiary's PARTNER_PAYABLE.
+model ReferralWithholdingRecovery {
+  id                  String   @id @default(uuid())
+  withholdingId       String
+  /// The accrual lot the amount was taken from.
+  bonusLotId          String
+  amount              Decimal  @db.Decimal(18, 4)
+  ledgerTransactionId String   @unique
+  createdAt           DateTime @default(now())
+
+  withholding ReferralWithholding @relation(fields: [withholdingId], references: [id])
+
+  @@index([withholdingId])
+  @@index([bonusLotId])
+  @@map("referral_withholding_recoveries")
+}
+
 enum ReferralChallengeParticipantStatus {
   IN_PROGRESS
   QUALIFIED
@@ -2980,18 +3304,29 @@ enum LedgerAccountType {
   /// further spender needs the same explicit decision.
   CUSTOMER_PREPAID_BALANCE
   /// Partner Commerce (docs/PARTNER_COMMERCE.md, Q2 = A): a real,
-  /// traceable reserve — never a boolean imitating a hold. Every electronic
-  /// payment leg of an online `PartnerOrder` (DISCOUNT from
-  /// BONUS_LIABILITY, TUTAK_MONEY from CUSTOMER_PREPAID_BALANCE) and the
-  /// TuTak-money part of a QR `PurchaseIntent` is captured here first and
-  /// is not partner receivable yet. It moves on to PARTNER_PAYABLE only at
-  /// completion — for an online order, after the customer confirms receipt;
-  /// for a QR purchase, when staff confirm it — or back to its own source on
-  /// cancel/reject/expiry. Each movement is its own posting, referenced from
-  /// the leg/intent that caused it. Per-partner (`partnerId` set), like
-  /// `PARTNER_PAYABLE` itself; a completed or cancelled order leaves nothing
-  /// behind in it.
-  PARTNER_ORDER_ESCROW
+  /// traceable reserve — never a boolean imitating a hold — for real money
+  /// only: the TUTAK_MONEY leg of an online `PartnerOrder` and the
+  /// TuTak-money part of a QR `PurchaseIntent`, captured from
+  /// CUSTOMER_PREPAID_BALANCE. It moves on to PARTNER_PAYABLE only at
+  /// completion (online: after receipt; QR: at staff confirmation) or back
+  /// to CUSTOMER_PREPAID_BALANCE on cancel/reject/expiry — never to
+  /// BONUS_LIABILITY (item 9: money never becomes bonus). Per-partner.
+  PARTNER_ORDER_MONEY_ESCROW
+  /// The discount twin of the money escrow (item 9): the platform-side value
+  /// of a DISCOUNT leg, captured from BONUS_LIABILITY; on to
+  /// PARTNER_PAYABLE at completion or back to BONUS_LIABILITY on cancel —
+  /// never to CUSTOMER_PREPAID_BALANCE (discount never becomes money).
+  /// Per-partner. Separate accounts make the provenance provable from the
+  /// ledger alone, not only from leg metadata.
+  PARTNER_ORDER_DISCOUNT_ESCROW
+  /// Q9: what a customer owes back on a COMMERCE_V2 return/refund — the
+  /// already-spent part of their own allocation. Debited by the
+  /// contribution reversal, credited in the same transaction by whatever
+  /// recovers it (netted from the TuTak-money refund, retained from the
+  /// external/cash refund, collected at the partner's desk). A settled
+  /// return always leaves it at zero — nothing is ever left as a hidden
+  /// debt. Per-customer (`userId`).
+  CUSTOMER_SHORTFALL_CLEARING
   /// Spec §49: a partner's credit for an order under an ORDER dispute opened
   /// before that credit was settled — moved out of PARTNER_PAYABLE so no
   /// payout can include it, and back (or on to the customer) only by an
@@ -3674,7 +4009,7 @@ enum AuditAction {
   /// PURCHASE_INTENT_* above.
   PARTNER_ORDER_CREATED
   PARTNER_ORDER_SUBMITTED
-  PARTNER_ORDER_HANDED_OVER
+  PARTNER_ORDER_DELIVERED
   PARTNER_ORDER_RECEIVED
   PARTNER_ORDER_EXPIRED
   PARTNER_ORDER_MANUAL_REVIEW
@@ -3708,6 +4043,24 @@ enum AuditAction {
   PARTNER_ORDER_ESCALATION_RESOLVED
   COMMISSION_RULE_CREATED
   COMMISSION_RULE_UPDATED
+  /// Final fixes (items 1-8): delivery split, Q10 payment issue, the
+  /// cancellation cost review, Q9 shortfall settlement, Q8 withholdings.
+  PARTNER_ORDER_OUT_FOR_DELIVERY
+  PARTNER_ORDER_READY_FOR_PICKUP
+  PARTNER_ORDER_PAYMENT_ISSUE
+  PARTNER_ORDER_CANCELLATION_REQUESTED
+  PARTNER_ORDER_CANCELLATION_COST_CLAIMED
+  PARTNER_ORDER_CANCELLATION_DECIDED
+  PARTNER_ORDER_CANCELLATION_WITHDRAWN
+  PARTNER_ORDER_RETURN_SHORTFALL_SETTLED
+  PARTNER_ORDER_RETURN_SHORTFALL_REFUSED
+  PARTNER_ORDER_RETURN_REVIEWED
+  PURCHASE_INTENT_REFUND_PENDING
+  PURCHASE_INTENT_REFUND_SHORTFALL_SETTLED
+  PURCHASE_INTENT_REFUND_SHORTFALL_REFUSED
+  PURCHASE_INTENT_REFUND_REVIEWED
+  REFERRAL_WITHHOLDING_CREATED
+  REFERRAL_WITHHOLDING_RECOVERED
 }
 
 /// Immutable, append-only system-wide audit trail. Never updated/deleted.

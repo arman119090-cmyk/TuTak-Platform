@@ -5,6 +5,8 @@
 export enum Role {
   CUSTOMER = 'CUSTOMER',
   PARTNER_STAFF = 'PARTNER_STAFF',
+  /** Operational access at a partner (no commercial settings) — mirrors the API's RoleName. */
+  PARTNER_MANAGER = 'PARTNER_MANAGER',
   PARTNER_OWNER = 'PARTNER_OWNER',
   ADMIN = 'ADMIN',
   SUPER_ADMIN = 'SUPER_ADMIN',

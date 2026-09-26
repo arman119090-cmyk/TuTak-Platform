@@ -32,6 +32,11 @@ export interface AuthenticatedUserDto {
   firstName: string;
   lastName: string;
   roles: Role[];
+  /**
+   * Effective fine-grained permissions (the union over `roles`) — what UI
+   * availability is decided by, never a "primary role" name.
+   */
+  permissions?: string[];
   /** Partner IDs a scoped role (e.g. PARTNER_OWNER) applies to, keyed by role name. */
   partnerScopes: Record<string, string[]>;
   locale: string;

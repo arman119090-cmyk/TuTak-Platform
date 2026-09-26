@@ -17,7 +17,9 @@ const FILTERS: { key: PartnerOrderQueueFilter | 'all'; label: string }[] = [
   { key: 'seen', label: 'Seen' },
   { key: 'stock_confirmed', label: 'Stock confirmed' },
   { key: 'out_of_stock', label: 'Out of stock' },
-  { key: 'handed_over', label: 'Handed over' },
+  { key: 'in_delivery', label: 'With courier / for pickup' },
+  { key: 'delivered', label: 'Delivered' },
+  { key: 'cancellation', label: 'Cancellation requests' },
   { key: 'completed', label: 'Completed' },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'refund', label: 'Refunds' },
@@ -27,9 +29,11 @@ const FILTERS: { key: PartnerOrderQueueFilter | 'all'; label: string }[] = [
 const STATUS: Record<string, { label: string; tone: 'pending' | 'available' | 'danger' | 'neutral' }> = {
   SUBMITTED: { label: 'New order', tone: 'danger' },
   SEEN: { label: 'Check stock', tone: 'pending' },
-  STOCK_CONFIRMED: { label: 'In stock — prepare and hand over', tone: 'available' },
+  STOCK_CONFIRMED: { label: 'In stock — prepare the order', tone: 'available' },
   OUT_OF_STOCK: { label: 'Out of stock', tone: 'neutral' },
-  HANDED_OVER: { label: 'Handed over', tone: 'available' },
+  OUT_FOR_DELIVERY: { label: 'With your courier', tone: 'pending' },
+  READY_FOR_PICKUP: { label: 'Ready for pickup', tone: 'pending' },
+  DELIVERED: { label: 'Delivered — waiting for the customer to confirm', tone: 'available' },
   RECEIVED: { label: 'Customer received it', tone: 'available' },
   COMPLETED: { label: 'Completed', tone: 'available' },
   CANCELLED: { label: 'Cancelled', tone: 'neutral' },
@@ -53,7 +57,9 @@ const LEG_STATUS: Record<string, string> = {
 
 /**
  * Spec §53-54, §75: the partner's order desk. A new order shows one button
- * ("Увидел"), then "В наличии / Нет в наличии", then "Передан". Cash and
+ * ("Увидел"), then "В наличии / Нет в наличии", then the fulfilment steps —
+ * "Передал курьеру" or "Готов к выдаче", and "Доставлен / выдан клиенту"
+ * (only that last one starts the customer's 24h/48h clock). Cash and
  * other direct payments are confirmed here by an employee on shift;
  * electronic payments are never the partner's to mark (spec §59), and there
  * is no field anywhere to change an amount or a commission.
@@ -120,8 +126,10 @@ function OrderCard({ order }: { order: PartnerOrderDto }) {
   const pendingExternal = order.paymentLegs.filter((l) => l.type === 'EXTERNAL' && l.status === 'PENDING');
   const confirmedExternal = order.paymentLegs.filter((l) => l.type === 'EXTERNAL' && l.status === 'CONFIRMED');
   const returnPending = order.paymentLegs.filter((l) => l.status === 'RETURN_PENDING');
-  const beforeHandover = ['SUBMITTED', 'SEEN', 'STOCK_CONFIRMED'].includes(order.operationalStatus);
-  const afterHandover = ['HANDED_OVER', 'RECEIVED', 'COMPLETED'].includes(order.operationalStatus);
+  const beforeHandover = ['SUBMITTED', 'SEEN', 'STOCK_CONFIRMED', 'READY_FOR_PICKUP'].includes(order.operationalStatus);
+  const afterHandover = ['OUT_FOR_DELIVERY', 'DELIVERED', 'RECEIVED', 'COMPLETED'].includes(order.operationalStatus);
+  const cancellation = (order.cancellations ?? []).find((c) => c.status === 'AWAITING_PARTNER' || c.status === 'COST_REVIEW');
+  const noCancellation = order.cancellationStatus === 'NONE' || !order.cancellationStatus;
 
   return (
     <Surface>
@@ -135,6 +143,8 @@ function OrderCard({ order }: { order: PartnerOrderDto }) {
         <div className="flex gap-2">
           <Badge tone={status.tone}>{status.label}</Badge>
           {order.disputeStatus === 'OPEN' ? <Badge tone="danger">Dispute open</Badge> : null}
+          {order.cancellationStatus === 'REQUESTED' ? <Badge tone="danger">Customer asked to cancel</Badge> : null}
+          {order.cancellationStatus === 'COST_REVIEW' ? <Badge tone="pending">Cancellation cost under TuTak review</Badge> : null}
         </div>
       </div>
 
@@ -157,6 +167,8 @@ function OrderCard({ order }: { order: PartnerOrderDto }) {
         <div>
           Commission {order.commissionRateBps / 100}%: {num(order.commissionAmount)} AMD
         </div>
+        {order.courierNote ? <div>Courier: {order.courierNote}</div> : null}
+        {order.cancellationTerms ? <div>Cancellation terms shown to the customer: {order.cancellationTerms}</div> : null}
       </div>
 
       {error ? <div className="mt-3 text-[13px] text-danger-text">{error}</div> : null}
@@ -182,8 +194,24 @@ function OrderCard({ order }: { order: PartnerOrderDto }) {
             Found it — in stock
           </Button>
         ) : null}
-        {order.operationalStatus === 'STOCK_CONFIRMED' ? (
-          <Button onClick={() => action.mutate(() => partnerOrderApi.handedOver(order.id))}>Handed over</Button>
+        {order.operationalStatus === 'STOCK_CONFIRMED' && noCancellation ? (
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const note = window.prompt('Courier (name, phone, tracking) — optional');
+                action.mutate(() => partnerOrderApi.outForDelivery(order.id, note ?? undefined));
+              }}
+            >
+              Handed to courier
+            </Button>
+            <Button variant="secondary" onClick={() => action.mutate(() => partnerOrderApi.readyForPickup(order.id))}>
+              Ready for pickup
+            </Button>
+          </>
+        ) : null}
+        {['STOCK_CONFIRMED', 'OUT_FOR_DELIVERY', 'READY_FOR_PICKUP'].includes(order.operationalStatus) && noCancellation ? (
+          <Button onClick={() => action.mutate(() => partnerOrderApi.delivered(order.id))}>Delivered to the customer</Button>
         ) : null}
         {pendingExternal.map((leg) => (
           <Button key={leg.id} variant="primary" onClick={() => action.mutate(() => partnerOrderApi.confirmExternal(leg.id))}>
@@ -218,6 +246,82 @@ function OrderCard({ order }: { order: PartnerOrderDto }) {
           ))}
       </div>
 
+      {cancellation ? (
+        <div className="mt-4 grid gap-2 border-t border-line pt-3 text-[13px]">
+          <div className="text-ink">
+            The customer asked to cancel{cancellation.reason ? `: “${cancellation.reason}”` : ''}. Only an actual cost you already had —
+            one disclosed to the customer in your cancellation terms — can be kept, and only the amount TuTak approves. Never a penalty.
+          </div>
+          {cancellation.status === 'AWAITING_PARTNER' ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" onClick={() => action.mutate(() => partnerOrderApi.cancellationNoCost(order.id))}>
+                No costs — cancel with a full refund
+              </Button>
+              {order.cancellationTerms ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const amount = window.prompt('Actual cost in AMD');
+                    const why = amount ? window.prompt('What was it for? (e.g. courier already dispatched)') : null;
+                    const evidence = why ? window.prompt('Evidence / comment (invoice number, link)') : null;
+                    if (amount && why) {
+                      action.mutate(() =>
+                        partnerOrderApi.cancellationClaimCost(order.id, { amount, reason: why, evidence: evidence || undefined }),
+                      );
+                    }
+                  }}
+                >
+                  Report an actual cost
+                </Button>
+              ) : null}
+              <span className="text-muted">Answer by {new Date(cancellation.partnerDeadlineAt).toLocaleString()} — otherwise it is a full refund.</span>
+            </div>
+          ) : (
+            <div className="text-muted">
+              You reported {num(cancellation.claimedCostAmount)} AMD ({cancellation.costReason}). TuTak is reviewing it.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {(order.returns ?? [])
+        .filter((r) => r.status === 'AWAITING_SHORTFALL_SETTLEMENT' || r.status === 'MANUAL_REVIEW')
+        .map((r) => (
+          <div key={r.id} className="mt-4 grid gap-2 border-t border-line pt-3 text-[13px]">
+            <div className="text-ink">
+              Return of {num(r.amount)} AMD: the customer already used {num(r.shortfallAmount)} AMD of the bonus this order gave them.
+              It is recovered from what they get back — nothing moves until you settle it with the customer.
+            </div>
+            <div className="text-muted">
+              Refund owed {num(r.grossRefund)} AMD · recovered {num(r.recoveredShortfall)} AMD · customer gets {num(r.netRefund)} AMD
+              {Number(r.tutakMoneyRefunded) > 0 ? ` (${num(r.tutakMoneyRefunded)} to their TuTak money)` : ''}
+            </div>
+            {r.status === 'AWAITING_SHORTFALL_SETTLEMENT' ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="primary"
+                  onClick={() => action.mutate(() => partnerOrderApi.settleReturnShortfall(r.id, r.shortfallCollected))}
+                >
+                  {Number(r.shortfallCollected) > 0
+                    ? `Customer paid ${num(r.shortfallCollected)} AMD · handed back ${num(r.externalRefundDue)} AMD — confirm`
+                    : `Handed back ${num(r.externalRefundDue)} AMD — confirm`}
+                </Button>
+                <Button
+                  variant="tertiary"
+                  onClick={() => {
+                    const note = window.prompt('What did the customer say?');
+                    if (note) action.mutate(() => partnerOrderApi.refuseReturnShortfall(r.id, note));
+                  }}
+                >
+                  Customer refuses
+                </Button>
+              </div>
+            ) : (
+              <div className="text-muted">The customer disputed the amount — TuTak is reviewing it.</div>
+            )}
+          </div>
+        ))}
+
       {rejecting ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" />
@@ -238,7 +342,9 @@ function OrderCard({ order }: { order: PartnerOrderDto }) {
         </div>
       ) : null}
 
-      {order.operationalStatus === 'COMPLETED' && order.paymentStatus !== 'REFUNDED' ? (
+      {order.operationalStatus === 'COMPLETED' &&
+      order.paymentStatus !== 'REFUNDED' &&
+      !(order.returns ?? []).some((r) => r.status === 'AWAITING_SHORTFALL_SETTLEMENT' || r.status === 'MANUAL_REVIEW') ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           <span className="text-[13px] text-muted">Return:</span>
           <Input value={returnAmount} onChange={(e) => setReturnAmount(e.target.value)} placeholder="Amount (empty = full)" />

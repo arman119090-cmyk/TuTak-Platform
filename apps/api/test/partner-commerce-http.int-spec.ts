@@ -103,8 +103,22 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
     const orderId = (created.data as { id: string }).id;
     // The partner's site only learns what it needs to build the checkout link.
     expect(Object.keys(created.data as object).sort()).toEqual(
-      ['currency', 'draftExpiresAt', 'externalOrderId', 'id', 'operationalStatus', 'orderNumber', 'paymentStatus', 'totalAmount'].sort(),
+      [
+        'appCheckoutUrl',
+        'checkoutUrl',
+        'currency',
+        'draftExpiresAt',
+        'externalOrderId',
+        'id',
+        'operationalStatus',
+        'orderNumber',
+        'paymentStatus',
+        'totalAmount',
+      ].sort(),
     );
+    // Q12: where to send the customer — the app deep link always; the web
+    // checkout link once CHECKOUT_WEB_BASE_URL is configured.
+    expect((created.data as { appCheckoutUrl: string }).appCheckoutUrl).toBe(`tutak://checkout/${(created.data as { id: string }).id}`);
     expect((await call('POST', '/partner-orders', { body: { externalOrderId: 'X', items: [] } })).status).toBe(401);
 
     const checkout = await call('GET', `/partner-orders/${orderId}/checkout`, { auth: token(w.customer) });
@@ -128,7 +142,7 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
 
     expect((await call('POST', `/partner-orders/${orderId}/seen`, { auth: token(w.cashier) })).status).toBe(201);
     expect((await call('POST', `/partner-orders/${orderId}/confirm-stock`, { auth: token(w.cashier) })).status).toBe(201);
-    expect((await call('POST', `/partner-orders/${orderId}/handed-over`, { auth: token(w.cashier) })).status).toBe(201);
+    expect((await call('POST', `/partner-orders/${orderId}/delivered`, { auth: token(w.cashier) })).status).toBe(201);
 
     const order = await prisma.partnerOrder.findUniqueOrThrow({ where: { id: orderId }, include: { paymentLegs: true } });
     const cashLeg = order.paymentLegs.find((l) => l.type === 'EXTERNAL')!;
@@ -186,5 +200,94 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
       body: { externalOrderId: 'SITE-2', items: [{ name: 'x', quantity: 1, unitPrice: '1000' }] },
     });
     expect((await call('GET', `/partner-orders/${(ok.data as { id: string }).id}/checkout`)).status).toBe(401);
+  });
+
+  it('final fixes over HTTP: Q13 prepayment, cancellation cost review, shortfall settlement and shift access — each only for its own actor', async () => {
+    const w = await world();
+    const { user: manager } = await createCustomer(prisma);
+    await withRole(manager.id, RoleName.PARTNER_MANAGER, w.partner.id);
+    await prisma.partnerBranchStaffAssignment.create({
+      data: { partnerId: w.partner.id, partnerBranchId: w.branch.id, userId: manager.id, assignedByUserId: w.admin.id, employeeDisplayCode: 'M-1' },
+    });
+    // Item 10: a manager manages their own shift — permissions, not a primary role.
+    expect((await call('GET', `/shifts/me?partnerId=${w.partner.id}`, { auth: token(manager) })).status).toBe(200);
+    expect((await call('POST', '/shifts/start', { auth: token(manager), body: { branchId: w.branch.id } })).status).toBe(201);
+    expect((await call('POST', '/shifts/start', { auth: token(w.cashier), body: { branchId: w.branch.id } })).status).toBe(201);
+
+    // Q13 over HTTP: a prepayment rule is not satisfied by the discount.
+    expect(
+      (
+        await call('POST', '/admin/partner-orders/prepayment-rules', {
+          auth: token(w.admin),
+          body: { partnerId: w.partner.id, mode: 'FIXED', fixedAmount: '5000' },
+        })
+      ).status,
+    ).toBe(201);
+    const created = await call('POST', '/partner-orders', {
+      apiKey: w.apiKey,
+      body: {
+        externalOrderId: 'SITE-FF',
+        branchId: w.branch.id,
+        cancellationTerms: 'The courier fee is kept once the courier left',
+        items: [{ name: 'Brake pads', quantity: 1, unitPrice: '30000' }],
+      },
+    });
+    const orderId = (created.data as { id: string }).id;
+    const checkout = await call('GET', `/partner-orders/${orderId}/checkout`, { auth: token(w.customer) });
+    expect((checkout.data as { cancellationTerms: string }).cancellationTerms).toMatch(/courier fee/);
+    const noMoney = await call('POST', `/partner-orders/${orderId}/submit`, { auth: token(w.customer), body: { idempotencyKey: 'ff-submit-0' } });
+    expect(noMoney.status).toBe(400);
+    expect(noMoney.error?.code).toBe('PREPAYMENT_REQUIRED');
+    expect(
+      (await call('POST', `/partner-orders/${orderId}/submit`, { auth: token(w.customer), body: { tutakMoneyAmount: '5000', idempotencyKey: 'ff-submit-1' } }))
+        .status,
+    ).toBe(201);
+    expect((await call('POST', `/partner-orders/${orderId}/confirm-stock`, { auth: token(w.cashier) })).status).toBe(201);
+    expect((await call('POST', `/partner-orders/${orderId}/out-for-delivery`, { auth: token(w.cashier), body: { courierNote: 'Aram' } })).status).toBe(201);
+
+    // Item 8: only the order's own customer may ask to cancel or withdraw.
+    expect((await call('POST', `/partner-orders/${orderId}/cancel`, { auth: token(w.stranger), body: {} })).status).toBe(404);
+    const asked = await call('POST', `/partner-orders/${orderId}/cancel`, { auth: token(w.customer), body: { reason: 'changed my mind' } });
+    expect(asked.status).toBe(201);
+    expect((asked.data as { customerStatus: string }).customerStatus).toBe('cancellation_requested');
+    expect((await call('POST', `/partner-orders/${orderId}/cancel/withdraw`, { auth: token(w.stranger) })).status).toBe(404);
+    // Only the order's partner may answer, and never decide.
+    const claim = { amount: '2000', reason: 'Courier already dispatched', evidence: 'Invoice 77' };
+    expect((await call('POST', `/partner-orders/${orderId}/cancellation/claim-cost`, { auth: token(w.foreignOwner), body: claim })).status).toBe(403);
+    expect((await call('POST', `/partner-orders/${orderId}/cancellation/claim-cost`, { auth: token(w.cashier), body: claim })).status).toBe(201);
+    const request = await prisma.partnerOrderCancellation.findFirstOrThrow({ where: { orderId } });
+    const decision = { decision: 'REDUCE', approvedAmount: '1500', note: 'Invoice shows 1500' };
+    expect((await call('POST', `/admin/partner-orders/cancellations/${request.id}/decide`, { auth: token(w.owner), body: decision })).status).toBe(403);
+    expect((await call('POST', `/admin/partner-orders/cancellations/${request.id}/decide`, { auth: token(w.customer), body: decision })).status).toBe(403);
+    const decided = await call('POST', `/admin/partner-orders/cancellations/${request.id}/decide`, { auth: token(w.admin), body: decision });
+    expect(decided.status).toBe(201);
+    expect((decided.data as { approvedCostAmount: string }).approvedCostAmount).toBe('1500');
+    const cancelled = await prisma.partnerOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(cancelled.operationalStatus).toBe('CANCELLED');
+
+    // Q9 routes: only the order's partner settles/refuses; only its customer disputes.
+    const second = await call('POST', '/partner-orders', {
+      apiKey: w.apiKey,
+      body: { externalOrderId: 'SITE-FF-2', branchId: w.branch.id, items: [{ name: 'Filter', quantity: 1, unitPrice: '20000' }] },
+    });
+    const secondId = (second.data as { id: string }).id;
+    await call('POST', `/partner-orders/${secondId}/submit`, { auth: token(w.customer), body: { tutakMoneyAmount: '5000', idempotencyKey: 'ff-submit-2' } });
+    await call('POST', `/partner-orders/${secondId}/confirm-stock`, { auth: token(w.cashier) });
+    const legs = await prisma.partnerOrderPaymentLeg.findMany({ where: { orderId: secondId, type: 'EXTERNAL' } });
+    await call('POST', `/partner-orders/legs/${legs[0]!.id}/confirm-external`, { auth: token(w.cashier) });
+    await call('POST', `/partner-orders/${secondId}/delivered`, { auth: token(w.cashier) });
+    expect((await call('POST', `/partner-orders/${secondId}/received`, { auth: token(w.customer) })).status).toBe(201);
+    const ret = await call('POST', `/partner-orders/${secondId}/returns`, {
+      auth: token(w.cashier),
+      body: { reason: 'returned', idempotencyKey: 'ff-return-1' },
+    });
+    expect(ret.status).toBe(201);
+    const returnId = (ret.data as { id: string }).id;
+    expect((await call('POST', `/partner-orders/returns/${returnId}/settle-shortfall`, { auth: token(w.foreignOwner), body: { collectedAmount: '0' } })).status).toBe(403);
+    expect((await call('POST', `/partner-orders/returns/${returnId}/settle-shortfall`, { auth: token(w.customer), body: { collectedAmount: '0' } })).status).toBe(403);
+    expect((await call('POST', `/partner-orders/returns/${returnId}/dispute-shortfall`, { auth: token(w.stranger), body: { note: 'not mine' } })).status).toBe(404);
+    expect((await call('GET', '/admin/partner-orders/return-reviews', { auth: token(w.owner) })).status).toBe(403);
+    expect((await call('GET', '/admin/partner-orders/referral-withholdings', { auth: token(w.owner) })).status).toBe(403);
+    expect((await call('GET', '/admin/partner-orders/referral-withholdings', { auth: token(w.admin) })).status).toBe(200);
   });
 });

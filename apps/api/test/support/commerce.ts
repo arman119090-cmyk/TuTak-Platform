@@ -101,6 +101,77 @@ export function commerceSupport(app: TestingModule, prisma: PrismaClient) {
       return (account?.balance ?? new Decimal(0)).toFixed(4);
     },
 
+    /** Both escrows of a partner together (money + discount), as one figure. */
+    async escrow(partnerId: string) {
+      const accounts = await prisma.ledgerAccount.findMany({
+        where: { partnerId, type: { in: [LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW] } },
+      });
+      return accounts.reduce((sum, a) => sum.plus(a.balance), new Decimal(0)).toFixed(4);
+    },
+
+    /**
+     * Item 9 — provenance proven from the ledger alone: every posting on a
+     * money escrow is matched only by CUSTOMER_PREPAID_BALANCE or
+     * PARTNER_PAYABLE, every posting on a discount escrow only by
+     * BONUS_LIABILITY or PARTNER_PAYABLE; no transaction ever moves value
+     * between BONUS_LIABILITY/discount escrow and CUSTOMER_PREPAID_BALANCE/
+     * money escrow; and the Q9 shortfall clearing always nets to zero once
+     * nothing is awaiting a desk settlement.
+     */
+    async assertEscrowProvenance() {
+      const MONEY_SIDE: LedgerAccountType[] = [LedgerAccountType.CUSTOMER_PREPAID_BALANCE, LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW];
+      const BONUS_SIDE: LedgerAccountType[] = [LedgerAccountType.BONUS_LIABILITY, LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW];
+      const escrowTx = await prisma.ledgerTransaction.findMany({
+        where: {
+          postings: {
+            some: { account: { type: { in: [LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW] } } },
+          },
+        },
+        include: { postings: { include: { account: true } } },
+      });
+      for (const t of escrowTx) {
+        const types = new Set(t.postings.map((p) => p.account.type));
+        if (types.has(LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW)) {
+          for (const type of types) {
+            expect([`${t.kind}:${type}`]).toEqual([
+              expect.stringMatching(/:(CUSTOMER_PREPAID_BALANCE|PARTNER_ORDER_MONEY_ESCROW|PARTNER_ORDER_DISCOUNT_ESCROW|PARTNER_PAYABLE)$/),
+            ]);
+          }
+        }
+        if (types.has(LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW)) {
+          for (const type of types) {
+            expect([`${t.kind}:${type}`]).toEqual([
+              expect.stringMatching(/:(BONUS_LIABILITY|PARTNER_ORDER_DISCOUNT_ESCROW|PARTNER_ORDER_MONEY_ESCROW|PARTNER_PAYABLE)$/),
+            ]);
+          }
+        }
+        // Both escrows in one transaction only ever at completion, and then
+        // both only flow out to PARTNER_PAYABLE — never into each other.
+        if (types.has(LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW) && types.has(LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW)) {
+          expect(t.kind).toBe('partner_order.completion');
+          for (const p of t.postings) {
+            if (p.account.type !== LedgerAccountType.PARTNER_PAYABLE) expect(p.direction).toBe('DEBIT');
+          }
+        }
+      }
+      // Nowhere in the ledger does discount value land on the money side, or money on the bonus side.
+      const all = await prisma.ledgerTransaction.findMany({ include: { postings: { include: { account: true } } } });
+      for (const t of all) {
+        const credits = t.postings.filter((p) => p.direction === 'CREDIT').map((p) => p.account.type);
+        const debits = t.postings.filter((p) => p.direction === 'DEBIT').map((p) => p.account.type);
+        const bonusToMoney = debits.some((d) => BONUS_SIDE.includes(d)) && credits.some((c) => MONEY_SIDE.includes(c));
+        const moneyToBonus = debits.some((d) => MONEY_SIDE.includes(d)) && credits.some((c) => BONUS_SIDE.includes(c));
+        expect(`${t.kind}:${bonusToMoney ? 'bonus→money' : moneyToBonus ? 'money→bonus' : 'ok'}`).toBe(`${t.kind}:ok`);
+      }
+      const awaiting =
+        (await prisma.partnerOrderReturn.count({ where: { status: { in: ['AWAITING_SHORTFALL_SETTLEMENT', 'MANUAL_REVIEW'] } } })) +
+        (await prisma.purchaseIntentRefund.count({ where: { status: { in: ['AWAITING_SHORTFALL_SETTLEMENT', 'MANUAL_REVIEW'] } } }));
+      if (awaiting === 0) {
+        const clearing = await prisma.ledgerAccount.findMany({ where: { type: LedgerAccountType.CUSTOMER_SHORTFALL_CLEARING } });
+        for (const c of clearing) expect(`${c.userId}:${c.balance.toFixed(4)}`).toBe(`${c.userId}:0.0000`);
+      }
+    },
+
     /** Every ledger account's materialised balance equals the replay of its own postings. */
     async assertAllAccountsReplay() {
       const accounts = await prisma.ledgerAccount.findMany();
@@ -128,38 +199,24 @@ export function commerceSupport(app: TestingModule, prisma: PrismaClient) {
         expect(liveSum.toFixed(4)).toBe(order.totalAmount.minus(order.refundedAmount).toFixed(4));
         expect(order.discountAmount.plus(order.tutakMoneyAmount).plus(order.externalAmount).toFixed(4)).toBe(order.totalAmount.toFixed(4));
       }
-      const escrowIn = await prisma.ledgerPosting.aggregate({
-        where: {
-          transaction: { sourceId: orderId },
-          account: { type: LedgerAccountType.PARTNER_ORDER_ESCROW },
-          direction: 'CREDIT',
-        },
-        _sum: { amount: true },
-      });
-      const escrowOut = await prisma.ledgerPosting.aggregate({
-        where: {
-          transaction: { sourceId: orderId },
-          account: { type: LedgerAccountType.PARTNER_ORDER_ESCROW },
-          direction: 'DEBIT',
-        },
-        _sum: { amount: true },
-      });
       if (order.operationalStatus === 'COMPLETED' || order.operationalStatus === 'CANCELLED') {
-        // Only postings sourced to the order itself; adjustment-sourced legs are checked by the caller.
+        // Every posting caused by this order (itself, its adjustments, its
+        // cancellation request) — each escrow must net to zero on its own.
         const adjustmentIds = (await prisma.partnerOrderAdjustment.findMany({ where: { orderId }, select: { id: true } })).map((a) => a.id);
-        const adjIn = await prisma.ledgerPosting.aggregate({
-          where: { transaction: { sourceId: { in: adjustmentIds } }, account: { type: LedgerAccountType.PARTNER_ORDER_ESCROW }, direction: 'CREDIT' },
-          _sum: { amount: true },
-        });
-        const adjOut = await prisma.ledgerPosting.aggregate({
-          where: { transaction: { sourceId: { in: adjustmentIds } }, account: { type: LedgerAccountType.PARTNER_ORDER_ESCROW }, direction: 'DEBIT' },
-          _sum: { amount: true },
-        });
-        const net = (escrowIn._sum.amount ?? new Decimal(0))
-          .plus(adjIn._sum.amount ?? 0)
-          .minus(escrowOut._sum.amount ?? 0)
-          .minus(adjOut._sum.amount ?? 0);
-        expect(net.toFixed(4)).toBe('0.0000');
+        const cancellationIds = (await prisma.partnerOrderCancellation.findMany({ where: { orderId }, select: { id: true } })).map((c) => c.id);
+        const sources = [orderId, ...adjustmentIds, ...cancellationIds];
+        for (const type of [LedgerAccountType.PARTNER_ORDER_MONEY_ESCROW, LedgerAccountType.PARTNER_ORDER_DISCOUNT_ESCROW]) {
+          const [inflow, outflow] = await Promise.all(
+            (['CREDIT', 'DEBIT'] as const).map((direction) =>
+              prisma.ledgerPosting.aggregate({
+                where: { transaction: { sourceId: { in: sources } }, account: { type }, direction },
+                _sum: { amount: true },
+              }),
+            ),
+          );
+          const net = (inflow!._sum.amount ?? new Decimal(0)).minus(outflow!._sum.amount ?? 0);
+          expect(`${type}:${net.toFixed(4)}`).toBe(`${type}:0.0000`);
+        }
       }
       if (order.poolAmount) {
         const parts = [order.greenAmount, order.deferredAmount, order.referrer1Amount, order.referrer2Amount, order.referrer3Amount, order.tutakAmount];

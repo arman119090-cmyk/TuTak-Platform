@@ -1,5 +1,5 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import type { PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
+import type { CustomerPartnerOrderDto, PartnerPublicDto, PurchaseIntentDto } from '@tutak/shared-types';
 import { EvSessionStatus, PurchaseIntentStatus, QrCodeStatus, QrCodeType } from '@tutak/shared-types';
 import { MOCK_USER, freshMockState, mockBrandFor, mockTokens, type MockState } from './mockData';
 
@@ -232,6 +232,12 @@ function handle(
     case 'GET /transactions/me':
       return envelope(paged(state.transactions));
 
+    // ── Partner Commerce ────────────────────────────────────────────────
+    case 'GET /balance/me':
+      return envelope(state.balance);
+    case 'GET /partner-orders/mine':
+      return envelope(state.partnerOrders);
+
     // ── Referrals ───────────────────────────────────────────────────────
     case 'GET /referral/me/code':
       return envelope(state.referralCode);
@@ -364,9 +370,11 @@ function handle(
         partnerBranchId?: string;
         grossAmount: string;
         bonusAmountRequested?: string;
+        tutakMoneyAmount?: string;
       }>(config);
       const partner = state.partners.find((p) => p.partnerId === dto.partnerId);
       const bonusAmountRequested = dto.bonusAmountRequested ?? '0';
+      const tutakMoneyAmount = dto.tutakMoneyAmount ?? '0';
       const intent: PurchaseIntentDto = {
         id: `pi-${Date.now()}`,
         customerId: MOCK_USER.id,
@@ -375,8 +383,9 @@ function handle(
         status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
         grossAmount: dto.grossAmount,
         bonusAmountRequested,
+        tutakMoneyAmount,
         ordinaryPaymentRemainder: String(
-          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested)),
+          Math.max(0, Number(dto.grossAmount) - Number(bonusAmountRequested) - Number(tutakMoneyAmount)),
         ),
         negotiatedRateBps: (partner?.cashbackPercent ?? 5) * 100,
         maxBonusPaymentPercent: 50,
@@ -468,6 +477,7 @@ function handle(
       status: PurchaseIntentStatus.AWAITING_CONFIRMATION,
       grossAmount: '5000',
       bonusAmountRequested: '0',
+      tutakMoneyAmount: '0',
       ordinaryPaymentRemainder: '5000',
       negotiatedRateBps: 500,
       maxBonusPaymentPercent: 50,
@@ -552,6 +562,163 @@ function handle(
           createdAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
         };
     return envelope(partner);
+  }
+
+  // Partner Commerce: falls back to a synthesized order rather than
+  // 404ing, same reasoning as `getPurchaseIntent` above — the checkout
+  // screen always passes an id this adapter itself issued, and the only
+  // caller of an id it never created is the route-completeness test.
+  const synthesizedOrder = (id: string): CustomerPartnerOrderDto => {
+    const now = new Date().toISOString();
+    return {
+      id,
+      orderNumber: 1000,
+      customerId: null,
+      partnerId: state.partners[0]?.partnerId ?? 'partner-1',
+      branchId: null,
+      externalOrderId: `demo-${id}`,
+      serviceType: null,
+      category: null,
+      currency: 'AMD',
+      subtotal: '5000.0000',
+      totalAmount: '5000.0000',
+      discountAmount: '0.0000',
+      tutakMoneyAmount: '0.0000',
+      externalAmount: '0.0000',
+      prepaymentRequiredAmount: '0.0000',
+      prepaymentCoveredAmount: '0.0000',
+      refundedAmount: '0.0000',
+      financialPolicyVersion: 'COMMERCE_V2' as never,
+      cancellationTerms: null,
+      cancellationStatus: 'NONE' as never,
+      fulfillmentMethod: null,
+      courierNote: null,
+      operationalStatus: 'DRAFT' as never,
+      paymentStatus: 'UNFUNDED' as never,
+      sourcingStatus: 'NONE' as never,
+      disputeStatus: 'NONE' as never,
+      sourcingAllowed: true,
+      createdAt: now,
+      draftExpiresAt: now,
+      submittedAt: null,
+      partnerSeenAt: null,
+      stockConfirmedAt: null,
+      stockRejectedAt: null,
+      outForDeliveryAt: null,
+      readyForPickupAt: null,
+      deliveredAt: null,
+      customerReceivedAt: null,
+      completedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+      customerStatus: 'awaiting_confirmation',
+      canConfirmReceipt: false,
+      canCancel: true,
+      canWithdrawCancellation: false,
+      canOpenDispute: false,
+      paymentLegs: [],
+      cancellations: [],
+      returns: [],
+      adjustments: [],
+      items: [
+        {
+          id: `${id}-item-1`,
+          externalProductId: null,
+          name: 'Demo item',
+          sku: null,
+          oemNumber: null,
+          quantity: 1,
+          unitPrice: '5000.0000',
+          totalPrice: '5000.0000',
+          imageUrl: null,
+          description: null,
+        },
+      ],
+    };
+  };
+
+  const upsertOrder = (order: CustomerPartnerOrderDto) => {
+    state.partnerOrders = state.partnerOrders.some((o) => o.id === order.id)
+      ? state.partnerOrders.map((o) => (o.id === order.id ? order : o))
+      : [order, ...state.partnerOrders];
+    return order;
+  };
+  const findOrder = (id: string) => state.partnerOrders.find((o) => o.id === id) ?? synthesizedOrder(id);
+
+  const getCheckout = /^\/partner-orders\/([^/]+)\/checkout$/.exec(path);
+  if (method === 'GET' && getCheckout) {
+    const order = findOrder(getCheckout[1]!);
+    return envelope({
+      order,
+      partner: { id: order.partnerId, displayName: state.partners[0]?.name ?? 'TuTak partner' },
+      balances: { discountAvailable: state.wallet.availableBonus, tutakMoney: state.balance.balance },
+      limits: { maxDiscountAmount: order.totalAmount, prepaymentRequiredAmount: order.prepaymentRequiredAmount, prepaymentCountsFrom: 'TUTAK_MONEY' },
+      cancellationTerms: order.cancellationTerms,
+    });
+  }
+
+  const submitOrder = /^\/partner-orders\/([^/]+)\/submit$/.exec(path);
+  if (method === 'POST' && submitOrder) {
+    const dto = body<{ discountAmount?: string; tutakMoneyAmount?: string }>(config);
+    const order = findOrder(submitOrder[1]!);
+    const discount = Number(dto.discountAmount ?? 0);
+    const money = Number(dto.tutakMoneyAmount ?? 0);
+    return envelope(
+      upsertOrder({
+        ...order,
+        customerId: MOCK_USER.id,
+        operationalStatus: 'SUBMITTED' as never,
+        paymentStatus: 'RESERVED' as never,
+        submittedAt: new Date().toISOString(),
+        discountAmount: discount.toFixed(4),
+        tutakMoneyAmount: money.toFixed(4),
+        prepaymentCoveredAmount: money.toFixed(4),
+        externalAmount: Math.max(Number(order.totalAmount) - discount - money, 0).toFixed(4),
+        customerStatus: 'checking_availability',
+      }),
+    );
+  }
+
+  const orderAction = /^\/partner-orders\/([^/]+)\/(received|cancel)$/.exec(path);
+  if (method === 'POST' && orderAction) {
+    const order = findOrder(orderAction[1]!);
+    const received = orderAction[2] === 'received';
+    return envelope(
+      upsertOrder({
+        ...order,
+        operationalStatus: (received ? 'COMPLETED' : 'CANCELLED') as never,
+        customerStatus: received ? 'received' : 'cancelled',
+        canConfirmReceipt: false,
+        canCancel: false,
+        canOpenDispute: received,
+      }),
+    );
+  }
+
+  const withdrawCancel = /^\/partner-orders\/([^/]+)\/cancel\/withdraw$/.exec(path);
+  if (method === 'POST' && withdrawCancel) {
+    const order = findOrder(withdrawCancel[1]!);
+    return envelope(upsertOrder({ ...order, cancellationStatus: 'NONE' as never, canWithdrawCancellation: false }));
+  }
+
+  const disputeShortfall = /^\/partner-orders\/returns\/([^/]+)\/dispute-shortfall$/.exec(path);
+  if (method === 'POST' && disputeShortfall) {
+    return envelope({ id: disputeShortfall[1], status: 'MANUAL_REVIEW' });
+  }
+
+  const openDispute = /^\/partner-orders\/([^/]+)\/disputes$/.exec(path);
+  if (method === 'POST' && openDispute) {
+    return envelope({ id: `dispute-${Date.now()}`, orderId: openDispute[1], type: 'ORDER', status: 'OPEN' });
+  }
+
+  const adjustmentAction = /^\/partner-orders\/adjustments\/([^/]+)\/(accept|decline)$/.exec(path);
+  if (method === 'POST' && adjustmentAction) {
+    const order = state.partnerOrders.find((o) => o.adjustments.some((a) => a.id === adjustmentAction[1])) ?? synthesizedOrder('demo-order');
+    return envelope(order);
+  }
+
+  if (method === 'POST' && path === '/balance/topup') {
+    return envelope({ topUpId: `topup-${Date.now()}`, status: 'DECLINED', amount: '0', declineReason: 'top_up_not_configured' });
   }
 
   // Fuel-station branches task: the preview has no real branch/QR state to

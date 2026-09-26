@@ -17,6 +17,11 @@ import { AdminOrderActionDto } from './dto/admin-order-action.dto';
 import { OrderDisputesService } from './order-disputes.service';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputeCommentDto } from './dto/dispute-comment.dto';
+import { DecideCancellationCostDto, ReviewShortfallDto } from './dto/final-fixes.dto';
+import { PartnerOrderCancellationService } from './partner-order-cancellation.service';
+import { PartnerOrderReturnsService } from './partner-order-returns.service';
+import { PurchaseIntentRefundService } from '../purchase-intents/purchase-intent-refund.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 /**
  * TuTak's own side of Partner Commerce: the operator queues (spec §55,
@@ -37,7 +42,73 @@ export class PartnerOrdersAdminController {
     private readonly escalations: OrderEscalationService,
     private readonly rules: CommerceRulesService,
     private readonly disputes: OrderDisputesService,
+    private readonly cancellations: PartnerOrderCancellationService,
+    private readonly returns: PartnerOrderReturnsService,
+    private readonly qrRefunds: PurchaseIntentRefundService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  // ── Cancellation cost review — item 8 ───────────────────────────────────
+
+  @Get('cancellations')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  listCancellationReviews(@CurrentUser() admin: RequestUser) {
+    assertPlatformAdmin(admin, 'Cancellation reviews');
+    return this.cancellations.listForReview();
+  }
+
+  /** The most that can be approved: the real money on the order (never charged beyond it). */
+  @Get(':id/cancellation-cost-cap')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  cancellationCostCap(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string) {
+    assertPlatformAdmin(admin, 'Cancellation reviews');
+    return this.cancellations.costCap(id);
+  }
+
+  /** Approve / reduce / reject an actual-cost claim. Claim on COST_REVIEW — two admins, one decision. */
+  @Post('cancellations/:id/decide')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  decideCancellation(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string, @Body() dto: DecideCancellationCostDto) {
+    assertPlatformAdmin(admin, 'Deciding a cancellation cost');
+    return this.cancellations.decide(id, admin.id, dto);
+  }
+
+  // ── Return shortfall reviews — Q9 ────────────────────────────────────────
+
+  @Get('return-reviews')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  async listReturnReviews(@CurrentUser() admin: RequestUser) {
+    assertPlatformAdmin(admin, 'Return reviews');
+    const [online, qr] = await Promise.all([this.returns.listAwaitingReview(), this.qrRefunds.listAwaitingReview()]);
+    return { online, qr };
+  }
+
+  @Post('returns/:id/review')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  reviewReturn(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string, @Body() dto: ReviewShortfallDto) {
+    assertPlatformAdmin(admin, 'Return reviews');
+    return this.returns.reviewShortfall(id, admin.id, dto.decision, dto.note);
+  }
+
+  @Post('purchase-intent-refunds/:id/review')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  reviewQrRefund(@CurrentUser() admin: RequestUser, @UuidParam('id') id: string, @Body() dto: ReviewShortfallDto) {
+    assertPlatformAdmin(admin, 'Return reviews');
+    return this.qrRefunds.reviewShortfall(id, admin.id, dto.decision, dto.note);
+  }
+
+  /** Q8: open referral withholdings — who owes what, to whose commission refund. Read-only. */
+  @Get('referral-withholdings')
+  @RequirePermissions(PermissionName.ORDER_DISPUTE_RESOLVE)
+  listWithholdings(@CurrentUser() admin: RequestUser, @Query('status') status: 'OPEN' | 'SETTLED' = 'OPEN') {
+    assertPlatformAdmin(admin, 'Referral withholdings');
+    return this.prisma.referralWithholding.findMany({
+      where: { status },
+      include: { recoveries: { orderBy: { createdAt: 'asc' } } },
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+    });
+  }
 
   // ── Disputes — spec §29, §48-49 ─────────────────────────────────────────
 

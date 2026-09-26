@@ -227,7 +227,7 @@ export class CustomerBalanceService {
    * (closed-loop business decision, 2026-08-29). Revised for Partner
    * Commerce (Arman, Q1 = C): partner purchases — QR and online orders —
    * are the second, named spender, through
-   * `CommerceLedgerService.captureMoney` (into PARTNER_ORDER_ESCROW, never
+   * `CommerceLedgerService.captureMoney` (into PARTNER_ORDER_MONEY_ESCROW, never
    * straight to a partner). See `CUSTOMER_PREPAID_BALANCE`'s own schema
    * docblock. What did not change: there is still no conversion into
    * bonus/wallet points, and any further spender needs the same explicit

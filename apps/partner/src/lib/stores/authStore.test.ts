@@ -1,6 +1,6 @@
 import type { AuthTokensDto, AuthenticatedUserDto } from '@tutak/shared-types';
 import { Role } from '@tutak/shared-types';
-import { PARTNER_ROLES, getPrimaryPartnerId, isPartnerOwner, useAuthStore } from './authStore';
+import { PARTNER_ROLES, canManageShift, getPrimaryPartnerId, hasPermission, isPartnerOwner, useAuthStore } from './authStore';
 
 const tokens: AuthTokensDto = {
   accessToken: 'access-1',
@@ -83,8 +83,8 @@ describe('partner authStore', () => {
 });
 
 describe('PARTNER_ROLES', () => {
-  it('admits only PARTNER_OWNER and PARTNER_STAFF', () => {
-    expect(PARTNER_ROLES).toEqual(['PARTNER_OWNER', 'PARTNER_STAFF']);
+  it('admits every partner-scoped role — owner, manager and staff (item 10)', () => {
+    expect(PARTNER_ROLES).toEqual(['PARTNER_OWNER', 'PARTNER_MANAGER', 'PARTNER_STAFF']);
   });
 });
 
@@ -144,5 +144,32 @@ describe('isPartnerOwner', () => {
   it('returns false when the user owns a different partner', () => {
     const user = buildUser({ partnerScopes: { PARTNER_OWNER: ['partner-other'] } });
     expect(isPartnerOwner(user, 'partner-1')).toBe(false);
+  });
+
+  describe('item 10 — shift availability follows permissions, not a primary role', () => {
+    it('a PARTNER_MANAGER is a partner user with a partner id', () => {
+      expect(PARTNER_ROLES).toContain('PARTNER_MANAGER');
+      const manager = buildUser({ roles: [Role.PARTNER_MANAGER], partnerScopes: { PARTNER_MANAGER: ['p-1'] } });
+      expect(getPrimaryPartnerId(manager)).toBe('p-1');
+    });
+
+    it('anyone holding a shift-requiring permission may manage their shift', () => {
+      const manager = buildUser({
+        roles: [Role.PARTNER_MANAGER],
+        partnerScopes: { PARTNER_MANAGER: ['p-1'] },
+        permissions: ['PARTNER_TRANSACTIONS_READ', 'PARTNER_ORDER_MANAGE'],
+      });
+      expect(hasPermission(manager, 'PARTNER_ORDER_MANAGE')).toBe(true);
+      expect(canManageShift(manager)).toBe(true);
+      const cashier = buildUser({ roles: [Role.PARTNER_STAFF], partnerScopes: { PARTNER_STAFF: ['p-1'] }, permissions: ['PURCHASE_INTENT_CONFIRM'] });
+      expect(canManageShift(cashier)).toBe(true);
+    });
+
+    it('a partner-scoped user without such a permission does not see the shift controls', () => {
+      const reader = buildUser({ roles: [Role.PARTNER_STAFF], partnerScopes: { PARTNER_STAFF: ['p-1'] }, permissions: ['PARTNER_TRANSACTIONS_READ'] });
+      expect(canManageShift(reader)).toBe(false);
+      const noScope = buildUser({ roles: [Role.CUSTOMER], partnerScopes: {}, permissions: ['PURCHASE_INTENT_CONFIRM'] });
+      expect(canManageShift(noScope)).toBe(false);
+    });
   });
 });

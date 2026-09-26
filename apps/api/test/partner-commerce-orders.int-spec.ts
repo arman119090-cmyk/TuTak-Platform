@@ -3,6 +3,7 @@ import { PartnerOrdersService } from '../src/modules/partner-orders/partner-orde
 import { PartnerOrderAdjustmentService } from '../src/modules/partner-orders/partner-order-adjustment.service';
 import { SourcingTaskService } from '../src/modules/partner-orders/sourcing-task.service';
 import { CommerceRulesService } from '../src/modules/partner-orders/commerce-rules.service';
+import { PartnerOrderCancellationService } from '../src/modules/partner-orders/partner-order-cancellation.service';
 import { createPartner, createStaffUser } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
 import { commerceSupport, orderDto } from './support/commerce';
@@ -21,6 +22,7 @@ describe('Partner Commerce — online orders (integration)', () => {
   let adjustments: PartnerOrderAdjustmentService;
   let sourcing: SourcingTaskService;
   let rules: CommerceRulesService;
+  let cancellations: PartnerOrderCancellationService;
   let s: ReturnType<typeof commerceSupport>;
 
   beforeAll(async () => {
@@ -30,6 +32,7 @@ describe('Partner Commerce — online orders (integration)', () => {
     adjustments = harness.app.get(PartnerOrderAdjustmentService);
     sourcing = harness.app.get(SourcingTaskService);
     rules = harness.app.get(CommerceRulesService);
+    cancellations = harness.app.get(PartnerOrderCancellationService);
     s = commerceSupport(harness.app, prisma);
   });
 
@@ -110,19 +113,19 @@ describe('Partner Commerce — online orders (integration)', () => {
       expect(submitted.operationalStatus).toBe('SUBMITTED');
       expect(submitted.paymentStatus).toBe('FUNDED');
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-20000.0000');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-30000.0000');
+      expect(await s.escrow(partner.id)).toBe('-30000.0000');
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('0.0000');
 
       await orders.markSeen(created.id, staff.id);
       await orders.confirmStock(created.id, staff.id);
       // E2 fixed: stock confirmation moves no money.
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-30000.0000');
-      await orders.markHandedOver(created.id, staff.id);
+      expect(await s.escrow(partner.id)).toBe('-30000.0000');
+      await orders.markDelivered(created.id, staff.id);
 
       const done = await orders.confirmReceived(created.id, customer.user.id);
       expect(done.operationalStatus).toBe('COMPLETED');
       expect(done.paymentStatus).toBe('SETTLED');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       // 30000 receivable − 1500 pool (E1 fixed: the pool is distributed, not all platform revenue).
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('-28500.0000');
       expect(done.poolAmount?.toFixed(4)).toBe('1500.0000');
@@ -167,7 +170,7 @@ describe('Partner Commerce — online orders (integration)', () => {
       expect(submitted.paymentStatus).toBe('RESERVED');
       expect(submitted.externalAmount.toFixed(4)).toBe('30000.0000');
       await orders.confirmStock(created.id, cashier.id);
-      await orders.markHandedOver(created.id, cashier.id);
+      await orders.markDelivered(created.id, cashier.id);
       const received = await orders.confirmReceived(created.id, customer.user.id);
       // Interim rule pending Q10: not completed while external money is unconfirmed.
       expect(received.operationalStatus).toBe('RECEIVED');
@@ -185,7 +188,7 @@ describe('Partner Commerce — online orders (integration)', () => {
       expect(confirmedLeg.confirmedByUserId).toBe(cashier.id);
       // TuTak never received the cash: the partner simply owes the pool.
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('1500.0000');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       await s.assertOrderInvariants(created.id);
       await s.assertAllAccountsReplay();
     });
@@ -203,7 +206,7 @@ describe('Partner Commerce — online orders (integration)', () => {
       const fresh = corrected.paymentLegs.find((l) => l.status === 'PENDING')!;
       await orders.confirmExternalPayment(fresh.id, staff.id);
       await orders.confirmStock(created.id, staff.id);
-      await orders.markHandedOver(created.id, staff.id);
+      await orders.markDelivered(created.id, staff.id);
       await expect(orders.correctExternalPayment(fresh.id, staff.id, 'too late')).rejects.toThrow(/payment dispute/);
       const audit = await prisma.auditLog.findFirst({ where: { action: 'PARTNER_ORDER_EXTERNAL_PAYMENT_CORRECTED' } });
       expect((audit?.metadata as { reason: string }).reason).toBe('Courier had not paid in yet');
@@ -225,13 +228,13 @@ describe('Partner Commerce — online orders (integration)', () => {
         'EXTERNAL:PENDING:15000',
         'TUTAK_MONEY:CAPTURED:10000',
       ]);
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-15000.0000');
+      expect(await s.escrow(partner.id)).toBe('-15000.0000');
       const walletAfterSubmit = await prisma.wallet.findUniqueOrThrow({ where: { userId: customer.user.id } });
       expect(walletAfterSubmit.availableBonus.toFixed(4)).toBe('1000.0000');
 
       await orders.confirmStock(created.id, staff.id);
       await orders.confirmExternalPayment(submitted.paymentLegs.find((l) => l.type === 'EXTERNAL')!.id, staff.id);
-      await orders.markHandedOver(created.id, staff.id);
+      await orders.markDelivered(created.id, staff.id);
       const done = await orders.confirmReceived(created.id, customer.user.id);
       expect(done.operationalStatus).toBe('COMPLETED');
       // 15000 electronic receivable − 1500 pool on the full 30000.
@@ -254,8 +257,12 @@ describe('Partner Commerce — online orders (integration)', () => {
       await expect(
         orders.submit(created.id, customer.user.id, { discountAmount: '3000', idempotencyKey: 'e2-b' }),
       ).rejects.toThrow(/in advance/);
+      // Q13: discount + money reaching 6000 is not enough — only money counts.
       await expect(
         orders.submit(created.id, customer.user.id, { discountAmount: '3000', tutakMoneyAmount: '3000', idempotencyKey: 'e2-c' }),
+      ).rejects.toThrow(/discount balance does not count/);
+      await expect(
+        orders.submit(created.id, customer.user.id, { discountAmount: '3000', tutakMoneyAmount: '6000', idempotencyKey: 'e2-d' }),
       ).rejects.toThrow(/Not enough money/);
       // Nothing leaked: the discount reservation was released, no transaction completed.
       const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: customer.user.id } });
@@ -279,11 +286,11 @@ describe('Partner Commerce — online orders (integration)', () => {
       });
       const external = submitted.paymentLegs.find((l) => l.type === 'EXTERNAL')!;
       await orders.confirmExternalPayment(external.id, staff.id);
-      const cancelled = await orders.cancelByCustomer(created.id, customer.user.id, 'changed my mind');
+      const cancelled = await cancellations.request(created.id, customer.user.id, 'changed my mind');
       expect(cancelled.operationalStatus).toBe('CANCELLED');
       expect(cancelled.paymentStatus).toBe('REFUND_PENDING');
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-50000.0000');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: customer.user.id } });
       expect(wallet.availableBonus.toFixed(4)).toBe('6000.0000');
       await orders.confirmExternalReturn(external.id, staff.id);
@@ -295,14 +302,32 @@ describe('Partner Commerce — online orders (integration)', () => {
       await s.assertAllAccountsReplay();
     });
 
-    it('refuses to cancel after handover — that is a return', async () => {
+    it('refuses to cancel after receipt — that is a return', async () => {
       const { partner, integrationId, staff } = await setup();
       const customer = await s.customer('50000');
       const created = await orders.create(partner.id, integrationId, orderDto('X-2'));
       await orders.submit(created.id, customer.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'x-2' });
       await orders.confirmStock(created.id, staff.id);
-      await orders.markHandedOver(created.id, staff.id);
-      await expect(orders.cancelByCustomer(created.id, customer.user.id)).rejects.toThrow(/no longer be cancelled/);
+      await orders.markDelivered(created.id, staff.id);
+      await orders.confirmReceived(created.id, customer.user.id);
+      await expect(cancellations.request(created.id, customer.user.id)).rejects.toThrow(/no longer be cancelled/);
+    });
+
+    it('item 8: the customer may still cancel after delivery; with no disclosed cost terms it is a full refund at once', async () => {
+      const { partner, integrationId, staff } = await setup();
+      const customer = await s.customer('50000');
+      const created = await orders.create(partner.id, integrationId, orderDto('X-2b'));
+      await orders.submit(created.id, customer.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'x-2b' });
+      await orders.confirmStock(created.id, staff.id);
+      await orders.markOutForDelivery(created.id, staff.id, 'Courier Aram, +374 99 000000');
+      await orders.markDelivered(created.id, staff.id);
+      const cancelled = await cancellations.request(created.id, customer.user.id, 'not what I expected');
+      expect(cancelled.operationalStatus).toBe('CANCELLED');
+      expect(cancelled.paymentStatus).toBe('REFUNDED');
+      expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-50000.0000');
+      await s.assertOrderInvariants(created.id);
+      await s.assertAllAccountsReplay();
+      await s.assertEscrowProvenance();
     });
 
     it('never lets another customer reuse a claimed checkout link', async () => {
@@ -315,10 +340,10 @@ describe('Partner Commerce — online orders (integration)', () => {
       await expect(
         orders.submit(created.id, second.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'x-3b' }),
       ).rejects.toThrow(/not found/);
-      await expect(orders.cancelByCustomer(created.id, second.user.id)).rejects.toThrow(/not found/);
+      await expect(cancellations.request(created.id, second.user.id)).rejects.toThrow(/not found/);
       // Nor can anyone cancel an unclaimed checkout link they merely hold.
       const draft = await orders.create(partner.id, integrationId, orderDto('X-3-draft'));
-      await expect(orders.cancelByCustomer(draft.id, second.user.id)).rejects.toThrow(/not found/);
+      await expect(cancellations.request(draft.id, second.user.id)).rejects.toThrow(/not found/);
       expect((await prisma.partnerOrder.findUniqueOrThrow({ where: { id: draft.id } })).operationalStatus).toBe('DRAFT');
     });
   });
@@ -344,9 +369,9 @@ describe('Partner Commerce — online orders (integration)', () => {
       expect(accepted.operationalStatus).toBe('STOCK_CONFIRMED');
       expect(accepted.totalAmount.toFixed(4)).toBe('25000.0000');
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-25000.0000');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-25000.0000');
+      expect(await s.escrow(partner.id)).toBe('-25000.0000');
 
-      await orders.markHandedOver(created.id, staff.id);
+      await orders.markDelivered(created.id, staff.id);
       const done = await orders.confirmReceived(created.id, customer.user.id);
       expect(done.poolAmount?.toFixed(4)).toBe('1250.0000');
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('-23750.0000');
@@ -371,8 +396,8 @@ describe('Partner Commerce — online orders (integration)', () => {
       const accepted = await adjustments.accept(proposal.id, customer.user.id, { tutakMoneyAmount: '3000' });
       expect(accepted.totalAmount.toFixed(4)).toBe('33000.0000');
       expect(accepted.paymentLegs.filter((l) => l.purpose === 'ADDITIONAL')).toHaveLength(1);
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-33000.0000');
-      await orders.markHandedOver(created.id, staff.id);
+      expect(await s.escrow(partner.id)).toBe('-33000.0000');
+      await orders.markDelivered(created.id, staff.id);
       const done = await orders.confirmReceived(created.id, customer.user.id);
       expect(done.poolAmount?.toFixed(4)).toBe('1650.0000');
       await s.assertOrderInvariants(created.id);
@@ -421,7 +446,7 @@ describe('Partner Commerce — online orders (integration)', () => {
       expect(notFound.operationalStatus).toBe('CANCELLED');
       expect(notFound.sourcingStatus).toBe('FAILED');
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-60000.0000');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       await s.assertAllAccountsReplay();
     });
 
@@ -465,12 +490,12 @@ describe('Partner Commerce — online orders (integration)', () => {
       await orders.confirmStock(created.id, staff.id);
       const results = await Promise.allSettled([
         orders.confirmReceived(created.id, customer.user.id),
-        orders.cancelByCustomer(created.id, customer.user.id),
+        cancellations.request(created.id, customer.user.id),
       ]);
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       const final = await prisma.partnerOrder.findUniqueOrThrow({ where: { id: created.id } });
       expect(['COMPLETED', 'CANCELLED']).toContain(final.operationalStatus);
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       const released = await prisma.ledgerTransaction.count({ where: { kind: 'partner_order.completion' } });
       const returned = await prisma.ledgerTransaction.count({ where: { kind: 'partner_order.money_return' } });
       expect(released + returned).toBe(1);

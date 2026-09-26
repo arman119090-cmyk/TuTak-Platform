@@ -189,6 +189,9 @@ jobs:
       - name: Partner dashboard tests
         run: pnpm --filter @tutak/partner test
 
+      - name: TuTak Web Checkout tests
+        run: pnpm --filter @tutak/checkout test
+
       - name: Build all applications
         # The dashboards refuse to build without being told which API they are
         # for: the value is baked into their Content-Security-Policy and no

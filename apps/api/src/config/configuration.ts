@@ -292,16 +292,42 @@ export interface AppConfig {
     stockAlertRepeatMinutes: number;
     /** An unconfirmed DRAFT (abandoned cart) expires after this long. */
     draftTtlHours: number;
-    /** Spec §34. Hours after handover before the customer is reminded to confirm receipt. */
+    /**
+     * Spec §34 / item 7. Hours after the partner marked the order DELIVERED
+     * (never after a courier handoff) before the customer is reminded.
+     */
     receiptReminderHours: number;
-    /** Spec §34. Hours after handover before the order goes to TuTak manual review. */
+    /** Spec §34 / item 7. Hours after DELIVERED before TuTak manual review. */
     receiptManualReviewHours: number;
     /**
-     * Interim rule pending Q10: hours after the customer confirmed receipt
-     * with an external leg still unconfirmed before the order lands in the
-     * admin "Payment issue" queue. The escrow stays put either way.
+     * Q10: the order enters "Payment issue" the moment the customer confirms
+     * receipt with an external leg still unconfirmed; this many hours later
+     * it is escalated once more. The escrow stays put either way.
      */
     paymentIssueHours: number;
+    /**
+     * Item 8: how long the partner has to declare "no costs" or claim actual,
+     * previously disclosed cancellation costs before a customer's
+     * cancellation proceeds as a full refund.
+     */
+    cancellationClaimHours: number;
+  };
+  /**
+   * Q9: from when new purchases carry the COMMERCE_V2 financial model. Unset
+   * = effective as soon as this code runs. Only ever compared at *creation*;
+   * refunds dispatch on the version stamped on the purchase.
+   */
+  financialPolicy: {
+    commerceV2EffectiveAt: Date | null;
+  };
+  /**
+   * Q12: where TuTak Web Checkout (apps/checkout) is served, e.g.
+   * https://checkout.tutak.am — the partner's website gets
+   * `<base>/o/<orderId>` back when it creates an order. Unset = no web link
+   * is offered (the app deep link always is).
+   */
+  checkout: {
+    webBaseUrl: string | null;
   };
 }
 
@@ -352,6 +378,7 @@ export function assertPartnerOrderPolicy(policy: AppConfig['partnerOrderPolicy']
     ['receiptReminderHours', policy.receiptReminderHours],
     ['receiptManualReviewHours', policy.receiptManualReviewHours],
     ['paymentIssueHours', policy.paymentIssueHours],
+    ['cancellationClaimHours', policy.cancellationClaimHours],
   ] as const) {
     if (!Number.isInteger(value) || value <= 0) {
       throw new Error(`partnerOrderPolicy.${name} must be a positive integer, got ${value}`);
@@ -622,5 +649,20 @@ const buildConfig = (): AppConfig => ({
     receiptReminderHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_REMINDER_HOURS ?? '24', 10),
     receiptManualReviewHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_MANUAL_REVIEW_HOURS ?? '48', 10),
     paymentIssueHours: parseInt(process.env.PARTNER_ORDER_PAYMENT_ISSUE_HOURS ?? '24', 10),
+    cancellationClaimHours: parseInt(process.env.PARTNER_ORDER_CANCELLATION_CLAIM_HOURS ?? '24', 10),
+  },
+  financialPolicy: {
+    commerceV2EffectiveAt: parseEffectiveAt(process.env.FINANCIAL_POLICY_V2_EFFECTIVE_AT),
+  },
+  checkout: {
+    webBaseUrl: process.env.CHECKOUT_WEB_BASE_URL?.trim().replace(/\/+$/, '') || null,
   },
 });
+
+/** An ISO timestamp, or null (= effective immediately). A malformed value refuses to boot. */
+function parseEffectiveAt(raw: string | undefined): Date | null {
+  if (!raw || raw.trim() === '') return null;
+  const at = new Date(raw);
+  if (Number.isNaN(at.getTime())) throw new Error(`FINANCIAL_POLICY_V2_EFFECTIVE_AT is not a valid timestamp: ${raw}`);
+  return at;
+}

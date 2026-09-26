@@ -89,10 +89,17 @@ describe('assertPartnerOrderPolicy', () => {
     receiptReminderHours: 24,
     receiptManualReviewHours: 48,
     paymentIssueHours: 24,
+    cancellationClaimHours: 24,
   });
 
   it('accepts the default policy', () => {
     expect(() => assertPartnerOrderPolicy(validPolicy())).not.toThrow();
+  });
+
+  it('rejects a zero cancellation-claim window (item 8)', () => {
+    const policy = validPolicy();
+    policy.cancellationClaimHours = 0;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/cancellationClaimHours/);
   });
 
   it('rejects a zero or negative SLA minute value', () => {

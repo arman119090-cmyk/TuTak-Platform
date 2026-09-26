@@ -1,5 +1,10 @@
 import type {
   AdminPartnerOrderDto,
+  DecideCancellationCostRequestDto,
+  PartnerOrderCancellationDto,
+  PartnerOrderReturnDto,
+  ReferralWithholdingDto,
+  ReviewShortfallRequestDto,
   CommissionRuleDto,
   CreateCommissionRuleRequestDto,
   CreatePrepaymentRuleRequestDto,
@@ -95,6 +100,55 @@ export const partnerOrderAdminApi = {
   },
   async deactivatePrepaymentRule(id: string) {
     await httpClient.post(`/admin/partner-orders/prepayment-rules/${id}/deactivate`);
+  },
+
+  // ── Final fixes: cancellation cost review (item 8), shortfall review (Q9), withholdings (Q8)
+
+  async listCancellationReviews() {
+    const { data } = await httpClient.get<ApiEnvelope<PartnerOrderCancellationDto[]>>('/admin/partner-orders/cancellations');
+    return data.data;
+  },
+  async cancellationCostCap(orderId: string) {
+    const { data } = await httpClient.get<ApiEnvelope<{ external: string; money: string; total: string }>>(
+      `/admin/partner-orders/${orderId}/cancellation-cost-cap`,
+    );
+    return data.data;
+  },
+  async decideCancellation(id: string, dto: DecideCancellationCostRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderCancellationDto>>(`/admin/partner-orders/cancellations/${id}/decide`, dto);
+    return data.data;
+  },
+  async listReturnReviews() {
+    const { data } = await httpClient.get<
+      ApiEnvelope<{
+        online: (PartnerOrderReturnDto & { order: { id: string; orderNumber: number; partnerId: string; customerId: string | null; totalAmount: string } })[];
+        qr: {
+          id: string;
+          amount: string;
+          reason: string;
+          customerShortfall: string;
+          grossRefund: string;
+          recoveredShortfall: string;
+          netRefund: string;
+          refusalNote: string | null;
+          createdAt: string;
+          purchaseIntent: { id: string; partnerId: string; customerId: string; grossAmount: string };
+        }[];
+      }>
+    >('/admin/partner-orders/return-reviews');
+    return data.data;
+  },
+  async reviewReturn(id: string, dto: ReviewShortfallRequestDto) {
+    await httpClient.post(`/admin/partner-orders/returns/${id}/review`, dto);
+  },
+  async reviewQrRefund(id: string, dto: ReviewShortfallRequestDto) {
+    await httpClient.post(`/admin/partner-orders/purchase-intent-refunds/${id}/review`, dto);
+  },
+  async listWithholdings(status: 'OPEN' | 'SETTLED' = 'OPEN') {
+    const { data } = await httpClient.get<ApiEnvelope<ReferralWithholdingDto[]>>('/admin/partner-orders/referral-withholdings', {
+      params: { status },
+    });
+    return data.data;
   },
 
   async setSettlementPeriod(partnerId: string, period: SettlementPeriod) {

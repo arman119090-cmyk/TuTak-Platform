@@ -98,6 +98,62 @@ export class PartnerOrderNotifier {
     });
   }
 
+  outForDelivery(order: OrderRef) {
+    return this.toCustomer(order, 'outForDelivery', {
+      title: `Order #${order.orderNumber} is on its way`,
+      body: 'The partner handed it to its courier.',
+    });
+  }
+
+  readyForPickup(order: OrderRef) {
+    return this.toCustomer(order, 'readyForPickup', {
+      title: `Order #${order.orderNumber} is ready for pickup`,
+      body: 'Tap "Received" once you have it in your hands.',
+    });
+  }
+
+  delivered(order: OrderRef) {
+    return this.toCustomer(order, 'delivered', {
+      title: `Order #${order.orderNumber} delivered`,
+      body: 'The partner marked it delivered. Tap "Received" once you have it in your hands.',
+    });
+  }
+
+  /** Q10: the customer confirmed receipt but an external payment is still unconfirmed. */
+  paymentIssue(order: OrderRef) {
+    return this.toPartner(order, 'paymentIssue');
+  }
+
+  cancellationRequested(order: OrderRef) {
+    return this.toPartner(order, 'cancellationRequested');
+  }
+
+  cancellationCostClaimed(order: OrderRef) {
+    return this.toCustomer(order, 'cancellationCostClaimed', {
+      title: `Order #${order.orderNumber}: cancellation under review`,
+      body: 'The partner reported actual costs. TuTak will review them before your refund.',
+    });
+  }
+
+  cancelledWithCost(order: OrderRef) {
+    return this.toCustomer(order, 'cancelledWithCost', {
+      title: `Order #${order.orderNumber} cancelled`,
+      body: 'Your refund has been processed minus the approved actual cost. Open the order for details.',
+    });
+  }
+
+  cancellationDeclinedByPartnerCostRejected(order: OrderRef) {
+    return this.toPartner(order, 'cancellationDecided');
+  }
+
+  /** Q9: a return waits for the customer's shortfall to be settled at the partner's desk. */
+  returnSettlementRequired(order: OrderRef) {
+    return this.toCustomer(order, 'returnSettlementRequired', {
+      title: `Return for order #${order.orderNumber}`,
+      body: 'Part of the bonus you received for this order was already used. Open the order to see how it is settled.',
+    });
+  }
+
   disputeCreated(order: OrderRef) {
     return this.toPartner(order, 'disputeCreated');
   }

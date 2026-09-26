@@ -76,6 +76,7 @@ describe('Sweeps (integration)', () => {
     sweepReceipt: jest.fn(record('partner-order.receipt-followup')),
     sweepPaymentIssues: jest.fn(record('partner-order.payment-issue')),
     expireDrafts: jest.fn(record('partner-order.draft-expiry')),
+    expireCancellationClaims: jest.fn(record('partner-order.cancellation-claims')),
   };
   const employeeShifts = { closeStaleShifts: jest.fn(record('employee-shift.close-stale')) };
   const settlementStatements = { generateDue: jest.fn(record('partner-settlement.statements')) };
@@ -225,6 +226,7 @@ describe('Sweeps (integration)', () => {
       expect(partnerOrderSla.sweepReceipt).toHaveBeenCalledTimes(1);
       expect(partnerOrderSla.sweepPaymentIssues).toHaveBeenCalledTimes(1);
       expect(partnerOrderSla.expireDrafts).toHaveBeenCalledTimes(1);
+      expect(partnerOrderSla.expireCancellationClaims).toHaveBeenCalledTimes(1);
       expect(employeeShifts.closeStaleShifts).toHaveBeenCalledTimes(1);
       expect(settlementStatements.generateDue).toHaveBeenCalledTimes(1);
     });

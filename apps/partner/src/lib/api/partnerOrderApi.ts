@@ -1,4 +1,5 @@
 import type {
+  ClaimCancellationCostRequestDto,
   MyShiftDto,
   EmployeeShiftDto,
   OrderDisputeDto,
@@ -39,8 +40,51 @@ export const partnerOrderApi = {
     return data.data;
   },
 
-  async handedOver(id: string) {
-    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderDto>>(`/partner-orders/${id}/handed-over`);
+  /** Item 7: handed to the partner's own courier — no customer timer starts. */
+  async outForDelivery(id: string, courierNote?: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderDto>>(`/partner-orders/${id}/out-for-delivery`, { courierNote });
+    return data.data;
+  },
+
+  /** Item 7: waiting at the branch for self-pickup — no customer timer starts. */
+  async readyForPickup(id: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderDto>>(`/partner-orders/${id}/ready-for-pickup`);
+    return data.data;
+  },
+
+  /** Item 7: actually delivered / handed to the customer — the 24h/48h clock starts. */
+  async delivered(id: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderDto>>(`/partner-orders/${id}/delivered`);
+    return data.data;
+  },
+
+  /** Item 8: no costs — the customer's cancellation proceeds with a full refund. */
+  async cancellationNoCost(id: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderDto>>(`/partner-orders/${id}/cancellation/no-cost`);
+    return data.data;
+  },
+
+  /** Item 8: an actual, previously disclosed cost; TuTak decides. On shift. */
+  async cancellationClaimCost(id: string, body: ClaimCancellationCostRequestDto) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderDto>>(`/partner-orders/${id}/cancellation/claim-cost`, body);
+    return data.data;
+  },
+
+  /** Q9: the desk settlement with the customer, echoing the amount shown. On shift. */
+  async settleReturnShortfall(returnId: string, collectedAmount: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderReturnDto>>(
+      `/partner-orders/returns/${returnId}/settle-shortfall`,
+      { collectedAmount },
+    );
+    return data.data;
+  },
+
+  /** Q9: the customer refuses — TuTak reviews; nothing moves. */
+  async refuseReturnShortfall(returnId: string, note: string) {
+    const { data } = await httpClient.post<ApiEnvelope<PartnerOrderReturnDto>>(
+      `/partner-orders/returns/${returnId}/refuse-shortfall`,
+      { note },
+    );
     return data.data;
   },
 

@@ -58,7 +58,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   clear: () => set({ user: null, accessToken: null }),
 }));
 
-export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_STAFF'] as const;
+/** Every partner-scoped role — a manager is as much a partner user as an owner or a cashier. */
+export const PARTNER_ROLES = ['PARTNER_OWNER', 'PARTNER_MANAGER', 'PARTNER_STAFF'] as const;
 
 /** MVP assumption: a partner-role user belongs to exactly one partner. */
 export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string | null {
@@ -68,6 +69,22 @@ export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string |
     if (ids && ids.length > 0) return ids[0];
   }
   return null;
+}
+
+export function hasPermission(user: AuthenticatedUserDto | null, permission: string): boolean {
+  return Boolean(user?.permissions?.includes(permission));
+}
+
+/**
+ * The permissions whose actions need an active shift (QR confirm/reject/
+ * refund; external-payment confirmation, returns and cost claims on online
+ * orders). Whoever holds one of them manages their own shift — the same
+ * rule the API enforces on /shifts (`RequireAnyPermission`).
+ */
+export const SHIFT_PERMISSIONS = ['PURCHASE_INTENT_CONFIRM', 'PARTNER_ORDER_MANAGE'] as const;
+
+export function canManageShift(user: AuthenticatedUserDto | null): boolean {
+  return SHIFT_PERMISSIONS.some((p) => hasPermission(user, p)) && getPrimaryPartnerId(user) !== null;
 }
 
 /**

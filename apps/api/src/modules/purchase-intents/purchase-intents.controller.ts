@@ -10,6 +10,7 @@ import { RequestUser } from '../auth/types/request-user.type';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
 import { RefundPurchaseIntentDto } from './dto/refund-purchase-intent.dto';
 import { RejectPurchaseIntentDto } from './dto/reject-purchase-intent.dto';
+import { RefuseShortfallDto, SettleShortfallDto } from '../partner-orders/dto/final-fixes.dto';
 import { PurchaseIntentRefundService } from './purchase-intent-refund.service';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
@@ -116,6 +117,37 @@ export class PurchaseIntentsController {
       actorId: staff.id,
       idempotencyKey: dto.idempotencyKey,
     });
+  }
+
+  /** Q9: the employee on shift confirms the desk settlement; the refund then executes. */
+  @Post('refunds/:refundId/settle-shortfall')
+  @RequirePermissions(PermissionName.PURCHASE_INTENT_CONFIRM)
+  async settleRefundShortfall(
+    @CurrentUser() staff: RequestUser,
+    @UuidParam('refundId') refundId: string,
+    @Body() dto: SettleShortfallDto,
+  ) {
+    const intent = await this.intentOfRefund(refundId);
+    assertResourceBranchScope(staff, intent.partnerId, intent.partnerBranchId);
+    return this.purchaseIntentRefunds.settleShortfall(refundId, staff.id, dto.collectedAmount);
+  }
+
+  /** Q9: the customer refuses/disputes — staff at the desk or the customer themself. Nothing moves. */
+  @Post('refunds/:refundId/refuse-shortfall')
+  async refuseRefundShortfall(
+    @CurrentUser() user: RequestUser,
+    @UuidParam('refundId') refundId: string,
+    @Body() dto: RefuseShortfallDto,
+  ) {
+    const intent = await this.intentOfRefund(refundId);
+    const isCustomer = intent.customerId === user.id;
+    if (!isCustomer) assertResourceBranchScope(user, intent.partnerId, intent.partnerBranchId);
+    return this.purchaseIntentRefunds.refuseShortfall(refundId, { userId: user.id, isCustomer }, dto.note);
+  }
+
+  private async intentOfRefund(refundId: string) {
+    const refund = await this.purchaseIntentRefunds.findRefundOrThrow(refundId);
+    return this.purchaseIntents.findByIdOrThrow(refund.purchaseIntentId);
   }
 
   @Get(':id/refunds')

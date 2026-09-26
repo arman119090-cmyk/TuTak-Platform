@@ -67,7 +67,7 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
     const external = submitted.paymentLegs.find((l) => l.type === 'EXTERNAL');
     if (external) await orders.confirmExternalPayment(external.id, staff.id);
     await orders.confirmStock(created.id, staff.id);
-    await orders.markHandedOver(created.id, staff.id);
+    await orders.markDelivered(created.id, staff.id);
     const done = await orders.confirmReceived(created.id, customer.user.id);
     expect(done.operationalStatus).toBe('COMPLETED');
     return { partner, admin, staff, customer, referrer, order: done };
@@ -151,7 +151,7 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
       await s.assertAllAccountsReplay();
     });
 
-    it('already-spent green balance → MANUAL_REVIEW, nothing moved, TuTak absorbs nothing (Q7a)', async () => {
+    it('Q9: already-spent green balance is netted from the money refund — nothing absorbed, no manual review', async () => {
       const { partner, staff, customer, order } = await completedOrder();
       // The customer spends the green 300 elsewhere before returning.
       const other = await createPartner(prisma);
@@ -161,18 +161,19 @@ describe('Partner Commerce — returns, disputes, settlement (integration)', () 
       const spend = await intents.create({ partnerId: other.id, grossAmount: '1000', bonusAmountRequested: '300' }, customer.user.id);
       await intents.confirm(spend.id, otherStaff.id);
 
-      const before = await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id });
       const ret = await returns.createReturn({ orderId: order.id, reason: 'late', actorId: staff.id, actorType: 'PARTNER', idempotencyKey: 'sf-1' });
-      expect(ret.status).toBe('MANUAL_REVIEW');
+      expect(ret.status).toBe('COMPLETED');
       expect(ret.shortfallAmount.toFixed(4)).toBe('300.0000');
-      expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe(before);
+      expect(ret.grossRefund.toFixed(4)).toBe('30000.0000');
+      expect(ret.recoveredShortfall.toFixed(4)).toBe('300.0000');
+      expect(ret.netRefund.toFixed(4)).toBe('29700.0000');
+      expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.balance(A.CUSTOMER_SHORTFALL_CLEARING, { userId: customer.user.id })).toBe('0.0000');
       const final = await prisma.partnerOrder.findUniqueOrThrow({ where: { id: order.id } });
-      expect(final.refundedAmount.toFixed(4)).toBe('0.0000');
-      expect(final.manualReviewReason).toBe('return_shortfall');
-      await expect(
-        returns.createReturn({ orderId: order.id, reason: 'again', actorId: staff.id, actorType: 'PARTNER', idempotencyKey: 'sf-2' }),
-      ).rejects.toThrow(/manual review/);
+      expect(final.refundedAmount.toFixed(4)).toBe('30000.0000');
+      expect(final.manualReviewReason).toBeNull();
       await s.assertAllAccountsReplay();
+      await s.assertEscrowProvenance();
     });
   });
 

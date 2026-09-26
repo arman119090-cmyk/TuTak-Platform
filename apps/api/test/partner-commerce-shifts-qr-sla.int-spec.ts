@@ -206,9 +206,9 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       const intent = await intents.create({ partnerId: partner.id, grossAmount: '30000', tutakMoneyAmount: '5000' }, customer.user.id);
       expect(intent.ordinaryPaymentRemainder.toFixed(4)).toBe('25000.0000');
       expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-45000.0000');
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-5000.0000');
+      expect(await s.escrow(partner.id)).toBe('-5000.0000');
       await intents.confirm(intent.id, staff.id);
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       // TuTak owes 5000, the partner owes the 1500 pool on the full 30000 → net 3500 owed to the partner.
       expect(await s.balance(A.PARTNER_PAYABLE, { partnerId: partner.id })).toBe('-3500.0000');
 
@@ -234,7 +234,7 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       await expect(
         intents.create({ partnerId: partner.id, grossAmount: '10000', tutakMoneyAmount: '9000' }, customer.user.id),
       ).rejects.toThrow(/Not enough money/);
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('0.0000');
+      expect(await s.escrow(partner.id)).toBe('0.0000');
       await s.assertAllAccountsReplay();
     });
   });
@@ -296,19 +296,19 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       const created = await orders.create(partner.id, integrationId, orderDto('RCPT-1'));
       await orders.submit(created.id, customer.user.id, { tutakMoneyAmount: '30000', idempotencyKey: 'rcpt-1' });
       await orders.confirmStock(created.id, staff.id);
-      await orders.markHandedOver(created.id, staff.id);
+      await orders.markDelivered(created.id, staff.id);
 
-      await prisma.partnerOrder.update({ where: { id: created.id }, data: { handedOverAt: new Date(Date.now() - 25 * HOUR) } });
+      await prisma.partnerOrder.update({ where: { id: created.id }, data: { deliveredAt: new Date(Date.now() - 25 * HOUR) } });
       expect(await sla.sweepReceipt()).toEqual({ reminded: 1, manualReview: 0 });
       const notification = await prisma.notification.findFirst({ where: { userId: customer.user.id, titleKey: 'notifications.partnerOrder.receiptReminderTitle' } });
       expect(notification).not.toBeNull();
 
-      await prisma.partnerOrder.update({ where: { id: created.id }, data: { handedOverAt: new Date(Date.now() - 49 * HOUR) } });
+      await prisma.partnerOrder.update({ where: { id: created.id }, data: { deliveredAt: new Date(Date.now() - 49 * HOUR) } });
       expect(await sla.sweepReceipt()).toEqual({ reminded: 0, manualReview: 1 });
       const order = await prisma.partnerOrder.findUniqueOrThrow({ where: { id: created.id } });
-      expect(order.operationalStatus).toBe('HANDED_OVER');
+      expect(order.operationalStatus).toBe('DELIVERED');
       expect(order.manualReviewAt).not.toBeNull();
-      expect(await s.balance(A.PARTNER_ORDER_ESCROW, { partnerId: partner.id })).toBe('-30000.0000');
+      expect(await s.escrow(partner.id)).toBe('-30000.0000');
       expect((await orders.listAdminQueue('manual_review')).map((o) => o.id)).toEqual([created.id]);
 
       // A human decision — never the timer — completes it.
@@ -328,7 +328,7 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       await expect(orders.submit(created.id, customer.user.id, { idempotencyKey: 'exp-1' })).rejects.toThrow(/no longer be confirmed/);
     });
 
-    it('received with an unconfirmed external leg past the grace window → Payment issue queue', async () => {
+    it('Q10: received with an unconfirmed external leg → Payment issue at once; 24h later escalated once more', async () => {
       const partner = await createPartner(prisma);
       const admin = await createStaffUser(prisma);
       const integrationId = await s.websiteIntegration(partner.id, admin.id);
@@ -337,10 +337,15 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       const created = await orders.create(partner.id, integrationId, orderDto('PI-1'));
       await orders.submit(created.id, customer.user.id, { idempotencyKey: 'pi-1' });
       await orders.confirmStock(created.id, staff.id);
-      await orders.confirmReceived(created.id, customer.user.id);
-      await prisma.partnerOrder.update({ where: { id: created.id }, data: { customerReceivedAt: new Date(Date.now() - 25 * HOUR) } });
-      expect(await sla.sweepPaymentIssues()).toBe(1);
+      const received = await orders.confirmReceived(created.id, customer.user.id);
+      expect(received.operationalStatus).toBe('RECEIVED');
+      expect(received.paymentIssueAt).not.toBeNull();
+      // Already in the queue — no 24h wait for the first flag.
       expect((await orders.listAdminQueue('payment_issue')).map((o) => o.id)).toEqual([created.id]);
+      expect(await sla.sweepPaymentIssues()).toBe(0);
+      await prisma.partnerOrder.update({ where: { id: created.id }, data: { paymentIssueAt: new Date(Date.now() - 25 * HOUR) } });
+      expect(await sla.sweepPaymentIssues()).toBe(1);
+      expect(await prisma.orderEscalation.count({ where: { orderId: created.id, type: 'PAYMENT_ISSUE_24H' } })).toBe(1);
     });
   });
 });

@@ -126,7 +126,7 @@ export default tseslint.config(
 
   // ── Web apps ────────────────────────────────────────────────────────────
   {
-    files: ['apps/admin/**/*.{ts,tsx}', 'apps/partner/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
+    files: ['apps/admin/**/*.{ts,tsx}', 'apps/partner/**/*.{ts,tsx}', 'apps/checkout/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
       parserOptions: { ecmaFeatures: { jsx: true } },
@@ -149,6 +149,7 @@ export default tseslint.config(
     files: [
       'apps/admin/**/*.{ts,tsx}',
       'apps/partner/**/*.{ts,tsx}',
+      'apps/checkout/**/*.{ts,tsx}',
       'apps/mobile/**/*.{ts,tsx}',
       'packages/design/**/*.{ts,tsx}',
     ],

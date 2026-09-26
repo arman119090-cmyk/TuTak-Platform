@@ -19,6 +19,7 @@ const QUEUES: { key: PartnerOrderAdminQueue; label: string }[] = [
   { key: 'refund_required', label: 'Refund required' },
   { key: 'disputes', label: 'Disputes' },
   { key: 'manual_review', label: 'Manual review' },
+  { key: 'cancellation_review', label: 'Cancellation cost review' },
   { key: 'completed', label: 'Completed' },
 ];
 
@@ -26,9 +27,11 @@ const QUEUES: { key: PartnerOrderAdminQueue; label: string }[] = [
 const WHERE: Record<string, string> = {
   SUBMITTED: 'Waiting for the partner to open it',
   SEEN: 'Partner saw it, stock not confirmed',
-  STOCK_CONFIRMED: 'In stock, not handed over yet',
+  STOCK_CONFIRMED: 'In stock, not dispatched yet',
   OUT_OF_STOCK: 'Out of stock',
-  HANDED_OVER: 'Handed over, customer has not confirmed',
+  OUT_FOR_DELIVERY: 'With the partner’s courier (no customer timer yet)',
+  READY_FOR_PICKUP: 'Ready for pickup (no customer timer yet)',
+  DELIVERED: 'Partner marked delivered, customer has not confirmed',
   RECEIVED: 'Customer received it',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
@@ -147,7 +150,8 @@ export default function PartnerOrdersQueuePage() {
                           Take into work
                         </Button>
                       ))}
-                    {['STOCK_CONFIRMED', 'HANDED_OVER'].includes(o.operationalStatus) ? (
+                    {['STOCK_CONFIRMED', 'OUT_FOR_DELIVERY', 'READY_FOR_PICKUP', 'DELIVERED'].includes(o.operationalStatus) &&
+                    o.cancellationStatus === 'NONE' ? (
                       <Button
                         size="sm"
                         variant="secondary"
@@ -159,7 +163,9 @@ export default function PartnerOrdersQueuePage() {
                         Record receipt
                       </Button>
                     ) : null}
-                    {['SUBMITTED', 'SEEN', 'STOCK_CONFIRMED', 'OUT_OF_STOCK'].includes(o.operationalStatus) ? (
+                    {['SUBMITTED', 'SEEN', 'STOCK_CONFIRMED', 'OUT_OF_STOCK', 'OUT_FOR_DELIVERY', 'READY_FOR_PICKUP', 'DELIVERED'].includes(
+                      o.operationalStatus,
+                    ) && o.cancellationStatus !== 'COST_REVIEW' ? (
                       <Button
                         size="sm"
                         variant="destructive"

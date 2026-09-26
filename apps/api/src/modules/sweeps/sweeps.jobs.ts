@@ -287,11 +287,19 @@ export const SWEEPS: readonly SweepDefinition[] = [
   },
   {
     name: 'partner-order.payment-issue',
-    why: 'Interim rule pending Q10: an order the customer received while an external payment is still unconfirmed must reach the "Payment issue" queue instead of waiting silently.',
+    why: 'Q10: an order received while an external payment is still unconfirmed is flagged "Payment issue" at receipt; this is the safety net for any it missed and the 24h escalation for any still unconfirmed.',
     repeat: { every: 10 * 60_000 },
     maxSilenceMs: 60 * 60_000,
     lockTtlMs: 5 * 60_000,
     run: ({ partnerOrderSla }) => partnerOrderSla.sweepPaymentIssues(),
+  },
+  {
+    name: 'partner-order.cancellation-claims',
+    why: 'Item 8: a customer cancellation the partner did not answer (no costs / actual-cost claim) within its window must proceed as a full refund instead of pausing the order forever.',
+    repeat: { every: 10 * 60_000 },
+    maxSilenceMs: 60 * 60_000,
+    lockTtlMs: 5 * 60_000,
+    run: ({ partnerOrderSla }) => partnerOrderSla.expireCancellationClaims(),
   },
   {
     name: 'partner-order.draft-expiry',

@@ -58,7 +58,16 @@ export default function SettlementPage() {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatTile label="Due to you" value={`${num(summary.dueToPartner)} AMD`} />
         <StatTile label="Due to TuTak" value={`${num(summary.dueToTutak)} AMD`} />
-        <StatTile label="Reserved (not yet received)" value={`${num(summary.reservedInEscrow)} AMD`} hint="Released after customers confirm receipt" />
+        <StatTile
+          label="Reserved (not yet received)"
+          value={`${num(summary.reservedInEscrow)} AMD`}
+          hint={`Money ${num(summary.reservedMoneyInEscrow)} · discount ${num(summary.reservedDiscountInEscrow)} — released after customers confirm receipt`}
+        />
+        <StatTile
+          label="Commission refunds on the way"
+          value={`${num(summary.commissionRefundAwaitingWithholding)} AMD`}
+          hint="From returned purchases: credited to you as the referrer's next bonuses repay what they had already spent"
+        />
         <StatTile label="Frozen by disputes" value={`${num(summary.frozenForDisputes)} AMD`} />
         <StatTile label="Cash to confirm" value={`${num(summary.externalPaymentsAwaitingConfirmation)} AMD`} />
       </div>

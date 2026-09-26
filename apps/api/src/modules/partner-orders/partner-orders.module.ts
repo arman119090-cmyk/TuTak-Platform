@@ -6,6 +6,7 @@ import { CustomerBalanceModule } from '../customer-balance/customer-balance.modu
 import { EmployeeShiftsModule } from '../employee-shifts/employee-shifts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PartnersModule } from '../partners/partners.module';
+import { PurchaseIntentsModule } from '../purchase-intents/purchase-intents.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { PartnerOrdersController } from './partner-orders.controller';
@@ -21,6 +22,7 @@ import { PartnerOrderNotifier } from './partner-order-notifier.service';
 import { PartnerOrderApiKeyGuard } from './partner-order-api-key.guard';
 import { PartnerOrderReturnsService } from './partner-order-returns.service';
 import { OrderDisputesService } from './order-disputes.service';
+import { PartnerOrderCancellationService } from './partner-order-cancellation.service';
 import { LedgerModule } from '../ledger/ledger.module';
 import { ReferralModule } from '../referral/referral.module';
 
@@ -43,6 +45,7 @@ import { ReferralModule } from '../referral/referral.module';
     NotificationsModule,
     LedgerModule,
     PartnersModule,
+    PurchaseIntentsModule,
     ReferralModule,
     TransactionsModule,
     WalletModule,
@@ -59,6 +62,7 @@ import { ReferralModule } from '../referral/referral.module';
     PartnerOrderNotifier,
     PartnerOrderReturnsService,
     OrderDisputesService,
+    PartnerOrderCancellationService,
     PartnerOrderApiKeyGuard,
   ],
   exports: [
@@ -72,6 +76,7 @@ import { ReferralModule } from '../referral/referral.module';
     PartnerOrderNotifier,
     PartnerOrderReturnsService,
     OrderDisputesService,
+    PartnerOrderCancellationService,
   ],
 })
 export class PartnerOrdersModule {}

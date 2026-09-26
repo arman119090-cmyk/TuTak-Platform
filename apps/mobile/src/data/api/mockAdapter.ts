@@ -586,7 +586,13 @@ function handle(
       tutakMoneyAmount: '0.0000',
       externalAmount: '0.0000',
       prepaymentRequiredAmount: '0.0000',
+      prepaymentCoveredAmount: '0.0000',
       refundedAmount: '0.0000',
+      financialPolicyVersion: 'COMMERCE_V2' as never,
+      cancellationTerms: null,
+      cancellationStatus: 'NONE' as never,
+      fulfillmentMethod: null,
+      courierNote: null,
       operationalStatus: 'DRAFT' as never,
       paymentStatus: 'UNFUNDED' as never,
       sourcingStatus: 'NONE' as never,
@@ -598,7 +604,9 @@ function handle(
       partnerSeenAt: null,
       stockConfirmedAt: null,
       stockRejectedAt: null,
-      handedOverAt: null,
+      outForDeliveryAt: null,
+      readyForPickupAt: null,
+      deliveredAt: null,
       customerReceivedAt: null,
       completedAt: null,
       cancelledAt: null,
@@ -606,8 +614,11 @@ function handle(
       customerStatus: 'awaiting_confirmation',
       canConfirmReceipt: false,
       canCancel: true,
+      canWithdrawCancellation: false,
       canOpenDispute: false,
       paymentLegs: [],
+      cancellations: [],
+      returns: [],
       adjustments: [],
       items: [
         {
@@ -641,7 +652,8 @@ function handle(
       order,
       partner: { id: order.partnerId, displayName: state.partners[0]?.name ?? 'TuTak partner' },
       balances: { discountAvailable: state.wallet.availableBonus, tutakMoney: state.balance.balance },
-      limits: { maxDiscountAmount: order.totalAmount, prepaymentRequiredAmount: order.prepaymentRequiredAmount },
+      limits: { maxDiscountAmount: order.totalAmount, prepaymentRequiredAmount: order.prepaymentRequiredAmount, prepaymentCountsFrom: 'TUTAK_MONEY' },
+      cancellationTerms: order.cancellationTerms,
     });
   }
 
@@ -660,6 +672,7 @@ function handle(
         submittedAt: new Date().toISOString(),
         discountAmount: discount.toFixed(4),
         tutakMoneyAmount: money.toFixed(4),
+        prepaymentCoveredAmount: money.toFixed(4),
         externalAmount: Math.max(Number(order.totalAmount) - discount - money, 0).toFixed(4),
         customerStatus: 'checking_availability',
       }),
@@ -680,6 +693,17 @@ function handle(
         canOpenDispute: received,
       }),
     );
+  }
+
+  const withdrawCancel = /^\/partner-orders\/([^/]+)\/cancel\/withdraw$/.exec(path);
+  if (method === 'POST' && withdrawCancel) {
+    const order = findOrder(withdrawCancel[1]!);
+    return envelope(upsertOrder({ ...order, cancellationStatus: 'NONE' as never, canWithdrawCancellation: false }));
+  }
+
+  const disputeShortfall = /^\/partner-orders\/returns\/([^/]+)\/dispute-shortfall$/.exec(path);
+  if (method === 'POST' && disputeShortfall) {
+    return envelope({ id: disputeShortfall[1], status: 'MANUAL_REVIEW' });
   }
 
   const openDispute = /^\/partner-orders\/([^/]+)\/disputes$/.exec(path);

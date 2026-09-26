@@ -30,14 +30,14 @@ Render/Railway production, печать секретов.
 | Пилотный антифрод (reward hold), CodeQL, pre-deploy/staging/legal docs | `7f53969a` |
 | AI review: JSON-схема, retries, weekly audit | `5c729ab6` |
 | **FINAL code SHA** (последнее изменение `apps/api`) | `7f53969a` |
-| Финальный отчёт | коммит этого отчёта — head PR #71 на момент публикации |
+| Финальный отчёт | `cfe76448` |
 
 ## A1. Три состояния (§3)
 
 | Состояние | SHA | Источник |
 |---|---|---|
 | MAIN | `369eda19` (#57 «Оповещения…», 19.09) | `git log origin/main` |
-| LAUNCH CANDIDATE | `7f53969a` + docs `5c729ab6`/коммит этого отчёта — head PR #71 на момент публикации | эта ветка |
+| LAUNCH CANDIDATE | `7f53969a` + docs `5c729ab6`/`cfe76448` | эта ветка |
 | PRODUCTION | `369eda19` — деплой `f94d56eb` 19.09 07:30 UTC, SUCCESS, все три сервиса с `main` | Railway `list-deployments tutak-api` (`meta.commitHash`) |
 
 Production = main; launch candidate впереди main на весь Partner Commerce +

@@ -11,6 +11,8 @@ const NAV: NavItem[] = [
   { href: '/transactions', label: 'Transactions', icon: <NavIcon d="M4 7h16M4 7l3-3M4 7l3 3M20 17H4M20 17l-3-3M20 17l-3 3" /> },
   { href: '/qr', label: 'Payment QR', icon: <NavIcon d="M4 4h6v6H4V4ZM14 4h6v6h-6V4ZM4 14h6v6H4v-6ZM14 14h2.5v2.5H14V14ZM19.5 19.5H17V17h2.5v2.5Z" /> },
   { href: '/purchase-intents', label: 'Purchase requests', icon: <NavIcon d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 13l2 2 4-4" /> },
+  { href: '/orders', label: 'Orders', icon: <NavIcon d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4M3 6h18M16 10a4 4 0 0 1-8 0" /> },
+  { href: '/settlement', label: 'Settlement', icon: <NavIcon d="M4 6h16M4 12h16M4 18h10M18 16v4M16 18h4" /> },
   { href: '/refunds', label: 'Returns', icon: <NavIcon d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /> },
   { href: '/earnings', label: 'Earnings', icon: <NavIcon d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" /> },
   // Next to Earnings deliberately: Earnings is what activity produced, this

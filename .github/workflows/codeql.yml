@@ -1,0 +1,35 @@
+name: CodeQL (static security analysis)
+
+# Advisory static analysis for the TypeScript/JavaScript code base. Findings
+# land in GitHub → Security → Code scanning (the owner must have code
+# scanning enabled on the repository for results to be stored; on a public
+# repository it is free). The job does not gate merges by itself — adding it
+# to the ruleset is the owner's decision (docs/INFRASTRUCTURE_OWNERSHIP.md §6).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript'

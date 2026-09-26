@@ -65,6 +65,16 @@ export class PartnerSettlementAdminController {
     });
   }
 
+  /** A draft for the partner's last closed period of its own cadence (`settlementPeriodicity`). */
+  @Post('drafts/:partnerId/closed-period')
+  @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)
+  async draftClosedPeriod(
+    @CurrentUser() actor: RequestUser,
+    @UuidParam('partnerId') partnerId: string,
+  ) {
+    return this.settlements.createDraftForClosedPeriod({ partnerId, actorId: actor.id });
+  }
+
   @Post(':id/ready')
   @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)
   async ready(
@@ -164,6 +174,23 @@ export class PartnerSettlementAdminController {
   @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)
   async confirmReconciliation(@CurrentUser() actor: RequestUser, @UuidParam('id') id: string) {
     return this.settlements.confirmReconciliationOutcome(id, { actorId: actor.id });
+  }
+
+  /**
+   * Takes back an approval when it is provable that no money moved and
+   * releases the claims — for a dispute decided for the customer after
+   * approval. No draft is made: the released postings go into the next
+   * settlement drafted for the partner's closed period. Refused once a
+   * transfer may have moved money.
+   */
+  @Post(':id/revoke-approval')
+  @RequirePermissions(PermissionName.SETTLEMENT_MANAGE)
+  async revokeApproval(
+    @CurrentUser() actor: RequestUser,
+    @UuidParam('id') id: string,
+    @Body() dto: CancelSettlementDto,
+  ) {
+    return this.settlements.revokeApproval(id, { actorId: actor.id, reason: dto.reason });
   }
 
   @Post(':id/cancel')

@@ -1,6 +1,7 @@
 /**
  * Sends one clearly-labelled test alert and exits — the controlled way to
- * prove that `ALERT_WEBHOOK_URL` actually reaches a human.
+ * prove that the alert channel (`ALERT_WEBHOOK_URL`, or
+ * `ALERT_TELEGRAM_BOT_TOKEN` + `ALERT_TELEGRAM_CHAT_ID`) actually reaches a human.
  *
  * The counterpart of `sentry-verify.ts`, and it exists for the same reason:
  * an alerting channel nobody has ever sent a message through is a channel
@@ -102,7 +103,7 @@ export function buildVerificationAlert(now: Date) {
     title: 'TuTak alert channel test',
     body:
       'This is a test of the alerting channel, sent by hand with alert:verify. ' +
-      'Nothing is wrong. If you are seeing this, the webhook works and real ' +
+      'Nothing is wrong. If you are seeing this, the alert channel works and real ' +
       'alerts — reconciliation discrepancies, dead-lettered outbox events, ' +
       'failed background jobs — will reach you the same way.',
     // Timestamped so a second run is not swallowed by the suppression
@@ -142,8 +143,9 @@ export async function runAlertVerify(
       sent: false,
       channel: channel.name,
       reason:
-        'ALERT_WEBHOOK_URL is not set, so the alert went to the console and no human was ' +
-        'told. Set it on this service and run this again.',
+        'Neither ALERT_WEBHOOK_URL nor ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID is set ' +
+        '(or only half of the Telegram pair is), so the alert went to the console and no human ' +
+        'was told. Set one on this service and run this again.',
     };
   }
 
@@ -155,8 +157,8 @@ export async function runAlertVerify(
       sent: false,
       channel: channel.name,
       reason:
-        `ALERT_WEBHOOK_URL is set but the receiver did not accept the alert (${outcome.detail}). ` +
-        'Nothing reached a human. Check the URL and what is on the other end of it.',
+        `The ${channel.name} channel is set but the receiver did not accept the alert (${outcome.detail}). ` +
+        'Nothing reached a human. Check the configuration and what is on the other end of it.',
     };
   }
 
@@ -189,8 +191,8 @@ async function main() {
 
     console.log(`Sent through the ${result.channel} channel (${result.reason}).`);
     console.log(`Environment reported in the message: ${appEnv}.`);
-    console.log('Look for "TuTak alert channel test" wherever ALERT_WEBHOOK_URL points.');
-    console.log('If it did not arrive, the URL is wrong or the receiver rejected it —');
+    console.log(`Look for "TuTak alert channel test" wherever the ${result.channel} channel points.`);
+    console.log('If it did not arrive, the configuration is wrong or the receiver rejected it —');
     console.log('the channel logs the status code it got back.');
   } catch (err) {
     new Logger('alert-verify').error(err);

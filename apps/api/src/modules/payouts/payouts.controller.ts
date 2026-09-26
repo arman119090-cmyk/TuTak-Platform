@@ -9,10 +9,9 @@ import { assertPartnerScope } from '../../common/auth/partner-scope';
 import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../auth/types/request-user.type';
 import { SettlementService } from '../settlement/settlement.service';
-import { ConfirmPayoutDto, FailPayoutDto, RequestPayoutDto } from './dto/request-payout.dto';
 import { RecordAcquirerSettlementDto } from './dto/record-acquirer-settlement.dto';
 import { RecordPartnerCollectionDto } from './dto/record-partner-collection.dto';
-import { PayoutEngineService } from './payout-engine.service';
+import { PayoutHistoryService } from './payout-history.service';
 import { AcquirerSettlementService } from './acquirer-settlement.service';
 import { PartnerCollectionService } from './partner-collection.service';
 
@@ -20,21 +19,25 @@ import { PartnerCollectionService } from './partner-collection.service';
  * Reads are partner-scoped; writes are platform-admin only.
  *
  * A partner can see what they are owed and what has been paid — that is
- * their own money and withholding it serves nobody. What they cannot do is
- * initiate the transfer: `PAYOUT_MANAGE` is deliberately not granted to
- * ADMIN either, only SUPER_ADMIN, because wiring money to an external bank
- * account is the least reversible action on this platform.
+ * their own money and withholding it serves nobody.
  *
- * On top of that permission, confirming a payout is subject to the
- * two-person rule enforced in `PayoutEngineService.confirmPaid`: the
- * confirming admin must not be the one who requested it.
+ * Paying a partner is not on this controller any more. `POST /payouts`,
+ * `POST /payouts/:id/confirm` and `POST /payouts/:id/fail` were the retired
+ * legacy payout engine's routes (26.09.2026, Launch Readiness P1): a second
+ * path out of `PARTNER_PAYABLE` that the settlement engine did not see, so
+ * the same earnings could be paid by both. The one way money now leaves a
+ * partner's payable is a `PartnerSettlement` — `PartnerSettlementController`
+ * (`/partner-settlements`), draft → ready → approved → paid, under
+ * `SETTLEMENT_MANAGE` and the two-person rule. `GET /payouts/partners/:id`
+ * keeps the old rows readable as history. The write routes that remain here
+ * record money *arriving* (acquirer settlements, partner collections).
  */
 @ApiTags('payouts')
 @ApiBearerAuth()
 @Controller('payouts')
 export class PayoutsController {
   constructor(
-    private readonly payouts: PayoutEngineService,
+    private readonly payouts: PayoutHistoryService,
     private readonly acquirerSettlements: AcquirerSettlementService,
     private readonly collections: PartnerCollectionService,
     private readonly settlement: SettlementService,
@@ -185,67 +188,5 @@ export class PayoutsController {
   async list(@CurrentUser() user: RequestUser, @UuidParam('partnerId') partnerId: string) {
     assertPartnerScope(user, partnerId);
     return this.payouts.listForPartner(partnerId);
-  }
-
-  @Post()
-  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async request(@CurrentUser() admin: RequestUser, @Body() dto: RequestPayoutDto) {
-    const result = await this.payouts.requestPayout({
-      partnerId: dto.partnerId,
-      amount: dto.amount,
-      actorId: admin.id,
-      idempotencyKey: dto.idempotencyKey,
-    });
-
-    await this.audit.record({
-      actorUserId: admin.id,
-      action: AuditAction.PAYOUT_REQUESTED,
-      entityType: 'Payout',
-      entityId: result.payoutId,
-      metadata: {
-        partnerId: dto.partnerId,
-        amount: result.amount,
-        remainingBalance: result.remainingBalance,
-      },
-    });
-
-    return result;
-  }
-
-  @Post(':id/confirm')
-  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
-  async confirm(
-    @CurrentUser() admin: RequestUser,
-    @UuidParam('id') id: string,
-    @Body() dto: ConfirmPayoutDto,
-  ) {
-    await this.payouts.confirmPaid(id, dto.bankReference, admin.id);
-    await this.audit.record({
-      actorUserId: admin.id,
-      action: AuditAction.PAYOUT_RESOLVED,
-      entityType: 'Payout',
-      entityId: id,
-      metadata: { outcome: 'PAID', bankReference: dto.bankReference, confirmedBy: admin.id },
-    });
-    return { success: true };
-  }
-
-  @Post(':id/fail')
-  @RequirePermissions(PermissionName.PAYOUT_MANAGE)
-  async fail(
-    @CurrentUser() admin: RequestUser,
-    @UuidParam('id') id: string,
-    @Body() dto: FailPayoutDto,
-  ) {
-    await this.payouts.markFailed(id, dto.failureReason);
-    await this.audit.record({
-      actorUserId: admin.id,
-      action: AuditAction.PAYOUT_RESOLVED,
-      entityType: 'Payout',
-      entityId: id,
-      metadata: { outcome: 'FAILED', failureReason: dto.failureReason },
-    });
-    return { success: true };
   }
 }

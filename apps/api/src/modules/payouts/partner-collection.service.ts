@@ -59,7 +59,13 @@ export interface CollectionResult {
   remainingOwed: string;
 }
 
-/** Same narrowing as `payout-engine.service.ts`'s copy — see there for why. */
+/**
+ * Did this come from the (recordedByUserId, idempotencyKey) unique index?
+ *
+ * Narrow on purpose: a blanket "P2002 means already done" would also swallow
+ * a collision on `ledgerTransactionId` or on `bankTransactionId`, both of
+ * which are real bugs that must not surface as a successful replay.
+ */
 function isKeyCollision(err: unknown): boolean {
   if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
   if (err.code !== 'P2002') return false;
@@ -85,14 +91,14 @@ function isBankTransactionCollision(err: unknown): boolean {
 }
 
 /**
- * Records a partner's bank transfer settling a debt to TuTak — the missing
- * direction of `PayoutEngineService`.
+ * Records a partner's bank transfer settling a debt to TuTak — the opposite
+ * direction of a partner settlement (`PartnerSettlementService`).
  *
  * Doc §2/§7: a purchase posts two obligations into the same `PARTNER_PAYABLE`
  * account at once — TuTak's compensation for the discount the partner gave,
  * and the partner's commission on the sale. Most of the time the first
  * exceeds the second and the balance sits negative (TuTak owes the partner,
- * see `PayoutEngineService`). It can go the other way — heavy bonus
+ * see `PayoutHistoryService.availableBalance`). It can go the other way — heavy bonus
  * redemption against a partner with a high commission rate, or a refund
  * clawing back a payout that already drained the balance (see
  * `RefundEngineService.warnIfPartnerNowOwesUs`) — and then the raw balance
@@ -113,7 +119,7 @@ function isBankTransactionCollision(err: unknown): boolean {
  * Problem 2 — maker-checker. When `payouts.dualControl` is on, `record`
  * creates a `PENDING` row only: no ledger posting, no balance change. A
  * *different* admin must call `confirm` before anything posts — mirroring
- * `PayoutEngineService.requestPayout`/`confirmPaid` as closely as the domain
+ * the settlement engine's create/approve split as closely as the domain
  * allows. This is new, and deliberately not the same reasoning the original
  * single-step design rested on ("recording an inbound transfer moves nothing
  * external, so one admin cannot drain a balance to a bank account the way a
@@ -126,14 +132,15 @@ function isBankTransactionCollision(err: unknown): boolean {
  * When `payouts.dualControl` is off, `record` posts immediately — the
  * original single-step design, preserved exactly, with Problem 1's
  * uniqueness control and the existing idempotency guarantee still fully
- * enforced regardless. This is a deliberate divergence from `Payout`, which
- * always requires a separate confirm call and only toggles the self-check;
+ * enforced regardless. This is a deliberate divergence from a partner
+ * settlement, which always requires a separate approve step and only toggles
+ * the self-check;
  * a collection has no realistic in-flight moment to confirm later — an
  * operator either has a bank statement in front of them or does not — so
  * "dual control off" here means "back to one step," not "confirm is
  * optional."
  *
- * Same discipline as `PayoutEngineService` throughout: idempotent via
+ * Same discipline as the retired payout engine had throughout: idempotent via
  * `IdempotencyService` with a durable fallback lookup, a `FOR UPDATE` lock
  * on the account row so two concurrent collections (or a collection and a
  * confirmation) cannot together overdraw what the partner actually owes, and
@@ -292,7 +299,7 @@ export class PartnerCollectionService {
     actorId: string,
     idempotencyKey: string,
   ): Promise<CollectionResult> {
-    // Same reasoning as `PayoutEngineService.executePayout`: the
+    // Same reasoning as `PaymentEngineService.capture`'s durable key: the
     // `IdempotencyRecord` this call is wrapped in can itself be lost between
     // its own two transactions, and a retry without this check would record
     // the same bank transfer twice.
@@ -307,10 +314,10 @@ export class PartnerCollectionService {
     let collection;
     try {
       collection = await this.prisma.$transaction(async (tx) => {
-        // Locks the same row `ledger.post` below moves, for the same reason
-        // `requestPayout` does: a conditional UPDATE here would race the
-        // posting's own balance move and double-count. See that method's
-        // docblock for the full argument.
+        // Locks the same row `ledger.post` below moves: a conditional UPDATE
+        // here would race the posting's own balance move and double-count.
+        // Locking states the intent — exclude concurrent readers — without
+        // touching the number.
         const locked = await tx.$queryRaw<Array<{ balance: string }>>`
           SELECT balance FROM "ledger_accounts" WHERE id = ${partnerAccount.id} FOR UPDATE
         `;
@@ -392,7 +399,7 @@ export class PartnerCollectionService {
    * `collectionId` confirms it, atomically posting the ledger transaction
    * that actually reduces what the partner owes.
    *
-   * Mirrors `PayoutEngineService.confirmPaid`: the claim (`updateMany` on
+   * Mirrors `PartnerSettlementService.markPaid`: the claim (`updateMany` on
    * `status: PENDING`) and the posting share one transaction, so a repeated
    * confirmation cannot double-post — the second call finds `count === 0`
    * and posts nothing, having claimed nothing. The amount owed is re-checked
@@ -402,9 +409,8 @@ export class PartnerCollectionService {
    * touches this partner's `PARTNER_PAYABLE` account.
    *
    * The audit record is written inside this same transaction, not by the
-   * controller afterwards the way `PayoutEngineService.confirmPaid`'s own
-   * caller does it. That is a deliberate divergence from the mirrored
-   * precedent: a controller-level failure between this call returning and
+   * controller afterwards the way the retired payout engine's own caller did
+   * it. That is a deliberate divergence from the mirrored precedent: a controller-level failure between this call returning and
    * the controller's own `audit.record` call would otherwise leave a posted
    * collection with no audit trail, and a client retry of that same HTTP
    * request would otherwise be able to reach the controller's audit call
@@ -420,7 +426,7 @@ export class PartnerCollectionService {
     }
 
     // ── Two-person rule ──────────────────────────────────────────────────
-    // Same shape as `PayoutEngineService.confirmPaid`'s own check — see
+    // Same shape as `PartnerSettlementService.approve`'s own check — see
     // there for the full reasoning. Skipped when there is no recorded maker
     // to differ from, and when `payouts.dualControl` is off, for the same
     // reasons that check is conditional there.

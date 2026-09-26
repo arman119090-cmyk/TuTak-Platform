@@ -1,0 +1,187 @@
+name: AI review (advisory)
+
+# Second-opinion review of every pull request by Kimi and DeepSeek, plus a
+# weekly full-module audit of the money code.
+#
+# Honest by construction. Each model step ends in exactly one STATUS
+# (scripts/ai-review.mjs): REVIEW_COMPLETE, BLOCKED_BY_API_KEY,
+# PROVIDER_FAILURE, INVALID_RESPONSE, NOTHING_TO_REVIEW or NOT_RUN. The
+# status goes to the step summary, to the step outputs and into a sticky PR
+# comment. The final "Verdict" step is GREEN only when BOTH models report
+# REVIEW_COMPLETE (or both NOTHING_TO_REVIEW for a docs-only diff); anything
+# else fails this job on purpose, so a missing key or a dead provider never
+# looks like a clean review.
+#
+# Advisory, not a gate: this job is NOT in the "Protect main" ruleset's
+# required checks and MUST NOT be added there while KIMI_API_KEY /
+# DEEPSEEK_API_KEY are absent from GitHub Secrets — it would block every PR.
+# The repository holds no keys (AGENTS.md §4); forks never receive secrets.
+# Neither model sees the other's answer (separate steps, separate prompts).
+#
+# Output per model: one sticky PR comment (findings table) and JSON files
+# (scripts/ai-review.mjs FINDING_SCHEMA + <provider>-<mode>.status.json)
+# uploaded as an artifact for a later decision engine. Nothing here merges,
+# deploys or marks anything verified. The script itself is covered by
+# scripts/ai-review.test.mjs (offline, no model calls) — run first below.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Weekly full audit of the money modules, Monday 04:23 UTC.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIMI_BASE_URL: ${{ vars.KIMI_BASE_URL || 'https://api.moonshot.ai/v1' }}
+  KIMI_MODEL: ${{ vars.KIMI_MODEL || 'kimi-k3' }}
+  DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL || 'https://api.deepseek.com' }}
+  DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
+  AI_REVIEW_MAX_INPUT_CHARS: ${{ vars.AI_REVIEW_MAX_INPUT_CHARS || '120000' }}
+  AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.AI_REVIEW_MAX_OUTPUT_TOKENS || '4000' }}
+
+jobs:
+  review:
+    name: Kimi + DeepSeek review
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Kimi may take up to AI_REVIEW_TIMEOUT_MS (5 min) per attempt, 3 attempts.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Self-test of the review script (offline, no model calls)
+        run: node --test scripts/ai-review.test.mjs
+      - name: Diff against the base branch
+        run: |
+          git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1
+          git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" \
+            -- . ':(exclude)pnpm-lock.yaml' ':(exclude)**/*.snap' ':(exclude)docs/**' \
+            > /tmp/pr.diff
+          wc -c /tmp/pr.diff
+      - name: Kimi (status in step summary; never fails by itself)
+        id: kimi
+        env:
+          AI_REVIEW_PROVIDER: kimi
+          AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
+          # Moonshot fixes the temperature per model (kimi-k3: 1.0) and rejects
+          # any explicit value with 400 — omit the field for Kimi only.
+          AI_REVIEW_TEMPERATURE: ''
+          # kimi-k3 always reasons and its reasoning_content counts toward
+          # max_tokens (docs: "set max_tokens >= 16000"); with the shared 4000
+          # cap the answer came back empty (INVALID_RESPONSE). At the default
+          # reasoning_effort "max" a 33k-token diff reasoned for over 5 minutes
+          # and the request died on Node fetch's 300 s header timeout — so the
+          # effort is "low" and the timeout stays at the 300 s that fetch can
+          # actually honour for a non-streaming call.
+          AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.KIMI_MAX_OUTPUT_TOKENS || '32000' }}
+          AI_REVIEW_REASONING_EFFORT: ${{ vars.KIMI_REASONING_EFFORT || 'low' }}
+          AI_REVIEW_TIMEOUT_MS: ${{ vars.KIMI_TIMEOUT_MS || '300000' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/ai-review.mjs /tmp/pr.diff
+      - name: DeepSeek (status in step summary; never fails by itself)
+        id: deepseek
+        env:
+          AI_REVIEW_PROVIDER: deepseek
+          AI_REVIEW_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ env.DEEPSEEK_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.DEEPSEEK_MODEL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/ai-review.mjs /tmp/pr.diff
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-review-findings-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: ai-review-out/
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: "Verdict: GREEN only if both models returned REVIEW_COMPLETE (Kimi=${{ steps.kimi.outputs.status || 'NOT_RUN' }}, DeepSeek=${{ steps.deepseek.outputs.status || 'NOT_RUN' }})"
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/ai-review.mjs --verdict ai-review-out kimi,deepseek
+
+  weekly-audit:
+    name: Weekly full audit of the money modules
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - apps/api/src/modules/ledger
+          - apps/api/src/modules/partner-settlements
+          - apps/api/src/modules/payouts
+          - apps/api/src/modules/purchase-intents
+          - apps/api/src/modules/partner-orders
+          - apps/api/src/modules/commission-distribution
+          - apps/api/src/modules/wallet
+          - apps/api/src/modules/referral
+          - apps/api/src/modules/payments
+          - apps/api/src/modules/psp
+          - apps/api/src/modules/auth
+          - apps/api/src/modules/security
+          - apps/api/prisma/migrations
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Self-test of the review script (offline, no model calls)
+        run: node --test scripts/ai-review.test.mjs
+      - name: Kimi
+        id: kimi
+        env:
+          AI_REVIEW_PROVIDER: kimi
+          AI_REVIEW_MODE: full
+          AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
+          AI_REVIEW_TEMPERATURE: ''
+          AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.KIMI_MAX_OUTPUT_TOKENS || '32000' }}
+          AI_REVIEW_REASONING_EFFORT: ${{ vars.KIMI_REASONING_EFFORT || 'low' }}
+          AI_REVIEW_TIMEOUT_MS: ${{ vars.KIMI_TIMEOUT_MS || '300000' }}
+        run: node scripts/ai-review.mjs "${{ matrix.module }}"
+      - name: DeepSeek
+        id: deepseek
+        env:
+          AI_REVIEW_PROVIDER: deepseek
+          AI_REVIEW_MODE: full
+          AI_REVIEW_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ env.DEEPSEEK_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.DEEPSEEK_MODEL }}
+        run: node scripts/ai-review.mjs "${{ matrix.module }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-audit-${{ github.run_id }}-${{ strategy.job-index }}
+          path: ai-review-out/
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: "Verdict: GREEN only if both models returned REVIEW_COMPLETE (Kimi=${{ steps.kimi.outputs.status || 'NOT_RUN' }}, DeepSeek=${{ steps.deepseek.outputs.status || 'NOT_RUN' }})"
+        if: always()
+        env:
+          AI_REVIEW_MODE: full
+        run: node scripts/ai-review.mjs --verdict ai-review-out kimi,deepseek

@@ -19,6 +19,8 @@ import { CreatePurchaseIntentScreen } from '../../presentation/screens/purchase-
 import { ProviderPaymentScreen } from '../../presentation/screens/purchase-intent/ProviderPaymentScreen';
 import { PurchaseIntentStatusScreen } from '../../presentation/screens/purchase-intent/PurchaseIntentStatusScreen';
 import { PartnerDetailScreen } from '../../presentation/screens/partners/PartnerDetailScreen';
+import { CheckoutScreen } from '../../presentation/screens/partner-order/CheckoutScreen';
+import { MyOrdersScreen } from '../../presentation/screens/partner-order/MyOrdersScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -131,6 +133,16 @@ export function RootNavigator() {
         name="PartnerDetail"
         component={PartnerDetailScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Checkout"
+        component={CheckoutScreen}
+        options={{ title: t('partnerOrder.checkoutTitle'), headerShown: false }}
+      />
+      <Stack.Screen
+        name="MyOrders"
+        component={MyOrdersScreen}
+        options={{ title: t('partnerOrder.myOrdersTitle'), headerShown: false }}
       />
     </Stack.Navigator>
   );

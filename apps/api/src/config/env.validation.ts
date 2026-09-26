@@ -251,22 +251,27 @@ export function assertProviderPaymentsConfigured(config: Record<string, unknown>
   }
 
   // Real money needs a human on the other end of the alert channel. Without
-  // a webhook, a callback the worker gave up on — a customer who paid for a
+  // one, a callback the worker gave up on — a customer who paid for a
   // purchase that never completed — goes to a console line in a container
   // nobody is attached to. `AlertsModule` only *warns* about a missing
-  // webhook, because the ordinary till route must not go down over a
+  // channel, because the ordinary till route must not go down over a
   // notification endpoint; the provider route is the one where money can be
   // taken and stay unaccounted for, so it is the one that must not start blind.
-  const webhook =
-    typeof config.ALERT_WEBHOOK_URL === 'string' ? config.ALERT_WEBHOOK_URL.trim() : '';
-  if (webhook === '') {
+  //
+  // Either real channel satisfies this: a webhook, or a Telegram bot + chat
+  // (both halves — half a pair is the console in disguise, see AlertsModule).
+  const str = (name: string) => (typeof config[name] === 'string' ? (config[name] as string).trim() : '');
+  const webhook = str('ALERT_WEBHOOK_URL');
+  const telegram = str('ALERT_TELEGRAM_BOT_TOKEN') !== '' && str('ALERT_TELEGRAM_CHAT_ID') !== '';
+  if (webhook === '' && !telegram) {
     throw new Error(
-      'TUTAK_PSP_ENABLED=true but ALERT_WEBHOOK_URL not set. A dead-lettered payment callback ' +
-        'would be logged and nobody told. Set the webhook and prove it with `pnpm alert:verify`, ' +
+      'TUTAK_PSP_ENABLED=true but no alert channel is set: neither ALERT_WEBHOOK_URL nor ' +
+        'ALERT_TELEGRAM_BOT_TOKEN + ALERT_TELEGRAM_CHAT_ID. A dead-lettered payment callback ' +
+        'would be logged and nobody told. Set one and prove it with `pnpm alert:verify`, ' +
         'or turn the route off.',
     );
   }
-  if (!/^https:\/\//.test(webhook)) {
+  if (webhook !== '' && !/^https:\/\//.test(webhook)) {
     throw new Error(
       `ALERT_WEBHOOK_URL must be an https URL when TUTAK_PSP_ENABLED=true (got "${webhook}").`,
     );

@@ -15,6 +15,7 @@ import { JakoWingMark } from '../../components/V2NavIcon';
 import { purchaseIntentApi } from '../../../data/api/purchaseIntentApi';
 import { partnersApi } from '../../../data/api/partnersApi';
 import { walletApi } from '../../../data/api/walletApi';
+import { customerBalanceApi } from '../../../data/api/customerBalanceApi';
 import { describeApiError } from '../../../data/api/errors';
 import { formatAmd, formatPoints } from '../../utils/format';
 
@@ -46,6 +47,9 @@ export function CreatePurchaseIntentScreen() {
 
   const [grossAmount, setGrossAmount] = useState('');
   const [bonusAmount, setBonusAmount] = useState('');
+  // Partner Commerce v2 (Q1 = C): the customer's real TuTak money — a
+  // separate source from the discount, shown and sent separately.
+  const [moneyAmount, setMoneyAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -58,6 +62,7 @@ export function CreatePurchaseIntentScreen() {
 
   const { data: wallet } = useQuery({ queryKey: ['wallet'], queryFn: walletApi.getMyWallet });
   const availableBonus = wallet?.availableBonus ?? '0';
+  const { data: moneyBalance } = useQuery({ queryKey: ['customer-balance'], queryFn: customerBalanceApi.getMyBalance });
 
   const create = useMutation({
     mutationFn: () =>
@@ -66,6 +71,7 @@ export function CreatePurchaseIntentScreen() {
         partnerBranchId,
         grossAmount,
         bonusAmountRequested: bonusAmount || undefined,
+        tutakMoneyAmount: moneyAmount || undefined,
       }),
     onSuccess: (intent) => {
       navigation.replace('PurchaseIntentStatus', { intent });
@@ -186,6 +192,18 @@ export function CreatePurchaseIntentScreen() {
         hint={t('qr.availableToSpend', { amount: formatPoints(availableBonus) })}
       />
 
+      <TextField
+        label={t('purchaseIntent.tutakMoneyAmount')}
+        keyboardType="decimal-pad"
+        value={moneyAmount}
+        onChangeText={setMoneyAmount}
+        placeholder="0"
+        hint={t('purchaseIntent.tutakMoneyBalance', { amount: formatAmd(moneyBalance?.balance ?? '0') })}
+        error={
+          Number(moneyAmount || 0) > Number(moneyBalance?.balance ?? 0) ? t('purchaseIntent.notEnoughMoney') : undefined
+        }
+      />
+
       {error ? (
         <Text style={[text.bodySm, { color: color.dangerText, marginTop: space[2] }]}>{error}</Text>
       ) : null}
@@ -196,10 +214,10 @@ export function CreatePurchaseIntentScreen() {
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
             <Text style={[text.bodySm, { color: color.textSecondary }]}>
-              {t('purchaseIntent.youPay')}
+              {t('purchaseIntent.externalAmount')}
             </Text>
             <Text style={[text.headline, { color: color.textPrimary }]}>
-              {formatAmd(Math.max(0, Number(grossAmount || 0) - Number(bonusAmount || 0)))}
+              {formatAmd(Math.max(0, Number(grossAmount || 0) - Number(bonusAmount || 0) - Number(moneyAmount || 0)))}
             </Text>
           </View>
         </Surface>

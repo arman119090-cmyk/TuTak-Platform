@@ -48,7 +48,8 @@ import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { QrPaymentsService } from '../modules/qr-payments/qr-payments.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
 import { RefundEngineService } from '../modules/payments/refund-engine.service';
-import { PayoutEngineService } from '../modules/payouts/payout-engine.service';
+import { PayoutHistoryService } from '../modules/payouts/payout-history.service';
+import { PartnerSettlementService } from '../modules/partner-settlements/partner-settlement.service';
 import { AcquirerSettlementService } from '../modules/payouts/acquirer-settlement.service';
 import { ReconciliationService } from '../modules/reconciliation/reconciliation.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
@@ -181,7 +182,8 @@ async function main() {
   const qrPayments = app.get(QrPaymentsService);
   const payments = app.get(PaymentEngineService);
   const refunds = app.get(RefundEngineService);
-  const payouts = app.get(PayoutEngineService);
+  const payouts = app.get(PayoutHistoryService);
+  const settlements = app.get(PartnerSettlementService);
   const acquirerSettlements = app.get(AcquirerSettlementService);
   const reconciliation = app.get(ReconciliationService);
   const outbox = app.get(OutboxService);
@@ -447,16 +449,14 @@ async function main() {
   }
 
   // A second administrator, so the demo can actually exercise the two-person
-  // rule on payouts. With one admin the rule is invisible — and a control
-  // nobody has seen working is a control nobody trusts when it fires.
+  // rule on partner settlements. With one admin the rule is invisible — and a
+  // control nobody has seen working is a control nobody trusts when it fires.
   //
-  // SUPER_ADMIN, not ADMIN: confirming a payout needs PAYOUT_MANAGE, which
-  // is deliberately not granted to ADMIN because wiring money to an external
-  // account is the least reversible action here. The consequence is worth
-  // stating plainly — running with dual control means the business needs
-  // *two* super administrators, or no payout can ever be confirmed. An ADMIN
-  // approver looks like it should work and is refused by the permission
-  // guard before the two-person rule is even reached.
+  // The engine refuses the maker as checker, so the business needs *two*
+  // people holding SETTLEMENT_MANAGE (ADMIN or SUPER_ADMIN — see
+  // `role-permissions.ts`), or no settlement can ever be approved. This one
+  // is a SUPER_ADMIN so the demo also has a second holder of PAYOUT_MANAGE
+  // for confirming partner collections.
   const approver = await prisma.user.upsert({
     where: { phone: '+37400000001' },
     update: { passwordHash, mustChangePassword: false },
@@ -471,7 +471,7 @@ async function main() {
     },
   });
   await grantRole(approver.id, RoleName.SUPER_ADMIN);
-  log.log('Second administrator created for payout approval.');
+  log.log('Second administrator created for settlement approval.');
 
   // ── QR payments: the loyalty loop ──────────────────────────────────────
 
@@ -588,22 +588,39 @@ async function main() {
     idempotencyKey: 'demo-refund-1',
   });
 
-  log.log('Requesting a payout…');
+  log.log('Settling the café…');
+  // The one way a partner is paid: a settlement claims everything the café
+  // is owed so far, a second administrator approves it, and "paid" posts.
+  // The legacy request/confirm payout engine was retired on 26.09.2026.
   const available = await payouts.availableBalance(cafe.id);
-  const payoutAmount = available.greaterThan(20_000)
-    ? new Decimal('20000')
-    : available.dividedBy(2);
-  if (payoutAmount.greaterThan(0)) {
-    const payout = await payouts.requestPayout({
-      partnerId: cafe.id,
-      amount: payoutAmount.toFixed(4),
-      actorId: admin?.id ?? owner.id,
-      idempotencyKey: 'demo-payout-1',
+  if (available.greaterThan(0)) {
+    const maker = admin?.id ?? owner.id;
+    // Approval snapshots where the money goes, so the café needs a bank
+    // account on file first — the same step a real partner goes through.
+    await prisma.partnerBankAccount.create({
+      data: {
+        partnerId: cafe.id,
+        beneficiaryName: 'Cafe Yerevan LLC',
+        accountNumber: 'AM00 0000 0000 0000 0117',
+        bankName: 'Demo Bank',
+        createdByUserId: maker,
+      },
     });
-    // Confirmed by the *other* administrator. Passing the requester here
-    // would be rejected by the engine, which is the point: the demo data
-    // could not have been produced by one person acting alone.
-    await payouts.confirmPaid(payout.payoutId, 'DEMO-WIRE-000117', approver.id);
+    const draft = await settlements.createDraft({
+      partnerId: cafe.id,
+      actorId: maker,
+      periodStart: new Date(Date.now() - 30 * 24 * 3_600_000),
+      periodEnd: new Date(Date.now() + 1000),
+    });
+    await settlements.markReady(draft.id, { actorId: maker, documentNumber: 'DEMO-ACT-000117' });
+    // Approved by the *other* administrator. Passing the maker here would
+    // be rejected by the engine, which is the point: the demo data could
+    // not have been produced by one person acting alone.
+    await settlements.approve(draft.id, approver.id);
+    await settlements.markPaid(draft.id, {
+      actorId: approver.id,
+      bankTransferReference: 'DEMO-WIRE-000117',
+    });
   }
 
   // ── The acquirer pays us ───────────────────────────────────────────────
@@ -698,7 +715,7 @@ async function main() {
     payments: await prisma.payment.count(),
     settlements: await prisma.settlement.count(),
     refunds: await prisma.refund.count(),
-    payouts: await prisma.payout.count(),
+    partnerSettlements: await prisma.partnerSettlement.count(),
     transactions: await prisma.transaction.count(),
     evStations: await prisma.evStation.count(),
     reconciliationRuns: await prisma.reconciliationRun.count(),

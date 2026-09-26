@@ -6,6 +6,7 @@ import { EvChargingModule } from '../ev-charging/ev-charging.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { PayoutsModule } from '../payouts/payouts.module';
+import { PartnerOrdersModule } from '../partner-orders/partner-orders.module';
 import { PurchaseIntentsModule } from '../purchase-intents/purchase-intents.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { RetentionModule } from '../retention/retention.module';
@@ -17,6 +18,9 @@ import { EvSessionsService } from '../ev-charging/ev-sessions.service';
 import { OutboxService } from '../ledger/outbox.service';
 import { RefundEngineService } from '../payments/refund-engine.service';
 import { PartnerSettlementCheckService } from '../payouts/partner-settlement-check.service';
+import { PartnerOrderSlaSweepService } from '../partner-orders/partner-order-sla-sweep.service';
+import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
+import { EmployeeShiftsModule } from '../employee-shifts/employee-shifts.module';
 import { PurchaseIntentsService } from '../purchase-intents/purchase-intents.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { RetentionService } from '../retention/retention.service';
@@ -63,6 +67,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     LedgerModule,
     ...(cardPaymentsEnabled ? [PaymentsModule] : []),
     PayoutsModule,
+    PartnerOrdersModule,
+    EmployeeShiftsModule,
     PspModule,
     PurchaseIntentsModule,
     ReconciliationModule,
@@ -87,6 +93,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         DeferredBonusLotService,
         PurchaseIntentsService,
         PartnerSettlementCheckService,
+        PartnerOrderSlaSweepService,
+        EmployeeShiftService,
         PspAttemptAgeingService,
         PspCallbackWorkerService,
         // Only resolvable when PaymentsModule was actually imported above —
@@ -108,6 +116,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         deferredBonusLots: DeferredBonusLotService,
         purchaseIntents: PurchaseIntentsService,
         partnerSettlement: PartnerSettlementCheckService,
+        partnerOrderSla: PartnerOrderSlaSweepService,
+        employeeShifts: EmployeeShiftService,
         pspAgeing: PspAttemptAgeingService,
         pspCallbacks: PspCallbackWorkerService,
         refunds?: RefundEngineService,
@@ -123,6 +133,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
         deferredBonusLots,
         purchaseIntents,
         partnerSettlement,
+        partnerOrderSla,
+        employeeShifts,
         pspAgeing,
         pspCallbacks,
         refunds,

@@ -1,6 +1,6 @@
 import {
   LedgerAccountType,
-  PayoutStatus,
+  PartnerSettlementStatus,
   PostingDirection,
   PrismaClient,
   RoleName,
@@ -10,10 +10,10 @@ import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { OutboxService } from '../src/modules/ledger/outbox.service';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
 import { RefundEngineService } from '../src/modules/payments/refund-engine.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
 import { SettlementService } from '../src/modules/settlement/settlement.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { settlementSupport } from './support/settle';
 
 /**
  * Everything a partner is owed, rebuilt from postings alone.
@@ -35,7 +35,7 @@ describe('Partner balance reconstruction (integration)', () => {
   let prisma: PrismaClient;
   let payments: PaymentEngineService;
   let refunds: RefundEngineService;
-  let payouts: PayoutEngineService;
+  let settle: ReturnType<typeof settlementSupport>;
   let settlement: SettlementService;
   let ledger: LedgerService;
   let outbox: OutboxService;
@@ -45,7 +45,7 @@ describe('Partner balance reconstruction (integration)', () => {
     prisma = harness.prisma;
     payments = harness.app.get(PaymentEngineService);
     refunds = harness.app.get(RefundEngineService);
-    payouts = harness.app.get(PayoutEngineService);
+    settle = settlementSupport(harness.app, prisma);
     settlement = harness.app.get(SettlementService);
     ledger = harness.app.get(LedgerService);
     outbox = harness.app.get(OutboxService);
@@ -186,24 +186,23 @@ describe('Partner balance reconstruction (integration)', () => {
     }, new Decimal(0));
     expect(owed.toString()).toBe(grossNet.minus(refundedNet).toString());
 
-    // ── 5. A payout of everything owed ───────────────────────────────────
-    const requester = await superAdmin('+37477830002');
-    const confirmer = await superAdmin('+37477830003');
-    const requested = await payouts.requestPayout({
-      partnerId: partner.id,
-      amount: owed.toString(),
-      actorId: requester.id,
-      idempotencyKey: 'recon-payout-1',
+    // ── 5. A settlement of everything owed ───────────────────────────────
+    const maker = await superAdmin('+37477830002');
+    const checker = await superAdmin('+37477830003');
+    const paid = await settle.payEverything(partner.id, {
+      makerId: maker.id,
+      checkerId: checker.id,
+      bankTransferReference: 'BANKREF-1',
     });
-    await payouts.confirmPaid(requested.payoutId, 'BANKREF-1', confirmer.id);
+    // The settlement's own figure is the one reconstructed above.
+    expect(paid.netPayableAmount.toString()).toBe(owed.toString());
 
     await assertEveryAccountReconstructs();
     await assertBooksBalance();
 
     // The debt is gone, and it is gone because postings say so.
     expect((await replay(payable.id)).toString()).toBe('0');
-    const settled = await prisma.payout.findUniqueOrThrow({ where: { id: requested.payoutId } });
-    expect(settled.status).toBe(PayoutStatus.PAID);
+    expect(paid.status).toBe(PartnerSettlementStatus.PAID);
   });
 
   it('reconstructs after a refund that follows the payout', async () => {
@@ -233,15 +232,14 @@ describe('Partner balance reconstruction (integration)', () => {
     });
     const owed = (await replay(payable.id)).negated();
 
-    const requester = await superAdmin('+37477840001');
-    const confirmer = await superAdmin('+37477840002');
-    const payout = await payouts.requestPayout({
-      partnerId: partner.id,
-      amount: owed.toString(),
-      actorId: requester.id,
-      idempotencyKey: 'recon-payout-2',
+    const maker = await superAdmin('+37477840001');
+    const checker = await superAdmin('+37477840002');
+    const paid = await settle.payEverything(partner.id, {
+      makerId: maker.id,
+      checkerId: checker.id,
+      bankTransferReference: 'BANKREF-2',
     });
-    await payouts.confirmPaid(payout.payoutId, 'BANKREF-2', confirmer.id);
+    expect(paid.netPayableAmount.toString()).toBe(owed.toString());
     expect((await replay(payable.id)).toString()).toBe('0');
 
     const admin = await superAdmin('+37477840003');

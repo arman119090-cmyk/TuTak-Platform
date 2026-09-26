@@ -16,6 +16,7 @@ import { MediaStorageModule } from './infrastructure/media/media-storage.module'
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ClientIpThrottlerGuard } from './common/guards/client-ip-throttler.guard';
+import { EmergencyFreezeGuard } from './common/guards/emergency-freeze.guard';
 import { RequestContextMiddleware } from './common/observability/request-context.middleware';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -36,6 +37,8 @@ import { QrPaymentsModule } from './modules/qr-payments/qr-payments.module';
 import { EvChargingModule } from './modules/ev-charging/ev-charging.module';
 import { RoamingCpoModule } from './modules/roaming-cpo/roaming-cpo.module';
 import { CustomerBalanceModule } from './modules/customer-balance/customer-balance.module';
+import { PartnerOrdersModule } from './modules/partner-orders/partner-orders.module';
+import { EmployeeShiftsModule } from './modules/employee-shifts/employee-shifts.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
@@ -102,6 +105,8 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
     EvChargingModule,
     RoamingCpoModule,
     CustomerBalanceModule,
+    PartnerOrdersModule,
+    EmployeeShiftsModule,
     AdminModule,
     NotificationsModule,
     AnalyticsModule,
@@ -124,6 +129,9 @@ const cardPaymentsEnabled = process.env.CARD_PAYMENTS_ENABLED === 'true';
   ],
   providers: [
     { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
+    // Before authentication on purpose: a frozen platform answers "frozen",
+    // whoever is asking — see the guard's own docblock.
+    { provide: APP_GUARD, useClass: EmergencyFreezeGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },

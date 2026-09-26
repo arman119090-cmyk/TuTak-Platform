@@ -61,6 +61,10 @@ export interface ReconciliationRun {
   createdAt: string;
 }
 
+/**
+ * A row of the retired payout engine's history (read-only since 26.09.2026).
+ * Partners are paid through settlements now — see the settlements screen.
+ */
 export interface Payout {
   id: string;
   partnerId: string;
@@ -179,23 +183,6 @@ export const financeApi = {
   async partnerPayouts(partnerId: string): Promise<Payout[]> {
     const { data } = await httpClient.get(`/payouts/partners/${partnerId}`);
     return data.data;
-  },
-
-  async requestPayout(partnerId: string, amount: string, idempotencyKey: string) {
-    const { data } = await httpClient.post('/payouts', {
-      partnerId,
-      amount,
-      idempotencyKey,
-    });
-    return data.data;
-  },
-
-  async confirmPayout(payoutId: string, bankReference: string): Promise<void> {
-    await httpClient.post(`/payouts/${payoutId}/confirm`, { bankReference });
-  },
-
-  async failPayout(payoutId: string, failureReason: string): Promise<void> {
-    await httpClient.post(`/payouts/${payoutId}/fail`, { failureReason });
   },
 
   // ── Money arriving from a partner ──────────────────────────────────────
@@ -445,6 +432,18 @@ export const settlementAdminApi = {
 
   async cancel(id: string, reason: string) {
     const { data } = await httpClient.post(`/admin/partner-settlements/${id}/cancel`, { reason });
+    return data.data as PartnerSettlementDto;
+  },
+
+  /**
+   * Revoke an approval while it is provable that no money moved: the claims
+   * are released and the settlement becomes CANCELLED. No draft is made — the
+   * postings go into the next settlement drafted for the partner's period.
+   */
+  async revokeApproval(id: string, reason: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/revoke-approval`, {
+      reason,
+    });
     return data.data as PartnerSettlementDto;
   },
 };

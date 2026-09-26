@@ -233,6 +233,12 @@ export function SettingsScreen() {
             onPress={() => navigation.navigate('Referral')}
           />
           <ListRow
+            title={t('partnerOrder.myOrdersTitle')}
+            leading={<SettingIcon name="bag-handle-outline" />}
+            trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}
+            onPress={() => navigation.navigate('MyOrders')}
+          />
+          <ListRow
             title={t('settings.notifications')}
             leading={<SettingIcon name="notifications-outline" />}
             trailing={<Ionicons name="chevron-forward" size={18} color={color.textTertiary} />}

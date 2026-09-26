@@ -1,4 +1,4 @@
-import loadConfiguration, { AppConfig, assertPoolSplitSums } from './configuration';
+import loadConfiguration, { AppConfig, assertPartnerOrderPolicy, assertPoolSplitSums } from './configuration';
 
 /**
  * 2026-08-22 3-level referral rework: the pool split grew from four legs
@@ -77,6 +77,47 @@ describe('assertPoolSplitSums', () => {
     policy.poolReferrerL3Bps = 0;
     policy.poolTutakBps = 5000; // 2000 + 3000 + 0 + 0 + 0 + 5000 = 10000
     expect(() => assertPoolSplitSums(policy)).not.toThrow();
+  });
+});
+
+describe('assertPartnerOrderPolicy', () => {
+  const validPolicy = (): AppConfig['partnerOrderPolicy'] => ({
+    notSeenAlertMinutes: 5,
+    stockConfirmDeadlineMinutes: 30,
+    stockAlertRepeatMinutes: 5,
+    draftTtlHours: 24,
+    receiptReminderHours: 24,
+    receiptManualReviewHours: 48,
+    paymentIssueHours: 24,
+    cancellationClaimHours: 24,
+  });
+
+  it('accepts the default policy', () => {
+    expect(() => assertPartnerOrderPolicy(validPolicy())).not.toThrow();
+  });
+
+  it('rejects a zero cancellation-claim window (item 8)', () => {
+    const policy = validPolicy();
+    policy.cancellationClaimHours = 0;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/cancellationClaimHours/);
+  });
+
+  it('rejects a zero or negative SLA minute value', () => {
+    const policy = validPolicy();
+    policy.stockConfirmDeadlineMinutes = 0;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/stockConfirmDeadlineMinutes/);
+  });
+
+  it('rejects a non-integer timer', () => {
+    const policy = validPolicy();
+    policy.draftTtlHours = 1.5;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/draftTtlHours/);
+  });
+
+  it('rejects a manual-review deadline that is not after the reminder', () => {
+    const policy = validPolicy();
+    policy.receiptManualReviewHours = 24;
+    expect(() => assertPartnerOrderPolicy(policy)).toThrow(/receiptManualReviewHours/);
   });
 });
 

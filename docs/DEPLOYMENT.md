@@ -423,8 +423,14 @@ deploy are the ones you can still see afterwards.
 ## 5a. Alerts — who gets told when money is at risk
 
 Set `ALERT_WEBHOOK_URL` to a Slack/Mattermost/Discord incoming webhook, or to
-anything that accepts a JSON POST. Three events reach it, and they are the
-three that mean money is at risk while nothing else in the system notices:
+anything that accepts a JSON POST — **or** set `ALERT_TELEGRAM_BOT_TOKEN` and
+`ALERT_TELEGRAM_CHAT_ID` (both; half a pair is reported at startup and falls
+back to the console) to have the same alerts posted to a Telegram chat by a
+bot. When both a webhook and the Telegram pair are set, the webhook is used.
+The Telegram channel exists since 26.09.2026: production had the two
+variables set and nothing reading them, so every money alert until then went
+to the console. Three events reach the channel, and they are the three that
+mean money is at risk while nothing else in the system notices:
 
 | Event | What it means |
 |---|---|
@@ -439,7 +445,7 @@ not noise but an operator muting the channel, which is worse than no alerting
 because it still looks alive. Suppression state lives in Redis, so three
 replicas noticing the same problem produce one notification.
 
-Like tracing and unlike SMS, a missing webhook does **not** stop the process:
+Like tracing and unlike SMS, a missing channel does **not** stop the process:
 it warns at startup instead. Refusing to serve payments because a
 notification endpoint is unset would take the platform down at the exact
 moment someone was fixing the webhook.
@@ -453,8 +459,8 @@ script called it sent. Then confirm the message arrived where a human will
 see it at 3am, not in a channel nobody opens.
 
 **The provider route will not start without it.** With `TUTAK_PSP_ENABLED=true`
-the boot validation requires `ALERT_WEBHOOK_URL` (https), alongside the
-Idram credentials. The ordinary till route keeps the warn-and-continue
+the boot validation requires a real channel — `ALERT_WEBHOOK_URL` (https) or
+the complete Telegram pair — alongside the Idram credentials. The ordinary till route keeps the warn-and-continue
 behaviour above; the route where a customer's money can be taken and sit
 unaccounted for is the one that must not start blind — a dead-lettered
 payment callback with no webhook is a customer who paid for nothing, and

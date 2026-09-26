@@ -7,26 +7,22 @@ import { partnersApi } from '@/lib/api/partnersApi';
 import { useAuthStore } from '@/lib/stores/authStore';
 
 /**
- * The payouts screen: the least reversible thing this platform does.
+ * The payouts screen: what a partner is owed, the retired payout engine's
+ * history, and collections of what a partner owes TuTak.
  *
- * Two behaviours are pinned here. One is the retry that must not pay twice,
- * for the reason `refunds/page.test.tsx` sets out at length. The other is
- * narrower and was worse: confirming a payout asked for a bank reference with
- * `window.prompt(...) ?? 'unknown'`, so pressing Escape confirmed the
- * transfer anyway and recorded the reference as the literal word "unknown".
- *
- * Confirmation is the second half of the two-person rule. An operator who
- * dismisses the dialog has said no in the plainest way available to them, and
- * the screen was reading it as yes.
+ * Requesting and confirming payouts left this screen on 26.09.2026 with the
+ * engine behind them (a second path out of the partner's payable that the
+ * settlement engine could not see — the same earnings could be paid twice).
+ * What is pinned here: the history is shown read-only with no way to act on
+ * it, the operator is pointed at settlements, and the collection flow — the
+ * other direction of money, still recorded here — keeps its retry-safe key
+ * and its two-person rule.
  */
 
 jest.mock('@/lib/api/financeApi', () => ({
   financeApi: {
     partnerBalance: jest.fn(),
     partnerPayouts: jest.fn(),
-    requestPayout: jest.fn(),
-    confirmPayout: jest.fn(),
-    failPayout: jest.fn(),
     partnerCollections: jest.fn(),
     recordCollection: jest.fn(),
     confirmCollection: jest.fn(),
@@ -88,7 +84,7 @@ async function selectPartner() {
   // the rest of the screen never appears.
   await screen.findByRole('option', { name: 'Coffee Bar' });
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'partner-1' } });
-  await screen.findByText('Confirm');
+  await screen.findByText('requested');
 }
 
 describe('PayoutsPage', () => {
@@ -109,8 +105,6 @@ describe('PayoutsPage', () => {
     ]);
     mockedFinance.partnerBalance.mockResolvedValue({ availableBalance: '9000.00' });
     mockedFinance.partnerPayouts.mockResolvedValue([requested]);
-    mockedFinance.confirmPayout.mockResolvedValue(undefined);
-    mockedFinance.failPayout.mockResolvedValue(undefined);
     mockedFinance.partnerCollections.mockResolvedValue([]);
     mockedFinance.recordCollection.mockResolvedValue({
       collectionId: 'collection-1',
@@ -123,107 +117,36 @@ describe('PayoutsPage', () => {
     jest.restoreAllMocks();
   });
 
-  it('does not confirm a payout when the reference dialog is dismissed', async () => {
-    jest.spyOn(window, 'prompt').mockReturnValue(null);
-
+  it('shows the legacy history read-only: no request form, no confirm or fail buttons', async () => {
     renderPage();
     await selectPartner();
-    fireEvent.click(screen.getByText('Confirm'));
 
-    expect(window.prompt).toHaveBeenCalled();
-    await settle();
-    expect(mockedFinance.confirmPayout).not.toHaveBeenCalled();
+    // The row is there, with who asked for it…
+    expect(screen.getByText('Narek')).toBeTruthy();
+    expect(screen.getByText('5,000.00')).toBeTruthy();
+    // …and nothing to press. Even a SUPER_ADMIN cannot act on it from here:
+    // the API routes behind those buttons are gone.
+    expect(screen.queryByText('Request payout')).toBeNull();
+    expect(screen.queryByPlaceholderText('0.00')).toBeNull();
+    expect(screen.queryByRole('button', { name: /confirm the 5,000 payout/i })).toBeNull();
+    expect(screen.queryByText('Mark failed')).toBeNull();
+    expect(screen.queryByText('Confirm')).toBeNull();
   });
 
-  it('does not mark a payout failed when the reason dialog is dismissed', async () => {
-    jest.spyOn(window, 'prompt').mockReturnValue(null);
-
+  it('points the operator at settlements as the way to pay a partner', async () => {
     renderPage();
     await selectPartner();
-    fireEvent.click(screen.getByText('Mark failed'));
 
-    await settle();
-    expect(mockedFinance.failPayout).not.toHaveBeenCalled();
+    expect(await screen.findByText(/to pay this partner, draft a settlement/i)).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Settlements' }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/settlements');
   });
 
-  it('refuses a blank bank reference and says why', async () => {
-    // Pressing OK on an empty box is not the same as cancelling, so it earns
-    // an explanation rather than silence.
-    jest.spyOn(window, 'prompt').mockReturnValue('   ');
-
-    renderPage();
-    await selectPartner();
-    fireEvent.click(screen.getByText('Confirm'));
-
-    await settle();
-    expect(mockedFinance.confirmPayout).not.toHaveBeenCalled();
-    expect(await screen.findByText(/bank reference is required/i)).toBeTruthy();
-  });
-
-  it('confirms with the reference the operator typed, trimmed', async () => {
-    jest.spyOn(window, 'prompt').mockReturnValue('  SWIFT-99120  ');
-
-    renderPage();
-    await selectPartner();
-    fireEvent.click(screen.getByText('Confirm'));
-
-    await waitFor(() =>
-      expect(mockedFinance.confirmPayout).toHaveBeenCalledWith('payout-1', 'SWIFT-99120'),
-    );
-  });
-
-  it('does not fire a second confirm request while the first is still in flight', async () => {
-    // Independent audit, GitHub issue #28: unlike every other money-moving
-    // control on this screen, Confirm/Mark-failed had no `isPending` guard —
-    // a double-click (or an impatient retry before the first request even
-    // returned) could fire a second POST to `/payouts/:id/confirm`. The
-    // dialog itself is a one-time synchronous gate; it does nothing to stop
-    // a second click once the request it started is merely slow.
-    jest.spyOn(window, 'prompt').mockReturnValue('SWIFT-1');
-    let resolveConfirm: (() => void) | undefined;
-    mockedFinance.confirmPayout.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveConfirm = () => resolve();
-        }),
-    );
-
-    renderPage();
-    await selectPartner();
-    fireEvent.click(screen.getByText('Confirm'));
-    await settle();
-    expect(mockedFinance.confirmPayout).toHaveBeenCalledTimes(1);
-
-    // The button must now be disabled while the request is still in flight.
-    const button = await screen.findByText('Confirming…');
-    fireEvent.click(button);
-    await settle();
-    expect(mockedFinance.confirmPayout).toHaveBeenCalledTimes(1);
-
-    resolveConfirm?.();
-    await settle();
-  });
-
-  it('retries a timed-out payout request with the key the first attempt used', async () => {
-    mockedFinance.requestPayout
-      .mockRejectedValueOnce(new Error('timeout of 15000ms exceeded'))
-      .mockResolvedValueOnce({ payoutId: 'payout-2' });
-
+  it('shows what the partner is owed', async () => {
     renderPage();
     await selectPartner();
 
-    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '1500' } });
-    fireEvent.click(screen.getByText('Request payout'));
-    await screen.findByText('timeout of 15000ms exceeded');
-
-    fireEvent.click(screen.getByText('Request payout'));
-    await waitFor(() => expect(mockedFinance.requestPayout).toHaveBeenCalledTimes(2));
-
-    const [, , firstKey] = mockedFinance.requestPayout.mock.calls[0]!;
-    const [, , secondKey] = mockedFinance.requestPayout.mock.calls[1]!;
-
-    expect(firstKey).toBeTruthy();
-    expect(secondKey).toBe(firstKey);
+    expect(await screen.findByText('9,000.00 AMD')).toBeTruthy();
   });
 
   // ── Collections: the other settlement direction ──────────────────────
@@ -320,9 +243,8 @@ describe('PayoutsPage', () => {
       confirmedByName: null,
     };
 
-    // `selectPartner()` waits for the payouts table's own "Confirm" button,
-    // which collides once a collection also has one on screen — so these two
-    // pick the partner directly rather than reusing that shared helper.
+    // `selectPartner()` waits for the legacy payout row; these two wait for
+    // the collection row instead, which is what they are about.
     const selectPartnerForCollections = async () => {
       await screen.findByRole('option', { name: 'Coffee Bar' });
       fireEvent.change(screen.getByRole('combobox'), { target: { value: 'partner-1' } });

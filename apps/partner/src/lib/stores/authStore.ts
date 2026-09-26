@@ -109,6 +109,22 @@ export function getPrimaryPartnerId(user: AuthenticatedUserDto | null): string |
   return null;
 }
 
+export function hasPermission(user: AuthenticatedUserDto | null, permission: string): boolean {
+  return Boolean(user?.permissions?.includes(permission));
+}
+
+/**
+ * The permissions whose actions need an active shift (QR confirm/reject/
+ * refund; external-payment confirmation, returns and cost claims on online
+ * orders). Whoever holds one of them manages their own shift — the same
+ * rule the API enforces on /shifts (`RequireAnyPermission`).
+ */
+export const SHIFT_PERMISSIONS = ['PURCHASE_INTENT_CONFIRM', 'PARTNER_ORDER_MANAGE'] as const;
+
+export function canManageShift(user: AuthenticatedUserDto | null): boolean {
+  return SHIFT_PERMISSIONS.some((p) => hasPermission(user, p)) && getPrimaryPartnerId(user) !== null;
+}
+
 /**
  * True when `user` holds `PARTNER_OWNER` scoped to `partnerId` specifically.
  * Mirrors `assertPartnerOwner` on the API (`common/auth/partner-scope.ts`) —

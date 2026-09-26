@@ -81,6 +81,7 @@ function purchaseFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseIn
     status: PurchaseIntentStatus.CONFIRMED,
     grossAmount: '10000',
     bonusAmountRequested: '0',
+    tutakMoneyAmount: '0',
     ordinaryPaymentRemainder: '10000',
     refundedAmount: '0',
     // Added by the purchase-intent work this screen now sits alongside: the

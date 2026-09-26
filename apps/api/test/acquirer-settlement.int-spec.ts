@@ -2,11 +2,11 @@ import { ConflictException } from '@nestjs/common';
 import { LedgerAccountType, PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
 import { AcquirerSettlementService } from '../src/modules/payouts/acquirer-settlement.service';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { settlementSupport } from './support/settle';
 
 /**
  * The acquirer paying the platform.
@@ -24,7 +24,7 @@ describe('AcquirerSettlementService (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
   let payments: PaymentEngineService;
-  let payouts: PayoutEngineService;
+  let payout: ReturnType<typeof settlementSupport>;
   let acquirer: AcquirerSettlementService;
   let ledger: LedgerService;
 
@@ -32,7 +32,7 @@ describe('AcquirerSettlementService (integration)', () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     payments = harness.app.get(PaymentEngineService);
-    payouts = harness.app.get(PayoutEngineService);
+    payout = settlementSupport(harness.app, prisma);
     acquirer = harness.app.get(AcquirerSettlementService);
     ledger = harness.app.get(LedgerService);
   });
@@ -200,16 +200,10 @@ describe('AcquirerSettlementService (integration)', () => {
     // The acquirer pays the platform everything it captured.
     await settle('10000', 'REMIT-CYCLE', 'acq-cycle');
 
-    // The platform pays the partner everything it owes them, and the bank
-    // confirms the transfer.
-    const owed = await payouts.availableBalance(partner.id);
-    const payout = await payouts.requestPayout({
-      partnerId: partner.id,
-      amount: owed.toFixed(4),
-      actorId: 'admin-1',
-      idempotencyKey: 'acq-cycle-payout',
-    });
-    await payouts.confirmPaid(payout.payoutId, 'BANK-CYCLE', 'admin-2');
+    // The platform pays the partner everything it owes them — one
+    // settlement, marked paid on the bank's confirmation.
+    const paid = await payout.payEverything(partner.id, { bankTransferReference: 'BANK-CYCLE' });
+    expect(paid.netPayableAmount.toFixed(4)).toBe('9750.0000');
 
     expect(await balanceOf(LedgerAccountType.PSP_RECEIVABLE)).toBe('0.0000');
     expect(await balanceOf(LedgerAccountType.BANK_CLEARING)).toBe('0.0000');

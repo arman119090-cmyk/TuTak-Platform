@@ -151,6 +151,19 @@ export function PurchaseIntentStatusScreen() {
             </Surface>
           ) : null}
 
+          {Number(intent.tutakMoneyAmount ?? 0) > 0 ? (
+            <Surface style={{ width: '100%', marginTop: space[3] }}>
+              <View style={styles.row}>
+                <Text style={[text.bodySm, { color: color.textSecondary }]}>
+                  {t('purchaseIntent.tutakMoneyAmount')}
+                </Text>
+                <Text style={[text.headline, { color: color.textPrimary }]}>
+                  −{formatAmd(intent.tutakMoneyAmount)}
+                </Text>
+              </View>
+            </Surface>
+          ) : null}
+
           <View style={{ width: '100%', marginTop: space[8] }}>
             <Button
               label={t('common.done')}

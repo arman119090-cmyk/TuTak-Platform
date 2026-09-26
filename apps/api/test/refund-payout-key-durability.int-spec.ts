@@ -2,9 +2,9 @@ import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
 import { RefundEngineService } from '../src/modules/payments/refund-engine.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { settlementSupport } from './support/settle';
 
 /**
  * The same crash window, on the two money paths that are not payments.
@@ -15,30 +15,35 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  * then does the work again. Capture is now protected by a unique index on
  * the payment itself.
  *
- * `RefundEngineService` and `PayoutEngineService` call the same
- * `IdempotencyService` and carry no such key. Both hand money outward — a
- * duplicated refund pays a customer twice, a duplicated payout pays a
- * partner twice — so the question is not academic.
+ * `RefundEngineService` calls the same `IdempotencyService` and carries no
+ * such key. It hands money outward — a duplicated refund pays a customer
+ * twice — so the question is not academic. It has a *bound* that a duplicate
+ * cannot exceed (what remains refundable on the payment), which makes a
+ * replay bounded rather than unlimited, and that is not the same as safe: an
+ * operator who authorised one 500 refund and got two has given away 1,000,
+ * and every amount of it was "within bounds".
  *
- * Both have a *bound* that a duplicate cannot exceed: a refund is capped by
- * what remains refundable on the payment, a payout by what the partner is
- * owed. That makes a replay bounded rather than unlimited, which is not the
- * same as safe: an operator who authorised one 500 refund and got two has
- * given away 1,000, and every amount of it was "within bounds".
+ * The other outward path used to be the legacy payout engine, with the same
+ * lost-record window. It was retired on 26.09.2026 (Launch Readiness P1) and
+ * a partner is now paid only by `PartnerSettlementService.markPaid`, which
+ * needs no idempotency record at all: the claim is a conditional status
+ * update inside the transaction that posts, so a retried "paid" — whatever
+ * key it carries — finds nothing left to claim and posts nothing. The second
+ * describe pins that.
  */
 describe('Refund and payout key durability (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
   let payments: PaymentEngineService;
   let refunds: RefundEngineService;
-  let payouts: PayoutEngineService;
+  let settle: ReturnType<typeof settlementSupport>;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     payments = harness.app.get(PaymentEngineService);
     refunds = harness.app.get(RefundEngineService);
-    payouts = harness.app.get(PayoutEngineService);
+    settle = settlementSupport(harness.app, prisma);
   });
 
   afterAll(async () => {
@@ -137,31 +142,40 @@ describe('Refund and payout key durability (integration)', () => {
     });
   });
 
-  describe('a payout whose idempotency record was lost', () => {
-    it('does not pay the partner a second time', async () => {
+  describe('a settlement whose "paid" response was lost', () => {
+    it('does not pay the partner a second time when "paid" is retried', async () => {
       const { partner } = await capturedPayment();
-      const key = 'payout-lost-record';
 
-      const { user: operator } = await createCustomer(prisma);
-      const first = await payouts.requestPayout({
-        partnerId: partner.id,
-        amount: '100.00',
-        actorId: operator.id,
-        idempotencyKey: key,
+      const paid = await settle.payEverything(partner.id, { bankTransferReference: 'BANK-LOST-1' });
+      expect(paid.status).toBe('PAID');
+
+      // The operator never saw the response and presses "paid" again, with
+      // the same reference and with a different one. Neither pays.
+      const checker = await createCustomer(prisma);
+      for (const reference of ['BANK-LOST-1', 'BANK-LOST-2']) {
+        await expect(
+          settle.engine.markPaid(paid.id, { actorId: checker.user.id, bankTransferReference: reference }),
+        ).rejects.toThrow(/Settlement is PAID/);
+      }
+
+      await expect(
+        prisma.ledgerTransaction.count({
+          where: { kind: 'partner.settlement.paid', sourceType: 'PartnerSettlement', sourceId: paid.id },
+        }),
+      ).resolves.toBe(1);
+      const payable = await prisma.ledgerAccount.findFirstOrThrow({
+        where: { type: 'PARTNER_PAYABLE', partnerId: partner.id },
       });
+      expect(payable.balance.toFixed(4)).toBe('0.0000');
+      const stored = await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: paid.id } });
+      expect(stored.bankTransferReference).toBe('BANK-LOST-1');
 
-      const removed = await prisma.idempotencyRecord.deleteMany({ where: { key } });
-      expect(removed.count).toBe(1);
-
-      const retry = await payouts.requestPayout({
-        partnerId: partner.id,
-        amount: '100.00',
-        actorId: operator.id,
-        idempotencyKey: key,
-      });
-
-      expect(retry.payoutId).toBe(first.payoutId);
-      await expect(prisma.payout.count({ where: { partnerId: partner.id } })).resolves.toBe(1);
+      const [sums] = await prisma.$queryRaw<{ difference: Decimal }[]>`
+        select coalesce(sum(case when direction = 'DEBIT' then amount else -amount end), 0)
+          as difference
+        from ledger_postings
+      `;
+      expect(new Decimal(sums?.difference ?? 0).toFixed(4)).toBe('0.0000');
     });
   });
 });

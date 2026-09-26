@@ -551,8 +551,8 @@ export class RefundEngineService {
    * difference from the partner.
    *
    * Nothing was broken by this. The ledger balances, the postings are
-   * correct, and `requestPayout` will refuse the partner while the balance
-   * is against them. What was missing is the part where anyone finds out:
+   * correct, and a settlement draft will refuse the partner while the
+   * balance is against them (`PartnerSettlementService.createDraft`). What was missing is the part where anyone finds out:
    * the money is outside the platform and only a person can get it back.
    * Recovering it is a conversation, and a conversation nobody knows to have
    * is a write-off.

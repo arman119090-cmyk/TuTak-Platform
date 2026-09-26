@@ -53,6 +53,11 @@ export enum BonusEntryType {
   RESERVE_RELEASE = 'RESERVE_RELEASE',
   /** Pending → available, when the cooling-off window on an accrual ends. */
   PENDING_PROMOTION = 'PENDING_PROMOTION',
+  /**
+   * Part of a new accrual taken to repay a referral share of a returned
+   * purchase the user had already spent (Q8) — shown next to the accrual.
+   */
+  WITHHOLDING = 'WITHHOLDING',
 }
 
 /**

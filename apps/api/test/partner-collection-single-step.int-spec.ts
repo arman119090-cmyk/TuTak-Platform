@@ -14,9 +14,8 @@ import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
  *
  * This needs its own harness because the config flag is read once when the
  * app boots (`ConfigModule.forRoot`), not per request — see
- * `payout-engine.int-spec.ts` for the equivalent split on the payout side,
- * which does not exist today only because nothing there yet exercises the
- * flag off. `PAYOUT_DUAL_CONTROL` is set before `createTestHarness()` runs
+ * `partner-commerce-settlement.int-spec.ts` for the settlement side, where
+ * the flag is only ever exercised on. `PAYOUT_DUAL_CONTROL` is set before `createTestHarness()` runs
  * and restored afterwards so no other suite in the same test run observes
  * it.
  */

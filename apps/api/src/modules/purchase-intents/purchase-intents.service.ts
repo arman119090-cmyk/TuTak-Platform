@@ -10,13 +10,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
+  FinancialPolicyVersion,
   ContributionRuleKind,
   PaymentRoute,
   UnitOfMeasure,
-  BonusEntryType,
   LedgerAccountType,
   PostingDirection,
   Prisma,
+  PurchaseIntent,
   PurchaseIntentStatus,
   TransactionType,
 } from '@prisma/client';
@@ -26,19 +27,17 @@ import { AppConfig } from '../../config/configuration';
 import { MONEY_SCALE, parseMoney, parsePositiveMoney, roundCharge } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CommissionDistributionService } from '../commission-distribution/commission-distribution.service';
+import { CommerceLedgerService } from '../commerce-ledger/commerce-ledger.service';
+import { EmployeeShiftService } from '../employee-shifts/employee-shift.service';
 import { MediaViewService } from '../media/media-view.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
-import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { contributionForPurchase } from '../partners/contribution/contribution-rule';
 import { PartnerContributionRuleService } from '../partners/contribution/partner-contribution-rule.service';
 import { PartnersService } from '../partners/partners.service';
 import { MONEY_MAY_HAVE_MOVED } from '../psp/psp-attempt-safety';
-import {
-  CURRENT_REFERRAL_PROGRAM_VERSION,
-  ReferralChainLevel,
-  ReferralService,
-} from '../referral/referral.service';
+import { FraudDetectionService } from '../security/fraud-detection.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { WalletService } from '../wallet/wallet.service';
 import { ApprovePurchaseIntentDto } from './dto/approve-purchase-intent.dto';
@@ -196,18 +195,20 @@ export class PurchaseIntentsService {
     private readonly partnersService: PartnersService,
     private readonly contributionRules: PartnerContributionRuleService,
     private readonly transactionsService: TransactionsService,
-    private readonly referralService: ReferralService,
-    private readonly deferredBonusLots: DeferredBonusLotService,
     private readonly ledger: LedgerService,
+    private readonly distribution: CommissionDistributionService,
+    private readonly commerceLedger: CommerceLedgerService,
+    private readonly shifts: EmployeeShiftService,
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly media: MediaViewService,
+    private readonly fraud: FraudDetectionService,
   ) {}
 
   /**
    * `client` lets a caller already inside a transaction read on that
    * transaction's own connection instead of borrowing a second one from the
-   * pool — see `postContributionLedger` for what borrowing costs under a
+   * pool — see `CommissionDistributionService.postContribution` for what borrowing costs under a
    * burst of duplicate provider callbacks.
    */
   async findByIdOrThrow(id: string, client: Tx | PrismaService = this.prisma) {
@@ -243,7 +244,7 @@ export class PurchaseIntentsService {
    * card-charge path gated behind `CARD_PAYMENTS_ENABLED`, which stays off in
    * production (docs/LAUNCH_READINESS_2026-08-16.md). A partner running only the live QR flow
    * has confirmed purchases and a real `PARTNER_PAYABLE` balance, but zero
-   * `Settlement` rows — so this reads the same source `postContributionLedger`
+   * `Settlement` rows — so this reads the same source `CommissionDistributionService.postContribution`
    * and `postRedemptionCompensation` already posted from, rather than adding
    * a third parallel rollup table.
    *
@@ -257,7 +258,7 @@ export class PurchaseIntentsService {
    *
    * Deliberately scoped to purchases where *this* partner is the merchant —
    * not purchases where this partner was paid a referral share as the
-   * terminal link in another purchase's chain (`postContributionLedger`'s
+   * terminal link in another purchase's chain (`CommissionDistributionService.postContribution`'s
    * `partnerReferrerPostings`). That is real income too, but it lives on a
    * different partner's `PurchaseIntent` rows and has no `grossAmount` of
    * its own to report against; folding it into "this partner's daily
@@ -376,6 +377,12 @@ export class PurchaseIntentsService {
    * No financial ledger entry exists yet — spec §7 step 11 is explicit that
    * those wait for confirmation.
    */
+  /** COMMERCE_V2 once its effective date has passed (unset = already effective). */
+  private financialPolicyVersionNow(now = new Date()): FinancialPolicyVersion {
+    const effectiveAt = this.config.get('financialPolicy', { infer: true }).commerceV2EffectiveAt;
+    return !effectiveAt || effectiveAt <= now ? FinancialPolicyVersion.COMMERCE_V2 : FinancialPolicyVersion.LEGACY_V1;
+  }
+
   async create(dto: CreatePurchaseIntentDto, customerId: string) {
     const grossAmount = parsePositiveMoney(dto.grossAmount, 'grossAmount');
     const bonusAmountRequested = dto.bonusAmountRequested
@@ -383,6 +390,15 @@ export class PurchaseIntentsService {
       : new Decimal(0);
     if (bonusAmountRequested.greaterThan(grossAmount)) {
       throw new BadRequestException('bonusAmountRequested cannot exceed grossAmount');
+    }
+    // Partner Commerce v2 (Q1 = C): the customer's own TuTak money — a
+    // separate source from the discount, and never limited by the partner's
+    // bonus-payment cap (that cap is about the discount only).
+    const tutakMoneyAmount = dto.tutakMoneyAmount
+      ? parseMoney(dto.tutakMoneyAmount, 'tutakMoneyAmount')
+      : new Decimal(0);
+    if (bonusAmountRequested.plus(tutakMoneyAmount).greaterThan(grossAmount)) {
+      throw new BadRequestException('Discount plus TuTak money cannot exceed the purchase amount');
     }
 
     // Refuses PENDING_APPROVAL/SUSPENDED/REJECTED partners automatically —
@@ -518,7 +534,18 @@ export class PurchaseIntentsService {
       );
     }
 
-    const ordinaryPaymentRemainder = grossAmount.minus(bonusAmountRequested);
+    /*
+     * One purchase, one money route (Partner Commerce v2 × provider route).
+     * The TuTak-money part is captured into escrow at creation and released
+     * by the cashier's confirmation; a provider-routed purchase is never
+     * confirmed at the till, so the two cannot be combined on one purchase.
+     */
+    if (tutakMoneyAmount.greaterThan(0) && paymentRoute !== PaymentRoute.DIRECT_PARTNER) {
+      throw new BadRequestException('TuTak money cannot be combined with paying through a payment provider');
+    }
+
+    // The external part — paid to the partner directly, outside TuTak.
+    const ordinaryPaymentRemainder = grossAmount.minus(bonusAmountRequested).minus(tutakMoneyAmount);
     const intentTimeoutSeconds = this.config.get('purchasePolicy.intentTimeoutSeconds', {
       infer: true,
     });
@@ -562,12 +589,21 @@ export class PurchaseIntentsService {
         bonusReservationId = reservation.reservationId;
       }
 
-      const intent = await this.createWithConfirmationCode({
+      // The intent and its TuTak-money capture are one atomic unit: the
+      // money moves CUSTOMER_PREPAID_BALANCE → PARTNER_ORDER_MONEY_ESCROW now (so
+      // it cannot be spent twice while staff decide), and only reaches the
+      // partner on confirmation — or goes back on reject/cancel/expiry.
+      const intent = await this.createWithConfirmationCode(
+        {
         customerId,
+        // Q9: the financial model this purchase will be refunded under,
+        // stamped once — never re-derived from dates at refund time.
+        financialPolicyVersion: this.financialPolicyVersionNow(),
         partnerId: partner.id,
         partnerBranchId: dto.partnerBranchId,
         grossAmount,
         bonusAmountRequested,
+        tutakMoneyAmount,
         ordinaryPaymentRemainder,
         paymentRoute,
         ...lineItem,
@@ -592,7 +628,24 @@ export class PurchaseIntentsService {
         bonusReservationId,
         sourceTransactionId: transaction.id,
         expiresAt,
-      });
+        },
+        tutakMoneyAmount.greaterThan(0)
+          ? async (tx, created) => {
+              const captureId = await this.commerceLedger.captureMoney(
+                customerId,
+                partner.id,
+                tutakMoneyAmount,
+                { sourceType: 'PurchaseIntent', sourceId: created.id },
+                'purchase_intent.money_capture',
+                tx,
+              );
+              return tx.purchaseIntent.update({
+                where: { id: created.id },
+                data: { moneyCaptureLedgerTransactionId: captureId },
+              });
+            }
+          : undefined,
+      );
 
       await this.auditService.record({
         actorUserId: customerId,
@@ -603,6 +656,8 @@ export class PurchaseIntentsService {
           partnerId: partner.id,
           grossAmount: grossAmount.toString(),
           bonusAmountRequested: bonusAmountRequested.toString(),
+          tutakMoneyAmount: tutakMoneyAmount.toString(),
+          externalAmount: ordinaryPaymentRemainder.toString(),
           paymentRoute,
           contributionRuleVersion: rule?.version ?? null,
           contributionRuleKind: rule?.kind ?? null,
@@ -742,6 +797,13 @@ export class PurchaseIntentsService {
    */
   private async createWithConfirmationCode(
     data: Omit<Prisma.PurchaseIntentUncheckedCreateInput, 'confirmationCode'>,
+    /**
+     * Runs in the same transaction as the insert (Partner Commerce v2: the
+     * TuTak-money capture), so the purchase and its money move together or
+     * not at all. Each code attempt is its own transaction: a collision
+     * aborts it, and the next draw starts clean.
+     */
+    afterCreate?: (tx: Tx, created: PurchaseIntent) => Promise<PurchaseIntent>,
   ) {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       // `randomInt` and not `Math.random`: the code is not a secret, but it
@@ -751,7 +813,12 @@ export class PurchaseIntentsService {
       // own note on why this is Char(4).
       const confirmationCode = String(randomInt(0, 10_000)).padStart(4, '0');
       try {
-        return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
+        if (!afterCreate) {
+          return await this.prisma.purchaseIntent.create({ data: { ...data, confirmationCode } });
+        }
+        return await this.prisma.$transaction(async (tx) =>
+          afterCreate(tx, await tx.purchaseIntent.create({ data: { ...data, confirmationCode } })),
+        );
       } catch (error) {
         // Two creates raced past the service check and the database arbitrated.
         // Not retryable — drawing a different code changes nothing about the
@@ -1019,22 +1086,51 @@ export class PurchaseIntentsService {
      */
     await this.stampMerchantApproval(intent, staffUserId, dto);
 
-    const outcome = await this.settlePurchase(intent, staffUserId);
+    // Pilot anti-fraud: a hit holds the customer's green reward, never the
+    // sale. Fails open on an infrastructure error — the rules protect the
+    // reward, and a broken rule engine must not stop a till — but says so.
+    const risk = await this.fraud
+      .assessPurchase({
+        customerId: intent.customerId,
+        partnerId: intent.partnerId,
+        branchId: intent.partnerBranchId,
+        staffUserId,
+        grossAmount: intent.grossAmount,
+        sourceTransactionId: intent.sourceTransactionId,
+      })
+      .catch((err: unknown) => {
+        this.logger.error(`Fraud assessment failed for intent ${intent.id}; reward not held`, err);
+        return { hold: false, reasons: [] as string[], holdHours: 0 };
+      });
+
+    const outcome = await this.settlePurchase(intent, staffUserId, undefined, risk);
     if (outcome === 'already-resolved') {
       // Lost the race — someone else confirmed, rejected, or the sweep
       // expired it a moment ago.
       return this.findByIdOrThrow(intentId);
     }
 
+    const confirmed = await this.findByIdOrThrow(intentId);
     await this.auditService.record({
       actorUserId: staffUserId,
       action: AuditAction.PURCHASE_INTENT_CONFIRMED,
       entityType: 'PurchaseIntent',
       entityId: intentId,
-      metadata: { partnerId: intent.partnerId, grossAmount: intent.grossAmount.toString() },
+      metadata: {
+        partnerId: intent.partnerId,
+        branchId: intent.partnerBranchId,
+        grossAmount: intent.grossAmount.toString(),
+        tutakMoneyAmount: intent.tutakMoneyAmount.toString(),
+        shiftId: confirmed.confirmedShiftId,
+        // Spec §6.2 / Q4 rollout: a confirmation made without a shift inside
+        // the partner's one-off transition window is recorded as such.
+        withoutShift: confirmed.confirmedWithoutShift,
+        // Pilot anti-fraud: which rules held the reward, if any.
+        ...(risk.hold ? { rewardHold: { rules: risk.reasons, hours: risk.holdHours } } : {}),
+      },
     });
 
-    return this.findByIdOrThrow(intentId);
+    return confirmed;
   }
 
   /**
@@ -1051,7 +1147,7 @@ export class PurchaseIntentsService {
    * reservation still `ACTIVE` — and is safe to retry with no manual
    * compensation required.
    *
-   * The same reasoning applies to `postContributionLedger` and
+   * The same reasoning applies to `CommissionDistributionService.postContribution` and
    * `postRedemptionCompensation` below: both now take `tx` and pass it to
    * `LedgerService.post`, matching the pattern every other financial
    * engine in this codebase already uses (see `payment-engine.service.ts`).
@@ -1130,6 +1226,7 @@ export class PurchaseIntentsService {
     intent: Awaited<ReturnType<typeof this.findByIdOrThrow>>,
     staffUserId: string | null,
     externalTx?: Prisma.TransactionClient,
+    risk?: { hold: boolean; holdHours: number },
   ): Promise<'settled' | 'already-resolved'> {
     // Spec §12: the pool is computed from the terms this purchase was
     // *snapshotted* under — not from whatever the partner's terms are today.
@@ -1159,18 +1256,25 @@ export class PurchaseIntentsService {
     // Read-only, and safe to resolve before the transaction: attribution is
     // immutable once created (spec §5) at every level, so the chain cannot
     // change between this read and the transaction below using it. The
-    // 2026-08-22 3-level rework's own single source of truth for the split —
-    // see `ReferralService.computePoolSplit`'s docblock for why `tutak` is
-    // always the residual, never independently rounded, so all six legs
-    // always sum to exactly `pool`.
-    const chain = await this.referralService.resolveReferralChain(intent.customerId, reader);
-    const split = this.referralService.computePoolSplit(pool, chain);
-    const { green, deferred, l1, l2, l3, tutak } = split;
-    const l1Entry = chain.find((c) => c.level === 1) ?? null;
-    const l2Entry = chain.find((c) => c.level === 2) ?? null;
-    const l3Entry = chain.find((c) => c.level === 3) ?? null;
+    // split itself — and every effect it has — lives in
+    // `CommissionDistributionService`, shared with online partner orders so
+    // the two flows cannot drift apart (same order, same rounding, same
+    // ledger shape as the inline code it replaced).
+    const split = await this.distribution.planForPool(intent.customerId, pool, reader);
 
     const run = async (tx: Prisma.TransactionClient) => {
+      // Spec §6: only an employee on an active shift confirms — checked
+      // and the shift row locked inside this same transaction, so a
+      // concurrent shift close or deactivation cannot slip in between. A
+      // provider confirmation has no employee, so there is no shift to stamp.
+      const stamp = staffUserId
+        ? await this.shifts.stampFor(tx, {
+            userId: staffUserId,
+            partnerId: intent.partnerId,
+            branchId: intent.partnerBranchId,
+          })
+        : null;
+
       // Conditional on still being AWAITING_CONFIRMATION, exactly like
       // the rest of this codebase's claim-then-act pattern — but now the
       // claim and the act are the same atomic unit.
@@ -1179,6 +1283,8 @@ export class PurchaseIntentsService {
         data: {
           status: PurchaseIntentStatus.CONFIRMED,
           confirmedByUserId: staffUserId,
+          confirmedShiftId: stamp?.shiftId ?? null,
+          confirmedWithoutShift: stamp?.withoutShift ?? false,
           confirmedAt: new Date(),
           // Spec §12's pool split, snapshotted at the moment it is
           // actually posted — a later refund reverses these exact
@@ -1191,24 +1297,8 @@ export class PurchaseIntentsService {
           // explicit, persisted eligibility boundary — every purchase
           // confirmed from here on is THREE_LEVEL_V2, and its own
           // per-level referrer snapshot lives in `referrer1..3*`/
-          // `tutakAmount` below, never the legacy `referrerAmount` column.
-          poolAmount: pool,
-          greenAmount: green,
-          deferredAmount: deferred,
-          programVersion: CURRENT_REFERRAL_PROGRAM_VERSION,
-          referrer1Type: l1Entry?.type ?? null,
-          referrer1UserId: l1Entry?.type === 'USER' ? l1Entry.userId : null,
-          referrer1PartnerId: l1Entry?.type === 'PARTNER' ? l1Entry.partnerId : null,
-          referrer1Amount: l1,
-          referrer2Type: l2Entry?.type ?? null,
-          referrer2UserId: l2Entry?.type === 'USER' ? l2Entry.userId : null,
-          referrer2PartnerId: l2Entry?.type === 'PARTNER' ? l2Entry.partnerId : null,
-          referrer2Amount: l2,
-          referrer3Type: l3Entry?.type ?? null,
-          referrer3UserId: l3Entry?.type === 'USER' ? l3Entry.userId : null,
-          referrer3PartnerId: l3Entry?.type === 'PARTNER' ? l3Entry.partnerId : null,
-          referrer3Amount: l3,
-          tutakAmount: tutak,
+          // `tutakAmount`, never the legacy `referrerAmount` column.
+          ...this.distribution.snapshotOf(split),
         },
       });
       if (claimed.count === 0) return 'already-resolved' as const;
@@ -1218,55 +1308,43 @@ export class PurchaseIntentsService {
       }
       await this.transactionsService.markCompleted(intent.sourceTransactionId!, {}, tx);
 
-      if (green.greaterThan(0)) {
-        const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: intent.customerId } });
-        await this.bonusEngine.accrue(
-          {
-            walletId: wallet.id,
-            type: BonusEntryType.ACCRUAL_PURCHASE,
-            amount: green,
-            sourceTransactionId: intent.sourceTransactionId!,
-            pendingHours: 0,
-          },
-          tx,
-        );
-      }
-
-      // Spec §15: existing lots first, then this purchase's own new lot —
-      // never the other order.
-      await this.deferredBonusLots.advanceExistingLots(
-        intent.customerId,
-        intent.grossAmount,
-        intent.sourceTransactionId!,
-        tx,
-      );
-      if (deferred.greaterThan(0)) {
-        await this.deferredBonusLots.createLot(
-          intent.customerId,
-          deferred,
-          intent.sourceTransactionId!,
-          tx,
-        );
-      }
-
-      // Every USER-type level (L1/L2/L3) is credited straight into its
-      // wallet; a PARTNER-type level is deliberately skipped here — its
-      // share is the ledger-only leg `postContributionLedger` posts below.
-      await this.referralService.creditChainShares(
-        chain,
-        { l1, l2, l3 },
-        intent.sourceTransactionId!,
-        tx,
-      );
-
-      await this.postContributionLedger(
-        intent,
-        { pool, green, deferred, l1, l2, l3, tutak, chain },
+      // Green accrual, deferred-lot progress then this purchase's own new
+      // lot, every USER-type referral level's share, and the balanced
+      // contribution posting — see `CommissionDistributionService.apply`.
+      await this.distribution.apply(
+        split,
+        {
+          customerId: intent.customerId,
+          partnerId: intent.partnerId,
+          turnoverAmount: intent.grossAmount,
+          sourceTransactionId: intent.sourceTransactionId!,
+          ledgerSource: { sourceType: 'PurchaseIntent', sourceId: intent.id },
+          rewardHoldHours: risk?.hold ? risk.holdHours : undefined,
+        },
         tx,
       );
 
       if (intent.bonusAmountRequested.greaterThan(0)) {
         await this.postRedemptionCompensation(intent, tx);
+      }
+
+      // The TuTak-money part leaves escrow and becomes partner receivable
+      // (Q1/Q2): the partner is owed it, netted against the contribution
+      // above in the same PARTNER_PAYABLE account (spec §11). Only ever on a
+      // DIRECT_PARTNER purchase — `create` refuses TuTak money on any other
+      // route.
+      if (intent.tutakMoneyAmount.greaterThan(0)) {
+        const releaseId = await this.commerceLedger.releaseMoneyToPartner(
+          intent.partnerId,
+          intent.tutakMoneyAmount,
+          { sourceType: 'PurchaseIntent', sourceId: intent.id },
+          'purchase_intent.money_release',
+          tx,
+        );
+        await tx.purchaseIntent.update({
+          where: { id: intent.id },
+          data: { moneyReleaseLedgerTransactionId: releaseId },
+        });
       }
 
       return 'settled' as const;
@@ -1278,8 +1356,8 @@ export class PurchaseIntentsService {
       // Nothing to unwind by hand: the transaction above is one atomic
       // unit, so a failure anywhere in it rolled back the status claim
       // together with the reservation settle, the accrual, the deferred
-      // lot and both ledger postings. The caller sees the error and the
-      // intent is left safely retryable.
+      // lot, both ledger postings and the money release. The caller sees
+      // the error and the intent is left safely retryable.
       this.logger.error(
         `Purchase intent ${intent.id} settlement failed and was rolled back: ${err}`,
       );
@@ -1324,137 +1402,6 @@ export class PurchaseIntentsService {
   }
 
   /**
-   * Spec §12 + §22-24: the full contribution pool, split by who receives
-   * each slice, as one balanced double-entry transaction. See the migration
-   * doc §3 for why this is one `LedgerService.post()` call rather than
-   * being split across the referral module — the referrer legs have to
-   * balance against the same purchase's contribution posting.
-   *
-   * 2026-08-22 3-level rework: up to three referrer legs now, not one. A
-   * USER-type level's share is folded into the same `bonusLiabilityAccount`
-   * credit as green/deferred (it is spendable wallet value, same as
-   * before); a PARTNER-type level gets its own `PARTNER_PAYABLE` credit,
-   * one per distinct partner in the chain (at most one, in practice — a
-   * partner referrer never continues the chain, so the chain can contain at
-   * most one PARTNER entry, always its own terminal level). `tutak` is
-   * already the pool's residual (`ReferralService.computePoolSplit`), so it
-   * needs no further adjustment for missing levels the way the old
-   * single-referrer code needed `.plus(referrer ? 0 : referrerShare)`.
-   */
-  private async postContributionLedger(
-    intent: { id: string; partnerId: string; sourceTransactionId: string | null },
-    amounts: {
-      pool: Decimal;
-      green: Decimal;
-      deferred: Decimal;
-      l1: Decimal;
-      l2: Decimal;
-      l3: Decimal;
-      tutak: Decimal;
-      chain: ReferralChainLevel[];
-    },
-    tx: Tx,
-  ): Promise<void> {
-    if (amounts.pool.lessThanOrEqualTo(0)) return;
-
-    /*
-     * Every `accountFor` below takes `tx`, and so does every one in the
-     * sibling `postRedemptionCompensation`. Uniformly — that is the whole
-     * point, and it is the correction of an earlier fix that got the
-     * diagnosis half right.
-     *
-     * The earlier note here said passing `tx` caused a self-deadlock. What
-     * actually caused it was *mixing*: this method looked accounts up inside
-     * the transaction while `postRedemptionCompensation` looked the same ones
-     * up outside it, on a second connection. The outside lookup could not see
-     * the account this transaction had just created and not yet committed, so
-     * its own insert blocked on this transaction's uncommitted row — a wait
-     * this transaction could never clear, because it was the one waiting for
-     * the query to return. Making both tx-less hid it; making both take `tx`
-     * removes it, because neither can then be looking at a different
-     * snapshot from the other.
-     *
-     * Not passing `tx` has its own, worse failure, and it is the one that
-     * turned CI red (run #735). A tx-less call borrows a *second* connection
-     * from the pool while this transaction already holds one. Five concurrent
-     * settlements hold all five connections in a default CI-sized pool, each
-     * waits for a sixth that cannot exist, and every one of them dies at
-     * Prisma's 5s interactive-transaction timeout — so a duplicate callback
-     * burst settled nothing at all rather than settling exactly once.
-     * Reproduced by pinning `connection_limit=5` locally.
-     *
-     * Sequential rather than `Promise.all`: an interactive transaction is one
-     * connection, so concurrent calls on it are serialised anyway, and doing
-     * it in writing keeps the lock order identical between transactions.
-     */
-    const partnerAccount = await this.ledger.accountFor(
-      { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId },
-      tx,
-    );
-    const bonusLiabilityAccount = await this.ledger.accountFor(
-      { type: LedgerAccountType.BONUS_LIABILITY },
-      tx,
-    );
-    const revenueAccount = await this.ledger.accountFor(
-      { type: LedgerAccountType.PLATFORM_REVENUE },
-      tx,
-    );
-
-    const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
-    const userLiability = amounts.chain
-      .filter((c) => c.type === 'USER')
-      .reduce((sum, c) => sum.plus(byLevel[c.level]), new Decimal(0));
-    const customerLiability = amounts.green.plus(amounts.deferred).plus(userLiability);
-
-    const partnerReferrerPostings = await Promise.all(
-      amounts.chain
-        .filter((c): c is ReferralChainLevel & { type: 'PARTNER' } => c.type === 'PARTNER')
-        .map(async (c) => {
-          const share = byLevel[c.level];
-          if (share.lessThanOrEqualTo(0)) return null;
-          const account = await this.ledger.accountFor(
-            { type: LedgerAccountType.PARTNER_PAYABLE, partnerId: c.partnerId },
-            tx,
-          );
-          return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
-        }),
-    );
-
-    const postings = [
-      { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.pool },
-      ...(customerLiability.greaterThan(0)
-        ? [
-            {
-              accountId: bonusLiabilityAccount.id,
-              direction: PostingDirection.CREDIT,
-              amount: customerLiability,
-            },
-          ]
-        : []),
-      ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
-      ...(amounts.tutak.greaterThan(0)
-        ? [
-            {
-              accountId: revenueAccount.id,
-              direction: PostingDirection.CREDIT,
-              amount: amounts.tutak,
-            },
-          ]
-        : []),
-    ];
-
-    await this.ledger.post(
-      {
-        kind: 'partner.contribution',
-        sourceType: 'PurchaseIntent',
-        sourceId: intent.id,
-        postings,
-      },
-      tx,
-    );
-  }
-
-  /**
    * Spec §2/§23's redemption-compensation leg — always a separate posting
    * from the contribution above, never netted into it.
    */
@@ -1467,7 +1414,7 @@ export class PurchaseIntentsService {
     tx: Tx,
   ): Promise<void> {
     // Both take `tx`, for the reason set out at length in
-    // `postContributionLedger`: these two methods run inside the same
+    // `CommissionDistributionService.postContribution`: these two methods run inside the same
     // transaction and must resolve accounts through the same client, or each
     // waits on a row the other has not committed. Same order as there, too.
     const partnerAccount = await this.ledger.accountFor(
@@ -1563,6 +1510,13 @@ export class PurchaseIntentsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Rejecting is a cash-desk decision too (spec §6) — same shift check
+      // as confirm().
+      const stamp = await this.shifts.stampFor(tx, {
+        userId: staffUserId,
+        partnerId: intent.partnerId,
+        branchId: intent.partnerBranchId,
+      });
       const claimed = await tx.purchaseIntent.updateMany({
         where: { id: intentId, status: PurchaseIntentStatus.AWAITING_CONFIRMATION },
         data: {
@@ -1573,9 +1527,12 @@ export class PurchaseIntentsService {
           rejectedByUserId: staffUserId,
           rejectionReason: dto.comment ? `${dto.reasonCode}: ${dto.comment}` : dto.reasonCode,
           rejectedAt: new Date(),
+          rejectedShiftId: stamp.shiftId,
         },
       });
       if (claimed.count === 0) return;
+
+      await this.returnTutakMoney(intent, 'purchase_intent_rejected', tx);
 
       if (intent.bonusReservationId) {
         await this.bonusEngine.releaseReservation(
@@ -1598,13 +1555,40 @@ export class PurchaseIntentsService {
           action: AuditAction.PURCHASE_INTENT_REJECTED,
           entityType: 'PurchaseIntent',
           entityId: intentId,
-          metadata: { reason: dto.reasonCode },
+          metadata: { reason: dto.reasonCode, shiftId: stamp.shiftId, withoutShift: stamp.withoutShift },
         },
         tx,
       );
     });
 
     return this.findByIdOrThrow(intentId);
+  }
+
+  /**
+   * PARTNER_ORDER_MONEY_ESCROW → CUSTOMER_PREPAID_BALANCE for the TuTak-money part
+   * of an intent that will never be confirmed. Only ever called after the
+   * caller's own conditional status claim succeeded, inside the same
+   * transaction — so it runs at most once per intent.
+   */
+  private async returnTutakMoney(
+    intent: { id: string; partnerId: string; customerId: string; tutakMoneyAmount: Decimal },
+    reason: string,
+    tx: Tx,
+  ): Promise<void> {
+    if (!intent.tutakMoneyAmount.greaterThan(0)) return;
+    const returnId = await this.commerceLedger.returnMoney(
+      intent.customerId,
+      intent.partnerId,
+      intent.tutakMoneyAmount,
+      { sourceType: 'PurchaseIntent', sourceId: intent.id },
+      'purchase_intent.money_return',
+      tx,
+    );
+    await tx.purchaseIntent.update({
+      where: { id: intent.id },
+      data: { moneyReturnLedgerTransactionId: returnId },
+    });
+    this.logger.log(`Returned ${intent.tutakMoneyAmount.toString()} TuTak money for purchase intent ${intent.id} (${reason})`);
   }
 
   /**
@@ -1687,6 +1671,10 @@ export class PurchaseIntentsService {
       });
       if (claimed.count === 0) return;
 
+      // Partner Commerce v2: the TuTak-money part goes back from escrow in
+      // the same transaction as the claim — exactly once, like reject/expiry.
+      await this.returnTutakMoney(intent, 'customer_cancelled', tx);
+
       if (intent.bonusReservationId) {
         await this.bonusEngine.releaseReservation(
           intent.bonusReservationId,
@@ -1738,6 +1726,9 @@ export class PurchaseIntentsService {
    */
   private async expireOne(intent: {
     id: string;
+    partnerId: string;
+    customerId: string;
+    tutakMoneyAmount: Decimal;
     bonusReservationId: string | null;
     sourceTransactionId: string | null;
   }): Promise<boolean> {
@@ -1774,6 +1765,8 @@ export class PurchaseIntentsService {
         data: { status: PurchaseIntentStatus.EXPIRED },
       });
       if (claimed.count === 0) return false;
+
+      await this.returnTutakMoney(intent, 'purchase_intent_expired', tx);
 
       if (intent.bonusReservationId) {
         await this.bonusEngine.releaseReservation(

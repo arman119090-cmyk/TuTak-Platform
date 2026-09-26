@@ -1,5 +1,3 @@
-import { Reflector } from '@nestjs/core';
-import { JwtAuthGuard } from '../../src/common/guards/jwt-auth.guard';
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitter2, EventEmitterModule } from '@nestjs/event-emitter';
@@ -47,12 +45,20 @@ import { AuditModule } from '../../src/modules/audit/audit.module';
 import { EvChargingModule } from '../../src/modules/ev-charging/ev-charging.module';
 import { RoamingCpoModule } from '../../src/modules/roaming-cpo/roaming-cpo.module';
 import { CustomerBalanceModule } from '../../src/modules/customer-balance/customer-balance.module';
+import { PartnerOrdersModule } from '../../src/modules/partner-orders/partner-orders.module';
 import { QrPaymentsModule } from '../../src/modules/qr-payments/qr-payments.module';
 import { ReferralModule } from '../../src/modules/referral/referral.module';
 import { TransactionsModule } from '../../src/modules/transactions/transactions.module';
 import { UsersModule } from '../../src/modules/users/users.module';
 import { WalletModule } from '../../src/modules/wallet/wallet.module';
 import { TEST_DATABASE_URL } from './test-database';
+import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
+import { EmergencyFreezeGuard } from '../../src/common/guards/emergency-freeze.guard';
+import { JwtAuthGuard } from '../../src/common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../src/common/guards/roles.guard';
+import { PermissionsGuard } from '../../src/common/guards/permissions.guard';
+import { PasswordRotationGuard } from '../../src/common/guards/password-rotation.guard';
 
 /**
  * Boots the real domain modules against the real test database.
@@ -191,6 +197,7 @@ function domainTestingModuleBuilder(
         EvChargingModule,
         RoamingCpoModule,
         CustomerBalanceModule,
+        PartnerOrdersModule,
         AuditModule,
         UsersModule,
         AdminModule,
@@ -204,8 +211,8 @@ function domainTestingModuleBuilder(
         PaymentsModule,
         PartnerSettlementsModule,
         PspModule,
-      TreasuryModule,
-      AccountingModule,
+        TreasuryModule,
+        AccountingModule,
         SettlementModule,
         PayoutsModule,
         ReconciliationModule,
@@ -348,9 +355,15 @@ export interface HttpTestHarness {
  * purpose. Anything testing what a token is worth needs the guard, and
  * without this option there was no way to get one: the global guards live on
  * `AppModule`, which neither harness imports.
+ *
+ * `rbacGuards` additionally installs the rest of `AppModule`'s chain (roles →
+ * permissions → password rotation) after the JWT guard, so a suite can prove
+ * end-to-end, over real HTTP, who may call what — Partner Commerce's
+ * authorization tests. Separate from `authGuards` so callers that only need a
+ * token's identity keep seeing exactly what they saw before.
  */
 export async function createHttpTestHarness(
-  options: { authGuards?: boolean } = {},
+  options: { authGuards?: boolean; rbacGuards?: boolean } = {},
 ): Promise<HttpTestHarness> {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
   const alerts = new RecordingAlertChannel();
@@ -381,6 +394,10 @@ export async function createHttpTestHarness(
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+  // Always, like `AppModule`: it reads `EMERGENCY_FREEZE` from the config and
+  // is a no-op unless a suite sets that before booting. Ahead of the
+  // authentication guard for the same reason it is there in production.
+  app.useGlobalGuards(new EmergencyFreezeGuard(moduleRef.get(ConfigService)));
   if (options.authGuards) {
     // Only `JwtAuthGuard`. The role and permission guards read metadata this
     // harness's callers set per-test, and attaching them globally here would
@@ -389,6 +406,15 @@ export async function createHttpTestHarness(
   }
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
+  if (options.rbacGuards) {
+    const reflector = app.get(Reflector);
+    app.useGlobalGuards(
+      ...(options.authGuards ? [] : [new JwtAuthGuard(reflector)]),
+      new RolesGuard(reflector),
+      new PermissionsGuard(reflector),
+      new PasswordRotationGuard(reflector),
+    );
+  }
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   await app.init();

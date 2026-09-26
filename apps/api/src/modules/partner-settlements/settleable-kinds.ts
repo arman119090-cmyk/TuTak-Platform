@@ -48,6 +48,41 @@ export const SETTLEABLE_LEDGER_KINDS: ReadonlySet<string> = new Set([
   'referral.challenge_reward',
   'referral.challenge_reward_reversed',
   'settlement.bonus_accrued',
+
+  // ── Partner Commerce (docs/PARTNER_COMMERCE.md §4, §14) ────────────────
+  // Exact kinds only — never a `partner_order.*` pattern: a kind added later
+  // stays unpaid until somebody classifies it here. Every one of these is
+  // the partner's own economics on PARTNER_PAYABLE. External cash/card the
+  // partner took directly is never posted at all, so it is never paid twice;
+  // the commission on it is already inside `partner.contribution`.
+  //
+  // CREDIT: the electronic part (TuTak money + discount) of a received order,
+  // released from both escrows at completion.
+  'partner_order.completion',
+  // CREDIT: the TuTak-money part of an admin-approved actual cancellation
+  // cost (item 8) — the cash part the partner keeps is not posted.
+  'partner_order.cancellation_cost',
+  // DEBIT: a return's TuTak-money share refunded to the customer through the
+  // partner (net of the customer's Q9 shortfall, which is not the partner's).
+  'partner_order.return_money',
+  // DEBIT: a return's discount share restored to the customer.
+  'partner_order.return_discount',
+  // DEBIT: the Q9 customer shortfall the partner kept from the cash it handed
+  // back, or collected at the desk — TuTak's money in the partner's till.
+  'partner_order.shortfall_settled_at_desk',
+  // DEBIT: an open dispute's frozen share moved to PARTNER_DISPUTE_HOLD, so it
+  // is never paid while the dispute is open; CREDIT: its release back.
+  'order_dispute.hold',
+  'order_dispute.release',
+  // CREDIT: the TuTak-money part of a confirmed QR purchase (Q1 = C).
+  'purchase_intent.money_release',
+  // DEBIT: a QR refund's TuTak-money share returned to the customer.
+  'purchase_intent.money_refund',
+  // DEBIT: a QR refund's Q9 shortfall the partner kept from the cash refund.
+  'purchase_intent.shortfall_settled_at_desk',
+  // CREDIT: a Q8 referral withholding repaid by the referrer's later accrual —
+  // the selling partner's commission refund, owed only as it is repaid.
+  'referral.withholding_recovered',
 ]);
 
 /**

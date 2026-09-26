@@ -6,10 +6,11 @@ import {
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PaymentEngineService } from '../src/modules/payments/payment-engine.service';
-import { PayoutEngineService } from '../src/modules/payouts/payout-engine.service';
+import { PayoutHistoryService } from '../src/modules/payouts/payout-history.service';
 import { ReconciliationService } from '../src/modules/reconciliation/reconciliation.service';
 import { createCustomer, createPartner } from './setup/fixtures';
 import { TestHarness, createTestHarness, truncateAll } from './setup/harness';
+import { settlementSupport } from './support/settle';
 
 /**
  * Reconciliation.
@@ -25,15 +26,17 @@ describe('ReconciliationService (integration)', () => {
   let harness: TestHarness;
   let prisma: PrismaClient;
   let payments: PaymentEngineService;
-  let payouts: PayoutEngineService;
+  let payouts: PayoutHistoryService;
   let reconciliation: ReconciliationService;
+  let settle: ReturnType<typeof settlementSupport>;
 
   beforeAll(async () => {
     harness = await createTestHarness();
     prisma = harness.prisma;
     payments = harness.app.get(PaymentEngineService);
-    payouts = harness.app.get(PayoutEngineService);
+    payouts = harness.app.get(PayoutHistoryService);
     reconciliation = harness.app.get(ReconciliationService);
+    settle = settlementSupport(harness.app, prisma);
   });
 
   afterAll(async () => {
@@ -175,13 +178,10 @@ describe('ReconciliationService (integration)', () => {
     const partner = await createPartner(prisma);
     await earn(partner.id, '10000', 'recon-block-1');
 
-    // A payout works before reconciliation runs.
-    await payouts.requestPayout({
-      partnerId: partner.id,
-      amount: '1000',
-      actorId: 'admin-1',
-      idempotencyKey: 'payout-prior-1',
-    });
+    // A settlement works before reconciliation runs; then the partner earns
+    // again, so there is something a later settlement would want to pay.
+    expect((await settle.payEverything(partner.id)).status).toBe('PAID');
+    await earn(partner.id, '10000', 'recon-block-2');
 
     const result = await reconciliation.reconcile({
       periodStart: yesterday(),
@@ -194,15 +194,10 @@ describe('ReconciliationService (integration)', () => {
 
     // And now the money has stopped, even though the balance is nominally
     // sufficient — refusing to pay against a balance known to be wrong is
-    // the correct failure.
-    await expect(
-      payouts.requestPayout({
-        partnerId: partner.id,
-        amount: '1000',
-        actorId: 'admin-1',
-        idempotencyKey: 'payout-after-block',
-      }),
-    ).rejects.toThrow(/Payouts are blocked/);
+    // the correct failure. Nothing is even drafted.
+    await expect(settle.draftEverything(partner.id)).rejects.toThrow(/Payouts are blocked/);
+    expect(await prisma.partnerSettlement.count({ where: { partnerId: partner.id } })).toBe(1);
+    expect((await payouts.availableBalance(partner.id)).toFixed(4)).toBe('9750.0000');
   });
 
   it('leaves unaffected partners able to be paid', async () => {
@@ -222,13 +217,9 @@ describe('ReconciliationService (integration)', () => {
     const stillFine = await prisma.partner.findUniqueOrThrow({ where: { id: healthy.id } });
     expect(stillFine.payoutsBlockedAt).toBeNull();
 
-    const paid = await payouts.requestPayout({
-      partnerId: healthy.id,
-      amount: '1000',
-      actorId: 'admin-1',
-      idempotencyKey: 'payout-healthy-1',
-    });
-    expect(paid.payoutId).toBeDefined();
+    const paid = await settle.payEverything(healthy.id);
+    expect(paid.status).toBe('PAID');
+    expect((await payouts.availableBalance(healthy.id)).toFixed(4)).toBe('0.0000');
   });
 
   it('blocks nothing platform-wide when the drift is on a platform account', async () => {
@@ -263,13 +254,8 @@ describe('ReconciliationService (integration)', () => {
     expect(cleared.payoutsBlockedAt).toBeNull();
     expect(cleared.payoutsBlockedReason).toBeNull();
 
-    const paid = await payouts.requestPayout({
-      partnerId: partner.id,
-      amount: '1000',
-      actorId: 'admin-1',
-      idempotencyKey: 'payout-cleared-1',
-    });
-    expect(paid.payoutId).toBeDefined();
+    const paid = await settle.payEverything(partner.id);
+    expect(paid.status).toBe('PAID');
   });
 
   // ── Re-running ────────────────────────────────────────────────────────
@@ -330,13 +316,6 @@ describe('ReconciliationService (integration)', () => {
     const stillBlocked = await prisma.partner.findUniqueOrThrow({ where: { id: partner.id } });
     expect(stillBlocked.payoutsBlockedAt).not.toBeNull();
 
-    await expect(
-      payouts.requestPayout({
-        partnerId: partner.id,
-        amount: '100',
-        actorId: 'admin-1',
-        idempotencyKey: 'payout-sticky-1',
-      }),
-    ).rejects.toThrow(/Payouts are blocked/);
+    await expect(settle.draftEverything(partner.id)).rejects.toThrow(/Payouts are blocked/);
   });
 });

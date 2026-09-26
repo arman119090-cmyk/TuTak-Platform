@@ -7,6 +7,7 @@ import type {
   NearbyPartnerDto,
   NotificationDto,
   PartnerBrandDto,
+  CustomerPartnerOrderDto,
   PurchaseIntentDto,
   ReferralCodeDto,
   ReferralInviteDto,
@@ -115,6 +116,9 @@ export interface MockState {
   referralCode: ReferralCodeDto;
   invites: ReferralInviteDto[];
   purchaseIntents: PurchaseIntentDto[];
+  partnerOrders: CustomerPartnerOrderDto[];
+  /** The real-money TuTak balance — separate from `wallet`'s bonus points. */
+  balance: { balance: string; currency: string };
 }
 
 const WALLET_ID = 'mock-wallet-1';
@@ -804,5 +808,7 @@ export function freshMockState(): MockState {
     ],
 
     purchaseIntents: [],
+    partnerOrders: [],
+    balance: { balance: '15000.0000', currency: 'AMD' },
   };
 }

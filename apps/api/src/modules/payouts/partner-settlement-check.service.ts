@@ -35,10 +35,10 @@ export interface SettlementCheckResult {
  * sweep). It is the start of the *current* cycle — the last time this
  * balance actually crossed zero, either direction — kept honest by
  * `LedgerService` itself on every posting that touches a `PARTNER_PAYABLE`
- * account, not by this sweep or by `PayoutEngineService`/
+ * account, not by this sweep or by `PartnerSettlementService`/
  * `PartnerCollectionService` reaching in to set it. Turning a real non-zero
- * balance into an actual transfer is still `PayoutEngineService` (TuTak owes
- * the partner) or `PartnerCollectionService` (the partner owes TuTak), both
+ * balance into an actual transfer is still `PartnerSettlementService` (TuTak
+ * owes the partner) or `PartnerCollectionService` (the partner owes TuTak), both
  * of which already carry their own concurrency and idempotency guarantees;
  * duplicating any of that here would be building a second, less careful way
  * to move the same money.
@@ -135,7 +135,7 @@ export class PartnerSettlementCheckService {
     lastSettledAt: Date | null,
   ): Promise<void> {
     // Credit-normal: negated-positive means TuTak owes the partner (the
-    // ordinary case — see `PayoutEngineService.availableBalance`); the raw
+    // ordinary case — see `PayoutHistoryService.availableBalance`); the raw
     // balance being positive means the partner owes TuTak (the case
     // `PartnerCollectionService.amountOwed` reports).
     const owedToPartner = rawBalance.negated();

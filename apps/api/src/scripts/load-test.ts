@@ -30,7 +30,9 @@ import * as os from 'os';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { PaymentEngineService } from '../modules/payments/payment-engine.service';
-import { PayoutEngineService } from '../modules/payouts/payout-engine.service';
+import { PayoutHistoryService } from '../modules/payouts/payout-history.service';
+import { PartnerSettlementService } from '../modules/partner-settlements/partner-settlement.service';
+import { EmployeeShiftService } from '../modules/employee-shifts/employee-shift.service';
 import { OutboxService } from '../modules/ledger/outbox.service';
 import { PurchaseIntentsService } from '../modules/purchase-intents/purchase-intents.service';
 import { ReferralService } from '../modules/referral/referral.service';
@@ -171,9 +173,11 @@ async function main() {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   const prisma = app.get(PrismaService);
   const payments = app.get(PaymentEngineService);
-  const payouts = app.get(PayoutEngineService);
+  const payouts = app.get(PayoutHistoryService);
+  const settlements = app.get(PartnerSettlementService);
   const outbox = app.get(OutboxService);
   const intents = app.get(PurchaseIntentsService);
+  const shifts = app.get(EmployeeShiftService);
   const referrals = app.get(ReferralService);
   const ledger = app.get(LedgerService);
 
@@ -309,23 +313,66 @@ async function main() {
     say(`  rate          ${(drained / (drainMs / 1000)).toFixed(1)} events/s`);
   }
 
-  // ── 4. Contended payouts ───────────────────────────────────────────────
+  // ── 4. Contended settlement drafts ─────────────────────────────────────
   //
-  // Every one of these takes `FOR UPDATE` on the same partner's payable
-  // balance, so they serialize by design. The number to watch is not
-  // throughput but whether the total paid out ever exceeds what was owed —
-  // reported below by the ledger check.
-
-  const owedBefore = await payouts.availableBalance(partner.id);
-  const payoutRuns = await saturate(Math.min(CONCURRENCY, 16), Math.min(SECONDS, 10), async (n) => {
-    await payouts.requestPayout({
+  // Paying a partner is a `PartnerSettlement` (the legacy per-amount payout
+  // engine was retired on 26.09.2026). Every draft here takes the partner
+  // settlement lock and claims the same postings, so they serialize by
+  // design and exactly one may win: the rest must be refused because a
+  // settlement is already open, and the number to watch is not throughput
+  // but that one draft, paid, never takes more than was owed.
+  //
+  // The audit log has a foreign key to users, so the maker and checker are
+  // real rows rather than labels.
+  const [makerRow, checkerRow] = await Promise.all(
+    ['Maker', 'Checker'].map((lastName, i) =>
+      prisma.user.create({
+        data: {
+          // 9000+: an index no other fixture in this script reaches.
+          phone: phoneFor(9000 + i),
+          firstName: 'Load',
+          lastName,
+          passwordHash,
+          isPhoneVerified: true,
+        },
+      }),
+    ),
+  );
+  // Approval snapshots where the money goes; a partner with no bank account
+  // on file cannot be approved, so the fixture partner gets one.
+  await prisma.partnerBankAccount.create({
+    data: {
       partnerId: partner.id,
-      amount: '10',
-      actorId: 'load-test',
-      idempotencyKey: `load-payout-${run}-${n}`,
+      beneficiaryName: `Load Test ${run} LLC`,
+      accountNumber: `AM00 LOAD ${run}`,
+      bankName: 'Load Test Bank',
+      createdByUserId: makerRow!.id,
+    },
+  });
+  const owedBefore = await payouts.availableBalance(partner.id);
+  const draftRuns = await saturate(Math.min(CONCURRENCY, 16), Math.min(SECONDS, 10), async () => {
+    await settlements.createDraft({
+      partnerId: partner.id,
+      actorId: makerRow!.id,
+      periodStart: new Date(0),
+      periodEnd: new Date(Date.now() + 1000),
     });
   });
-  report('Contended payouts (same partner)', payoutRuns.samples, payoutRuns.elapsedMs);
+  report('Contended settlement drafts (same partner)', draftRuns.samples, draftRuns.elapsedMs);
+  const drafts = await prisma.partnerSettlement.findMany({ where: { partnerId: partner.id } });
+  say(`  drafts made   ${drafts.length} (exactly one is correct while the partner is owed anything)`);
+  if (drafts.length > 1) {
+    throw new Error(`${drafts.length} settlements are open for one partner; the claim did not serialize`);
+  }
+  const draft = drafts[0];
+  if (draft) {
+    await settlements.markReady(draft.id, { actorId: makerRow!.id });
+    await settlements.approve(draft.id, checkerRow!.id);
+    await settlements.markPaid(draft.id, {
+      actorId: checkerRow!.id,
+      bankTransferReference: `LOAD-${run}`,
+    });
+  }
   const owedAfter = await payouts.availableBalance(partner.id);
   const paid = owedBefore.minus(owedAfter);
   say(`  owed before   ${owedBefore.toFixed(4)}`);
@@ -333,6 +380,11 @@ async function main() {
   say(`  paid out      ${paid.toFixed(4)}`);
   if (owedAfter.lessThan(0)) {
     throw new Error(`Partner was overpaid: balance is ${owedAfter.toFixed(4)}`);
+  }
+  if (draft && !paid.equals(draft.netPayableAmount)) {
+    throw new Error(
+      `Paid ${paid.toFixed(4)} but the settlement said ${draft.netPayableAmount.toFixed(4)}`,
+    );
   }
 
   // ── 5. Purchase intent settlement ──────────────────────────────────────
@@ -354,7 +406,7 @@ async function main() {
   // Each merchant needs its own confirming staff member: affiliation is what
   // `create` refuses, so a staff member not attached to the partner would
   // measure a path production rejects rather than the settlement.
-  const tills: Array<{ partnerId: string; staffUserId: string }> = [];
+  const tills: Array<{ partnerId: string; staffUserId: string; branchId: string }> = [];
   for (let i = 0; i < PARTNERS; i += 1) {
     const merchant =
       i === 0
@@ -379,13 +431,26 @@ async function main() {
     await prisma.partnerMembership.create({
       data: { partnerId: merchant.id, userId: staff.id },
     });
-    tills.push({ partnerId: merchant.id, staffUserId: staff.id });
+    // Since the shift rollout a till confirms purchases only inside an open
+    // shift at a branch; the load-test staff clock in the way real staff do.
+    const branch = await prisma.partnerBranch.create({
+      data: {
+        partnerId: merchant.id,
+        name: `Load Test ${run}-${i} till`,
+        address: 'Load Test St. 1',
+        city: 'Yerevan',
+        latitude: 40.18,
+        longitude: 44.51,
+      },
+    });
+    await shifts.start(staff.id, branch.id);
+    tills.push({ partnerId: merchant.id, staffUserId: staff.id, branchId: branch.id });
   }
 
   const purchases = await saturate(CONCURRENCY, SECONDS, async (n) => {
     const till = tills[n % tills.length]!;
     const intent = await intents.create(
-      { partnerId: till.partnerId, grossAmount: '1000' },
+      { partnerId: till.partnerId, partnerBranchId: till.branchId, grossAmount: '1000' },
       customers[n % customers.length]!,
     );
     await intents.confirm(intent.id, till.staffUserId);
@@ -468,7 +533,7 @@ async function main() {
   const till = tills[0]!;
   for (const customerId of [...bonusOnly, ...chained]) {
     const warmup = await intents.create(
-      { partnerId: till.partnerId, grossAmount: WARMUP_GROSS },
+      { partnerId: till.partnerId, partnerBranchId: till.branchId, grossAmount: WARMUP_GROSS },
       customerId,
     );
     await intents.confirm(warmup.id, till.staffUserId);
@@ -489,6 +554,7 @@ async function main() {
     const intent = await intents.create(
       {
         partnerId: till.partnerId,
+        partnerBranchId: till.branchId,
         grossAmount: '1000',
         bonusAmountRequested: BONUS_SPEND,
       },
@@ -507,7 +573,7 @@ async function main() {
 
   const throughChain = await saturate(CONCURRENCY, SECONDS, async (n) => {
     const intent = await intents.create(
-      { partnerId: till.partnerId, grossAmount: '1000' },
+      { partnerId: till.partnerId, partnerBranchId: till.branchId, grossAmount: '1000' },
       chained[n % chained.length]!,
     );
     await intents.confirm(intent.id, till.staffUserId);
@@ -524,6 +590,7 @@ async function main() {
     const intent = await intents.create(
       {
         partnerId: till.partnerId,
+        partnerBranchId: till.branchId,
         grossAmount: '1000',
         bonusAmountRequested: BONUS_SPEND,
       },
@@ -599,16 +666,34 @@ async function main() {
       WHERE w."reservedBonus" <> COALESCE(r.s, 0)`,
   );
 
-  // Every unit taken out of a lot must be accounted for by an allocation
-  // naming that lot. Consume a lot twice and this is what disagrees.
+  // Every unit taken out of a lot must be accounted for: by an allocation of
+  // a hold that is still active or was settled, or by an accrual reversal
+  // (a refund clawing the lot back — `reverseAccrualLot`, a DEBIT REVERSAL
+  // ledger entry naming the lot). A released hold gives the lot its units
+  // back but keeps its allocation rows as history, so those must not count
+  // — the first version of this check summed every allocation and flagged
+  // every lot a rolled-back saga had ever touched (26.09.2026). Expired lots
+  // are zeroed by the sweep and checked by the expiry invariants instead.
+  // Consume a lot twice and this is what disagrees.
   await check(
-    'every lot consumed exactly as much as its allocations claim',
+    'every lot consumed exactly as much as its live allocations and reversals claim',
     prisma.$queryRaw`
       SELECT count(*) AS n FROM bonus_lots bl
       LEFT JOIN (
-        SELECT "lotId", SUM(amount) AS s FROM bonus_reservation_allocations GROUP BY "lotId"
+        SELECT a."lotId", SUM(a.amount) AS s
+        FROM bonus_reservation_allocations a
+        JOIN bonus_reservations r ON r.id = a."reservationId"
+        WHERE r.status IN ('ACTIVE', 'SETTLED')
+        GROUP BY a."lotId"
       ) a ON a."lotId" = bl.id
-      WHERE bl."originalAmount" - bl."remainingAmount" <> COALESCE(a.s, 0)`,
+      LEFT JOIN (
+        SELECT "relatedLotId" AS "lotId", SUM(amount) AS s
+        FROM bonus_ledger_entries
+        WHERE type = 'REVERSAL' AND direction = 'DEBIT' AND "relatedLotId" IS NOT NULL
+        GROUP BY "relatedLotId"
+      ) rv ON rv."lotId" = bl.id
+      WHERE bl.status <> 'EXPIRED'
+        AND bl."originalAmount" - bl."remainingAmount" <> COALESCE(a.s, 0) + COALESCE(rv.s, 0)`,
   );
   await check(
     'no lot is over-consumed or negative',

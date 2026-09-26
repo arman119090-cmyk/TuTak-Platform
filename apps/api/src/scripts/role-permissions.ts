@@ -18,6 +18,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
     PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.PARTNER_ORDER_MANAGE,
   ],
   // The manager tier: broader day-to-day operational reach than STAFF, but
   // — like STAFF — still no PARTNER_MANAGE. "Operational access appropriate
@@ -27,6 +28,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
     PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.PARTNER_ORDER_MANAGE,
     PermissionName.EV_STATION_MANAGE,
     PermissionName.ANALYTICS_READ,
   ],
@@ -34,6 +36,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.QR_ISSUE,
     PermissionName.PARTNER_TRANSACTIONS_READ,
     PermissionName.PURCHASE_INTENT_CONFIRM,
+    PermissionName.PARTNER_ORDER_MANAGE,
     PermissionName.PARTNER_MANAGE,
     PermissionName.EV_STATION_MANAGE,
     PermissionName.ANALYTICS_READ,
@@ -58,6 +61,10 @@ export const ROLE_PERMISSIONS: Record<RoleName, PermissionName[]> = {
     PermissionName.WALLET_WRITE,
     PermissionName.PAYMENT_REFUND,
     PermissionName.LEDGER_READ,
+    // Partner Commerce operators: queues, sourcing, escalations, manual
+    // review — and deciding disputes, a financial decision (spec §29).
+    PermissionName.PARTNER_ORDER_OPERATE,
+    PermissionName.ORDER_DISPUTE_RESOLVE,
     // The finance desk's day job: watching payments that did not resolve,
     // reading settlements, and proposing terms.
     PermissionName.PSP_READ,

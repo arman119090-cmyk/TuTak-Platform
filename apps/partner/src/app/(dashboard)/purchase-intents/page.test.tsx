@@ -44,6 +44,7 @@ function intentFixture(overrides: Partial<PurchaseIntentDto> = {}): PurchaseInte
     confirmationCode: '0042',
     grossAmount: '15000',
     bonusAmountRequested: '1000',
+    tutakMoneyAmount: '0',
     ordinaryPaymentRemainder: '14000',
     refundedAmount: '0',
     paymentRoute: PaymentRoute.DIRECT_PARTNER,

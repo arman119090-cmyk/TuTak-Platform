@@ -302,10 +302,18 @@ transaction linked by `reversedById`. Full and partial. Reverses the associated
 bonus accrual through the existing `reverseAccrualLot`, and reverses any
 redemption through `reverseSettlement` — both already exist and are tested.
 
-**Payout.** Debits `PARTNER_PAYABLE`, credits a bank-transfer clearing account,
-emits `payout.requested`. The bank confirmation closes it. A payout is never
-initiated for an amount exceeding the account balance, checked with a
-conditional `updateMany` under `Serializable`.
+**Payout — retired 26.09.2026.** The original design here was a per-amount
+request/confirm engine (`PayoutEngineService`): debit `PARTNER_PAYABLE`,
+credit `BANK_CLEARING`, close on the bank's confirmation. It was retired in
+the Launch Readiness pass because it had become a *second* way out of
+`PARTNER_PAYABLE` next to `PartnerSettlementService`, and the two did not see
+each other: the settlement engine claims only `SETTLEABLE_LEDGER_KINDS`, so a
+legacy payout's debit was invisible to it and the same earnings could be
+drafted and paid again. A partner is now paid only by a `PartnerSettlement`
+(draft claims every settleable posting exactly once → ready → approved by a
+second person → paid; `docs/PARTNER_COMMERCE.md` §14). `payouts` rows remain
+readable as history (`PayoutHistoryService`, `GET /v1/payouts/partners/:id`);
+nothing writes them.
 
 **Reconciliation.** Nightly. Compares `PSP_RECEIVABLE` against the acquirer's
 settlement file and `PARTNER_PAYABLE` against bank confirmations. Drift raises
@@ -330,10 +338,8 @@ POST   /v1/refunds                        { paymentId, amount?, reason, idempote
 GET    /v1/payouts/partners/:id/balance                          [partner-scoped]
 GET    /v1/payouts/partners/:id/settlements                      [partner-scoped]
 GET    /v1/payouts/partners/:id                                  [partner-scoped]
-POST   /v1/payouts                        { partnerId, amount, idempotencyKey }
-                                                                 [PAYOUT_MANAGE]
-POST   /v1/payouts/:id/confirm            { bankReference }      [PAYOUT_MANAGE]
-POST   /v1/payouts/:id/fail               { failureReason }      [PAYOUT_MANAGE]
+(retired 26.09.2026 — a partner is paid through /v1/partner-settlements:)
+  POST /v1/payouts, POST /v1/payouts/:id/confirm, POST /v1/payouts/:id/fail
 GET    /v1/admin/ledger/accounts                                 [LEDGER_READ]
 GET    /v1/admin/ledger/accounts/:id/postings                    [LEDGER_READ]
 GET    /v1/admin/reconciliation                                  [LEDGER_READ]
@@ -356,9 +362,13 @@ actually hold funds — a sandbox "authorization" proves nothing.
 `PAYMENT_REFUND`, `PAYOUT_MANAGE`, `LEDGER_READ`. Editing a partner's
 details, moving money back out of their balance, and wiring money to an
 external bank are three different levels of trust. `PAYOUT_MANAGE` is
-deliberately **not** granted to `ADMIN` — only `SUPER_ADMIN` — because a
-payout is the least reversible action here and there is no maker-checker
-flow yet to hand it out more widely.
+deliberately **not** granted to `ADMIN` — only `SUPER_ADMIN`. Since the
+payout engine's retirement it gates the routes that *record* money against a
+partner's balance (collections); paying a partner is `SETTLEMENT_MANAGE`, with
+the settlement engine's own maker-checker rule. `SETTLEMENT_MANAGE` is seeded
+to `ADMIN` as well as `SUPER_ADMIN` — the engine refuses the maker as checker,
+so two people are always needed; whether ADMIN should hold it at all is
+recorded as an owner decision in the 26.09.2026 launch-readiness baseline.
 
 ---
 
@@ -435,17 +445,21 @@ debt — the platform owes that value at redemption — so settlement posts
 accrual. Without it the double-entry ledger claimed the platform kept revenue
 it had already committed to giving back.
 
-**`BANK_CLEARING` was added to the chart of accounts.** A payout debits
-`PARTNER_PAYABLE` and credits clearing, where the money sits until the bank
-confirms. The alternative — straight out of the ledger on request — makes an
-in-flight transfer invisible: not the partner's to request again, but not yet
-safe to call gone either.
+**`BANK_CLEARING` was added to the chart of accounts.** The retired payout
+engine parked a requested transfer here until the bank confirmed it. Since
+26.09.2026 nothing new posts to it: a settlement's `markPaid` is the single
+posting step (DEBIT `PARTNER_PAYABLE` / CREDIT `PLATFORM_BANK`), and the
+in-flight state lives in the settlement's own status (`PAYMENT_PENDING`)
+rather than in an account. Historical balances on the account are exactly
+what the old path left there.
 
-**Payouts serialize on `SELECT ... FOR UPDATE`, not a conditional UPDATE.**
-The conditional-UPDATE pattern used everywhere else in this codebase does not
-work here, because `ledger.post` moves the same balance the claim would move
-— a claim that also moved it would double-count. Locking the row states the
-intent (exclude concurrent readers) without touching the number.
+**Payouts serialized on `SELECT ... FOR UPDATE`, not a conditional UPDATE.**
+(Retired engine.) The conditional-UPDATE pattern used everywhere else in this
+codebase did not work there, because `ledger.post` moves the same balance
+the claim would move. The settlement engine takes a different route: the
+claim is the unique index on `PartnerSettlementEntry.ledgerPostingId`, so two
+drafts for the same postings cannot both commit, and paying is a conditional
+status update in the same transaction as the posting.
 
 **`reverseAccrualLot` gained an optional cap.** A partial refund must reclaim
 a proportional share of the points, not all of them. The existing method took
@@ -462,10 +476,10 @@ which is a bug in this codebase rather than a dispute with a third party.
 | §8 requirement | Covered by |
 | --- | --- |
 | Every transaction balances | `ledger.int-spec.ts`, deferred constraint trigger |
-| Balance equals its postings | `assertLedgerIntegrity` in refund/payout specs; `reconciliation.int-spec.ts` |
+| Balance equals its postings | `assertLedgerIntegrity` in refund/settlement specs; `reconciliation.int-spec.ts` |
 | Postings immutable | `ledger.int-spec.ts` |
 | No over-refund under concurrency | `refund-engine.int-spec.ts`, plus a CHECK constraint |
-| Concurrent payout drain | `payout-engine.int-spec.ts` |
+| Concurrent payout drain | `partner-commerce-settlement.int-spec.ts` (two drafts, one wins; resolve × markPaid); `payout-history.int-spec.ts` (one debit, one kind, no second payer) |
 | Outbox drained by two workers | `outbox.int-spec.ts` |
 | Idempotency: replay, mismatch, per-actor | `idempotency.int-spec.ts` and each engine's spec |
 | Injected drift blocks payouts | `reconciliation.int-spec.ts` |

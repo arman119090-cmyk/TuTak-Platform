@@ -128,10 +128,41 @@ export interface AppConfig {
   alerts: {
     /** Where an operator gets told that money is at risk. Empty = the log only. */
     webhookUrl: string;
+    /**
+     * A Telegram bot + chat as the human channel instead of (or before) a
+     * webhook. Both empty = not configured. Read by `AlertsModule`.
+     */
+    telegramBotToken: string;
+    telegramChatId: string;
   };
   payouts: {
     /** Whether confirming a payout requires someone other than its requester. */
     dualControl: boolean;
+  };
+  fraud: {
+    /** Sliding window for every velocity rule below. */
+    velocityWindowMinutes: number;
+    /** Customer: transactions inside the window at or above which a payment is held. */
+    velocityMaxTransactions: number;
+    /** Partner / branch / employee: confirmed purchases inside the window; 0 = rule off. */
+    partnerVelocityMax: number;
+    branchVelocityMax: number;
+    employeeVelocityMax: number;
+    /** A single purchase at or above this gross (AMD) holds the reward; '0' = off. */
+    highValueAmount: string;
+    /** An account younger than this, with this many confirmed purchases, holds the reward; 0 = off. */
+    newAccountHours: number;
+    newAccountMaxPurchases: number;
+    /** How long a held green reward stays PENDING before the sweep releases it (an admin can release earlier). */
+    rewardHoldHours: number;
+  };
+  emergency: {
+    /**
+     * Platform-wide freeze: every state-changing HTTP request except auth
+     * and health is refused with 503 while this is on. See
+     * `EmergencyFreezeGuard` and docs/PRODUCTION_RUNBOOK.md.
+     */
+    freeze: boolean;
   };
   metrics: {
     /** Bearer token a Prometheus scraper must present. Empty disables /metrics. */
@@ -399,6 +430,66 @@ export interface AppConfig {
     /** Spec §18. "First 3 qualified friends" — this is the 3. */
     challengeSlotLimit: number;
   };
+  /**
+   * Partner Commerce (docs/PARTNER_COMMERCE.md). Read by
+   * `CommissionRuleService` and the SLA sweeps in `sweeps.jobs.ts` —
+   * nowhere else should hardcode one of these values.
+   */
+  partnerOrderPolicy: {
+    /**
+     * There is deliberately no platform default commission rate here any
+     * more (Q5 = A, v1 error E4): `Partner.bonusAccrualRateBps` is the one
+     * base rate, and a `CommissionRule` only ever overrides it for a
+     * specific service type/category.
+     */
+    /** Spec §17. Minutes since `submittedAt` before the "not seen" alert fires. */
+    notSeenAlertMinutes: number;
+    /**
+     * Spec §18. Minutes since `submittedAt` — never `partnerSeenAt` — before
+     * the critical "stock not confirmed" alert first fires.
+     */
+    stockConfirmDeadlineMinutes: number;
+    /** Spec §18.1. How often the critical alert repeats until resolved. */
+    stockAlertRepeatMinutes: number;
+    /** An unconfirmed DRAFT (abandoned cart) expires after this long. */
+    draftTtlHours: number;
+    /**
+     * Spec §34 / item 7. Hours after the partner marked the order DELIVERED
+     * (never after a courier handoff) before the customer is reminded.
+     */
+    receiptReminderHours: number;
+    /** Spec §34 / item 7. Hours after DELIVERED before TuTak manual review. */
+    receiptManualReviewHours: number;
+    /**
+     * Q10: the order enters "Payment issue" the moment the customer confirms
+     * receipt with an external leg still unconfirmed; this many hours later
+     * it is escalated once more. The escrow stays put either way.
+     */
+    paymentIssueHours: number;
+    /**
+     * Item 8: how long the partner has to declare "no costs" or claim actual,
+     * previously disclosed cancellation costs before a customer's
+     * cancellation proceeds as a full refund.
+     */
+    cancellationClaimHours: number;
+  };
+  /**
+   * Q9: from when new purchases carry the COMMERCE_V2 financial model. Unset
+   * = effective as soon as this code runs. Only ever compared at *creation*;
+   * refunds dispatch on the version stamped on the purchase.
+   */
+  financialPolicy: {
+    commerceV2EffectiveAt: Date | null;
+  };
+  /**
+   * Q12: where TuTak Web Checkout (apps/checkout) is served, e.g.
+   * https://checkout.tutak.am — the partner's website gets
+   * `<base>/o/<orderId>` back when it creates an order. Unset = no web link
+   * is offered (the app deep link always is).
+   */
+  checkout: {
+    webBaseUrl: string | null;
+  };
 }
 
 /**
@@ -432,6 +523,30 @@ export function assertPoolSplitSums(policy: AppConfig['purchasePolicy']): void {
         `L1 ${policy.poolReferrerL1Bps} + L2 ${policy.poolReferrerL2Bps} + L3 ${policy.poolReferrerL3Bps} + ` +
         `tutak ${policy.poolTutakBps})`,
     );
+  }
+}
+
+/**
+ * Same "fail loudly at boot" discipline as `assertPoolSplitSums` above, for
+ * the one Partner Commerce figure a bad env var could put out of range.
+ */
+export function assertPartnerOrderPolicy(policy: AppConfig['partnerOrderPolicy']): void {
+  for (const [name, value] of [
+    ['notSeenAlertMinutes', policy.notSeenAlertMinutes],
+    ['stockConfirmDeadlineMinutes', policy.stockConfirmDeadlineMinutes],
+    ['stockAlertRepeatMinutes', policy.stockAlertRepeatMinutes],
+    ['draftTtlHours', policy.draftTtlHours],
+    ['receiptReminderHours', policy.receiptReminderHours],
+    ['receiptManualReviewHours', policy.receiptManualReviewHours],
+    ['paymentIssueHours', policy.paymentIssueHours],
+    ['cancellationClaimHours', policy.cancellationClaimHours],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`partnerOrderPolicy.${name} must be a positive integer, got ${value}`);
+    }
+  }
+  if (policy.receiptManualReviewHours <= policy.receiptReminderHours) {
+    throw new Error('partnerOrderPolicy.receiptManualReviewHours must be later than receiptReminderHours');
   }
 }
 
@@ -473,6 +588,7 @@ function oneOf(
 export default (): AppConfig => {
   const config = buildConfig();
   assertPoolSplitSums(config.purchasePolicy);
+  assertPartnerOrderPolicy(config.partnerOrderPolicy);
   return config;
 };
 
@@ -654,6 +770,36 @@ const buildConfig = (): AppConfig => ({
     // JSON POST. Unset in development; production boots without it but warns
     // — see AlertsModule for why it does not refuse.
     webhookUrl: process.env.ALERT_WEBHOOK_URL ?? '',
+    // A Telegram bot token + chat id. Production on Railway had these set
+    // since before 26.09.2026 with nothing reading them — the channel now
+    // exists (`TelegramAlertChannel`). Used when no webhook is set.
+    telegramBotToken: process.env.ALERT_TELEGRAM_BOT_TOKEN?.trim() ?? '',
+    telegramChatId: process.env.ALERT_TELEGRAM_CHAT_ID?.trim() ?? '',
+  },
+  fraud: {
+    // The pilot's deterministic anti-fraud rule, configurable so the owner
+    // can tighten it without a release. Defaults are the values that were
+    // hard-coded before 26.09.2026 (10 minutes, 8 transactions).
+    velocityWindowMinutes: parseInt(process.env.FRAUD_VELOCITY_WINDOW_MINUTES ?? '10', 10),
+    velocityMaxTransactions: parseInt(process.env.FRAUD_VELOCITY_MAX_TRANSACTIONS ?? '8', 10),
+    // Pilot minimum (26.09.2026). The defaults are deliberately loose — they
+    // catch a script, not a busy Saturday — and every one is the owner's to
+    // tighten; none of them is a commercial decision made here. A hit never
+    // refuses the sale: the customer's green reward is held PENDING for
+    // `rewardHoldHours` and a FraudSignal is raised for an admin to release
+    // or keep (docs/AI_RISK_ENGINE_DESIGN.md §1-2).
+    partnerVelocityMax: parseInt(process.env.FRAUD_PARTNER_VELOCITY_MAX ?? '300', 10),
+    branchVelocityMax: parseInt(process.env.FRAUD_BRANCH_VELOCITY_MAX ?? '150', 10),
+    employeeVelocityMax: parseInt(process.env.FRAUD_EMPLOYEE_VELOCITY_MAX ?? '60', 10),
+    highValueAmount: process.env.FRAUD_HIGH_VALUE_AMOUNT ?? '300000',
+    newAccountHours: parseInt(process.env.FRAUD_NEW_ACCOUNT_HOURS ?? '24', 10),
+    newAccountMaxPurchases: parseInt(process.env.FRAUD_NEW_ACCOUNT_MAX_PURCHASES ?? '5', 10),
+    rewardHoldHours: parseInt(process.env.FRAUD_REWARD_HOLD_HOURS ?? '72', 10),
+  },
+  emergency: {
+    // Off unless spelled out. Set EMERGENCY_FREEZE=true on the service and
+    // let it restart: reads keep working, writes answer 503 PLATFORM_FROZEN.
+    freeze: process.env.EMERGENCY_FREEZE === 'true',
   },
   metrics: {
     // No default. An unset token disables the endpoint rather than opening
@@ -765,7 +911,40 @@ const buildConfig = (): AppConfig => ({
     // First 3 qualified friends, per spec §18.
     challengeSlotLimit: parseInt(process.env.REFERRAL_CHALLENGE_SLOT_LIMIT ?? '3', 10),
   },
+  partnerOrderPolicy: {
+    // Spec §17.
+    notSeenAlertMinutes: parseInt(process.env.PARTNER_ORDER_NOT_SEEN_ALERT_MINUTES ?? '5', 10),
+    // Spec §18.
+    stockConfirmDeadlineMinutes: parseInt(
+      process.env.PARTNER_ORDER_STOCK_CONFIRM_DEADLINE_MINUTES ?? '30',
+      10,
+    ),
+    stockAlertRepeatMinutes: parseInt(
+      process.env.PARTNER_ORDER_STOCK_ALERT_REPEAT_MINUTES ?? '5',
+      10,
+    ),
+    draftTtlHours: parseInt(process.env.PARTNER_ORDER_DRAFT_TTL_HOURS ?? '24', 10),
+    // Spec §34 / Q3: 24h reminder, 48h manual review.
+    receiptReminderHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_REMINDER_HOURS ?? '24', 10),
+    receiptManualReviewHours: parseInt(process.env.PARTNER_ORDER_RECEIPT_MANUAL_REVIEW_HOURS ?? '48', 10),
+    paymentIssueHours: parseInt(process.env.PARTNER_ORDER_PAYMENT_ISSUE_HOURS ?? '24', 10),
+    cancellationClaimHours: parseInt(process.env.PARTNER_ORDER_CANCELLATION_CLAIM_HOURS ?? '24', 10),
+  },
+  financialPolicy: {
+    commerceV2EffectiveAt: parseEffectiveAt(process.env.FINANCIAL_POLICY_V2_EFFECTIVE_AT),
+  },
+  checkout: {
+    webBaseUrl: process.env.CHECKOUT_WEB_BASE_URL?.trim().replace(/\/+$/, '') || null,
+  },
 });
+
+/** An ISO timestamp, or null (= effective immediately). A malformed value refuses to boot. */
+function parseEffectiveAt(raw: string | undefined): Date | null {
+  if (!raw || raw.trim() === '') return null;
+  const at = new Date(raw);
+  if (Number.isNaN(at.getTime())) throw new Error(`FINANCIAL_POLICY_V2_EFFECTIVE_AT is not a valid timestamp: ${raw}`);
+  return at;
+}
 
 /**
  * A positive whole number of milliseconds from the environment.

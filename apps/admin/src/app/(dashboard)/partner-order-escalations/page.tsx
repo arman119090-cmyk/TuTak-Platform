@@ -9,6 +9,8 @@ const TYPE_LABEL: Record<string, string> = {
   NOT_SEEN_5MIN: 'Not seen (5 min)',
   STOCK_NOT_CONFIRMED_30MIN: 'Stock not confirmed (30 min)',
   STOCK_NOT_CONFIRMED_REPEAT: 'Stock still not confirmed',
+  RECEIPT_NOT_CONFIRMED_48H: 'Receipt not confirmed (48 h) — manual review',
+  PAYMENT_ISSUE: 'Received, external payment unconfirmed',
 };
 
 function elapsed(from: string, now: number) {
@@ -64,12 +66,12 @@ export default function PartnerOrderEscalationsPage() {
             {escalations.map((e) => (
               <Tr key={e.id}>
                 <Td className="font-mono text-[12px] text-faint">
-                  {e.order ? `#${e.order.orderNumber}` : e.orderId.slice(-8)}
+                  {e.order ? `#${e.order.orderNumber} · ${e.order.partner?.displayName ?? ''} · ${Number(e.order.totalAmount).toLocaleString('en-US')} ֏` : e.orderId.slice(-8)}
                 </Td>
                 <Td>
                   <Badge tone="danger">{TYPE_LABEL[e.type] ?? e.type}</Badge>
                 </Td>
-                <Td className="text-muted">{elapsed(e.order?.createdAt ?? e.createdAt, now)}</Td>
+                <Td className="text-muted">{elapsed(e.order?.submittedAt ?? e.createdAt, now)}</Td>
                 <Td className="text-muted">{e.claimedByUserId ? 'Claimed' : '—'}</Td>
                 <Td align="right">
                   <div className="flex items-center justify-end gap-2">

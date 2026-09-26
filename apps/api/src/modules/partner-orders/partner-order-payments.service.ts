@@ -269,7 +269,7 @@ export class PartnerOrderPaymentsService {
     if (remaining.greaterThan(0)) {
       throw new BadRequestException({
         message: 'The price difference can only be returned from cash the partner already received',
-        code: 'PRICE_DECREASE_NEEDS_EXTERNAL_REFUND',
+        error: 'PRICE_DECREASE_NEEDS_EXTERNAL_REFUND',
       });
     }
     return reduced;

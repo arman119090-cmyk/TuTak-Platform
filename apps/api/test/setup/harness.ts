@@ -44,6 +44,11 @@ import { TransactionsModule } from '../../src/modules/transactions/transactions.
 import { UsersModule } from '../../src/modules/users/users.module';
 import { WalletModule } from '../../src/modules/wallet/wallet.module';
 import { TEST_DATABASE_URL } from './test-database';
+import { Reflector } from '@nestjs/core';
+import { JwtAuthGuard } from '../../src/common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../src/common/guards/roles.guard';
+import { PermissionsGuard } from '../../src/common/guards/permissions.guard';
+import { PasswordRotationGuard } from '../../src/common/guards/password-rotation.guard';
 
 /**
  * Boots the real domain modules against the real test database.
@@ -282,7 +287,14 @@ export interface HttpTestHarness {
  * real running server, in docs/ID_VALIDATION_2026-08-23.md, is the evidence
  * that authenticated routes behave the same way end-to-end, guards included.
  */
-export async function createHttpTestHarness(): Promise<HttpTestHarness> {
+/**
+ * `authGuards: true` additionally installs the same global guard chain
+ * `AppModule` declares (JWT → roles → permissions → password rotation), so a
+ * suite can prove end-to-end, over real HTTP, who may call what — e.g.
+ * Partner Commerce's authorization tests. Off by default, preserving this
+ * harness's original, guard-free behaviour for `id-validation.int-spec.ts`.
+ */
+export async function createHttpTestHarness(options: { authGuards?: boolean } = {}): Promise<HttpTestHarness> {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
   const alerts = new RecordingAlertChannel();
   const emitter = new SettleableEventEmitter();
@@ -307,6 +319,15 @@ export async function createHttpTestHarness(): Promise<HttpTestHarness> {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
+  if (options.authGuards) {
+    const reflector = app.get(Reflector);
+    app.useGlobalGuards(
+      new JwtAuthGuard(reflector),
+      new RolesGuard(reflector),
+      new PermissionsGuard(reflector),
+      new PasswordRotationGuard(reflector),
+    );
+  }
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   await app.init();

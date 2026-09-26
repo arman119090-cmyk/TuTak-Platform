@@ -16,7 +16,7 @@ export interface ShiftStamp {
 
 export class ShiftRequiredError extends ForbiddenException {
   constructor() {
-    super({ message: 'Start your shift first', code: 'SHIFT_REQUIRED' });
+    super({ message: 'Start your shift first', error: 'SHIFT_REQUIRED' });
   }
 }
 

@@ -312,7 +312,7 @@ export class PartnerOrdersService {
     if (split.discount.plus(split.tutakMoney).lessThan(order.prepaymentRequiredAmount)) {
       throw new BadRequestException({
         message: `This order needs at least ${order.prepaymentRequiredAmount.toFixed(0)} AMD paid through TuTak in advance`,
-        code: 'PREPAYMENT_REQUIRED',
+        error: 'PREPAYMENT_REQUIRED',
       });
     }
 
@@ -630,7 +630,7 @@ export class PartnerOrdersService {
       if (!([Op.SUBMITTED, Op.SEEN, Op.STOCK_CONFIRMED] as Op[]).includes(order.operationalStatus)) {
         throw new BadRequestException({
           message: 'The goods were already handed over — open a payment dispute instead',
-          code: 'USE_PAYMENT_DISPUTE',
+          error: 'USE_PAYMENT_DISPUTE',
         });
       }
       const stamp = await this.shifts.stampFor(tx, { userId: staffUserId, partnerId: order.partnerId, branchId: order.branchId });

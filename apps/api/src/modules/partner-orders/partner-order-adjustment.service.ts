@@ -144,7 +144,7 @@ export class PartnerOrderAdjustmentService {
       });
     } catch (err) {
       await this.payments.compensateDiscount(reservationId, 'partner_order_adjustment_failed');
-      if (err instanceof HttpException && (err.getResponse() as { code?: string })?.code === 'PRICE_DECREASE_NEEDS_EXTERNAL_REFUND') {
+      if (err instanceof HttpException && (err.getResponse() as { error?: string })?.error === 'PRICE_DECREASE_NEEDS_EXTERNAL_REFUND') {
         // Nothing moved (the transaction rolled back). The cheaper price
         // could only be refunded out of cash the partner already holds —
         // a TuTak operator settles that by hand rather than a rule invented

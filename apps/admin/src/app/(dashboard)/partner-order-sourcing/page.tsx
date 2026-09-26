@@ -19,6 +19,8 @@ export default function PartnerOrderSourcingPage() {
   const [mode, setMode] = useState<'FOUND_EXACT' | 'FOUND_ALTERNATE' | null>(null);
   const [productName, setProductName] = useState('');
   const [price, setPrice] = useState('');
+  const [differences, setDifferences] = useState('');
+  const [sourceType, setSourceType] = useState<'OTHER_TUTAK_PARTNER' | 'EXTERNAL'>('OTHER_TUTAK_PARTNER');
 
   const { data } = useQuery({
     queryKey: ['partner-order-sourcing'],
@@ -32,6 +34,7 @@ export default function PartnerOrderSourcingPage() {
     setMode(null);
     setProductName('');
     setPrice('');
+    setDifferences('');
   };
   const tasks = data ?? [];
 
@@ -49,8 +52,10 @@ export default function PartnerOrderSourcingPage() {
           <thead>
             <tr>
               <Th>Order</Th>
+              <Th>Partner · customer</Th>
               <Th>Item requested</Th>
-              <Th align="right">Paid</Th>
+              <Th align="right">Price · secured through TuTak</Th>
+              <Th>Waiting</Th>
               <Th>Status</Th>
               <Th align="right" />
             </tr>
@@ -62,9 +67,35 @@ export default function PartnerOrderSourcingPage() {
                   <Td className="font-mono text-[12px] text-faint">
                     {task.order ? `#${task.order.orderNumber}` : task.orderId.slice(-8)}
                   </Td>
-                  <Td>{task.order?.items.map((i) => `${i.quantity}× ${i.name}`).join(', ') ?? '—'}</Td>
+                  <Td>
+                    {task.order?.partner?.displayName ?? '—'}
+                    <div className="text-[12px] text-muted">
+                      {task.order?.customer ? `${task.order.customer.firstName ?? ''} ${task.order.customer.lastName ?? ''}` : ''}
+                    </div>
+                  </Td>
+                  <Td>
+                    {task.order?.items.map((i) => (
+                      <div key={i.id}>
+                        {i.imageUrl ? <img src={i.imageUrl} alt="" className="mr-2 inline h-8 w-8 rounded object-cover" /> : null}
+                        {i.quantity}× {i.name}
+                        <span className="text-[12px] text-muted">
+                          {i.sku ? ` · SKU ${i.sku}` : ''}
+                          {i.oemNumber ? ` · OEM ${i.oemNumber}` : ''}
+                          {i.description ? ` · ${i.description}` : ''}
+                        </span>
+                      </div>
+                    )) ?? '—'}
+                  </Td>
                   <Td align="right" className="tabular">
                     {task.order ? `${num(task.order.totalAmount)} ֏` : '—'}
+                    <div className="text-[12px] text-muted">
+                      {task.order
+                        ? `${num(Number(task.order.discountAmount) + Number(task.order.tutakMoneyAmount))} ֏ secured`
+                        : ''}
+                    </div>
+                  </Td>
+                  <Td className="text-muted">
+                    {task.order?.submittedAt ? `${Math.floor((Date.now() - +new Date(task.order.submittedAt)) / 60_000)} min` : '—'}
                   </Td>
                   <Td>
                     <Badge tone={task.status === 'SEARCHING' ? 'pending' : 'neutral'}>{task.status}</Badge>
@@ -118,7 +149,7 @@ export default function PartnerOrderSourcingPage() {
                 </Tr>
                 {formId === task.id && mode && (
                   <Tr>
-                    <Td colSpan={5}>
+                    <Td colSpan={7}>
                       <div className="flex items-center gap-2 py-2">
                         <Input
                           autoFocus
@@ -133,6 +164,20 @@ export default function PartnerOrderSourcingPage() {
                           onChange={(e) => setPrice(e.target.value)}
                           className="h-8 w-32 text-[13px]"
                         />
+                        <Input
+                          placeholder="Differences shown to the customer"
+                          value={differences}
+                          onChange={(e) => setDifferences(e.target.value)}
+                          className="h-8 w-64 text-[13px]"
+                        />
+                        <select
+                          value={sourceType}
+                          onChange={(e) => setSourceType(e.target.value as 'OTHER_TUTAK_PARTNER' | 'EXTERNAL')}
+                          className="h-8 rounded border border-line bg-surface px-2 text-[13px]"
+                        >
+                          <option value="OTHER_TUTAK_PARTNER">Another TuTak partner</option>
+                          <option value="EXTERNAL">External (e.g. List.am)</option>
+                        </select>
                         <Button
                           size="sm"
                           disabled={!productName || !price}
@@ -141,6 +186,8 @@ export default function PartnerOrderSourcingPage() {
                               status: mode,
                               productName,
                               price,
+                              differences: differences || undefined,
+                              sourceType,
                             });
                             closeForm();
                             invalidate();

@@ -684,12 +684,26 @@ export class PartnerSettlementService {
    *
    * Only APPROVED and FAILED can be provable at all: PAYMENT_PENDING is a
    * transfer in flight, REQUIRES_RECONCILIATION is by definition unknown, and
-   * PAID is paid. For FAILED the proof is the attempt record: every attempt
-   * resolved and none succeeded — what `markFailed` ("only when the bank's
-   * answer is unambiguous") and a two-person MONEY_DID_NOT_MOVE both leave
-   * behind — with no bank reference on the settlement and no MONEY_MOVED
-   * reading anywhere in its history. PAYMENT_PENDING in a FAILED settlement's
-   * past is not evidence: it is how the bounced transfer reached the bank.
+   * PAID is paid. Common to both: no paid posting, no attempt that succeeded,
+   * none still unresolved.
+   *
+   * APPROVED is provable when nothing has ever been tried: no attempt, no
+   * bank reference, no PAYMENT_PENDING recorded.
+   *
+   * FAILED is provable in two ways (owner's decisions, 26.09.2026):
+   *
+   * - the bank's unambiguous refusal — `markFailed`, never reconciled: every
+   *   attempt resolved and failed, no reference on the settlement;
+   * - two people confirmed MONEY_DID_NOT_MOVE. That confirmation *is* the
+   *   proof for the attempt it decided, whatever reference that attempt or a
+   *   retracted MONEY_MOVED reading left on the row — so the reference is not
+   *   held against it. What is: anything tried *after* the confirmation. A
+   *   later attempt or PAYMENT_PENDING means the old confirmation says nothing
+   *   about the money now; the settlement has to be reconciled again (which
+   *   stamps a new confirmation) before it can be released.
+   *
+   * PAYMENT_PENDING in a FAILED settlement's past is not evidence by itself:
+   * it is how a bounced transfer reached the bank.
    */
   private async transferEvidence(
     tx: Tx,
@@ -700,6 +714,7 @@ export class PartnerSettlementService {
       ledgerTransactionId: string | null;
       paidAt: Date | null;
       reconciliationOutcome: ReconciliationOutcome | null;
+      reconciliationConfirmedAt: Date | null;
     },
   ): Promise<string[]> {
     const evidence: string[] = [];
@@ -710,15 +725,6 @@ export class PartnerSettlementService {
       evidence.push(`status ${settlement.status}`);
     }
     if (settlement.ledgerTransactionId || settlement.paidAt) evidence.push('marked paid');
-    if (settlement.bankTransferReference) {
-      evidence.push('a bank transfer reference on the settlement');
-    }
-    if (
-      settlement.reconciliationOutcome &&
-      settlement.reconciliationOutcome !== ReconciliationOutcome.MONEY_DID_NOT_MOVE
-    ) {
-      evidence.push(`a reconciliation reading of ${settlement.reconciliationOutcome}`);
-    }
     const paidPostings = await tx.ledgerTransaction.count({
       where: {
         kind: SETTLEMENT_PAID_KIND,
@@ -729,24 +735,57 @@ export class PartnerSettlementService {
     if (paidPostings > 0) evidence.push(`${SETTLEMENT_PAID_KIND} posting`);
     const attempts = await tx.partnerSettlementTransferAttempt.findMany({
       where: { settlementId: settlement.id },
-      select: { succeeded: true, resolvedAt: true },
+      select: { succeeded: true, resolvedAt: true, attemptedAt: true },
+      orderBy: { attemptedAt: 'asc' },
     });
     if (attempts.some((a) => a.succeeded)) evidence.push('a successful transfer attempt');
     if (attempts.some((a) => !a.succeeded && a.resolvedAt === null)) {
       evidence.push('an unresolved transfer attempt');
     }
-    if (settlement.status === PartnerSettlementStatus.FAILED && attempts.length === 0) {
-      evidence.push('FAILED without a recorded attempt');
-    }
-    if (settlement.status === PartnerSettlementStatus.APPROVED) {
-      const pending = await tx.auditLog.count({
+    const pendingRecordedAfter = (since?: Date) =>
+      tx.auditLog.count({
         where: {
           entityType: 'PartnerSettlement',
           entityId: settlement.id,
           metadata: { path: ['event'], equals: 'settlement.payment_pending' },
+          ...(since ? { createdAt: { gt: since } } : {}),
         },
       });
-      if (pending > 0) evidence.push('PAYMENT_PENDING recorded');
+
+    if (settlement.status === PartnerSettlementStatus.APPROVED) {
+      if (attempts.length > 0) evidence.push('a transfer attempt');
+      if (settlement.bankTransferReference) {
+        evidence.push('a bank transfer reference on the settlement');
+      }
+      if (settlement.reconciliationOutcome) {
+        evidence.push(`a reconciliation reading of ${settlement.reconciliationOutcome}`);
+      }
+      if ((await pendingRecordedAfter()) > 0) evidence.push('PAYMENT_PENDING recorded');
+    }
+
+    if (settlement.status === PartnerSettlementStatus.FAILED) {
+      if (attempts.length === 0) evidence.push('FAILED without a recorded attempt');
+      if (settlement.reconciliationOutcome === null) {
+        if (settlement.bankTransferReference) {
+          evidence.push('a bank transfer reference on the settlement');
+        }
+      } else if (
+        settlement.reconciliationOutcome === ReconciliationOutcome.MONEY_DID_NOT_MOVE &&
+        settlement.reconciliationConfirmedAt
+      ) {
+        const confirmedAt = settlement.reconciliationConfirmedAt;
+        if (attempts.some((a) => a.attemptedAt > confirmedAt)) {
+          evidence.push('a transfer attempt after MONEY_DID_NOT_MOVE was confirmed');
+        }
+        if ((await pendingRecordedAfter(confirmedAt)) > 0) {
+          evidence.push('PAYMENT_PENDING after MONEY_DID_NOT_MOVE was confirmed');
+        }
+      } else {
+        evidence.push(
+          `a reconciliation reading of ${settlement.reconciliationOutcome}` +
+            (settlement.reconciliationConfirmedAt ? '' : ' (unconfirmed)'),
+        );
+      }
     }
     return evidence;
   }
@@ -1205,15 +1244,18 @@ export class PartnerSettlementService {
    * settlement period (owner's decision, 26.09.2026).
    *
    * Allowed only on proof, re-checked under the partner lock:
-   * `transferEvidence` finds nothing. That is APPROVED with no PAYMENT_PENDING
-   * ever recorded, or FAILED whose every attempt is resolved and failed — the
-   * bank's unambiguous refusal, or two people confirming MONEY_DID_NOT_MOVE —
-   * and in both cases no attempt that succeeded or is unresolved, no bank
-   * reference, no paid posting, no MONEY_MOVED reading. PAYMENT_PENDING and
-   * REQUIRES_RECONCILIATION are never revocable: a transfer may have moved
-   * money, so the claims stay and that settlement finishes through the
-   * transfer or reconciliation steps; a refund is then the partner's debt for
-   * the next settlement.
+   * `transferEvidence` finds nothing — see there for what APPROVED and FAILED
+   * each have to show. PAYMENT_PENDING and REQUIRES_RECONCILIATION are never
+   * revocable: a transfer may have moved money, so the claims stay and that
+   * settlement finishes through the transfer or reconciliation steps; a
+   * refund is then the partner's debt for the next settlement.
+   *
+   * Refused while an order in the settlement has an OPEN dispute
+   * (`OPEN_DISPUTE_PENDING_RESOLUTION`): the chosen path there is to wait for
+   * the decision — `markPaid` already refuses — and since nothing is drafted
+   * on revoke, releasing early buys nothing and leaves an odd in-between
+   * state. Decided for the partner, the settlement is simply paid; for the
+   * customer, it is revoked here (owner's decision, 26.09.2026).
    */
   async revokeApproval(id: string, params: { actorId: string; reason: string }) {
     const reason = params.reason.trim();
@@ -1248,6 +1290,21 @@ export class PartnerSettlementService {
             'money, so its claims stay. Finish it through the transfer or reconciliation steps; ' +
             'a refund is then netted by the next settlement.',
           error: 'TRANSFER_MAY_HAVE_STARTED',
+        });
+      }
+      const openDisputes = await tx.$queryRaw<{ orderId: string }[]>`
+        SELECT DISTINCT d."orderId"
+          FROM partner_settlement_entries e
+          JOIN order_disputes d ON d."orderId" = e."sourceId" AND d.status = 'OPEN' AND d.type = 'ORDER'
+         WHERE e."settlementId" = ${id}
+           AND e."sourceType" = 'PartnerOrder'`;
+      if (openDisputes.length > 0) {
+        throw new ConflictException({
+          message:
+            `An order in this settlement has an open dispute (${openDisputes.map((d) => d.orderId).join(', ')}). ` +
+            'Wait for the decision: for the partner the settlement is paid as it is, for the customer it is revoked then.',
+          error: 'OPEN_DISPUTE_PENDING_RESOLUTION',
+          orderIds: openDisputes.map((d) => d.orderId),
         });
       }
 

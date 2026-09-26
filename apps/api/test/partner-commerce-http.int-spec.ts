@@ -322,7 +322,7 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
     const openDrafts = (partnerId: string) =>
       prisma.partnerSettlement.count({ where: { partnerId, status: { in: ['DRAFT', 'READY'] } } });
 
-    type Stage = 'DRAFT' | 'READY' | 'APPROVED' | 'PAYMENT_PENDING' | 'FAILED' | 'REQUIRES_RECONCILIATION' | 'FAILED_AMBIGUOUS';
+    type Stage = 'DRAFT' | 'READY' | 'APPROVED' | 'PAYMENT_PENDING' | 'FAILED' | 'REQUIRES_RECONCILIATION' | 'FAILED_RECONCILED' | 'FAILED_RETRIED';
     /** A partner owed 30000 for one settleable posting, with its settlement advanced to `stage`. */
     async function settlementAt(stage: Stage) {
       const partner = await createPartner(prisma, { displayName: `Partner ${stage}` });
@@ -363,10 +363,15 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
       }
       await engine.markRequiresReconciliation(draft.id, { actorId: checker.id, reason: 'bank timeout' });
       if (stage === 'REQUIRES_RECONCILIATION') return { partner, settlement: await current() };
-      // A MONEY_MOVED reading, retracted, then confirmed not moved: FAILED with the reference left on the row.
+      // A MONEY_MOVED reading, retracted, then two people confirm not moved: FAILED with the
+      // reference left on the row — which does not count against it.
       await engine.proposeReconciliationOutcome(draft.id, { actorId: finance.id, outcome: 'MONEY_MOVED', evidence: 'line 3', bankTransferReference: `M-${draft.id.slice(0, 8)}` });
       await engine.proposeReconciliationOutcome(draft.id, { actorId: finance.id, outcome: 'MONEY_DID_NOT_MOVE', evidence: 'line 3 was another partner' });
       await engine.confirmReconciliationOutcome(draft.id, { actorId: checker.id });
+      if (stage === 'FAILED_RECONCILED') return { partner, settlement: await current() };
+      // A retry after that confirmation, bounced: the confirmation says nothing about it.
+      await engine.markPaymentPending(draft.id, checker.id);
+      await engine.markFailed(draft.id, { actorId: checker.id, reason: 'IBAN closed', bankTransferReference: `R-${draft.id.slice(0, 8)}` });
       return { partner, settlement: await current() };
     }
 
@@ -395,7 +400,7 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
     }
 
     // A transfer may have moved money: never, and nothing changes.
-    for (const stage of ['PAYMENT_PENDING', 'REQUIRES_RECONCILIATION', 'FAILED_AMBIGUOUS'] as const) {
+    for (const stage of ['PAYMENT_PENDING', 'REQUIRES_RECONCILIATION', 'FAILED_RETRIED'] as const) {
       const { settlement } = await settlementAt(stage);
       const r = await revoke(settlement.id, token(finance), { reason: 'dispute decided for the customer' });
       expect(r.status).toBe(409);
@@ -405,9 +410,10 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
       expect(await entries(settlement.id)).toBe(1);
     }
 
-    // Provably unpaid — APPROVED untouched, or FAILED on the bank's unambiguous "no": revoked, claims
-    // released, no draft made; a second call is refused and changes nothing.
-    for (const stage of ['APPROVED', 'FAILED'] as const) {
+    // Provably unpaid — APPROVED untouched, FAILED on the bank's unambiguous "no", or FAILED by a
+    // confirmed MONEY_DID_NOT_MOVE: revoked, claims released, no draft made; a second call is refused
+    // and changes nothing.
+    for (const stage of ['APPROVED', 'FAILED', 'FAILED_RECONCILED'] as const) {
       const { partner, settlement } = await settlementAt(stage);
       const r = await revoke(settlement.id, token(finance), { reason: 'dispute decided for the customer' });
       expect(r.status).toBe(201);

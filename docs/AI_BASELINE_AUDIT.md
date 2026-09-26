@@ -21,9 +21,23 @@
   Системный промпт нацелен на деньги: баланс двойной записи, идемпотентность,
   гонки, maker/checker, tenant isolation, авторизация на write-маршрутах;
   шкала P0/P1/P2/NIT; «не хвалить».
-- Без ключа скрипт печатает `BLOCKED_BY_API_KEY` и завершается с кодом 0 —
-  проверено локально (`AI_REVIEW_PROVIDER=kimi node scripts/ai-review.mjs /dev/null`).
-  Job **никогда не валит CI**: это совет, не approve (`AGENTS.md` §4).
+- Без ключа скрипт печатает `BLOCKED_BY_API_KEY` **и постит это же в PR как
+  sticky-комментарий** («это не чистое ревью»), завершаясь с кодом 0 —
+  проверено локально. Сбой провайдера после 2 повторов → `PROVIDER_FAILURE`
+  тем же способом. Job **никогда не валит CI**, но отсутствие ревью никогда
+  не выглядит как «нет замечаний» (`AGENTS.md` §4).
+- Вывод — JSON по схеме `FINDING_SCHEMA` в `scripts/ai-review.mjs`
+  (`severity P0–P3, category, file, line, finding, evidence, suggestedFix,
+  confidence`), сохраняется артефактом (`ai-review-out/<provider>-<mode>.json`,
+  90 дней) и рендерится таблицей в комментарии. Лимиты: вход 120 000 символов,
+  выход 4 000 токенов, таймаут 180 с, 2 повтора (repository variables
+  `AI_REVIEW_*`).
+- Еженедельный полный аудит (понедельник 04:23 UTC, и `workflow_dispatch`):
+  13 денежных модулей (`ledger`, `partner-settlements`, `payouts`,
+  `purchase-intents`, `partner-orders`, `commission-distribution`, `wallet`,
+  `referral`, `payments`, `psp`, `auth`, `security`, `prisma/migrations`),
+  обе модели независимо, артефакты на прогон. Первый прогон на PR #71 без
+  ключей: job «Kimi + DeepSeek review» отработал (12 с) со статусом BLOCKED.
 - Форки не получают секретов: `if: head.repo.full_name == github.repository`.
 
 ## Что НЕ сделано и почему

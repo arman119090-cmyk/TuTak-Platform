@@ -1,45 +1,56 @@
 name: AI review (advisory)
 
-# Second-opinion review of every pull request by Kimi and DeepSeek.
+# Second-opinion review of every pull request by Kimi and DeepSeek, plus a
+# weekly full-module audit of the money code.
 #
-# Advisory by construction: the job never fails the PR, and it never runs at
-# all unless the API keys exist in GitHub Secrets — the repository holds no
-# keys (AGENTS.md §4). Without a key the step prints BLOCKED_BY_API_KEY and
-# exits 0, so a fork or a fresh clone is not punished for lacking them.
+# Advisory by construction: the job never fails the PR, and it never runs a
+# model unless the API keys exist in GitHub Secrets — the repository holds no
+# keys (AGENTS.md §4). Without a key the step posts BLOCKED_BY_API_KEY as a PR
+# comment and exits 0; a provider failure posts PROVIDER_FAILURE the same way.
+# Neither ever looks like a clean review, and neither model sees the other's
+# answer (they run as separate steps with separate prompts).
 #
-# What the models see: the PR diff against the base (capped), the PR title
-# and body. What they produce: a markdown review posted as one sticky PR
-# comment per model. Nothing they say is trusted without a human or a test
-# confirming it (AGENTS.md §4).
+# Output per model: one sticky PR comment (findings table) and a JSON file
+# (scripts/ai-review.mjs FINDING_SCHEMA) uploaded as an artifact for a later
+# decision engine. Nothing here merges, deploys or marks anything verified.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Weekly full audit of the money modules, Monday 04:23 UTC.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  group: ai-review-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  KIMI_BASE_URL: ${{ vars.KIMI_BASE_URL || 'https://api.moonshot.ai/v1' }}
+  KIMI_MODEL: ${{ vars.KIMI_MODEL || 'kimi-k2-0905-preview' }}
+  DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL || 'https://api.deepseek.com' }}
+  DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
+  AI_REVIEW_MAX_INPUT_CHARS: ${{ vars.AI_REVIEW_MAX_INPUT_CHARS || '120000' }}
+  AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.AI_REVIEW_MAX_OUTPUT_TOKENS || '4000' }}
 
 jobs:
   review:
     name: Kimi + DeepSeek review
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # Draft PRs get reviewed too — that is when the feedback is cheapest —
-    # but only from this repository; forks have no access to the secrets.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Diff against the base branch
         run: |
           git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1
@@ -47,27 +58,83 @@ jobs:
             -- . ':(exclude)pnpm-lock.yaml' ':(exclude)**/*.snap' ':(exclude)docs/**' \
             > /tmp/pr.diff
           wc -c /tmp/pr.diff
-
       - name: Kimi
         env:
           AI_REVIEW_PROVIDER: kimi
           AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
-          AI_REVIEW_BASE_URL: ${{ vars.KIMI_BASE_URL || 'https://api.moonshot.ai/v1' }}
-          AI_REVIEW_MODEL: ${{ vars.KIMI_MODEL || 'kimi-k2-0905-preview' }}
+          AI_REVIEW_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node scripts/ai-review.mjs /tmp/pr.diff
-
       - name: DeepSeek
         env:
           AI_REVIEW_PROVIDER: deepseek
           AI_REVIEW_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          AI_REVIEW_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL || 'https://api.deepseek.com' }}
-          AI_REVIEW_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
+          AI_REVIEW_BASE_URL: ${{ env.DEEPSEEK_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.DEEPSEEK_MODEL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node scripts/ai-review.mjs /tmp/pr.diff
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-review-findings-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: ai-review-out/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  weekly-audit:
+    name: Weekly full audit of the money modules
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - apps/api/src/modules/ledger
+          - apps/api/src/modules/partner-settlements
+          - apps/api/src/modules/payouts
+          - apps/api/src/modules/purchase-intents
+          - apps/api/src/modules/partner-orders
+          - apps/api/src/modules/commission-distribution
+          - apps/api/src/modules/wallet
+          - apps/api/src/modules/referral
+          - apps/api/src/modules/payments
+          - apps/api/src/modules/psp
+          - apps/api/src/modules/auth
+          - apps/api/src/modules/security
+          - apps/api/prisma/migrations
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Kimi
+        env:
+          AI_REVIEW_PROVIDER: kimi
+          AI_REVIEW_MODE: full
+          AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
+        run: node scripts/ai-review.mjs "${{ matrix.module }}"
+      - name: DeepSeek
+        env:
+          AI_REVIEW_PROVIDER: deepseek
+          AI_REVIEW_MODE: full
+          AI_REVIEW_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ env.DEEPSEEK_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ env.DEEPSEEK_MODEL }}
+        run: node scripts/ai-review.mjs "${{ matrix.module }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-audit-${{ github.run_id }}-${{ strategy.job-index }}
+          path: ai-review-out/
+          if-no-files-found: ignore
+          retention-days: 90

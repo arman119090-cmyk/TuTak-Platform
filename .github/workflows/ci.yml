@@ -253,8 +253,12 @@ jobs:
   #
   # `timeout-minutes` stays generous for the same reason it was raised to 25
   # in the first place: it is a stall detector, not a performance budget.
-  # Per shard the suite is a third of the work, so 15 keeps the same wide
-  # gap between "slow runner" and "stuck".
+  # Per shard the suite is a third of the work, so 15 kept the same wide
+  # gap between "slow runner" and "stuck" — until Partner Commerce added its
+  # integration suites: a green shard then took 13.3 minutes, and a slow
+  # runner (every suite 2-4x its usual time) hit 15 with all tests passing
+  # and six suites never run. 25 restores the gap; a real stall still ends
+  # the job.
   integration:
     name: Integration tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
@@ -320,7 +324,7 @@ jobs:
       # absent — see the 2026-08-30 hardening note in git history for the
       # open handle it used to paper over and why removing it was the fix.
       - name: Integration tests
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: pnpm --filter @tutak/api test:int:shard
         env:
           JEST_SHARD: ${{ matrix.shard }}/3

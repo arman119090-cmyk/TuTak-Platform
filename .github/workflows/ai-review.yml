@@ -1,0 +1,73 @@
+name: AI review (advisory)
+
+# Second-opinion review of every pull request by Kimi and DeepSeek.
+#
+# Advisory by construction: the job never fails the PR, and it never runs at
+# all unless the API keys exist in GitHub Secrets — the repository holds no
+# keys (AGENTS.md §4). Without a key the step prints BLOCKED_BY_API_KEY and
+# exits 0, so a fork or a fresh clone is not punished for lacking them.
+#
+# What the models see: the PR diff against the base (capped), the PR title
+# and body. What they produce: a markdown review posted as one sticky PR
+# comment per model. Nothing they say is trusted without a human or a test
+# confirming it (AGENTS.md §4).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Kimi + DeepSeek review
+    runs-on: ubuntu-latest
+    # Draft PRs get reviewed too — that is when the feedback is cheapest —
+    # but only from this repository; forks have no access to the secrets.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Diff against the base branch
+        run: |
+          git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1
+          git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" \
+            -- . ':(exclude)pnpm-lock.yaml' ':(exclude)**/*.snap' ':(exclude)docs/**' \
+            > /tmp/pr.diff
+          wc -c /tmp/pr.diff
+
+      - name: Kimi
+        env:
+          AI_REVIEW_PROVIDER: kimi
+          AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ vars.KIMI_BASE_URL || 'https://api.moonshot.ai/v1' }}
+          AI_REVIEW_MODEL: ${{ vars.KIMI_MODEL || 'kimi-k2-0905-preview' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/ai-review.mjs /tmp/pr.diff
+
+      - name: DeepSeek
+        env:
+          AI_REVIEW_PROVIDER: deepseek
+          AI_REVIEW_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_REVIEW_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL || 'https://api.deepseek.com' }}
+          AI_REVIEW_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/ai-review.mjs /tmp/pr.diff

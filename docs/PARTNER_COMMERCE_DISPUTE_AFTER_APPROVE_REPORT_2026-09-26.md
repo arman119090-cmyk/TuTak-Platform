@@ -35,7 +35,9 @@ committed, поэтому спор, открытый после APPROVED, пол
 
 - Ветка `claude/tutak-staging-flow-check-hl97qh`, Draft PR #70.
 - Работа начата от `418cf630`: GitHub CI 10/10 GREEN, проверено перед push.
-- Коммит с кодом: `dbf3ebf9`. Коммит с этим отчётом идёт поверх.
+- Коммит с кодом: `dbf3ebf9`. Черновик этого отчёта — `797a05f7` (только
+  `docs/`); на нём GitHub CI 10/10 GREEN. Финальная версия отчёта — ещё один
+  docs-коммит поверх, его CI указан в аудите.
 - Не merge, не deploy.
 
 ## 3. Что сделано
@@ -152,7 +154,7 @@ committed, поэтому спор, открытый после APPROVED, пол
      «file not found». Unit-тесты прогнал отдельно, они прошли.
   3. Первый вариант 8h проходил и при отключённой блокировке `markPaid`:
      он проверял только revoke. Добавил в 8h явную проверку отказа
-     `markPaid`.
+     `markPaid` и перепроверил мутацией — теперь падает.
   4. Контекст из прошлой задачи: локальные Postgres и Redis упали после
      рестарта контейнера, пришлось поднимать заново.
 
@@ -176,8 +178,12 @@ committed, поэтому спор, открытый после APPROVED, пол
 нет) и replay всех счетов.
 
 Мутационная проверка:
-- Отключил `assertPayable` → упали 8c, 8e ×2, 8f (4 теста). 8h после
-  доработки тоже проверяет отказ.
+- Отключил `assertPayable` → упали 8c, 8e ×2, 8f (4 теста). После
+  доработки 8h прогнал его отдельно с той же мутацией — упал на ожидании
+  `DISPUTE_REFUND_NOT_IN_SETTLEMENT` («promise resolved instead of
+  rejected»). 8d и 8g проходят без блокировки по построению: в 8d спор
+  решён за партнёра (блокировать нечего), 8g проверяет `revokeApproval` и
+  уникальность claim.
 - Отключил проверку статуса и признаков перевода в `revokeApproval` → упали
   8f и 8g.
 - Код возвращён из копии, `MUTANT` в коде нет (grep = 0).
@@ -188,13 +194,17 @@ committed, поэтому спор, открытый после APPROVED, пол
 |---|---|
 | `partner-commerce-settlement` | 23/23 |
 | Затронутые наборы: settlement, `partner-settlement` (`main`), returns-disputes, http, final-fixes, partner-settlement-check | 6 наборов, 103/103 |
-| Полный интеграционный прогон | LOCAL_FULL |
+| Полный интеграционный прогон | 117/117 наборов, 1569/1569 тестов (1562 прежних + 7 новых) |
 | API unit (включая `transaction-discipline`) | 704/704 |
 | admin | 15 наборов, 106/106 |
 | `pnpm typecheck` | 0 ошибок |
 | `pnpm lint` | 0 ошибок |
 
-GitHub CI: CI_RESULT
+GitHub CI на `797a05f7` (код `dbf3ebf9` + черновик отчёта): **10/10 GREEN** —
+push run 36253650827 и pull_request run 36253653213; «Lint, test and build»,
+«Integration tests 1/3–3/3», «Build the container images» — все success,
+пропущенных нет. Прогоны на `dbf3ebf9` были отменены push'ем черновика
+(`cancel-in-progress`), код в обоих коммитах один и тот же.
 
 ## 6. UNVERIFIED
 
@@ -223,4 +233,6 @@ GitHub CI: CI_RESULT
 
 ---
 
-FINAL_LINE
+Partner Commerce — спор после APPROVE: CLOSED (код `dbf3ebf9`; GitHub CI
+10/10 GREEN на `797a05f7`; CI финального docs-коммита — в аудите). Не merge,
+не deploy.

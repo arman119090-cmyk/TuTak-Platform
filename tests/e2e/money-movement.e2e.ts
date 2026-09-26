@@ -172,10 +172,10 @@ test.describe('partner settlements', () => {
    * route is gone, and the first test below pins that it stays gone.
    */
   const settlementPaths = {
-    draft: (partnerId: string) => `/partner-settlements/drafts/${partnerId}`,
-    ready: (id: string) => `/partner-settlements/${id}/ready`,
-    approve: (id: string) => `/partner-settlements/${id}/approve`,
-    paid: (id: string) => `/partner-settlements/${id}/paid`,
+    draft: (partnerId: string) => `/admin/partner-settlements/drafts/${partnerId}`,
+    ready: (id: string) => `/admin/partner-settlements/${id}/ready`,
+    approve: (id: string) => `/admin/partner-settlements/${id}/approve`,
+    paid: (id: string) => `/admin/partner-settlements/${id}/paid`,
   };
 
   interface Settlement {
